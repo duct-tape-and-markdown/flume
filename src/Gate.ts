@@ -193,7 +193,9 @@ export interface GateResult {
    * dispatcher derives the suspect-flake marker on the prior-attempt record
    * mechanically, from list disjointness — never from this gate's prose
    * (spec/chain.md "What a gate returns"). Absent is today's behavior: no
-   * marker, no inference. No builtin gate populates this yet.
+   * marker, no inference. `writablePathsGate` populates it with the same
+   * paths its `details` lists; the shell-backed builtins do not, having no
+   * structured report to attribute from.
    */
   failingFiles?: string[];
 }

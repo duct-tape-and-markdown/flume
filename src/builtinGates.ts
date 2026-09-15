@@ -440,6 +440,11 @@ export function pendingGate(opts: PendingGateOptions): Gate {
  * entryChannelPaths`. The gate never re-decides whether a tick is scoped and
  * never rebuilds the union: `undefined` here *is* an unscoped tick.
  *
+ * A refusal names its violating paths on `GateResult.failingFiles` as well as
+ * in `details` prose. Those paths are by construction a subset of the span's
+ * own footprint, so the dispatcher's disjointness check never marks a
+ * writable-paths revert a suspect flake.
+ *
  * Implementation note: we don't ship this as a static export because it
  * depends on the phase config. The dispatcher attaches it automatically.
  */
@@ -475,13 +480,21 @@ export function writablePathsGate(
             `  - ${p} (inside phase writablePaths but outside the assigned entry's declared files ∪ entryChannelPaths)`,
         ),
       ];
-      const total = outsideCeiling.length + outsideScope.length;
+      // The two sets the refusal was computed from, reported as paths rather
+      // than spent on prose alone (`.claude/rules/engineering.md` "A fact the
+      // engine holds is reported, never rediscovered"): a chain reading the
+      // verdict row or a prior-attempt record gets the violating paths as a
+      // list, never by re-parsing `details`. Same order and same membership
+      // as `lines` above — the prose is the rendering of this list, not a
+      // second derivation of it.
+      const violating = [...outsideCeiling, ...outsideScope];
       return {
         ok: false,
-        message: `commit touched ${total} path(s) outside ${
+        message: `commit touched ${violating.length} path(s) outside ${
           entryScope ? "the entry-scoped write allowance" : "writablePaths"
         }`,
         details: lines.join("\n"),
+        failingFiles: violating,
       };
     },
   };

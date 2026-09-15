@@ -8206,6 +8206,50 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
     expect(record.mode).toBe("gate-revert");
     expect(record.suspectFlake).toBeUndefined();
   }, 20_000);
+
+  // The builtin that now names its violating paths, driven through the real
+  // derivation rather than a hand-built gate result: the auto-attached
+  // writable-paths gate blames paths that are by construction inside the
+  // reverted span's own footprint, so disjointness can never hold and the
+  // marker can never appear on a writable-paths revert.
+  it("a writable-paths gate-revert record earns no suspect-flake marker", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      writablePaths: ["src/**"],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "outside/d.ts", "d\n", "plan: overreach");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the writable-paths gate is what refused, and it named the
+    // path it refused on — otherwise the assertion below would pass over a
+    // record no gate wrote anything to.
+    const row = outcome.verdict?.gateResults.find(
+      (g) => g.gate === "writable-paths",
+    );
+    expect(row?.ok).toBe(false);
+    expect(row?.failingFiles).toEqual(["outside/d.ts"]);
+
+    const record = await readPlanPriorAttempt();
+    expect(record.mode).toBe("gate-revert");
+    expect(record.gate).toBe("writable-paths");
+    expect(record.suspectFlake).toBeUndefined();
+  }, 20_000);
 });
 
 // ---------- no-commit outcome taxonomy (§6) ----------

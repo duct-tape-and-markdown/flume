@@ -445,6 +445,71 @@ describe("GateResult.failingFiles — optional, type passthrough", () => {
   });
 });
 
+// ---------- writablePathsGate names its violating paths
+// (`.claude/rules/engineering.md` "A fact the engine holds is reported,
+// never rediscovered") ----------
+
+describe("writablePathsGate — the refusal reports the paths it refused on", () => {
+  it("a writable-paths refusal names every violating path on failingFiles", async () => {
+    // Both refusal sets at once: `spec/bad.md` and `docs/x.md` breach the
+    // phase ceiling, `src/stray.ts` clears the ceiling but falls outside the
+    // entry's declared allowance, and `src/a.ts` is inside both.
+    const gate = writablePathsGate(["src/**"], ["src/a.ts"]);
+    const result = await gate.run(
+      ctx(process.cwd(), {
+        commitSha: "deadbeef",
+        touchedPaths: ["src/a.ts", "spec/bad.md", "src/stray.ts", "docs/x.md"],
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.failingFiles).toEqual([
+      "spec/bad.md",
+      "docs/x.md",
+      "src/stray.ts",
+    ]);
+    expect(result.failingFiles).not.toContain("src/a.ts");
+
+    // The prose and the list are one derivation, not two: every path the
+    // `details` block lists is on `failingFiles`, and nothing else is.
+    const fromProse = (result.details ?? "")
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => line.trim().replace(/^- /, "").split(" ")[0]);
+    expect(fromProse.length).toBeGreaterThan(0);
+    expect([...fromProse].sort()).toEqual([...result.failingFiles!].sort());
+  });
+
+  it("a writable-paths refusal on the phase ceiling alone names its paths on failingFiles", async () => {
+    // Unscoped tick: no entry allowance, so the ceiling set is the whole
+    // refusal and the field still carries it.
+    const gate = writablePathsGate(["src/**"]);
+    const result = await gate.run(
+      ctx(process.cwd(), {
+        commitSha: "deadbeef",
+        touchedPaths: ["src/a.ts", "spec/bad.md"],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.failingFiles).toEqual(["spec/bad.md"]);
+  });
+
+  it("a passing writable-paths run declares no failingFiles at all", async () => {
+    const gate = writablePathsGate(["src/**"], ["src/a.ts"]);
+    const result = await gate.run(
+      ctx(process.cwd(), {
+        commitSha: "deadbeef",
+        touchedPaths: ["src/a.ts"],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    // Absent, not an empty array: absence is what "nothing to attribute"
+    // means on the wire (exactOptionalPropertyTypes).
+    expect(result.failingFiles).toBeUndefined();
+    expect(result).not.toHaveProperty("failingFiles");
+  });
+});
+
 // ---------- chainLoadGate (RELEASE-v0.2 §3) ----------
 
 const VALID_CHAIN =
