@@ -55,7 +55,10 @@
       "bin/execEntry.js",
       "bin/flume.js",
       "bin/flume-harness.js",
-      "bin/flume"
+      "bin/flume",
+      "scripts/build-changelog.mjs",
+      "scripts/pack-harness-assets.mjs",
+      "scripts/smoke-install.mjs"
     ]
   }
 }

@@ -1,1 +1,19 @@
-[]
+[
+  {
+    "tag": "CHANGELOG-BOUNDARY-READ-REFUSES-NON-ENOENT",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "scripts/build-changelog.mjs", "description": "narrow resolveLastRelease's CHANGELOG.md catch to ENOENT" },
+        { "path": "tests/build-changelog.test.ts", "description": "the unreadable-CHANGELOG case" }
+      ]
+    },
+    "summary": "refuse a non-ENOENT CHANGELOG.md read in the changelog miner's boundary resolution instead of degrading to the tag fallback",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "resolveLastRelease rethrows every CHANGELOG.md read error but ENOENT; absence alone reaches the semver-tag fallback",
+    "tests": [
+      "an unreadable CHANGELOG.md refuses instead of resolving the boundary from the tag fallback"
+    ],
+    "notes": "scripts/build-changelog.mjs:67 catches every readFileSync error. The file's own doc block (:12-20) scopes the tag fallback to a repo that never recorded a version, so the catch is wider than its declared trigger. An unreadable CHANGELOG.md silently re-mines already-released build: commits under ## [Unreleased] for a human to curate."
+  }
+]
