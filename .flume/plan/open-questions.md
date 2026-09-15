@@ -97,3 +97,54 @@ not re-derive them:
   author quotes it. The package's prompts take the quotes; derive files them.
   Named here only so the failure tally above stays honest — three
   `harnessPrompts` cases and one `harnessChain` case belong to this family.
+
+## The export-nameability scan walks source type nodes as a proxy for the emitted `.d.ts` (PARKED — architectural fork)
+
+Drained from the build note `PROPERTY-TYPE-POSITIONS-RESOLVE-FROM-THE-EXPORTS-MAP`
+(2026-09-15), which flagged a standing gap and declined to file it.
+
+**Verified on disk this tick.** `tests/helpers/exportGraph.ts`: `fromMembers`
+reports a property position only when `member.type` is present, and
+`positionsOf`'s variable arm yields no position at all when a declaration
+carries neither an annotation nor a function initializer. A declaration the
+walk reads no position from is silently dropped from the judged set — it is
+not a pass, it is a verdict never made, and `tests/exportConsumers.test.ts`
+*every type a reached property position names is exported from an entry
+module* stays green over it.
+
+The member half is latent: 720 property positions across 48 `src/` and
+`harness/` files, every one annotated (measured). The variable half is **live
+today** — `HELP_TOP` and `HELP_JOB` (`src/cliHelp.ts`), `RUNTIME_IGNORES`
+(`src/job.ts`), `EX_DATAERR`/`EX_IOERR` (`src/cli.ts`), `NAME_MAX` and
+`TAG_MAX_LENGTH` (`src/PendingSchema.ts`), `PROMPT_NAMES`
+(`harness/prompts.ts`), `NO_COMMIT_MODES` (`src/Prompt.ts`) are each reached
+and each contribute no position. Nothing is hidden yet, because every one
+infers to a literal or an array of literals. The emitted `.d.ts` does name an
+inferred type, so the first `export const defaults = { chain: someChain }` or
+`readonly store = new PriorAttemptStore()` puts a name in the hover text that
+no `import` can carry, and the pin says nothing.
+
+**The upstream suspect, and why this is a fork rather than an entry.** The
+scan's subject is what the emitted `.d.ts` names; it reads source type nodes
+instead. Every gap above is one re-implementation gap, and closing them one
+at a time is chasing the tail (`.claude/rules/engineering.md`, *A seam gate
+reads what the real writer wrote* — the real producer of those names is
+`tsc`'s declaration emit).
+
+1. **Read the real emit.** Run the build config's declaration emit and walk
+   the `.d.ts` type references. Closes every gap class at once and deletes
+   the approximation. Costs a `tsc` emit in the default lane; the scan
+   already resolves `outDir`/`rootDir` and the fixture arms already build a
+   real tsconfig, so the machinery is half there.
+2. **Keep the node walk, declare its boundary.** Per *Loud or nothing*: the
+   scan reports the reached declarations it read no position from instead of
+   dropping them, and the walk's doc comment names what it cannot read. Cheap,
+   honest, leaves the hole — the sanctioned degraded-but-declared path.
+3. **Mandate annotations.** Refuse on any reached un-annotated declaration.
+   Mechanically simplest, but it costs literal types
+   (`export const EX_DATAERR: number = 65`) and is a house style rule wearing
+   a pin.
+
+**Recommended:** (1) if an emit in the default lane is affordable — it is the
+only option under which the pin's title is true. Otherwise (2); (3) buys the
+least for the most.

@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "QUICKSTART-VERB-CASE-READS-THE-ADOPTION-PASSAGE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "narrow the verb case's reader handle off sectionOf to the adoption passage; retitle to match"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the quickstart verb case reads the whole section, so a harness verb named only under '### The engine-level path' satisfies it",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "the verb containment loop reads a handle that stops at the section's first '###', and the case carries a detection probe — a verb string present only in the engine-level subsection is not found.",
+    "tests": [],
+    "pins": [
+      "the README adoption passage names every verb the flume-harness bin dispatches"
+    ],
+    "notes": "The sibling init case measured a false green off this same handle and narrowed to listUnderFirstBlock; the verb loop still reads sectionOf. One verb (init) today, named in the adoption block, so the claim holds either way — hence pins, not tests."
+  }
+]
