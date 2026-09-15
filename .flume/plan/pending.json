@@ -1,7 +1,9 @@
 [
   {
     "tag": "TEMP-REPO-FIXTURES-RUN-WITH-AUTO-GC-OFF",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -34,7 +36,9 @@
   },
   {
     "tag": "EXPORT-NAMEABILITY-READS-THE-DECLARATION-EMIT",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "files": {
       "new": [],
       "edit": [
@@ -62,6 +66,124 @@
     "pins": [
       "every type a reached property position names is exported from an entry module"
     ],
-    "notes": "Inbox 2026-09-15 rules option 1 of the closed question. State the emit's measured cost in the commit body; if it is past what the default lane carries, scope the emit — never fall back to the node walk. Live half today: the reached constants in cliHelp, job, cli, PendingSchema, Prompt and harness/prompts, each contributing no position."
+    "notes": "Inbox 2026-09-15 rules option 1 of the closed question. State the emit's measured cost in the commit body; if it is past what the default lane carries, scope the emit \u2014 never fall back to the node walk. Live half today: the reached constants in cliHelp, job, cli, PendingSchema, Prompt and harness/prompts, each contributing no position."
+  },
+  {
+    "tag": "CI-LANES-ARE-A-DECLARED-FIELD",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "`ci`, optional: the lanes, each a workflow file, a job name, and the lane name its findings carry"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the accept and refuse arms for the new field"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the optional-field list names `ci` beside `slots`"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the declaration carries no `ci` field, so a consumer with a CI lane cannot declare one \u2014 the strict schema refuses the key",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "a declaration naming a lane's workflow, job and lane name parses; one missing a component refuses at load naming the field; the authoring doc's optional-field list carries it.",
+    "tests": [
+      "a declaration carrying a ci lane with its workflow, job and lane name parses",
+      "a declaration whose ci lane omits its job refuses the load naming the field"
+    ],
+    "pins": [],
+    "notes": "The field is shape alone here \u2014 nothing reads it until INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE, which is why that entry is the blocked one and this is not. This repo's own `ci:` line is a chore(flume) edit outside build's fence, never part of this entry."
+  },
+  {
+    "tag": "INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "CI-LANES-ARE-A-DECLARED-FIELD"
+      ]
+    },
+    "files": {
+      "new": [
+        {
+          "path": "harness/ci.ts",
+          "description": "the lane reader: latest completed run of the declared workflow job for the tip's branch, through the forge CLI; its failing material, or the reason it is unread"
+        },
+        {
+          "path": "tests/harnessCi.test.ts",
+          "description": "the reader over a stub forge CLI on PATH \u2014 failing, green, absent CLI, no completed run"
+        }
+      ],
+      "edit": [
+        {
+          "path": "harness/windows.ts",
+          "description": "the inbox window's third arg and data key, rendered beside the records and bounded as the other windows are"
+        },
+        {
+          "path": "harness/prompts/plan-inbox.md",
+          "description": "the lane block, and the paragraph routing each failing title the way a record drains"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the inbox window's arg map over a declared lane"
+        },
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "the new key is declared data, not authored text"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a declared CI lane is read by nothing: the inbox slice renders records and build refusals only, so a red lane reaches no tick",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "CI lanes as a findings source"
+    },
+    "acceptance": "with a lane declared, the inbox slice's prompt carries that lane's latest completed run under its lane name \u2014 the failing job's log, or an explicit unread reason when the forge CLI is absent or no run has completed \u2014 and says which when the run is green.",
+    "tests": [
+      "the inbox window renders the declared lane's failing run under its lane name",
+      "the inbox window renders a lane as unread when the forge CLI is absent",
+      "the inbox window renders a lane as unread when no completed run for the tip's branch exists",
+      "the inbox window renders a lane whose latest completed run passed as green"
+    ],
+    "pins": [],
+    "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content \u2014 a generic parse of a consumer's runner output is the inference the boundary rule fences. Liveness is deliberately not a leg here; the fork is the open question, and this entry ships under every branch of it."
+  },
+  {
+    "tag": "WINDOWS-LANE-TRIGGER-IS-PINNED",
+    "gate": {
+      "kind": "open"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/bin.test.ts",
+          "description": "beside the case that already reads the workflow: the trigger and the windows lane's step set"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "nothing reads the trigger and lane content win32 support now rests on, so a lane that stops running on push to main still reads as supported",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "win32 is a supported host"
+    },
+    "acceptance": "the suite refuses a workflow whose push trigger drops `main`, or whose windows-latest lane drops one of the four steps the section names.",
+    "tests": [],
+    "pins": [
+      "the CI workflow runs on every push to main",
+      "the windows-latest lane runs typecheck, the default test lane, build and the install smoke"
+    ],
+    "notes": "Both properties hold on disk today (.github/workflows/ci.yml), so they are pins. The section's support claim is now conditional on the lane running, and the condition is a fact about a committed file that no rung above prose holds."
   }
 ]
