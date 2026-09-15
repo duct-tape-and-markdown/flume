@@ -1,1 +1,42 @@
-[]
+[
+  {
+    "tag": "SPAWN-SCAN-SEES-NODE-BY-NAME",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/spawnBudget.ts",
+          "description": "the scan's node-startup vocabulary, past the lone `process.execPath` spelling"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the scan's fixture cases for a command-string node spawn"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "declare the budget on the shellGate cases that spawn `node`"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "declare the budget on the case that runs `tscGate({ cmd: 'npm' })`"
+        },
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "declare the budget on the `npm pack --dry-run` case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Widen the spawn-budget scan past the process.execPath spelling; three node-starting default-lane cases inherit the runner's 5s default",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "scanDefaultLaneSpawnSites() reports the sites at tests/Gate.test.ts:63, tests/builtinGates.test.ts:693 and tests/harnessPackaging.test.ts:457, and the lane's budget case is green with every reported site naming SPAWN_BUDGET_MS.",
+    "tests": [
+      "the spawn-budget scan reports a case that starts node under a command-string name"
+    ],
+    "notes": "Verified this tick: the scan returns 202 sites and none of the three. Gate.test.ts spawns node ten times through shellGate's cmd: \"node\"; builtinGates.test.ts:693 and harnessPackaging.test.ts:471 spawn npm. Seeding on every node:child_process call was weighed and rejected — it flags the git-plumbing sites the cited section measures as fast and never flaked. The helper's header claims (\"start a node process\"; no second copy of the lane's vocabulary) move with the fix."
+  }
+]

@@ -65,7 +65,9 @@
       "tests/helpers/subprocess.ts",
       "tests/helpers/spawnBudget.ts",
       "tests/helpers/vitestSetup.ts",
-      "tests/helpers/dispatcherFixture.ts"
+      "tests/helpers/dispatcherFixture.ts",
+      "tests/harnessPackaging.test.ts",
+      "harness/index.ts"
     ]
   }
 }
