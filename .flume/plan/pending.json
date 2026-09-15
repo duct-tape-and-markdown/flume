@@ -1,1 +1,67 @@
-[]
+[
+  {
+    "tag": "TEMP-REPO-FIXTURES-RUN-WITH-AUTO-GC-OFF",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "pin auto gc off for every git child the suite spawns, at the one home the fixtures already share"
+        },
+        {
+          "path": "tests/helpers/vitestSetup.ts",
+          "description": "arm the pin for in-worker spawns too, beside the state-root leak guard"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the fixture-repo case reading the pin back"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "temp repo fixtures leave git's auto gc on, so a detached gc outlives its test and reds the posix lane at rmdir .git/objects",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "no git process outlives the test that spawned it: every temp repository the suite creates runs with auto gc off, pinned at one home rather than at each of the 25 creation sites.",
+    "tests": [
+      "a temp git repository the suite creates has git's auto gc disabled"
+    ],
+    "pins": [],
+    "notes": "Inbox 2026-09-15: posix ci red on 2 of 12 main runs, always ENOTEMPTY rmdir .git/objects at fixture teardown, never an assertion. gc.autoDetach is on by default, so the gc git starts outlives the test and races the recursive remove. A retry around the remove hides the same race behind a wait."
+  },
+  {
+    "tag": "EXPORT-NAMEABILITY-READS-THE-DECLARATION-EMIT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/exportGraph.ts",
+          "description": "positions come from the build config's declaration emit, walked on the emitted .d.ts; drop the source-node approximation"
+        },
+        {
+          "path": "tests/exportConsumers.test.ts",
+          "description": "the inferred-type fixture arm, and the vacuity guards restated over the emitted set"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the export-nameability scan walks source type nodes as a proxy for the emit, dropping every declaration it reads no position from",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "acceptance": "the scan's positions are read from the emitted declarations, so no reached declaration is dropped for want of a source annotation, and the three real-tree nameability verdicts stay green.",
+    "tests": [
+      "the export scan flags an unnamable type an export infers without a type annotation",
+      "the export scan carries a property position for a reached export that carries no source annotation"
+    ],
+    "pins": [
+      "every type a reached property position names is exported from an entry module"
+    ],
+    "notes": "Inbox 2026-09-15 rules option 1 of the closed question. State the emit's measured cost in the commit body; if it is past what the default lane carries, scope the emit — never fall back to the node walk. Live half today: the reached constants in cliHelp, job, cli, PendingSchema, Prompt and harness/prompts, each contributing no position."
+  }
+]
