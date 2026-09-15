@@ -60,9 +60,11 @@
     "tests": [
       "flume render prints to stdout the prompt a tick would be handed and invokes no agent",
       "flume render's first line says the prior-attempt block is omitted",
+      "flume render --entry selects the queue entry a scoped tick would carry",
+      "flume render --entry naming no queue entry refuses usage-shaped and names the tag",
       "flume render exits EX_DATAERR naming an unresolved span",
       "flume --help names render on the subcommand surface"
     ],
-    "notes": "spec/cli.md ruled all three forks at d9f0a90, closing the parked question. The removal those cliHelp cases pin (CLI-RENDER-REMOVAL, operator ruling 2026-08-03) is superseded by name, so they retire here. docs/MIGRATING-0.10.md §8 is a historical migration record and stays as written. Fanout takes `--entry <tag>`."
+    "notes": "spec/cli.md ruled all three forks at d9f0a90, closing the parked question. The removal those cliHelp cases pin (CLI-RENDER-REMOVAL, operator ruling 2026-08-03) is superseded by name, so they retire here. docs/MIGRATING-0.10.md §8 is a historical migration record and stays as written. `--entry` is in no src/ file today: the section's usage-shaped clause naming it lands with the verb. No `--out` flag."
   }
 ]
