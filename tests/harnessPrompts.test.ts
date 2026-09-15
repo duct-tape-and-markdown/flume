@@ -323,18 +323,24 @@ function spanSubstitutes(raw: string, key: SharedPromptArg): boolean {
 }
 
 /**
- * Which shipped prompts substitute each artifact's path — the detector the
- * coverage pin and the odd-root loop both read, rather than one re-deriving
- * it beside the other (`.claude/rules/engineering.md`, *The fix lands at the
- * mechanism*).
+ * Which prompts of a roster substitute each artifact's path — the detector
+ * the coverage pins and the render loops all read, rather than one
+ * re-deriving it beside the other (`.claude/rules/engineering.md`, *The fix
+ * lands at the mechanism*).
+ *
+ * The roster is a parameter because the cases below judge different ones: the
+ * odd-root loop renders every shipped prompt, while the guarded-span cases
+ * render the plan slices alone, and a count taken over all of `PHASES` cannot
+ * tell a plan slice that stopped reading an artifact from `build.md` never
+ * having read it.
  */
-async function promptsReadingEachArtifact(): Promise<
-  ReadonlyMap<SharedPromptArg, PromptName[]>
-> {
+async function promptsReadingEachArtifact(
+  roster: readonly PromptName[] = PHASES,
+): Promise<ReadonlyMap<SharedPromptArg, PromptName[]>> {
   const readers = new Map<SharedPromptArg, PromptName[]>(
     ARTIFACTS.map((a) => [a.key, []]),
   );
-  for (const name of PHASES) {
+  for (const name of roster) {
     const raw = await readFile(promptPath(name), "utf8");
     for (const artifact of ARTIFACTS) {
       if (spanSubstitutes(raw, artifact.key))
@@ -345,18 +351,35 @@ async function promptsReadingEachArtifact(): Promise<
 }
 
 /**
- * The table's own coverage, per artifact rather than in aggregate: an entry
+ * A table's own coverage, per artifact rather than in aggregate: an entry
  * whose detector stops matching any span leaves every loop below silently,
  * and a total count cannot tell that from a table that shrank
  * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ *
+ * `over` is the slice of the table the calling case actually renders, so a
+ * case keyed on the guarded artifacts is not answered by an unguarded one
+ * still being read.
  */
 function expectEveryArtifactRead(
   readers: ReadonlyMap<SharedPromptArg, PromptName[]>,
+  over: ReadonlyArray<(typeof ARTIFACTS)[number]> = ARTIFACTS,
 ): void {
-  expect(ARTIFACTS.length).toBeGreaterThan(0);
+  expect(over.length).toBeGreaterThan(0);
   expect(
-    ARTIFACTS.filter((a) => readers.get(a.key)!.length === 0).map((a) => a.key),
+    over.filter((a) => readers.get(a.key)!.length === 0).map((a) => a.key),
   ).toEqual([]);
+}
+
+/**
+ * How many (prompt, artifact) pairs a loop over `roster` x `over` is supposed
+ * to assert — the expected count the guarded cases close on, read off the same
+ * detector the loop itself skips by.
+ */
+function pairsToAssert(
+  readers: ReadonlyMap<SharedPromptArg, PromptName[]>,
+  over: ReadonlyArray<(typeof ARTIFACTS)[number]>,
+): number {
+  return over.reduce((n, a) => n + readers.get(a.key)!.length, 0);
 }
 
 it("every artifact in the harness prompt odd-root table is read by at least one shipped prompt", async () => {
@@ -638,6 +661,13 @@ it("every plan slice prompt refuses when its queue artifact is absent", async ()
  * The other side of that fork, and the reason the guard is not a bare
  * refusal: a cold state root is a first tick, not a defect.
  */
+it("every guarded artifact the cold-root case renders is substituted by at least one plan slice prompt", async () => {
+  expectEveryArtifactRead(
+    await promptsReadingEachArtifact(PLAN_SLICES),
+    GUARDED,
+  );
+});
+
 it("a cold state root renders every plan slice prompt's placeholder as its block's whole content", async () => {
   expect(PLAN_SLICES.length).toBeGreaterThan(0);
   const root = await coldRoot("flume-prompts-cold-root-");
@@ -645,12 +675,18 @@ it("a cold state root renders every plan slice prompt's placeholder as its block
     expect(existsSync(artifact.at(root))).toBe(false);
   }
 
+  // The skip below and the count that closes the loop read one detector, so a
+  // guarded artifact no plan slice substitutes reds here rather than dropping
+  // out of both (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*).
+  const readers = await promptsReadingEachArtifact(PLAN_SLICES);
+  expectEveryArtifactRead(readers, GUARDED);
+
   let asserted = 0;
   for (const name of PLAN_SLICES) {
-    const raw = await readFile(promptPath(name), "utf8");
     const rendered = await render(name, root);
     for (const artifact of GUARDED) {
-      if (!spanSubstitutes(raw, artifact.key)) continue;
+      if (!readers.get(artifact.key)!.includes(name)) continue;
       placeholderIsBlockContent(
         rendered,
         artifact.placeholder,
@@ -662,9 +698,9 @@ it("a cold state root renders every plan slice prompt's placeholder as its block
     }
   }
 
-  // Non-vacuity: a prompt set whose spans stopped reading these artifacts
-  // would pass the loop over nothing.
-  expect(asserted).toBeGreaterThan(0);
+  // Every (slice, guarded artifact) pair the detector found was asserted, and
+  // the coverage above makes that count non-zero.
+  expect(asserted).toBe(pairsToAssert(readers, GUARDED));
 });
 
 /**
@@ -686,10 +722,14 @@ it("a questions file carrying no headings renders the plan slices' none-open pla
     "utf8",
   );
 
+  // Same detector, same closing count: a plan slice set that stopped indexing
+  // the questions file reds the coverage rather than skipping past it.
+  const readers = await promptsReadingEachArtifact(PLAN_SLICES);
+  expectEveryArtifactRead(readers, [questions!]);
+
   let asserted = 0;
   for (const name of PLAN_SLICES) {
-    const raw = await readFile(promptPath(name), "utf8");
-    if (!spanSubstitutes(raw, "QUESTIONS_PATH")) continue;
+    if (!readers.get("QUESTIONS_PATH")!.includes(name)) continue;
     const rendered = await render(name, root);
     placeholderIsBlockContent(
       rendered,
@@ -699,7 +739,7 @@ it("a questions file carrying no headings renders the plan slices' none-open pla
     asserted++;
   }
 
-  // Non-vacuity: a prompt set that stopped indexing the questions file would
-  // pass the loop over nothing.
-  expect(asserted).toBeGreaterThan(0);
+  // Every plan slice the detector found indexing the file was asserted, and
+  // the coverage above makes that count non-zero.
+  expect(asserted).toBe(pairsToAssert(readers, [questions!]));
 });
