@@ -23,6 +23,10 @@
         {
           "path": "tests/priorAttempts.test.ts",
           "description": "the two-way case"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the `not-shipped` bullet names both causes"
         }
       ],
       "retire": []
@@ -32,7 +36,7 @@
       "path": "spec/loop.md",
       "section": "Prior-outcome feedback to the retrying tick"
     },
-    "acceptance": "A record written after a throwing `shipped` hook is distinguishable on `TickContext.priorAttempts` from one written after a returned `false`, and the rendered block says which.",
+    "acceptance": "A record written after a throwing `shipped` hook is distinguishable on `TickContext.priorAttempts` from one written after a returned `false`, the rendered block says which, and the chain guide's `not-shipped` bullet names both.",
     "tests": [
       "a not-shipped record distinguishes a thrown shipped hook from a returned false"
     ],
@@ -76,6 +80,40 @@
     "notes": "The engine half shipped: `ClaudeCodeOptions.inheritUserMcp`, `--strict-mcp-config` on the argv by default (src/Agent.ts, `.claude/rules/platform-facts.md`). The harness's strict `agents` schema takes model and extraArgs only, so a consumer wanting its own MCP servers has no spelling and the strict schema refuses the field."
   },
   {
+    "tag": "WRITABLE-PATHS-GATE-NAMES-ITS-VIOLATING-PATHS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/builtinGates.ts",
+          "description": "writablePathsGate's refusal carries failingFiles"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "the structured-paths case and the no-marker pin"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`writablePathsGate`'s refusal reports its violating paths on `failingFiles`, not in `details` prose alone",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "A writable-paths refusal carries every path its `details` lists on `GateResult.failingFiles`; a passing run carries none.",
+    "tests": [
+      "a writable-paths refusal names every violating path on failingFiles"
+    ],
+    "pins": [
+      "a writable-paths gate-revert record earns no suspect-flake marker"
+    ],
+    "notes": "The gate computes `outsideCeiling`/`outsideScope` (src/builtinGates.ts) and spends both on a prose line; the dispatcher already copies `GateResult.failingFiles` onto the verdict row (src/Dispatcher.ts). Both sets sit inside the span's footprint, so `isSuspectFlake` (src/priorAttempts.ts) stays false \u2014 the pin holds that."
+  },
+  {
     "tag": "RENDER-REFUSED-DOC-NAMES-BOTH-PRODUCERS",
     "gate": {
       "kind": "open"
@@ -91,7 +129,7 @@
       ],
       "retire": []
     },
-    "summary": "`RenderRefusedAttempt`'s shipped doc names both producers — a failing inline-exec span and a pre-invocation hook that threw",
+    "summary": "`RenderRefusedAttempt`'s shipped doc names both producers \u2014 a failing inline-exec span and a pre-invocation hook that threw",
     "per": {
       "path": "spec/loop.md",
       "section": "Prior-outcome feedback to the retrying tick"
@@ -99,7 +137,7 @@
     "acceptance": "The exported type's comment and its `failures` field describe both writers; nothing on the shipped `.d.ts` reads as spans-only.",
     "tests": [],
     "pins": [],
-    "notes": "`persistHookRefusal` (src/Dispatcher.ts) writes the record for a `shouldRun`/`promptArgs` throw, and `buildRenderRefused`'s own comment names both; the exported type still reads 'one or more inline-exec spans ... did not resolve', with `failures` as 'every failing span's command text'. Doc comment on the shipped `.d.ts` — the ladder's one carve-out (`engineering.md`)."
+    "notes": "`persistHookRefusal` (src/Dispatcher.ts) writes the record for a `shouldRun`/`promptArgs` throw, and `buildRenderRefused`'s own comment names both; the exported type still reads 'one or more inline-exec spans ... did not resolve', with `failures` as 'every failing span's command text'. Doc comment on the shipped `.d.ts` \u2014 the ladder's one carve-out (`engineering.md`)."
   },
   {
     "tag": "CHECKOUT-AT-COMMENT-NAMES-THE-SHIPPED-ROUTE",
@@ -125,7 +163,7 @@
     "acceptance": "The comment on `api.git.checkoutAt` names no route the package does not export; the refusal reads as gate-time by design, per `spec/harness.md`, *The runner interface*.",
     "tests": [],
     "pins": [],
-    "notes": "`addWorktree`/`removeWorktree` (`src/git.ts`) are on neither `src/index.ts` nor `FlumeApi.git`, and `exports` reaches only `.` and `./harness` — the comment rides the shipped `.d.ts` and points at a route no consumer can take. `spec/harness.md` now rules the operation gate-time (0f9dfc8). `{@link}`s to internal symbols are TSDoc-normal and stay. Runtime unaffected: `namedLinesGate` runs through `runGate`, which opens the scope."
+    "notes": "`addWorktree`/`removeWorktree` (`src/git.ts`) are on neither `src/index.ts` nor `FlumeApi.git`, and `exports` reaches only `.` and `./harness` \u2014 the comment rides the shipped `.d.ts` and points at a route no consumer can take. `spec/harness.md` now rules the operation gate-time (0f9dfc8). `{@link}`s to internal symbols are TSDoc-normal and stay. Runtime unaffected: `namedLinesGate` runs through `runGate`, which opens the scope."
   },
   {
     "tag": "CHAIN-AUTHORING-MANAGED-STATE-POINTS-AT-THE-SPEC",
