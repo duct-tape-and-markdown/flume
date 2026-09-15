@@ -32,6 +32,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
 import { PHASES, PLAN_SLICES } from "../harness/declaration.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
+import { harnessInit } from "../harness/init.ts";
 import { planStatePath } from "../harness/planState.ts";
 import {
   PROMPT_NAMES,
@@ -655,6 +656,39 @@ async function everySliceOverAbsentArtifactAt(
 
 it("every plan slice prompt refuses when its queue artifact is absent", async () => {
   await everySliceOverAbsentArtifactAt("PENDING_PATH");
+});
+
+/**
+ * The other end of that refusal, from a consumer's side: adoption seeds the
+ * queue (`spec/harness.md`, *Adoption and upgrade*), so the first tick a
+ * fresh repository can take renders instead of walling on the artifact above.
+ *
+ * The writer is the real `harnessInit` over a real temporary repository — no
+ * fixture queue by the tester's hand, which is the whole claim: whatever
+ * adoption seeds is what a slice's span reads, and the two move together.
+ */
+it("a state root flume-harness init just wrote renders every plan slice prompt's queue span", async () => {
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+  const adopted = await scratchRoot("flume-prompts-adopted-");
+  const result = await harnessInit({ repoRoot: adopted });
+  const root = join(adopted, result.stateRoot);
+
+  for (const name of PLAN_SLICES) {
+    const raw = await readFile(promptPath(name), "utf8");
+    // Non-vacuity: a slice that stopped opening the queue would render clean
+    // below while proving nothing about what adoption wrote.
+    expect(
+      spanSubstitutes(raw, "PENDING_PATH"),
+      `${name}: opens no PENDING_PATH span`,
+    ).toBe(true);
+
+    // The seeded bytes arrived as the block's content — an empty queue the
+    // slice can read, not a render that merely failed to throw.
+    const rendered = await render(name, root);
+    expect(rendered, `${name}: the seeded queue did not reach the prompt`).toMatch(
+      /^\[\]$/m,
+    );
+  }
 });
 
 /**

@@ -36,7 +36,10 @@ import {
   protocolTemplatePath,
   type HarnessInitResult,
 } from "../harness/index.ts";
+import { entryExtension } from "../harness/entryExtension.ts";
 import { HELP_JOB, HELP_TOP, isSubcommand } from "../src/cliHelp.ts";
+import { parsePending } from "../src/PendingSchema.ts";
+import { gitPath, resolvePendingPath } from "../src/paths.ts";
 import {
   SPAWN_BUDGET_MS,
   TSX_CLI,
@@ -174,6 +177,61 @@ it("flume-harness init writes the state root and its derived ignore lines", asyn
   await rm(join(repoRoot, result.stateRoot), { recursive: true });
   const again = await harnessInit({ repoRoot });
   expect(again.ignoreLines).toEqual([]);
+});
+
+/**
+ * The queue is the one artifact an adopted repository needs before its first
+ * tick that no tick writes (`spec/harness.md`, *Adoption and upgrade*): every
+ * plan slice opens it with a bare reader and refuses on absence
+ * (`tests/harnessPrompts.test.ts`, *every plan slice prompt refuses when its
+ * queue artifact is absent*), and only a plan tick that got to run would
+ * write one. Seeded here, or the first wave never starts.
+ *
+ * Addressed through the engine's own `resolvePendingPath` rather than a
+ * layout spelled by the tester: a queue seeded at a path the dispatcher does
+ * not resolve reds here instead of at a consumer's first tick.
+ */
+it("flume-harness init seeds an empty queue in the state root", async () => {
+  const result = await harnessInit({ repoRoot });
+
+  const pending = resolvePendingPath(join(repoRoot, result.stateRoot));
+  expect(existsSync(pending)).toBe(true);
+  expect(statSync(pending).isFile()).toBe(true);
+
+  // And reported: `written` is the list a consumer commits the adoption from,
+  // so a queue on disk that no line names is a file their first commit drops.
+  // The expectation is the same derivation the writer reports through, in
+  // git's alphabet, since that is what the rest of the list is in.
+  expect(result.written).toContain(
+    gitPath(resolvePendingPath(result.stateRoot)),
+  );
+});
+
+/**
+ * The agreement gate behind the case above (`.claude/rules/engineering.md`,
+ * *A seam gate reads what the real writer wrote*): the writer is
+ * `harnessInit` and the reader is the engine's real `parsePending`, composed
+ * with the package's own entry extension — the pair a consumer's first plan
+ * tick and its `pending-gate` meet these bytes through. A seed that parsed
+ * to something other than zero entries would hand that tick a phantom.
+ */
+it("the queue flume-harness init writes parses as an empty pending queue", async () => {
+  const result = await harnessInit({ repoRoot });
+  const raw = await readFile(
+    resolvePendingPath(join(repoRoot, result.stateRoot)),
+    "utf8",
+  );
+
+  // Non-vacuity: there are bytes to judge, so the empty entry list below is
+  // the parser's verdict on a real file rather than on an empty read.
+  expect(raw.length).toBeGreaterThan(0);
+
+  const parsed = parsePending(raw, entryExtension());
+  expect({ ok: parsed.ok, errors: parsed.errors }).toEqual({
+    ok: true,
+    errors: [],
+  });
+  expect(parsed.entries).toEqual([]);
 });
 
 it("flume-harness init writes PROTOCOL.md from the package's own template", async () => {

@@ -2,7 +2,8 @@
  * `flume-harness init` — what adopting the harness package writes into a
  * repository (`spec/harness.md`, *Adoption and upgrade*): the declaration
  * skeleton, the `chain.ts` that applies the package's factory to it, the
- * state root, the ignore set, `PROTOCOL.md`, and the dependency
+ * state root with an empty queue in it, the ignore set, `PROTOCOL.md`, and
+ * the dependency
  * line that makes `@dtmd/flume/harness` resolve from the declaration that
  * imports it. The engine refuses a load with no `<configDir>/chain.ts`, so
  * an adoption that stopped at the declaration would leave a repository one
@@ -36,7 +37,12 @@ import { fileURLToPath } from "node:url";
 
 import { existsLoud } from "../src/fsProbe.js";
 import { mergeIgnoreLines } from "../src/job.js";
-import { namespacedJoin, STATE_ROOT_DIRNAME } from "../src/paths.js";
+import {
+  gitPath,
+  namespacedJoin,
+  resolvePendingPath,
+  STATE_ROOT_DIRNAME,
+} from "../src/paths.js";
 import { readSelfPackage } from "../src/selfPackage.js";
 
 import { consumerIgnores } from "./ignores.js";
@@ -72,6 +78,20 @@ const CHAIN_REL = "chain.ts";
 
 /** Where the project's own conventions sit under a state root. */
 const PROTOCOL_REL = "PROTOCOL.md";
+
+/**
+ * The queue a repository starts life with: the empty JSON list the engine's
+ * schema decodes to zero entries (`src/PendingSchema.ts`), with the trailing
+ * newline every other file here ends on.
+ *
+ * Spelled as bytes because nothing in the package emits a queue — a plan
+ * slice writes it as an agent's output and the engine only ever reads it —
+ * so there is no writer to derive this from. What keeps the two sides
+ * honest is the parse, driven over exactly these bytes
+ * (`tests/harnessInit.test.ts`, *the queue flume-harness init writes parses
+ * as an empty pending queue*).
+ */
+const EMPTY_QUEUE = "[]\n";
 
 /**
  * The placeholder the shipped `PROTOCOL.md` template carries wherever it
@@ -340,6 +360,24 @@ export async function harnessInit(
     await writeFile(namespacedJoin(stateRootAbs, rel), body, "utf8");
     written.push(`${stateRoot}/${rel}`);
   }
+
+  // The queue, which nothing else creates. A plan slice opens it with a bare
+  // reader and refuses on absence, and no slice writes one before the first
+  // build wave — so an adoption that stopped at the skeletons would wall
+  // every plan tick a fresh consumer could take (`spec/harness.md`, *Adoption
+  // and upgrade*). It sits a directory below them, hence the `mkdir`.
+  //
+  // Addressed through the engine's own resolver rather than spelled here: the
+  // dispatcher, `flume check` and `flume status` all reach the queue through
+  // it, and a second spelling would seed a file none of them read
+  // (`.claude/rules/engineering.md`, *Derived state is computed, never
+  // restated beside its source*). It composes with `node:path`, so the
+  // reported line folds back into git's alphabet the way `harness/chain.ts`
+  // does for the same value.
+  const pendingAbs = resolvePendingPath(stateRootAbs);
+  await mkdir(namespacedJoin(dirname(pendingAbs)), { recursive: true });
+  await writeFile(namespacedJoin(pendingAbs), EMPTY_QUEUE, "utf8");
+  written.push(gitPath(resolvePendingPath(stateRoot)));
 
   // Derived from the engine's own path record, never hand-listed
   // (`ignores.ts`), and merged rather than replacing: a repository's
