@@ -175,8 +175,11 @@ Everything else under the state root is its chain's — placed by the chain
 rather than the runtime, and the chain's alone to move. This repo's own chain
 writes:
 
-- `.flume/plan/state.md`, `.flume/plan/open-questions.md` — prose scratch
-  that survives across ticks.
+- `.flume/plan/state.json` — the plan state the harness package keeps across
+  ticks: its derive and sweep cursors and the sweep's continuation signal, as
+  fields of a typed artifact read through the package's own accessor.
+- `.flume/plan/open-questions.md` — the forks plan parks for a human, in
+  prose, carried across ticks.
 - `.flume/inbox/` — transient findings queue, one file per finding, drained
   by plan.
 - `.flume/sessions/<timestamp>.jsonl` — captured agent NDJSON (opt-in via

@@ -389,20 +389,20 @@ export class PriorAttemptStore {
    * Snapshot every non-deleted file the reverted commit touched, verbatim,
    * into the durable snapshot dir before the hard reset destroys it.
    *
-   * A gate-reverted plan tick otherwise loses its state.md /
-   * open-questions.md prose to `git reset --hard`, recoverable only by a
-   * human reading `.flume/sessions/` logs. The snapshot is post-image content
-   * under a mirror of the repo path, so recovery is "open the file" — not
-   * "read a diff", not "grep a session log". `diffStat` (the record's
-   * digest) is `git show --stat`: filenames and counts, never content — it
-   * cannot recover findings, which is why this distinct artifact exists.
+   * A gate-reverted tick otherwise loses everything the commit carried to
+   * `git reset --hard` — including whatever prose the agent wrote once and
+   * cannot restate, recoverable only by a human reading an agent transcript.
+   * The snapshot is post-image content under a mirror of the repo path, so
+   * recovery is "open the file" — not "read a diff", not "grep a session
+   * log". `diffStat` (the record's digest) is `git show --stat`: filenames
+   * and counts, never content — it cannot recover findings, which is why
+   * this distinct artifact exists.
    *
    * Generic by construction: it snapshots whatever the reverted commit
-   * changed (for plan that is the prose plus the schema-failing
-   * pending.json), so the dispatcher needs no chain-specific notion of which
-   * artifact is "prose" vs "machine-checkable". Must run while `sha` is still
-   * reachable (before the drop). Best-effort — a snapshot failure must never
-   * block or fail the revert.
+   * changed, so the dispatcher needs no chain-specific notion of which
+   * artifact is "prose" vs "machine-checkable", and names no chain's file.
+   * Must run while `sha` is still reachable (before the drop). Best-effort —
+   * a snapshot failure must never block or fail the revert.
    */
   async snapshotReverted(cwd: string, sha: string, key: string): Promise<void> {
     const dir = this.snapshotDir(key);
