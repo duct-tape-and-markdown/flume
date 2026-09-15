@@ -16,6 +16,7 @@ import {
   loopExitCode,
   tickExitCode,
 } from "../src/cliVerdict.ts";
+import { RUNTIME_IGNORES } from "../src/job.ts";
 import { DEFAULT_ABORT_THRESHOLD } from "../src/loopSupervisor.ts";
 import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import type { TickOutcome, TickVerdict } from "../src/Dispatcher.ts";
@@ -747,3 +748,30 @@ describe("flume friction --help — the exit-code list against the verb's own I/
     }
   }, SPAWN_BUDGET_MS);
 });
+
+/**
+ * JOB-NEW-HELP-INTERPOLATES-RUNTIME-IGNORES — the `new` verb's help named
+ * five of the ten entries `jobNew` really merges, a hand copy that had
+ * already gone stale against the runtime's layout. The roster is now read
+ * off {@link RUNTIME_IGNORES} itself (`.claude/rules/engineering.md`,
+ * "Derived state is computed, never restated beside its source"), so this
+ * drives the real CLI and compares its printed block against the constant
+ * the seeding code merges — the real writer's value through the real
+ * surface, not a fixture of either.
+ */
+it("job new help names every RUNTIME_IGNORES entry", async () => {
+  const { out, code } = await runCli(process.cwd(), ["job", "new", "--help"]);
+  expect(code).toBe(0);
+
+  // Vacuity pin: an empty constant would let any help text at all pass.
+  expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
+  for (const entry of RUNTIME_IGNORES) expect(out).toContain(entry);
+
+  // ...and nothing respelled beside them: the printed block, unwrapped, is
+  // exactly the constant, so an entry dropped or invented here is red.
+  const marker = "The entries merged:\n";
+  const start = out.indexOf(marker);
+  expect(start).toBeGreaterThan(-1);
+  const block = out.slice(start + marker.length, out.indexOf("\n\n", start));
+  expect(block.replace(/\s+/g, " ").trim()).toBe(RUNTIME_IGNORES.join(", "));
+}, SPAWN_BUDGET_MS);

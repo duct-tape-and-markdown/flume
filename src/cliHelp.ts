@@ -5,6 +5,7 @@
  * on disk this tick").
  */
 
+import { RUNTIME_IGNORES } from "./job.js";
 import { DEFAULT_ABORT_THRESHOLD } from "./loopSupervisor.js";
 
 const SUBCOMMANDS = [
@@ -335,6 +336,40 @@ Exit codes:
 `,
 };
 
+/**
+ * Comma-joined `items` filled into `indent`-prefixed lines no wider than
+ * `width`. A help block interpolating a runtime-owned list cannot hand-wrap
+ * it — the literal does not know how many entries the constant holds, which
+ * is the whole point of reading it from there.
+ */
+function fillList(
+  items: readonly string[],
+  indent: string,
+  width: number,
+): string {
+  const lines: string[] = [];
+  let line = indent;
+  items.forEach((item, i) => {
+    const piece = i === items.length - 1 ? item : `${item},`;
+    if (line !== indent && line.length + 1 + piece.length > width) {
+      lines.push(line);
+      line = indent;
+    }
+    line += line === indent ? piece : ` ${piece}`;
+  });
+  lines.push(line);
+  return lines.join("\n");
+}
+
+/**
+ * The ignore set `job new` seeds, read off {@link RUNTIME_IGNORES} — the
+ * constant `jobNew` actually merges — rather than respelled here, so an
+ * entry added to the runtime's layout cannot leave this surface naming a
+ * subset (`.claude/rules/engineering.md`, "Derived state is computed, never
+ * restated beside its source").
+ */
+const RUNTIME_IGNORE_ROSTER = fillList([...RUNTIME_IGNORES], "        ", 78);
+
 export const HELP_JOB = `Usage: flume job <verb> [args]
 
 Lifecycle verbs over a job — .flume/jobs/<name>/, tracked files in the
@@ -348,10 +383,11 @@ Verbs:
       job that could never \`run\` must not be creatable), copy its declared
       seedDir into .flume/jobs/<name>/ verbatim and skip-existing (absent
       seedDir → bare job, no warning; a declared-but-absent seedDir exits 2),
-      merge runtime ignore entries into the job dir's .gitignore (awake/,
-      prior-attempts/, worktrees/, node_modules/, loop.pid), pin
+      merge the runtime's ignore entries into the job dir's .gitignore, pin
       core.longpaths repo-locally (win32), and baseline-commit the seeded
       harness on the current HEAD. No branch is created or checked out.
+      The entries merged:
+${RUNTIME_IGNORE_ROSTER}
 
   run <name> [--max N]
       Wake the chain's entry phase (phases[0]) iff the baton is hibernating
