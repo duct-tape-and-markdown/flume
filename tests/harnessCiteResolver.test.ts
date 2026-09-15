@@ -94,6 +94,36 @@ const FENCED_MARKDOWN = [
 ].join("\n");
 
 /**
+ * The same page with the indents CommonMark grants a heading: one space, then
+ * three, then the fourth that revokes it. The indented headings are structure
+ * — they resolve, and they bound what precedes them — while the four-space
+ * line below is an indented code block the section that holds it carries as
+ * content.
+ */
+const INDENTED_MARKDOWN = [
+  "# A spec page",
+  "",
+  "## The section above it",
+  "",
+  "Above the indented heading.",
+  "",
+  " ## The cite resolver",
+  "",
+  "`per` is `{ path, section }`.",
+  "",
+  "   ### A subsection under it",
+  "",
+  "Still the cited section.",
+  "",
+  "## The next section",
+  "",
+  "    ## An indented code block",
+  "",
+  "Not the cited section.",
+  "",
+].join("\n");
+
+/**
  * A spec with no headings at all — the shape a declared resolver exists for.
  * The package's heading resolver finds nothing here, so a section found in it
  * was found by the declared resolver and by nothing else.
@@ -272,6 +302,72 @@ it("a heading-shaped line inside a fenced block resolves no section of its own",
     const found = await resolveCite(cite("spec/harness.md", section), LOCUS, read);
     expect(found.ok).toBe(true);
   }
+});
+
+it("a heading indented up to three spaces resolves as the cited section", async () => {
+  const verdict = await resolveCite(
+    cite("spec/harness.md", "The cite resolver"),
+    LOCUS,
+    serving("spec/harness.md", INDENTED_MARKDOWN),
+  );
+
+  expect(verdict.ok).toBe(true);
+  const text = verdict.ok === true ? verdict.text : "";
+  // The heading line as the page wrote it, indent and all.
+  expect(text.startsWith(" ## The cite resolver")).toBe(true);
+  // A three-space-indented deeper heading is still inside the section.
+  expect(text).toContain("   ### A subsection under it");
+  expect(text).toContain("Still the cited section.");
+  // And the section stops where the page's own next heading of its depth is.
+  expect(text).not.toContain("## The next section");
+  expect(text).not.toContain("Above the indented heading.");
+});
+
+it("a heading indented up to three spaces bounds the section above it", async () => {
+  const verdict = await resolveCite(
+    cite("spec/harness.md", "The section above it"),
+    LOCUS,
+    serving("spec/harness.md", INDENTED_MARKDOWN),
+  );
+
+  expect(verdict.ok).toBe(true);
+  const text = verdict.ok === true ? verdict.text : "";
+  expect(text.startsWith("## The section above it")).toBe(true);
+  expect(text).toContain("Above the indented heading.");
+  // The indented heading ends it — its heading line and its body are the
+  // cited section's, not this one's.
+  expect(text).not.toContain("The cite resolver");
+  expect(text).not.toContain("`per` is `{ path, section }`.");
+});
+
+it("a four-space-indented hash line resolves no section", async () => {
+  const read = serving("spec/harness.md", INDENTED_MARKDOWN);
+
+  const verdict = await resolveCite(
+    cite("spec/harness.md", "An indented code block"),
+    LOCUS,
+    read,
+  );
+
+  expect(verdict.ok).toBe(false);
+  expect(verdict.ok === false && verdict.message).toContain(
+    "An indented code block",
+  );
+  expect(verdict.ok === false && verdict.message).toContain("no heading");
+
+  // Vacuity guard: the page is readable through the same reader, and the
+  // section that holds the four-space line carries it as content rather than
+  // ending at it.
+  const holder = await resolveCite(
+    cite("spec/harness.md", "The next section"),
+    LOCUS,
+    read,
+  );
+  expect(holder.ok).toBe(true);
+  expect(holder.ok === true && holder.text).toContain(
+    "    ## An indented code block",
+  );
+  expect(holder.ok === true && holder.text).toContain("Not the cited section.");
 });
 
 it("the package resolves this repository's own cite at a real commit through the engine's at-ref reader", async () => {

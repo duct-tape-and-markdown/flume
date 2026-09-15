@@ -111,8 +111,13 @@ export type CiteVerdict =
 /** A fenced code block's delimiter: three or more backticks or tildes, indented no further than a paragraph would be, and whatever follows the run on that line. */
 const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
-/** A markdown ATX heading: its `#` run and its text, trailing whitespace off. */
-const HEADING = /^(#{1,6})\s+(.*?)\s*$/;
+/**
+ * A markdown ATX heading: its `#` run and its text, trailing whitespace off,
+ * indented no further than a paragraph would be — the same up-to-three the
+ * fence above allows, because CommonMark grants both the same leeway and a
+ * fourth space turns either into an indented code block.
+ */
+const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*$/;
 
 /**
  * The fence state one line on: the open fence's run while the scan is inside a
@@ -139,9 +144,10 @@ function fenceAfter(open: string | undefined, line: string): string | undefined 
 
 /**
  * The package's own resolver: the body of the markdown section whose heading
- * text is exactly `cite.section` — any `#` depth, no trailing decoration — up
- * to the next heading of the same or shallower depth, heading line included.
- * `undefined` when no such heading exists.
+ * text is exactly `cite.section` — any `#` depth, any CommonMark-legal
+ * indent, no trailing decoration — up to the next heading of the same or
+ * shallower depth, heading line included. `undefined` when no such heading
+ * exists.
  *
  * Exact text, never a nearest match: a heading that drifted is a cite that
  * has to be rewritten, and standing in the closest section for it hands build
