@@ -5549,6 +5549,65 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
   }, 20_000);
 });
 
+it("a tick's non-ASCII committed path reaches GateContext.touchedPaths unquoted", async () => {
+  // The seam between `git.diffNameOnly` and every gate that reads
+  // `ctx.touchedPaths`: git's default `--name-only` output octal-escapes a
+  // non-ASCII path inside double quotes, and that spelling matches no fence
+  // glob — so the path the tick was told to write reads as out-of-fence and
+  // the commit reverts (`.claude/rules/engineering.md`, *Loud or nothing*).
+  // Driven through the real dispatcher against a real commit rather than a
+  // hand-built context, so the writer's own bytes reach the reader
+  // (engineering.md, *A seam gate reads what the real writer wrote*).
+  new Baton(join(fx.repo, ".flume")).wake("plan");
+
+  const seen: string[][] = [];
+  const capture: Gate = {
+    name: "capture-touched-paths",
+    when: "afterCommit",
+    run: (ctx) => {
+      seen.push([...ctx.touchedPaths]);
+      return Promise.resolve({ ok: true, message: "captured" });
+    },
+  };
+
+  const phase = makePhase({
+    name: "plan",
+    concurrency: "singleton",
+    writablePaths: ["src/**"],
+    gates: [capture],
+  });
+  const chain: Chain = { phases: [phase], humanOnly: [] };
+
+  const agent = singleAgent(async (cwd) => {
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeFile(join(cwd, "src", "café.ts"), "export const x = 1;\n");
+    // Staged with `-A`, never by naming the path in argv: git-for-windows
+    // re-parses its own command line through MSYS2, which mangles non-ASCII
+    // arguments (`.claude/rules/platform-facts.md`).
+    await exec("git", ["add", "-A"], { cwd });
+    await exec("git", ["commit", "-q", "-m", "plan: non-ascii path"], {
+      cwd,
+    });
+  });
+
+  const dispatcher = new Dispatcher({
+    chainLoader: staticLoader(chain),
+    repoRoot: fx.repo,
+    configDir: fx.configDir,
+    agent,
+    log: silent,
+  });
+
+  const outcome = await dispatcher.tick();
+
+  expect(seen).toEqual([["src/café.ts"]]);
+  // And the fence judged that spelling: nothing reverted, the file landed
+  // on trunk under the name git committed it as.
+  expect(outcome.result?.committed).toBe(true);
+  expect(outcome.result?.gateResults.every((g) => g.ok)).toBe(true);
+  expect(existsSync(join(fx.repo, "src", "café.ts"))).toBe(true);
+}, 20_000);
+
 describe("Dispatcher fanout — ship classification is the chain's call, not the engine's (spec/pending.md \"Ship detection trusts the agent's own account\")", () => {
   it("a commit touching no declared file still ships when the phase declares no `shipped` predicate", async () => {
     // A commit outside the entry's declared files once stayed pending

@@ -125,6 +125,29 @@ export async function softResetTo(cwd: string, sha: string): Promise<void> {
 }
 
 /**
+ * Decode the `-z` form of a `--name-only` listing: NUL-terminated fields,
+ * each the path exactly as git committed it.
+ *
+ * **Both readers pass `-z`, because the default form is quoted.** Without it
+ * git wraps any path carrying a space, a control character, or a non-ASCII
+ * byte in double quotes with the offending bytes escaped — `src/café.ts`
+ * arrives as `"src/caf\303\251.ts"` — and that spelling is a *different*
+ * path than the one committed: it matches no fence glob, so a path the tick
+ * was meant to write reads as out-of-fence, and it enters an entry's
+ * `observedFiles` as a name no later partition can key on
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). `core.quotePath=false`
+ * is not the fix, since a space still quotes.
+ *
+ * No per-field trim, for the same reason: a committed path may legitimately
+ * end in a space, and trimming it silently substitutes another path for the
+ * one git named. Empty fields are dropped — the trailing NUL after the last
+ * path yields one, and a commit touching nothing yields only that.
+ */
+function nameOnlyPaths(stdout: string): string[] {
+  return stdout.split("\0").filter((p) => p.length > 0);
+}
+
+/**
  * Files touched across a commit range (`git diff --name-only from to`) — the
  * cumulative footprint of a per-entry fanout span (spec/loop.md "Tip
  * verify", per-entry leg: "N commits are completion"), as opposed to
@@ -136,11 +159,8 @@ export async function diffNameOnly(
   from: string,
   to: string,
 ): Promise<string[]> {
-  const { stdout } = await run(cwd, ["diff", "--name-only", from, to]);
-  return stdout
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+  const { stdout } = await run(cwd, ["diff", "--name-only", "-z", from, to]);
+  return nameOnlyPaths(stdout);
 }
 
 /**
@@ -369,12 +389,10 @@ export async function showNameOnly(
     "show",
     "--name-only",
     "--format=",
+    "-z",
     sha,
   ]);
-  return stdout
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+  return nameOnlyPaths(stdout);
 }
 
 /**

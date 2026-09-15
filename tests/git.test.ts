@@ -110,6 +110,7 @@ import {
   resetKeepTo,
   ResetKeepRefusedError,
   revParse,
+  showNameOnly,
   softResetTo,
   tipClaimPath,
   TipClaimHeldError,
@@ -555,6 +556,45 @@ describe("diffNameOnly (spec/loop.md 'Tip verify', per-entry leg)", () => {
     const sha = await revParse(repo);
     expect(await diffNameOnly(repo, sha, sha)).toEqual([]);
   });
+});
+
+/**
+ * Both `--name-only` readers over the one input that tells the quoted form
+ * from the committed one: git's default output wraps a non-ASCII path in
+ * double quotes with its bytes octal-escaped, so a reader taking that form
+ * hands every consumer a path that was never committed — the fence glob
+ * misses it, and it lands in `observedFiles` under a name no partition can
+ * key on (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * The space-bearing path rides along in the same commit: it is quoted by the
+ * default form too, and is what rules out `core.quotePath=false` as the fix.
+ */
+async function commitNonAsciiPath(): Promise<{ base: string; sha: string }> {
+  const base = await revParse(repo);
+  await mkdir(join(repo, "src"), { recursive: true });
+  await writeFile(join(repo, "src", "café.ts"), "export const x = 1;\n");
+  await writeFile(join(repo, "src", "two words.ts"), "export const y = 2;\n");
+  await exec("git", ["add", "."], { cwd: repo });
+  await exec("git", ["commit", "-q", "-m", "non-ascii"], { cwd: repo });
+  return { base, sha: await revParse(repo) };
+}
+
+it("diffNameOnly returns a committed non-ASCII path as git spelled it", async () => {
+  const { base, sha } = await commitNonAsciiPath();
+
+  expect((await diffNameOnly(repo, base, sha)).sort()).toEqual([
+    "src/café.ts",
+    "src/two words.ts",
+  ]);
+});
+
+it("showNameOnly returns a committed non-ASCII path as git spelled it", async () => {
+  const { sha } = await commitNonAsciiPath();
+
+  expect((await showNameOnly(repo, sha)).sort()).toEqual([
+    "src/café.ts",
+    "src/two words.ts",
+  ]);
 });
 
 describe("cherryPickRange (spec/loop.md 'Tip verify', per-entry leg)", () => {
