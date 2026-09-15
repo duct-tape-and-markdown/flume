@@ -19,7 +19,7 @@ import { shellGate, writablePathsGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { entryWriteScope } from "../src/paths.ts";
-import { NO_COMMIT_MODES } from "../src/index.ts";
+import { NO_COMMIT_MODES, PRIOR_ATTEMPT_MODES } from "../src/index.ts";
 import type { NoCommitMode } from "../src/index.ts";
 import { renderPrompt, InlineExecRenderError } from "../src/Prompt.ts";
 import type {
@@ -698,14 +698,19 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     ["not-shipped", notShipped],
   ];
 
-  it("every NO_COMMIT_MODES member is one of the variants rendered below", async () => {
+  it("every PRIOR_ATTEMPT_MODES member has a <prior-attempt> fixture the block renders", async () => {
     // Agreement between the taxonomy value and this block's coverage: the
-    // modes are enumerated from the engine's own list, not retyped here, so
-    // a mode added to NO_COMMIT_MODES with no fixture fails here rather than
-    // reaching a tick's prompt unrendered.
-    expect(NO_COMMIT_MODES.length).toBeGreaterThan(0);
+    // modes are enumerated from the engine's own roster — the whole set the
+    // renderer switches on, not the no-commit subset of it — so a mode added
+    // to PRIOR_ATTEMPT_MODES with no fixture fails here rather than reaching
+    // a tick's prompt unrendered. The switch's exhaustiveness is tsc's; that
+    // a fixture exists to drive it through is this case's alone.
+    expect(PRIOR_ATTEMPT_MODES.length).toBeGreaterThan(0);
+    // Both directions, so neither side can drift alone: a fixture for a mode
+    // the roster no longer names fails here too.
+    expect(variants.length).toBe(PRIOR_ATTEMPT_MODES.length);
 
-    for (const mode of NO_COMMIT_MODES) {
+    for (const mode of PRIOR_ATTEMPT_MODES) {
       const match = variants.find(([, prior]) => prior.mode === mode);
       expect(match, `no <prior-attempt> fixture for mode '${mode}'`).toBeDefined();
 
