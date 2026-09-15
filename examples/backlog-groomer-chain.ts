@@ -55,6 +55,15 @@ const SHIPPED_PATH = "SHIPPED.md";
  * this ships next". Small on purpose, to contrast with cascade's five-field
  * extension: the engine composes either shape identically.
  *
+ * "One line" is a bound the schema holds, not a convention the writer
+ * remembers. `reason` is interpolated into `SHIPPED.md`'s ledger line
+ * (`- <tag>: <reason>`), and `readShippedTags` reads that file back line by
+ * line to decide which `blockedBy` items have unblocked. An embedded newline
+ * would write a second line shaped exactly like a ledger entry — forging a
+ * shipped tag nothing shipped, and unblocking a backlog item silently.
+ * Refusing it at parse is the one place the writer and the reader cannot
+ * disagree.
+ *
  * `tag` is refined to a lowercase-kebab convention — the opposite of
  * cascade's ALL-CAPS grammar — proving the refinement is this chain's
  * choice, not the engine's: both compose against the same mechanical floor
@@ -62,8 +71,12 @@ const SHIPPED_PATH = "SHIPPED.md";
  */
 const entryExtension = {
   reason: {
-    schema: z.string().min(1).max(280),
-    hint: `"why this item ships next (≤280 chars)"`,
+    schema: z
+      .string()
+      .min(1)
+      .max(280)
+      .regex(/^[^\r\n]*$/, "reason is one line: no line break"),
+    hint: `"why this item ships next (one line, ≤280 chars)"`,
   },
   tag: {
     schema: z
@@ -151,6 +164,10 @@ const factory: ChainFactory = (api) => {
       const remaining = parsed.entries.filter((entry) => entry !== pick);
       writeFileSync(backlogPath, `${JSON.stringify(remaining, null, 2)}\n`);
 
+      // Narrows the parsed payload's `unknown` to `string`, and re-asserts
+      // the one-line bound at the interpolation it protects: a `reason` that
+      // reached here carrying a newline throws rather than writing a ledger
+      // line `readShippedTags` would read as a second tag.
       const reason = entryExtension.reason.schema.parse(pick.reason);
       const shippedPath = join(cwd, SHIPPED_PATH);
       const prior = existsSync(shippedPath) ? readFileSync(shippedPath, "utf8") : "";
