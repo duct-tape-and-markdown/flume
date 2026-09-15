@@ -97,3 +97,76 @@ not re-derive them:
   author quotes it. The package's prompts take the quotes; derive files them.
   Named here only so the failure tally above stays honest — three
   `harnessPrompts` cases and one `harnessChain` case belong to this family.
+
+## 329 dead release-corpus cites in `tests/` are pure shape, and posture-sweep *Routing* forbids the entry that would cut them (PARKED — routing-clause ruling needed)
+
+Drained from the inbox (2026-09-15, interactive session), filed after five
+consecutive sweep ticks each accepted the same debt from inside its own
+neighborhood. Every measurement in the record re-verified against this tree.
+
+**The finding.** `spec/RELEASE-v0.*.md` was retired at `b622b15` ("flatten the
+release corpus into seven topic files"). 329 cites into it survive across 18
+files in `tests/` — 145 name a release line (`RELEASE-v0.N`, `v0.N §M`), 184
+are a bare `§M` that resolved only through that corpus. 101 sit inside a
+`describe`/`it`/`test` title. Four `src/` doc comments (`PendingSchema.ts:87`,
+`paths.ts:253`, `Prompt.ts:478`, `:731`) point at a test case *by* its
+§-bearing title, so they move in the same commit as any title rewrite. One more
+in `scripts/smoke-install.mjs:191`. `src/`, `harness/`, `examples/`, `README.md`
+are otherwise clean; `docs/` hits are historical material and out of scope.
+
+**Why this is parked rather than filed.** The record recommends one bulk
+entry. I can't write it. `.claude/rules/posture-sweep.md` *Routing* sets the
+filing bar at correctness-adjacency and says pure shape — "duplication,
+narration drift, style" — goes to "an **accepted-debt line** in the plan commit
+body, **never an entry**." The record concedes the finding is not
+correctness-adjacent: no behavior sits behind any cite, and the titles still
+assert what their bodies do. Filing it anyway would be plan overriding a
+"never" in a human-authored rule page, through the inbox, to reach a conclusion
+the Sweep dimension's own routing bar refuses. That's the amendment's call, not
+mine.
+
+**The record's argument, which is the live part.** *Routing* justifies the debt
+line with an economics clause: "a later rotation re-noting the same debt is
+cheaper than a queue that grows faster than build drains it." The record
+measures that clause as inverted — the queue is empty, recent entries ship
+within the tick they're picked, and the re-note is not one line but a full
+re-derivation in each sweep tick's body, which is the token tax
+`engineering.md` *Derived state is computed, never restated beside its source*
+names, paid by plan instead of by a file.
+
+**Two corrections to the record's sizing**, so the ruling isn't made on
+inflated numbers. It claims "35 frontier modules remain, 18 of them are these
+files." Derived against the live state this tick: **23** remain, and only
+**8** of the 18 cite-carrying files are still uncovered (`Dispatcher`, `cli`,
+`cliJobResolution`, `cliJobVerbs`, `job.integration`,
+`loop-process-boundary.integration`, `examples.integration`,
+`tip-claim.integration` — 240 of the 329 cites). The other 10 are already
+`covered` and settled for this rotation; posture-sweep *The frontier is
+decidable* forbids re-sweeping them. So the near-term re-note cost is 8 ticks,
+not 18. The record's real point survives the correction: the rotation is open
+under a **phrase delta** (both posture pages moved past the stamp), which
+redraws the whole domain, so all 18 return on the next phrase delta — and this
+repo generates those often.
+
+**The fork:**
+
+1. **Amend *Routing*** to let a shape finding become an entry once it is
+   measured above some threshold of re-derivation cost — then this ships as
+   the record's option 1: one bulk entry, `files` naming the 18 test files plus
+   the four `src/` doc comments and `smoke-install.mjs`, no `tests[]` and no
+   `pins[]` (it claims no property), scheduled into a solo wave that the
+   partitioner already isolates by `files`. tsc and the suite gate it like any
+   ship. The risk is that "measured cost" is a bar every future shape finding
+   will argue it clears.
+2. **Hold the line** — shape stays out of the queue unconditionally, and this
+   cut waits for a human to run it by hand outside the loop (it is one
+   scripted rewrite: drop the cite, keep the sentence —
+   `"ensureRuntimeIgnores — §5a-3 create-or-merge"` →
+   `"ensureRuntimeIgnores — create-or-merge"`). Cheapest, and it keeps the
+   engine/queue boundary crisp.
+3. **Neither** — keep accepting the debt, and accept the re-note on the 8
+   remaining modules and on every module after the next phrase delta.
+
+Whichever way it goes, the form to cut is the numbered one — `RELEASE-v0.N`,
+`v0.N §M`, `§M`. A cite by heading text into `spec/*.md` or a rule page is the
+live form and stays.
