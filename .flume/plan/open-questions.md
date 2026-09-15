@@ -838,3 +838,65 @@ would lose the property they pin.
 
 Parked because the amendment is a `spec/worktrees.md` edit, and `spec/` is the
 human's alone.
+
+## A path's alphabet is carried by convention, and a posix run cannot see a mistake (PARKED)
+
+Drained from `HARNESS-STATE-ROOT-IS-A-GIT-PATH`'s note; every claim below
+re-verified on disk this tick.
+
+**The mechanics.** `gitPath` (`src/paths.ts`, exported from `src/index.ts`) is
+the one host-path-to-git-path rule. Nothing says which alphabet a given value
+is in — both sides are `string` — so each site that needs git's form applies
+the rule by hand, and whether it needed to depends on facts a file away. Three
+shapes in the tree, all correct, none readable at the site:
+
+- **Converted here.** `harness/gates.ts:264`, `harness/prompts.ts:379`,
+  `harness/chain.ts:592` each fold `stateRootRel` before composing.
+- **Safe because the reader folds.** `harness/gates.ts:139` composes
+  `join(ctx.stateRootRel, queueRel(ctx))` — both operands host dialect — and
+  is fine only because `readFileAtRef` applies `gitPath` to its pathspec
+  (`src/git.ts:404`). Nothing at the call site says so.
+- **Re-dialected after normalization.** `harness/chain.ts:182` re-folds
+  `resolvePendingPath(stateRoot)`, because `node:path` turns the normalized
+  root straight back into backslashes. Declared and cited at the site.
+
+**Why nothing catches a fourth.** `relative()` on posix never emits a
+backslash, so this host cannot produce the failing input. The pins that do bite
+(`tests/harnessGates.test.ts`, `tests/harnessBuildArgs.test.ts`) work by
+*injecting* a literal `jobs\alpha\.flume` into a context — available only where
+the value is handed in. `harness/chain.ts` computes its own through
+`computeStateRootRel(api.paths…)`, so its fold has no posix-observable test at
+all and a new composer beside it ships green. The measured cost of one such
+miss, from the note's own entry: the build fence rejects the note the prompt
+told the tick to write, the park predicate is never true, and the records gate
+reports green over nothing.
+
+**Options.**
+
+- **A — brand the alphabet in the type.** A nominal `GitPath` on the engine's
+  reporting surface. The only option a posix CI enforces, because a type is
+  platform-independent. Cost: public API — `GateContext.stateRootRel`,
+  `TickContext.stateRootRel`, `gitPath`'s return, and a scope decision inside
+  it (the repo-relative reporting fields alone, or every path a chain reads).
+- **B — normalize at the reporter.** `computeStateRootRel` returns git's
+  alphabet; the three hand folds go. `spec/chain.md` *What a gate receives*
+  already describes the field's use as `git show <sha>:<stateRootRel>/…`, so
+  this ratifies the dialect its documented purpose implies — which makes it a
+  `spec/` edit, not a derivable entry. Caveats: no test can fail on the pre-fix
+  tree on posix, so it lands under `engineering.md`'s named exception;
+  `src/friction.ts:191,221` join the value onto host paths and stay correct on
+  win32 only because node's win32 `join` accepts `/`; and it does nothing for a
+  composer that reaches for `node:path` *after* it — `resolvePendingPath` is
+  that case already, so `harness/chain.ts` keeps one fold regardless.
+- **C — a standing sweep lens** in `posture-sweep.md`: a repo-relative path
+  composed with `node:path`. Cheap, reaches code that exists, no API move.
+  Bottom rung, and paid every rotation for a property a type could hold.
+- **D — accept.** Every site is folded and three are pinned; the cost is the
+  next composer, which fails on win32 only and fails silently.
+
+**Recommend B with C alongside**, and not A: A's cost is public surface every
+chain author reads, against a class that has produced one defect, already
+fixed. B moves the dialect to the one site that knows it; C is what still finds
+the composer B cannot reach. Both files are the human's — `spec/chain.md` for
+the ruling, `.claude/rules/posture-sweep.md` for the lens — so neither is
+fileable from here.
