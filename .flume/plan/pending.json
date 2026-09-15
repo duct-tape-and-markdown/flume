@@ -35,6 +35,45 @@
     "notes": "Six unguarded call sites, four seams: src/Dispatcher.ts:1724 (handoff), 1849/3284 (shouldRun), 1967/3291 (promptArgs), 2888 (shipped). The singleton and fanout copies share one guard — `runGate` is the precedent (`.claude/rules/engineering.md`, *The fix lands at the mechanism*)."
   },
   {
+    "tag": "HOOK-GATE-RESULTS-CARRY-WHAT-THE-ENGINE-HANDS-OUT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "both hook-side gate-result shapes take the one reported row"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the two comments claiming an erasure shrink to pointers"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the four pins"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`handoff` and `shipped` read the gate-result row the engine already hands them — `details`, `verdict`, `skipped` typed, not typed away",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a hook receives"
+    },
+    "acceptance": "`TickResult.gateResults` and `ShipContext.gateResults` are the reported gate-result row; no hook must pattern-match `message` to reach a discriminant its own chain authored.",
+    "tests": [],
+    "pins": [
+      "a handoff's gate results carry a failing gate's details",
+      "a handoff's gate results carry the gate's own verdict",
+      "a handoff's gate results carry a skipped gate's reason",
+      "a shipped predicate's gate results carry details, verdict and skipped"
+    ],
+    "notes": "Type-only: the dispatcher hands the same array through (src/Dispatcher.ts:2313, :2940, :3191), so the fields ride today and the type hides them. One row shape, not three — `TickVerdictGateResult` is the standing one and Phase.ts already type-imports from Dispatcher.js; its name no longer fits the widened role, rename build's call (pre-1.0)."
+  },
+  {
     "tag": "API-CHECKOUT-AT-FOR-A-DIFFERENTIAL-GATE",
     "gate": {
       "kind": "open"
