@@ -1,5 +1,47 @@
 [
   {
+    "tag": "GATE-THROW-IS-A-GATE-FAILURE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "one guard over gate.run, shared by all three gate-run sites" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the throwing-gate cases at both stages" }
+      ],
+      "retire": []
+    },
+    "summary": "A gate that throws is recorded ok:false with the error's message, and the tick's verdict and merge bookkeeping complete as for a returned refusal",
+    "per": { "path": "spec/chain.md", "section": "What a gate returns" },
+    "acceptance": "A throw out of any gate reaches the tick as that gate's failure; the verdict is written and the merge is reverted or refused exactly as a returned ok:false would have it.",
+    "tests": [
+      "a gate that throws is recorded as that gate's failure carrying the error's message",
+      "a tick whose gate throws writes its verdict instead of dying at the crash marker",
+      "an afterMerge gate that throws reverts the merge as a returned refusal would"
+    ],
+    "notes": "Three unguarded sites: src/Dispatcher.ts:2116 (fanout afterMerge), :2740 (wave afterMerge), :3729 (the span's gate loop). The guard is one helper the three share, not a try/catch pasted thrice (engineering.md, The fix lands at the mechanism); its home is build's call. The revert-refused catch at :2201 is the shape precedent."
+  },
+  {
+    "tag": "SWEEP-WINDOW-NAMES-ITS-TIP",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/windows.ts", "description": "renderSweepWindow names the tip its frontier was drawn from" },
+        { "path": "harness/prompts/plan-sweep.md", "description": "the cursor paragraph stamps the named tip" },
+        { "path": "tests/harnessWindows.test.ts", "description": "the named tip, populated and quiet" }
+      ],
+      "retire": []
+    },
+    "summary": "The sweep window names the tip it was drawn from, so the closing tick stamps that tip instead of rediscovering a HEAD that moved",
+    "per": { "path": ".claude/rules/posture-sweep.md", "section": "The stamp" },
+    "acceptance": "Every rendered sweep window names one tip, and the prompt directs the closing tick to stamp exactly that rather than a sha it resolves itself.",
+    "tests": [
+      "a rendered sweep window names the tip its frontier was drawn from",
+      "a sweep window with no commits past its cursor names the cursor as its tip"
+    ],
+    "notes": "renderSpecWindow:419 is the sibling line to match. The tip is the last of commitsPast(cursor) else the cursor — already read, so no second git call. plan-sweep.md:37 still says \"the sha the frontier was derived from — never a HEAD that moved mid-rotation\", which is the rule's retired wording."
+  },
+  {
     "tag": "HARNESS-WINDOW-RENDER-REFUSES-A-GIT-FAILURE",
     "gate": { "kind": "open" },
     "files": {
@@ -46,5 +88,25 @@
       "the vitest runner factory provisions its base checkout with the installer from the API it was given"
     ],
     "notes": "Ruled in spec at 1d81a77. Breaking declaration-schema change with a chain-side twin: this repo's .flume/declaration.ts:63 still passes a vitestRunner({lanes}) value and .flume/ is outside build's fence, so chain load refuses every tick between this commit and the operator's edit -- an interactive session moves it the moment this lands. The package reaches the base as worktreesBase(api.paths.flumeDir) via ../src/paths.js; putting it on FlumeApi stays the parked question's call."
+  },
+  {
+    "tag": "HARNESS-COMMITTED-PATH-CITE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/chain.ts", "description": "the relocated-root refusal cites the section that states the precondition" },
+        { "path": "tests/harnessChain.test.ts", "description": "the refusal's pin" }
+      ],
+      "retire": []
+    },
+    "summary": "The package's relocated-root refusal cites Committed-path discipline, the section that now states the precondition, and a test pins the refusal",
+    "per": { "path": "spec/harness.md", "section": "Committed-path discipline" },
+    "acceptance": "repoRelativeStateRoot's refusal cites the section stating the precondition, and a test holds the package to refusing a root outside the repository.",
+    "tests": [],
+    "pins": [
+      "the package refuses a state root resolved outside the repository, naming both roots"
+    ],
+    "notes": "harness/chain.ts:560 already refuses; it cites *Records as one file each*, which states no precondition. Nothing pins the refusal, so it is one deletion from being silently lost."
   }
 ]
