@@ -1,21 +1,29 @@
 /**
- * The default lane's spawn-budget scan: which of its cases and hooks start a
- * node process, and which of those declare the shared budget
- * (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+ * Either lane's spawn scan: which of its cases and hooks start a node
+ * process, which of those declare the shared budget (`SPAWN_BUDGET_MS`,
+ * `tests/helpers/subprocess.ts`), and which of them await a wall-clock timer
+ * between the spawn and the assertion downstream of it.
  *
- * A source scan rather than a runtime probe, because the property is what a
- * site *declares*: a budget observable only once a case has already run long
- * is no defence against the flake it exists to prevent (spec/worktrees.md,
- * "The default test lane must stay fast").
+ * A source scan rather than a runtime probe, because both properties are what
+ * a site *declares*: a budget observable only once a case has already run long
+ * is no defence against the flake it exists to prevent, and a fixed sleep that
+ * is long enough on the host that wrote it reports nothing until the lane is
+ * under contention (spec/worktrees.md, "The default test lane must stay fast").
  *
- * Nothing here holds a second copy of the lane's vocabulary — the spawn
+ * The lane is a parameter, not a constant: the same cost drivers name both
+ * lanes, and the sleep the scan reports is one the integration lane is the
+ * likelier home for. Which mode selects which lane is read off the scripts
+ * that run them.
+ *
+ * Nothing here holds a second copy of a lane's vocabulary — the spawn
  * wrappers are read out of the harness module, the budget names out of its
- * exported numbers, and which files the lane even contains out of
- * `vitest.config.ts`, so a wrapper, a rename, or a widened include arms the
- * scan without a second edit (`.claude/rules/engineering.md`, *Derived state
- * is computed, never restated beside its source*). The one list held here is
- * `NODE_COMMANDS`, which has no source to be read off; it is declared at its
- * site below rather than left looking derived.
+ * exported numbers, each lane's vitest mode out of `package.json`, and which
+ * files a lane contains out of `vitest.config.ts`, so a wrapper, a rename, or
+ * a widened include arms the scan without a second edit
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*). The two lists held here are `NODE_COMMANDS` and
+ * `TIMERS`, neither of which has a source to be read off; both are declared
+ * at their sites below rather than left looking derived.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -83,6 +91,28 @@ const NODE_COMMANDS: ReadonlySet<string> = new Set([
 /** Both spellings of a node startup, as the propagation's seed. */
 const NODE_STARTS: readonly string[] = [EXEC_PATH, NODE_COMMAND];
 
+/**
+ * The wall-clock timers, as the second propagation's seed. A case that starts
+ * a process and then awaits one of these is sleeping a guess at how long the
+ * startup takes — calibrated on a host running one file, and short under the
+ * contention both lanes run their files with (spec/worktrees.md, "The default
+ * test lane must stay fast": a load-sensitive timing assertion belongs in
+ * neither lane until it is event-based).
+ *
+ * Deliberately absent, and the absences are the vocabulary's edges:
+ *
+ * - **Fake-timer advancement** (`vi.advanceTimersByTimeAsync`). Virtual time
+ *   costs no wall clock and is load-insensitive by construction — it is what
+ *   a timing claim is rewritten into, not the defect.
+ * - **A helper module's internals.** The propagation below is seeded per lane
+ *   file and never follows an import, so `waitFor` (tests/helpers/waitFor.ts)
+ *   reads as what it is — an event-based wait that happens to be built on
+ *   `setTimeout` — rather than as the sleep it replaced. The bound that buys
+ *   that: a sleep hidden behind a new helper module is invisible here, and
+ *   the call site is where this scan looks.
+ */
+const TIMERS: readonly string[] = ["setTimeout", "setInterval"];
+
 export interface SpawnSite {
   /** Repo-relative, forward-slashed. */
   readonly file: string;
@@ -96,6 +126,12 @@ export interface SpawnSite {
    * wearing a value.
    */
   readonly budget: string | null;
+  /**
+   * The name this site awaits that reaches a wall-clock timer — the local
+   * wrapper's name where there is one, `setTimeout` where the sleep is
+   * inline — or `null` when it awaits none.
+   */
+  readonly awaitedTimer: string | null;
 }
 
 function parse(path: string): ts.SourceFile {
@@ -108,14 +144,63 @@ function parse(path: string): ts.SourceFile {
 }
 
 /**
- * The mode a config function is called with when no `--mode` is passed, which
- * is how the afterMerge gate invokes `vitest run` — so this is the lane the
- * scan judges.
+ * The script that runs each lane, per `spec/worktrees.md`: the afterMerge gate
+ * invokes the default lane as `pnpm test`, and the integration lane runs at
+ * the host via `pnpm test:integration`. The binding from a lane's name to its
+ * script is the one copy here; the mode each selects is read off the script
+ * itself.
  */
-const DEFAULT_LANE_MODE = "test";
+const LANE_SCRIPTS = {
+  default: "test",
+  integration: "test:integration",
+} as const;
+
+/** The lanes this repo's suite is split into. */
+export type Lane = keyof typeof LANE_SCRIPTS;
+
+/** Both of them, in a form a scan can iterate. */
+export const LANES: readonly Lane[] = Object.keys(LANE_SCRIPTS) as Lane[];
+
+/**
+ * The mode vitest runs in when a run passes no `--mode` — which is how the
+ * afterMerge gate invokes it. No surface declares this; it is vitest's own
+ * default, declared here rather than left looking derived.
+ */
+const VITEST_DEFAULT_MODE = "test";
+
+/** `--mode <name>` as a package script spells it. */
+const MODE_FLAG = /(?:^|\s)--mode[\s=]+(\S+)/;
+
+/**
+ * The vitest mode a lane's script selects, off `package.json` rather than
+ * spelled here: the scan then judges the lane the script actually runs, so a
+ * renamed mode reds instead of quietly scanning the other lane
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+export function laneMode(lane: Lane): string {
+  const name = LANE_SCRIPTS[lane];
+  const { scripts = {} } = JSON.parse(
+    readFileSync(join(REPO_ROOT, "package.json"), "utf8"),
+  ) as { scripts?: Record<string, string> };
+  const script = scripts[name];
+  if (typeof script !== "string")
+    throw new Error(
+      `package.json declares no \`${name}\` script; the spawn scan reads the ` +
+        `${lane} lane's vitest mode from it`,
+    );
+  if (!/(?:^|\s)vitest(?:\s|$)/.test(script))
+    throw new Error(
+      `package.json's \`${name}\` script does not run vitest ('${script}'); ` +
+        `the spawn scan would read a mode no lane is selected by`,
+    );
+  return MODE_FLAG.exec(script)?.[1] ?? VITEST_DEFAULT_MODE;
+}
 
 /** One lane's file selection, as `vitest.config.ts` hands it over. */
 export interface LaneGlobs {
+  /** Which lane asked, so a refusal below names it. */
+  readonly lane: Lane;
   readonly include: readonly string[];
   readonly exclude: readonly string[];
 }
@@ -137,35 +222,42 @@ const INCLUDE_SHAPE = /^([^*?{}[\]]+)\/\*\*\/\*([^*?{}[\]/]+)$/;
 const EXCLUDE_SHAPE = /^\*\*\/\*([^*?{}[\]/]+)$/;
 
 /**
- * The default lane's globs, off `vitest.config.ts` itself: the config
- * function is called the way the runner calls it, so what comes back is the
+ * A lane's globs, off `vitest.config.ts` itself: the config function is called
+ * with the mode that lane's own script selects, so what comes back is the
  * selection the lane actually runs rather than a reading of its source.
  */
-export async function declaredLaneGlobs(): Promise<LaneGlobs> {
+export async function declaredLaneGlobs(lane: Lane): Promise<LaneGlobs> {
+  const mode = laneMode(lane);
   const exported: unknown = (
     (await import("../../vitest.config.ts")) as { default?: unknown }
   ).default;
   if (typeof exported !== "function")
     throw new Error(
-      "vitest.config.ts exports no config function; the default lane's " +
+      `vitest.config.ts exports no config function; the ${lane} lane's ` +
         "file selection cannot be read",
     );
   const config = (await (
     exported as (env: { command: "serve"; mode: string }) => unknown
-  )({ command: "serve", mode: DEFAULT_LANE_MODE })) as {
+  )({ command: "serve", mode })) as {
     test?: { include?: unknown; exclude?: unknown };
   };
   return {
-    include: stringList(config.test?.include, "include"),
-    exclude: stringList(config.test?.exclude, "exclude"),
+    lane,
+    include: stringList(config.test?.include, "include", lane, mode),
+    exclude: stringList(config.test?.exclude, "exclude", lane, mode),
   };
 }
 
-function stringList(value: unknown, field: string): string[] {
+function stringList(
+  value: unknown,
+  field: string,
+  lane: Lane,
+  mode: string,
+): string[] {
   if (!Array.isArray(value) || value.some((v) => typeof v !== "string"))
     throw new Error(
       `vitest.config.ts declares no string \`test.${field}\` for mode ` +
-        `'${DEFAULT_LANE_MODE}'; the spawn-budget scan reads the lane from it`,
+        `'${mode}'; the spawn scan reads the ${lane} lane from it`,
     );
   return value as string[];
 }
@@ -185,15 +277,15 @@ export function reduceLaneGlobs(globs: LaneGlobs): LaneRule {
   if (globs.include.length !== 1)
     throw new Error(
       `vitest.config.ts declares ${globs.include.length} include globs for ` +
-        `the default lane; the spawn-budget scan walks one root`,
+        `the ${globs.lane} lane; the spawn scan walks one root`,
     );
   const [include = ""] = globs.include;
   const shape = INCLUDE_SHAPE.exec(include);
   if (!shape)
     throw new Error(
-      `default-lane include glob '${include}' is not '<root>/**/*<suffix>'; ` +
-        `the spawn-budget scan walks a root for a suffix and would read a ` +
-        `narrower set than the lane runs`,
+      `${globs.lane}-lane include glob '${include}' is not ` +
+        `'<root>/**/*<suffix>'; the spawn scan walks a root for a suffix and ` +
+        `would read a narrower set than the lane runs`,
     );
   const [, root = "", suffix = ""] = shape;
   const runnerDefaults = new Set<string>(configDefaults.exclude);
@@ -203,18 +295,18 @@ export function reduceLaneGlobs(globs: LaneGlobs): LaneRule {
       const dropped = EXCLUDE_SHAPE.exec(glob)?.[1];
       if (dropped === undefined)
         throw new Error(
-          `default-lane exclude glob '${glob}' is not '**/*<suffix>'; the ` +
-            `spawn-budget scan drops files by suffix and would judge sites ` +
-            `the lane never runs`,
+          `${globs.lane}-lane exclude glob '${glob}' is not '**/*<suffix>'; ` +
+            `the spawn scan drops files by suffix and would judge sites the ` +
+            `lane never runs`,
         );
       return dropped;
     });
   return { root: join(REPO_ROOT, ...root.split("/")), suffix, excluded };
 }
 
-/** The rule this repo's default lane reduces to. */
-export async function defaultLaneRule(): Promise<LaneRule> {
-  return reduceLaneGlobs(await declaredLaneGlobs());
+/** The rule one of this repo's lanes reduces to. */
+export async function laneRule(lane: Lane): Promise<LaneRule> {
+  return reduceLaneGlobs(await declaredLaneGlobs(lane));
 }
 
 /**
@@ -223,14 +315,11 @@ export async function defaultLaneRule(): Promise<LaneRule> {
  * hand-kept list is what would not carry it. Which files count is `rule`'s to
  * say — this walk holds no copy of the lane's root or its suffixes.
  */
-export function defaultLaneFiles(
-  rule: LaneRule,
-  dir: string = rule.root,
-): string[] {
+export function laneFiles(rule: LaneRule, dir: string = rule.root): string[] {
   const out: string[] = [];
   for (const dirent of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, dirent.name);
-    if (dirent.isDirectory()) out.push(...defaultLaneFiles(rule, path));
+    if (dirent.isDirectory()) out.push(...laneFiles(rule, path));
     else if (
       dirent.name.endsWith(rule.suffix) &&
       !rule.excluded.some((dropped) => dirent.name.endsWith(dropped))
@@ -263,6 +352,33 @@ function referenced(node: ts.Node): Set<string> {
     if (ts.isStringLiteralLike(n) && NODE_COMMANDS.has(n.text))
       names.add(NODE_COMMAND);
     ts.forEachChild(n, walk);
+  };
+  walk(node);
+  return names;
+}
+
+/**
+ * Every name referenced under an `await` in `node` — the names this site's
+ * body *waits on*, as opposed to the ones it merely mentions.
+ *
+ * The distinction is the whole point for timers: a case that arms a kill
+ * timer beside a spawn and clears it is not sleeping, while a case that
+ * awaits one is. Identifiers only — a timer named inside a string literal is
+ * chain source the case writes out, not a call site.
+ *
+ * Over-approximating within the await, on the same trade the propagation
+ * takes: a timer racing an event inside one awaited expression reads as a
+ * sleep here, because it is one on the branch where the event loses.
+ */
+function awaitedNames(node: ts.Node): Set<string> {
+  const names = new Set<string>();
+  const collect = (n: ts.Node): void => {
+    if (ts.isIdentifier(n)) names.add(n.text);
+    ts.forEachChild(n, collect);
+  };
+  const walk = (n: ts.Node): void => {
+    if (ts.isAwaitExpression(n)) collect(n.expression);
+    else ts.forEachChild(n, walk);
   };
   walk(node);
   return names;
@@ -307,17 +423,21 @@ function namedFunctions(src: ts.SourceFile): Map<string, ts.Node[]> {
 }
 
 /**
- * The names in `src` that reach a node spawn: `seed`, plus every function
- * whose body reaches one, to a fixed point. Over-approximating by
- * design — a name that merely looks like a spawn wrapper costs one declared
- * budget, while a missed one costs the flake.
+ * The names in `src` that reach `seed` — a node spawn, or a wall-clock
+ * timer: the seed itself, plus every function whose body reaches it, to a
+ * fixed point. Over-approximating by design — a name that merely looks like
+ * a spawn wrapper costs one declared budget, while a missed one costs the
+ * flake.
  *
  * A name reaches when **any** of its declarations does, on that same trade:
  * the scan has no scopes, so a name shared by a wrapper and an unrelated
  * helper is judged by the wrapper, and the helper's callers pay a ceiling
  * they never needed.
  */
-function spawnNames(src: ts.SourceFile, seed: readonly string[]): Set<string> {
+function reachingNames(
+  src: ts.SourceFile,
+  seed: readonly string[],
+): Set<string> {
   const fns = namedFunctions(src);
   const reaching = new Set<string>(seed);
   for (;;) {
@@ -360,7 +480,7 @@ function exportedNames(src: ts.SourceFile): Set<string> {
 export function harnessSpawnExports(): string[] {
   const src = parse(HARNESS);
   const exported = exportedNames(src);
-  return [...spawnNames(src, NODE_STARTS)].filter((n) => exported.has(n));
+  return [...reachingNames(src, NODE_STARTS)].filter((n) => exported.has(n));
 }
 
 /**
@@ -435,8 +555,8 @@ function declaredBudget(
 }
 
 /**
- * Every default-lane case and hook under `dir` that starts a node process,
- * with the budget it declares.
+ * Every case and hook under `dir` in `lane` that starts a node process, with
+ * the budget it declares and the timer it awaits.
  *
  * `dir` defaults to the root the declared lane names and is a parameter for
  * one reason: the scan's own test drives it over a fixture whose cases are
@@ -444,22 +564,24 @@ function declaredBudget(
  * firing rather than an empty set (`.claude/rules/engineering.md`, *A green
  * verdict is proven non-vacuous*). The lane's suffixes apply either way.
  */
-export async function scanDefaultLaneSpawnSites(
+export async function scanLaneSpawnSites(
+  lane: Lane,
   dir?: string,
 ): Promise<SpawnSite[]> {
-  const rule = await defaultLaneRule();
+  const rule = await laneRule(lane);
   const wrappers = harnessSpawnExports();
   const budgets = new Set(harnessBudgets().keys());
   const sites: SpawnSite[] = [];
 
-  for (const path of defaultLaneFiles(rule, dir)) {
+  for (const path of laneFiles(rule, dir)) {
     const src = parse(path);
     const file = relative(REPO_ROOT, path).split(sep).join("/");
     const imported = harnessImports(src);
-    const spawns = spawnNames(src, [
+    const spawns = reachingNames(src, [
       ...NODE_STARTS,
       ...wrappers.filter((n) => imported.has(n)),
     ]);
+    const timers = reachingNames(src, TIMERS);
     const named = new Set([...budgets].filter((n) => imported.has(n)));
 
     const visit = (node: ts.Node): void => {
@@ -491,6 +613,11 @@ export async function scanDefaultLaneSpawnSites(
             const line =
               src.getLineAndCharacterOfPosition(node.getStart()).line + 1;
             const first = node.arguments[0];
+            const awaited = new Set(
+              node.arguments
+                .filter((a) => !ts.isStringLiteralLike(a))
+                .flatMap((a) => [...awaitedNames(a)]),
+            );
             sites.push({
               file,
               line,
@@ -500,6 +627,7 @@ export async function scanDefaultLaneSpawnSites(
                   : `${root} at ${file}:${line}`,
               kind,
               budget: declaredBudget(node, named),
+              awaitedTimer: [...timers].find((n) => awaited.has(n)) ?? null,
             });
           }
         }

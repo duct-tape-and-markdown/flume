@@ -29,12 +29,16 @@ import {
   watchStateRoots,
 } from "./helpers/subprocess.ts";
 import {
+  LANES,
+  type Lane,
+  type SpawnSite,
   declaredLaneGlobs,
-  defaultLaneFiles,
   harnessBudgets,
   harnessSpawnExports,
+  laneFiles,
+  laneMode,
   reduceLaneGlobs,
-  scanDefaultLaneSpawnSites,
+  scanLaneSpawnSites,
 } from "./helpers/spawnBudget.ts";
 
 const exec = promisify(execFile);
@@ -432,7 +436,7 @@ it("every default-lane suite that spawns the CLI declares the shared spawn budge
   // found no spawn wrapper, or no suite, would clear every assertion below
   // without judging anything.
   expect(harnessSpawnExports().length).toBeGreaterThan(0);
-  const sites = await scanDefaultLaneSpawnSites();
+  const sites = await scanLaneSpawnSites("default");
   expect(sites.length).toBeGreaterThan(0);
   expect(new Set(sites.map((s) => s.file)).size).toBeGreaterThan(1);
 
@@ -462,7 +466,7 @@ it("every default-lane suite that spawns the CLI declares the shared spawn budge
  * gate reads what the real writer wrote*).
  */
 it("the spawn-budget scan's lane rule agrees with the default lane vitest.config.ts declares", async () => {
-  const declared = await declaredLaneGlobs();
+  const declared = await declaredLaneGlobs("default");
 
   // Vacuity: the config was reached and it declared a selection at all, so
   // the reduction below is judging globs rather than two empty lists.
@@ -473,7 +477,7 @@ it("the spawn-budget scan's lane rule agrees with the default lane vitest.config
   // declared glob the walk cannot implement, so a lane the scan would read
   // only part of cannot reduce quietly to the part it understands.
   const rule = reduceLaneGlobs(declared);
-  const files = defaultLaneFiles(rule);
+  const files = laneFiles(rule);
 
   expect(files).toContain(fileURLToPath(import.meta.url));
   expect(new Set(files).size).toBeGreaterThan(1);
@@ -495,16 +499,25 @@ it("the spawn-budget scan's lane rule agrees with the default lane vitest.config
   // declared in a shape this walk does not implement reds here instead of
   // narrowing what the scan reads.
   expect(() =>
-    reduceLaneGlobs({ include: ["tests/**/*.{test,spec}.ts"], exclude: [] }),
+    reduceLaneGlobs({
+      lane: "default",
+      include: ["tests/**/*.{test,spec}.ts"],
+      exclude: [],
+    }),
   ).toThrow("<root>/**/*<suffix>");
   expect(() =>
     reduceLaneGlobs({
+      lane: "default",
       include: [...declared.include, "packages/**/*.test.ts"],
       exclude: [],
     }),
   ).toThrow("walks one root");
   expect(() =>
-    reduceLaneGlobs({ include: declared.include, exclude: ["**/fixtures/**"] }),
+    reduceLaneGlobs({
+      lane: "default",
+      include: declared.include,
+      exclude: ["**/fixtures/**"],
+    }),
   ).toThrow("drops files by suffix");
 });
 
@@ -550,7 +563,7 @@ it("the spawn-budget scan reports a case that starts node under a command-string
   const dir = await mkdtemp(join(tmpdir(), "flume-budget-command-"));
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-    const sites = await scanDefaultLaneSpawnSites(dir);
+    const sites = await scanLaneSpawnSites("default", dir);
 
     // The whole list, so the two shapes the scan must *not* report — git
     // plumbing and a case that spawns nothing — are pinned by their absence
@@ -609,7 +622,7 @@ it("a same-named function elsewhere in the file does not hide a spawning case fr
   const dir = await mkdtemp(join(tmpdir(), "flume-budget-shadowed-"));
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-    const sites = await scanDefaultLaneSpawnSites(dir);
+    const sites = await scanLaneSpawnSites("default", dir);
 
     // The whole list: the spawning case is back, and the case sharing neither
     // name is still absent — so the widening is the shadowed declaration's
@@ -667,7 +680,7 @@ describe("the default-lane spawn-budget scan", () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-budget-scan-"));
     try {
       await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-      const sites = await scanDefaultLaneSpawnSites(dir);
+      const sites = await scanLaneSpawnSites("default", dir);
 
       // A spawning hook inherits `hookTimeout`, which is lower still than
       // the case default — the same defect one registrar over.
@@ -690,18 +703,178 @@ describe("the default-lane spawn-budget scan", () => {
     }
   });
 
-  it("reads only the default lane, so an integration suite's spawns are none of its business", async () => {
+  it("each lane reads its own files and not the other lane's", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-budget-lane-"));
     try {
       await writeFile(join(dir, "fixture.integration.test.ts"), FIXTURE, "utf8");
-      expect(await scanDefaultLaneSpawnSites(dir)).toEqual([]);
+      expect(await scanLaneSpawnSites("default", dir)).toEqual([]);
 
-      // Sensitivity: the same bytes under the default lane's suffix are the
-      // findings the assertion above must not be collecting.
+      // The same bytes, read by the lane whose suffix they carry: the absence
+      // above is the default lane's exclude doing work rather than a scan
+      // that stopped reading.
+      const theirs = await scanLaneSpawnSites("integration", dir);
+      expect(theirs.length).toBeGreaterThan(0);
+      expect(theirs.every((s) => s.file.endsWith(".integration.test.ts"))).toBe(
+        true,
+      );
+
+      // And the symmetric half: the integration lane does not collect a
+      // default-lane file sitting beside it.
       await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-      expect((await scanDefaultLaneSpawnSites(dir)).length).toBeGreaterThan(0);
+      expect((await scanLaneSpawnSites("default", dir)).length).toBeGreaterThan(
+        0,
+      );
+      expect(await scanLaneSpawnSites("integration", dir)).toEqual(theirs);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("reads each lane under the vitest mode its own package script selects", () => {
+    // The binding the scan runs on, against the scripts that run the lanes:
+    // `pnpm test` passes no `--mode`, `pnpm test:integration` passes one, and
+    // the two must not resolve to the same lane.
+    expect(LANES).toEqual(["default", "integration"]);
+    const modes = LANES.map((lane) => laneMode(lane));
+    expect(new Set(modes).size).toBe(LANES.length);
+    const scripts = (
+      JSON.parse(
+        readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+      ) as { scripts: Record<string, string> }
+    ).scripts;
+    expect(scripts.test).not.toContain("--mode");
+    for (const mode of modes) {
+      if (mode === laneMode("default")) continue;
+      expect(scripts["test:integration"]).toContain(`--mode ${mode}`);
+    }
+  });
+});
+
+// ---------- the lanes' sync points
+// (spec/worktrees.md, "The default test lane must stay fast") ----------
+
+/**
+ * A spawning case's wait, against the clock it waits on.
+ *
+ * A fixed sleep between spawning `flume tick`/`loop` and asserting on what
+ * that process wrote is a guess at a `node`+`tsx` startup, calibrated on a
+ * host running one file. Under whole-lane contention the same guess goes
+ * short and reds an innocent entry — which is a defect in the test, not a
+ * lane assignment: the spec's bar is that a load-sensitive timing assertion
+ * belongs in *neither* lane until it is event-based.
+ *
+ * Both lanes, because both spawn: the integration lane is where the sleeps
+ * were, and the default lane is where one would cost the afterMerge gate
+ * directly. `tests/helpers/waitFor.ts` is the shape that passes here — it
+ * ends on the event, and the scan does not follow an import into it, so the
+ * timer it is built on is not the timer this pin is about.
+ */
+it("no case that starts a node process awaits a timer, in either lane", async () => {
+  const byLane = new Map<Lane, SpawnSite[]>();
+  for (const lane of LANES) byLane.set(lane, await scanLaneSpawnSites(lane));
+
+  // Vacuity: both lanes were reached, both carry spawning sites, and the two
+  // sets are the different lanes they claim to be — a scan that read the same
+  // lane twice, or read one of them as empty, would clear the refusal below
+  // without judging anything (`.claude/rules/engineering.md`, *A green
+  // verdict is proven non-vacuous*).
+  expect([...byLane.keys()]).toEqual([...LANES]);
+  for (const [lane, sites] of byLane) {
+    expect(sites.length, `${lane} lane: no spawning site found`).toBeGreaterThan(
+      0,
+    );
+  }
+  const integration = byLane.get("integration") ?? [];
+  const fast = byLane.get("default") ?? [];
+  expect(
+    integration.every((s) => s.file.endsWith(".integration.test.ts")),
+  ).toBe(true);
+  expect(fast.some((s) => s.file.endsWith(".integration.test.ts"))).toBe(false);
+
+  const sleeping = [...byLane].flatMap(([lane, sites]) =>
+    sites
+      .filter((s) => s.awaitedTimer !== null)
+      .map(
+        (s) =>
+          `${lane} lane — ${s.file}:${s.line} ${s.kind} "${s.title}" awaits ` +
+          `${s.awaitedTimer ?? ""}`,
+      ),
+  );
+  expect(
+    sleeping,
+    "these cases start a node process and then await a wall-clock timer: " +
+      "wait on the event instead (`waitFor`, tests/helpers/waitFor.ts), which " +
+      "ends as soon as the thing arrives and refuses by name at its ceiling",
+  ).toEqual([]);
+});
+
+/**
+ * The timer scan's own sensitivity, over a fixture written to be caught: the
+ * pin above is green over an empty set by design, so a detector that stopped
+ * firing would read exactly like two lanes in order.
+ *
+ * The fixture prices both edges of the vocabulary as well as its middle — an
+ * event-based wait, a timer named only inside chain source, and a timer armed
+ * but never awaited are all *not* sleeps, and a case that sleeps without
+ * spawning is not this scan's business at all.
+ */
+it("the timer scan reports an awaited timer in a spawning fixture case", async () => {
+  const FIXTURE = [
+    `import { runCli, SPAWN_BUDGET_MS } from "../helpers/subprocess.ts";`,
+    `import { fileWithContent, waitFor } from "../helpers/waitFor.ts";`,
+    ``,
+    `const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));`,
+    ``,
+    `it("sleeps a fixed guess after spawning", async () => {`,
+    `  const child = runCli("/tmp", ["loop"]);`,
+    `  await new Promise((r) => setTimeout(r, 800));`,
+    `  await child;`,
+    `}, SPAWN_BUDGET_MS);`,
+    ``,
+    `it("sleeps through a file-local wrapper", async () => {`,
+    `  await runCli("/tmp", ["status"]);`,
+    `  await settle(800);`,
+    `}, SPAWN_BUDGET_MS);`,
+    ``,
+    `it("waits on the event instead", async () => {`,
+    `  await runCli("/tmp", ["status"]);`,
+    `  await waitFor("the claim", () => fileWithContent("/tmp/claim"));`,
+    `}, SPAWN_BUDGET_MS);`,
+    ``,
+    `it("names a timer only inside the chain source it writes", async () => {`,
+    `  await runCli("/tmp", ["status"]);`,
+    `  expect("await new Promise((r) => setTimeout(r, 10));").toContain("r");`,
+    `}, SPAWN_BUDGET_MS);`,
+    ``,
+    `it("arms a kill timer it never awaits", async () => {`,
+    `  const kill = setTimeout(() => {}, 5000);`,
+    `  await runCli("/tmp", ["status"]);`,
+    `  clearTimeout(kill);`,
+    `}, SPAWN_BUDGET_MS);`,
+    ``,
+    `it("sleeps but spawns nothing", async () => {`,
+    `  await settle(800);`,
+    `});`,
+    ``,
+  ].join("\n");
+
+  const dir = await mkdtemp(join(tmpdir(), "flume-sync-point-"));
+  try {
+    await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+    const sites = await scanLaneSpawnSites("default", dir);
+
+    // The whole list, so the four shapes that must read as event-based — and
+    // the sleeping case that spawns nothing, absent entirely — are pinned by
+    // their verdicts rather than by a filter that could match nothing.
+    expect(sites.map((s) => [s.title, s.awaitedTimer])).toEqual([
+      ["sleeps a fixed guess after spawning", "setTimeout"],
+      // The local wrapper is named at the site, not the timer under it.
+      ["sleeps through a file-local wrapper", "settle"],
+      ["waits on the event instead", null],
+      ["names a timer only inside the chain source it writes", null],
+      ["arms a kill timer it never awaits", null],
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
