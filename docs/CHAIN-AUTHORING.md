@@ -951,6 +951,9 @@ Spawns `claude -p` with the rendered prompt on stdin. Options:
 - `outputFormat` — `"text"` (default) or `"stream-json"` (adds
   `--output-format stream-json --verbose`). Required for
   `withTerminalRenderer`.
+- `inheritUserMcp` — load the user's own MCP configuration too. Default
+  `false`: `--strict-mcp-config` rides the argv, so a tick loads only the MCP
+  configuration the chain hands it. Set `true` to omit the flag and inherit.
 - `model` — passes `--model <value>`. No default: undeclared, the flag is
   omitted and the binary's own default applies.
 - `extraArgs` — appended after the format flags.

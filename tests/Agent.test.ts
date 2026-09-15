@@ -24,6 +24,7 @@ import {
   extractFinalMessage,
   assistantTurnText,
   type Agent,
+  type ClaudeCodeOptions,
 } from "../src/Agent.ts";
 
 const spawnMock = vi.mocked(spawn);
@@ -98,6 +99,7 @@ describe("claudeCode — outputFormat flags", () => {
       "stream-json",
       "--verbose",
       "--dangerously-skip-permissions",
+      "--strict-mcp-config",
     ]);
     expect(opts).toMatchObject({ cwd: "/tmp", stdio: ["pipe", "pipe", "pipe"] });
   });
@@ -114,7 +116,7 @@ describe("claudeCode — outputFormat flags", () => {
     expect(args).not.toContain("--output-format");
     expect(args).not.toContain("stream-json");
     expect(args).not.toContain("--verbose");
-    expect(args).toEqual(["-p", "--dangerously-skip-permissions"]);
+    expect(args).toEqual(["-p", "--dangerously-skip-permissions", "--strict-mcp-config"]);
   });
 
   it("appends extraArgs after the format flags and respects dangerouslySkipPermissions=false", async () => {
@@ -135,6 +137,7 @@ describe("claudeCode — outputFormat flags", () => {
       "--output-format",
       "stream-json",
       "--verbose",
+      "--strict-mcp-config",
       "--model",
       "opus",
     ]);
@@ -149,7 +152,13 @@ describe("claudeCode — outputFormat flags", () => {
     await result;
 
     const args = spawnMock.mock.calls[0]![1] as string[];
-    expect(args).toEqual(["-p", "--dangerously-skip-permissions", "--model", "opus"]);
+    expect(args).toEqual([
+      "-p",
+      "--dangerously-skip-permissions",
+      "--strict-mcp-config",
+      "--model",
+      "opus",
+    ]);
   });
 
   it("emits no --model flag when model is undeclared", async () => {
@@ -162,6 +171,37 @@ describe("claudeCode — outputFormat flags", () => {
 
     const args = spawnMock.mock.calls[0]![1] as string[];
     expect(args).not.toContain("--model");
+  });
+
+  it("the claude-code argv carries --strict-mcp-config by default", async () => {
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
+
+    const result = claudeCode({}).invoke({ cwd: "/tmp", prompt: "p" });
+    proc.emit("close", 0);
+    await result;
+
+    const args = spawnMock.mock.calls[0]![1] as string[];
+    expect(args).toContain("--strict-mcp-config");
+  });
+
+  // The omission is only the option's doing if the flag would otherwise be
+  // there, so both legs run and the baseline is asserted first.
+  it("inheritUserMcp omits --strict-mcp-config from the argv", async () => {
+    const argvFor = async (opts: ClaudeCodeOptions): Promise<string[]> => {
+      const proc = fakeChildProcess();
+      spawnMock.mockReturnValueOnce(proc as never);
+      const result = claudeCode(opts).invoke({ cwd: "/tmp", prompt: "p" });
+      proc.emit("close", 0);
+      await result;
+      return spawnMock.mock.calls.at(-1)![1] as string[];
+    };
+
+    expect(await argvFor({})).toContain("--strict-mcp-config");
+
+    const inherited = await argvFor({ inheritUserMcp: true });
+    expect(inherited).not.toContain("--strict-mcp-config");
+    expect(inherited).toEqual(["-p", "--dangerously-skip-permissions"]);
   });
 });
 

@@ -167,6 +167,16 @@ export interface ClaudeCodeOptions {
    */
   outputFormat?: "text" | "stream-json";
   /**
+   * Load the user's own MCP configuration too. Default is `false`:
+   * `--strict-mcp-config` rides the argv, so a tick loads only the MCP
+   * configuration the chain hands it. A headless `claude -p` otherwise boots
+   * every MCP server the invoking user's own config names — by-user runtime
+   * state a stateless tick excludes, and a wedged inherited server has held a
+   * finished agent's process open and stalled a whole fanout wave. Set to
+   * `true` to inherit anyway; the flag is then omitted.
+   */
+  inheritUserMcp?: boolean;
+  /**
    * Pass `--model <value>`. No default: undeclared, the flag is omitted and
    * the binary's own default applies.
    */
@@ -187,6 +197,7 @@ export interface ClaudeCodeOptions {
 export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
   const binary = opts.binary ?? "claude";
   const skipPerms = opts.dangerouslySkipPermissions ?? true;
+  const inheritUserMcp = opts.inheritUserMcp ?? false;
   const outputFormat = opts.outputFormat ?? "text";
   const formatArgs =
     outputFormat === "stream-json"
@@ -202,6 +213,7 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
           "-p",
           ...formatArgs,
           ...(skipPerms ? ["--dangerously-skip-permissions"] : []),
+          ...(inheritUserMcp ? [] : ["--strict-mcp-config"]),
           ...(opts.model !== undefined ? ["--model", opts.model] : []),
           ...extra,
         ];
