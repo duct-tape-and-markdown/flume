@@ -100,7 +100,9 @@
       "examples/prompts/build.md",
       "examples/prompts/backlog-groomer.md",
       "tests/cliVerdict.test.ts",
-      "tests/cliHelp.test.ts"
+      "tests/cliHelp.test.ts",
+      "tests/waitForHelper.test.ts",
+      "tests/helpers/waitFor.ts"
     ]
   }
 }
