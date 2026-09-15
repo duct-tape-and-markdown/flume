@@ -23,8 +23,10 @@
  * stays the same.
  *
  * Imports come from `../src/index.ts` — the same public surface a consumer
- * sees as `import { ... } from "flume"`. See cascade-chain.ts's trailing
- * block for the host-repo swap; it applies here unchanged.
+ * sees as `import type { ... } from "flume"`. Type-only: every engine value
+ * this chain composes with arrives on the factory's `api`. See
+ * cascade-chain.ts's trailing block for the host-repo swap; it applies here
+ * unchanged.
  */
 
 import { execFileSync } from "node:child_process";
@@ -260,10 +262,12 @@ export default factory;
  *      `examples/prompts/backlog-groomer.md` to
  *      `<your-repo>/.flume/prompts/backlog-groomer.md`.
  *
- *   2. Replace the `../src/index.ts` import paths with the bare specifier:
+ *   2. Replace the `../src/index.ts` import path with the bare specifier.
+ *      It stays `import type` — `isPickableNow`, `parsePending` and
+ *      `renderSchemaForPrompt` are destructured off the factory's `api`
+ *      below, so nothing here resolves a second engine:
  *
  *          import type { Agent, Chain, EntryExtension, Gate, Phase } from "flume";
- *          import { isPickableNow, parsePending, renderSchemaForPrompt } from "flume";
  *
  *   3. Seed `<your-repo>/BACKLOG.json` with a JSON array conforming to
  *      `entryExtension` above (core `tag`/`gate`/`dependsOnForks`/`files`

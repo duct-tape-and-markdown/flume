@@ -21,7 +21,7 @@ import { slugify } from "../src/paths.ts";
 import { priorAttemptPath } from "../src/priorAttempts.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import { readFileAtRef } from "../src/git.ts";
-import { matchesAny } from "../src/paths.ts";
+import { gitPath, matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 import { declaration } from "../.flume/declaration.ts";
 
@@ -55,6 +55,17 @@ describe("buildFlumeApi().slugify / .priorAttemptPath (spec/loop.md 'Prior-outco
     const api = buildFlumeApi(REPO_PATHS);
     expect(api.slugify).toBe(slugify);
     expect(api.priorAttemptPath).toBe(priorAttemptPath);
+  });
+});
+
+describe("buildFlumeApi().gitPath (engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
+  it("buildFlumeApi().gitPath is the engine's own gitPath, by reference", () => {
+    const api = buildFlumeApi(REPO_PATHS);
+    expect(api.gitPath).toBe(gitPath);
+    // Identity is the claim, so one behavioral probe is enough to say which
+    // rule it is: both separators fold, which a chain-local respelling keyed
+    // on the host `sep` would get half-right.
+    expect(api.gitPath(String.raw`a\b/c`)).toBe("a/b/c");
   });
 });
 

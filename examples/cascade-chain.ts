@@ -15,16 +15,17 @@
  * the JSDoc on `Phase`, `Gate`, and the pending-schema exports.
  *
  * Imports come from `../src/index.ts` — the same public surface a consumer
- * sees as `import { ... } from "flume"`. Path is relative because this file
- * lives inside the flume repo; in a host repo, swap `../src/index.ts` for
- * `flume`. See the trailing block.
+ * sees as `import type { ... } from "flume"`. Path is relative because this
+ * file lives inside the flume repo; in a host repo, swap `../src/index.ts`
+ * for `flume`. Type-only, all of it: every engine *value* arrives on the
+ * factory's `api`, so nothing here resolves a second engine. See the
+ * trailing block.
  */
 
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { z } from "zod";
-import { gitPath } from "../src/index.ts";
 import type {
   Chain,
   ChainFactory,
@@ -114,13 +115,23 @@ function parseTestReport(details: string | undefined): TestReport | undefined {
   }
 }
 
-/** Does the reporter's absolute file path name the repo-relative path the entry declared? */
-function isDeclaredFile(reported: string, declared: string): boolean {
-  // The engine's own host-path-to-git-path rule rather than a chain-local
-  // respelling of it: an entry declares its files the way a commit names
-  // them, and turning what a reporter printed into that form is a fact the
-  // engine hands out (`.claude/rules/engineering.md`, *A fact the engine
-  // holds is reported, never rediscovered*).
+/**
+ * Does the reporter's absolute file path name the repo-relative path the
+ * entry declared?
+ *
+ * `gitPath` is the engine's own host-path-to-git-path rule rather than a
+ * chain-local respelling of it: an entry declares its files the way a commit
+ * names them, and turning what a reporter printed into that form is a fact
+ * the engine hands out (`.claude/rules/engineering.md`, *A fact the engine
+ * holds is reported, never rediscovered*). Taken as a parameter, the way
+ * every other engine value this file composes with arrives — the rule rides
+ * `FlumeApi`, so reaching it never costs a runtime import of the engine.
+ */
+function isDeclaredFile(
+  gitPath: FlumeApi["gitPath"],
+  reported: string,
+  declared: string,
+): boolean {
   const norm = gitPath(reported);
   return norm === declared || norm.endsWith(`/${declared}`);
 }
@@ -140,9 +151,13 @@ function isDeclaredFile(reported: string, declared: string): boolean {
  *
  * Takes the suite gate as a parameter — any gate whose `details` carry a
  * vitest JSON report composes, and the wrapper is drivable over a report the
- * caller supplies.
+ * caller supplies — and the engine's path rule alongside it, for matching
+ * the reporter's absolute filenames against the entry's declaration.
  */
-export function judgedByEntryTests(suite: Gate): Gate {
+export function judgedByEntryTests(
+  suite: Gate,
+  gitPath: FlumeApi["gitPath"],
+): Gate {
   return {
     ...suite,
     async run(ctx): Promise<GateResult> {
@@ -167,7 +182,7 @@ export function judgedByEntryTests(suite: Gate): Gate {
         (t) =>
           !report.testResults.some(
             (f) =>
-              isDeclaredFile(f.name, t.path) &&
+              isDeclaredFile(gitPath, f.name, t.path) &&
               f.assertionResults.some(
                 (a) => a.status === "passed" && a.fullName.includes(t.asserts),
               ),
@@ -365,6 +380,7 @@ const factory: ChainFactory = (api) => {
       args: ["vitest", "run", "--reporter=json"],
       failHint: "Tests failed — entry reverted from the trunk",
     }),
+    api.gitPath,
   );
 
   /**

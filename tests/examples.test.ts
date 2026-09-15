@@ -170,6 +170,65 @@ describe("examples/prompts — every shipped prompt has a phase that names it", 
 });
 
 /**
+ * A chain is a plugin loaded into a host, not a library consumer resolving
+ * its own copy (`src/flumeApi.ts`): every engine *value* arrives on the
+ * factory's `api`, so a chain's only engine import is `import type`, erased
+ * at runtime. A value import re-resolves the engine — two physical copies in
+ * one process at equal versions, splitting `instanceof` and module state with
+ * nothing reporting it — and each shipped chain under `examples/` is a "copy
+ * this into your repo" artifact, so one slipping in teaches the shape the
+ * contract forbids.
+ *
+ * Read off the source text, because the defect *is* the import statement:
+ * TypeScript erases `import type` and keeps a value import whose bindings
+ * went unused, so the loaded module graph cannot tell the two apart.
+ */
+describe("example chains — the engine arrives on the api, never through a value import", () => {
+  /** `"flume"` and every relative spelling of the in-repo public entry. */
+  const ENGINE = /^(?:flume|(?:\.\.?\/)+src\/index\.ts)$/;
+
+  /** Every `import <clause> from "<spec>"`, comments stripped first. */
+  function importsOf(src: string): Array<{ clause: string; spec: string }> {
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    return [...code.matchAll(/^import\s+([\s\S]*?)\bfrom\s+"([^"]+)";/gm)].map(
+      (m) => ({ clause: m[1]!.trim(), spec: m[2]! }),
+    );
+  }
+
+  it("every example chain imports the engine type-only, with no runtime value import", () => {
+    const dir = fileURLToPath(new URL("../examples", import.meta.url));
+    const chains = readdirSync(dir)
+      .filter((f) => f.endsWith("-chain.ts"))
+      .sort();
+    // Vacuity pin: an empty directory listing would pass the filter below
+    // over nothing.
+    expect(chains.length).toBeGreaterThan(0);
+
+    const valueImports: string[] = [];
+    for (const name of chains) {
+      const engine = importsOf(readFileSync(join(dir, name), "utf8")).filter(
+        (i) => ENGINE.test(i.spec),
+      );
+      // Vacuity pin, per file: a chain the scanner failed to read imports
+      // from would contribute no violation however it was written.
+      expect(
+        engine.length,
+        `${name}: the scan found no engine import to classify`,
+      ).toBeGreaterThan(0);
+      valueImports.push(
+        ...engine
+          .filter((i) => !i.clause.startsWith("type"))
+          .map((i) => `${name}: import ${i.clause} from "${i.spec}"`),
+      );
+    }
+
+    expect(valueImports).toEqual([]);
+  });
+});
+
+/**
  * `flume job run` wakes `phases[0]` unconditionally on a cold job (v0.5
  * decision 6, `src/job.ts` `jobRun`) — it has no notion of `humanOnly` at
  * that call site. A chain whose entry phase is also in its own `humanOnly`

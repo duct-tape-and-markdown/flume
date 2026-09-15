@@ -38,7 +38,7 @@ import {
 } from "./Dispatcher.js";
 import { readFileAtRef, showNameOnly, TipClaimHeldError } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
-import { matchesAny, slugify } from "./paths.js";
+import { gitPath, matchesAny, slugify } from "./paths.js";
 import { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
 import {
   composePendingList,
@@ -123,6 +123,16 @@ export interface FlumeApi {
   readTickVerdicts: typeof readTickVerdicts;
   readLatestVerdictsSync: typeof readLatestVerdictsSync;
   slugify: typeof slugify;
+  /**
+   * The engine's own host-path-to-git-path rule — the one it keys fence
+   * globs, pathspecs and touched-path comparisons by. A chain composing a
+   * committed path out of a root the engine reported, or reading a path some
+   * tool printed in the host's alphabet, converts it through this rather
+   * than respelling the rule: a chain-local copy folds one separator where
+   * the engine folds both, and the disagreement surfaces as a fence glob
+   * that silently matches nothing on win32.
+   */
+  gitPath: typeof gitPath;
   priorAttemptPath: typeof priorAttemptPath;
   priorAttemptsDir: typeof priorAttemptsDir;
   /** Read-only git helpers a chain gate may need. */
@@ -199,6 +209,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     readTickVerdicts,
     readLatestVerdictsSync,
     slugify,
+    gitPath,
     priorAttemptPath,
     priorAttemptsDir,
     git: { showNameOnly, readFileAtRef, readWorktreeRegistry },
