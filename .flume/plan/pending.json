@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "tag": "MERGING-MARKERS-UNREADABLE-DIR-LOUD",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "readMergingMarkers' readdir catch" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the absent and unreadable legs" }
+      ],
+      "retire": []
+    },
+    "summary": "readMergingMarkers swallows every readdir error; narrow to ENOENT so an unreadable merging dir refuses instead of reading as no interrupted merge",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "An unreadable <flumeDir>/merging/ escapes readMergingMarkers; an absent one still reads as no markers.",
+    "tests": [
+      "readMergingMarkers throws when the merging dir cannot be read for a reason other than absence"
+    ],
+    "pins": [
+      "readMergingMarkers reads an absent merging dir as no interrupted merge"
+    ],
+    "notes": "src/Dispatcher.ts:636-639. Sibling idiom already shipped at src/priorAttempts.ts:279-283 (ENOENT -> empty, else rethrow); reuse it. Sole consumer is src/cli.ts:982, the loop/job-run startup refusal, where an empty read means start: an EACCES/ELOOP/EIO merging dir proceeds over the unreconciled merge the refusal exists to stop, contradicting this function's own doc block."
+  }
+]

@@ -38,7 +38,11 @@
       "src/cliChainLoad.ts",
       "src/Prompt.ts",
       "src/Phase.ts",
-      "src/PendingSchema.ts"
+      "src/PendingSchema.ts",
+      "src/Dispatcher.ts",
+      "src/Agent.ts",
+      "src/bounds.ts",
+      "src/partition.ts"
     ]
   }
 }
