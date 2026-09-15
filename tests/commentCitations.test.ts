@@ -16,7 +16,6 @@
  * implementation of the verdict.
  */
 
-import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -357,25 +356,6 @@ const EXTERNAL_VOCABULARY: ReadonlyMap<string, string> = new Map([
   ["sysexits.h", "the BSD header flume's exit codes are taken from"],
 ]);
 
-/**
- * Citations naming a file of *this* repo by a name the working tree cannot be
- * asked for: a bare basename, with the directory holding it left unsaid. The
- * scan resolves a module by basename too, but only across the trees it reads,
- * so these resolve nowhere — and `EXTERNAL_VOCABULARY`'s reason is untrue of
- * them: the file is right here, one rung away.
- *
- * So they are excluded against a path instead of a reason, and the pin checks
- * the path exists. A renamed rules page reds here exactly as a deleted
- * declaration does, which is the whole property the scan is for.
- *
- * The list is what the path arm cannot reach, and shrinks as citations are
- * written the way the tree can answer: a comment that says
- * `.claude/rules/engineering.md` is judged outright and needs no entry here.
- */
-const REPO_FILE_VOCABULARY: ReadonlyMap<string, string> = new Map([
-  ["engineering.md", ".claude/rules/engineering.md"],
-]);
-
 it("every backticked identifier in a src/ or harness/ comment names a declaration those trees hold", () => {
   const scan = repoScan;
 
@@ -391,20 +371,9 @@ it("every backticked identifier in a src/ or harness/ comment names a declaratio
   // stopped citing is a hole widened for nothing, and reds here rather than
   // sitting in the list unread.
   const judged = scan.scanned.map((s) => s.text);
-  const excluded = [
-    ...EXTERNAL_VOCABULARY.keys(),
-    ...REPO_FILE_VOCABULARY.keys(),
-  ];
+  const excluded = [...EXTERNAL_VOCABULARY.keys()];
   for (const name of excluded) {
     expect(judged).toContain(name);
-  }
-
-  // And the repo-file arm carries its own check: the path each stands for is
-  // on disk, so the exclusion cannot outlive the file it points at.
-  for (const [name, path] of REPO_FILE_VOCABULARY) {
-    expect(`${name} -> ${existsSync(join(REPO_ROOT, path))}`).toBe(
-      `${name} -> true`,
-    );
   }
 
   expect(

@@ -129,8 +129,9 @@ export type ProvisionFailure = StageFailureEntry & {
 /**
  * Which entry a stage failure is blamed on — **both halves or neither**, so
  * the supervisor's quarantine leg can never read a tag it has no key to
- * hold it under (`engineering.md`, *Narration is the ladder's bottom rung*:
- * the pairing is a type, not a comment asking each call site to remember).
+ * hold it under (`.claude/rules/engineering.md`, *Narration is the ladder's
+ * bottom rung*: the pairing is a type, not a comment asking each call site
+ * to remember).
  *
  * - `tag` is the entry the failure is scoped to (a `createWorktree` failure
  *   for that specific slug, a cherry-pick conflict on that entry's commit, a
@@ -145,7 +146,8 @@ export type ProvisionFailure = StageFailureEntry & {
  *   `FLUME_QUARANTINED_SLUGS`. Reported rather than recomputed: the
  *   supervisor holds only the verdict, and a second read of `pending.json`
  *   there would key the hold on bytes a *later* tick wrote
- *   (`engineering.md`, *A fact the engine holds is reported*).
+ *   (`.claude/rules/engineering.md`, *A fact the engine holds is
+ *   reported*).
  */
 export type StageFailureEntry =
   | { tag: string; quarantineKey: string }
@@ -708,8 +710,8 @@ function isMergingMarker(rec: unknown): rec is MergingMarker {
  * A file that will not parse, or parses to the wrong shape, still counts:
  * the marker's *presence* is the fact, and degrading an unreadable one to
  * "no interrupted merge" would proceed over exactly the state this refusal
- * exists to stop (`engineering.md`, "Loud or nothing"). Its `marker` is
- * `undefined` and the caller names the file alone.
+ * exists to stop (`.claude/rules/engineering.md`, "Loud or nothing"). Its
+ * `marker` is `undefined` and the caller names the file alone.
  *
  * The directory read takes the same line, as the ENOENT-vs-other split
  * `PriorAttemptStore.readAll` (src/priorAttempts.ts) gives its own record dir:

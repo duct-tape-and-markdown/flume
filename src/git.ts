@@ -443,7 +443,7 @@ export async function showNameOnly(
  * leading colon as a magic prefix: `:leading.ts` lists nothing (so an
  * existing path reads back `null`) and `:(icase)x` exits 128 (so the whole
  * read throws). Both are the engine substituting a verdict for a path it was
- * handed (`engineering.md`, *Loud or nothing*).
+ * handed (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * Content comes straight off `exec`, not `run()`: `run()`'s `trimEnd()` is
  * right for git's own line-oriented output but would silently drop a real
