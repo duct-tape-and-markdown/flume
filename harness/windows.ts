@@ -30,11 +30,12 @@
  * commits past the budget are listed so the next tick picks them up — a
  * window larger than one tick is progress, not a wall.
  *
- * **A cursor that does not resolve refuses, in the window itself.** The
- * window cannot be computed, so the slice is woken carrying a refusal that
- * names the field to repair and forbids advancing anything. The degraded
- * path is declared and bounded rather than silently reporting an empty
- * delta, which would advance a cursor over commits nobody read
+ * **A range that cannot be read refuses, in the window itself.** A cursor
+ * naming no commit, or any git failure under the render, means the window
+ * cannot be computed, so the slice is woken carrying a refusal that names
+ * what failed and forbids advancing anything. The degraded path is declared
+ * and bounded rather than silently reporting an empty delta, which would
+ * advance a cursor over commits nobody read
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * This module is the windows alone. Which slices a consumer enabled, what
@@ -384,13 +385,20 @@ function renderSpecWindow(
   ctx: WindowContext,
   options: PlanSliceWindowsOptions,
 ): string {
+  return bounded("derivedThrough", ctx, () => specWindow(ctx, options));
+}
+
+function specWindow(
+  ctx: WindowContext,
+  options: PlanSliceWindowsOptions,
+): string {
   const locus = options.declaration.specLocus;
   const state = readPlanState(ctx.flumeDir);
   if (state === undefined) return bootstrap("derivedThrough", ctx, locus);
 
   const cursor = state.derivedThrough;
   if (!resolves(ctx.cwd, cursor)) {
-    return refusal("derivedThrough", cursor, ctx.flumeDir);
+    return unresolvedCursor("derivedThrough", cursor, ctx.flumeDir);
   }
 
   const all = commitsPast(ctx.cwd, cursor);
@@ -503,7 +511,20 @@ function renderSweepWindow(
   ctx: WindowContext,
   options: PlanSliceWindowsOptions,
 ): string {
-  const { domain, posturePages } = sweepInputs(options.declaration);
+  // `sweepInputs` reads the declaration, not the tree: its throw is the
+  // unconstructable-declaration guard, which the bound below — the tree's
+  // own failures alone — deliberately does not swallow.
+  const inputs = sweepInputs(options.declaration);
+  return bounded("sweptThrough", ctx, () =>
+    sweepWindowOf(ctx, options, inputs),
+  );
+}
+
+function sweepWindowOf(
+  ctx: WindowContext,
+  options: PlanSliceWindowsOptions,
+  { domain, posturePages }: { domain: string[]; posturePages: string[] },
+): string {
   const locus = options.declaration.specLocus;
   const state = readPlanState(ctx.flumeDir);
   if (state === undefined) {
@@ -512,7 +533,7 @@ function renderSweepWindow(
 
   const cursor = state.sweptThrough;
   if (!resolves(ctx.cwd, cursor)) {
-    return refusal("sweptThrough", cursor, ctx.flumeDir);
+    return unresolvedCursor("sweptThrough", cursor, ctx.flumeDir);
   }
 
   const budget = budgetOf(options);
@@ -618,29 +639,61 @@ function bootstrap(
 }
 
 /**
- * The window a cursor that names no commit in this tree opens over: nothing,
- * loudly.
+ * The window an unreadable range opens over: nothing, loudly.
  *
  * Rendered into the prompt rather than thrown out of it, and that is
- * deliberate. A throw here kills the tick before any agent runs, and the
- * artifact that needs repairing is one only this slice may write — so the
- * loop would decline forever with no path back. The refusal instead reaches
- * the one actor that can fix it, naming the field, the value, and the file,
- * and forbidding any cursor advance in the meantime
+ * deliberate. A throw here kills the tick before any agent runs — the engine
+ * invokes `promptArgs` uncaught — so the tick ends with no verdict and the
+ * next one is woken over the same unreadable tree with nothing said. The
+ * refusal instead reaches the woken slice, naming what could not be read and
+ * forbidding any cursor advance in the meantime
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
-function refusal(
+const refusal = (cause: string, repair: string): string =>
+  `REFUSE: ${cause}, so this window cannot be computed. Process nothing and ` +
+  `advance no cursor this tick; ${repair}`;
+
+/** The refusal a cursor that names no commit in this tree renders. */
+const unresolvedCursor = (
   field: keyof PlanState,
   cursor: string,
   flumeDir: string,
-): string {
-  return (
-    `REFUSE: \`${field}\` is \`${cursor}\`, which does not resolve to a ` +
-    `commit in this tick's tree, so this window cannot be computed. Process ` +
-    `nothing and advance no cursor this tick; repair \`${field}\` in ` +
-    `${planStatePath(flumeDir)} and say in the commit body what it was and ` +
-    `what you set it to.`
+): string =>
+  refusal(
+    `\`${field}\` is \`${cursor}\`, which does not resolve to a commit in ` +
+      `this tick's tree`,
+    `repair \`${field}\` in ${planStatePath(flumeDir)} and say in the ` +
+      `commit body what it was and what you set it to.`,
   );
+
+/**
+ * The bound {@link touchedPast}'s fail-open already promises: every way a
+ * render reads the tree — the bootstrap listing, the range scan, a commit's
+ * diff, the retired-claim diff — arrives here as the named refusal rather
+ * than as a throw out of `promptArgs`. Not git's failures alone, because a
+ * refusal that classified what it caught would be guessing at a cause it
+ * was never told; the failure's own text is carried instead.
+ *
+ * The cursor is untouched by a failure this side of the render, so the
+ * window re-opens over the same range next tick; the tick that was woken
+ * says what it saw instead of dying silently.
+ */
+function bounded(
+  field: keyof PlanState,
+  ctx: WindowContext,
+  render: () => string,
+): string {
+  try {
+    return render();
+  } catch (err) {
+    const text = err instanceof Error ? err.message : String(err);
+    return refusal(
+      `the \`${field}\` window could not be read: ${text.trim()}`,
+      `say in the commit body what failed; \`${field}\` in ` +
+        `${planStatePath(ctx.flumeDir)} is untouched, so the window re-opens ` +
+        `over the same range next tick.`,
+    );
+  }
 }
 
 /**
@@ -802,9 +855,9 @@ const touches = (commit: RangeCommit, globs: string[]): boolean =>
  *
  * **Fails open, deliberately.** A window that cannot be read — a cursor that
  * names no commit, a git that will not run — reports the slice live, and the
- * render it wakes then refuses by name (see {@link refusal}). The inverse
- * would be worse in the one way that matters: a closed window over an
- * unreadable range is silence, and the next cursor advance would step over
+ * render it wakes then refuses by name for either (see {@link bounded}).
+ * The inverse would be worse in the one way that matters: a closed window
+ * over an unreadable range is silence, and the next cursor advance would step over
  * commits nobody read (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 function touchedPast(

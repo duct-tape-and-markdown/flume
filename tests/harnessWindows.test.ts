@@ -329,6 +329,55 @@ it("a window refuses a cursor sha that does not resolve in the tick's tree", () 
   ).toBe(true);
 });
 
+it("a window render refuses by name when git fails for a reason other than an unresolvable cursor", () => {
+  commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
+  // No plan state is written, so both renders take the bootstrap leg — it
+  // lists the tree and consults no cursor at all. The failure below is
+  // therefore git's own, not the unresolvable-cursor refusal under a second
+  // name.
+  const notATree = mkdtempSync(join(tmpdir(), "flume-windows-nogit-"));
+
+  // What git says about that directory, read here rather than written by
+  // hand: the assertion below is then that git's sentence reached the
+  // refusal, not that the test and the module agree on a phrasing.
+  let said = "";
+  try {
+    execFileSync("git", ["ls-files"], {
+      cwd: notATree,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    said = err instanceof Error ? err.message : String(err);
+  }
+  const fatal =
+    said.split("\n").find((line) => line.startsWith("fatal:")) ?? "";
+  // Vacuity guard: a fixture git happily read would pass every assertion
+  // below against a window that never failed.
+  expect(fatal).not.toBe("");
+
+  try {
+    const built = windows();
+    const ctx = { cwd: notATree, flumeDir: stateRoot() };
+
+    for (const [field, window] of [
+      ["derivedThrough", built["plan-derive"].args(ctx).SPEC_WINDOW],
+      ["sweptThrough", built["plan-sweep"].args(ctx).SWEEP_WINDOW],
+    ] as const) {
+      expect(window).toContain("REFUSE");
+      expect(window).toContain(`\`${field}\``);
+      expect(window).toContain("advance no cursor this tick");
+      // The failure's own text, carried whole.
+      expect(window).toContain(fatal);
+      // Nothing of the window itself: a bootstrap listing beside the
+      // refusal would read as material the tick may act on.
+      expect(window).not.toContain("bootstrap");
+    }
+  } finally {
+    rmSync(notATree, { recursive: true, force: true });
+  }
+});
+
 it("the sweep window carries the frontier commits and the spec lines the window retired", () => {
   const base = commit(
     { "src/a.ts": "export const a = 1;\n", "spec/loop.md": "# Loop\n\nA ratified claim.\n" },
