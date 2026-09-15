@@ -36,6 +36,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import ts from "typescript";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { Gate, GateContext } from "../src/Gate.ts";
@@ -52,6 +53,7 @@ import {
   type FlumePaths,
 } from "../src/flumeApi.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
+import { REPO_ROOT } from "./helpers/repoProgram.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
 import cascadeFactory, {
@@ -1939,6 +1941,103 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
     expect(fromSource).toContain("`${stateRoot}/plan/pending.json`,");
 
     expect(fromDoc).toEqual(fromSource);
+  });
+});
+
+/**
+ * Agreement pin (.claude/rules/engineering.md, *A seam gate reads what the
+ * real writer wrote*): `docs/CHAIN-AUTHORING.md`'s supervisor-policy section
+ * is the only prose a chain author reads before declaring
+ * `Chain.supervisorPolicy`, and a knob the section skips is a knob nobody
+ * finds — `tickTimeoutMs` and `partitionIgnore` were each reachable only
+ * through a migration note for a release line before this pin.
+ *
+ * The knob list is read off the declaration through the repo program, never
+ * kept as a second list beside it (*Derived state is computed, never restated
+ * beside its source*): a field added to the type without a paragraph reds
+ * here, which a hand-kept list could only do if someone remembered to extend
+ * it. The checker resolves it, so the pin survives the block becoming a named
+ * type rather than the inline literal it is today.
+ */
+describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the block", () => {
+  /** The section, heading line through the line before the next `## `. */
+  const sectionOf = (doc: string, heading: RegExp): string => {
+    const start = doc.search(heading);
+    expect(start, `\`${heading.source}\` matches a heading`).toBeGreaterThanOrEqual(0);
+    const next = doc.indexOf("\n## ", start + 1);
+    return doc.slice(start, next === -1 ? doc.length : next);
+  };
+
+  /**
+   * Every property of `Chain["supervisorPolicy"]`, resolved by a checker.
+   *
+   * The tier is declared here rather than taken from `repoProgram`, which
+   * builds the whole repo's program for the scans that resolve across it
+   * (`tests/helpers/repoProgram.ts`): the subject is one block in one module,
+   * and a checker over that module alone — no lib, no resolution, no
+   * `@types` — answers it in a tenth of the time a repo program takes to
+   * start, which is what keeps this case in the fast lane
+   * (spec/worktrees.md, *The default test lane must stay fast*). A block that
+   * moved out of `src/Phase.ts` would resolve to nothing here rather than
+   * quietly to something else, and the vacuity pin below is what reds on it.
+   */
+  const supervisorPolicyKnobs = (): string[] => {
+    const module = join(REPO_ROOT, "src/Phase.ts");
+    const program = ts.createProgram({
+      rootNames: [module],
+      options: { noLib: true, noResolve: true, types: [] },
+    });
+    const source = program.getSourceFile(module);
+    expect(source, "src/Phase.ts is in the program").toBeDefined();
+
+    let chainName: ts.Identifier | undefined;
+    ts.forEachChild(source!, (node) => {
+      if (ts.isInterfaceDeclaration(node) && node.name.text === "Chain") {
+        chainName = node.name;
+      }
+    });
+    expect(chainName, "src/Phase.ts declares an interface `Chain`").toBeDefined();
+
+    const checker = program.getTypeChecker();
+    const chain = checker.getDeclaredTypeOfSymbol(
+      checker.getSymbolAtLocation(chainName!)!,
+    );
+    const field = chain.getProperty("supervisorPolicy");
+    expect(field, "`Chain` declares `supervisorPolicy`").toBeDefined();
+    const policy = checker.getNonNullableType(
+      checker.getTypeOfSymbolAtLocation(field!, field!.valueDeclaration!),
+    );
+    return policy.getProperties().map((knob) => knob.name);
+  };
+
+  it("docs/CHAIN-AUTHORING.md's supervisor-policy section names every Chain.supervisorPolicy field the engine reads", () => {
+    const knobs = supervisorPolicyKnobs();
+
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a resolution that fell through to an empty property list
+    // would walk zero knobs and pass. One anchor rather than a second copy of
+    // the list — the count is what proves the set is the real one.
+    expect(knobs.length).toBeGreaterThan(1);
+    expect(knobs).toContain("quarantineScope");
+
+    const section = sectionOf(
+      readFileSync(
+        fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
+        "utf8",
+      ),
+      /^## \d+\. Supervisor policy \(`supervisorPolicy`\)$/m,
+    );
+    // The section is the one it claims to be before an absence is asserted
+    // over it: a heading match that captured the wrong span would report
+    // every knob missing, or none.
+    expect(section).toContain("`Chain.supervisorPolicy`");
+
+    for (const knob of knobs) {
+      expect(
+        section,
+        `docs/CHAIN-AUTHORING.md's supervisor-policy section walks \`${knob}\``,
+      ).toContain(`- **\`${knob}\`** —`);
+    }
   });
 });
 

@@ -1692,8 +1692,12 @@ so fanout's in practice), and a consecutive-identical-failure backstop aborts
 the run outright when the same stage-tagged signature repeats with no clearing
 tick in between — the non-entry-scoped class quarantine can't isolate, which is
 a repo-level failure like `git worktree prune` *and* every singleton failure,
-since a singleton tick has no entry to blame. Beside the net, the block
-carries the grace a signalled run gives its in-flight tick tree before it
+since a singleton tick has no entry to blame.
+
+Beside the net, the block carries the knobs that shape the tick itself and
+have nowhere else to be set from a chain: how wide a fanout wave runs, the
+wall-clock cap on one agent invocation, the paths the fanout partition
+ignores, and the grace a signalled run gives its in-flight tick tree before it
 stops waiting. Each knob ships as an engine default; `Chain.supervisorPolicy`
 lets a chain choose otherwise:
 
@@ -1705,6 +1709,9 @@ const chain: Chain = {
     quarantineScope: "none",
     abortThreshold: 5,
     killGraceMs: 30_000,
+    maxParallel: 2,
+    tickTimeoutMs: 45 * 60_000,
+    partitionIgnore: ["pnpm-lock.yaml"],
   },
 };
 ```
@@ -1731,13 +1738,57 @@ const chain: Chain = {
   exits on the `SIGTERM` never reaches it. Default 5000. POSIX only: win32
   maps `SIGTERM` to `TerminateProcess`, which runs no handler, so there is no
   disposition for a grace to bound.
+- **`maxParallel`** — how many entry ticks one fanout wave starts at once.
+  Default 4. The partition (§3) decides which entries *may* share a wave —
+  disjoint declared files — and this decides how many of that set actually
+  run together; the rest wait for the next wave. Lower it when the agent seam
+  is rate-limited or the machine has fewer cores than the wave has entries,
+  raise it when ticks are cheap and cherry-picks land clean. A singleton
+  chain never reads it.
+- **`tickTimeoutMs`** — wall-clock cap on one agent invocation, in
+  milliseconds. Default unset: **no cap**, which means the only brake on a
+  runaway invocation is an operator watching verdict lines. Exceeded, the
+  invocation is aborted and the tick records the abort like any other failed
+  tick, so the signature accounting above sees it and the run's `--max`
+  budget is not burned silently against a hung agent. Derive the value from
+  measured invocations with headroom over the observed maximum — a cap set at
+  the maximum kills the next slow-but-healthy tick.
+- **`partitionIgnore`** — globs, matched by the same matcher `writablePaths`
+  goes through (§1), whose paths never count toward the fanout partition's
+  collision set. Default `[]`, byte-identical to no filter. A file every
+  entry touches — a lockfile, a generated index, a shared changelog —
+  otherwise collides with every other entry and serializes each wave down to
+  a single tick; naming it here keeps the wave wide. This widens only what counts as a *collision*, never a
+  permission: the fence, the write guard, and ship detection all still read
+  that path in full (`spec/pending.md`, "Fanout partition — disjoint touched
+  paths").
 
 Every field here is optional and independent; a chain declaring none gets the
 engine defaults, byte-identical (`spec/loop.md`, "Repeated identical
-failures — quarantine, then abort"). `flume loop` reads this block from the
-resolved chain once at supervisor start — a chain that fails to load there
-surfaces nothing new; the defaults apply for that run and the first child
-tick still reports the load failure exactly as it does today.
+failures — quarantine, then abort").
+
+**The fields split by when they are read, and a self-editing chain feels the
+difference.** `quarantineScope`, `abortThreshold` and `killGraceMs` are bound
+**once per run**: `flume loop`'s supervisor resolves the chain in its own
+process before the first child and nothing re-reads them between ticks, so a
+tick that commits a changed value is governed by the old one until the
+operator restarts the loop — with no indication the new declaration was
+ignored. For the first two that is the point rather than an oversight: the
+quarantine set and the consecutive-failure streak are run-scoped accounting
+that resets per run, and a mid-run change would rewrite the rules the
+accumulated counts were gathered under. `killGraceMs` is bound there because
+the supervisor is the process that sends the signal; a bare `flume tick`,
+which signals its own tree, reads it off its own chain instead.
+`maxParallel`, `tickTimeoutMs` and `partitionIgnore` are read **per tick**,
+straight off the tick's own resolved chain — the dispatcher reloads `chain.ts`
+fresh every tick and none of the three accumulates run-scoped state, so a
+mid-run change governs from the next tick onward (`spec/chain.md`, "Supervisor
+policy is a chain-overridable default").
+
+A chain that fails to load at supervisor start surfaces nothing new here: the
+defaults apply for that run and the first child tick still reports the load
+failure exactly as it does today.
+
 ## 10. Declaring an entry extension (`entryExtension`)
 
 The engine's pending-entry schema is deliberately small: `tag` (identity),
