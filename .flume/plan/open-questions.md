@@ -97,30 +97,3 @@ not re-derive them:
   author quotes it. The package's prompts take the quotes; derive files them.
   Named here only so the failure tally above stays honest — three
   `harnessPrompts` cases and one `harnessChain` case belong to this family.
-
-## `An export earns its consumer` still hand-holds the property `tests/exportConsumers.test.ts` now pins (NEEDS AMENDMENT — an operator edit)
-
-Drained from `.flume/plan/notes/UNEARNED-EXPORT-PIN.md` (build tick, `c4f5fdd`).
-Bullet three of that section promises its own retirement — "this bullet shrinks
-to a pointer in the commit that ships it" — and the pin shipped at `243f394`
-without the shrink, because `.claude/rules/**` is outside build's fence. No
-autonomous phase can clear it, and the page is re-injected into every tick, so
-prose asserting a property a test now pins stands as a per-tick tax against the
-same section's own ladder bullet.
-
-Measured on the tip (`tests/exportConsumers.test.ts`, 2.5s of the ~130s default
-lane): 343 judged exports across `src/` + `harness/` — 191 earned by
-exports-map reachability, 152 by cross-module reference, 0 unearned.
-
-**Two limits on how far the shrink goes**, so the pointer claims only what the
-pin holds:
-
-- The scan resolves symbols through the TS compiler API, so bullet two's "a
-  host that lacks it leaves the verdict unmade" no longer binds the *export*
-  verdict. It still governs the wider dead-symbol case.
-- Reachability walks **type positions only**, skipping function bodies — a
-  module-local helper a public method calls is not public surface. That is what
-  keeps the verdict honest; stated at `scanExports`.
-
-**Recommended:** bullet three shrinks to a pointer at the pin; bullet two keeps
-the wider case and loses only its export clause.
