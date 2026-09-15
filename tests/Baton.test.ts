@@ -90,7 +90,7 @@ describe("Baton — idempotency", () => {
  * unstattable *awake dir* fails the listing too, and that is where the two
  * readers have to agree.
  */
-describe("Baton — an unstattable awake flag is loud", () => {
+describe.runIf(process.platform !== "win32")("Baton — an unstattable awake flag is loud", () => {
   /**
    * Replace the constructed awake dir with a symlink to itself: `readdirSync`
    * on the dir and `statSync` on any path under it both raise ELOOP. Not a

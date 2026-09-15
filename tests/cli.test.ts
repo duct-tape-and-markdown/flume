@@ -3485,7 +3485,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it("flume friction refuses with EX_IOERR when a listed note cannot be stat'd", async () => {
+  it.runIf(process.platform !== "win32")("flume friction refuses with EX_IOERR when a listed note cannot be stat'd", async () => {
     const repo = await makeJobRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));

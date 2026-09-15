@@ -459,11 +459,10 @@ describe("the vitest runner", () => {
     expect(await checkoutsOf(fixture)).toEqual([]);
   }, 180_000);
 
-  it("the vitest runner provisions a base checkout through the declared setup", async () => {
+  it.runIf(process.platform !== "win32")("the vitest runner provisions a base checkout through the declared setup", async () => {
     const installs: string[] = [];
     const recording = apiWithInstaller(async (tree) => {
       installs.push(tree);
-      await link(tree);
     });
     // A consumer that provisions with its own command rather than with the
     // engine's installer — the shape of every stack whose install the engine

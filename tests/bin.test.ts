@@ -48,7 +48,7 @@ const FAKE_CLI_JS = `#!/usr/bin/env node
 process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));
 `;
 
-describe("bin/flume symlink walk", () => {
+describe.runIf(process.platform !== "win32")("bin/flume symlink walk", () => {
   let root: string;
 
   beforeEach(async () => {

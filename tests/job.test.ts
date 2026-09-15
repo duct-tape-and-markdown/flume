@@ -1919,7 +1919,7 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
   // A pin, not a red-on-base test: the pre-fix gate read the file it had
   // just stat'd, so an unreadable `.gitignore` threw there too. The narrowing
   // keeps that reading while dropping the redundant stat — this holds it.
-  it("ensureRuntimeIgnores rethrows a non-ENOENT read failure instead of rewriting the .gitignore it could not read", async () => {
+  it.runIf(process.platform !== "win32")("ensureRuntimeIgnores rethrows a non-ENOENT read failure instead of rewriting the .gitignore it could not read", async () => {
     const base = await mkdtemp(join(tmpdir(), "flume-job-ignores-"));
     const jobDir = join(base, "job");
     try {

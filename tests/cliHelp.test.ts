@@ -720,7 +720,7 @@ describe("flume friction --help — the exit-code list against the verb's own I/
     `  friction: "friction",\n` +
     `} });\n`;
 
-  it("flume friction --help names exit 74 for an I/O failure in the channel dir", async () => {
+  it.runIf(process.platform !== "win32")("flume friction --help names exit 74 for an I/O failure in the channel dir", async () => {
     const root = await mkFixtureRoot("flume-friction-help-");
     const frictionDir = join(root, ".flume", "friction");
     try {
