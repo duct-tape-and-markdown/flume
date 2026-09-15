@@ -99,7 +99,8 @@
       "examples/prompts/plan.md",
       "examples/prompts/build.md",
       "examples/prompts/backlog-groomer.md",
-      "tests/cliVerdict.test.ts"
+      "tests/cliVerdict.test.ts",
+      "tests/cliHelp.test.ts"
     ]
   }
 }

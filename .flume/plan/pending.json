@@ -1,1 +1,44 @@
-[]
+[
+  {
+    "tag": "FAILURE-STAGES-ONE-ROSTER",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "export the stage roster as a value; derive FailureStage from it"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "re-export the roster beside NO_COMMIT_MODES"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "drive ABORT-SIGNATURE-NAMES-ITS-STAGE off the roster; retire the STAGES copy and the doc comment's not-hand-copied claim"
+        },
+        {
+          "path": "tests/cliVerdict.test.ts",
+          "description": "drive the summary case off the roster"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "drive the repeatedFailure case and abortOn's param off the roster"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Give FailureStage one exported value roster; the three stage lists in tests/ read it instead of respelling its members",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "acceptance": "FailureStage is derived from an exported FAILURE_STAGES; no test respells its members, and a member added to the roster reaches all three driven surfaces without an edit.",
+    "tests": [
+      "flume loop --help names every FAILURE_STAGES member as an abort stage",
+      "loopCompletionSummary renders every FAILURE_STAGES member as its own stage phrase",
+      "superviseLoop reports the aborting streak's stage for every FAILURE_STAGES member"
+    ],
+    "notes": "src/loopSupervisor.ts:119 declares FailureStage as a bare type union, so three suites hand-copy its members: tests/cliHelp.test.ts:616, tests/cliVerdict.test.ts:219, tests/loopSupervisor.test.ts:1644,1692 — each guarded only by `expect(stages.length).toBe(3)`, the copy pinned against itself. Same shape NO_COMMIT_MODES (src/Prompt.ts:79) and PRIOR_ATTEMPT_MODES (:107) already took. tests/cliHelp.test.ts:609 asserts the vocabulary is 'not hand-copied here'; that sentence goes with the copy."
+  }
+]
