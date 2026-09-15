@@ -528,8 +528,10 @@ dispatcher-owned `<prior-attempt>` block:
   and two chains independently rebuilt "was the last build a park" from there.
 
 - **Cross-process by construction.** Persisted at
-  `<flumeDir>/prior-attempts/<key>.json` — `priorAttemptPath(flumeDir, tag)`, the
-  exported rule (`spec/pending.md`, *What the package exports*) — and read by the next
+  `<flumeDir>/prior-attempts/<keyspace>/<slug>.json` — `priorAttemptPath(flumeDir, ref)`,
+  the exported rule (`spec/pending.md`, *What the package exports*), the ref pairing the
+  keyspace (`entry` or `phase`) with the identity written, so a phase name and a tag
+  that slugify alike never share a stem — and read by the next
   `flume tick` at prompt render. There is no in-memory handoff to assume. The same
   read populates `TickContext.priorAttempts` for `shouldRun` and `promptArgs`, so a
   chain never opens the directory itself.

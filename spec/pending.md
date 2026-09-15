@@ -470,7 +470,8 @@ that did not know the extension is how declared fields get destroyed.
 values: every pending-schema helper, the tag-to-filename rule and the record path
 built from it, and every path rule a chain composes with — held by the shipped
 `.d.ts` rather than by a roster here. `slugify` and `priorAttemptPath` are the tag-to-filename rule and the record path built from it
-(`priorAttemptPath(flumeDir, tag)`): a chain reading `prior-attempts/` — a `shouldRun` declining
+(`priorAttemptPath(flumeDir, ref)`, the ref pairing keyspace and identity): a chain reading
+`prior-attempts/` — a `shouldRun` declining
 to redispatch an entry whose last attempt bailed — uses the engine's rule rather than restating
 it, so the rule cannot drift out from under the reader. Types are index-only by
 construction — `FlumeApi` carries values, never types — so a chain takes `PendingEntry` /

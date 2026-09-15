@@ -573,9 +573,10 @@ the merge bookkeeping completes.
     computation fanout selection uses, so a
     singleton `shouldRun` and the next fanout tick cannot disagree.
   - **`priorAttempts`** — every persisted `PriorAttempt` record under
-    `<flumeDir>/prior-attempts/`, keyed by the identity each was written under (tag slug for
-    fanout entries, phase name for singletons — the file on disk sits at a slugged
-    stem; the map key does not), read with the engine's own reader and
+    `<flumeDir>/prior-attempts/`, keyed by keyspace and identity — `entry:<tag slug>`
+    for fanout entries, `phase:<phase name>` for singletons — so the two keyspaces
+    never collide in the map, as they never share a stem on disk; read with the
+    engine's own reader and
     the engine's own tolerance (a corrupt record is absent). A plan-phase
     `shouldRun` deciding "build has a standing bail to reconcile" reads this
     map; it does not `readdirSync` the engine's directory. A park is in the
