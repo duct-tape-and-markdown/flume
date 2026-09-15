@@ -1,40 +1,5 @@
 [
   {
-    "tag": "HOOK-THROWS-ANSWERED-LIKE-THEIR-SEAMS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "one guard per hook seam, at the site both concurrencies share"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "all four legs"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Answer a throwing `promptArgs`, `shouldRun`, `handoff` or `shipped` the way its sibling seam already answers, never by losing the tick",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a hook receives"
-    },
-    "acceptance": "Each of the four hooks throwing lands on the outcome its seam already has, with the verdict written and the merge bookkeeping complete.",
-    "tests": [
-      "a throwing promptArgs is a render-refused no-commit outcome",
-      "a throwing shouldRun refuses the tick rather than declining it",
-      "a throwing handoff is logged and the tick's facts stand",
-      "a throwing shipped leaves the entry pending and names the throw on the verdict"
-    ],
-    "pins": [],
-    "notes": "Six unguarded call sites, four seams: src/Dispatcher.ts:1724 (handoff), 1849/3284 (shouldRun), 1967/3291 (promptArgs), 2888 (shipped). The singleton and fanout copies share one guard — `runGate` is the precedent (`.claude/rules/engineering.md`, *The fix lands at the mechanism*)."
-  },
-  {
     "tag": "HOOK-GATE-RESULTS-CARRY-WHAT-THE-ENGINE-HANDS-OUT",
     "gate": {
       "kind": "open"
