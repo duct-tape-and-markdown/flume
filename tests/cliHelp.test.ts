@@ -12,8 +12,13 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { EX_IOERR } from "../src/cli.ts";
-import { loopCompletionSummary, tickExitCode } from "../src/cliVerdict.ts";
+import {
+  loopCompletionSummary,
+  loopExitCode,
+  tickExitCode,
+} from "../src/cliVerdict.ts";
 import { DEFAULT_ABORT_THRESHOLD } from "../src/loopSupervisor.ts";
+import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import type { TickOutcome, TickVerdict } from "../src/Dispatcher.ts";
 import type { TickResult } from "../src/Phase.ts";
 import { mkFixtureRoot, runCli } from "./helpers/subprocess.ts";
@@ -60,8 +65,34 @@ const ascending = (codes: Iterable<number>): number[] =>
  * `return`/`process.exit` literal on a control path with no outcome value
  * to drive.
  */
-const PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
+const TICK_PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
   [1, "detached HEAD or held tip claim refusal, or a harness error"],
+]);
+
+/*
+ * The `flume loop` / `flume job run` process's exit-code range, in the same
+ * two halves: the codes `loopExitCode` (`src/cliVerdict.ts`) maps a
+ * `SuperviseResult` to, and the codes the process returns without ever
+ * reaching it. `docs/CLI.md` §§ `flume loop` and `flume job run` each
+ * restate this range, and each is pinned against the producer below rather
+ * than against the other copy or against the `--help` blocks — two prose
+ * copies compared to each other move together in the commit that changes
+ * the behavior, and agree while both are wrong.
+ */
+
+/**
+ * Exit codes the `flume loop` process returns that `loopExitCode` cannot:
+ * cli.ts's start-up refusals, taken before any tick runs and so before a
+ * `SuperviseResult` exists. 1 and 78 are *not* here — the run reaches both
+ * through the supervised result as well, so the driven half already owns
+ * them.
+ */
+const LOOP_PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
+  [2, "a bad --max value, or a stray positional past --max <value>"],
+  [
+    74,
+    "the stop flag or the merging-marker dir exists but could not be read",
+  ],
 ]);
 
 /** Candidate standing for "this field is not set on the outcome". */
@@ -125,22 +156,50 @@ const TICK_OUTCOME_SPACE: {
 };
 
 /**
- * Every outcome the table spans, `ABSENT` fields left unset. A generator,
- * not an array: the product runs to tens of thousands of outcomes, and
- * only the code each one maps to is worth keeping.
+ * One candidate list per `SuperviseResult` field, under the same discipline
+ * as {@link TICK_OUTCOME_SPACE} above: optionality stripped so a field
+ * added to the result is a compile error here, every optional field
+ * carrying `ABSENT` beside a present value so a branch `loopExitCode` grows
+ * on a field it ignores today cannot ship green, and representative values
+ * per field rather than exhaustive ones.
  */
-function* tickOutcomeSpace(
+const SUPERVISE_RESULT_SPACE: {
+  [K in keyof SuperviseResult]-?: readonly (SuperviseResult[K] | typeof ABSENT)[];
+} = {
+  ticks: [0, 3],
+  hibernated: [false, true],
+  terminal: [ABSENT, { kind: "orphaned-awake", phases: ["ghost"] }],
+  mountDead: [ABSENT, false, true],
+  shippedTags: [[], ["SHIPPED-ONE"]],
+  erroredTicks: [[], ["tick 1: gate-revert"]],
+  repeatedFailure: [
+    ABSENT,
+    { stage: "provision", signature: "boom", count: 3 },
+    { stage: "gate", signature: "boom", count: 3 },
+  ],
+  stoppedByFlag: [ABSENT, false, true],
+};
+
+/**
+ * Every value the candidate table spans, `ABSENT` fields left unset. A
+ * generator, not an array: a product runs to tens of thousands of values,
+ * and only the code each one maps to is worth keeping. Generic over the
+ * table's type — the space mechanics are the same whichever verdict
+ * function is being driven, so both drivers below share this one
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ */
+function* candidateSpace<T>(
   fields: readonly (readonly [string, readonly unknown[]])[],
   partial: Record<string, unknown> = {},
-): Generator<TickOutcome> {
+): Generator<T> {
   const [head, ...rest] = fields;
   if (!head) {
-    yield partial as unknown as TickOutcome;
+    yield partial as unknown as T;
     return;
   }
   const [field, candidates] = head;
   for (const value of candidates) {
-    yield* tickOutcomeSpace(
+    yield* candidateSpace<T>(
       rest,
       value === ABSENT ? partial : { ...partial, [field]: value },
     );
@@ -148,29 +207,60 @@ function* tickOutcomeSpace(
 }
 
 /**
- * Drive the real `tickExitCode` over {@link TICK_OUTCOME_SPACE} and return
- * the codes it produced, with the size of the space it was driven over so
- * each caller can pin its own non-vacuity: a space that collapsed, or a
- * range that did, agrees with almost any prose.
+ * Drive a real exit-code function over its candidate table and return the
+ * codes it produced, with the size of the space it was driven over so each
+ * caller can pin its own non-vacuity: a space that collapsed, or a range
+ * that did, agrees with almost any prose.
  */
-function driveTickExitCodes(): { returned: Set<number>; spanned: number } {
+function driveExitCodes<T>(
+  space: object,
+  classify: (value: T) => number,
+): { returned: Set<number>; spanned: number } {
   const returned = new Set<number>();
   let spanned = 0;
-  for (const outcome of tickOutcomeSpace(
-    Object.entries(TICK_OUTCOME_SPACE) as [string, readonly unknown[]][],
+  for (const value of candidateSpace<T>(
+    Object.entries(space) as [string, readonly unknown[]][],
   )) {
     spanned++;
-    returned.add(tickExitCode(outcome));
+    returned.add(classify(value));
   }
   return { returned, spanned };
 }
 
+const driveTickExitCodes = (): { returned: Set<number>; spanned: number } =>
+  driveExitCodes<TickOutcome>(TICK_OUTCOME_SPACE, tickExitCode);
+
+const driveLoopExitCodes = (): { returned: Set<number>; spanned: number } =>
+  driveExitCodes<SuperviseResult>(SUPERVISE_RESULT_SPACE, loopExitCode);
+
 /**
- * The whole range a `flume tick` surface owes an operator: what the driven
- * function returns, plus the process-level codes it cannot.
+ * The whole range a surface owes an operator: what the driven function
+ * returns, plus the process-level codes it cannot.
  */
-function expectedTickExitCodes(returned: Iterable<number>): number[] {
-  return ascending([...returned, ...PROCESS_LEVEL_EXIT_CODES.keys()]);
+function wholeRange(
+  returned: Iterable<number>,
+  processLevel: ReadonlyMap<number, string>,
+): number[] {
+  return ascending([...returned, ...processLevel.keys()]);
+}
+
+/**
+ * The named process-level half holds only what the driven function *cannot*
+ * return. The defect this discipline carried was a process-level code read
+ * as part of a function's range, which let a real range change ship green.
+ */
+function expectProcessLevelDisjoint(
+  returned: ReadonlySet<number>,
+  processLevel: ReadonlyMap<number, string>,
+  fn: string,
+): void {
+  expect(processLevel.size).toBeGreaterThan(0);
+  for (const [exitCode, site] of processLevel) {
+    expect(
+      returned.has(exitCode),
+      `${exitCode} (${site}) is in ${fn}'s own range`,
+    ).toBe(false);
+  }
 }
 
 /**
@@ -190,23 +280,66 @@ describe("flume tick --help — the exit-code list against tickExitCode's derive
     expect(spanned).toBeGreaterThan(1);
     expect(returned.size).toBeGreaterThan(1);
 
-    // The named set holds only what the function cannot return — the defect
-    // this suite carried was a process-level code read as part of the
-    // function's range, which let a real range change ship green.
-    for (const [exitCode, site] of PROCESS_LEVEL_EXIT_CODES) {
-      expect(
-        returned.has(exitCode),
-        `${exitCode} (${site}) is in tickExitCode's own range`,
-      ).toBe(false);
-    }
+    expectProcessLevelDisjoint(
+      returned,
+      TICK_PROCESS_LEVEL_EXIT_CODES,
+      "tickExitCode",
+    );
 
     const { out, code } = await runCli(process.cwd(), ["tick", "--help"]);
     expect(code).toBe(0);
     expect(ascending(documentedExitCodes(out))).toEqual(
-      expectedTickExitCodes(returned),
+      wholeRange(returned, TICK_PROCESS_LEVEL_EXIT_CODES),
     );
   });
 });
+
+/**
+ * Every backticked bare integer a `docs/CLI.md` section carries, code or
+ * not — the denominator {@link namedExitCodes} reads its codes out of.
+ */
+function backtickedIntegers(section: string): number[] {
+  const values = new Set<number>();
+  for (const [, value] of section.matchAll(/`(\d+)`/g)) {
+    values.add(Number(value));
+  }
+  return ascending(values);
+}
+
+/**
+ * The exit codes a `docs/CLI.md` section names. The page writes a code as a
+ * backticked bare integer introduced by the word "exit" — "exits `69`",
+ * "refuses (exit `1`)", "Exit code stays `0`" — and that context is what
+ * makes the read a claim about the verb's range rather than about any
+ * number the prose happens to backtick. These sections also backtick
+ * integers that are values (`--max`'s default), and a value read as a code
+ * would put the page permanently at odds with every producer. The window
+ * between the word and the code admits no backtick, so the two must sit in
+ * one clause.
+ */
+function namedExitCodes(section: string): number[] {
+  const codes = new Set<number>();
+  for (const [, code] of section.matchAll(/\bexits?\b[^`\n]{0,24}`(\d+)`/gi)) {
+    codes.add(Number(code));
+  }
+  return ascending(codes);
+}
+
+/** One `## `-delimited section of the page, heading included. */
+function docSection(doc: string, heading: string): string {
+  const start = doc.indexOf(heading);
+  expect(start).toBeGreaterThan(-1);
+  const next = doc.indexOf("\n## ", start + 1);
+  return next === -1 ? doc.slice(start) : doc.slice(start, next);
+}
+
+/** `docs/CLI.md` as the working tree holds it. */
+async function readCliDoc(): Promise<string> {
+  return readFile(
+    fileURLToPath(new URL("../docs/CLI.md", import.meta.url)),
+    "utf8",
+  );
+}
 
 /**
  * CLI-DOC-TICK-EXIT-CODES-PINNED — `docs/CLI.md` § `flume tick` is a second
@@ -219,46 +352,79 @@ describe("flume tick --help — the exit-code list against tickExitCode's derive
  * engineering.md`, "A seam gate reads what the real writer wrote").
  */
 describe("docs/CLI.md's flume tick section against tickExitCode's derived range (CLI-DOC-TICK-EXIT-CODES-PINNED)", () => {
-  /**
-   * The exit codes a `docs/CLI.md` section names — every backticked bare
-   * integer in it. The page writes a code as `` `69` ``, prose and code
-   * alike, so this is the section's whole claim about the verb's range.
-   */
-  function namedExitCodes(section: string): number[] {
-    const codes = new Set<number>();
-    for (const [, code] of section.matchAll(/`(\d+)`/g)) {
-      codes.add(Number(code));
-    }
-    return ascending(codes);
-  }
-
-  /** One `## `-delimited section of the page, heading included. */
-  function docSection(doc: string, heading: string): string {
-    const start = doc.indexOf(heading);
-    expect(start).toBeGreaterThan(-1);
-    const next = doc.indexOf("\n## ", start + 1);
-    return next === -1 ? doc.slice(start) : doc.slice(start, next);
-  }
-
   it("docs/CLI.md's flume tick section names every exit code the real tick range produces", async () => {
     const { returned, spanned } = driveTickExitCodes();
     // Non-vacuity, as above: a collapsed space or range agrees with prose
     // that names almost anything.
     expect(spanned).toBeGreaterThan(1);
     expect(returned.size).toBeGreaterThan(1);
-    expect(PROCESS_LEVEL_EXIT_CODES.size).toBeGreaterThan(0);
-
-    const doc = await readFile(
-      fileURLToPath(new URL("../docs/CLI.md", import.meta.url)),
-      "utf8",
+    expectProcessLevelDisjoint(
+      returned,
+      TICK_PROCESS_LEVEL_EXIT_CODES,
+      "tickExitCode",
     );
-    const section = docSection(doc, "## `flume tick`");
+
+    const section = docSection(await readCliDoc(), "## `flume tick`");
     expect(section.length).toBeGreaterThan(0);
 
     // Exactly the range, in both directions: a code the verb gained and the
     // page never named is red, and so is a code the page names that the
     // producer can no longer return.
-    expect(namedExitCodes(section)).toEqual(expectedTickExitCodes(returned));
+    expect(namedExitCodes(section)).toEqual(
+      wholeRange(returned, TICK_PROCESS_LEVEL_EXIT_CODES),
+    );
+  });
+});
+
+/**
+ * CLI-DOC-LOOP-EXIT-CODES-PINNED — `docs/CLI.md` §§ `flume loop` and `flume
+ * job run` are the loop range's two prose copies, and both had drifted: the
+ * loop section named 0, 1 and 69 and neither the usage code, the I/O
+ * refusal nor the terminal-misconfiguration code; `job run` missed the I/O
+ * refusal. Each is pinned against the same driven producer —
+ * `loopExitCode` over the `SuperviseResult` space, beside the named
+ * start-up set — never against the other section and never against the
+ * `--help` blocks (`.claude/rules/engineering.md`, "A seam gate reads what
+ * the real writer wrote").
+ */
+describe("docs/CLI.md's loop sections against loopExitCode's derived range (CLI-DOC-LOOP-EXIT-CODES-PINNED)", () => {
+  /**
+   * Both sections make the same claim about the same range, so both take
+   * the same check: exactly the range, in both directions, plus the reader
+   * discrimination that claim rests on.
+   */
+  async function expectSectionNamesTheLoopRange(heading: string): Promise<void> {
+    const { returned, spanned } = driveLoopExitCodes();
+    // Non-vacuity: a collapsed result space, or a range that collapsed,
+    // agrees with prose that names almost anything.
+    expect(spanned).toBeGreaterThan(1);
+    expect(returned.size).toBeGreaterThan(1);
+    expectProcessLevelDisjoint(
+      returned,
+      LOOP_PROCESS_LEVEL_EXIT_CODES,
+      "loopExitCode",
+    );
+
+    const section = docSection(await readCliDoc(), heading);
+    expect(section.length).toBeGreaterThan(0);
+
+    const named = namedExitCodes(section);
+    expect(named).toEqual(wholeRange(returned, LOOP_PROCESS_LEVEL_EXIT_CODES));
+    // The reader discriminates rather than sweeping up every backticked
+    // integer: each of these sections also documents `--max`'s default,
+    // which is a value and not a code. A reader that read it as one would
+    // hold the page permanently at odds with the producer above, so the
+    // section is asserted to carry at least one backticked integer that
+    // survived as a non-code.
+    expect(backtickedIntegers(section).length).toBeGreaterThan(named.length);
+  }
+
+  it("docs/CLI.md's flume loop section names every exit code the real loop range produces", async () => {
+    await expectSectionNamesTheLoopRange("## `flume loop");
+  });
+
+  it("docs/CLI.md's flume job run section names every exit code the real loop range produces", async () => {
+    await expectSectionNamesTheLoopRange("## `flume job run");
   });
 });
 
