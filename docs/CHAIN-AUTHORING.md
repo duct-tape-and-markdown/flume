@@ -130,11 +130,10 @@ class of error, checked before the state root is touched.
 line between this and `seedDir` is the same line as "machinery vs.
 opinion" everywhere else in this doc:
 
-- Merging `awake/`, `prior-attempts/`, `rendered-prompts/`, `worktrees/`,
-  `merging/`, `node_modules/`, `loop.pid`, `tick-verdict.json`,
-  `tick-verdicts.jsonl`, `stop` into the job dir — the runtime's own ignore entries, written to
-  `.gitignore` there, creating the file if `seedDir` carries none and
-  preserving any lines it does.
+- Merging its own ignore entries into the job dir's `.gitignore`, creating
+  the file if `seedDir` carries none and preserving any lines it does. The
+  set and its merge semantics are the runtime's alone (`spec/jobs.md`,
+  "Runtime ignores") — it grows without asking your chain.
 - Pinning `core.longpaths true` repo-locally on Windows.
 - Baseline-committing the seeded harness so subsequent plan/build ticks
   produce clean deltas.
