@@ -586,6 +586,84 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
 });
 
 /**
+ * spec/loop.md "The tick verdict — one facts artifact", *No interpretation
+ * fields*: `not-shipped` has two causes, and only one of them is the chain
+ * declining. A `shipped` predicate that *threw* never made a ship decision
+ * at all, and the verdict distinguishes the two by carrying `threw` on the
+ * merge outcome (`TickVerdictMergeOutcome`) — so the supervisor's errored
+ * allowlist reads them apart rather than treating a broken predicate as a
+ * deliberate park. Same `runTick` fixture idiom as the errored-accounting
+ * suites above.
+ */
+describe("superviseLoop — a thrown shipped predicate counts as errored (not-shipped's two causes)", () => {
+  const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
+
+  /** A tick whose wave landed a commit the `shipped` hook then threw on. */
+  const notShippedTick =
+    (over: { threw?: string }) =>
+    async (): Promise<{ exitCode: number | null }> => {
+      const baton = new Baton(join(fx.repo, ".flume"));
+      await writeFile(
+        verdictPath(),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            shippedTags: [],
+            summary: "build: PARKED cherry-picked but not shipped",
+            mergeOutcomes: [
+              {
+                entryTag: "PARKED",
+                outcome: "not-shipped",
+                baseSha: "a".repeat(40),
+                headSha: "b".repeat(40),
+                ...(over.threw === undefined ? {} : { threw: over.threw }),
+              },
+            ],
+          }),
+        ),
+        "utf8",
+      );
+      baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+  it("a not-shipped outcome carrying the shipped hook's throw counts the tick errored", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick: notShippedTick({
+        threw: "TypeError: cannot read properties of undefined",
+      }),
+      log: silent,
+    });
+
+    expect(res.ticks).toBe(1);
+    expect(res.shippedTags).toEqual([]);
+    expect(res.erroredTicks).toHaveLength(1);
+    expect(res.erroredTicks[0]).toContain("PARKED");
+    expect(res.erroredTicks[0]).toContain("TypeError");
+    expect(loopExitCode(res)).not.toBe(0);
+  });
+
+  it("a not-shipped outcome the chain returned counts no tick errored", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick: notShippedTick({}),
+      log: silent,
+    });
+
+    expect(res.ticks).toBe(1);
+    expect(res.erroredTicks).toEqual([]);
+    expect(loopExitCode(res)).toBe(0);
+  });
+});
+
+/**
  * v0.7 §16 — the supervisor-level legs `superviseLoop` owns: a tagged
  * provisioning failure quarantines its slug for the rest of the run (and
  * that quarantine crosses to the next child tick via `runTick`'s

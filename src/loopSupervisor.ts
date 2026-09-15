@@ -266,14 +266,22 @@ export async function superviseLoop(
     // was broken), `tipMoved` (the
     // ref moved out from under this tick — worth surfacing even on a wave
     // that also shipped something, unlike the provisioning/merge legs below,
-    // since it signals something else is writing to this ref), or a
-    // provisioning or merge (cherry-pick) failure that left nothing shipped
+    // since it signals something else is writing to this ref), a
+    // provisioning or merge (cherry-pick) failure that left nothing shipped,
+    // or a `not-shipped` merge outcome the chain's `shipped` predicate
+    // *threw* into (the predicate is broken, so the tick's ship decision was
+    // never actually made — counted like `tipMoved` rather than the
+    // provisioning/merge legs, since a sibling entry shipping does not make
+    // this predicate any less broken)
     // — never a `clean-exit` (an agent exiting cleanly with nothing to
     // commit is not evidence anything went wrong), and never a
-    // `not-shipped` merge outcome, for the same reason one rung up: the
-    // chain's `shipped` predicate declining a landed commit is that chain's
-    // own verdict, not a failure of the tick that produced it (spec/loop.md
-    // "The tick verdict — one facts artifact", *No interpretation fields*).
+    // `not-shipped` the chain *returned*, for the same reason one rung up:
+    // the chain's `shipped` predicate declining a landed commit is that
+    // chain's own verdict, not a failure of the tick that produced it
+    // (spec/loop.md "The tick verdict — one facts artifact", *No
+    // interpretation fields*). The `threw` field exists precisely so the two
+    // `not-shipped` causes never collapse into one record
+    // (`TickVerdictMergeOutcome.threw`), and they are read apart here.
     // The formula is an allowlist for exactly this — a fact absent from it
     // is excluded by construction, and each of the two above stays named
     // here so that exclusion reads as decided rather than overlooked.
@@ -283,11 +291,15 @@ export async function superviseLoop(
       for (const tag of verdict.shippedTags) shippedTags.add(tag);
       const verdictProvisionFailures = verdict.provisionFailures ?? [];
       const verdictMergeFailures = verdict.mergeFailures ?? [];
+      const shipHookThrew = verdict.mergeOutcomes.filter(
+        (o) => o.outcome === "not-shipped" && o.threw !== undefined,
+      );
       const errored =
         verdict.noCommit === "gate-revert" ||
         verdict.noCommit === "platform-preempt" ||
         verdict.noCommit === "render-refused" ||
         verdict.tipMoved === true ||
+        shipHookThrew.length > 0 ||
         (verdictProvisionFailures.length > 0 &&
           verdict.shippedTags.length === 0) ||
         (verdictMergeFailures.length > 0 && verdict.shippedTags.length === 0);
@@ -303,7 +315,13 @@ export async function superviseLoop(
                     f.tag ? `${f.tag} (${f.signature})` : f.signature,
                   )
                   .join("; ")}`
-              : verdict.summary,
+              : shipHookThrew.length > 0
+                ? `${verdict.summary} — shipped predicate threw: ${shipHookThrew
+                    .map((o) =>
+                      o.entryTag ? `${o.entryTag} (${o.threw})` : o.threw,
+                    )
+                    .join("; ")}`
+                : verdict.summary,
         );
         countedAsErrored = true;
       }
