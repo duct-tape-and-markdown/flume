@@ -345,7 +345,7 @@ unrelated package.
   from `tsx/esm/api` because plain Node refuses `.ts` from anything under
   `node_modules`. The loader contract lives in the CLI, not the bin shim, so
   the shims stay trivial.
-- **ESM-only**: `"type": "module"`, Node ≥ 22, one strict `"."` export. The
+- **ESM-only**: `"type": "module"`, Node ≥ 22, a strict, enumerated exports map (`spec/chain.md`). The
   export map, its condition, and the reason are the packaging half of the
   chain-loading contract — see `spec/chain.md`; `src/index.ts` is the canonical
   inventory of what is exported and this file does not restate it.
