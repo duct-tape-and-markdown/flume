@@ -82,7 +82,7 @@ describe("denyDirectory — a plain file where a directory is read", () => {
     expect(code).toBeDefined();
     expect(code).not.toBe("ENOENT");
     // Reading a *child* of this denial is not pinned here. That is a lookup
-    // through a denied parent, which win32 answers as plain absence — the
+    // through a denied parent, which is not a refusal on every host — the
     // shape the case below owns, and the reason the primitive targets the
     // read path itself. A child read by name keeps its cross-host home in
     // the `denyFile` block, which denies that child.
@@ -113,12 +113,12 @@ describe("denyDirectory — a plain file where a directory is read", () => {
     // The tempting seal: one denial covering every read beneath it.
     denyDirectory(join(jobDir, "plan"));
 
-    // And the option answers "absent" rather than refusing: it suppresses
-    // ENOTDIR alongside ENOENT. `existsLoud` (src/fsProbe.ts) is off it for
-    // exactly this reason and refuses here on posix — but win32 raises ENOENT
-    // for the same lookup, so a parent denial still reads as absence on that
-    // host whatever the probe does. The refusal is reached on every host only
-    // when the read path itself is denied.
+    // And the option answers "absent" rather than refusing — here, and on
+    // win32 for a second reason of its own (`.claude/rules/platform-facts.md`,
+    // *win32 reports a path through a non-directory as not found*). So being
+    // off the option, as `existsLoud` (`src/fsProbe.ts`) is, does not rescue a
+    // parent denial: the refusal is reached on every host only when the read
+    // path itself is denied.
     expect(statSync(read, { throwIfNoEntry: false })).toBeUndefined();
   });
 
