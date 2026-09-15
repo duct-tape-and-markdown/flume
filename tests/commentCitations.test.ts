@@ -16,6 +16,7 @@
  * implementation of the verdict.
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -60,7 +61,10 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * Last come the page names no backtick fences, in both verdicts and beside
  * the two placeholder spellings the path arm refuses — the same shapes the
  * fenced citations above carry, so the two arms are shown agreeing rather
- * than the unfenced one getting a rule of its own.
+ * than the unfenced one getting a rule of its own. One of those is wrapped
+ * too, broken at a directory boundary whose tail a root-level page of the
+ * same basename answers: the reading that judges the tail resolves, so only
+ * a scan that reports the wrap can tell the two pages apart.
  *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
@@ -78,6 +82,7 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     include: ["lib/**/*"],
   }),
   "docs/guide.md": "# a page a comment cites without fencing it\n",
+  "guide.md": "# the root-level page a broken cite's tail answers instead\n",
   "lib/dataShapes.ts": [
     `/** Cites \`WeakMap\`, a lib global no statement in this tree uses. */`,
     `export interface Shipped {`,
@@ -145,6 +150,11 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// docs/vanished.md one it does not. Refused the way a fenced`,
     `// placeholder is: <area>/notes.md and docs/*.md name no one file.`,
     `export const PAGES = 6;`,
+    ``,
+    `// A page name the break splits is reported as the wrap, not judged as the`,
+    `// tail: this comment cites docs/`,
+    `// guide.md, a page whose tail a root-level page of that name answers.`,
+    `export const SPLIT = 7;`,
     ``,
   ].join("\n"),
 };
@@ -369,12 +379,13 @@ it("the citation scan judges neither an extensionless path nor a relative specif
 
 it("the citation scan reports a backticked span its comment line leaves open", () => {
   // Vacuity guard: every other comment in the fixture closes its spans on the
-  // line that opened them, so the three reports below are the wraps the
+  // line that opened them, so the four reports below are the wraps the
   // fixture authored rather than a parity artifact of some earlier comment.
   expect(fixtureScan.wrapped.map(formatCitation)).toEqual([
     "lib/surface.ts:42 lib/ dataShapes.ts",
     "lib/surface.ts:49 Shipped. maxDepth",
     "lib/surface.ts:51 not a citation",
+    "lib/surface.ts:62 docs/ guide.md",
   ]);
 
   // Reported because nothing else can reach it: neither half is a span of its
@@ -395,22 +406,24 @@ it("the citation scan reports a backticked span its comment line leaves open", (
 });
 
 it("the citation scan reports a wrapped span that names a subject once its break is closed", () => {
-  // Vacuity guard: all three wraps were read and closed, in both alphabets
-  // and in prose, before any subset of them is judged. Closing the break
-  // removes the break alone — the prose span keeps the space it spelled
-  // itself, which is why it closes to no subject.
+  // Vacuity guard: all four wraps were read and closed, in both alphabets,
+  // in both fencings and in prose, before any subset of them is judged.
+  // Closing the break removes the break alone — the prose span keeps the
+  // space it spelled itself, which is why it closes to no subject.
   expect(fixtureScan.wrapped.map((s) => s.closed)).toEqual([
     "lib/dataShapes.ts",
     "Shipped.maxDepth",
     "nota citation",
+    "docs/guide.md",
   ]);
 
-  // The two that close to a name are reported as broken citations, and the
+  // The three that close to a name are reported as broken citations, and the
   // one that closes to prose is not: the wrap is read by the subject rule the
   // judged set is held to, in either alphabet, rather than by the slash.
   expect(fixtureScan.broken.map(formatCitation)).toEqual([
     "lib/surface.ts:42 lib/ dataShapes.ts",
     "lib/surface.ts:49 Shipped. maxDepth",
+    "lib/surface.ts:62 docs/ guide.md",
   ]);
 
   // Reported because nothing else can reach the identifier wrap either: the
@@ -462,6 +475,47 @@ it("the citation scan judges no unbackticked *.md name carrying a path placehold
   const judged = fixtureScan.scanned.map((s) => s.text);
   expect(judged).not.toContain("<area>/notes.md");
   expect(judged).not.toContain("docs/*.md");
+});
+
+it("the citation scan reports an unfenced page name broken across a comment line", () => {
+  // Vacuity guard: no backtick fences either half of this comment, so the
+  // report below is the bare arm's own reading and not the backticked wrap
+  // arm reaching it. And the page it cites resolves when a comment spells it
+  // on one line, so what the wrap costs is the citation, not the answer.
+  expect(
+    fixtureScan.backticked.filter((s) => s.line >= 61 && s.line <= 63),
+  ).toEqual([]);
+  expect(fixtureScan.resolved.map((s) => s.text)).toContain("docs/guide.md");
+
+  // Reported through the set the fenced wraps are reported into, read both
+  // ways that break reads: as markdown joins it, and as the author spelled it
+  // before the wrap — which is a subject, so it is a citation the break took.
+  expect(fixtureScan.wrapped.map(formatCitation)).toContain(
+    "lib/surface.ts:62 docs/ guide.md",
+  );
+  expect(fixtureScan.wrapped.find((s) => s.line === 62)?.closed).toBe(
+    "docs/guide.md",
+  );
+  expect(fixtureScan.broken.map(formatCitation)).toContain(
+    "lib/surface.ts:62 docs/ guide.md",
+  );
+});
+
+it("the citation scan judges no tail an unfenced page name's line break left behind", () => {
+  // Vacuity guard: the fixture holds a page at the root under the tail's own
+  // basename, and the bare arm is collecting page names in this tree, so
+  // judging the tail would *resolve* — quietly, under a cite no author
+  // wrote — rather than dangle where a reader would meet it.
+  expect(existsSync(join(fixtureRoot, "guide.md"))).toBe(true);
+  expect(fixtureScan.bare.length).toBeGreaterThan(0);
+
+  // Collected by neither arm, so judged by nothing: the wrap is the whole
+  // report, and the page the author never named answers nothing.
+  expect(fixtureScan.bare.map(formatCitation)).not.toContain(
+    "lib/surface.ts:63 guide.md",
+  );
+  expect(fixtureScan.scanned.map((s) => s.text)).not.toContain("guide.md");
+  expect(fixtureScan.resolved.map((s) => s.text)).not.toContain("guide.md");
 });
 
 // --- the pin -------------------------------------------------------------

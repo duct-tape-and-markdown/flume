@@ -17,10 +17,11 @@
  * has to be read to know the token names a file. Those are collected from the
  * comment text the backticked spans leave over and judged by the path arm —
  * the one rule, so a placeholder spelling is refused on the same filename
- * charset whichever way the author fenced it. Unfenced, a name a comment line
- * breaks needs no report of its own: the tail it leaves behind is a page name
- * the working tree cannot answer, so the wrap reds exactly where a rename
- * would.
+ * charset whichever way the author fenced it. A name a comment line breaks is
+ * reported as the wrap it is rather than judged as the tail the break left
+ * behind — unfenced through the same set the fenced wrap is reported into,
+ * because a tail is a page name the author never wrote and a root-level page
+ * answers it whenever the break falls at a directory boundary.
  *
  * Both the comments and the identifier half of the verdict go through the
  * TypeScript program. The comments are read off real trivia ranges rather
@@ -78,9 +79,10 @@ export interface CitationSite {
 }
 
 /**
- * A backticked span a comment line left open, read both ways its break can
- * be read: `text` as markdown joins it, `closed` as the author spelled it
- * before the wrap.
+ * A citation a comment line left open — a backticked span the line never
+ * closed, or an unfenced page name its break split — read both ways that
+ * break can be read: `text` as markdown joins it, `closed` as the author
+ * spelled it before the wrap.
  */
 export interface WrappedCitation extends CitationSite {
   /**
@@ -98,15 +100,17 @@ export interface CitationScan {
   readonly backticked: readonly CitationSite[];
   /**
    * Every unbackticked `*.md` token those comments carry, outside the
-   * backticked spans — the page names the carve-out reads without a fence.
+   * backticked spans and outside the wraps below — the page names the
+   * carve-out reads without a fence.
    */
   readonly bare: readonly CitationSite[];
   /**
-   * Every backticked span a comment line left open — the wrap, reported as
-   * markdown joins it. Judged by nothing: the space markdown puts at the
-   * break is not a character any subject spelling admits, so the citation the
-   * span meant to carry falls out of the scan whatever it named. Reported so
-   * the wrap cannot do that quietly.
+   * Every citation a comment line left open — a backticked span the line
+   * never closed, or an unfenced page name the break split at a directory
+   * boundary — reported as markdown joins it. Judged by nothing: the space
+   * markdown puts at the break is not a character any subject spelling
+   * admits, so the citation the wrap meant to carry falls out of the scan
+   * whatever it named. Reported so the wrap cannot do that quietly.
    */
   readonly wrapped: readonly WrappedCitation[];
   /**
@@ -330,6 +334,28 @@ const commentLines = (sf: ts.SourceFile): readonly CommentLine[] => {
 const CONTINUATION_MARGIN = /^\s*(?:\/\/+|\*+)\s*/;
 
 /**
+ * The furniture a block comment closes with, stripped from a line's right
+ * edge for the reason the margin is stripped from its left: markdown renders
+ * neither, and the `/` that ends a comment is not the `/` that ends a
+ * directory.
+ */
+const BLOCK_TERMINATOR = /\*+\/\s*$/;
+
+/**
+ * The half of a wrap a line ends with: a token broken at a directory
+ * boundary. Read from the line's text with both furnitures off, so an empty
+ * `//` line is no directory and a block comment's last line is no wrap.
+ */
+const WRAP_HEAD = /\S+\/$/;
+
+/**
+ * The half of a wrap the next line opens with, anchored: only a page name the
+ * break actually carried across continues the token above it. Same lookahead
+ * as `BARE_PAGE` — `.mdx` is a page name of its own, not this one truncated.
+ */
+const WRAP_TAIL = /^\S*\.md(?![A-Za-z0-9_-])/;
+
+/**
  * A wrapped span read across its break. The line break and the next line's
  * margin collapse into `at`: a space is what markdown renders and what breaks
  * whatever the span was spelling; nothing at all is the spelling the author
@@ -358,7 +384,11 @@ const joinWrapped = (raw: string, at: string): string =>
  * doc comment is one span rather than three stray backticks.
  *
  * The page names are read off the same pairing, from the text no span covers,
- * so a fenced citation is collected once and by the arm its author chose.
+ * so a fenced citation is collected once and by the arm its author chose. One
+ * a line break split is reported as the wrap it is, through the set the
+ * fenced wrap already goes to, and its tail is left out of the collected
+ * names — the same report for both fencings rather than a second rule for the
+ * one the author left bare.
  */
 const commentSpans = (
   sf: ts.SourceFile,
@@ -378,6 +408,16 @@ const commentSpans = (
     const first = run[0]?.line ?? 0;
     const lineAt = (offset: number): number =>
       first + (joined.slice(0, offset).match(/\n/g)?.length ?? 0);
+    // Where each line of the run starts in `joined` — the one place the two
+    // wrap arms and the page-name arm share an alphabet for a position.
+    let cursor = 0;
+    const starts = run.map((entry) => {
+      const start = cursor;
+      cursor += entry.text.length + 1;
+      return start;
+    });
+    /** The run's wraps, both fencings, ordered by where the break sits. */
+    const runWrapped: Array<{ at: number; site: WrappedCitation }> = [];
     const marks = [...joined.matchAll(/`+/g)].map((m) => ({
       start: m.index,
       length: m[0].length,
@@ -406,15 +446,53 @@ const commentSpans = (
         text: raw,
       };
       if (raw.includes("\n")) {
-        wrapped.push({
-          ...site,
-          text: joinWrapped(raw, " "),
-          closed: joinWrapped(raw, ""),
+        runWrapped.push({
+          at: open.start,
+          site: {
+            ...site,
+            text: joinWrapped(raw, " "),
+            closed: joinWrapped(raw, ""),
+          },
         });
       } else {
         closed.push(site);
       }
       index = closeAt + 1;
+    }
+
+    /** Every unfenced page name a line break split, both halves covered. */
+    const split: Array<{ start: number; end: number }> = [];
+    for (let above = 0; above + 1 < run.length; above += 1) {
+      const head = run[above]?.text ?? "";
+      const next = run[above + 1]?.text ?? "";
+      const headMargin = (CONTINUATION_MARGIN.exec(head)?.[0] ?? "").length;
+      const opened = WRAP_HEAD.exec(
+        head.slice(headMargin).replace(BLOCK_TERMINATOR, "").trimEnd(),
+      );
+      if (!opened) continue;
+      const nextMargin = (CONTINUATION_MARGIN.exec(next)?.[0] ?? "").length;
+      const tail = WRAP_TAIL.exec(next.slice(nextMargin))?.[0];
+      if (tail === undefined) continue;
+      const start = (starts[above] ?? 0) + headMargin + opened.index;
+      const end = (starts[above + 1] ?? 0) + nextMargin + tail.length;
+      // A wrap with either half inside a fenced span is the backticked arm's,
+      // reported there already and by this same rule.
+      if (fenced.some((span) => span.start < end && start < span.end)) continue;
+      const directory = opened[0].replace(OPENING_PUNCTUATION, "");
+      runWrapped.push({
+        at: start,
+        site: {
+          module,
+          line: lineAt(start),
+          text: `${directory} ${tail}`,
+          closed: `${directory}${tail}`,
+        },
+      });
+      split.push({ start, end });
+    }
+
+    for (const entry of runWrapped.sort((a, b) => a.at - b.at)) {
+      wrapped.push(entry.site);
     }
 
     for (const match of joined.matchAll(BARE_PAGE)) {
@@ -423,6 +501,10 @@ const commentSpans = (
       // A page name inside a span was already collected as that span; taking
       // it again here would judge one citation twice, by two rules.
       if (fenced.some((span) => span.start < end && start < span.end)) continue;
+      // The tail of a wrap is not a citation of its own: it is a page name
+      // the author never wrote, which a root-level page answers whenever the
+      // break fell at a directory boundary. Reported above as the wrap.
+      if (split.some((span) => span.start < end && start < span.end)) continue;
       const text = match[0].replace(OPENING_PUNCTUATION, "");
       bare.push({ module, line: lineAt(start), text });
     }
