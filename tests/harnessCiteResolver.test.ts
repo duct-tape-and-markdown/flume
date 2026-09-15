@@ -124,6 +124,49 @@ const INDENTED_MARKDOWN = [
 ].join("\n");
 
 /**
+ * The same page heading the cited text twice: once at the depth the cite was
+ * written against, once nested inside a later section. A scan that stops at
+ * its first match sees neither the second heading nor the nested one, so it
+ * hands back a section the entry may never have been derived against and
+ * leaves the other uncitable.
+ */
+const DUPLICATED_MARKDOWN = [
+  "# A spec page",
+  "",
+  "## The cite resolver",
+  "",
+  "First of the two.",
+  "",
+  "## Another section",
+  "",
+  "### The cite resolver",
+  "",
+  "Second of the two, a depth down.",
+  "",
+  "## The next section",
+  "",
+  "Not the cited section.",
+  "",
+].join("\n");
+
+/**
+ * The cited heading once as structure and once inside a fence. Only the first
+ * is a section, so the cite still names exactly one and resolves.
+ */
+const FENCED_DUPLICATE_MARKDOWN = [
+  "# A spec page",
+  "",
+  "## The cite resolver",
+  "",
+  "Still the only section.",
+  "",
+  "```md",
+  "## The cite resolver",
+  "```",
+  "",
+].join("\n");
+
+/**
  * A spec with no headings at all — the shape a declared resolver exists for.
  * The package's heading resolver finds nothing here, so a section found in it
  * was found by the declared resolver and by nothing else.
@@ -203,6 +246,48 @@ it("a per cite whose section is no heading at the gated commit is refused, namin
     serving("spec/harness.md", MARKDOWN),
   );
   expect(exact.ok).toBe(true);
+});
+
+it("a per cite whose section text heads more than one section is refused, naming the section", async () => {
+  const ambiguous = cite("spec/harness.md", "The cite resolver");
+
+  const verdict = await resolveCite(
+    ambiguous,
+    LOCUS,
+    serving("spec/harness.md", DUPLICATED_MARKDOWN),
+  );
+
+  expect(verdict.ok).toBe(false);
+  const message = verdict.ok === false ? verdict.message : "";
+  expect(message).toContain("The cite resolver");
+  expect(message).toContain("spec/harness.md");
+  // Both of them, by line, so the plan tick can see which heading to rename.
+  expect(message).toContain("lines 3, 9");
+  // And never one of the two standing in for the cite.
+  expect(message).not.toContain("First of the two.");
+
+  // Vacuity guard: the same cite through the same resolver resolves against a
+  // page that heads it once, so the refusal is the second heading's doing and
+  // not this section text refusing everywhere.
+  const unique = await resolveCite(
+    ambiguous,
+    LOCUS,
+    serving("spec/harness.md", MARKDOWN),
+  );
+  expect(unique.ok).toBe(true);
+  expect(unique.ok === true && unique.text.startsWith("## The cite resolver")).toBe(
+    true,
+  );
+
+  // A heading-shaped duplicate inside a fence is text the page shows, not a
+  // second section: it never makes a unique cite ambiguous.
+  const fenced = await resolveCite(
+    ambiguous,
+    LOCUS,
+    serving("spec/harness.md", FENCED_DUPLICATE_MARKDOWN),
+  );
+  expect(fenced.ok).toBe(true);
+  expect(fenced.ok === true && fenced.text).toContain("Still the only section.");
 });
 
 it("a declared resolver keys a section without changing the verdict shape", async () => {

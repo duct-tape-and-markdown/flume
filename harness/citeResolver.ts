@@ -2,8 +2,8 @@
  * How the package resolves an entry's `per` cite (`spec/harness.md`, *The
  * cite resolver*): the cited path lands inside the consumer's declared
  * `specLocus` and is present in the commit under judgement, and the cited
- * section is found in that file — by heading text, or by whatever key a
- * consumer's declared resolver reads instead.
+ * section is found in that file, exactly once — by heading text, or by
+ * whatever key a consumer's declared resolver reads instead.
  *
  * **One resolution, two readers.** The `per` gate refuses a queue whose cite
  * does not resolve, and the build prompt renders the cited section as data.
@@ -143,28 +143,31 @@ function fenceAfter(open: string | undefined, line: string): string | undefined 
 }
 
 /**
- * The package's own resolver: the body of the markdown section whose heading
- * text is exactly `cite.section` — any `#` depth, any CommonMark-legal
- * indent, no trailing decoration — up to the next heading of the same or
- * shallower depth, heading line included. `undefined` when no such heading
- * exists.
- *
- * Exact text, never a nearest match: a heading that drifted is a cite that
- * has to be rewritten, and standing in the closest section for it hands build
- * prose the entry was not derived from.
+ * A real heading the page carries: where it is, how deep it is, and the text
+ * a cite is matched against.
+ */
+interface Heading {
+  /** Its line's index, zero-based, as the page splits. */
+  readonly line: number;
+  /** Its `#` run's length. */
+  readonly depth: number;
+  /** Its heading text, exactly as the cite must name it. */
+  readonly text: string;
+}
+
+/**
+ * Every real heading in the page, in order.
  *
  * **Only a real heading counts.** A `#`-prefixed line inside a fenced code
  * block — a shell comment, a diff hunk, a markdown sample — is text the page
  * is showing, not structure it has. Reading one as a heading truncates the
- * cited section at it and resolves the sample itself as a section of its own,
- * both silently: the gate passes and the prompt renders the wrong bytes. The
- * scan carries fence state for that reason and nothing else — the grammar
- * above is unchanged outside a fence.
+ * cited section at it, resolves the sample itself as a section of its own,
+ * and makes a page that heads its cite once look like a page that heads it
+ * twice, all silently. The scan carries fence state for that reason and
+ * nothing else — the grammar above is unchanged outside a fence.
  */
-function headingSection(cite: Cite, text: string): string | undefined {
-  const lines = text.split("\n");
-  let depth = 0;
-  let start = -1;
+function headings(lines: readonly string[]): Heading[] {
+  const found: Heading[] = [];
   let fence: string | undefined;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
@@ -175,16 +178,43 @@ function headingSection(cite: Cite, text: string): string | undefined {
     if (fenced) continue;
     const match = HEADING.exec(line);
     if (!match) continue;
-    if (start === -1) {
-      if (match[2] === cite.section) {
-        depth = match[1]!.length;
-        start = i;
-      }
-    } else if (match[1]!.length <= depth) {
-      return lines.slice(start, i).join("\n").trimEnd();
-    }
+    found.push({ line: i, depth: match[1]!.length, text: match[2]! });
   }
-  return start === -1 ? undefined : lines.slice(start).join("\n").trimEnd();
+  return found;
+}
+
+/**
+ * The package's own resolver: every section whose heading text is exactly
+ * `cite.section` — any `#` depth, any CommonMark-legal indent, no trailing
+ * decoration — each running to the next heading of the same or shallower
+ * depth, heading line included.
+ *
+ * Exact text, never a nearest match: a heading that drifted is a cite that
+ * has to be rewritten, and standing in the closest section for it hands build
+ * prose the entry was not derived from.
+ *
+ * **Every match, not the first.** A page may head one text twice — two
+ * siblings, or one nested inside another section — and a cite naming that
+ * text names no one of them. Returning them all is what lets {@link
+ * sectionIn} refuse rather than resolve whichever came first
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function headingSections(
+  cite: Cite,
+  lines: readonly string[],
+): { readonly line: number; readonly text: string }[] {
+  const all = headings(lines);
+  return all.flatMap((heading, i) => {
+    if (heading.text !== cite.section) return [];
+    const bound = all.slice(i + 1).find((next) => next.depth <= heading.depth);
+    const end = bound?.line ?? lines.length;
+    return [
+      {
+        line: heading.line,
+        text: lines.slice(heading.line, end).join("\n").trimEnd(),
+      },
+    ];
+  });
 }
 
 /** A refusal naming what is at fault, in the one shape every caller reads. */
@@ -218,6 +248,19 @@ function outsideLocus(cite: Cite, locus: CiteLocus): CiteVerdict | undefined {
  * the read hop alone, so a cite the gate resolved is a cite the prompt
  * renders identically (`.claude/rules/engineering.md`, *The fix lands at the
  * mechanism*).
+ *
+ * **A cite that names two sections names none.** The heading path refuses a
+ * section text the page heads more than once rather than handing back
+ * whichever came first: the first is a section the entry may never have been
+ * derived against, and the second is uncitable while it stands. The refusal
+ * names both lines, because the fix is the page's heading or the cite's text
+ * and the plan tick needs to see which (*Loud or nothing*).
+ *
+ * A declared resolver keys its own sections, so what a repeated key means
+ * there is the consumer's to decide — it answers with one section or with
+ * `undefined`, and this reads the answer it was given rather than auditing
+ * how it was reached (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
  */
 function sectionIn(
   cite: Cite,
@@ -227,16 +270,29 @@ function sectionIn(
   if (text === null) {
     return refuse(cite, `${cite.path} is not in the commit`);
   }
-  const section = (locus.resolver ?? headingSection)(cite, text);
-  if (section === undefined) {
+  if (locus.resolver !== undefined) {
+    const keyed = locus.resolver(cite, text);
+    return keyed === undefined
+      ? refuse(
+          cite,
+          `the declared resolver keys no section "${cite.section}" in ${cite.path}`,
+        )
+      : { ok: true, cite, text: keyed };
+  }
+  const sections = headingSections(cite, text.split("\n"));
+  const only = sections[0];
+  if (only === undefined) {
+    return refuse(cite, `no heading "${cite.section}" in ${cite.path}`);
+  }
+  if (sections.length > 1) {
+    const lines = sections.map((section) => section.line + 1).join(", ");
     return refuse(
       cite,
-      locus.resolver === undefined
-        ? `no heading "${cite.section}" in ${cite.path}`
-        : `the declared resolver keys no section "${cite.section}" in ${cite.path}`,
+      `${sections.length} headings "${cite.section}" in ${cite.path} ` +
+        `(lines ${lines}) — the cite names no one section`,
     );
   }
-  return { ok: true, cite, text: section };
+  return { ok: true, cite, text: only.text };
 }
 
 /**
