@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "tag": "WORKTREE-REGISTRY-READS-NUL-SEPARATED-PORCELAIN",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/worktrees.ts",
+          "description": "readWorktreeRegistry: `worktree list --porcelain -z`, split on NUL, drop the `.trim()`"
+        },
+        {
+          "path": "tests/worktrees.test.ts",
+          "description": "registry cases for a newline-bearing and a trailing-space worktree path"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Read git's worktree registry NUL-separated, so the set carries the path git named",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "readWorktreeRegistry returns exactly the paths git names for worktree paths carrying a newline or trailing whitespace; pnpm test green",
+    "tests": [
+      "the worktree registry carries a newline-bearing path as the one path git named",
+      "the worktree registry keeps a worktree path's trailing whitespace"
+    ],
+    "pins": [],
+    "notes": "Measured on git 2.43: `worktree list --porcelain` never C-quotes, so the mangle is line-splitting plus `.trim()`, not quoting. git's own man page recommends `-z` with `--porcelain` here. `-z` for `worktree list` is git >=2.36; the repo declares no git floor — if that needs one, say so in the commit body rather than adding a fallback."
+  }
+]
