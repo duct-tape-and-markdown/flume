@@ -110,9 +110,14 @@ Never file against a divergence the site declares and cites as deliberate.
 
 ## The stamp
 
-The plan state carries the sweep cursor — the sha the frontier was
-derived from, never a HEAD that moved mid-rotation. It is **copied forward
-verbatim** on every plan tick and advanced only when a rotation closes.
+The plan state carries the sweep cursor. While a rotation is open the
+frontier is re-derived each tick from that cursor against the live tip, so
+a commit landing mid-rotation joins the frontier at the next tick rather than
+waiting for the next rotation; a module already covered stays covered for the
+rotation, whatever lands on it after. The rendered window names the tip it
+was drawn from, and the tick that closes the rotation stamps exactly that
+tip — never a sha it rediscovered itself. The cursor is **copied forward
+verbatim** on every other plan tick.
 
 The job re-arms when commits past the stamp touch the sweep domain or a
 posture page.
