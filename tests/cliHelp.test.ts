@@ -429,6 +429,59 @@ describe("docs/CLI.md's loop sections against loopExitCode's derived range (CLI-
 });
 
 /**
+ * JOB-HELP-NAMES-THE-WHOLE-LOOP-RANGE — the loop range's two *runtime* prose
+ * copies. `flume job run` rewrites the command to `loop` and relays its exit
+ * code verbatim, while the other job verbs return only 0/1/2, so `flume job
+ * --help`'s block owes exactly the loop range — and it named 0, 1, 2 and 78
+ * alone: an operator hitting a child tick's mount-dead (69) or a start-up
+ * I/O refusal (74) read a status the surface never mentioned. Each block is
+ * driven against `loopExitCode` beside the named start-up set, never against
+ * the other block or against `docs/CLI.md` — two prose copies compared to
+ * each other move together in the commit that changes the behavior, and
+ * agree while both are wrong (`.claude/rules/engineering.md`, "A seam gate
+ * reads what the real writer wrote").
+ */
+describe("the --help blocks that restate the loop range, against loopExitCode's derived range (JOB-HELP-NAMES-THE-WHOLE-LOOP-RANGE)", () => {
+  /**
+   * Both surfaces make the same claim about the same range, so both take
+   * the same check: the block's own listed codes, read off the real help
+   * output, equal to the whole range in both directions — a code the run
+   * gained and the block never named is red, and so is a code the block
+   * names that no longer reaches an operator through it.
+   */
+  async function expectHelpNamesTheLoopRange(
+    argv: readonly string[],
+  ): Promise<void> {
+    const { returned, spanned } = driveLoopExitCodes();
+    // Non-vacuity: a collapsed result space, or a range that collapsed,
+    // agrees with a help block that lists almost anything.
+    expect(spanned).toBeGreaterThan(1);
+    expect(returned.size).toBeGreaterThan(1);
+    expectProcessLevelDisjoint(
+      returned,
+      LOOP_PROCESS_LEVEL_EXIT_CODES,
+      "loopExitCode",
+    );
+
+    const { out, code } = await runCli(process.cwd(), [...argv]);
+    expect(code).toBe(0);
+    const documented = ascending(documentedExitCodes(out));
+    expect(documented.length).toBeGreaterThan(0);
+    expect(documented).toEqual(
+      wholeRange(returned, LOOP_PROCESS_LEVEL_EXIT_CODES),
+    );
+  }
+
+  it("flume loop --help names every exit code the loop range produces, beside its named start-up set", async () => {
+    await expectHelpNamesTheLoopRange(["loop", "--help"]);
+  });
+
+  it("flume job --help names every exit code the loop range produces, since job run relays it", async () => {
+    await expectHelpNamesTheLoopRange(["job", "--help"]);
+  });
+});
+
+/**
  * CLI-RENDER-REMOVAL — `render` previewed with the wrong fence, the wrong
  * prior-attempt state, and its own re-derivation of pickability that
  * disagreed with the dispatcher's (operator ruling 2026-08-03). It is gone

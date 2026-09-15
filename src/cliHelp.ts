@@ -345,7 +345,17 @@ Exit codes:
   2   Usage error: missing or unknown verb, missing <name>, a <name> that is
       not a single path segment, new with no chain at <configDir>/chain.ts or
       a declared seedDir absent on disk, rm on a <name> whose job dir does
-      not exist, or status given any argument.
+      not exist, status given any argument, or run given a --max that is
+      missing, non-numeric, or negative (no tick runs).
+  69  run: stopped on a child tick's mount-dead failure (see \`flume tick
+      --help\`): the chain never resolved. The run aborts after that one tick
+      instead of burning the remaining --max ticks against the same wall.
+  74  run: I/O error (EX_IOERR) at start — the stop flag (\`stop\` under the
+      job dir) exists but could not be stat'd, or the merging-marker dir
+      (\`merging/\`) exists but could not be listed. Refused rather than
+      started: an unreadable flag is not an absent one, and an unlistable
+      marker dir is not an absent marker. Naming the path and the underlying
+      error.
   78  run: stopped on a child tick's terminal misconfiguration (see
       \`flume tick --help\`); also, at start, an unreconciled interrupted
       merge — a \`merging/<slug>.json\` marker under the job dir (see
