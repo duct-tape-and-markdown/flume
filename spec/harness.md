@@ -63,8 +63,11 @@ runner through the runner interface below and never assumes vitest.
 
 The `per` gate (the cited file is in the
 gated commit and the section is a heading in it), the records gate (one file
-per record, titled, under the byte cap, under the tick's own tag), the
-clean-tree gate, and the pending gate wired to the consumer's fence.
+per record, titled, under the tick's own tag), the
+clean-tree gate, and the pending gate wired to the consumer's fence. The
+record byte cap is not the gate's: a note over the cap ships with its entry,
+and the drain that reads it says so in the plan commit body — a shape rule on
+a prose channel refuses the prose, never the code it rode in with.
 
 
 ### Records as one file each
