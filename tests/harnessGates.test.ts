@@ -39,6 +39,7 @@ import { pendingGate } from "../src/builtinGates.ts";
 import { computeStateRootRel } from "../src/Dispatcher.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import { readFileAtRef } from "../src/git.ts";
+import { matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { Runner, RunnerFactory } from "../harness/runner.ts";
 
@@ -400,6 +401,66 @@ it("the clean-tree gate refuses a leftover path the phase may not write", async 
   expect(refused.ok).toBe(false);
   expect(refused.message).toContain("left uncommitted in the worktree");
   expect(refused.details).toContain("spec/harness.md");
+});
+
+it("the clean-tree gate refuses an untracked file inside the fence whose name git quotes", async () => {
+  const gate = named("clean-tree");
+  await write("src/widget.ts", `export const widget = "shipped";\n`);
+  const span = commitAll("build: the tick's whole output");
+  const ctx = ctxFor(span, { phaseName: "build", entry: assigned("MINE") });
+  expect(await gate.run(ctx)).toMatchObject({ ok: true });
+
+  // A name porcelain v1 would quote, inside the phase's fence: work the tick
+  // wrote and never added, which the worktree's teardown discards.
+  const quoted = "src/a widget.ts";
+  expect(matchesAny(quoted, phase.writablePaths)).toBe(true);
+  await write(quoted, `export const widget = "unstaged";\n`);
+  expect(git(repo, ["status", "--porcelain", "--untracked-files=all"])).toContain(
+    `"${quoted}"`,
+  );
+
+  const refused: GateResult = await gate.run(ctx);
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain(`${quoted} (??)`);
+});
+
+it("the clean-tree gate names a quoted tracked path without its quotes", async () => {
+  const gate = named("clean-tree");
+  const tracked = "spec/a page.md";
+  await write(tracked, "# tracked under a quoted name\n");
+  const span = commitAll("build: the tick's whole output");
+  const ctx = ctxFor(span, { phaseName: "build", entry: assigned("MINE") });
+  expect(await gate.run(ctx)).toMatchObject({ ok: true });
+
+  // Tracked, so residue wherever it sits — the fence never reads it.
+  expect(matchesAny(tracked, phase.writablePaths)).toBe(false);
+  await write(tracked, "# rewritten under the tick\n");
+  const refused: GateResult = await gate.run(ctx);
+
+  expect(refused.ok).toBe(false);
+  // Named as git spells the path, not as porcelain v1 escapes it for display.
+  expect(refused.details).toContain(`${tracked} (M)`);
+  expect(refused.details).not.toContain(`"`);
+});
+
+it("the clean-tree gate reads a rename's origin field as its origin, not as a second status line", async () => {
+  const gate = named("clean-tree");
+  const from = "src/old name.ts";
+  await write(from, `export const widget = "renamed";\n`);
+  const span = commitAll("build: the tick's whole output");
+  const ctx = ctxFor(span, { phaseName: "build", entry: assigned("MINE") });
+  expect(await gate.run(ctx)).toMatchObject({ ok: true });
+
+  // `-z` spends a second record on where a rename came from, and that record
+  // carries no status code — read as one it becomes a line of its own.
+  const to = "src/new name.ts";
+  git(repo, ["mv", from, to]);
+  const refused: GateResult = await gate.run(ctx);
+
+  expect(refused.ok).toBe(false);
+  expect(refused.message).toContain("1 path(s) left uncommitted");
+  expect(refused.details).toBe(`${to} (R)`);
 });
 
 it("the package's gates precede a consumer's declared gates for the same phase", async () => {

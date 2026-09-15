@@ -333,6 +333,14 @@ function recordsGate(engine: GateEngine): Gate {
  * and is left alone; a tracked one is residue wherever it sits, because the
  * tick is what dirtied it.
  *
+ * **Read NUL-separated, because the default form is quoted.** Porcelain v1
+ * wraps any path carrying a space, a control character, or a non-ASCII byte
+ * in double quotes with the offending bytes escaped, and a quoted spelling
+ * matches no fence glob — so an untracked file the tick was meant to commit
+ * reads as out-of-fence and the gate passes over the very discard it exists
+ * to refuse. `-z` is the unquoted form; `core.quotePath=false` is not, since
+ * a space still quotes.
+ *
  * `afterCommit` only: `repoRoot` is the tick's own worktree there, and the
  * trunk after a merge holds nothing of the agent's to read.
  */
@@ -344,15 +352,23 @@ function cleanTreeGate(writablePaths: readonly string[]): Gate {
     async run(ctx) {
       const { stdout } = await exec(
         "git",
-        ["status", "--porcelain", "--untracked-files=all"],
+        ["status", "--porcelain", "-z", "--untracked-files=all"],
         { cwd: ctx.repoRoot },
       );
-      const left = stdout
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => ({ code: line.slice(0, 2), path: line.slice(3) }))
-        .filter(({ code, path }) => code !== "??" || matchesAny(path, fence))
-        .map(({ code, path }) => `${path} (${code.trim()})`);
+      const records = stdout.split("\0");
+      const left: string[] = [];
+      for (let i = 0; i < records.length; i += 1) {
+        const record = records[i];
+        if (!record) continue;
+        const code = record.slice(0, 2);
+        const path = record.slice(3);
+        // A rename or copy spends a second record on the path it came from;
+        // that field carries no status, so it is consumed here rather than
+        // read as one. The surviving path is the one on disk now.
+        if (code.includes("R") || code.includes("C")) i += 1;
+        if (code === "??" && !matchesAny(path, fence)) continue;
+        left.push(`${path} (${code.trim()})`);
+      }
       if (left.length === 0) {
         return { ok: true, message: "worktree clean after the commit" };
       }
