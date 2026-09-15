@@ -768,3 +768,73 @@ distinguishes the two.
 
 Parked because both forks land on `spec/` sentences that read as deliberate,
 and `spec/` is the human's alone.
+
+## The fast lane's carve-out is cut on invocation count, and the tree is cut on budget (NEEDS AMENDMENT)
+
+Drained from `CLIHELP-CASES-ARE-SINGLE-INVOCATION`'s note (2026-09-14 build
+wave); verified on disk at 601f940. The note reported the multi-spawn shape
+live across the rest of the default lane, called those cases "the next
+candidates to time out under afterMerge contention", and left plan the choice
+between filing them as entries and sweeping them. Neither, on the tree as it
+reads.
+
+**The projected risk is not there.** 27 multi-invocation `it`s live in the
+default lane — `tests/cli.test.ts` 9, `tests/job.test.ts` 7,
+`tests/cliJobResolution.test.ts` 6, `tests/cliJobVerbs.test.ts` 3,
+`tests/cliVerdict.test.ts` 1, `tests/subprocessHelper.test.ts` 1 (counted by a
+TS-AST walk over `runCli` calls per case, not by reading). **Every one of the
+27 carries an explicit per-case budget of 30s, 60s or 120s.** None inherits
+vitest's 5s default. The pair that actually flaked was the other shape: pre-fix
+`tests/cliHelp.test.ts:197` spawned twice with **no** explicit budget. The
+distinguishing fact was a double spawn *inside the 5s default* — two axes, and
+the ruling in 20dc763's body ("the verified gap is the spawn count, not the
+budget") named one of them.
+
+**And the literal reading does not survive contact.** Most of the 27 cannot be
+made single-invocation at all:
+
+- Agreement gates — "agrees with `flume status` on a live pid: loop refuses,
+  status reports the same" (`tests/cli.test.ts:350`), "`flume job status` and
+  `flume status` render the same friction wording" (`tests/cliJobVerbs.test.ts:271`).
+  `.claude/rules/engineering.md`, *A seam gate reads what the real writer
+  wrote*, requires both real surfaces run; one spawn cannot express agreement
+  between two.
+- Idempotence — "is idempotent — a repeat call finds the flag already present"
+  (`tests/cli.test.ts:1412`), "re-run with an unchanged seedDir commits
+  nothing" (`tests/job.test.ts:414`). The second run *is* the subject.
+
+Splitting either deletes the property it pins. Genuinely splittable — several
+independent cases bundled into one `it` — is the minority:
+`tests/job.test.ts:550` (n=5), `:1216` (n=3), `:1501` (n=3),
+`tests/cliJobResolution.test.ts:683` (n=3) and `:719` (n=4). All budgeted at
+60–120s, so none is at risk today either.
+
+**The gap.** The carve-out sentence is scoped to "A single-invocation
+CLI-surface test", so read literally it consigns ~20 correct fast-lane tests to
+the integration lane or to a split that would destroy them. A plan tick has
+already acted on that reading once, and the next one reading the same sentence
+against the same tree files 27 entries of pure shape work.
+
+**Recommend** re-cutting the carve-out on the axis the tree holds. A fast-lane
+test may spawn a **fixed, small number** of processes when each spawn is the
+test's subject — an exit code, an agreement between two surfaces, an
+idempotence re-run — and **declares a per-case budget** instead of inheriting
+the 5s default; what moves a test to the integration lane stays the section's
+named cost drivers (multi-tick engine behavior, a real agent, a wall-clock
+assertion), never a count. That is one paragraph, and it ratifies what all 27
+sites already do.
+
+**A rung up, optionally.** "A spawning case declares a budget" is decidable
+from the test source, so it could be a pin rather than prose
+(`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+Cost: a TS-AST scanner over `tests/` — `ast-grep` is not on PATH in this
+environment, `typescript` is a devDependency, so the compiler API is the tool.
+Worth it only if the amendment lands and the budget clause is the load-bearing
+half; the prose alone is the cheaper first move.
+
+**Rejected, and worth not re-proposing:** filing the 27 as split entries. Six
+waves of shape work against a risk every site already bounds, ~20 of which
+would lose the property they pin.
+
+Parked because the amendment is a `spec/worktrees.md` edit, and `spec/` is the
+human's alone.
