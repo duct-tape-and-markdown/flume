@@ -52,6 +52,7 @@ import type { PendingEntry } from "../src/PendingSchema.js";
 import { matchesAny, slugify } from "../src/paths.js";
 import type { PriorAttempt } from "../src/Prompt.js";
 
+import { readCiLanes, type CiLaneReading } from "./ci.js";
 import {
   INBOX_PHASE,
   PLAN_SLICES,
@@ -138,7 +139,7 @@ export interface WindowContext {
  * restated beside its source*).
  */
 const SLICE_DATA_KEYS = {
-  [INBOX_PHASE]: ["RECORDS", "BUILD_RECORDS"],
+  [INBOX_PHASE]: ["RECORDS", "BUILD_RECORDS", "CI_LANES"],
   "plan-derive": ["SPEC_WINDOW"],
   "plan-sweep": ["SWEEP_WINDOW"],
 } as const satisfies Record<PlanSlice, readonly string[]>;
@@ -214,7 +215,7 @@ function window(
 ): PlanSliceWindow {
   switch (name) {
     case INBOX_PHASE:
-      return inboxWindow();
+      return inboxWindow(options);
     case "plan-derive":
       return deriveWindow(options);
     case "plan-sweep":
@@ -280,16 +281,27 @@ function standingRefusals(ctx: {
 }
 
 /**
- * The inbox slice's window: the record queues, and the build refusals still
- * standing against entries the queue carries.
+ * The inbox slice's window: the record queues, the build refusals still
+ * standing against entries the queue carries, and the declared CI lanes
+ * (`spec/harness.md`, *CI lanes as a findings source*).
  *
- * Two legs because there are two ways work reaches this slice — someone left
- * a file, or a build wave walled — and either alone leaves a loop: without
- * the record leg an operator's finding is never read; without the refusal
- * leg a parked entry stays pickable, plan yields to build, and build re-parks
- * into the same wall.
+ * The first two legs are there because there are two ways work reaches this
+ * slice from inside the loop — someone left a file, or a build wave walled —
+ * and either alone leaves a loop: without the record leg an operator's
+ * finding is never read; without the refusal leg a parked entry stays
+ * pickable, plan yields to build, and build re-parks into the same wall. The
+ * lanes are the third source, and the only one whose evidence sits off this
+ * disk.
+ *
+ * The lanes ride `args` alone for now: a lane is rendered whenever this slice
+ * runs, and what makes the slice *live* over a red lane is the stamp leg
+ * (`readCiLanes` against the plan state's `drainedRuns`), which the spec
+ * holds and no entry has shipped yet. Until it does, a lane renders only on a
+ * tick the records or the refusals already woke — which is the order the spec
+ * names anyway: unread renders only when the slice is live for another
+ * reason.
  */
-function inboxWindow(): PlanSliceWindow {
+function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
   return {
     name: INBOX_PHASE,
     live: (inputs) =>
@@ -297,9 +309,67 @@ function inboxWindow(): PlanSliceWindow {
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       RECORDS: renderRecords(ctx.flumeDir),
       BUILD_RECORDS: renderBuildRecords(ctx),
+      CI_LANES: renderCiLanes(options),
     }),
     dataKeys: SLICE_DATA_KEYS[INBOX_PHASE],
   };
+}
+
+/**
+ * Every declared lane's latest completed run, one block each, or the spelled
+ * empty case for a consumer that declared none.
+ *
+ * Read from the repository rather than from the tick's own tree, which is the
+ * reader's own rule and the reason it takes a root rather than a `cwd`
+ * (`ci.ts`): the branch a run is keyed to is the repository's, never the
+ * scratch branch a tick works on.
+ *
+ * Unbounded by {@link bounded}, and deliberately: every way the read can fail
+ * is already one of the reader's own unread readings, so a refusal wrapped
+ * around it would be a second, unreachable spelling of a degradation this
+ * window states per lane. What the render owes instead is that unread never
+ * reads as green — which is what the block below says in its own words.
+ */
+function renderCiLanes(options: PlanSliceWindowsOptions): string {
+  const lanes = options.declaration.ci;
+  if (lanes === undefined) return "(no CI lanes declared)";
+  return readCiLanes(lanes, {
+    repoRoot: options.repoRoot,
+    logLines: budgetOf(options),
+  })
+    .map(renderLane)
+    .join("\n\n");
+}
+
+/** One lane's reading, under the lane name its findings are keyed by. */
+function renderLane(reading: CiLaneReading): string {
+  const { lane } = reading;
+  const head = `lane \`${lane.name}\` (workflow ${lane.workflow}, job ${lane.job})`;
+  if (reading.kind === "unread") {
+    return [
+      `=== ${head}: UNREAD ===`,
+      `${reading.reason}.`,
+      `Unread is not green: this tick knows nothing about the lane's state, ` +
+        `so file nothing and close nothing against it.`,
+    ].join("\n");
+  }
+  const { run, branch } = reading;
+  const stamp =
+    `run ${run.id} on branch ${branch} — ${run.title} (${run.at})\n${run.url}`;
+  if (reading.kind === "green") {
+    return [
+      `=== ${head}: GREEN ===`,
+      stamp,
+      `Nothing to drain. A finding already filed under this lane's name that ` +
+        `this run no longer reports closes in the commit body.`,
+    ].join("\n");
+  }
+  return [
+    `=== ${head}: FAILING ===`,
+    stamp,
+    `--- the failing job's log ---`,
+    reading.log,
+  ].join("\n");
 }
 
 /**

@@ -842,3 +842,27 @@ it("the windows a declaration builds are the slices it enabled, in the ladder's 
     inboxOnly: [INBOX_PHASE],
   });
 });
+
+/**
+ * The empty case, spelled rather than inherited (`.claude/rules/engineering.md`,
+ * *A green verdict is proven non-vacuous*): a consumer with no forge still
+ * gets the key, because the phase declares it as data whatever the
+ * declaration holds, and a key a tick stops returning is a render the engine
+ * refuses.
+ *
+ * It is also the proof that no lane is read for a consumer that declared
+ * none — the forge CLI is never reached on this path, so no host without one
+ * pays a failed spawn per inbox tick.
+ */
+it("the inbox window spells the empty CI lane case when the declaration names none", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const inbox = windows()[INBOX_PHASE];
+
+  const args = inbox.args({ cwd: repo, flumeDir: stateRoot() });
+
+  expect(declaration().ci).toBeUndefined();
+  expect(inbox.dataKeys).toContain("CI_LANES");
+  expect(Object.keys(args).sort()).toEqual([...inbox.dataKeys].sort());
+  expect(args["CI_LANES"]).toBe("(no CI lanes declared)");
+});
