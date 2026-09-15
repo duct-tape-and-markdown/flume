@@ -37,7 +37,7 @@ const FALLBACK_REMOVE_RETRY_DELAY_MS = 200;
  * rm -r` over the same spelling deletes it (measured, git 2.43). A leading
  * `:` is worse still — read as magic, `:leading.ts` selects nothing and
  * `:(icase)x` exits `128`. Either way the engine acts on a set it was never
- * handed (`engine-boundary.md`, *Told, not inferred*).
+ * handed (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
  *
  * **One spelling, applied at the invocation, not at the argument.** Of git's
  * three literal-pathspec forms, this is the only one that is neither
@@ -80,8 +80,9 @@ export async function revParse(cwd: string, ref = "HEAD"): Promise<string> {
  * so both the engine's span and the bystander's uncommitted content are
  * exactly as they were before the call. `gitMessage` carries git's own
  * stderr for the operator's log, never parsed by the caller — the engine
- * does not classify *why* --keep refused (`engine-boundary.md`, "Told, not
- * inferred"), only that it did.
+ * does not classify *why* --keep refused
+ * (`.claude/rules/engine-boundary.md`, "Told, not inferred"), only that it
+ * did.
  */
 export class ResetKeepRefusedError extends Error {
   constructor(
@@ -188,9 +189,9 @@ export async function diffNameOnly(
  * Whether `ancestor` is a (non-strict) ancestor of `descendant` — `git
  * merge-base --is-ancestor`, exit code `0` for yes and `1` for no. Any other
  * exit code (bad revision, not a repository) rethrows rather than being
- * read as "not an ancestor" (`engine-boundary.md` "Told, not inferred": a
- * failure the probe cannot explain is not silently folded into its negative
- * case).
+ * read as "not an ancestor" (`.claude/rules/engine-boundary.md` "Told, not
+ * inferred": a failure the probe cannot explain is not silently folded into
+ * its negative case).
  */
 export async function isAncestor(
   cwd: string,
@@ -433,8 +434,9 @@ export async function showNameOnly(
  * "not in this tree" — rather than parsing `git show`'s fatal-error exit
  * code, which is the same `128` for "path missing" as for every other fatal
  * condition (bad ref, not a repository) and so cannot structurally
- * distinguish them (`engine-boundary.md` "Told, not inferred"; the
- * `isAncestor`/`deleteBranch` structural-probe pattern above, applied here).
+ * distinguish them (`.claude/rules/engine-boundary.md` "Told, not
+ * inferred"; the `isAncestor`/`deleteBranch` structural-probe pattern above,
+ * applied here).
  *
  * That probe's pathspec is matched as the path it is and never re-read as
  * magic, because every invocation here runs under {@link
@@ -492,8 +494,8 @@ async function revParseGitPath(
  * Whether a cherry-pick sequence has actually started on this checkout —
  * `CHERRY_PICK_HEAD` or a `sequencer/` directory present, git's own state
  * for an in-progress (possibly multi-commit) pick. Read structurally off
- * disk, never inferred from a prior call's outcome (`engine-boundary.md`
- * "Told, not inferred").
+ * disk, never inferred from a prior call's outcome
+ * (`.claude/rules/engine-boundary.md` "Told, not inferred").
  */
 async function hasCherryPickSequencerState(repoRoot: string): Promise<boolean> {
   const [headPath, sequencerPath] = await Promise.all([

@@ -58,13 +58,19 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * break-closed reading is shown discriminating rather than reporting every
  * wrap it meets.
  *
- * Last come the page names no backtick fences, in both verdicts and beside
+ * Then the page names no backtick fences, in both verdicts and beside
  * the two placeholder spellings the path arm refuses — the same shapes the
  * fenced citations above carry, so the two arms are shown agreeing rather
  * than the unfenced one getting a rule of its own. One of those is wrapped
  * too, broken at a directory boundary whose tail a root-level page of the
  * same basename answers: the reading that judges the tail resolves, so only
  * a scan that reports the wrap can tell the two pages apart.
+ *
+ * Last is the page name a fence carries with no directory ahead of it, in
+ * both verdicts and spelled with a hyphen no identifier segment admits —
+ * the shape that reaches the filename arm on its extension alone — beside
+ * the leading dot that arm refuses, which is how prose spells a member
+ * access whose receiver it elided.
  *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
@@ -83,6 +89,7 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
   }),
   "docs/guide.md": "# a page a comment cites without fencing it\n",
   "guide.md": "# the root-level page a broken cite's tail answers instead\n",
+  "release-notes.md": "# the root-level page a fenced cite names by hyphen\n",
   "lib/dataShapes.ts": [
     `/** Cites \`WeakMap\`, a lib global no statement in this tree uses. */`,
     `export interface Shipped {`,
@@ -156,6 +163,14 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// guide.md, a page whose tail a root-level page of that name answers.`,
     `export const SPLIT = 7;`,
     ``,
+    `// A page name a fence carries with no directory ahead of it, judged by`,
+    `// the arm every path ends on: \`release-notes.md\` names a file at this`,
+    `// tree's root and \`vanished-notes.md\` names none, both spelled with a`,
+    `// hyphen no identifier segment admits. Refused with the \`.\` a path`,
+    `// segment refuses: \`.opts.maxDepth\` is a member access whose receiver`,
+    `// the prose elided, not a dotfile.`,
+    `export const FENCED_PAGES = 8;`,
+    ``,
   ].join("\n"),
 };
 
@@ -211,9 +226,11 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "docs/vanished.md",
     "lib/dataShapes.ts",
     "lib/vanished.ts",
+    "release-notes.md",
     "surface.ts",
     "this.opts.maxDepth",
     "tsconfig.json",
+    "vanished-notes.md",
     "vanished.helper",
     "vanishedHelper",
     "vanishedPastDivision",
@@ -226,6 +243,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:31 vanished.helper",
     "lib/surface.ts:36 lib/vanished.ts",
     "lib/surface.ts:57 docs/vanished.md",
+    "lib/surface.ts:68 vanished-notes.md",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
@@ -239,6 +257,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "dataShapes.ts",
     "docs/guide.md",
     "lib/dataShapes.ts",
+    "release-notes.md",
     "surface.ts",
     "this.opts.maxDepth",
     "tsconfig.json",
@@ -373,6 +392,47 @@ it("the citation scan judges neither an extensionless path nor a relative specif
   const judged = fixtureScan.scanned.map((s) => s.text);
   expect(judged).not.toContain("refs/heads/main");
   expect(judged).not.toContain("./dataShapes.js");
+});
+
+it("the citation scan judges a backticked page name whose spelling carries a hyphen", () => {
+  // Vacuity guard: both spans were read off the fixture, and neither carries
+  // the slash that routes a span to the path arm — the extension is the whole
+  // claim, on a spelling the identifier charset refuses outright.
+  const pages = fixtureScan.backticked.filter((site) =>
+    ["release-notes.md", "vanished-notes.md"].includes(site.text),
+  );
+  expect(pages.map(formatCitation)).toEqual([
+    "lib/surface.ts:67 release-notes.md",
+    "lib/surface.ts:68 vanished-notes.md",
+  ]);
+  expect(pages.filter((site) => site.text.includes("/"))).toEqual([]);
+
+  // Judged, and judged in both directions by the arm the slashed paths go
+  // through: the page at this tree's root resolves against the working tree
+  // and the one no tree holds dangles. Unjudged, renaming either would leave
+  // every comment citing it standing.
+  expect(fixtureScan.resolved.map(formatCitation)).toContain(
+    "lib/surface.ts:67 release-notes.md",
+  );
+  expect(fixtureScan.dangling.map(formatCitation)).toContain(
+    "lib/surface.ts:68 vanished-notes.md",
+  );
+});
+
+it("the citation scan judges no backticked member access spelled with a leading dot", () => {
+  // Vacuity guard: both were read as spans, so the refusal below is the
+  // subject rule discriminating and not the reader missing the comment.
+  const spans = fixtureScan.backticked.map((s) => s.text);
+  expect(spans).toContain(".opts.maxDepth");
+  expect(spans).toContain(".");
+
+  // A leading dot spells two things at once — a root-level dotfile and a
+  // receiver the prose elided — and `.opts.maxDepth` ends in a named
+  // extension the filename arm would otherwise admit. Judging it would be a
+  // standing dangling finding no rename can repair.
+  const judged = fixtureScan.scanned.map((s) => s.text);
+  expect(judged).not.toContain(".opts.maxDepth");
+  expect(judged).not.toContain(".");
 });
 
 // --- the wrap, which no subject spelling can survive ---------------------

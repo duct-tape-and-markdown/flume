@@ -501,7 +501,7 @@ export async function teardownWorktreeInstance(
  * bare `readdir` + blind removal would delete a live sibling's entire
  * worktree tree the first time its container directory sits at this
  * level. The disambiguator is git's own registry, not a naming
- * heuristic (`engine-boundary.md`, "told, not inferred"):
+ * heuristic (`.claude/rules/engine-boundary.md`, "told, not inferred"):
  * {@link readWorktreeRegistry} — the same probe {@link createWorktree}
  * clears an occupied path on — names every path git currently considers a
  * worktree, and only entries that are literally one of those paths are

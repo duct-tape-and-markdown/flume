@@ -598,8 +598,8 @@ export async function buildGateRevert(
  * unbound at that layer; `tailBound` here is record-size policy, not
  * provider shape, so it stays on this side of the seam. The message is
  * quoted, never classified: whether the exit was a refusal, a park, or
- * nothing to do is the chain's reading (`engine-boundary.md`, *Told, not
- * inferred*).
+ * nothing to do is the chain's reading
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
  */
 export function buildCleanExit(
   finalMessage: string,
@@ -671,8 +671,9 @@ export function buildTipMoved(
  * same two the chain's own predicate was handed), and `threw`: the message
  * the predicate threw instead of returning, or `undefined` when it returned
  * `false` outright. Nothing about *why* the chain declined: the engine has no
- * such vocabulary (`engine-boundary.md`, *Told, not inferred*), and a
- * predicate that ran returned a boolean, not a reason. Whether it ran at all
+ * such vocabulary (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*), and a predicate that ran returned a boolean, not a reason.
+ * Whether it ran at all
  * is the engine's own fact, and the one the dispatcher already reports on the
  * tick's merge outcome — a record that dropped it would leave the retry and
  * every `shouldRun` reading a broken hook as a deliberate park.

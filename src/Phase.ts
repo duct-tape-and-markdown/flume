@@ -462,8 +462,9 @@ export interface Phase {
   /**
    * Optional predicate the dispatcher consults before rendering the prompt or
    * invoking the agent — a capability with an injection point: the dispatcher
-   * supplies the skip, the chain supplies the reason (`engine-boundary.md`,
-   * *Capability vs convention*). Returning `false` ends the tick as a declined
+   * supplies the skip, the chain supplies the reason
+   * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
+   * Returning `false` ends the tick as a declined
    * no-op: no agent invocation, no commit, `handoff` still runs so the chain
    * can pass the baton on. Undeclared is unchanged behavior — a phase without
    * `shouldRun` always runs, byte-identically to a phase whose `shouldRun`
@@ -494,9 +495,9 @@ export interface Phase {
    * Returning `false` records the entry `not-shipped`: the commit stays on
    * trunk, the entry stays in `pending.json`. The engine holds no vocabulary
    * for *why* — a park, a partial, a deliberate hand-off are one chain's
-   * words for one chain's workflow (`engine-boundary.md`, *Told, not
-   * inferred*). It reports the facts in {@link ShipContext}; the chain
-   * decides.
+   * words for one chain's workflow (`.claude/rules/engine-boundary.md`,
+   * *Told, not inferred*). It reports the facts in {@link ShipContext}; the
+   * chain decides.
    *
    * Synchronous, like `shouldRun` and `handoff`. It runs once per merged
    * entry, so a cheap `readFileSync` is fine and anything heavier is not.

@@ -436,7 +436,8 @@ export interface TickVerdictInvocation extends AgentUsage {
    * files are out of scope ({@link git.trackedModifications}).
    *
    * A fact, never a verdict: the engine says what went away with the
-   * worktree; whether that matters is the chain's (`engine-boundary.md`).
+   * worktree; whether that matters is the chain's
+   * (`.claude/rules/engine-boundary.md`).
    */
   uncommittedTracked: string[];
 }
@@ -681,7 +682,7 @@ export async function writeTickVerdict(
  * is re-pickable whichever way the reconciliation goes; `tag` names the entry
  * that is still `open` in the queue. The engine states these because it wrote
  * them — nothing here is re-derived from commit shape or authorship
- * (`engine-boundary.md`, "Told, not inferred").
+ * (`.claude/rules/engine-boundary.md`, "Told, not inferred").
  */
 type MergingMarker = {
   /** The entry whose span the merge stage was picking. */
@@ -903,8 +904,9 @@ const QUARANTINE_KEY_HASH_LENGTH = 10;
  * key on the next read and lift its own hold — the run re-attempts the wall
  * at full agent price, which is the burn the section exists to prevent.
  * A key identifying the work as declared cannot be keyed on the engine's
- * notes about it (`engine-boundary.md`, *Told, not inferred*). Every other
- * write-back is a real state change and re-keys deliberately.
+ * notes about it (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*). Every other write-back is a real state change and re-keys
+ * deliberately.
  *
  * Like a failure signature, the result is an **opaque equality key**:
  * written by the engine, compared by the engine, never parsed apart by
@@ -3837,8 +3839,9 @@ export class Dispatcher {
    * spec/loop.md "Crash equals stop": stake this entry's merge before the
    * pick runs. The marker is the engine's own statement that a span is
    * mid-flight — what makes an interrupted merge a fact the next start reads
-   * off disk instead of an inference from commit shape (`engine-boundary.md`,
-   * "Told, not inferred"; "Evidence must be durable").
+   * off disk instead of an inference from commit shape
+   * (`.claude/rules/engine-boundary.md`, "Told, not inferred"; "Evidence
+   * must be durable").
    */
   private async writeMergingMarker(
     entry: PendingEntry,

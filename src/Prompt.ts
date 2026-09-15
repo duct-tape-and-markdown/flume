@@ -194,8 +194,9 @@ export interface GateRevertAttempt {
  * The agent exited cleanly without committing. No commit, no gate — and no
  * reason: a refused constraint, a deliberate park, or simply nothing to do
  * are one chain's readings of one chain's prompt, never an engine label
- * (`engine-boundary.md`, *Told, not inferred*). The engine records the two
- * facts it holds — that the exit was clean and produced nothing, and the
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). The engine
+ * records the two facts it holds — that the exit was clean and produced
+ * nothing, and the
  * tail of what the agent last said — and leaves the reading to whoever
  * reads {@link finalMessage}.
  */
@@ -364,9 +365,10 @@ export interface TipMovedAttempt {
  *
  * **No reason vocabulary.** The engine records that the chain said no, never
  * why: a park, a partial, a deliberate hand-off are one chain's words for
- * one chain's workflow (`engine-boundary.md`, *Told, not inferred*). The
- * facts carried are the ones the engine itself holds — the merged sha, what
- * that commit touched, and whether the predicate ran to a verdict at all.
+ * one chain's workflow (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*). The facts carried are the ones the engine itself holds — the
+ * merged sha, what that commit touched, and whether the predicate ran to a
+ * verdict at all.
  */
 export interface NotShippedAttempt {
   mode: "not-shipped";

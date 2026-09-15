@@ -14,14 +14,15 @@
  *
  * A `*.md` page name is a citation backticked or not, because a filename is
  * never a sentence: the extension is the whole claim, so no surrounding prose
- * has to be read to know the token names a file. Those are collected from the
- * comment text the backticked spans leave over and judged by the path arm —
- * the one rule, so a placeholder spelling is refused on the same filename
- * charset whichever way the author fenced it. A name a comment line breaks is
- * reported as the wrap it is rather than judged as the tail the break left
- * behind — unfenced through the same set the fenced wrap is reported into,
- * because a tail is a page name the author never wrote and a root-level page
- * answers it whenever the break falls at a directory boundary.
+ * has to be read to know the token names a file. The unfenced ones are
+ * collected from the comment text the backticked spans leave over, and both
+ * fencings run the same filename detection the path arm ends on — one rule,
+ * so a placeholder spelling is refused on the same charset whichever way the
+ * author fenced the name and whether or not a directory precedes it. A name a
+ * comment line breaks is reported as the wrap it is rather than judged as the
+ * tail the break left behind — unfenced through the same set the fenced wrap
+ * is reported into, because a tail is a page name the author never wrote and a
+ * root-level page answers it whenever the break falls at a directory boundary.
  *
  * Both the comments and the identifier half of the verdict go through the
  * TypeScript program. The comments are read off real trivia ranges rather
@@ -196,18 +197,40 @@ const PATH_SEGMENT = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
 const NAMED_EXTENSION = /[A-Za-z0-9_-]\.[A-Za-z0-9]+$/;
 
 /**
+ * Whether one token names a file: the filename charset, ending in a named
+ * extension. The one filename detection the scan performs — the path arm runs
+ * it on the segment behind the last slash, the backticked arm on a span
+ * carrying no slash at all — so `engine-boundary.md` is judged by the charset
+ * a filename spells with whether or not its author wrote the directory.
+ */
+const isNamedFile = (token: string): boolean =>
+  PATH_SEGMENT.test(token) && NAMED_EXTENSION.test(token);
+
+/**
+ * A leading dot, which on a slashless span is two spellings at once: a
+ * root-level dotfile (`.env.example`) and a member access whose receiver the
+ * prose elided (`.element.shape`, `.message`). The spelling does not tell
+ * them apart, so the filename arm refuses the shape rather than guess, and a
+ * root-level dotfile stays out of scope by construction the way a single
+ * lowercase word does. Under a directory there is no ambiguity and the slash
+ * carries the claim, so `.flume/loop.pid` is judged.
+ */
+const ELIDED_RECEIVER = /^\./;
+
+/**
  * Whether a span is spelled as a repo-relative path to a file.
  *
  * A slash is the claim, the same way a dot carries a member access: prose
  * that wanted a sentence would not have punctuated it this way. A span
- * without one is left to the identifier spellings above, which reach a
- * root-level file (`tsconfig.build.json`) by their own dot.
+ * without one is one segment, which is the filename the arm ends on — the
+ * same detection, so `spec/loop.md` and a root-level `tsconfig.build.json`
+ * are read by one rule rather than by two arms that must be kept agreeing.
  */
 const isPathSubject = (text: string): boolean => {
   const segments = text.split("/");
+  const file = segments.pop() ?? "";
   return (
-    segments.every((segment) => PATH_SEGMENT.test(segment)) &&
-    NAMED_EXTENSION.test(segments[segments.length - 1] ?? "")
+    segments.every((segment) => PATH_SEGMENT.test(segment)) && isNamedFile(file)
   );
 };
 
@@ -244,9 +267,13 @@ const OPENING_PUNCTUATION = /^[([{"'*]+/;
  * - **A leading capital** on a word that is not capitals alone: `Dispatcher`,
  *   `Runner`. A type name reads as prose only at the start of a sentence,
  *   which a backtick is not.
- * - **A slash between path segments**, ending in a named extension:
- *   `spec/loop.md`, `src/Dispatcher.ts`. The repo holds names in two
- *   alphabets and a comment cites in both; `isPathSubject` carries this one.
+ * - **A named extension**, with or without a directory ahead of it:
+ *   `spec/loop.md`, `src/Dispatcher.ts`, `engine-boundary.md`,
+ *   `pnpm-lock.yaml`. The repo holds names in two alphabets and a comment
+ *   cites in both; `isNamedFile` carries the detection for either, so a page
+ *   name whose spelling the identifier charset refuses — a hyphen, an
+ *   underscore — is judged by the arm that can answer it instead of falling
+ *   out of the scan for want of a slash.
  *
  * Two spellings stay out of scope by construction, never by exception: a
  * single lowercase word, which is how prose emphasises an ordinary noun, and
@@ -255,6 +282,7 @@ const OPENING_PUNCTUATION = /^[([{"'*]+/;
  */
 const isSubject = (text: string): boolean => {
   if (text.includes("/")) return isPathSubject(text);
+  if (!ELIDED_RECEIVER.test(text) && isNamedFile(text)) return true;
   const segments = text.split(".");
   if (!segments.every((segment) => SEGMENT.test(segment))) return false;
   if (segments.length > 1) return true;

@@ -97,10 +97,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 /**
  * sysexits.h `EX_DATAERR` — a declared-world inconsistency the caller can
- * classify from the exit status alone (`platform-facts.md`, "Exit codes come
- * from sysexits.h"). `flume check`'s only non-zero exit: a `pending.json`
- * that fails to parse or that declares a path outside the consumer phase's
- * fence.
+ * classify from the exit status alone (`.claude/rules/platform-facts.md`,
+ * "Exit codes come from sysexits.h"). `flume check`'s only non-zero exit:
+ * a `pending.json` that fails to parse or that declares a path outside the
+ * consumer phase's fence.
  */
 export const EX_DATAERR = 65;
 

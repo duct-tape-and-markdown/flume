@@ -220,7 +220,7 @@ export interface FlumeApi {
      *
      * Reported as **facts**: the code git printed and the path it printed it
      * about. Which codes are residue, and which paths are the chain's to
-     * refuse, stay the chain's (`engine-boundary.md`).
+     * refuse, stay the chain's (`.claude/rules/engine-boundary.md`).
      */
     statusRecords: typeof statusRecords;
     /**
