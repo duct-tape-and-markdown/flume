@@ -182,8 +182,14 @@ export async function softResetTo(cwd: string, sha: string): Promise<void> {
  * ending in one, and trimming it silently substitutes another path for the
  * one git named. Empty fields are dropped — the trailing NUL after the last
  * path yields one, and a commit touching nothing yields only that.
+ *
+ * Exported for the sibling readers that spawn their own git —
+ * `harness/windows.ts` reads `log --name-only -z` and `ls-files -z` through
+ * this same decode — so no surface grows a second idea of what git named
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). The
+ * listing verb is the caller's; the decode is not.
  */
-function nameOnlyPaths(stdout: string): string[] {
+export function nameOnlyPaths(stdout: string): string[] {
   return stdout.split("\0").filter((p) => p.length > 0);
 }
 

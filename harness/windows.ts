@@ -47,7 +47,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import { literalPathspecEnv } from "../src/git.js";
+import { literalPathspecEnv, nameOnlyPaths } from "../src/git.js";
 import type { PendingEntry } from "../src/PendingSchema.js";
 import { matchesAny, slugify } from "../src/paths.js";
 import type { PriorAttempt } from "../src/Prompt.js";
@@ -638,9 +638,9 @@ function bootstrap(
   globs: string[],
 ): string {
   const tip = git(ctx.cwd, ["rev-parse", "HEAD"]).trim();
-  const files = git(ctx.cwd, ["ls-files"])
-    .split("\n")
-    .filter((path) => path.length > 0 && matchesAny(path, globs));
+  const files = nameOnlyPaths(git(ctx.cwd, ["ls-files", "-z"])).filter((path) =>
+    matchesAny(path, globs),
+  );
   return [
     `(bootstrap: no \`${field}\` yet — the whole of the declared paths is ` +
       `the window; read every file below)`,
@@ -782,18 +782,33 @@ interface RangeCommit {
 }
 
 /**
- * Record and field separators — bytes a subject and a path cannot carry, so
- * a commit message with a newline or a tab in it cannot be read as a second
- * commit.
+ * Record and field separators — control bytes a commit subject does not
+ * carry in practice, so a message with a newline or a tab in it cannot be
+ * read as a second commit.
  *
- * Emitted by git's own `%xNN` escape rather than written into the argument:
- * Node refuses to spawn a process with a NUL byte in an argv entry, so the
- * literal form would throw at the process boundary on every call.
+ * NUL is not among them: under `-z` git terminates its own `--format` output
+ * with it, so the header's end is read off git's terminator ({@link
+ * HEADER_END}) rather than off a byte this module chose, and only the record
+ * boundary is ours to spell. A subject that did carry `\x1e` splits one
+ * record into two, which costs the render a sha git cannot resolve — a
+ * throw {@link bounded} names, never a silently wrong window
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * Emitted by git's own `%xNN` escape rather than written into the argument,
+ * matching the terminator's own encoding at the one place both are read.
  */
-const RECORD_SEP = "\0";
+const RECORD_SEP = "\x1e";
 const FIELD_SEP = "\x1f";
-const RECORD_SEP_FMT = "%x00";
+const RECORD_SEP_FMT = "%x1e";
 const FIELD_SEP_FMT = "%x1f";
+
+/**
+ * The NUL `-z` puts after the `--format` output, and the newline git writes
+ * between that and a commit's file listing. A commit that touched nothing
+ * has the terminator and no newline after it.
+ */
+const HEADER_END = "\0";
+const LISTING_LEAD = "\n";
 
 /** Enough headroom for a window-sized diff on stdout. */
 const MAX_BUFFER = 64 << 20;
@@ -810,6 +825,14 @@ const MAX_BUFFER = 64 << 20;
  * the mechanism*); it replaces a local `:(top,literal)` prefix whose `top`
  * leg anchored nothing, since `cwd` is the tick's working tree root and
  * these paths are already relative to it.
+ *
+ * `core.quotePath=false` buys only the patch text the renders paste into the
+ * prompt, and only its non-ASCII case: a `+++ b/<path>` header naming a
+ * UTF-8 filename reads as the filename rather than as escaped octal. A
+ * control character stays quoted there regardless. It is not what makes a
+ * *listing* faithful — every path this module goes on to judge or hand back
+ * to git is read `-z` and decoded by {@link nameOnlyPaths}, which is the one
+ * form quoting cannot reach (`src/git.ts`).
  */
 function git(cwd: string, args: readonly string[]): string {
   return execFileSync("git", ["-c", "core.quotePath=false", ...args], {
@@ -841,6 +864,14 @@ function resolves(cwd: string, sha: string): boolean {
  * dialect — git's own pathspec globbing agrees with `matchesAny` on the
  * common cases and diverges on enough of the rest to be a second, silent
  * reading of the declaration.
+ *
+ * The listing is `-z`, decoded by the engine's own {@link nameOnlyPaths}:
+ * the default form quotes and octal-escapes a path carrying a control
+ * character or a non-ASCII byte, and line-splits one carrying a newline, so
+ * every path this scan judges would be a name git never committed. Exactly
+ * one leading newline is dropped ahead of the fields — git writes it between
+ * the header's terminator and the listing, and a path that itself begins
+ * with a newline arrives behind that separator, not in place of it.
  */
 function commitsPast(cwd: string, cursor: string): RangeCommit[] {
   const raw = git(cwd, [
@@ -848,18 +879,25 @@ function commitsPast(cwd: string, cursor: string): RangeCommit[] {
     "--reverse",
     `--format=${RECORD_SEP_FMT}%H${FIELD_SEP_FMT}%s`,
     "--name-only",
+    "-z",
     `${cursor}..HEAD`,
   ]);
   return raw
     .split(RECORD_SEP)
     .slice(1)
     .map((block) => {
-      const [header = "", ...rest] = block.split("\n");
+      const end = block.indexOf(HEADER_END);
+      const header = end === -1 ? block : block.slice(0, end);
+      const listing = end === -1 ? "" : block.slice(end + HEADER_END.length);
       const [sha = "", subject = ""] = header.split(FIELD_SEP);
       return {
         sha,
         subject,
-        paths: rest.filter((line) => line.length > 0),
+        paths: nameOnlyPaths(
+          listing.startsWith(LISTING_LEAD)
+            ? listing.slice(LISTING_LEAD.length)
+            : listing,
+        ),
       };
     });
 }

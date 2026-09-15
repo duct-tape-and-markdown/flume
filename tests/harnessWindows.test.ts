@@ -200,6 +200,46 @@ it("the derive window is live exactly while commits past the derive cursor touch
   });
 });
 
+/**
+ * A control character is illegal in a path on win32, so this fixture cannot
+ * exist there. The title is the queue entry's own `tests[]` line, matched on
+ * the full name.
+ */
+it.runIf(process.platform !== "win32")(
+  "the derive window is live when a commit touches a spec path whose name carries a control character",
+  () => {
+    const base = commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
+    writePlanState(stateRoot(), planState());
+    const derive = windows()["plan-derive"];
+
+    // Vacuity guard: the cursor is at HEAD, so the window is provably empty
+    // before the odd-named commit is what fills it.
+    const atCursor = derive.live({ flumeDir: stateRoot(), pickable: false });
+
+    const odd = "spec/ab.md";
+    commit({ [odd]: "in the locus\n" }, "spec: a control-character name");
+    const afterOddName = derive.live({
+      flumeDir: stateRoot(),
+      pickable: false,
+    });
+
+    expect({ atCursor, afterOddName }).toEqual({
+      atCursor: false,
+      afterOddName: true,
+    });
+
+    // ...and the render narrows by the path git committed. The
+    // octal-escaped spelling a quoted listing hands back names no file, so
+    // `show -- <that>` would resolve nothing and the diff would be empty —
+    // its content arriving is what proves the pathspec was the real name.
+    // (The patch's own `+++` header is git's spelling, not this module's.)
+    const rendered = derive.args({ cwd: repo, flumeDir: stateRoot() })
+      .SPEC_WINDOW;
+    expect(rendered).toContain(`=== 1 commit(s) in the spec locus since ${base}`);
+    expect(rendered).toContain("+in the locus");
+  },
+);
+
 it("the sweep window is live while the plan state's rotation is open", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
   const sweep = windows()["plan-sweep"];
