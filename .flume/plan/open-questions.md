@@ -666,7 +666,10 @@ has run. Comparing renders across an upgrade needs the answer before.
 only mechanism in five surveyed chains that turned an engine change into a loud
 failure rather than a silent one, and 0.15.0's rewording fires it on every plan
 tick. Two migration seats separately drove `loadChainModule` + `renderPrompt`
-from scratch hosts to diff before/after renders. `renderPrompt` is exported;
+from scratch hosts to diff before/after renders. The core block moved again at
+`32d7f4a` (an `observedFiles` line after `files`), and nothing in this repo pins
+the render's shape — so a consumer's red is the first signal the wording moved.
+`renderPrompt` is exported;
 `loadChainModule` is not, so the host is rebuilt each time — verbatim copying
 across consumers is the detector for a missing surface
 (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
