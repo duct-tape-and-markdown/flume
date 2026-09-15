@@ -1,33 +1,5 @@
 [
   {
-    "tag": "PACKAGE-QUEUE-SPAN-ABSENCE-REFUSAL-LIVES-ONLY-IN-TEST-PROSE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/harnessPrompts.test.ts",
-          "description": "pin the queue span's absence refusal; shrink the prose that hand-holds it to a pointer"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the package's choice that an absent queue refuses a plan slice render is stated only in test doc comments and by the absence of a guard",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "giving the queue span a guard, a placeholder or a fallback reds the default lane instead of quietly matching the example chain",
-    "tests": [],
-    "pins": [
-      "every plan slice prompt refuses when its queue artifact is absent"
-    ],
-    "notes": "All three plan prompts open the queue as a bare `cat` on the substituted queue path, so absence refuses; the two guarded spans take placeholders instead. Prose carrying the claim: tests/harnessPrompts.test.ts:237-239 (ARTIFACTS preamble) and :357-360 (coldRoot). The example templates make the opposite choice (an `[]` placeholder, tests/examples.test.ts:300), and nothing states the package diverges."
-  },
-  {
     "tag": "GUARDED-SPAN-CASES-JUDGE-A-PLAN-SLICE-TABLE-THEY-NEVER-COVER",
     "gate": {
       "kind": "open"
