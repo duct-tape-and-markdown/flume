@@ -108,5 +108,25 @@
       "the package refuses a state root resolved outside the repository, naming both roots"
     ],
     "notes": "harness/chain.ts:560 already refuses; it cites *Records as one file each*, which states no precondition. Nothing pins the refusal, so it is one deletion from being silently lost."
+  },
+  {
+    "tag": "HARNESS-IGNORES-DECLARE-THE-ONE-WRITER",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/ignores.ts", "description": "the set's lifetime, declared and bounded at the site" },
+        { "path": "tests/harnessIgnores.test.ts", "description": "the asymmetry the declaration rests on" }
+      ],
+      "retire": []
+    },
+    "summary": "The ignore site declares its one-writer lifetime — adoption writes the package's lines once, a later line rides the migration note — instead of reading as if a rename propagates",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "harness/ignores.ts declares adoption as the only writer of the package's lines and names the refusal that bounds it, and the asymmetry it rests on is pinned rather than asserted in prose.",
+    "tests": [],
+    "pins": [
+      "the engine's re-asserted runtime ignore set names none of the package's own artifacts"
+    ],
+    "notes": "Ruled at fbc30ef (spec/jobs.md, Runtime ignores): the package writes its lines at adoption, a later line rides the release's migration note. The bound to name is init's refusal over an existing state root (tests/harnessInit.test.ts:213). The site's opening overclaims — \"a rename lands in the set the moment its owner ships it\" holds for the derivation, not for an adopted consumer's written file; correct that sentence rather than adding one beside it."
   }
 ]
