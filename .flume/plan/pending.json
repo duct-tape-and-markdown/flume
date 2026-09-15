@@ -1,37 +1,5 @@
 [
   {
-    "tag": "GATE-THROW-CARRIES-ITS-STACK",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "runGate records the throw's stack as that gate's details"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the recorded details"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Record a thrown gate's stack as that gate's `details` \u2014 the details a returned refusal would have carried",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a gate returns"
-    },
-    "acceptance": "A gate that throws is recorded as `{ ok: false, message, details }`, and the failure the retry reads carries the stack rather than one line of message.",
-    "tests": [
-      "a gate that throws records its stack as that gate's details"
-    ],
-    "pins": [],
-    "notes": "`Dispatcher.runGate` (src/Dispatcher.ts:3657) already folds the throw to `{ ok: false, message }`; this is the `details` half of the amended sentence. A non-Error throw has no stack \u2014 what that records is build's call, stated at the site."
-  },
-  {
     "tag": "HOOK-THROWS-ANSWERED-LIKE-THEIR-SEAMS",
     "gate": {
       "kind": "open"
@@ -64,7 +32,7 @@
       "a throwing shipped leaves the entry pending and names the throw on the verdict"
     ],
     "pins": [],
-    "notes": "Six unguarded call sites, four seams: src/Dispatcher.ts:1724 (handoff), 1849/3284 (shouldRun), 1967/3291 (promptArgs), 2888 (shipped). The singleton and fanout copies share one guard \u2014 `runGate` is the precedent (`.claude/rules/engineering.md`, *The fix lands at the mechanism*)."
+    "notes": "Six unguarded call sites, four seams: src/Dispatcher.ts:1724 (handoff), 1849/3284 (shouldRun), 1967/3291 (promptArgs), 2888 (shipped). The singleton and fanout copies share one guard — `runGate` is the precedent (`.claude/rules/engineering.md`, *The fix lands at the mechanism*)."
   },
   {
     "tag": "API-CHECKOUT-AT-FOR-A-DIFFERENTIAL-GATE",
@@ -94,7 +62,7 @@
       ],
       "retire": []
     },
-    "summary": "Give a differential gate `api.git.checkoutAt` \u2014 a detached tree under the state root's worktree base, removed by the engine when the gate returns",
+    "summary": "Give a differential gate `api.git.checkoutAt` — a detached tree under the state root's worktree base, removed by the engine when the gate returns",
     "per": {
       "path": "spec/chain.md",
       "section": "What a gate receives"
@@ -140,10 +108,10 @@
       ],
       "retire": []
     },
-    "summary": "A chain may declare how to compute its worktree base \u2014 a function of the resolved roots, evaluated at load, never a committed path literal",
+    "summary": "A chain may declare how to compute its worktree base — a function of the resolved roots, evaluated at load, never a committed path literal",
     "per": {
       "path": "spec/worktrees.md",
-      "section": "Placement \u2014 the worktree base and the job namespace"
+      "section": "Placement — the worktree base and the job namespace"
     },
     "acceptance": "A chain declaring `worktreesBase` moves creation, per-wave stale-slug removal and the startup sweep together, without an environment variable set before the engine's own module loads.",
     "tests": [
@@ -151,7 +119,7 @@
       "the startup sweep reads the chain-declared base"
     ],
     "pins": [],
-    "notes": "A function, not a path: placement stays machine-local, and a committed literal is the wrong home. The one computation stays `worktreesBase` (src/paths.ts) \u2014 a second is the defect field-traced four times. `harness/vitestRunner.ts` reads the same resolution."
+    "notes": "A function, not a path: placement stays machine-local, and a committed literal is the wrong home. The one computation stays `worktreesBase` (src/paths.ts) — a second is the defect field-traced four times. `harness/vitestRunner.ts` reads the same resolution."
   },
   {
     "tag": "RUN-AT-BASE-USES-THE-ENGINE-CHECKOUT",
@@ -181,45 +149,11 @@
       "path": "spec/chain.md",
       "section": "What a gate receives"
     },
-    "acceptance": "`runAtBase` adds and removes no worktree of its own \u2014 the checkout is the API's and the engine reclaims it.",
+    "acceptance": "`runAtBase` adds and removes no worktree of its own — the checkout is the API's and the engine reclaims it.",
     "tests": [
       "runAtBase takes its base checkout from the engine's api rather than adding a worktree"
     ],
     "pins": [],
     "notes": "\"A differential gate never provisions its own\" is the ruling's second half; the named-lines judge is the differential gate and this runner is its only instance here. The `addWorktree`/`removeWorktree`/base-join block at harness/vitestRunner.ts:248-295 is what leaves."
-  },
-  {
-    "tag": "JOB-HELP-NAMES-THE-WHOLE-LOOP-RANGE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cliHelp.ts",
-          "description": "HELP_JOB's exit-code block names the two run-reachable codes it omits"
-        },
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "both --help blocks against the driven loop range"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`flume job --help` names every exit code its `run` verb relays, and both loop-range --help blocks are pinned against the driven producer",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "acceptance": "Each of `flume job --help` and `flume loop --help` lists exactly the codes the real loop range produces, each driven from `loopExitCode` rather than compared against the other copy.",
-    "tests": [
-      "flume job --help names every exit code the loop range produces, since job run relays it"
-    ],
-    "pins": [
-      "flume loop --help names every exit code the loop range produces, beside its named start-up set"
-    ],
-    "notes": "Verified this tick: HELP_JOB lists 0,1,2,78 \u2014 no 69 (a child tick's mount-dead), no 74 (stop flag or merging dir unreadable) \u2014 while `run` rewrites to `cmd = \"loop\"` (src/cli.ts:254) and the other verbs return only 0/1/2 (src/cliJobVerbs.ts), so the block's range is the loop range exactly. `driveLoopExitCodes`, `LOOP_PROCESS_LEVEL_EXIT_CODES` and `documentedExitCodes` already sit at module scope in tests/cliHelp.test.ts."
   }
 ]
