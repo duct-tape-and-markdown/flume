@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "FLUMEAPI-GITPATH-REPORTED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/flumeApi.ts", "description": "report gitPath on FlumeApi, beside slugify/matchesAny" },
+        { "path": "examples/cascade-chain.ts", "description": "take gitPath off api; restore the type-only engine import" },
+        { "path": "tests/chain.test.ts", "description": "identity pin for the new api value" },
+        { "path": "tests/examples.test.ts", "description": "the scan that would have caught the runtime import" }
+      ],
+      "retire": []
+    },
+    "summary": "Report gitPath on FlumeApi — today the only way a chain reaches the host-path-to-git-path rule is a runtime engine import",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "FlumeApi carries gitPath by reference; examples/cascade-chain.ts takes it off api and its only engine import is `import type` again.",
+    "tests": [
+      "buildFlumeApi().gitPath is the engine's own gitPath, by reference",
+      "every example chain imports the engine type-only, with no runtime value import"
+    ],
+    "pins": [],
+    "notes": "gitPath is the lone value on src/index.ts:72 with no FlumeApi counterpart (slugify, its module sibling, has one). examples/cascade-chain.ts:27 therefore value-imports ../src/index.ts for isDeclaredFile — in the file whose own doc (:334) and adoption block (:640) both claim the only engine import is `import type`, and against the plugin contract at src/flumeApi.ts:4-15. A consumer following step 2 either loses gitPath or resolves a second physical engine."
+  }
+]

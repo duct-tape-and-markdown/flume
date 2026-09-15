@@ -45,7 +45,9 @@
       "src/partition.ts",
       "src/cli.ts",
       "src/cliHelp.ts",
-      "src/cliJobResolution.ts"
+      "src/cliJobResolution.ts",
+      "src/index.ts",
+      "examples/cascade-chain.ts"
     ]
   }
 }
