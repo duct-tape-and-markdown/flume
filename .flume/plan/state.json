@@ -74,7 +74,8 @@
       "tests/helpers/stubRunner.ts",
       "tests/priorAttempts.test.ts",
       "tests/harnessPrompts.test.ts",
-      "harness/refusal.ts"
+      "harness/refusal.ts",
+      "tests/harnessChain.test.ts"
     ]
   }
 }

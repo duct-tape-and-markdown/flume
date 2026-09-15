@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "HARNESS-CHAIN-UNEXERCISED-ARMS",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "drive the factory's setup hook and its registry/script gate arms"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin harnessChain's setupWorktree branch and its registry/script gate arms — three factory decisions no case drives",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "tests/harnessChain.test.ts drives worktreeSetup on both branches and constructGate's registry and script arms through the real factory; every pins[] line is green.",
+    "tests": [],
+    "pins": [
+      "a declaration with no setup leaves every returned phase without a setupWorktree hook",
+      "a declared setup gives every returned phase a setupWorktree hook that provisions its worktree",
+      "each registry gate name the package ships constructs that builtin at the declared when",
+      "a registry gate name the package does not ship refuses the load naming the set it could have been",
+      "a declared script gate hangs the committed path at the declared when, named by the path"
+    ],
+    "notes": "harness/chain.ts:600 worktreeSetup, :465 registry, :486 constructGate. All three hold only in doc comments today: no test declares `setup` through harnessChain, and no test declares a gate of kind registry or script. registry()'s keys come off Function.name, set by Object.defineProperty in src/builtinGates.ts:153 — a cross-package derivation nothing pins."
+  }
+]
