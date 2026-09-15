@@ -108,6 +108,35 @@ export type CiteVerdict =
       readonly message: string;
     };
 
+/** A fenced code block's delimiter: three or more backticks or tildes, indented no further than a paragraph would be, and whatever follows the run on that line. */
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+/** A markdown ATX heading: its `#` run and its text, trailing whitespace off. */
+const HEADING = /^(#{1,6})\s+(.*?)\s*$/;
+
+/**
+ * The fence state one line on: the open fence's run while the scan is inside a
+ * fenced code block, `undefined` while it is not.
+ *
+ * A block closes on a run of the same character at least as long as the one
+ * that opened it and carrying no info string; every other line inside is
+ * content, `#`-prefixed ones included. A backtick fence whose info string
+ * carries a backtick opens nothing (CommonMark), which is how a line that is
+ * only an inline code span stays out of the state machine.
+ */
+function fenceAfter(open: string | undefined, line: string): string | undefined {
+  const match = FENCE.exec(line);
+  if (!match) return open;
+  const run = match[1]!;
+  const info = match[2]!;
+  if (open === undefined) {
+    return run.startsWith("`") && info.includes("`") ? undefined : run;
+  }
+  const closes =
+    run[0] === open[0] && run.length >= open.length && info.trim() === "";
+  return closes ? undefined : open;
+}
+
 /**
  * The package's own resolver: the body of the markdown section whose heading
  * text is exactly `cite.section` — any `#` depth, no trailing decoration — up
@@ -117,13 +146,28 @@ export type CiteVerdict =
  * Exact text, never a nearest match: a heading that drifted is a cite that
  * has to be rewritten, and standing in the closest section for it hands build
  * prose the entry was not derived from.
+ *
+ * **Only a real heading counts.** A `#`-prefixed line inside a fenced code
+ * block — a shell comment, a diff hunk, a markdown sample — is text the page
+ * is showing, not structure it has. Reading one as a heading truncates the
+ * cited section at it and resolves the sample itself as a section of its own,
+ * both silently: the gate passes and the prompt renders the wrong bytes. The
+ * scan carries fence state for that reason and nothing else — the grammar
+ * above is unchanged outside a fence.
  */
 function headingSection(cite: Cite, text: string): string | undefined {
   const lines = text.split("\n");
   let depth = 0;
   let start = -1;
+  let fence: string | undefined;
   for (let i = 0; i < lines.length; i++) {
-    const match = /^(#{1,6})\s+(.*?)\s*$/.exec(lines[i]!);
+    const line = lines[i]!;
+    const next = fenceAfter(fence, line);
+    // A line that opens, closes, or sits inside a block is never structure.
+    const fenced = fence !== undefined || next !== undefined;
+    fence = next;
+    if (fenced) continue;
+    const match = HEADING.exec(line);
     if (!match) continue;
     if (start === -1) {
       if (match[2] === cite.section) {

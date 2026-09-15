@@ -61,6 +61,39 @@ const MARKDOWN = [
 ].join("\n");
 
 /**
+ * The same page with the shapes a fence-blind scan misreads: a shell comment
+ * inside a backtick block and a markdown sample inside a tilde block, neither
+ * of them structure and both of them `#`-prefixed. The prose line that opens
+ * with a backtick run carrying an info string is the other half — no fence
+ * opens there, so the headings below it stay readable.
+ */
+const FENCED_MARKDOWN = [
+  "# A spec page",
+  "",
+  "## The cite resolver",
+  "",
+  "```sh",
+  "# a shell comment",
+  "flume tick",
+  "```",
+  "",
+  "Still the cited section, after the fence.",
+  "",
+  "~~~md",
+  "## a markdown sample",
+  "~~~",
+  "",
+  "``` opens a block, and `per` is `{ path, section }` — inline, not fenced.",
+  "",
+  "### A subsection under it",
+  "",
+  "## The next section",
+  "",
+  "Not the cited section.",
+  "",
+].join("\n");
+
+/**
  * A spec with no headings at all — the shape a declared resolver exists for.
  * The package's heading resolver finds nothing here, so a section found in it
  * was found by the declared resolver and by nothing else.
@@ -197,6 +230,48 @@ it("the resolved section is the cited heading's own, bounded at the next heading
   expect(text).toContain("### A subsection under it");
   expect(text).not.toContain("## The next section");
   expect(text).not.toContain("# A spec page");
+});
+
+it("a heading-shaped line inside a fenced block does not bound the cited section", async () => {
+  const verdict = await resolveCite(
+    cite("spec/harness.md", "The cite resolver"),
+    LOCUS,
+    serving("spec/harness.md", FENCED_MARKDOWN),
+  );
+
+  expect(verdict.ok).toBe(true);
+  const text = verdict.ok === true ? verdict.text : "";
+  expect(text.startsWith("## The cite resolver")).toBe(true);
+  // The whole cited section, fences and all — not truncated at the `#` line
+  // inside the ```sh block, nor at the `##` line inside the ~~~ one.
+  expect(text).toContain("# a shell comment");
+  expect(text).toContain("Still the cited section, after the fence.");
+  expect(text).toContain("## a markdown sample");
+  expect(text).toContain("### A subsection under it");
+  // And a fence that never opened does not swallow the rest of the page: the
+  // real heading below the inline-span line still bounds the section.
+  expect(text).not.toContain("## The next section");
+  expect(text).not.toContain("Not the cited section.");
+});
+
+it("a heading-shaped line inside a fenced block resolves no section of its own", async () => {
+  const read = serving("spec/harness.md", FENCED_MARKDOWN);
+
+  for (const section of ["a shell comment", "a markdown sample"]) {
+    const verdict = await resolveCite(cite("spec/harness.md", section), LOCUS, read);
+
+    expect(verdict.ok).toBe(false);
+    expect(verdict.ok === false && verdict.message).toContain(section);
+    expect(verdict.ok === false && verdict.message).toContain("no heading");
+  }
+
+  // Vacuity guard: the same page's real headings do resolve through the same
+  // reader, so the refusals above are the fence's doing and not an unreadable
+  // fixture refusing everything.
+  for (const section of ["The cite resolver", "The next section"]) {
+    const found = await resolveCite(cite("spec/harness.md", section), LOCUS, read);
+    expect(found.ok).toBe(true);
+  }
 });
 
 it("the package resolves this repository's own cite at a real commit through the engine's at-ref reader", async () => {
