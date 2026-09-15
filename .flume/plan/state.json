@@ -22,7 +22,10 @@
       "harness/entryExtension.ts",
       "harness/judge.ts",
       "harness/runner.ts",
-      "harness/ignores.ts"
+      "harness/ignores.ts",
+      "src/worktrees.ts",
+      "src/git.ts",
+      "src/fsProbe.ts"
     ]
   }
 }
