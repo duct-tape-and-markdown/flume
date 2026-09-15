@@ -249,6 +249,36 @@
     "notes": "Build-observed: tests/Dispatcher.test.ts:16722-16725 `not.toMatch` over `retry`, the whole prompt. The `<prior-attempt>` block quotes the hook's stack, whose absolute frames are the worktree path, and a worktree is named after the entry tag \u2014 so the tag INLINE-EXEC-CAP-ABORT-AWAITS-ITS-KILLED-CHILD red it for that entry's whole fork, green in the trunk checkout. Scope the negatives; never constrain tags."
   },
   {
+    "tag": "PRIOR-ATTEMPT-PROSE-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "`isDirectoryOrAbsent`'s doc and `readAll`'s each shrink to a cite of the section that owns the fact, keeping the decision each states"
+        },
+        {
+          "path": "tests/priorAttempts.test.ts",
+          "description": "`refusalOf`'s doc and the obstructed-ancestor case's comment, same shrink"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "four sites spell out the ENOTDIR/ENOENT split `platform-facts.md` now owns, so one measured external fact is held in five prose copies that can drift apart",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "every site turning on the two stat facts points at the section that owns them rather than restating it, and each keeps the decision it exists to state.",
+    "tests": [],
+    "pins": [],
+    "notes": "The leftovers DENIAL-HELPER-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS named, handed back by the ruling and re-verified on disk: src/priorAttempts.ts ~104 (cites *Loud or nothing* for the posture, not the page for the fact) and ~373 (no cite); tests/priorAttempts.test.ts ~369 (cites the neighbouring *chmod denies nothing on win32*) and ~412 (no cite). src/fsProbe.ts ~22 already cites it and declares its bound \u2014 out of scope. Collides with MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH on both files."
+  },
+  {
     "tag": "EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER",
     "gate": {
       "kind": "open"
