@@ -42,7 +42,7 @@ import { join, relative } from "node:path";
 import type { PendingGateOptions } from "../src/builtinGates.js";
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 import type { GitStatusRecord } from "../src/git.js";
-import { matchesAny } from "../src/paths.js";
+import { matchesAny, namespacedJoin } from "../src/paths.js";
 import type { EntryExtension } from "../src/PendingSchema.js";
 import type { Phase } from "../src/Phase.js";
 
@@ -138,7 +138,7 @@ async function queueAtCommit(
 ): Promise<string | null> {
   if (ctx.stateRootRel === undefined) {
     try {
-      return await readFile(ctx.pendingPath, "utf8");
+      return await readFile(namespacedJoin(ctx.pendingPath), "utf8");
     } catch {
       return null;
     }

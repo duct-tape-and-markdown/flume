@@ -25,7 +25,7 @@ import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 
 import { existsLoud } from "../src/fsProbe.js";
-import { gitPath } from "../src/paths.js";
+import { gitPath, namespacedJoin } from "../src/paths.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
 
 import type {
@@ -92,7 +92,7 @@ export function resolveVitest(cwd: string): VitestInvocation {
     );
   }
   const entry = join(dirname(pkg), "vitest.mjs");
-  if (!existsLoud(entry)) {
+  if (!existsLoud(namespacedJoin(entry))) {
     throw new Error(
       `vitestRunner: vitest resolves from ${cwd} but its entry point is missing: ${entry}`,
     );
@@ -269,7 +269,7 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
         // to reach the same error.
         const sources = files.map((f) => {
           const from = resolve(cwd, f);
-          if (!existsLoud(from)) {
+          if (!existsLoud(namespacedJoin(from))) {
             throw new Error(`vitestRunner.runAtBase: ${f} is not in the tree at ${cwd}`);
           }
           return { rel: f, from };
@@ -289,8 +289,10 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
           sha: baseSha,
         });
         for (const { rel, from } of sources) {
-          await mkdir(dirname(join(worktree, rel)), { recursive: true });
-          await copyFile(from, join(worktree, rel));
+          await mkdir(namespacedJoin(dirname(join(worktree, rel))), {
+            recursive: true,
+          });
+          await copyFile(namespacedJoin(from), namespacedJoin(worktree, rel));
         }
         // A checkout of a git ref has no installed dependencies. The chain's
         // own reduction of the declared `setup` provisions it, so the base

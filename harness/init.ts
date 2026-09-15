@@ -346,7 +346,7 @@ export async function harnessInit(
   // consumer manifest that is not JSON — should leave the repository
   // untouched rather than refuse over a half-written tree.
   const self = readSelfPackage(HERE);
-  const template = await readFile(protocolTemplatePath(), "utf8");
+  const template = await readFile(namespacedJoin(protocolTemplatePath()), "utf8");
   const protocol = renderProtocol(template, stateRoot);
   const manifest = await readConsumerManifest(repoRoot);
 

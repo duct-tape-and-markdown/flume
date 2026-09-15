@@ -30,9 +30,11 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, normalize } from "node:path";
+import { dirname } from "node:path";
 
 import { z } from "zod";
+
+import { namespacedJoin } from "../src/paths.js";
 
 import { parseOrThrow, strict } from "./refusal.js";
 
@@ -123,9 +125,19 @@ export function planStatePath(stateRoot: string): string {
   return `${stateRoot}/${PLAN_STATE_REL}`;
 }
 
-/** The host's form of the path the package composed. */
+/**
+ * The host's form of the path the package composed — every fs call in this
+ * module is made on one of these, never on a bare join: a consumer's state
+ * root is a path this package did not choose, and a deep one is where
+ * absence stops meaning "no cursor yet" (`.claude/rules/platform-facts.md`,
+ * *Windows MAX_PATH (~260 chars) breaks fs calls with no long component*).
+ */
 const onDisk = (stateRoot: string): string =>
-  normalize(planStatePath(stateRoot));
+  namespacedJoin(planStatePath(stateRoot));
+
+/** The directory that holds it, same form — what the writer creates. */
+const onDiskDir = (stateRoot: string): string =>
+  namespacedJoin(dirname(planStatePath(stateRoot)));
 
 /**
  * The plan state under `stateRoot`, or `undefined` when no artifact is
@@ -184,6 +196,6 @@ export function writePlanState(stateRoot: string, state: PlanState): void {
   const path = onDisk(stateRoot);
   const checked = parseOrThrow(PlanStateSchema, state, `plan state at ${path}`);
 
-  mkdirSync(dirname(path), { recursive: true });
+  mkdirSync(onDiskDir(stateRoot), { recursive: true });
   writeFileSync(path, `${JSON.stringify(checked, null, 2)}\n`);
 }

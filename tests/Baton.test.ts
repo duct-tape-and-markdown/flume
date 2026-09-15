@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
+import {
+  describeBareCall,
+  fsImports,
+  scanFsCalls,
+} from "./helpers/namespacedFsScan.ts";
 
 const BATON_SRC_PATH = fileURLToPath(new URL("../src/Baton.ts", import.meta.url));
 
@@ -167,36 +172,20 @@ describe("Baton — missing directory", () => {
 describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
   // toNamespacedPath is a no-op on POSIX, so the roundtrip tests above pass
   // identically whether Baton routes through namespacedJoin or a bare join.
-  // Pin the source shape directly per PendingSchema.test.ts's precedent for
-  // this kind of platform fact.
-  const src = readFileSync(BATON_SRC_PATH, "utf8");
-
-  /**
-   * The symbols Baton.ts takes by name from `moduleSpecifier`, `as`-aliases
-   * resolved to the local binding and type-only clauses dropped (a type is
-   * never a call site). Absent module: throw, so a moved import shrinks the
-   * scan loudly instead of silently.
-   */
-  const namedImports = (moduleSpecifier: string): string[] => {
-    const quoted = moduleSpecifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const clause = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*"${quoted}"`).exec(src);
-    if (!clause) throw new Error(`src/Baton.ts has no named import from "${moduleSpecifier}"`);
-    return (clause[1] ?? "")
-      .split(",")
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0 && !/^type\s/.test(name))
-      .map((name) => name.split(/\s+as\s+/).pop()!.trim());
-  };
-
+  // Pin the source shape directly, per PendingSchema.test.ts's precedent for
+  // this kind of platform fact — through the scan the package-wide pin
+  // (tests/harnessPaths.test.ts) judges harness/ with, so this module cannot
+  // be admitted by a looser copy of one rule.
+  //
   // The scan's subjects are Baton.ts's own fs imports, never a list restated
   // here (`.claude/rules/engineering.md`, *Derived state is computed, never
   // restated beside its source*): a sixth fs import joins the scan by being
-  // written, so a bare join at its call site cannot ship green.
-  // `existsLoud` (src/fsProbe.ts) stats the path it is handed and declares
-  // the join its caller's, so it is a subject exactly as `node:fs` calls are.
-  const nodeFsImports = namedImports("node:fs");
-  const fsProbeImports = namedImports("./fsProbe.js");
-  const fsCalls = [...nodeFsImports, ...fsProbeImports];
+  // written, so a bare join at its call site cannot ship green. `existsLoud`
+  // (src/fsProbe.ts) stats the path it is handed and declares the join its
+  // caller's, so it is a subject exactly as `node:fs` calls are.
+  const src = readFileSync(BATON_SRC_PATH, "utf8");
+  const imports = fsImports(src);
+  const scan = scanFsCalls(src);
 
   it("imports namespacedJoin from ./paths.js", () => {
     // Named alongside whatever else Baton takes from paths.js (the state-root
@@ -206,23 +195,17 @@ describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
   });
 
   it("the scanned fs-symbol set is non-empty and covers Baton.ts's node:fs and ./fsProbe.js imports", () => {
-    // Vacuity pin for the scan below: an import clause the regex stopped
-    // matching would leave it green over zero subjects.
-    expect(fsCalls.length).toBeGreaterThan(0);
-    expect(nodeFsImports.length).toBeGreaterThan(0);
-    expect(fsProbeImports.length).toBeGreaterThan(0);
+    // Vacuity pin for the scan below: an import clause the scan stopped
+    // matching, or a call-site regex that stopped matching, would leave it
+    // green over zero subjects.
+    expect(scan.judged).toBeGreaterThan(0);
+    expect(imports.get("node:fs")?.length ?? 0).toBeGreaterThan(0);
+    expect(imports.get("./fsProbe.js")?.length ?? 0).toBeGreaterThan(0);
   });
 
   it("every fs symbol src/Baton.ts imports is called on a namespacedJoin argument", () => {
-    for (const fn of fsCalls) {
-      const callSites = [...src.matchAll(new RegExp(`\\b${fn}\\(`, "g"))];
-      expect(callSites.length, `${fn} is imported but never called`).toBeGreaterThan(0);
-
-      for (const call of callSites) {
-        const rest = src.slice((call.index ?? 0) + call[0].length);
-        expect(rest.startsWith("namespacedJoin("), `${fn} is called on a bare join`).toBe(true);
-      }
-    }
+    expect(scan.uncalled, "imported but never called").toEqual([]);
+    expect(scan.bare.map((call) => describeBareCall(call, "src/Baton.ts"))).toEqual([]);
   });
 });
 

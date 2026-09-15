@@ -37,7 +37,6 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -45,7 +44,7 @@ import {
   type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.js";
-import { resolvePendingPath } from "../src/paths.js";
+import { namespacedJoin, resolvePendingPath } from "../src/paths.js";
 import { NO_COMMIT_MODES } from "../src/Prompt.js";
 
 import { resolveCiteSync } from "./citeResolver.js";
@@ -365,7 +364,7 @@ export function buildPromptArgs(
 function inTree(cwd: string): (path: string) => string | null {
   return (path) => {
     try {
-      return readFileSync(join(cwd, path), "utf8");
+      return readFileSync(namespacedJoin(cwd, path), "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
