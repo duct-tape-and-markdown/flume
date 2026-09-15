@@ -668,7 +668,8 @@ into it.
 - A relocated state root is expected to live outside the working tree, so no
   in-repo gitignore glob is added for it; the default `<repoRoot>/.flume`
   receives the same runtime-ignore merge a job dir does (`spec/jobs.md`,
-  *Runtime ignores*).
+  *Runtime ignores*). The harness package does not support a relocated root
+  and refuses it at load (`spec/harness.md`, *Committed-path discipline*).
 
 ## The package a chain loads through
 

@@ -122,8 +122,10 @@ merging/
   The declaration itself lives in `spec/chain.md`.
 - Merge semantics: create the file if absent, otherwise append only the entries that are
   missing. Seed-authored lines and their order are preserved verbatim. Idempotent.
-- The runtime owns its own layout, and only that. Chain-convention directories (`sessions/`)
-  are the seed's to add.
+- The runtime owns its own layout, and only that. A chain-convention directory under the
+  state root is its chain's to ignore — the harness package writes its own at adoption
+  (`spec/harness.md`, *The runtime ignore set*), and a line added after adoption rides
+  the release's migration note.
 
 ## `flume job run <name>`
 

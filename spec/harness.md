@@ -35,7 +35,12 @@ re-author them.
 
 Every prompt the package renders names
 the engine's no-commit vocabulary from the engine's own declaration, never a
-restated copy, so a rename in the engine cannot strand a prompt.
+restated copy, so a rename in the engine cannot strand a prompt. Every key the
+package substitutes — its own composed values, a cited spec section, a queue
+entry, and a consumer's slot text alike — is declared as data, so the engine
+neutralizes inline-exec spans in all of them before it scans
+(`spec/prompt.md`, *The render pipeline*): what a prompt quotes reaches the
+agent inert, whoever wrote it.
 
 
 ### The entry extension
@@ -78,6 +83,18 @@ never a line regexed out of prose.
 Reads the engine's reported pickable set and
 no-commit facts. A consumer overrides it by declaration, not by copying it.
 
+
+### Committed-path discipline
+
+Every mechanic the package wires addresses a path some commit holds: the
+queue the `per` gate reads at a ref, the record a slice drains, the note a
+build tick parks into and `shipped` reads back. The package therefore
+requires the state root to resolve inside the repository, and refuses a
+relocated root at chain load, naming it — the one engine configuration the
+package narrows. The engine supports a root outside the working tree
+(`spec/chain.md`, *The package a chain loads through*); a consumer relocating
+its root runs the engine without this package's discipline, never a chain
+whose every tick silently skips its own gates.
 
 ### The runtime ignore set
 
