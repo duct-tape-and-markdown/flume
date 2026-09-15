@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "STANDIN-SCAN-INCLUDE-HELPERS",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/stubRunner.test.ts",
+          "description": "subject set is every `.ts` under `tests/`, read recursively — drop the top-level `*.test.ts` filename rule"
+        },
+        {
+          "path": "tests/helpers/stubRunner.ts",
+          "description": "doc comment names the type without writing the cast, per this scan's own declared fix"
+        }
+      ]
+    },
+    "summary": "Widen the stand-in scan past its top-level `*.test.ts` read so `tests/helpers/` — the shared stand-ins' home — is a subject",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "The scan's set is read recursively off `tests/`; the helper's prose carries no cast literal; suite green.",
+    "tests": [
+      "no suite file stands an engine type in through an `unknown` cast, `tests/helpers/` included"
+    ],
+    "pins": [
+      "the stand-in scan's subject set contains a `tests/helpers/` file"
+    ],
+    "notes": "The filename rule is the last selection the type-directed scan does not make from imports; helpers is where one escape hatch flows to every adopter. Measured over the tree: a recursive scan raises exactly one finding, the `as unknown as Runner` literal in helpers/stubRunner.ts prose, beside an engine import. Comment-stripping is the rejected fork — the scan's own doc comment already declares the fix for this case."
+  }
+]
