@@ -373,5 +373,35 @@
       "tests/subprocessHelper.test.ts",
       "tests/worktrees.test.ts"
     ]
+  },
+  {
+    "tag": "DENIAL-HELPER-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/denial.ts",
+          "description": "the two stat facts shrink to a cite of the page section that now owns them"
+        },
+        {
+          "path": "tests/denial.test.ts",
+          "description": "the cover parent-seal comment, same shrink"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the denial helper spells out both stat facts `platform-facts.md` now owns, so one measured external fact is held in two prose copies that can drift apart",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "the two measured stat facts have one home, and every site that turns on them points at it rather than restating it.",
+    "tests": [],
+    "pins": [],
+    "notes": "The trigger the closed question named has fired: 4e750c0 gave `.claude/rules/platform-facts.md` *win32 reports a path through a non-directory as not found*, carrying both facts and the deny-the-read-never-the-parent idiom. The helper's second paragraph and the cover's parent-seal comment predate it and restate it whole; the neighbouring *chmod denies nothing on win32* cite in the same comment is the pointer shape. tests/job.test.ts's one-line why stays debt."
   }
 ]
