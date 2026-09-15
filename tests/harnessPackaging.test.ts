@@ -103,6 +103,23 @@ async function quickstartSection(): Promise<string> {
   return sectionOf(await readFile(join(REPO_ROOT, "README.md"), "utf8"), QUICKSTART_HEADING);
 }
 
+/**
+ * A section's lead passage: everything from its heading up to its first
+ * `###` subsection, or the whole section when it has none.
+ *
+ * For the Quickstart that is the adoption path — the verb, what it writes,
+ * what a consumer runs next. Its `### The engine-level path` subsection is
+ * the alternative for a consumer who wants no harness package at all, and a
+ * claim about what the adoption path names has to stop short of it: read
+ * over the whole section, a verb named only under the alternative satisfies
+ * the claim while the adoption paragraph never mentions it.
+ */
+function leadPassage(section: string): string {
+  const lines = section.split(/\r?\n/);
+  const end = lines.findIndex((line) => /^### /.test(line));
+  return lines.slice(0, end === -1 ? undefined : end).join("\n");
+}
+
 /** The heading `docs/CLI.md` gives one verb of the harness bin. */
 function harnessVerbHeading(verb: string): string {
   return `## \`flume-harness ${verb}\``;
@@ -699,13 +716,18 @@ it("the README prerequisite line names the git floor", async () => {
  *
  * An agreement gate, and the reason the verb is not spelled here: the real
  * writer is the shipped `bin/flume-harness.js` over the build's own emit, the
- * reader is the README's Quickstart, so a verb renamed or added in
+ * reader is the Quickstart's adoption passage, so a verb renamed or added in
  * `harness/cli.ts` reds this rather than leaving the README naming a command
  * the bin no longer dispatches. That the listed verb is one the bin really
  * runs is carried end to end by the adoption case above; what is pinned here
  * is that the block is the dispatcher's set rather than decorative prose.
+ *
+ * The reader stops at the section's first `###` for the same reason the
+ * neighbouring list does: the Quickstart runs on into an engine-level
+ * subsection that is explicitly not the harness path, so a verb named only
+ * down there is a verb the adoption paragraph never hands anyone.
  */
-it("the README quickstart names the adoption verb the flume-harness bin dispatches", async () => {
+it("the README adoption passage names every verb the flume-harness bin dispatches", async () => {
   const bin = join(pkgDir, "bin", "flume-harness.js");
   const help = await runNodeStreams(pkgDir, [bin, "--help"], hermeticEnv());
   expect({ code: help.code, stderr: help.stderr }).toEqual({ code: 0, stderr: "" });
@@ -723,16 +745,30 @@ it("the README quickstart names the adoption verb the flume-harness bin dispatch
 
   const quickstart = await quickstartSection();
   expect(quickstart).toContain(QUICKSTART_HEADING);
+  const adoption = leadPassage(quickstart);
+  expect(adoption).toContain(QUICKSTART_HEADING);
+
+  // The handle's own detection, before the verdict: a verb named only under
+  // the engine-level subsection is one the adoption passage does not hand a
+  // reader, and a handle that ran to the end of the section would count it.
+  const demoted =
+    `${QUICKSTART_HEADING}\n\nAdopting the harness is one command.\n\n` +
+    `### The engine-level path: a chain you write\n\n\`flume-harness ${outside}\`\n`;
+  expect(sectionOf(demoted, QUICKSTART_HEADING)).toContain(`flume-harness ${outside}`);
+  expect(leadPassage(sectionOf(demoted, QUICKSTART_HEADING))).not.toContain(
+    `flume-harness ${outside}`,
+  );
+
   for (const verb of verbs) {
-    expect({ verb, named: quickstart.includes(`flume-harness ${verb}`) }).toEqual({
+    expect({ verb, named: adoption.includes(`flume-harness ${verb}`) }).toEqual({
       verb,
       named: true,
     });
   }
 
-  // And it *leads*: the first command the section hands a reader is the
+  // And it *leads*: the first command the passage hands a reader is the
   // adoption verb, not the engine-level install under it.
-  const opener = firstShellBlock(quickstart);
+  const opener = firstShellBlock(adoption);
   expect(opener.trim().length).toBeGreaterThan(0);
   expect(verbs.some((verb) => opener.includes(`flume-harness ${verb}`))).toBe(true);
 }, SPAWN_BUDGET_MS);
