@@ -91,19 +91,12 @@ not re-derive them:
 - **The win32 path-limit tests fail on win32** (`JOB-EXISTSSYNC-WIN32-PATH-TOTAL-LIMIT`,
   `DISPATCHER-NAMESPACEDJOIN-WIN32-PATH-TOTAL-LIMIT`). These exist only for this
   platform and have never passed on it.
-- **An engine defect that also bites on posix** — `src/Prompt.ts`. `renderPrompt`
-  substitutes `{{KEY}}` and *then* feeds the resulting text to `sh` via stdin
-  (`substitutePlaceholders` → `evaluateInlineExec` → `runInlineExec`), so a
-  substituted value lands in a shell string unquoted. `harness/prompts/*.md`
-  writes `` !`cat {{PENDING_PATH}}` ``; on win32 `sh` eats the backslashes and
-  the render aborts — `cat: 'C:UsersRUNNER~1AppData…': No such file` — taking
-  three `harnessPrompts` cases and one `harnessChain` case with it. **The same
-  defect fires on linux for any repo path containing a space**, which reduces to
-  a case this suite runs today. Its fork is small but real and wants your
-  ruling: does the engine shell-quote values it substitutes inside a span (it
-  owns the `sh` it spawns), or does the prompt author write `cat "{{...}}"` (the
-  engine cannot know a placeholder was meant as one shell word)? Ruling this one
-  is independent of the win32 fork above and worth doing either way.
+- **A span substituting an unquoted path** — **ruled at `808aa09`**, and no
+  longer part of this question: `spec/prompt.md` *The render pipeline* says a
+  value substituted into a span's command is text in a shell string and the
+  author quotes it. The package's prompts take the quotes; derive files them.
+  Named here only so the failure tally above stays honest — three
+  `harnessPrompts` cases and one `harnessChain` case belong to this family.
 
 ## `spec/harness.md` still reads as first-match-wins, but the resolver refuses a repeated heading (NEEDS AMENDMENT — directed spec edit)
 
