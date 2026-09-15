@@ -131,9 +131,10 @@ Open design half: the correctness-adjacency filing bar (same-day ruling)
 demotes exactly the findings these lenses produce. Resolve before
 arming — either a quality lane (pure-shape debt accumulates in commit
 bodies, batched into a dedicated quality wave at release cuts) or a bar
-carve-out for reuse findings that retire real drift risk. Sequencing:
-arm after the v0.11 boundary line ships, so the lenses don't polish code
-the demolition deletes.
+carve-out for reuse findings that retire real drift risk. Sequencing: the
+lenses arm the tick that fork is ruled, and not before — no release line
+gates them, and a ruling is the observable condition a later reader can
+check.
 
 ## Beyond v0.1 — dependency-aware fanout
 
