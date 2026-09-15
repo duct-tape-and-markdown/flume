@@ -179,5 +179,13 @@ outlives its scaffold and becomes API someone must excavate later.
   outside its own module (a test counts) **or** its place in the package's
   public surface as declared API.
 - An absence verdict never rests on a bare text search. Confirm a
-  zero-consumer or dead-symbol finding with LSP references
-  (`code-navigation.md`), never a plain no-hits.
+  zero-consumer or dead-symbol finding with a search that resolves symbols
+  — LSP references (`code-navigation.md`) — never a plain no-hits. The
+  instrument is a host prerequisite (`platform-facts.md`, *nvm scopes
+  global packages to one node version*), so a host that lacks it leaves
+  the verdict unmade, never approximated by grep.
+- This bullet is the ladder's bottom rung for its property and queues its
+  own promotion: a pin that fails on an export reachable from no entry of
+  the package's `exports` map and referenced from no other module makes
+  the verdict mechanical, and this bullet shrinks to a pointer in the
+  commit that ships it.

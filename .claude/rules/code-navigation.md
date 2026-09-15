@@ -14,7 +14,7 @@ Use for:
 
 LSP catches type-level breakage *during* exploration, before the build phase's `tscGate` reverts the commit. Use it as part of the inner loop, not just as a final check.
 
-Provided by the `typescript-lsp` plugin (already enabled in `.claude/settings.json`); requires `typescript-language-server` on PATH (globally installed).
+Provided by the `typescript-lsp` plugin (already enabled in `.claude/settings.json`); requires `typescript-language-server` on PATH (globally installed — and under nvm a global install belongs to one node version, `platform-facts.md`, *nvm scopes global packages to one node version*).
 
 ### 2. ast-grep — structural pattern level
 

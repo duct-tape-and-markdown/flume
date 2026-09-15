@@ -94,8 +94,10 @@ Downstream chains outside this repo are the interactive session's to read,
 and their findings enter through the inbox.
 
 An **absence verdict never rests on a bare text search**: proving a symbol is
-*un*referenced needs LSP references (`code-navigation.md`), never a plain
-no-hits.
+*un*referenced needs a search that resolves symbols — LSP references
+(`code-navigation.md`) — never a plain no-hits. A host without the instrument
+leaves the finding unmade and says so (`engineering.md`, *An export earns its
+consumer*).
 
 ## Routing
 

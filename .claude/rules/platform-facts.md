@@ -194,3 +194,15 @@ is accepted by the main command only (`ls-tree` exits 129 on it),
 root. Compose git's pathspecs at one spelling and pin the over-match case,
 not the matched one.
 
+## nvm scopes global packages to one node version
+
+`npm install -g` writes into the active node version's own tree
+(`~/.nvm/versions/node/<version>/bin`), and `nvm install <new>` puts a fresh,
+empty tree on PATH. Every global package — the language server the sweep's
+absence verdicts need among them — stays under the old version and vanishes
+from PATH without an error. The signature is `which typescript-language-server`
+empty while the previous version's `bin/` still holds it; the fix is
+`npm install -g` under the active version, or `nvm install <new>
+--reinstall-packages-from=<old>` at upgrade time. Nothing in the repo holds
+this: no gate reads PATH, and an agent that lacks the tool parks the finding
+rather than rebuilding the verdict from grep.
