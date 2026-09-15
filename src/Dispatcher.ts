@@ -712,7 +712,7 @@ function isMergingMarker(rec: unknown): rec is MergingMarker {
  * `undefined` and the caller names the file alone.
  *
  * The directory read takes the same line, as the ENOENT-vs-other split
- * `PriorAttempts.readAll` (src/priorAttempts.ts) gives its own record dir:
+ * `PriorAttemptStore.readAll` (src/priorAttempts.ts) gives its own record dir:
  * an *absent* `merging/` is the honest empty answer — nothing was ever
  * staked — while any other listing failure (permission denied, a file
  * sitting at the path, a path too long for the platform) escapes. An
@@ -4590,9 +4590,10 @@ export class Dispatcher {
    * rewrite-read already ran (and, for the fanout wave, after any shipped
    * work already landed on trunk). A parse failure here means something
    * outside this tick corrupted the file in the gap between that strict read
-   * and now; degrading to `[]` is bounded because `pendingAfter` feeds only
-   * `chain.ts`'s advisory `hasPickable` handoff check, never a rewrite or a
-   * work decision (engineering.md "Loud or nothing": the degraded-but-
+   * and now; degrading to `[]` is bounded because `pendingAfter` — and the
+   * `TickResult.pickableAfter` derived from it — feeds only the handoff's
+   * advisory read of what is pickable next, never a rewrite or a work
+   * decision (engineering.md "Loud or nothing": the degraded-but-
    * proceeding path, declared and cited at its two call sites).
    *
    * Every way this read can fail degrades the same declared way — announced,
@@ -4649,7 +4650,7 @@ export class Dispatcher {
    * spec/loop.md "Tip verify", "Harness-driven commits carry no expected-tip
    * bookkeeping": no sha comparison — `liveForeignClaimPid`, checked fresh
    * immediately before this method's own harness-driven `commitPaths` call,
-   * the wave's other tip-verify site beside `cherryPick` (`runFanout`,
+   * the wave's other tip-verify site beside `cherryPickRange` (`runFanout`,
    * above). Checked before `writeFile`: a refusal here leaves pending.json
    * untouched on disk rather than a write with no commit behind it. No live
    * claim means the rewrite recommits on whatever tip is current — its
@@ -4740,7 +4741,7 @@ export class Dispatcher {
     if (!relocated) {
       // spec/loop.md "Tip verify", re-checked fresh immediately before this
       // method's own commit — the wave's other harness-driven commit besides
-      // `cherryPick`. Checked before `writeFile`: a refusal here leaves
+      // `cherryPickRange`. Checked before `writeFile`: a refusal here leaves
       // pending.json untouched on disk, never a write with no commit behind
       // it. Shipped entries this wave already cherry-picked stay shipped
       // regardless — only the ledger update itself is refused.
