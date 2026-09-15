@@ -19,6 +19,9 @@ export { Baton } from "./Baton.js";
 export type {
   Chain,
   Concurrency,
+  // `TickResult.entries` carries one per fanout entry; a chain reading the
+  // wave's per-entry outcomes into a helper needs the name.
+  FanoutEntryOutcome,
   Phase,
   QuarantinedTag,
   TickContext,
@@ -96,8 +99,14 @@ export {
 } from "./Prompt.js";
 
 // `FlumePaths` is `Chain.worktreesBase`'s parameter: a chain declaring that
-// callback anywhere but inline needs the name.
-export { type FlumeApi, type FlumePaths } from "./flumeApi.js";
+// callback anywhere but inline needs the name. `FlumeApiPaths` is what
+// `FlumeApi.paths` actually holds — the same roots plus the resolved
+// `stateRootRel`.
+export {
+  type FlumeApi,
+  type FlumeApiPaths,
+  type FlumePaths,
+} from "./flumeApi.js";
 
 export {
   Dispatcher,
@@ -107,7 +116,12 @@ export {
   type ChainModule,
   type ChainFactory,
   type DispatcherOptions,
+  // The two stage-failure records `TickVerdict`/`TickOutcome` list beside
+  // `ProvisionFailure`: a chain routing a quarantine decision off one needs
+  // to name what it is holding.
+  type GateFailure,
   type Logger,
+  type MergeFailure,
   type ProvisionFailure,
   type RenderRequest,
   type RenderResolution,

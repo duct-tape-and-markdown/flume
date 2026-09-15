@@ -161,7 +161,7 @@ export type StageFailureEntry =
  * (no entry to quarantine — same rationale as {@link StageFailureEntry}, it
  * falls to the consecutive-failure backstop alone).
  */
-type MergeFailure = StageFailureEntry & {
+export type MergeFailure = StageFailureEntry & {
   /** Same comparison-key contract as `ProvisionFailure.signature`. */
   signature: string;
   message: string;
@@ -175,7 +175,7 @@ type MergeFailure = StageFailureEntry & {
  * it falls to the consecutive-failure backstop alone) and present for a
  * fanout entry/wave gate revert.
  */
-type GateFailure = StageFailureEntry & {
+export type GateFailure = StageFailureEntry & {
   /** Same comparison-key contract as `ProvisionFailure.signature`. */
   signature: string;
   message: string;

@@ -65,23 +65,36 @@ export interface ExportScan {
   /** Judged exports neither reachable nor referenced — the residue. */
   readonly unearned: readonly ExportSite[];
   /**
-   * Every function signature the `exports` map reaches — the set `unnamable`
-   * is judged over, so a walk that stopped finding functions is visible
-   * rather than reading as a clean verdict.
+   * Every function signature the `exports` map reaches — one half of the set
+   * `unnamable` is judged over, so a walk that stopped finding functions is
+   * visible rather than reading as a clean verdict.
    */
   readonly signatures: readonly ExportSite[];
   /**
-   * Signature types a consumer can read but cannot name: a type the shipped
-   * surface's parameter and return positions mention, declared in the shipped
-   * tree, that no entry module exports under any name.
+   * Every non-function property position the `exports` map reaches — the
+   * other half of that set, carrying the same guard.
    */
-  readonly unnamable: readonly SignatureType[];
+  readonly properties: readonly ExportSite[];
+  /**
+   * Types a consumer can read but cannot name: a type the shipped surface's
+   * signature and property positions mention, declared in the shipped tree,
+   * that no entry module exports under any name.
+   */
+  readonly unnamable: readonly UnnamableType[];
 }
 
-/** One signature position naming a type the `exports` map cannot hand out. */
-export interface SignatureType {
-  /** The function-like declaration whose signature names it. */
-  readonly signature: ExportSite;
+/**
+ * Which position named the type. A signature names one in a parameter or a
+ * return annotation, a property in its own annotation; the two are found by
+ * different halves of the walk, so either can be judged alone.
+ */
+export type PositionKind = "signature" | "property";
+
+/** One reached position naming a type the `exports` map cannot hand out. */
+export interface UnnamableType {
+  /** The signature or property whose annotation names it. */
+  readonly position: ExportSite;
+  readonly kind: PositionKind;
   /** Where the unnamable type is declared. */
   readonly type: ExportSite;
 }
@@ -177,9 +190,9 @@ const inNamespace = (decl: ts.Node): boolean => {
 /** `module:line name`, the form a failure message cites a finding in. */
 export const formatSite = (site: ExportSite): string =>
   `${site.module}:${site.line} ${site.name}`;
-/** `<signature> names <type>`, the form a failure message cites a finding in. */
-export const formatSignatureType = (found: SignatureType): string =>
-  `${formatSite(found.signature)} names ${formatSite(found.type)}`;
+/** `<position> names <type>`, the form a failure message cites a finding in. */
+export const formatUnnamableType = (found: UnnamableType): string =>
+  `${formatSite(found.position)} names ${formatSite(found.type)}`;
 
 /**
  * Scan a package's shipped modules for exports nothing earns.
@@ -194,8 +207,9 @@ export const formatSignatureType = (found: SignatureType): string =>
  *
  * The same walk carries a second, stricter verdict alongside it. Reachability
  * asks whether a consumer can *read* a type; `unnamable` asks whether one can
- * *write* it — a signature type is nameable only when some entry module
- * exports it under a name an import specifier can carry.
+ * *write* it — a type named by a signature or a property position is nameable
+ * only when some entry module exports it under a name an import specifier can
+ * carry.
  */
 export const scanExports = (request: ExportScanRequest): ExportScan => {
   const root = resolve(request.root);
@@ -292,36 +306,52 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     }
   }
 
-  // --- signature types the exports map cannot hand out --------------------
+  // --- types the exports map reaches but cannot hand out ------------------
   // Reachability above proves a type is *readable*: it lands in the emitted
   // `.d.ts` and hover text shows it. It does not prove the type is
   // *nameable* — a consumer writing `const o: RenderOptions = …` needs an
   // import specifier, and only an entry module's own export list supplies
-  // one. So this arm re-asks the stricter question over the signatures the
-  // map reaches: every type a parameter or return position names, declared
-  // in the shipped tree, must be exported by some entry module.
+  // one. So this arm re-asks the stricter question over the positions the map
+  // reaches: every type one of them names, declared in the shipped tree, must
+  // be exported by some entry module.
   //
-  // Scope is every signature a reached symbol carries into the `.d.ts`: the
-  // reached function itself, and the member signatures of a reached type —
-  // `Chain.worktreesBase` names a parameter type a chain author must be able
-  // to annotate exactly as `renderPrompt` does. Two members are out, and
-  // both for the same reason the verdict exists: a `private` member carries
-  // no signature into the `.d.ts` at all, and a namespace member is named
-  // through its namespace rather than through an import specifier.
+  // A position is an annotation a consumer reads but may not be able to
+  // write — a function's parameters and return, and a property's own type.
+  // Scope is every position a reached symbol carries into the `.d.ts`: the
+  // reached function or variable itself, and the members of a reached type.
+  // `Chain.worktreesBase` names a parameter type and `FlumeApi.paths` a
+  // property type, each of which a chain author must be able to annotate
+  // exactly as `renderPrompt`'s parameter demands.
+  //
+  // Three exclusions, each for the reason the verdict exists. A `private`
+  // member carries no annotation into the `.d.ts` at all. A namespace member
+  // is named through its namespace rather than through an import specifier.
+  // And a type alias's own type node is a *second name* for what it points
+  // at rather than a position naming it — importing the alias imports the
+  // type — so the walk descends through one without reporting it.
   const entryExported = new Set<ts.Symbol>();
   for (const entry of entryFiles) {
     for (const sym of moduleExports(entry)) entryExported.add(unalias(sym));
   }
   const shippedFiles = new Set(build.fileNames.map((f) => resolve(f)));
 
-  /** One signature the walk found, under the name a consumer reads it by. */
-  interface FoundSignature {
-    readonly node: ts.SignatureDeclaration;
-    /**
-     * Dotted from the reached symbol: `renderPrompt`, `Chain.worktreesBase`.
-     */
-    readonly name: string;
-  }
+  /**
+   * One position the walk found, under the name a consumer reads it by —
+   * dotted from the reached symbol: `renderPrompt`, `Chain.worktreesBase`. A
+   * signature carries its declaration, whose parameter and return annotations
+   * are walked; a property carries its annotation directly.
+   */
+  type FoundPosition =
+    | {
+        readonly kind: "signature";
+        readonly node: ts.SignatureDeclaration;
+        readonly name: string;
+      }
+    | {
+        readonly kind: "property";
+        readonly node: ts.TypeNode;
+        readonly name: string;
+      };
 
   /**
    * How a consumer addresses one member of a container. A call, construct or
@@ -339,75 +369,86 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   };
 
   /**
-   * The signatures a type position carries: itself when it is a function
-   * type, its members when it is an object type. A function type's own
-   * parameters are not descended into — the type walk below already reads
-   * every type reference nested inside one.
+   * The positions an annotation carries: a signature when it is a function
+   * type, its members' when it is an object type, and otherwise the
+   * annotation itself. A function type's own parameters are not descended
+   * into — the type walk below already reads every type reference nested
+   * inside one.
    */
-  const fromTypeNode = (
+  const fromAnnotation = (
     type: ts.TypeNode,
     name: string,
-    out: FoundSignature[],
+    out: FoundPosition[],
+    /**
+     * Whether the annotation is a position in its own right. False for a type
+     * alias's right-hand side, which *is* the name it was reached under.
+     */
+    reportsItself = true,
   ): void => {
     if (ts.isFunctionLike(type)) {
-      out.push({ node: type, name });
+      out.push({ kind: "signature", node: type, name });
     } else if (ts.isTypeLiteralNode(type)) {
       fromMembers(type.members, name, out);
+    } else if (reportsItself) {
+      out.push({ kind: "property", node: type, name });
     }
   };
 
   function fromMembers(
     members: readonly (ts.ClassElement | ts.TypeElement)[],
     prefix: string,
-    out: FoundSignature[],
+    out: FoundPosition[],
   ): void {
     for (const member of members) {
       if (isPrivateMember(member)) continue;
       const name = memberPath(member, prefix);
       if (ts.isFunctionLike(member)) {
-        out.push({ node: member, name });
+        out.push({ kind: "signature", node: member, name });
       } else if (
         (ts.isPropertySignature(member) || ts.isPropertyDeclaration(member)) &&
         member.type
       ) {
-        fromTypeNode(member.type, name, out);
+        fromAnnotation(member.type, name, out);
       }
     }
   }
 
   /**
-   * Every signature one reached declaration carries. A `function` statement
-   * is one; so is `const f = (…) => …` and the function-type annotation a
-   * `const` may carry instead of an initializer. An interface, a class or a
-   * type alias carries the signatures of its members instead of one of its
-   * own. A namespace and an enum carry none the map hands out by name.
+   * Every position one reached declaration carries. A `function` statement is
+   * a signature; so is `const f = (…) => …`, while any other annotation a
+   * `const` carries is a property position. An interface or a class carries
+   * its members' positions instead of one of its own, and so does a type
+   * alias — except that the alias's own type node is descended into rather
+   * than reported, being the name it was reached under. A namespace and an
+   * enum carry none the map hands out by name.
    */
-  const signaturesOf = (
+  const positionsOf = (
     decl: ts.Declaration,
     name: string,
-  ): readonly FoundSignature[] => {
-    const out: FoundSignature[] = [];
+  ): readonly FoundPosition[] => {
+    const out: FoundPosition[] = [];
     if (ts.isFunctionLike(decl)) {
-      out.push({ node: decl, name });
+      out.push({ kind: "signature", node: decl, name });
     } else if (ts.isVariableDeclaration(decl)) {
-      if (decl.type) fromTypeNode(decl.type, name, out);
+      if (decl.type) fromAnnotation(decl.type, name, out);
       if (
         out.length === 0 &&
         decl.initializer &&
         ts.isFunctionLike(decl.initializer)
       ) {
-        out.push({ node: decl.initializer, name });
+        out.push({ kind: "signature", node: decl.initializer, name });
       }
     } else if (ts.isInterfaceDeclaration(decl) || ts.isClassDeclaration(decl)) {
       fromMembers(decl.members, name, out);
     } else if (ts.isTypeAliasDeclaration(decl)) {
-      fromTypeNode(decl.type, name, out);
+      fromAnnotation(decl.type, name, out, /* reportsItself */ false);
     }
     return out;
   };
 
   const signatures: ExportSite[] = [];
-  const unnamable: SignatureType[] = [];
+  const properties: ExportSite[] = [];
+  const unnamable: UnnamableType[] = [];
   const reported = new Set<string>();
 
   for (const owner of reachable) {
@@ -417,46 +458,59 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
       if (!shippedFiles.has(resolve(file.fileName))) continue;
       if (inNamespace(decl)) continue;
 
-      for (const fn of signaturesOf(decl, owner.getName())) {
-        const signature: ExportSite = {
+      for (const found of positionsOf(decl, owner.getName())) {
+        const position: ExportSite = {
           module: relPath(root, file.fileName),
-          name: fn.name,
-          line: file.getLineAndCharacterOfPosition(fn.node.getStart()).line + 1,
+          name: found.name,
+          line:
+            file.getLineAndCharacterOfPosition(found.node.getStart()).line + 1,
         };
-        signatures.push(signature);
+        (found.kind === "signature" ? signatures : properties).push(position);
 
         const named = (node: ts.Node): void => {
           if (ts.isTypeReferenceNode(node)) {
             const sym = checker.getSymbolAtLocation(node.typeName);
             const target = sym ? unalias(sym) : undefined;
-            // A type parameter is declared by this signature and named by
-            // writing the signature, never by importing it.
+            // Where the named type is declared in the shipped tree. A type
+            // declared nowhere the package ships is the consumer's own or the
+            // lib's, and nameable already.
+            const shipped = (target?.declarations ?? []).filter((d) =>
+              shippedFiles.has(resolve(d.getSourceFile().fileName)),
+            );
+            // A type parameter is declared by this position's own scope and
+            // named by writing it; a namespace member is named through its
+            // namespace. Neither is reached by an import specifier, so the
+            // verdict has nothing to say about either.
             if (
               target &&
               !(target.flags & ts.SymbolFlags.TypeParameter) &&
               !entryExported.has(target) &&
-              (target.declarations ?? []).some((d) =>
-                shippedFiles.has(resolve(d.getSourceFile().fileName)),
-              )
+              shipped.length > 0 &&
+              !shipped.some(inNamespace)
             ) {
-              const found: SignatureType = {
-                signature,
-                type: siteOf(root, target, signature.module),
+              const finding: UnnamableType = {
+                position,
+                kind: found.kind,
+                type: siteOf(root, target, position.module),
               };
-              const key = formatSignatureType(found);
+              const key = formatUnnamableType(finding);
               if (!reported.has(key)) {
                 reported.add(key);
-                unnamable.push(found);
+                unnamable.push(finding);
               }
             }
           }
           ts.forEachChild(node, named);
         };
 
-        for (const param of fn.node.parameters) {
-          if (param.type) named(param.type);
+        if (found.kind === "property") {
+          named(found.node);
+        } else {
+          for (const param of found.node.parameters) {
+            if (param.type) named(param.type);
+          }
+          if (found.node.type) named(found.node.type);
         }
-        if (fn.node.type) named(fn.node.type);
       }
     }
   }
@@ -524,6 +578,7 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     referenced: referencedSites,
     unearned,
     signatures,
+    properties,
     unnamable,
   };
 };

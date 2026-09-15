@@ -5,17 +5,18 @@
  *
  * Two verdicts ride the one scan. *Unearned* is the rule's own: an export
  * nothing reaches and nothing references. *Unnamable* is its consumer-facing
- * half — a type the shipped signatures name that no entry module exports, so
- * the hover text shows a name no `import` can carry.
+ * half — a type the shipped signature and property positions name that no
+ * entry module exports, so the hover text shows a name no `import` can carry.
  *
  * Each is asserted over a fixture as well as over this tree, because a pin
  * asserting an absence needs its detector shown working. The fixture arms
  * drive the scanner over a package whose residue and whose unnamable
- * signature types are known by construction — otherwise "none of either" is a
- * claim no failing run has ever backed. The repo arms are the pins
- * themselves, and `unnamable` splits across two of them: a top-level
- * function's signature and a reached type's member signature are found by
- * different halves of the walk, so each half is judged under its own title.
+ * types are known by construction — otherwise "none of either" is a claim no
+ * failing run has ever backed. The repo arms are the pins themselves, and
+ * `unnamable` splits across three of them: a top-level function's signature,
+ * a reached type's member signature, and a reached type's property
+ * annotation are found by different parts of the walk, so each is judged
+ * under its own title.
  *
  * The scanner is the same one throughout, reading real tsconfigs and a real
  * manifest, so the fixture cannot drift into testing a second implementation
@@ -30,22 +31,26 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import {
-  formatSignatureType,
   formatSite,
+  formatUnnamableType,
   scanExports,
   type ExportScan,
-  type SignatureType,
+  type UnnamableType,
 } from "./helpers/exportGraph.ts";
 
 /**
- * Which half of the signature walk a finding came from. A member signature is
- * reported dotted from the type that declares it (`Chain.worktreesBase`); a
- * top-level one carries a bare identifier, which can hold no dot. The two
- * repo arms below split `unnamable` on this so each judges the half its title
- * claims, rather than both restating one array.
+ * Which part of the walk a finding came from. The scan says whether the
+ * position was a signature or a property; within the signatures, a member is
+ * reported dotted from the type that declares it (`Chain.worktreesBase`)
+ * while a top-level one carries a bare identifier, which can hold no dot. The
+ * three arms below split `unnamable` on these so each judges the part its
+ * title claims, rather than all three restating one array.
  */
-const isMember = (found: SignatureType): boolean =>
-  found.signature.name.includes(".");
+const isTopLevelSignature = (found: UnnamableType): boolean =>
+  found.kind === "signature" && !found.position.name.includes(".");
+const isMemberSignature = (found: UnnamableType): boolean =>
+  found.kind === "signature" && found.position.name.includes(".");
+const isProperty = (found: UnnamableType): boolean => found.kind === "property";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -70,14 +75,18 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * is the one finding. Reachability cannot tell them apart — both land in the
  * emitted `.d.ts` — which is the whole reason the second arm exists.
  *
- * Three more cover the member walk and both of its exclusions, each as a
- * type named from exactly one place. `Container.reach` is a member signature,
- * and the `Membered` it names is the second finding. `Guarded.hush` is
- * `private`, so neither the member nor the `Hushed` it names is public
+ * Four more cover the member walk and its exclusions, each as a type named
+ * from exactly one place. `Container.reach` is a member signature, and the
+ * `Membered` it names is the second finding. `Container.held` is a property
+ * position, and the `Held` it names is the third — while `Container.boxed`
+ * is the same position over a `Box` the entry module re-exports, so the
+ * property arm discriminates exactly as the signature arm does. `Guarded.hush`
+ * is `private`, so neither the member nor the `Hushed` it names is public
  * surface at all — `Hushed` stays earned only through the consumer module,
  * which is how the arm sees the exclusion fire rather than inferring it.
  * `Box.Lid.open` is a namespace member, and the `Box.Key` it names is written
- * through the namespace `lib/index.ts` already exports.
+ * through the namespace, as is the `Box.Lid` that `Box.lid` holds — the
+ * exclusion reads from both sides, the position's and the named type's.
  */
 const FIXTURE_FILES: Readonly<Record<string, string>> = {
   "package.json": JSON.stringify({
@@ -113,7 +122,7 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
   "lib/index.ts": [
     `export { publicEntry } from "./surface.js";`,
     `export type { Container, Guarded } from "./surface.js";`,
-    `export type { Named } from "./shapes.js";`,
+    `export type { Box, Named } from "./shapes.js";`,
     ``,
   ].join("\n"),
   "lib/shapes.ts": [
@@ -133,6 +142,10 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `  readonly h: number;`,
     `}`,
     ``,
+    `export interface Held {`,
+    `  readonly held: number;`,
+    `}`,
+    ``,
     `export interface Box {`,
     `  readonly lid: Box.Lid;`,
     `}`,
@@ -148,7 +161,7 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     ``,
   ].join("\n"),
   "lib/surface.ts": [
-    `import type { Box, Hushed, Membered, Named, Shipped } from "./shapes.js";`,
+    `import type { Box, Held, Hushed, Membered, Named, Shipped } from "./shapes.js";`,
     ``,
     `export const publicEntry = (s: Shipped, k: Named): number =>`,
     `  s.n + k.label.length;`,
@@ -156,6 +169,7 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `export interface Container {`,
     `  readonly reach: (m: Membered) => void;`,
     `  readonly boxed: Box;`,
+    `  readonly held: Held;`,
     `}`,
     ``,
     `export class Guarded {`,
@@ -239,6 +253,7 @@ it("the export scan flags an export that no other module references and the expo
     "Box",
     "Container",
     "Guarded",
+    "Held",
     "Hushed",
     "Membered",
     "Named",
@@ -249,7 +264,7 @@ it("the export scan flags an export that no other module references and the expo
     "testOnly",
   ]);
 
-  expect(scan.unearned.map(formatSite)).toEqual(["lib/surface.ts:21 residue"]);
+  expect(scan.unearned.map(formatSite)).toEqual(["lib/surface.ts:22 residue"]);
 
   // Both earning arms fired, each over the exports it belongs to — so the
   // single finding above is a discrimination, not a scan that flagged
@@ -260,6 +275,7 @@ it("the export scan flags an export that no other module references and the expo
     "Box",
     "Container",
     "Guarded",
+    "Held",
     "Membered",
     "Named",
     "Shipped",
@@ -289,7 +305,7 @@ it("the export scan flags a signature type no entry module exports", () => {
   // is not, and is the finding. Same signature, same reachability, opposite
   // verdicts — the arm discriminates rather than flagging what it walked.
   expect(
-    scan.unnamable.filter((f) => !isMember(f)).map(formatSignatureType),
+    scan.unnamable.filter(isTopLevelSignature).map(formatUnnamableType),
   ).toEqual(["lib/surface.ts:3 publicEntry names lib/shapes.ts:1 Shipped"]);
 });
 
@@ -308,7 +324,9 @@ it("the export scan walks a member signature and skips a private member and a na
 
   // The member signature's parameter type is the finding, exactly as a
   // top-level function's would be.
-  expect(scan.unnamable.filter(isMember).map(formatSignatureType)).toEqual([
+  expect(
+    scan.unnamable.filter(isMemberSignature).map(formatUnnamableType),
+  ).toEqual([
     "lib/surface.ts:7 Container.reach names lib/shapes.ts:9 Membered",
   ]);
 
@@ -318,6 +336,38 @@ it("the export scan walks a member signature and skips a private member and a na
   const flagged = scan.unnamable.map((f) => f.type.name);
   expect(flagged).not.toContain("Hushed");
   expect(flagged).not.toContain("Key");
+});
+
+it("the export scan flags a property type no entry module exports", () => {
+  const scan = fixtureScan();
+
+  // Vacuity guard: the map resolved, and the walk carries every property
+  // position the shipped surface has — the two on `Container` that split the
+  // verdict among them. An empty `properties` would report the same empty
+  // `unnamable` below for having walked nothing at all.
+  expect(scan.entryModules).toEqual(["lib/index.ts"]);
+  expect(scan.properties.map(formatSite).sort()).toEqual([
+    "lib/shapes.ts:10 Membered.m",
+    "lib/shapes.ts:18 Held.held",
+    "lib/shapes.ts:2 Shipped.n",
+    "lib/shapes.ts:22 Box.lid",
+    "lib/shapes.ts:6 Named.label",
+    "lib/surface.ts:8 Container.boxed",
+    "lib/surface.ts:9 Container.held",
+  ]);
+
+  // `Box` is re-exported by `lib/index.ts` and so `Container.boxed` is
+  // silent; `Held` is not, and is the finding. Same container, same
+  // reachability, opposite verdicts — the arm discriminates rather than
+  // flagging every property it walked.
+  expect(scan.unnamable.filter(isProperty).map(formatUnnamableType)).toEqual([
+    "lib/surface.ts:9 Container.held names lib/shapes.ts:17 Held",
+  ]);
+
+  // The namespace exclusion read from the named type's side rather than the
+  // position's: `Box.lid` is an ordinary property of an ordinary interface,
+  // and the `Box.Lid` it holds is written through the namespace.
+  expect(scan.unnamable.map((f) => f.type.name)).not.toContain("Lid");
 });
 
 // --- the pins ------------------------------------------------------------
@@ -367,7 +417,7 @@ it("every type an exported function's signature names is exported from an entry 
   }
 
   expect(
-    scan.unnamable.filter((f) => !isMember(f)).map(formatSignatureType),
+    scan.unnamable.filter(isTopLevelSignature).map(formatUnnamableType),
   ).toEqual([]);
 });
 
@@ -393,5 +443,32 @@ it("every type a member signature of a reached type names is exported from an en
     expect(walked).toContain(member);
   }
 
-  expect(scan.unnamable.filter(isMember).map(formatSignatureType)).toEqual([]);
+  expect(
+    scan.unnamable.filter(isMemberSignature).map(formatUnnamableType),
+  ).toEqual([]);
+});
+
+it("every type a reached property position names is exported from an entry module", () => {
+  const scan = repoScan();
+
+  // Vacuity guard: the map resolved to both entry modules, and the walk
+  // carries property positions — named, because a signature-only walk reports
+  // the same empty verdict below. These three are the positions this arm
+  // first went red over, one per module that had to gain an entry line.
+  expect([...scan.entryModules].sort()).toEqual([
+    "harness/index.ts",
+    "src/index.ts",
+  ]);
+  const walked = new Set(scan.properties.map((site) => site.name));
+  for (const property of [
+    "TickResult.entries",
+    "FlumeApi.paths",
+    "TickVerdict.gateFailures",
+  ]) {
+    expect(walked).toContain(property);
+  }
+
+  expect(scan.unnamable.filter(isProperty).map(formatUnnamableType)).toEqual(
+    [],
+  );
 });
