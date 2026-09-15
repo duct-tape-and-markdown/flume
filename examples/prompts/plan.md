@@ -1,19 +1,19 @@
 # CURRENT STATE
 
 <pending-json>
-!`cat .flume/plan/pending.json 2>/dev/null || echo "[]"`
+!`cat "{{FLUME_DIR}}/plan/pending.json" 2>/dev/null || echo "[]"`
 </pending-json>
 
 <state>
-!`cat .flume/plan/state.md 2>/dev/null || echo "(no prior state)"`
+!`cat "{{FLUME_DIR}}/plan/state.md" 2>/dev/null || echo "(no prior state)"`
 </state>
 
 <open-questions>
-!`cat .flume/plan/open-questions.md 2>/dev/null || echo "(none)"`
+!`cat "{{FLUME_DIR}}/plan/open-questions.md" 2>/dev/null || echo "(none)"`
 </open-questions>
 
 <inbox>
-!`ls .flume/inbox/*.md 2>/dev/null || echo "(drained)"`
+!`ls "{{FLUME_DIR}}"/inbox/*.md 2>/dev/null || echo "(drained)"`
 </inbox>
 
 <active-specs>

@@ -1191,7 +1191,7 @@ without round-tripping through `promptArgs`:
 </recent-commits>
 
 <pending-json>
-!`cat .flume/plan/pending.json 2>/dev/null || echo "[]"`
+!`cat "{{FLUME_DIR}}/plan/pending.json" 2>/dev/null || echo "[]"`
 </pending-json>
 ```
 

@@ -25,18 +25,20 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { Gate, GateContext } from "../src/Gate.ts";
 import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
+import { renderPrompt } from "../src/Prompt.ts";
 import { Baton } from "../src/Baton.ts";
 import { Dispatcher, type TickOutcome } from "../src/Dispatcher.ts";
+import { resolvePendingPath } from "../src/paths.ts";
 import {
   buildFlumeApi,
   type FlumeApi,
@@ -166,6 +168,199 @@ describe("examples/prompts — every shipped prompt has a phase that names it", 
     expect(
       shipped.filter((name) => !declared.has(`prompts/${name}`)),
     ).toEqual([]);
+  });
+});
+
+/**
+ * `spec/prompt.md`, *The reserved `{{FLUME_DIR}}` prompt arg* — the token
+ * exists to close the footgun where a template hardcodes `.flume/` while the
+ * dispatcher resolved a relocated root. A shipped example is a template a
+ * consumer copies, so a literal there teaches the footgun rather than the
+ * affordance, and two of the plan template's spans carry an `|| echo`
+ * fallback: a miss renders as "(none)" and the tick plans blind instead of
+ * refusing (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * Agreement gate (`engineering.md`, *A seam gate reads what the real writer
+ * wrote*): the real reader is the engine's `renderPrompt` over the shipped
+ * markdown, handed the root the way a dispatcher hands it — reserved, merged
+ * past `args`. The seam under test is the template's rooting and quoting
+ * against that substitution, so the state root is awkward in a shell: the
+ * engine quotes nothing, and an unquoted `{{FLUME_DIR}}` word-splits on a
+ * space and loses a backslash before `sh` ever opens the file. The prompts'
+ * per-tick arg vocabulary is a separate claim, pinned below against the real
+ * `promptArgs`; here those keys are filled from the file's own placeholders.
+ */
+describe("examples/prompts — the spans read the injected state root", () => {
+  const PROMPT_DIR = fileURLToPath(new URL("../examples/prompts", import.meta.url));
+  /** The engine's inline-exec grammar and placeholder grammar, as it spells them. */
+  const SPAN = /!\s*`([^`]+)`/g;
+  const PLACEHOLDER = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
+
+  /** Every shipped example prompt, paired with the phase that names it. */
+  const shipped = readdirSync(PROMPT_DIR)
+    .filter((f) => f.endsWith(".md"))
+    .sort()
+    .map((file) => ({
+      file,
+      phase: [cascadeChain, backlogGroomerChain, minimalChain]
+        .flatMap((c) => c.phases)
+        .find((p) => p.promptPath === `prompts/${file}`),
+    }));
+
+  /**
+   * The artifacts a template's spans read under the state root. The queue's
+   * path is the engine's (`resolvePendingPath`); the rest are this example's
+   * own layout, which only its prompt and its fence spell. A sentinel rides
+   * each one so a case asserts the bytes *arrived*, not merely that the
+   * render did not throw.
+   */
+  const ARTIFACTS: ReadonlyArray<{
+    /** What a span names, relative to the state root — the detector. */
+    readonly span: string;
+    readonly at: (root: string) => string;
+    readonly body: string;
+    readonly sentinel: string;
+  }> = [
+    {
+      span: "plan/pending.json",
+      at: (root) => resolvePendingPath(root),
+      body: '{ "entries": [], "note": "PENDING-SENTINEL" }\n',
+      sentinel: "PENDING-SENTINEL",
+    },
+    {
+      span: "plan/state.md",
+      at: (root) => join(root, "plan", "state.md"),
+      body: "phase: PLAN-STATE-SENTINEL\n",
+      sentinel: "PLAN-STATE-SENTINEL",
+    },
+    {
+      span: "plan/open-questions.md",
+      at: (root) => join(root, "plan", "open-questions.md"),
+      body: "## QUESTIONS-SENTINEL\n",
+      sentinel: "QUESTIONS-SENTINEL",
+    },
+    {
+      // The inbox span lists rather than reads, so its sentinel is a filename.
+      span: "inbox/",
+      at: (root) => join(root, "inbox", "INBOX-SENTINEL.md"),
+      body: "# a finding\n",
+      sentinel: "INBOX-SENTINEL",
+    },
+  ];
+
+  /** Every scratch dir a case made, torn down together. */
+  const scratch: string[] = [];
+
+  /**
+   * The cwd a render runs its spans in. The spans not under test still have
+   * to resolve — `git log` carries no fallback, and the render aborts on any
+   * non-zero span — so this is a real repo with a real commit, rather than
+   * this checkout, whose `pnpm tsc` span would typecheck the tree per case.
+   */
+  let cwd: string;
+
+  beforeAll(async () => {
+    cwd = mkdtempSync(join(tmpdir(), "flume-example-prompts-cwd-"));
+    scratch.push(cwd);
+    writeFileSync(join(cwd, "README.md"), "scratch\n");
+    await exec("git", ["init", "-q", "-b", "main"], { cwd });
+    await exec("git", ["add", "-A"], { cwd });
+    await exec(
+      "git",
+      [
+        "-c",
+        "user.email=scratch@example.test",
+        "-c",
+        "user.name=scratch",
+        "commit",
+        "-qm",
+        "seed",
+      ],
+      { cwd },
+    );
+  });
+
+  afterAll(() => {
+    for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** One shipped template through the engine's real renderer. */
+  async function render(file: string, phase: Phase, root: string): Promise<string> {
+    const promptFile = join(PROMPT_DIR, file);
+    const raw = readFileSync(promptFile, "utf8");
+    const args = Object.fromEntries(
+      [...raw.matchAll(PLACEHOLDER)]
+        .map((m) => m[1]!)
+        .filter((key) => key !== "FLUME_DIR")
+        .map((key) => [key, `<per-tick ${key}>`]),
+    );
+    return renderPrompt({ phase, promptFile, cwd, flumeDir: root, args });
+  }
+
+  async function everyPromptReadsItsArtifactsUnder(root: string): Promise<void> {
+    scratch.push(root);
+    for (const artifact of ARTIFACTS) {
+      const at = artifact.at(root);
+      mkdirSync(dirname(at), { recursive: true });
+      writeFileSync(at, artifact.body, "utf8");
+    }
+
+    let asserted = 0;
+    for (const { file, phase } of shipped) {
+      expect(phase, `${file} is named by an example phase`).toBeDefined();
+      const spans = [...readFileSync(join(PROMPT_DIR, file), "utf8").matchAll(SPAN)]
+        .map((m) => m[1]!);
+      const reads = ARTIFACTS.filter((a) => spans.some((s) => s.includes(a.span)));
+      if (reads.length === 0) continue;
+
+      const rendered = await render(file, phase!, root);
+      for (const artifact of reads) {
+        asserted++;
+        expect({
+          file,
+          span: artifact.span,
+          read: rendered.includes(artifact.sentinel),
+        }).toEqual({ file, span: artifact.span, read: true });
+      }
+    }
+
+    // Non-vacuity (`engineering.md`, *A green verdict is proven non-vacuous*):
+    // a prompt set whose spans stopped naming these artifacts would pass the
+    // loop over nothing.
+    expect(asserted).toBeGreaterThan(0);
+  }
+
+  it("every example prompt's spans read their artifacts under a state root path carrying a space", async () => {
+    const root = mkdtempSync(join(tmpdir(), "flume example prompts space-"));
+    expect(root).toContain(" ");
+
+    await everyPromptReadsItsArtifactsUnder(root);
+  });
+
+  it("every example prompt's spans read their artifacts under a state root path carrying a backslash", async () => {
+    const base = mkdtempSync(join(tmpdir(), "flume-example-prompts-backslash-"));
+    scratch.push(base);
+    // On win32 the separator *is* the backslash, so every state root there is
+    // this case. Elsewhere a backslash is an ordinary filename byte, and the
+    // same byte reaches `sh`.
+    const root = process.platform === "win32" ? base : join(base, "back\\slash");
+    mkdirSync(root, { recursive: true });
+    expect(root).toContain("\\");
+
+    await everyPromptReadsItsArtifactsUnder(root);
+  });
+
+  it("no span in a shipped example prompt names a literal .flume/ path", () => {
+    const spans = shipped.flatMap(({ file }) =>
+      [...readFileSync(join(PROMPT_DIR, file), "utf8").matchAll(SPAN)].map((m) => ({
+        file,
+        cmd: m[1]!,
+      })),
+    );
+    // Non-vacuity: a prompt set with no spans at all satisfies the absence.
+    expect(spans.length).toBeGreaterThan(0);
+
+    expect(spans.filter((s) => s.cmd.includes(".flume/"))).toEqual([]);
   });
 });
 
