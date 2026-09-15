@@ -36,6 +36,7 @@ import { INBOX_PHASE } from "../harness/declaration.ts";
 import {
   parseDeclaration,
   planSliceWindows,
+  writePlanState,
   type PlanSliceWindow,
 } from "../harness/index.ts";
 
@@ -108,9 +109,39 @@ function inboxWindow(budget?: number): PlanSliceWindow {
   return window;
 }
 
+/** The state root the window reads records and the lane stamp from. */
+const stateRoot = (): string => join(repo, ".flume");
+
 /** The inbox window's rendered arguments for this tick. */
 function inboxArgs(budget?: number): Record<string, string> {
-  return inboxWindow(budget).args({ cwd: repo, flumeDir: join(repo, ".flume") });
+  return inboxWindow(budget).args({ cwd: repo, flumeDir: stateRoot() });
+}
+
+/**
+ * Whether the inbox slice's window is open, with nothing on disk to open it:
+ * the state root holds no record and the tick reports no prior attempt, so a
+ * true verdict is the lane leg's and nothing else's.
+ */
+const inboxLive = (): boolean =>
+  inboxWindow().live({ flumeDir: stateRoot(), pickable: false });
+
+/**
+ * A plan state under that root stamping each named lane at a run.
+ *
+ * Written through the package's own writer rather than as hand-shaped JSON —
+ * the artifact the liveness leg reads is the one a plan tick would have left
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). The cursors are this repository's own tip, which is the only sha
+ * the schema's object-name shape accepts here.
+ */
+function stampLanes(drainedRuns: Record<string, string>): void {
+  const tip = git("rev-parse", "HEAD").trim();
+  writePlanState(stateRoot(), {
+    derivedThrough: tip,
+    sweptThrough: tip,
+    rotation: { kind: "closed" },
+    drainedRuns,
+  });
 }
 
 /** Where the stub appends one JSON line per invocation. */
@@ -446,4 +477,85 @@ it("the inbox window spends a failing lane's line budget on log lines, not the f
     titles.flatMap((title) => ["one failing case", title]),
   );
   expect(rendered).not.toContain("above this tick's budget");
+}, SPAWN_BUDGET_MS);
+
+it("the inbox slice is live when a declared lane's latest completed run failed past the lane's stamp", () => {
+  plantForge({ runs: [RUN], jobs: [job("failure")] });
+  // Stamped at an older run of the same lane, so the verdict below turns on
+  // the comparison rather than on a map that holds nothing for this lane.
+  stampLanes({ [LANE.name]: "17420000000" });
+
+  expect(inboxLive()).toBe(true);
+
+  // Vacuity: the forge really was asked for this lane on the repository's
+  // branch — a leg that never spawned would be answering from nothing.
+  const asked = calls();
+  expect(asked.length).toBeGreaterThan(0);
+  expect(asked[0]?.join(" ")).toContain(`--workflow ${LANE.workflow}`);
+  expect(asked[0]?.join(" ")).toContain("--branch main");
+
+  // The selection path buys the run's identity and its job's conclusion, and
+  // never the failing job's log: the verdict is a comparison, and a
+  // multi-megabyte fetch to answer a boolean would be paid on every tick.
+  expect(asked.some((call) => call.includes("--log-failed"))).toBe(false);
+
+  // A lane the state has never been stamped for is undrained too — the
+  // absent map is a state, not a repair (`harness/planState.ts`).
+  rmSync(join(stateRoot(), "plan"), { recursive: true, force: true });
+  expect(inboxLive()).toBe(true);
+}, SPAWN_BUDGET_MS);
+
+it("the inbox slice is not live when the lane's failing run is the one already stamped", () => {
+  plantForge({ runs: [RUN], jobs: [job("failure")] });
+  stampLanes({ [LANE.name]: String(RUN.databaseId) });
+
+  expect(inboxLive()).toBe(false);
+
+  // Vacuity twice: the forge was asked, and the lane it answered for is red —
+  // the stamp is what closed the window, not an unread or green lane.
+  expect(calls().length).toBeGreaterThan(0);
+  expect(inboxArgs()["CI_LANES"] ?? "").toContain("FAILING");
+
+  // And the stamp alone: the same red run under a different stamp re-opens it.
+  stampLanes({ [LANE.name]: "17420000000" });
+  expect(inboxLive()).toBe(true);
+}, SPAWN_BUDGET_MS);
+
+it("the inbox slice is not live when the lane's latest completed run passed", () => {
+  plantForge({ runs: [{ ...RUN, conclusion: "success" }], jobs: [job("success")] });
+  stampLanes({});
+
+  expect(inboxLive()).toBe(false);
+
+  // Vacuity: the forge answered both of the leg's questions, and answered
+  // green — a green run needs no drain, so no stamp is required to close it.
+  expect(calls().length).toBe(2);
+  expect(inboxArgs()["CI_LANES"] ?? "").toContain("GREEN");
+}, SPAWN_BUDGET_MS);
+
+it("the inbox slice is not live when the forge CLI cannot read the lane", () => {
+  // The launcher plantForge leaves stays; its script becomes a CLI that
+  // records the question and then refuses it, the way an unauthenticated one
+  // does — so the call log proves the leg reached the forge.
+  plantForge({ runs: [RUN], jobs: [job("failure")] });
+  writeFileSync(
+    join(binDir, "gh.mjs"),
+    [
+      `import { appendFileSync } from "node:fs";`,
+      `appendFileSync(${JSON.stringify(callLog())}, JSON.stringify(process.argv.slice(2)) + "\\n");`,
+      `process.stderr.write("gh: could not authenticate to the forge");`,
+      `process.exit(4);`,
+      ``,
+    ].join("\n"),
+  );
+  stampLanes({});
+
+  expect(inboxLive()).toBe(false);
+
+  // Vacuity: the forge was asked and refused, and the lane renders unread —
+  // unread is live for nothing, and is not green.
+  expect(calls().length).toBeGreaterThan(0);
+  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  expect(rendered).toContain("UNREAD");
+  expect(rendered).not.toContain("GREEN");
 }, SPAWN_BUDGET_MS);

@@ -52,7 +52,12 @@ import type { PendingEntry } from "../src/PendingSchema.js";
 import { matchesAny, slugify } from "../src/paths.js";
 import type { PriorAttempt } from "../src/Prompt.js";
 
-import { readCiLanes, type CiLaneReading } from "./ci.js";
+import {
+  readCiLaneStatuses,
+  readCiLanes,
+  type CiLaneReading,
+  type CiLaneStatus,
+} from "./ci.js";
 import {
   INBOX_PHASE,
   PLAN_SLICES,
@@ -293,19 +298,19 @@ function standingRefusals(ctx: {
  * lanes are the third source, and the only one whose evidence sits off this
  * disk.
  *
- * The lanes ride `args` alone for now: a lane is rendered whenever this slice
- * runs, and what makes the slice *live* over a red lane is the stamp leg
- * (`readCiLanes` against the plan state's `drainedRuns`), which the spec
- * holds and no entry has shipped yet. Until it does, a lane renders only on a
- * tick the records or the refusals already woke — which is the order the spec
- * names anyway: unread renders only when the slice is live for another
- * reason.
+ * **The lane leg is asked last, and that ordering is load-bearing.** The
+ * record and refusal legs are two directory listings and a map walk; the lane
+ * leg spawns the forge CLI once per lane on the selection path. A tick the
+ * disk already woke needs no forge answer to know the slice runs, so the
+ * short-circuit is what keeps a woken plan tick from paying for the network.
  */
 function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
   return {
     name: INBOX_PHASE,
     live: (inputs) =>
-      recordsPending(inputs.flumeDir) || standingRefusals(inputs).length > 0,
+      recordsPending(inputs.flumeDir) ||
+      standingRefusals(inputs).length > 0 ||
+      undrainedRedLane(inputs, options),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       RECORDS: renderRecords(ctx.flumeDir),
       BUILD_RECORDS: renderBuildRecords(ctx),
@@ -313,6 +318,41 @@ function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
     }),
     dataKeys: SLICE_DATA_KEYS[INBOX_PHASE],
   };
+}
+
+/**
+ * Whether some declared lane's latest completed run failed at a run this
+ * consumer's plan state has not stamped as drained (`spec/harness.md`, *CI
+ * lanes as a findings source*).
+ *
+ * **The stamp is what closes the lane.** A red lane with no stamp leg would
+ * hold this slice live for as long as the lane stays red, re-filing the same
+ * run's titles every tick; a lane read with no liveness leg at all would
+ * never wake the slice, so a queue-drained tree hibernates over a failing
+ * lane. Both are the same missing comparison, read here off the run identity
+ * the reader reports (`ci.ts`) against the stamp the slice wrote last time it
+ * drained (`planState.ts`, `drainedRuns`).
+ *
+ * A lane read as green, and a lane that could not be read at all, are live
+ * for nothing: unread is not a reason to wake, only a thing to say on a tick
+ * something else woke. A consumer declaring no lanes never asks the forge.
+ *
+ * The statuses alone, never {@link readCiLanes}: the verdict is over run
+ * identity and conclusion, and fetching a failing job's whole log to answer
+ * a boolean would put a multi-megabyte read on the selection path.
+ */
+function undrainedRedLane(
+  inputs: SliceInputs,
+  options: PlanSliceWindowsOptions,
+): boolean {
+  const lanes = options.declaration.ci;
+  if (lanes === undefined) return false;
+  const drained = readPlanState(inputs.flumeDir)?.drainedRuns ?? {};
+  const undrained = (status: CiLaneStatus): boolean =>
+    status.kind === "failing" && drained[status.lane.name] !== status.run.id;
+  return readCiLaneStatuses(lanes, {
+    repoRoot: options.repoRoot,
+  }).some(undrained);
 }
 
 /**
@@ -367,6 +407,14 @@ function renderLane(reading: CiLaneReading): string {
   return [
     `=== ${head}: FAILING ===`,
     stamp,
+    // The stamp the slice writes for this lane, named rather than composed
+    // by the agent out of the run line above — a lane drained without it is
+    // a lane this window re-opens on next tick over the same run
+    // (`.claude/rules/posture-sweep.md`, *The stamp*, for the cursor this is
+    // the sibling of).
+    `Once you have drained this run, stamp \`drainedRuns.${lane.name}\` at ` +
+      `\`${run.id}\`: this lane holds the inbox slice live until it is the ` +
+      `run stamped there.`,
     `--- the failing job's log ---`,
     reading.log,
   ].join("\n");

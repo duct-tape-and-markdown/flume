@@ -24,8 +24,9 @@
  * **A lane is failing, green, or unread — never green by default.** Every way
  * the read can come up short — no forge CLI on the host, no completed run
  * yet, a run the declared job is not in, a conclusion that is neither a pass
- * nor a failure, a CLI that refused — resolves to {@link CiLaneReading}'s
- * `unread` arm carrying the reason. The degraded path is declared, and the
+ * nor a failure, a CLI that refused, a log the forge would not hand over —
+ * resolves to the `unread` arm {@link CiLaneStatus} declares, carrying the
+ * reason. The degraded path is declared, and the
  * refusal that bounds it is the render's: unread says so in the prompt and
  * the slice files nothing against it (`.claude/rules/engineering.md`, *Loud
  * or nothing*).
@@ -156,45 +157,77 @@ interface CiRun {
   readonly at: string;
 }
 
+/** A lane the forge named a run for, with the run and the branch it keys to. */
+interface CiLaneRun {
+  readonly lane: CiLane;
+  /** The branch the run is keyed to — the repository's, not the tick's. */
+  readonly branch: string;
+  readonly run: CiRun;
+}
+
 /**
- * One lane's latest completed run, as the slice reads it: a failure with its
- * material, a pass, or a lane this tick could not read and why.
+ * One lane's latest completed run as the forge states it, before any of a
+ * failing job's material is fetched: the run's identity, and whether the
+ * declared job failed.
+ *
+ * **This is the half a liveness predicate reads.** A lane makes the inbox
+ * slice live exactly while its latest completed run failed and is not the run
+ * already stamped for it (`spec/harness.md`, *CI lanes as a findings
+ * source*), and both facts that verdict needs are here — so the selection
+ * path asks the forge only the two questions it would have asked anyway, and
+ * never buys a job log to answer a yes or no.
  *
  * A stated kind rather than a run that may be absent: "unread" and "green"
  * want opposite moves from the slice, and a reading that spelled the
  * difference as a missing field would let one be read as the other.
  */
-export type CiLaneReading =
-  | {
+export type CiLaneStatus =
+  | (CiLaneRun & {
       readonly kind: "failing";
-      readonly lane: CiLane;
-      readonly branch: string;
-      readonly run: CiRun;
       /**
-       * The forge's log for the failing job: the forge's own decoration shed
-       * off it, then tail-trimmed to the budget.
+       * The forge's own id for the declared job — the handle its log is
+       * fetched by, reported rather than re-derived by whoever wants it
+       * (`.claude/rules/engineering.md`, *A fact the engine holds is
+       * reported, never rediscovered*).
        */
-      readonly log: string;
-    }
-  | {
-      readonly kind: "green";
-      readonly lane: CiLane;
-      readonly branch: string;
-      readonly run: CiRun;
-    }
+      readonly jobId: number;
+    })
+  | (CiLaneRun & { readonly kind: "green" })
   | {
       readonly kind: "unread";
       readonly lane: CiLane;
       readonly reason: string;
     };
 
-/** What {@link readCiLanes} needs to read a consumer's lanes for one tick. */
-interface CiReadOptions {
+/**
+ * One lane's status with a failing job's material on it — what the slice's
+ * prompt renders, and the half only a render pays for.
+ *
+ * A material fetch that fails resolves to `unread` like every other way the
+ * read can come up short, so a lane whose log could not be read never renders
+ * as a failure with nothing in it.
+ */
+export type CiLaneReading =
+  | (Extract<CiLaneStatus, { kind: "failing" }> & {
+      /**
+       * The forge's log for the failing job: the forge's own decoration shed
+       * off it, then tail-trimmed to the budget.
+       */
+      readonly log: string;
+    })
+  | Extract<CiLaneStatus, { kind: "green" | "unread" }>;
+
+/** What any lane read needs: the repository the runs are keyed through. */
+interface CiRepoOptions {
   /**
    * The repository whose tip's branch names the runs to read. The repo root,
    * never a tick's worktree — see this module's head.
    */
   readonly repoRoot: string;
+}
+
+/** What {@link readCiLanes} needs to read a consumer's lanes for one tick. */
+interface CiReadOptions extends CiRepoOptions {
   /**
    * How many lines of a failing job's log one lane carries. The tail is
    * kept: a suite reports its failing titles at the end of its output, and
@@ -208,21 +241,37 @@ interface CiReadOptions {
 }
 
 /**
- * Every declared lane's latest completed run, in the order the declaration
- * names them.
+ * Every declared lane's latest completed run as the forge states it, in the
+ * order the declaration names them — identity and verdict, no material.
  *
  * The branch is resolved once for the whole list — one fact about one tree,
  * and a per-lane read would be the same answer bought several times.
+ */
+export function readCiLaneStatuses(
+  lanes: readonly CiLane[],
+  options: CiRepoOptions,
+): CiLaneStatus[] {
+  const branch = branchAt(options.repoRoot);
+  if ("reason" in branch) {
+    return lanes.map((lane) => ({ kind: "unread", lane, reason: branch.reason }));
+  }
+  return lanes.map((lane) => readLaneStatus(lane, branch.branch, options));
+}
+
+/**
+ * The same readings with each failing lane's job log on it.
+ *
+ * One derivation, two depths: the statuses are read exactly as the liveness
+ * half reads them, and the material is layered on top rather than fetched by
+ * a second walk that could name a different run.
  */
 export function readCiLanes(
   lanes: readonly CiLane[],
   options: CiReadOptions,
 ): CiLaneReading[] {
-  const branch = branchAt(options.repoRoot);
-  if ("reason" in branch) {
-    return lanes.map((lane) => ({ kind: "unread", lane, reason: branch.reason }));
-  }
-  return lanes.map((lane) => readLane(lane, branch.branch, options));
+  return readCiLaneStatuses(lanes, options).map((status) =>
+    withMaterial(status, options),
+  );
 }
 
 /**
@@ -257,13 +306,13 @@ function branchAt(repoRoot: string): { branch: string } | { reason: string } {
   }
 }
 
-/** One lane's reading, with every failure of the read carried as its reason. */
-function readLane(
+/** One lane's status, with every failure of the read carried as its reason. */
+function readLaneStatus(
   lane: CiLane,
   branch: string,
-  options: CiReadOptions,
-): CiLaneReading {
-  const unread = (reason: string): CiLaneReading => ({
+  options: CiRepoOptions,
+): CiLaneStatus {
+  const unread = (reason: string): CiLaneStatus => ({
     kind: "unread",
     lane,
     reason,
@@ -319,21 +368,37 @@ function readLane(
       );
     }
 
+    return { kind: "failing", lane, branch, run, jobId: job.databaseId };
+  } catch (err) {
+    return unread(readFailure(err));
+  }
+}
+
+/**
+ * One status with the failing job's log fetched and trimmed, or the same
+ * lane unread when the forge could not be asked for it.
+ */
+function withMaterial(
+  status: CiLaneStatus,
+  options: CiReadOptions,
+): CiLaneReading {
+  if (status.kind !== "failing") return status;
+  try {
     const log = tail(
       shed(
         forge(options.repoRoot, [
           "run",
           "view",
           "--job",
-          String(job.databaseId),
+          String(status.jobId),
           "--log-failed",
         ]),
       ),
       options.logLines,
     );
-    return { kind: "failing", lane, branch, run, log };
+    return { ...status, log };
   } catch (err) {
-    return unread(readFailure(err));
+    return { kind: "unread", lane: status.lane, reason: readFailure(err) };
   }
 }
 
