@@ -851,7 +851,7 @@ describe("dependsOnForks — foundations governor", () => {
     expect(isPickableNow(entry, noForks, resolved)).toBe(false);
   });
 
-  it("the default predicate (no resolver) preserves v0.2 pickability", () => {
+  it("the default predicate (no resolver) leaves pickability to the gate alone", () => {
     const open = roundTrip({
       ...baseEntry,
       gate: { kind: "open" },

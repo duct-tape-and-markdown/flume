@@ -142,8 +142,8 @@ Worktree branches are named `flume/<entry-slug>`; under a job (below) they
 are namespaced `flume/<job>/<slug>`, so two jobs sharing an entry tag never
 clobber each other's branches.
 
-Worktrees are the only isolation primitive in v0.1. Docker / sandbox layers
-are deferred.
+Worktrees are the only isolation primitive the harness ships. Docker / sandbox
+layers are deferred until a chain needs a boundary a worktree cannot draw.
 
 ## Where state lives
 

@@ -50,8 +50,8 @@ export interface ShellGateOptions {
    * Merged over `process.env` for the spawned command. Lets a chain inject
    * or override a var (e.g. a test-only flag, a scrubbed secret) without
    * hand-forking `shellGate` to rebuild its exec plumbing. Omit-behavior is
-   * pinned by tests/Gate.test.ts's "without env, behavior is byte-identical
-   * to today" case.
+   * pinned by tests/Gate.test.ts's "omitting env leaves the spawned
+   * environment untouched (no forced var leaks in)" case.
    */
   env?: Record<string, string>;
 }

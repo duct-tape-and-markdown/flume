@@ -18,7 +18,7 @@ const exec = promisify(execFile);
 /**
  * Bounded retries for the recursive-removal fallback below — the
  * EBUSY/ENOTEMPTY class a just-installed, still-settling node_modules produces
- * on win32 (the v0.6.1 dogfood symptom: three build waves, three `Directory
+ * on win32 (the dogfood symptom: three build waves, three `Directory
  * not empty` failures, hand sweep).
  */
 const FALLBACK_REMOVE_MAX_RETRIES = 5;

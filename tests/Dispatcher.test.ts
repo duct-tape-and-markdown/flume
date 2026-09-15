@@ -1860,7 +1860,7 @@ describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md '
     expect(capturedPendingPath).toBe(join(fx.repo, ".flume", customRel));
   }, 20_000);
 
-  it("undeclared pendingPath defaults identically to today's plan/pending.json", async () => {
+  it("undeclared pendingPath defaults to .flume/plan/pending.json", async () => {
     const entries = [makeEntry("DEFAULT-PATH", ["src/default.ts"])];
     await writePending(fx.repo, entries);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -2074,7 +2074,7 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
     ]);
   }, 20_000);
 
-  it("a chain declaring nothing gets maxParallel: 4 byte-identically to today", async () => {
+  it("a chain declaring nothing gets maxParallel: 4", async () => {
     const entries = [
       makeEntry("MPD-A", ["src/mpd-a.ts"]),
       makeEntry("MPD-B", ["src/mpd-b.ts"]),
@@ -2112,7 +2112,7 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
       configDir: fx.configDir,
       agent,
       log: silent,
-      // No DispatcherOptions.maxParallel either — proving the plain v0.2
+      // No DispatcherOptions.maxParallel either — proving the built-in
       // default (4) survives both undeclared surfaces unchanged.
     });
 
@@ -2352,7 +2352,7 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PIC-B"]);
   }, 20_000);
 
-  it("a chain declaring no partitionIgnore is byte-identical to today — the shared path still collides", async () => {
+  it("a chain declaring no partitionIgnore still collides on the shared path", async () => {
     const entries = [
       makeEntry("PID-A", ["shared-lock.json"]),
       makeEntry("PID-B", ["shared-lock.json"]),
@@ -7732,7 +7732,7 @@ describe("Dispatcher fanout — fork-blocked entry becomes pickable when the pre
   }, 20_000);
 });
 
-describe("Dispatcher fanout — no forkResolver supplied is identical to v0.2", () => {
+describe("Dispatcher fanout — no forkResolver supplied never blocks selection", () => {
   it("builds an entry that declares dependsOnForks because the default predicate resolves every slug", async () => {
     const entries = [
       { ...makeEntry("ONLY", ["src/only.ts"]), dependsOnForks: ["some-fork"] },
@@ -7754,7 +7754,7 @@ describe("Dispatcher fanout — no forkResolver supplied is identical to v0.2", 
 
     // No forkResolver on the constructor and none on the chain module: the
     // governor's always-resolved default applies, so a declared dependsOnForks
-    // never blocks — selection is identical to v0.2.
+    // never blocks — selection ignores dependsOnForks entirely.
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,

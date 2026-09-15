@@ -960,8 +960,8 @@ Two chain-author consequences:
 
 ## 4. The agent seam
 
-`Agent` is the interface between the dispatcher and an LLM CLI. v0.1 ships
-one implementation, `claudeCode()`, plus two decorators.
+`Agent` is the interface between the dispatcher and an LLM CLI. The package
+ships one implementation, `claudeCode()`, plus two decorators.
 
 ```ts
 const factory: ChainFactory = (flume) => {

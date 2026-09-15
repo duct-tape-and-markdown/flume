@@ -198,7 +198,7 @@ describe("partitionByFileOverlap — ignore (Chain.supervisorPolicy.partitionIgn
     expect(tags(batches[1]!)).toEqual(["B"]);
   });
 
-  it("default (no ignore) is byte-identical to today — the shared path still collides", () => {
+  it("default (no ignore) still collides on the shared path", () => {
     const entries = [
       makeEntry("A", { edit: ["shared-lock.json"] }),
       makeEntry("B", { edit: ["shared-lock.json"] }),

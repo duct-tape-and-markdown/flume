@@ -1491,7 +1491,7 @@ describe("jobStatus — enumeration units", () => {
     }
   });
 
-  it("undeclared pendingPath defaults identically to today's plan/pending.json", async () => {
+  it("undeclared pendingPath defaults to .flume/plan/pending.json", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
     try {
       const jobs = join(dir, ".flume", "jobs");

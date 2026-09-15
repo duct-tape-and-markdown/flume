@@ -89,7 +89,7 @@ describe("shellGate — ok path", () => {
 });
 
 describe("shellGate — env option", () => {
-  it("without env, behavior is byte-identical to today (no forced var leaks in)", async () => {
+  it("omitting env leaves the spawned environment untouched (no forced var leaks in)", async () => {
     const gate = shellGate({
       name: "no-env",
       when: "afterCommit",
@@ -993,7 +993,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("omitting fenceWhen fences every entry, matching current behavior", async () => {
+  it("omitting fenceWhen fences every entry — no entry is exempt without a predicate", async () => {
     const sha = await writePending([
       {
         ...validEntry,
