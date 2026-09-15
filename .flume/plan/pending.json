@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "tag": "RUNNER-SUITE-READS-THE-ENGINE-WORKTREE-REGISTRY",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/harnessRunner.test.ts",
+          "description": "checkoutsOf reads the registry off api.git instead of spawning its own worktree list"
+        }
+      ]
+    },
+    "summary": "tests/harnessRunner.test.ts:142 hand-decodes `git worktree list --porcelain` beside api.git.readWorktreeRegistry, in the newline form src/worktrees.ts retired",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "the suite's standing- and reclaimed-checkout assertions read api.git.readWorktreeRegistry; no `worktree list` spawn is left in the file, and the registry's read:false arm refuses rather than reading as an empty set",
+    "tests": [],
+    "pins": [],
+    "notes": "checkoutsOf (line 141) is the sole evidence for `expect(checkoutsOf(fixture)).toEqual([])` at lines 327/360/442 — an absence verdict over the engine's gate-scope reclamation, read through the separator form platform-facts.md retires. The test already holds a real FlumeApi (`api`, line 260). Diff is the file holding its own cases, so no tests[] line is judgeable and the property gains no new check; the judge's empty skip is the declared policy."
+  }
+]
