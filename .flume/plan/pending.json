@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "HARNESS-INBOX-KEYSPACE-PINNED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "widen the record fixture to both keyspaces; add the phase-keyed arm"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "pin that a phase-keyed prior-attempt record never holds the inbox window live",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "the inbox liveness case drives both keyspaces, and the phase-keyed arm is false over a stem a queued entry also carries",
+    "tests": [],
+    "pins": [
+      "the inbox window ignores a phase-keyed prior-attempt record whose key matches a queued entry's slug"
+    ],
+    "notes": "standingRefusals (harness/windows.ts:278) discriminates on record.key; the suite's record() helper (tests/harnessWindows.test.ts:142) hardcodes key: \"entry\", so that leg is judged over zero phase-keyed records and the title's \"keyed to an entry\" claim is asserted in neither direction. Both keyspaces share one keyedAs map, so a `build` phase record collides with a tag slugged `build`."
+  }
+]

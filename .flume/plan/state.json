@@ -68,7 +68,8 @@
       "tests/helpers/dispatcherFixture.ts",
       "tests/harnessPackaging.test.ts",
       "harness/index.ts",
-      "tests/harnessJudge.test.ts"
+      "tests/harnessJudge.test.ts",
+      "tests/harnessWindows.test.ts"
     ]
   }
 }
