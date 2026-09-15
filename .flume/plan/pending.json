@@ -1,44 +1,5 @@
 [
   {
-    "tag": "EXAMPLE-PROMPT-SPANS-PLACEHOLDER-OVER-UNREAD-ARTIFACT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "examples/prompts/build.md",
-          "description": "the `<spec>` span refuses instead of substituting prose for an unresolved per cite"
-        },
-        {
-          "path": "examples/prompts/plan.md",
-          "description": "the four artifact spans guard absence, so a read failure reaches the renderer"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "render-driven cases for the refusals, plus the absent-artifact pin"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Shipped example prompt spans substitute prose for an artifact that failed to read \u2014 build's per cite and plan's four artifacts \u2014 and nothing downstream refuses",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "acceptance": "An absent PER_PATH refuses the build render; a plan artifact present but unreadable refuses; an absent one still renders its placeholder",
-    "tests": [
-      "the example build template's per span fails the render when the cited spec path is absent",
-      "the example plan template's artifact spans fail the render when an artifact is present but unreadable"
-    ],
-    "pins": [
-      "the example plan template's artifact spans render their empty placeholders when the artifacts are absent"
-    ],
-    "notes": "Sites: build.md:14 `cat \"{{PER_PATH}}\" 2>/dev/null || echo`; plan.md:4,8,12,16. Same shape as the shipped <spec-corpus> guard (8379b65) one rung quieter \u2014 these fallbacks are reachable. Absence is legitimate on tick one for the plan artifacts, so guard with `test -e`, not `-f`, which lets a directory render the placeholder. chmod injection is a win32 no-op (open-questions, windows lane); a directory in place of the file is the portable unreadable case."
-  },
-  {
     "tag": "CHAIN-AUTHORING-QUOTES-CASCADE-SLICEPHASE-UNPINNED",
     "gate": {
       "kind": "open"
@@ -64,6 +25,6 @@
     "pins": [
       "the CHAIN-AUTHORING slicePhase quote matches examples/cascade-chain.ts modulo indentation and comments"
     ],
-    "notes": "Sites: docs/CHAIN-AUTHORING.md:194-241 (fence introduced as the `slicePhase` declaration from `examples/cascade-chain.ts`); examples/cascade-chain.ts:612-659. Both ship in the tarball (package.json `files`). The comments diverge deliberately \u2014 the doc adds reader context \u2014 so the pin normalizes indentation and comments away and compares the rest: identical today, hence pins[] not tests[]. Vacuity guard: the extracted block is non-empty and carries the `writablePaths` lines before any comparison."
+    "notes": "Sites: docs/CHAIN-AUTHORING.md:194-241 (fence introduced as the `slicePhase` declaration from `examples/cascade-chain.ts`); examples/cascade-chain.ts:612-659. Both ship in the tarball (package.json `files`). The comments diverge deliberately — the doc adds reader context — so the pin normalizes indentation and comments away and compares the rest: identical today, hence pins[] not tests[]. Vacuity guard: the extracted block is non-empty and carries the `writablePaths` lines before any comparison."
   }
 ]
