@@ -71,7 +71,8 @@
       "tests/harnessJudge.test.ts",
       "tests/harnessWindows.test.ts",
       "tests/harnessDeclaration.test.ts",
-      "tests/helpers/stubRunner.ts"
+      "tests/helpers/stubRunner.ts",
+      "tests/priorAttempts.test.ts"
     ]
   }
 }
