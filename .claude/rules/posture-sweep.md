@@ -107,6 +107,10 @@ vacuous verdict over load-bearing machinery.
 
 - Correctness-adjacent, purely mechanical fix → a **pending entry**, `per`
   citing the owning section of the posture page.
+- A cohesion finding — a module carrying a second job, a job with no file,
+  a helper or vocabulary spelled three ways, a sequence copied across legs
+  (`engineering.md`, *A module is one job*) → a **pending entry** naming the
+  target shape, on that section's own terms.
 - Pure shape — duplication, narration drift, style, a vacuity whose subject
   is not load-bearing → an **accepted-debt line in the plan commit body**.
   A later rotation re-noting the same debt is cheaper than a queue that

@@ -177,6 +177,34 @@ generalizes the mechanism until the case stops being special.
 - A divergence that genuinely is the right depth is declared and cited at the
   site.
 
+## A module is one job
+
+A module holds one job, named by its file and stated by its header. Cohesion
+is not size — a long module holding one job is fine — but a module past
+which a second job was appended rather than homed is the shape autonomous
+ticks produce by default, and this section is how the sweep sees it.
+
+- A module whose header disclaims what its body carries — "the assembly
+  point, and nothing else" above ninety lines of gate logic — is residue
+  fileable against this section, and the fix is the split the header
+  already implies.
+- A job the tree gives no file to — a type every sibling imports from the
+  module that happens to hold it, an I/O family fronting an orchestrator —
+  is a cycle waiting to be named. It moves to the file its name is.
+- A helper spelled in three modules has one home; a request, site, or
+  verdict shape spelled three ways by three siblings has one vocabulary.
+- A second copy of a sequence — two legs that spell the same steps and
+  differ only in how they return — is one function with two callers.
+
+A finding under this section files as an **entry**, never a debt line: the
+refactor is behavior-free, and the typecheck, the suite, and the export and
+citation pins hold it. The entry names the target shape — which file takes
+which job — so build moves code rather than judging it.
+
+**Why:** seams stay sound while files accumulate, because nothing re-reads a
+module for what it has become; a job appended today is the module someone
+cannot find tomorrow.
+
 ## An export earns its consumer
 
 Public surface with no consumer is residue: an export born as scaffolding
