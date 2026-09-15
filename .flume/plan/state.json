@@ -29,7 +29,9 @@
       "harness/vitestRunner.ts",
       "src/spawnShim.ts",
       "src/flumeApi.ts",
-      "src/setupWorktree.ts"
+      "src/setupWorktree.ts",
+      "harness/init.ts",
+      "src/selfPackage.ts"
     ]
   }
 }
