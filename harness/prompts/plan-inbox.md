@@ -13,7 +13,7 @@
 </pending-now>
 
 <open-questions-index>
-!`grep -n '^## ' "{{QUESTIONS_PATH}}" || echo "(none open)"`
+!`p="{{QUESTIONS_PATH}}"; test -e "$p" || { echo "(none open)"; exit 0; }; grep -n '^## ' "$p" || { s=$?; test "$s" -eq 1 || exit "$s"; echo "(none open)"; }`
 </open-questions-index>
 
 <artifacts>

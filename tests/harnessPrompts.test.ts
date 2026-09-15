@@ -36,7 +36,7 @@ import {
 } from "../harness/prompts.ts";
 import { resolvePendingPath } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
-import { NO_COMMIT_MODES, renderPrompt } from "../src/Prompt.ts";
+import { InlineExecRenderError, NO_COMMIT_MODES, renderPrompt } from "../src/Prompt.ts";
 
 /** The repo root, and the directory the package's prompts ship in. */
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -230,16 +230,20 @@ it("every plan slice the package declares points its reader at the discipline pa
  * module that owns its path rather than through a layout spelled here: the
  * queue's is the engine's, the plan state's is `planState.ts`'s, the
  * questions file's is `prompts.ts`'s. A sentinel rides each body so a case
- * asserts the bytes *arrived*, not merely that the render did not throw —
- * two of these three spans carry an `|| echo` fallback, which is a silent
- * miss rather than a refusal (`.claude/rules/engineering.md`, *Loud or
- * nothing*).
+ * asserts the bytes *arrived*, not merely that the render did not throw — a
+ * span whose guard mis-fired would render its placeholder over a readable
+ * artifact and look identical from the outside.
+ *
+ * `placeholder` is what the span renders when the artifact is legitimately
+ * absent, on the two that have such a case; the queue's span has none, since
+ * a plan slice with no queue to read is not a tick the package proceeds with.
  */
 const ARTIFACTS: ReadonlyArray<{
   readonly key: SharedPromptArg;
   readonly at: (root: string) => string;
   readonly body: string;
   readonly sentinel: string;
+  readonly placeholder?: string;
 }> = [
   {
     key: "PENDING_PATH",
@@ -252,6 +256,7 @@ const ARTIFACTS: ReadonlyArray<{
     at: planStatePath,
     body: '{ "note": "PLAN-STATE-SENTINEL" }\n',
     sentinel: "PLAN-STATE-SENTINEL",
+    placeholder: "(no plan state yet)",
   },
   {
     key: "QUESTIONS_PATH",
@@ -259,6 +264,7 @@ const ARTIFACTS: ReadonlyArray<{
     at: questionsPath,
     body: "## QUESTIONS-SENTINEL\n",
     sentinel: "QUESTIONS-SENTINEL",
+    placeholder: "(none open)",
   },
 ];
 
@@ -329,4 +335,200 @@ it("every package prompt's spans read their artifacts under a state root path ca
   expect(root).toContain("\\");
 
   await everyPromptReadsItsArtifactsUnder(root);
+});
+
+// ------------------------------------------------- guarded spans: the fork
+
+/**
+ * The two artifacts whose spans carry a legitimate absence — a first tick,
+ * before any slice has written them. Read off the table rather than named
+ * again, so an artifact that gains or loses its placeholder moves both the
+ * refusal cases and the pins below with it.
+ */
+const GUARDED = ARTIFACTS.filter(
+  (a): a is (typeof ARTIFACTS)[number] & { placeholder: string } => a.placeholder !== undefined,
+);
+
+/** A scratch state root, torn down with the rest at the end of the file. */
+async function scratchRoot(prefix: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), prefix));
+  oddRoots.push(root);
+  return root;
+}
+
+/**
+ * A state root as a first tick finds it: nothing a guarded span reads has
+ * been written. The queue is seeded even so — its span carries no
+ * placeholder, by the package's own choice that a slice with no queue to
+ * read is not a tick to proceed with, so leaving it absent would refuse the
+ * render before any guarded span rendered anything to assert.
+ */
+async function coldRoot(prefix: string): Promise<string> {
+  const root = await scratchRoot(prefix);
+  for (const artifact of ARTIFACTS) {
+    if (artifact.placeholder !== undefined) continue;
+    const at = artifact.at(root);
+    await mkdir(dirname(at), { recursive: true });
+    await writeFile(at, artifact.body, "utf8");
+  }
+  return root;
+}
+
+/** One render's outcome, as a value both branches can be asserted against. */
+async function outcomeOf(
+  name: PromptName,
+  root: string,
+): Promise<{ rendered: string } | { error: unknown }> {
+  return render(name, root).then(
+    (rendered) => ({ rendered }),
+    (error: unknown) => ({ error }),
+  );
+}
+
+/**
+ * That a placeholder is the *whole* content of the block it stands in —
+ * asserted as a line directly under an opening tag, so a placeholder
+ * appearing anywhere else in the render cannot stand in for it.
+ */
+function placeholderIsBlockContent(rendered: string, placeholder: string, label: string): void {
+  const lines = rendered.split("\n").map((l) => l.trimEnd());
+  const at = lines.indexOf(placeholder);
+  expect(at, `${label}: no line renders ${placeholder}`).toBeGreaterThan(0);
+  expect(lines[at - 1], `${label}: the placeholder is not the block's content`).toMatch(
+    /^<[a-z-]+>$/,
+  );
+}
+
+/**
+ * `.claude/rules/engineering.md`, *Loud or nothing*, over one guarded span.
+ *
+ * Absence is legitimate on both of these artifacts, so the span cannot
+ * simply refuse — it has to split the fork: absent takes the placeholder, a
+ * *failed read* reaches the renderer. A trailing `|| echo` answered both
+ * with the same bytes, and a plan slice re-derived the queue against prose
+ * saying it could not see its own state.
+ *
+ * The unreadable case is the wrong kind in place — a directory where the
+ * span opens a file. A permission-denied would read the same on posix and be
+ * a no-op on win32, so it is not the case a portable suite can drive.
+ *
+ * Driven through the real renderer over the shipped markdown
+ * (`engineering.md`, *A seam gate reads what the real writer wrote*): the
+ * claim is what `sh` does with the bytes the prompt ships once the real
+ * substituter has put a real path into them.
+ *
+ * Every plan slice is rendered, and each one's verdict is the one its own
+ * spans entail: a slice that opens the artifact refuses on it, and a slice
+ * that does not open it renders — the second half is what keeps the roster
+ * honest rather than silently narrowing to the slices that happen to read.
+ */
+async function everySliceOverWrongKindAt(key: SharedPromptArg): Promise<void> {
+  const artifact = GUARDED.find((a) => a.key === key);
+  expect(artifact, `${key} is a guarded artifact`).toBeDefined();
+
+  // Non-vacuity: a roster that collapsed to zero would pass the loop below
+  // over nothing (`engineering.md`, *A green verdict is proven non-vacuous*).
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  let refused = 0;
+  for (const name of PLAN_SLICES) {
+    const raw = await readFile(promptPath(name), "utf8");
+    const root = await seed(await scratchRoot(`flume-prompts-unreadable-${key}-`));
+    const path = artifact!.at(root);
+    await rm(path, { recursive: true, force: true });
+    await mkdir(path, { recursive: true });
+
+    const outcome = await outcomeOf(name, root);
+
+    if (!spanSubstitutes(raw, key)) {
+      expect(
+        { name, opens: false, resolved: "rendered" in outcome },
+        `${name}: opens no ${key} span, so nothing of its own can refuse on it`,
+      ).toEqual({ name, opens: false, resolved: true });
+      continue;
+    }
+
+    refused++;
+    expect(outcome, `${name}: the render resolved over an unreadable ${key}`).not.toHaveProperty(
+      "rendered",
+    );
+    const error = (outcome as { error: unknown }).error;
+    expect(error).toBeInstanceOf(InlineExecRenderError);
+    const failures = (error as InlineExecRenderError).failures;
+    // This artifact's span is the one failure — its siblings all resolve.
+    expect(failures.map((f) => f.cmd)).toEqual([expect.stringContaining(path)]);
+    // Loud, not merely non-zero: the reader's own complaint survived to the
+    // failure record rather than being sent to `/dev/null`.
+    expect(failures[0]!.stderr.trim(), `${name}: the refusal is silent`).not.toBe("");
+  }
+
+  // Non-vacuity: a prompt set that stopped opening this artifact anywhere
+  // would take the `opens: false` branch every time and assert no refusal.
+  expect(refused).toBeGreaterThan(0);
+}
+
+it("every plan slice prompt refuses when its plan state artifact is a directory in place", async () => {
+  await everySliceOverWrongKindAt("PLAN_STATE_PATH");
+});
+
+it("every plan slice prompt refuses when its open-questions artifact is a directory in place", async () => {
+  await everySliceOverWrongKindAt("QUESTIONS_PATH");
+});
+
+/**
+ * The other side of that fork, and the reason the guard is not a bare
+ * refusal: a cold state root is a first tick, not a defect.
+ */
+it("a cold state root renders every plan slice prompt's placeholder as its block's whole content", async () => {
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+  const root = await coldRoot("flume-prompts-cold-root-");
+  for (const artifact of GUARDED) {
+    expect(existsSync(artifact.at(root))).toBe(false);
+  }
+
+  let asserted = 0;
+  for (const name of PLAN_SLICES) {
+    const raw = await readFile(promptPath(name), "utf8");
+    const rendered = await render(name, root);
+    for (const artifact of GUARDED) {
+      if (!spanSubstitutes(raw, artifact.key)) continue;
+      placeholderIsBlockContent(rendered, artifact.placeholder, `${name}/${artifact.key}`);
+      // Nothing was read, so nothing the artifact would have carried leaked.
+      expect(rendered).not.toContain(artifact.sentinel);
+      asserted++;
+    }
+  }
+
+  // Non-vacuity: a prompt set whose spans stopped reading these artifacts
+  // would pass the loop over nothing.
+  expect(asserted).toBeGreaterThan(0);
+});
+
+/**
+ * The third case the questions span has to tell apart, and the reason its
+ * guard cannot stop at `test -e`: `grep` exits 1 on a file it read and found
+ * no headings in, and 2 on a file it could not read at all. Exit 1 is the
+ * empty index — a questions file with a preamble and nothing open — and
+ * stays legitimate; only the reader's real failure refuses.
+ */
+it("a questions file carrying no headings renders the plan slices' none-open placeholder", async () => {
+  const questions = GUARDED.find((a) => a.key === "QUESTIONS_PATH");
+  expect(questions, "the questions artifact is guarded").toBeDefined();
+
+  const root = await seed(await scratchRoot("flume-prompts-no-headings-"));
+  // A real file, readable, with no `## ` heading anywhere in it.
+  await writeFile(questions!.at(root), "# Open questions\n\nNothing is open.\n", "utf8");
+
+  let asserted = 0;
+  for (const name of PLAN_SLICES) {
+    const raw = await readFile(promptPath(name), "utf8");
+    if (!spanSubstitutes(raw, "QUESTIONS_PATH")) continue;
+    const rendered = await render(name, root);
+    placeholderIsBlockContent(rendered, questions!.placeholder, `${name}/QUESTIONS_PATH`);
+    asserted++;
+  }
+
+  // Non-vacuity: a prompt set that stopped indexing the questions file would
+  // pass the loop over nothing.
+  expect(asserted).toBeGreaterThan(0);
 });

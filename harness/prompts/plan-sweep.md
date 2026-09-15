@@ -5,7 +5,7 @@
 </sweep-window>
 
 <plan-state>
-!`cat "{{PLAN_STATE_PATH}}" 2>/dev/null || echo "(no plan state yet)"`
+!`p="{{PLAN_STATE_PATH}}"; test -e "$p" || { echo "(no plan state yet)"; exit 0; }; cat "$p"`
 </plan-state>
 
 <pending-now>
@@ -13,7 +13,7 @@
 </pending-now>
 
 <open-questions-index>
-!`grep -n '^## ' "{{QUESTIONS_PATH}}" || echo "(none open)"`
+!`p="{{QUESTIONS_PATH}}"; test -e "$p" || { echo "(none open)"; exit 0; }; grep -n '^## ' "$p" || { s=$?; test "$s" -eq 1 || exit "$s"; echo "(none open)"; }`
 </open-questions-index>
 
 <artifacts>
