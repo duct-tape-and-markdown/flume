@@ -53,6 +53,13 @@ const exec = promisify(execFile);
 
 const CLI_SRC_PATH = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 
+/**
+ * The provider module a fixture chain imports the real `claudeCode` from —
+ * an absolute path, because the chain it is written into lives in a temp repo
+ * with no view of this one.
+ */
+const AGENT_SRC_PATH = fileURLToPath(new URL("../src/Agent.ts", import.meta.url));
+
 
 /**
  * `isInvokedDirectly` (`src/cli.ts`), the seam gating `main()`.
@@ -1798,7 +1805,8 @@ function tickChildPidChainSrc(
 const DECLARED_GRACE_MS = 250;
 
 /**
- * Every pid the driver below learned about, drained by the arms' `afterEach`.
+ * Every pid a signalled-teardown driver learned about — the loop's below and
+ * the bare tick's further down — drained by the arms' `afterEach`.
  *
  * The per-run cleanup cannot be the only one: a case that blows its budget is
  * rejected mid-`await`, so neither its `finally` nor the driver's own `catch`
@@ -1806,7 +1814,7 @@ const DECLARED_GRACE_MS = 250;
  * what makes them red a tree that is never taken down. A hook is what still
  * runs on that path.
  */
-const signalledLoopPids: (number | undefined)[] = [];
+const signalledPids: (number | undefined)[] = [];
 
 /**
  * SIGKILL a pid this suite recorded, if it is still there. Teardown only: an
@@ -1862,7 +1870,7 @@ async function signalledLoopRun(opts: {
   // Recorded lazily as each pid is learned, so the hook can finish a teardown
   // this function never reached.
   const record = <T extends number | undefined>(pid: T): T => {
-    signalledLoopPids.push(pid);
+    signalledPids.push(pid);
     return pid;
   };
   try {
@@ -1974,7 +1982,7 @@ async function signalledLoopRun(opts: {
  */
 describe("flume loop — a signalled run takes down its whole tick tree (spec/loop.md \"The loop lock and the tip claim\")", () => {
   afterEach(() => {
-    for (const pid of signalledLoopPids.splice(0)) killIfAlive(pid);
+    for (const pid of signalledPids.splice(0)) killIfAlive(pid);
   });
 
   it.skipIf(process.platform === "win32")(
@@ -2071,6 +2079,297 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
         // still leaves the declared grace an order of magnitude of slack on a
         // loaded host.
         expect(run.teardownMs).toBeLessThan(DEFAULT_KILL_GRACE_MS / 2);
+      } finally {
+        await run.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
+/**
+ * A chain whose agent is the shipped `claudeCode` provider (`src/Agent.ts`)
+ * pointed at a node one-liner instead of the real binary — so the bare tick
+ * below drives the engine's own spawn and teardown rather than a fixture's
+ * imitation of them (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*). The flags that would otherwise ride the argv are
+ * declared off, leaving `-p <script>`, which is `node -p`.
+ *
+ * The script is the agent: it reports the pid of the process `claude` would
+ * have been, and parks. Its arms mirror the loop driver's above:
+ *
+ * - `grandchildPidPath` — the agent spawns a parked process of its own, the
+ *   one a kill aimed at the agent process alone never reaches (the shape the
+ *   tools and MCP servers a real `claude` spawns take).
+ * - `ignoreSigterm` — the agent installs a SIGTERM handler that does nothing,
+ *   so only an escalation can end it. Installed before the pid is reported,
+ *   which makes that report the readiness event.
+ * - `killGraceMs` — declared on `supervisorPolicy`, the grace the tick is to
+ *   bound its wait by.
+ *
+ * The park outlasts `SPAWN_BUDGET_MS` deliberately, for the same reason the
+ * loop driver's does: a tree that is never taken down must red its case on
+ * the budget rather than outliving the wait and passing as a teardown.
+ */
+function bareTickAgentChainSrc(
+  agentPidPath: string,
+  opts: {
+    grandchildPidPath?: string;
+    ignoreSigterm?: boolean;
+    killGraceMs?: number;
+  } = {},
+): string {
+  const PARKED_GRANDCHILD = "setInterval(() => {}, 1000);";
+  const script =
+    `const fs = require("node:fs");\n` +
+    (opts.ignoreSigterm === true ? `process.on("SIGTERM", () => {});\n` : ``) +
+    (opts.grandchildPidPath !== undefined
+      ? `const kid = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(PARKED_GRANDCHILD)}], { stdio: "ignore" });\n` +
+        `fs.writeFileSync(${JSON.stringify(opts.grandchildPidPath)}, String(kid.pid));\n`
+      : ``) +
+    `fs.writeFileSync(${JSON.stringify(agentPidPath)}, String(process.pid));\n` +
+    `setInterval(() => {}, 600000);\n`;
+  return (
+    `import { claudeCode } from ${JSON.stringify(AGENT_SRC_PATH)};\n` +
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: "probe",\n` +
+    `    description: "signalled-bare-tick probe",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    (opts.killGraceMs !== undefined
+      ? `  supervisorPolicy: { killGraceMs: ${opts.killGraceMs} },\n`
+      : ``) +
+    `},\n` +
+    `agent: claudeCode({\n` +
+    `  binary: process.execPath,\n` +
+    `  dangerouslySkipPermissions: false,\n` +
+    `  inheritUserMcp: true,\n` +
+    `  extraArgs: [${JSON.stringify(script)}],\n` +
+    `}) });\n`
+  );
+}
+
+/**
+ * Drive a real bare `flume tick` to an agent parked mid-invocation, SIGTERM
+ * the tick, and wait for it to exit — the shape every arm below shares.
+ * Returns the pids it observed, the exit status, how long the teardown took,
+ * and the cleanup its caller owns.
+ *
+ * The signal targets the pid recorded in the tip claim rather than the
+ * spawned process's own: tsx re-execs itself into a second node process, so
+ * the spawned handle is the bootstrapper's, and the process that took the
+ * claim — and installed the handlers — is the one an operator's SIGTERM finds
+ * in production. That file is also the readiness event for the claim half:
+ * its content proves the claim is held at the moment the signal lands, which
+ * is what makes its absence afterwards a release.
+ */
+async function signalledBareTickRun(opts: {
+  grandchild?: boolean;
+  ignoreSigterm?: boolean;
+  killGraceMs?: number;
+}): Promise<{
+  agentPid: number;
+  grandchildPid: number | undefined;
+  claimPath: string;
+  exit: { code: number | null; signal: NodeJS.Signals | null };
+  teardownMs: number;
+  cleanup: () => Promise<void>;
+}> {
+  const repo = await makeJobRepo("main");
+  const scratch = await mkTempDir("flume-signalled-tick-");
+  let agentPid: number | undefined;
+  let grandchildPid: number | undefined;
+  let tick: ReturnType<typeof spawn> | undefined;
+  const cleanup = async (): Promise<void> => {
+    killIfAlive(grandchildPid);
+    killIfAlive(agentPid);
+    killIfAlive(tick?.pid);
+    await rm(scratch, { recursive: true, force: true });
+    await repo.cleanup();
+  };
+  // Recorded lazily as each pid is learned, so the hook can finish a teardown
+  // this function never reached.
+  const record = <T extends number | undefined>(pid: T): T => {
+    signalledPids.push(pid);
+    return pid;
+  };
+  try {
+    const agentPidPath = join(scratch, "agent.pid");
+    const grandchildPidPath = join(scratch, "grandchild.pid");
+    await writeRepoConfig(
+      repo.dir,
+      bareTickAgentChainSrc(agentPidPath, {
+        ...(opts.grandchild === true ? { grandchildPidPath } : {}),
+        ...(opts.ignoreSigterm === true ? { ignoreSigterm: true } : {}),
+        ...(opts.killGraceMs !== undefined
+          ? { killGraceMs: opts.killGraceMs }
+          : {}),
+      }),
+    );
+    new Baton(join(repo.dir, ".flume")).wake("probe");
+
+    tick = spawn(process.execPath, [TSX_CLI, CLI, "tick"], {
+      cwd: repo.dir,
+      env: hermeticEnv(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    record(tick.pid);
+
+    const claimPath = tipClaimPath(
+      await gitCommonDir(repo.dir),
+      "refs/heads/main",
+    );
+    const tickPid = record(
+      Number(
+        await waitFor(
+          `the bare tick to record its pid in the tip claim at ${claimPath}`,
+          () => fileWithContent(claimPath),
+        ),
+      ),
+    );
+    // The event every arm turns on: an agent parked mid-invocation, past the
+    // tick's claim and past its signal handlers. The script writes this last,
+    // so it also reports the grandchild and the SIGTERM handler above it as
+    // already in place.
+    agentPid = record(
+      Number(
+        await waitFor(
+          `the tick's agent to record its pid at ${agentPidPath}`,
+          () => fileWithContent(agentPidPath),
+        ),
+      ),
+    );
+    if (opts.grandchild === true) {
+      grandchildPid = record(Number(readFileSync(grandchildPidPath, "utf8")));
+    }
+    // Non-vacuity: the subject of every teardown assertion below must be a
+    // live *other* process at the moment the signal lands, or "nothing of the
+    // tree is alive" is green over a tree that never ran.
+    expect(agentPid).not.toBe(tickPid);
+    expect(processAlive(agentPid)).toBe(true);
+
+    const exited = new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolveExit) => {
+      tick?.on("exit", (code, signal) => resolveExit({ code, signal }));
+    });
+    const signalledAt = Date.now();
+    process.kill(tickPid, "SIGTERM");
+    const exit = await exited;
+
+    return {
+      agentPid,
+      grandchildPid,
+      claimPath,
+      exit,
+      teardownMs: Date.now() - signalledAt,
+      cleanup,
+    };
+  } catch (err) {
+    await cleanup();
+    throw err;
+  }
+}
+
+/**
+ * The bare tick's half of the guarantee the loop arms above pin: a tick that
+ * takes the claim itself starts an agent, that agent spawns tools of its own,
+ * and all of them write under the state root the claim protects — so a
+ * handler that drops the claim and exits leaves the next acquirer a root with
+ * a live writer inside it. `flume loop`'s supervisor takes a tick tree down
+ * by signalling its group and waiting for it; a bare tick owes its agent tree
+ * the same (spec/loop.md, "The loop lock and the tip claim").
+ *
+ * win32 has no process group to signal and maps SIGTERM to TerminateProcess,
+ * which runs no handler at all — release-on-signal is a POSIX guarantee and
+ * the cross-platform one is stale-reclaim, as the loop arms above declare.
+ * Every arm here states that skip rather than passing silently.
+ */
+describe("flume tick — a signalled bare tick takes its agent down (spec/loop.md \"The loop lock and the tip claim\")", () => {
+  afterEach(() => {
+    for (const pid of signalledPids.splice(0)) killIfAlive(pid);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "a signalled bare `flume tick` leaves nothing its agent spawned alive when the tip claim drops",
+    async () => {
+      const run = await signalledBareTickRun({ grandchild: true });
+      try {
+        // Non-vacuity: the grandchild is a third process, neither the tick
+        // nor the agent — the one a kill aimed at the agent process never
+        // reaches.
+        expect(run.grandchildPid).toBeDefined();
+        expect(run.grandchildPid).not.toBe(run.agentPid);
+
+        // The claim is released...
+        expect(existsSync(run.claimPath)).toBe(false);
+        // ...and the agent it was held for is already gone when it is: the
+        // invocation settles on that process's exit, so this is a settled
+        // fact read after the tick's own exit, not a race.
+        expect(processAlive(run.agentPid)).toBe(false);
+        // The group signal reaches every member at once, but they exit
+        // independently — the agent's own exit orders nothing about what it
+        // spawned — so this one death is awaited rather than read off the
+        // tick's exit instant. Without the group it never comes: the
+        // grandchild is reparented to init and parks out the budget.
+        await waitFor(
+          `the process the agent spawned (pid ${run.grandchildPid}) to go with the tree`,
+          () => (processAlive(run.grandchildPid!) ? undefined : "gone"),
+        );
+      } finally {
+        await run.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "a bare tick whose agent ignores SIGTERM kills it after the declared grace rather than exiting over a live writer",
+    async () => {
+      // Non-vacuity, and what makes the ceiling below discriminate: the
+      // declared grace must be far enough under the engine's that a teardown
+      // bounded by the default cannot land inside it.
+      expect(DECLARED_GRACE_MS * 10).toBeLessThan(DEFAULT_KILL_GRACE_MS);
+
+      const run = await signalledBareTickRun({
+        ignoreSigterm: true,
+        killGraceMs: DECLARED_GRACE_MS,
+      });
+      try {
+        // The agent swallowed the SIGTERM and would have parked past this
+        // case's whole budget, so reaching here at all is the escalation.
+        expect(processAlive(run.agentPid)).toBe(false);
+        expect(existsSync(run.claimPath)).toBe(false);
+        // A ceiling, not a cost. The agent ignores SIGTERM, so the only thing
+        // that can end it is the escalation, and the only question is which
+        // grace timed it: under the engine default this teardown could not
+        // have finished before `DEFAULT_KILL_GRACE_MS`, and half of that
+        // still leaves the declared grace an order of magnitude of slack on a
+        // loaded host.
+        expect(run.teardownMs).toBeLessThan(DEFAULT_KILL_GRACE_MS / 2);
+      } finally {
+        await run.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "a signalled bare `flume tick` exits 143",
+    async () => {
+      const run = await signalledBareTickRun({});
+      try {
+        // 128 + SIGTERM, the handler's own exit — not a death by the signal
+        // itself, which would leave the claim standing and report `signal`
+        // here instead.
+        expect(run.exit).toEqual({ code: 143, signal: null });
       } finally {
         await run.cleanup();
       }

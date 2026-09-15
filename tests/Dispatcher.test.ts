@@ -2268,6 +2268,171 @@ describe("Dispatcher — supervisorPolicy.tickTimeoutMs overrides the per-invoca
 });
 
 /**
+ * The tick's teardown reaching the agent seam: `DispatcherOptions.stopSignal`
+ * is what a signalled `flume tick` aborts, and the chain's
+ * `supervisorPolicy.killGraceMs` (`src/Phase.ts`) is what bounds the wait the
+ * abort commits the provider to (spec/loop.md, "The loop lock and the tip
+ * claim"). Both ride the invocation the same way `tickTimeoutMs` above does —
+ * off the tick's own resolved chain, at the `invokeAgent` call site — so a
+ * recording agent is how they are observed here too. What the provider then
+ * does with them is `tests/Agent.test.ts`'s subject.
+ */
+describe("Dispatcher — the stop signal and kill grace reach the agent invocation", () => {
+  it("the dispatcher's stopSignal is the signal a singleton phase's agent invocation receives", async () => {
+    const phase = makePhase({
+      name: "build",
+      concurrency: "singleton",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const stop = new AbortController();
+    let seenSignal: AbortSignal | undefined;
+    const agent: Agent = {
+      name: "stop-signal-capture",
+      async invoke(inv) {
+        seenSignal = inv.signal;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      stopSignal: stop.signal,
+    });
+
+    await dispatcher.tick();
+
+    // Identity, not merely an AbortSignal: the invocation must abort when
+    // *this* controller does, which is the one the CLI's signal handlers
+    // hold.
+    expect(seenSignal).toBe(stop.signal);
+    expect(seenSignal?.aborted).toBe(false);
+    stop.abort();
+    expect(seenSignal?.aborted).toBe(true);
+  });
+
+  it("the dispatcher's stopSignal is the signal a fanout entry's agent invocation receives", async () => {
+    const entries = [makeEntry("STOP-A", ["src/stop-a.ts"])];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const stop = new AbortController();
+    let seenSignal: AbortSignal | undefined;
+    const agent: Agent = {
+      name: "stop-signal-capture-fanout",
+      async invoke(inv) {
+        seenSignal = inv.signal;
+        await writeAndCommit(
+          inv.cwd,
+          "src/stop-a.ts",
+          "from-A\n",
+          "build(STOP-A): ship",
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      stopSignal: stop.signal,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["STOP-A"]);
+    expect(seenSignal).toBe(stop.signal);
+  });
+
+  it("a chain-declared supervisorPolicy.killGraceMs is the grace the agent invocation is given", async () => {
+    const phase = makePhase({
+      name: "build",
+      concurrency: "singleton",
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { killGraceMs: 321 },
+    };
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let seenGraceMs: number | undefined;
+    const agent: Agent = {
+      name: "grace-capture",
+      async invoke(inv) {
+        seenGraceMs = inv.killGraceMs;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    expect(seenGraceMs).toBe(321);
+  });
+
+  it("an invocation carries neither field when the chain declares no grace and nothing wired a stop signal", async () => {
+    const phase = makePhase({
+      name: "build",
+      concurrency: "singleton",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let seen: Record<string, unknown> | undefined;
+    const agent: Agent = {
+      name: "absence-capture",
+      async invoke(inv) {
+        seen = inv as unknown as Record<string, unknown>;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    await dispatcher.tick();
+
+    // Absent, never present-and-undefined: a provider reading `"signal" in
+    // inv` must see an invocation nobody can stop, and the engine's own
+    // `exactOptionalPropertyTypes` posture is what that spells.
+    expect(seen).toBeDefined();
+    expect("signal" in seen!).toBe(false);
+    expect("killGraceMs" in seen!).toBe(false);
+  });
+});
+
+/**
  * CHAIN-PARTITIONIGNORE — `Chain.supervisorPolicy.partitionIgnore`
  * (`src/Phase.ts`) joins `maxParallel`/`tickTimeoutMs` as a per-tick
  * chain-overridable default: `runFanout` reads it straight off the tick's

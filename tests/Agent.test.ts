@@ -41,10 +41,26 @@ interface FakeChildProcess extends EventEmitter {
   stdout: FakeChildStream;
   stderr: FakeChildStream;
   stdin: FakeChildStdin;
+  pid: number;
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
 }
+
+/**
+ * The pid every fake child reports, and so the group `terminateProcessTree`
+ * (`src/processTree.ts`) signals as `-FAKE_PID`. A constant rather than a
+ * per-case value: the cases below assert the *target*, and one spelling of it
+ * keeps that assertion about the sign rather than about the number.
+ */
+const FAKE_PID = 4242;
 
 function fakeChildProcess(): FakeChildProcess {
   const proc = new EventEmitter() as FakeChildProcess;
+  // What the teardown reads before it signals: a child already reaped has a
+  // pid the host may have recycled, and signalling it would kill a stranger.
+  proc.pid = FAKE_PID;
+  proc.exitCode = null;
+  proc.signalCode = null;
   const stdout = new EventEmitter() as FakeChildStream;
   stdout.setEncoding = (): void => {};
   const stderr = new EventEmitter() as FakeChildStream;
@@ -297,78 +313,223 @@ describe("claudeCode — win32 .cmd shim fallback", () => {
   });
 });
 
-describe("claudeCode — timeoutMs combines via AbortSignal.any", () => {
-  it("supplies AbortSignal.timeout when only timeoutMs is set", async () => {
-    const proc = fakeChildProcess();
-    spawnMock.mockReturnValueOnce(proc as never);
+/**
+ * The abort half of the seam: an agent invocation runs in its own process
+ * group and an abort takes that whole group down, settling on its exit rather
+ * than on the abort (`src/Agent.ts`, {@link AgentInvocation.signal}).
+ *
+ * Driven against the mocked `node:child_process` like the rest of this file —
+ * what a signal aimed at a real process group reaches is
+ * `tests/processTree.test.ts`'s subject, and the end-to-end property both
+ * halves exist for (a signalled `flume tick` releasing its claim over a dead
+ * agent tree) is `tests/cli.test.ts`'s. Here the wiring between them is what
+ * is judged: which group is signalled, and when the promise settles.
+ */
+describe("claudeCode — an aborted invocation takes its tree down", () => {
+  /**
+   * The signals `process.kill` was asked to deliver, as `<target> <signal>`
+   * pairs — a negative target being the process group's, which is the whole
+   * point of the spawn below. Installed per case so the engine's own
+   * escalation timer can never reach a real pid.
+   */
+  function recordKills(): { sent: string[]; restore: () => void } {
+    const sent: string[] = [];
+    const original = process.kill;
+    process.kill = ((pid: number, signal?: string | number): true => {
+      sent.push(`${pid} ${String(signal)}`);
+      return true;
+    }) as typeof process.kill;
+    return {
+      sent,
+      restore: () => {
+        process.kill = original;
+      },
+    };
+  }
 
-    const result = claudeCode().invoke({
-      cwd: "/tmp",
-      prompt: "",
-      timeoutMs: 5_000,
+  /** Let every already-queued microtask and I/O callback run. */
+  function settleTurn(): Promise<void> {
+    return new Promise((r) => setImmediate(r));
+  }
+
+  it("spawns the agent as its own process group leader on a host that has them", async () => {
+    await withPlatform("linux", async () => {
+      const proc = fakeChildProcess();
+      spawnMock.mockReturnValueOnce(proc as never);
+
+      const result = claudeCode().invoke({ cwd: "/tmp", prompt: "p" });
+      proc.emit("close", 0);
+      await result;
+
+      const opts = spawnMock.mock.calls[0]![2] as { detached?: boolean };
+      expect(opts.detached).toBe(true);
     });
-
-    const opts = spawnMock.mock.calls[0]![2] as { signal?: AbortSignal };
-    expect(opts.signal).toBeInstanceOf(AbortSignal);
-    expect(opts.signal!.aborted).toBe(false);
-
-    proc.emit("close", 0);
-    await result;
   });
 
-  it("combines user signal + timeoutMs so aborting the user signal aborts the merged signal", async () => {
-    const proc = fakeChildProcess();
-    spawnMock.mockReturnValueOnce(proc as never);
+  it("spawns the agent exactly as spawn would on win32, which has no group to lead", async () => {
+    await withPlatform("win32", async () => {
+      const proc = fakeChildProcess();
+      spawnMock.mockReturnValueOnce(proc as never);
 
-    const ctrl = new AbortController();
-    const result = claudeCode().invoke({
-      cwd: "/tmp",
-      prompt: "",
-      signal: ctrl.signal,
-      timeoutMs: 60_000,
+      const result = claudeCode().invoke({ cwd: "C:\\wt", prompt: "p" });
+      proc.emit("close", 0);
+      await result;
+
+      const opts = spawnMock.mock.calls[0]![2] as Record<string, unknown>;
+      expect("detached" in opts).toBe(false);
     });
+  });
 
-    const opts = spawnMock.mock.calls[0]![2] as { signal?: AbortSignal };
-    const merged = opts.signal!;
-    expect(merged).toBeInstanceOf(AbortSignal);
-    expect(merged).not.toBe(ctrl.signal);
-    expect(merged.aborted).toBe(false);
+  it("aborting the caller's signal SIGTERMs the agent's group, never the direct child alone", async () => {
+    await withPlatform("linux", async () => {
+      const kills = recordKills();
+      try {
+        const proc = fakeChildProcess();
+        spawnMock.mockReturnValueOnce(proc as never);
+        const ctrl = new AbortController();
+        const result = claudeCode().invoke({
+          cwd: "/tmp",
+          prompt: "p",
+          signal: ctrl.signal,
+        });
 
+        ctrl.abort();
+
+        // The group, not the pid: `claude` spawns tools and MCP servers of
+        // its own, and a kill aimed at the direct child reaches none of them.
+        expect(kills.sent).toEqual([`-${FAKE_PID} SIGTERM`]);
+
+        proc.emit("close", null);
+        await expect(result).rejects.toMatchObject({ name: "AbortError" });
+      } finally {
+        kills.restore();
+      }
+    });
+  });
+
+  it("settles only once the aborted tree has exited, never on the abort itself", async () => {
+    await withPlatform("linux", async () => {
+      const kills = recordKills();
+      try {
+        const proc = fakeChildProcess();
+        spawnMock.mockReturnValueOnce(proc as never);
+        const ctrl = new AbortController();
+        let settled = false;
+        const result = claudeCode()
+          .invoke({ cwd: "/tmp", prompt: "p", signal: ctrl.signal })
+          .catch(() => {
+            settled = true;
+          });
+
+        ctrl.abort();
+        await settleTurn();
+        // The caller releases the guards over the state root the moment this
+        // settles, so a settlement here would be a release over a live
+        // writer — the tree has been asked to go and has not gone.
+        expect(settled).toBe(false);
+
+        proc.emit("close", null);
+        await result;
+        expect(settled).toBe(true);
+      } finally {
+        kills.restore();
+      }
+    });
+  });
+
+  it("escalates to SIGKILL after the caller's declared grace when the tree ignores the SIGTERM", async () => {
+    await withPlatform("linux", async () => {
+      const kills = recordKills();
+      vi.useFakeTimers();
+      try {
+        const proc = fakeChildProcess();
+        spawnMock.mockReturnValueOnce(proc as never);
+        const ctrl = new AbortController();
+        const result = claudeCode().invoke({
+          cwd: "/tmp",
+          prompt: "p",
+          signal: ctrl.signal,
+          killGraceMs: 250,
+        });
+
+        ctrl.abort();
+        expect(kills.sent).toEqual([`-${FAKE_PID} SIGTERM`]);
+
+        // The declared grace, not the engine default: a tree that swallowed
+        // the SIGTERM is still there at 249ms and killed at 250.
+        await vi.advanceTimersByTimeAsync(249);
+        expect(kills.sent).toEqual([`-${FAKE_PID} SIGTERM`]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(kills.sent).toEqual([
+          `-${FAKE_PID} SIGTERM`,
+          `-${FAKE_PID} SIGKILL`,
+        ]);
+
+        proc.emit("close", null);
+        await expect(result).rejects.toMatchObject({ name: "AbortError" });
+      } finally {
+        vi.useRealTimers();
+        kills.restore();
+      }
+    });
+  });
+
+  it("aborts through the merged signal when timeoutMs rides alongside the caller's", async () => {
+    await withPlatform("linux", async () => {
+      const kills = recordKills();
+      try {
+        const proc = fakeChildProcess();
+        spawnMock.mockReturnValueOnce(proc as never);
+        const ctrl = new AbortController();
+        const result = claudeCode().invoke({
+          cwd: "/tmp",
+          prompt: "p",
+          signal: ctrl.signal,
+          // Far enough out that only the caller's abort can be what fired.
+          timeoutMs: 600_000,
+        });
+
+        ctrl.abort();
+
+        expect(kills.sent).toEqual([`-${FAKE_PID} SIGTERM`]);
+        proc.emit("close", null);
+        await expect(result).rejects.toMatchObject({ name: "AbortError" });
+      } finally {
+        kills.restore();
+      }
+    });
+  });
+
+  it("refuses to spawn at all when the signal was already aborted", async () => {
+    const ctrl = new AbortController();
     ctrl.abort();
-    expect(merged.aborted).toBe(true);
 
-    proc.emit("close", 1);
-    await result;
+    await expect(
+      claudeCode().invoke({ cwd: "/tmp", prompt: "p", signal: ctrl.signal }),
+    ).rejects.toMatchObject({ name: "AbortError", code: "ABORT_ERR" });
+    // Spawning a tree only to signal it leaves a process the caller was
+    // already told to stop.
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
-  it("passes the user signal through unchanged when timeoutMs is absent", async () => {
-    const proc = fakeChildProcess();
-    spawnMock.mockReturnValueOnce(proc as never);
+  it("wires no teardown at all when neither signal nor timeoutMs is set", async () => {
+    await withPlatform("linux", async () => {
+      const kills = recordKills();
+      try {
+        const proc = fakeChildProcess();
+        spawnMock.mockReturnValueOnce(proc as never);
 
-    const ctrl = new AbortController();
-    const result = claudeCode().invoke({
-      cwd: "/tmp",
-      prompt: "",
-      signal: ctrl.signal,
+        const result = claudeCode().invoke({ cwd: "/tmp", prompt: "" });
+        proc.emit("close", 0);
+        await expect(result).resolves.toMatchObject({ exitCode: 0 });
+
+        expect(kills.sent).toEqual([]);
+        const opts = spawnMock.mock.calls[0]![2] as Record<string, unknown>;
+        expect("signal" in opts).toBe(false);
+      } finally {
+        kills.restore();
+      }
     });
-
-    const opts = spawnMock.mock.calls[0]![2] as { signal?: AbortSignal };
-    expect(opts.signal).toBe(ctrl.signal);
-
-    proc.emit("close", 0);
-    await result;
-  });
-
-  it("omits the signal field entirely when neither signal nor timeoutMs is set", async () => {
-    const proc = fakeChildProcess();
-    spawnMock.mockReturnValueOnce(proc as never);
-
-    const result = claudeCode().invoke({ cwd: "/tmp", prompt: "" });
-    const opts = spawnMock.mock.calls[0]![2] as Record<string, unknown>;
-    expect("signal" in opts).toBe(false);
-
-    proc.emit("close", 0);
-    await result;
   });
 });
 

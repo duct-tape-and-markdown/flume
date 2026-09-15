@@ -1373,6 +1373,17 @@ export interface DispatcherOptions {
    */
   tickTimeoutMs?: number;
   /**
+   * This run's teardown, reaching the agent seam: aborting it aborts the
+   * in-flight invocation, which takes the agent's whole process tree down and
+   * settles once that tree is gone ({@link AgentInvocation.signal}). The
+   * `flume tick` command supplies its own controller's signal and awaits
+   * `tick()` before it releases the tip claim and exits, so a signalled bare
+   * tick leaves no writer inside the state root the claim protected
+   * (spec/loop.md, "The loop lock and the tip claim"). Default: unset — a
+   * dispatcher nobody can stop, which is every embedder that never wired one.
+   */
+  stopSignal?: AbortSignal;
+  /**
    * {@link quarantineKey} values (`slug@hash`) excluded
    * from this tick's fanout pick even though `pending.json` still lists them
    * as pickable — `pending.json` itself is untouched. The `flume loop`
@@ -2400,15 +2411,13 @@ export class Dispatcher {
       // two agree unless `setupWorktree` itself committed something — same
       // defensive re-read `runFanoutEntry` takes for the identical reason.
       preWtHead = await git.revParse(wt.path);
-      const tickTimeoutMs =
-        chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
       const termination = await this.invokeAgent(
         phase,
         ref.key,
         wt.path,
         prompt,
         agent,
-        tickTimeoutMs,
+        this.agentBounds(chain),
         extraEnv,
       );
       invocationRow = {
@@ -2799,8 +2808,8 @@ export class Dispatcher {
     const maxParallel = chain.supervisorPolicy?.maxParallel ?? this.maxParallel;
     // spec/pending.md "Fanout partition — disjoint touched paths": narrows
     // the collision set only — `declaredPaths` (fence, write guard, ship
-    // detection) is untouched. Same per-tick read as maxParallel/
-    // tickTimeoutMs above.
+    // detection) is untouched. Same per-tick read as maxParallel above and
+    // `agentBounds` below.
     const partitionIgnore = chain.supervisorPolicy?.partitionIgnore ?? [];
     const batches = partitionByFileOverlap(pickable, {
       maxParallel,
@@ -3724,15 +3733,13 @@ export class Dispatcher {
     }
 
     const preHead = await git.revParse(wt.path);
-    const tickTimeoutMs =
-      chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
     const termination = await this.invokeAgent(
       phase,
       ref.key,
       wt.path,
       prompt,
       agent,
-      tickTimeoutMs,
+      this.agentBounds(chain),
       extraEnv,
       entry.tag,
     );
@@ -4012,13 +4019,32 @@ export class Dispatcher {
     return true;
   }
 
+  /**
+   * What this tick's chain declares about how long an agent invocation runs
+   * and how long its tree gets to go — read once here rather than at each of
+   * the two legs that invoke an agent, which would be the same two-line
+   * fallback spelled twice (`.claude/rules/engineering.md`, *The fix lands at
+   * the mechanism*).
+   */
+  private agentBounds(chain: Chain): {
+    timeoutMs?: number;
+    killGraceMs?: number;
+  } {
+    const timeoutMs = chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
+    const killGraceMs = chain.supervisorPolicy?.killGraceMs;
+    return {
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      ...(killGraceMs !== undefined ? { killGraceMs } : {}),
+    };
+  }
+
   private async invokeAgent(
     phase: Phase,
     key: string,
     cwd: string,
     prompt: string,
     agent: Agent,
-    tickTimeoutMs: number | undefined,
+    bounds: { timeoutMs?: number; killGraceMs?: number },
     extraEnv?: Record<string, string>,
     /**
      * The provisioned entry's tag under fanout; omitted by the singleton
@@ -4036,7 +4062,13 @@ export class Dispatcher {
         cwd,
         prompt,
         ...(entryTag !== undefined ? { entryTag } : {}),
-        ...(tickTimeoutMs !== undefined ? { timeoutMs: tickTimeoutMs } : {}),
+        ...bounds,
+        // The tick's own teardown, reaching the one process a tick starts
+        // that outlives a bare `process.exit` (spec/loop.md, "The loop lock
+        // and the tip claim").
+        ...(this.opts.stopSignal !== undefined
+          ? { signal: this.opts.stopSignal }
+          : {}),
         onStdout: (chunk) => process.stdout.write(chunk),
         onStderr: (chunk) => process.stderr.write(chunk),
         ...(extraEnv ? { extraEnv } : {}),

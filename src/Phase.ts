@@ -682,14 +682,16 @@ export interface Chain {
      */
     abortThreshold?: number;
     /**
-     * Milliseconds between the SIGTERM a signalled `flume loop` sends its
-     * in-flight tick tree and the SIGKILL that follows — the window an agent
-     * mid-invocation gets to finish writing before the supervisor stops
-     * waiting and releases the loop lock and the tip claim. A tree that exits
-     * on the SIGTERM never reaches it. Run-scoped like
-     * `quarantineScope`/`abortThreshold`: the supervisor binds it before the
-     * first child. POSIX only — win32 maps SIGTERM to TerminateProcess,
-     * which runs no handler, so there is no grace to bound.
+     * Milliseconds between the SIGTERM a signalled run sends a tree it
+     * started and the SIGKILL that follows — the window an agent
+     * mid-invocation gets to finish writing before the signalled process
+     * stops waiting and releases the guards it holds. A tree that exits on
+     * the SIGTERM never reaches it. Both signalled paths read it: `flume
+     * loop` binds it before the first tick tree it spawns, and a `flume
+     * tick` — bare or loop-spawned — gives it to the agent tree it started,
+     * which leads a process group of its own. POSIX only — win32 maps
+     * SIGTERM to TerminateProcess, which runs no handler, so there is no
+     * grace to bound.
      */
     killGraceMs?: number;
     /**

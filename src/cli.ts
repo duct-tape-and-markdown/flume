@@ -51,6 +51,7 @@ import {
   RenderUnresolvedError,
   RenderUsageError,
   type RenderResolution,
+  type TickOutcome,
   EX_MOUNT_DEAD,
   EX_TERMINAL_MISCONFIG,
 } from "./Dispatcher.js";
@@ -807,12 +808,20 @@ async function main(): Promise<number> {
   const ownTipClaimPid = process.env.FLUME_TIP_CLAIM_HELD
     ? Number(process.env.FLUME_TIP_CLAIM_HELD)
     : process.pid;
+  // This process's teardown, reaching the agent a tick starts: the tick
+  // command's signal handlers abort it and await the tick, so the agent tree
+  // is gone before the tip claim drops (spec/loop.md, "The loop lock and the
+  // tip claim"). Constructed here because the dispatcher is — the signal
+  // handlers that abort it are installed in the `tick` branch below, which is
+  // the only command that runs one.
+  const stopTick = new AbortController();
   const dispatcher = new Dispatcher({
     repoRoot,
     configDir,
     flumeDir,
     agent: claudeCode(),
     ownTipClaimPid,
+    stopSignal: stopTick.signal,
     // Fanout branch namespace: the job resolution above is the one authority;
     // the dispatcher receives it as an option, never re-derives it from
     // flumeDir.
@@ -949,8 +958,7 @@ async function main(): Promise<number> {
     // and the `finally` may both run without the second one deleting a claim
     // a later process has since taken. Handlers precede the acquisition — a
     // signal landing during it must find a handler, not node's default
-    // disposition. Only the bare branch installs them: a loop-spawned child
-    // holds no claim of its own and keeps its default signal disposition.
+    // disposition.
     let bareTipClaim: Awaited<ReturnType<typeof acquireTipClaim>> | undefined;
     let claimHeld = false;
     const dropBareTipClaim = () => {
@@ -958,16 +966,43 @@ async function main(): Promise<number> {
       claimHeld = false;
       bareTipClaim?.release();
     };
+    // The release a signalled tick performs is its agent tree's too, never
+    // this process's alone: the agent leads its own process group
+    // (`src/Agent.ts`), writes in the worktree under the very state root the
+    // claim guards, and outlives a bare `process.exit` here — which handed
+    // that root to the next acquirer with a live writer inside it. Aborting
+    // `stopTick` takes the tree down through the same SIGTERM-then-SIGKILL
+    // teardown the supervisor applies to a tick tree, and awaiting the tick
+    // is what makes the release the whole tree's rather than a kill that was
+    // merely requested.
+    //
+    // Both paths install them, claim or no claim. A loop-spawned child holds
+    // no claim of its own, but the supervisor's group signal stops at this
+    // process — the agent's group is not the child's — so this handler is the
+    // only thing that reaches the agent there too.
+    //
+    // The wait is the tick's, not a timer's: a chain whose agent never settles
+    // on its abort holds this exit open, which is the intended outcome rather
+    // than a hang to bound — exiting anyway is the release-over-a-live-writer
+    // this whole path exists to stop. What bounds a well-behaved agent is its
+    // own teardown (`supervisorPolicy.killGraceMs`, `src/Phase.ts`).
+    let tickRun: Promise<TickOutcome> | undefined;
+    const releaseAndExit = async (code: number): Promise<never> => {
+      stopTick.abort();
+      if (tickRun !== undefined) {
+        // The tick's own failure is the tick's to report; this path owes the
+        // operator a dead agent tree, a released claim, and the signal's exit
+        // code, and a throw escaping here would replace all three with an
+        // unhandled rejection.
+        await tickRun.catch(() => undefined);
+      }
+      dropBareTipClaim();
+      process.exit(code);
+    };
+    process.on("exit", dropBareTipClaim);
+    process.on("SIGINT", () => void releaseAndExit(130));
+    process.on("SIGTERM", () => void releaseAndExit(143));
     if (process.env.FLUME_TIP_CLAIM_HELD === undefined) {
-      process.on("exit", dropBareTipClaim);
-      process.on("SIGINT", () => {
-        dropBareTipClaim();
-        process.exit(130);
-      });
-      process.on("SIGTERM", () => {
-        dropBareTipClaim();
-        process.exit(143);
-      });
       try {
         bareTipClaim = await acquireTipClaim(repoRoot, tickHeadRef.path);
         claimHeld = true;
@@ -980,7 +1015,8 @@ async function main(): Promise<number> {
       }
     }
     try {
-      const outcome = await dispatcher.tick();
+      tickRun = dispatcher.tick();
+      const outcome = await tickRun;
       console.log(outcome.summary);
       if (outcome.verdict) {
         await writeTickVerdict(flumeDir, outcome.verdict);

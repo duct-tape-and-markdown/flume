@@ -7,11 +7,11 @@
  * outputs, or session continuity; those are non-goals.
  */
 
-import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { basename, join } from "node:path";
 import { fsStamp } from "./paths.js";
+import { spawnProcessTree, terminateProcessTree } from "./processTree.js";
 import { isWin32ShimSpawnFailure } from "./spawnShim.js";
 
 /**
@@ -37,7 +37,17 @@ export interface AgentInvocation {
    * name under singleton, where this field stays absent.
    */
   entryTag?: string;
-  /** Optional abort signal for cancellation. */
+  /**
+   * Optional abort signal for cancellation — the dispatcher forwards the
+   * tick's own stop signal here (`DispatcherOptions.stopSignal`), which is
+   * how a signalled `flume tick` reaches the agent it started.
+   *
+   * A provider that aborts **takes its whole process tree down and settles on
+   * that tree's exit**, never on the abort itself: the caller releases the
+   * guards over the state root the moment this promise settles, so settling
+   * early hands that root to the next acquirer with a live writer inside it
+   * (spec/loop.md, "The loop lock and the tip claim").
+   */
   signal?: AbortSignal;
   /**
    * Optional wall-clock timeout in milliseconds. When set, the provider must
@@ -47,6 +57,15 @@ export interface AgentInvocation {
    * the invocation indefinitely.
    */
   timeoutMs?: number;
+  /**
+   * Milliseconds the aborted process tree gets between its SIGTERM and the
+   * SIGKILL that follows — what bounds the wait `signal` and `timeoutMs`
+   * above commit the provider to. The dispatcher forwards the chain's
+   * `supervisorPolicy.killGraceMs` (`src/Phase.ts`) here, the same value the
+   * `flume loop` supervisor bounds a tick tree by; absent takes
+   * `DEFAULT_KILL_GRACE_MS` (`src/processTree.ts`).
+   */
+  killGraceMs?: number;
   /**
    * Stream callback for stdout chunks. Chunks are NOT guaranteed to be
    * line-bounded — consumers that need lines must buffer and split on `\n`
@@ -190,6 +209,12 @@ export interface ClaudeCodeOptions {
  * stderr, returns the exit code. Streaming callbacks fire on each chunk so
  * the dispatcher can surface progress.
  *
+ * The process leads its own group (`spawnProcessTree`, `src/processTree.ts`),
+ * and an abort takes that whole group down and settles on its exit
+ * ({@link AgentInvocation.signal}) — `claude` spawns tools and MCP servers of
+ * its own, and every one of them writes in the tick's worktree, so the direct
+ * child is never the tree.
+ *
  * A win32 shim spawn failure (`src/spawnShim.ts`) retries once through the
  * shell: argv is fixed flags plus chain-authored `extraArgs`, the same
  * quoting tradeoff `shellGate` accepts.
@@ -207,7 +232,16 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
 
   return {
     name: "claude-code",
-    invoke({ cwd, prompt, signal, timeoutMs, onStdout, onStderr, extraEnv }) {
+    invoke({
+      cwd,
+      prompt,
+      signal,
+      timeoutMs,
+      killGraceMs,
+      onStdout,
+      onStderr,
+      extraEnv,
+    }) {
       return new Promise((resolve, reject) => {
         const args = [
           "-p",
@@ -221,11 +255,17 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
         const effective = combineSignals(signal, timeoutMs);
 
         const run = (useShell: boolean): void => {
-          const proc = spawn(binary, args, {
+          // Aborted before this attempt started: there is no tree to take
+          // down, and spawning one only to signal it would leave a process
+          // the caller was already told to stop.
+          if (effective?.aborted) {
+            reject(abortError(effective.reason));
+            return;
+          }
+          const proc = spawnProcessTree(binary, args, {
             cwd,
             stdio: ["pipe", "pipe", "pipe"],
             ...(useShell ? { shell: true } : {}),
-            ...(effective ? { signal: effective } : {}),
             ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}),
           });
 
@@ -234,6 +274,26 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
           // Set when this proc is superseded by the shell retry; its late
           // 'close' (spawn failures can emit both) must not settle the promise.
           let abandoned = false;
+          // Set when the abort below fired, so 'close' knows the exit it is
+          // seeing is the teardown's rather than the agent's own.
+          let aborted = false;
+
+          // Wired by hand rather than through spawn's own `signal` option:
+          // that option kills the direct child only and reports the abort as
+          // an 'error' event, so the promise settled while the tools and MCP
+          // servers `claude` spawned were still running under the state root
+          // the caller is about to release. Here the abort signals the whole
+          // group and settlement waits for its exit.
+          const onAbort = (): void => {
+            aborted = true;
+            terminateProcessTree(proc, {
+              ...(killGraceMs !== undefined ? { graceMs: killGraceMs } : {}),
+            });
+          };
+          effective?.addEventListener("abort", onAbort, { once: true });
+          const release = (): void => {
+            effective?.removeEventListener("abort", onAbort);
+          };
 
           proc.stdout.setEncoding("utf8");
           proc.stderr.setEncoding("utf8");
@@ -250,6 +310,7 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
 
           proc.on("error", (err) => {
             if (abandoned) return;
+            release();
             // Detection is shared; the mechanics stay here — a streaming
             // proc is abandoned and re-run, not re-awaited.
             if (!useShell && isWin32ShimSpawnFailure(err)) {
@@ -261,6 +322,15 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
           });
           proc.on("close", (exitCode) => {
             if (abandoned) return;
+            release();
+            // The tree this invocation started is gone — only now is the
+            // abort the caller asked for an accomplished fact, so only now
+            // does it settle, as the error the dispatcher classifies as a
+            // platform-preempt.
+            if (aborted) {
+              reject(abortError(effective?.reason));
+              return;
+            }
             resolve({
               exitCode: exitCode ?? -1,
               stdout,
@@ -281,6 +351,22 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
       });
     },
   };
+}
+
+/**
+ * The rejection an aborted invocation settles with, in the shape Node's own
+ * `spawn({ signal })` produced before the teardown above replaced it: `name`
+ * and `code` are what the dispatcher classifies a platform-preempt by
+ * (`src/Dispatcher.ts`), and the signal's own reason rides as `cause` so a
+ * timeout and a stop signal stay distinguishable to a reader.
+ */
+function abortError(reason: unknown): Error {
+  const err = new Error("The operation was aborted", { cause: reason }) as Error & {
+    code?: string;
+  };
+  err.name = "AbortError";
+  err.code = "ABORT_ERR";
+  return err;
 }
 
 function combineSignals(

@@ -12,6 +12,11 @@
  * which a bare SIGTERM leaves to whatever disposition the tree happens to
  * install.
  *
+ * Two callers, one rung apart: `src/loopSupervisor.ts` starts a `flume tick`
+ * child this way, and `src/Agent.ts` starts the agent the same way — so a
+ * signalled `flume tick` reaches the tools and MCP servers its agent spawned
+ * whether or not a supervisor is above it.
+ *
  * POSIX only, as that section states: win32 has no process group to signal,
  * and maps SIGTERM to TerminateProcess, which runs no handler. There
  * {@link spawnProcessTree} spawns exactly as `spawn` would and
@@ -26,8 +31,12 @@
 import {
   spawn,
   type ChildProcess,
+  type ChildProcessByStdio,
   type SpawnOptions,
+  type SpawnOptionsWithStdioTuple,
+  type StdioPipe,
 } from "node:child_process";
+import type { Readable, Writable } from "node:stream";
 
 /**
  * Engine default for the wait between a tick tree's SIGTERM and its SIGKILL,
@@ -62,7 +71,22 @@ function hasProcessGroups(): boolean {
  * alone and the supervisor's own teardown becomes the one path down. That is
  * the point rather than a side effect: a child signalled by the terminal *and*
  * by its parent races the parent's release against a death it never ordered.
+ *
+ * The all-pipes overload carries `spawn`'s own narrowing through the wrapper:
+ * a caller that streams its child's output (`src/Agent.ts`) reads the same
+ * non-nullable stdio handles it would have read from `spawn` directly, rather
+ * than paying an assertion for a shape this call already fixed.
  */
+export function spawnProcessTree(
+  command: string,
+  args: readonly string[],
+  options: SpawnOptionsWithStdioTuple<StdioPipe, StdioPipe, StdioPipe>,
+): ChildProcessByStdio<Writable, Readable, Readable>;
+export function spawnProcessTree(
+  command: string,
+  args: readonly string[],
+  options: SpawnOptions,
+): ChildProcess;
 export function spawnProcessTree(
   command: string,
   args: readonly string[],
