@@ -67,7 +67,7 @@ No schema holds these; they are the plan tick's actual work.
 
 ## Plan slices
 
-Plan is three singleton phases, one job each — `plan-inbox`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in the plan state (`plan/state.json`, three typed fields the package reads through its own accessor); the windows a slice reads, the predicates and the ladder, and the shared writer discipline are the package's — the slice prompts point at the discipline page by the address the package resolves.
+Plan is three singleton phases, one job each — `plan-inbox`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in the plan state (`plan/state.json`, typed fields the package reads through its own accessor — `spec/harness.md`, *Plan state as declared state*, names them); the windows a slice reads, the predicates and the ladder, and the shared writer discipline are the package's — the slice prompts point at the discipline page by the address the package resolves.
 
 ## Records: one file each
 
