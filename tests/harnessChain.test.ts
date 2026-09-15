@@ -40,6 +40,7 @@ import { promptPath, type PromptName } from "../harness/prompts.ts";
 import { notesDir } from "../harness/records.ts";
 import type { Runner, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
+import { computeStateRootRel } from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
@@ -232,6 +233,48 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
     ...overrides,
   };
 }
+
+it("the package refuses a state root resolved outside the repository, naming both roots", () => {
+  // Control: the same declaration over a root inside the repository loads,
+  // so the refusal below is the relocation's doing and not the fixture's.
+  expect(chainFor().phases.length).toBeGreaterThan(0);
+
+  // A sibling of the fixture repo rather than a child of it, and neither
+  // path a substring of the other — so "names both roots" below is read off
+  // two distinct spans.
+  const relocated = join(tmpdir(), "flume-harness-chain-relocated", STATE_ROOT);
+  expect(relocated.startsWith(repo)).toBe(false);
+  // The shape the engine reports for such a root: no repo-relative path, so
+  // the queue, the records and build's park note address nothing a commit
+  // holds.
+  expect(computeStateRootRel(repo, relocated)).toBeUndefined();
+
+  const load = (): Chain =>
+    harnessChain({
+      api: buildFlumeApi({
+        repoRoot: repo,
+        configDir: relocated,
+        flumeDir: relocated,
+      }),
+      declaration: DECLARATION,
+    });
+
+  // Refused at load, not degraded into a chain whose gates address nothing.
+  expect(load).toThrow(/outside the repository/);
+
+  let message = "";
+  try {
+    load();
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  // Both roots by name: "outside the repository" alone leaves an operator
+  // unable to tell which of the two moved.
+  expect({ root: message.includes(relocated), repo: message.includes(repo) }).toEqual({
+    root: true,
+    repo: true,
+  });
+});
 
 it("the chain factory calls the declared runner factory with the same FlumeApi it received", () => {
   const seen: FlumeApi[] = [];

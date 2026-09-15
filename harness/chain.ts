@@ -125,13 +125,11 @@ export interface HarnessChainOptions {
 /**
  * The chain a consumer's declaration describes.
  *
- * Refuses a state root outside the repository. Every one of the package's
- * discipline mechanics addresses a path some commit must hold — the queue
- * the `per` gate reads at a ref, the record a plan slice drains, the note a
- * build tick parks into and this factory's own `shipped` reads back — and a
- * relocated root has no such path. Refused once, at load, rather than
- * silently yielding a chain whose every tick skips its own gates
- * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * Refuses a state root outside the repository: every mechanic this factory
+ * wires addresses a path some commit holds (`spec/harness.md`,
+ * *Committed-path discipline*), and a relocated root has none. Refused once,
+ * at load, rather than silently yielding a chain whose every tick skips its
+ * own gates (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 export function harnessChain(options: HarnessChainOptions): Chain {
   const { api } = options;
@@ -574,7 +572,7 @@ function repoRelativeStateRoot(api: FlumeApi): string {
       `the harness package's state root ${api.paths.flumeDir} resolves ` +
         `outside the repository at ${api.paths.repoRoot}, so its queue, its ` +
         `records and build's park note are paths no commit can hold ` +
-        `(spec/harness.md, Records as one file each)`,
+        `(spec/harness.md, Committed-path discipline)`,
     );
   }
   return rel;

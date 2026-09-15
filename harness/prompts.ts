@@ -365,7 +365,7 @@ function noteRoot(ctx: BuildTickContext): string {
       `prompt args: the state root ${ctx.flumeDir} resolves outside the ` +
         `repository, so build's note is no path in the tick's commit and ` +
         `the park it carries could not be read back (spec/harness.md, ` +
-        `Records as one file each)`,
+        `Committed-path discipline)`,
     );
   }
   return ctx.stateRootRel;
