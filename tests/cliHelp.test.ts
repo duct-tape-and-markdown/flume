@@ -41,123 +41,150 @@ function documentedExitCodes(help: string): Set<number> {
 const ascending = (codes: Iterable<number>): number[] =>
   [...new Set(codes)].sort((a, b) => a - b);
 
+/*
+ * The `flume tick` process's exit-code range, in two halves with different
+ * owners, driven rather than hand-copied so every surface that restates it
+ * below compares against a real producer (`.claude/rules/engineering.md`,
+ * "A seam gate reads what the real writer wrote"): the codes `tickExitCode`
+ * (`src/cliVerdict.ts`) maps a `TickOutcome` to, and the codes the process
+ * returns without ever reaching that function. Both `flume tick --help` and
+ * `docs/CLI.md` § `flume tick` restate this range; each is pinned against
+ * the producer below, never against the other copy.
+ */
+
+/**
+ * Exit codes the `flume tick` process returns that `tickExitCode` cannot:
+ * cli.ts's own refusals, taken before a dispatcher outcome exists (the
+ * detached-HEAD refusal, the held-tip-claim refusal) or in place of one
+ * (main's harness-error exit). Named rather than derived — each is a
+ * `return`/`process.exit` literal on a control path with no outcome value
+ * to drive.
+ */
+const PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
+  [1, "detached HEAD or held tip claim refusal, or a harness error"],
+]);
+
+/** Candidate standing for "this field is not set on the outcome". */
+const ABSENT = Symbol("absent");
+
+const A_TICK_RESULT: TickResult = {
+  phaseName: "plan",
+  committed: true,
+  gateResults: [],
+  pendingAfter: [],
+  pickableAfter: [],
+  shippedTags: [],
+  revertedTags: [],
+  flumeDir: ".flume",
+  configDir: ".flume",
+};
+
+const A_TICK_VERDICT: TickVerdict = {
+  phaseName: "plan",
+  tags: [],
+  committed: true,
+  gateResults: [],
+  shippedTags: [],
+  mergeOutcomes: [],
+  invocations: [],
+  summary: "plan committed 0000000",
+  headSha: "0".repeat(40),
+  at: "2026-01-01T00:00:00.000Z",
+};
+
+const A_STAGE_FAILURE = { signature: "boom", message: "boom" };
+
+/**
+ * One candidate list per `TickOutcome` field, keyed with the optionality
+ * stripped so a field added to the outcome is a compile error here — the
+ * point at which someone supplies its candidates. Every field carries a
+ * present value as well as `ABSENT`, because a branch `tickExitCode` grows
+ * on a field it ignores today is exactly the change this gate exists to
+ * catch; a field left absent everywhere would let that branch ship green.
+ * The values themselves are representative, not exhaustive: what varies
+ * per field is presence, and per boolean, which of the two it holds.
+ */
+const TICK_OUTCOME_SPACE: {
+  [K in keyof TickOutcome]-?: readonly (TickOutcome[K] | typeof ABSENT)[];
+} = {
+  hibernated: [false, true],
+  failed: [ABSENT, false, true],
+  usageError: [ABSENT, false, true],
+  tipMoved: [ABSENT, false, true],
+  declined: [ABSENT, false, true],
+  terminal: [ABSENT, { kind: "orphaned-awake", phases: ["ghost"] }],
+  phaseName: [ABSENT, "plan"],
+  result: [ABSENT, A_TICK_RESULT],
+  noCommit: [ABSENT, "clean-exit"],
+  provisionFailures: [ABSENT, [A_STAGE_FAILURE]],
+  mergeFailures: [ABSENT, [A_STAGE_FAILURE]],
+  gateFailures: [ABSENT, [A_STAGE_FAILURE]],
+  verdict: [ABSENT, A_TICK_VERDICT],
+  awakeAfter: [[], ["plan"]],
+  summary: ["no phases awake; hibernating"],
+};
+
+/**
+ * Every outcome the table spans, `ABSENT` fields left unset. A generator,
+ * not an array: the product runs to tens of thousands of outcomes, and
+ * only the code each one maps to is worth keeping.
+ */
+function* tickOutcomeSpace(
+  fields: readonly (readonly [string, readonly unknown[]])[],
+  partial: Record<string, unknown> = {},
+): Generator<TickOutcome> {
+  const [head, ...rest] = fields;
+  if (!head) {
+    yield partial as unknown as TickOutcome;
+    return;
+  }
+  const [field, candidates] = head;
+  for (const value of candidates) {
+    yield* tickOutcomeSpace(
+      rest,
+      value === ABSENT ? partial : { ...partial, [field]: value },
+    );
+  }
+}
+
+/**
+ * Drive the real `tickExitCode` over {@link TICK_OUTCOME_SPACE} and return
+ * the codes it produced, with the size of the space it was driven over so
+ * each caller can pin its own non-vacuity: a space that collapsed, or a
+ * range that did, agrees with almost any prose.
+ */
+function driveTickExitCodes(): { returned: Set<number>; spanned: number } {
+  const returned = new Set<number>();
+  let spanned = 0;
+  for (const outcome of tickOutcomeSpace(
+    Object.entries(TICK_OUTCOME_SPACE) as [string, readonly unknown[]][],
+  )) {
+    spanned++;
+    returned.add(tickExitCode(outcome));
+  }
+  return { returned, spanned };
+}
+
+/**
+ * The whole range a `flume tick` surface owes an operator: what the driven
+ * function returns, plus the process-level codes it cannot.
+ */
+function expectedTickExitCodes(returned: Iterable<number>): number[] {
+  return ascending([...returned, ...PROCESS_LEVEL_EXIT_CODES.keys()]);
+}
+
 /**
  * CLI-HELP-TICK-MISSING-EXIT2 — `flume tick --help`'s exit-code list is the
- * prose copy of two facts with different owners: the range `tickExitCode`
- * (`src/cliVerdict.ts`) returns from a `TickOutcome`, and the codes the
- * `flume tick` process returns without ever reaching one. Neither is
- * hand-copied here. The first is derived by driving the real function over
- * the outcome space below; the second is {@link PROCESS_LEVEL_EXIT_CODES},
- * named with the refusal sites that produce it and asserted to hold nothing
- * `tickExitCode` can return. A code added to or dropped from either side
- * turns this red instead of shipping one-sided (`.claude/rules/
- * engineering.md`, "A seam gate reads what the real writer wrote").
+ * prose copy of the two halves above. Neither is hand-copied: the first is
+ * derived by driving the real function over the outcome space, the second
+ * is the named process-level set, asserted to hold nothing `tickExitCode`
+ * can return. A code added to or dropped from either side turns this red
+ * instead of shipping one-sided (`.claude/rules/engineering.md`, "A seam
+ * gate reads what the real writer wrote").
  */
 describe("flume tick --help — the exit-code list against tickExitCode's derived range (CLI-HELP-TICK-MISSING-EXIT2)", () => {
-  /**
-   * Exit codes the `flume tick` process returns that `tickExitCode` cannot:
-   * cli.ts's own refusals, taken before a dispatcher outcome exists (the
-   * detached-HEAD refusal, the held-tip-claim refusal) or in place of one
-   * (main's harness-error exit). Named rather than derived — each is a
-   * `return`/`process.exit` literal on a control path with no outcome value
-   * to drive.
-   */
-  const PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
-    [1, "detached HEAD or held tip claim refusal, or a harness error"],
-  ]);
-
-  /** Candidate standing for "this field is not set on the outcome". */
-  const ABSENT = Symbol("absent");
-
-  const A_TICK_RESULT: TickResult = {
-    phaseName: "plan",
-    committed: true,
-    gateResults: [],
-    pendingAfter: [],
-    pickableAfter: [],
-    shippedTags: [],
-    revertedTags: [],
-    flumeDir: ".flume",
-    configDir: ".flume",
-  };
-
-  const A_TICK_VERDICT: TickVerdict = {
-    phaseName: "plan",
-    tags: [],
-    committed: true,
-    gateResults: [],
-    shippedTags: [],
-    mergeOutcomes: [],
-    invocations: [],
-    summary: "plan committed 0000000",
-    headSha: "0".repeat(40),
-    at: "2026-01-01T00:00:00.000Z",
-  };
-
-  const A_STAGE_FAILURE = { signature: "boom", message: "boom" };
-
-  /**
-   * One candidate list per `TickOutcome` field, keyed with the optionality
-   * stripped so a field added to the outcome is a compile error here — the
-   * point at which someone supplies its candidates. Every field carries a
-   * present value as well as `ABSENT`, because a branch `tickExitCode` grows
-   * on a field it ignores today is exactly the change this gate exists to
-   * catch; a field left absent everywhere would let that branch ship green.
-   * The values themselves are representative, not exhaustive: what varies
-   * per field is presence, and per boolean, which of the two it holds.
-   */
-  const TICK_OUTCOME_SPACE: {
-    [K in keyof TickOutcome]-?: readonly (TickOutcome[K] | typeof ABSENT)[];
-  } = {
-    hibernated: [false, true],
-    failed: [ABSENT, false, true],
-    usageError: [ABSENT, false, true],
-    tipMoved: [ABSENT, false, true],
-    declined: [ABSENT, false, true],
-    terminal: [ABSENT, { kind: "orphaned-awake", phases: ["ghost"] }],
-    phaseName: [ABSENT, "plan"],
-    result: [ABSENT, A_TICK_RESULT],
-    noCommit: [ABSENT, "clean-exit"],
-    provisionFailures: [ABSENT, [A_STAGE_FAILURE]],
-    mergeFailures: [ABSENT, [A_STAGE_FAILURE]],
-    gateFailures: [ABSENT, [A_STAGE_FAILURE]],
-    verdict: [ABSENT, A_TICK_VERDICT],
-    awakeAfter: [[], ["plan"]],
-    summary: ["no phases awake; hibernating"],
-  };
-
-  /**
-   * Every outcome the table spans, `ABSENT` fields left unset. A generator,
-   * not an array: the product runs to tens of thousands of outcomes, and
-   * only the code each one maps to is worth keeping.
-   */
-  function* tickOutcomeSpace(
-    fields: readonly (readonly [string, readonly unknown[]])[],
-    partial: Record<string, unknown> = {},
-  ): Generator<TickOutcome> {
-    const [head, ...rest] = fields;
-    if (!head) {
-      yield partial as unknown as TickOutcome;
-      return;
-    }
-    const [field, candidates] = head;
-    for (const value of candidates) {
-      yield* tickOutcomeSpace(
-        rest,
-        value === ABSENT ? partial : { ...partial, [field]: value },
-      );
-    }
-  }
-
   it("flume tick --help documents every exit code tickExitCode returns, beside a named process-level set", async () => {
-    const returned = new Set<number>();
-    let spanned = 0;
-    for (const outcome of tickOutcomeSpace(
-      Object.entries(TICK_OUTCOME_SPACE) as [string, readonly unknown[]][],
-    )) {
-      spanned++;
-      returned.add(tickExitCode(outcome));
-    }
+    const { returned, spanned } = driveTickExitCodes();
     // Non-vacuity: an outcome space that collapsed, or a range that did,
     // would agree with almost any help text.
     expect(spanned).toBeGreaterThan(1);
@@ -176,8 +203,62 @@ describe("flume tick --help — the exit-code list against tickExitCode's derive
     const { out, code } = await runCli(process.cwd(), ["tick", "--help"]);
     expect(code).toBe(0);
     expect(ascending(documentedExitCodes(out))).toEqual(
-      ascending([...returned, ...PROCESS_LEVEL_EXIT_CODES.keys()]),
+      expectedTickExitCodes(returned),
     );
+  });
+});
+
+/**
+ * CLI-DOC-TICK-EXIT-CODES-PINNED — `docs/CLI.md` § `flume tick` is a second
+ * prose copy of the same range, and it had drifted: it named 0, 69 and 1
+ * and neither the usage code nor the terminal-misconfiguration code the
+ * verb really returns. It is pinned against the same driven producer as the
+ * help text above rather than against the help text itself — two prose
+ * copies compared to each other move together in the commit that changes
+ * the behavior, and agree while both are wrong (`.claude/rules/
+ * engineering.md`, "A seam gate reads what the real writer wrote").
+ */
+describe("docs/CLI.md's flume tick section against tickExitCode's derived range (CLI-DOC-TICK-EXIT-CODES-PINNED)", () => {
+  /**
+   * The exit codes a `docs/CLI.md` section names — every backticked bare
+   * integer in it. The page writes a code as `` `69` ``, prose and code
+   * alike, so this is the section's whole claim about the verb's range.
+   */
+  function namedExitCodes(section: string): number[] {
+    const codes = new Set<number>();
+    for (const [, code] of section.matchAll(/`(\d+)`/g)) {
+      codes.add(Number(code));
+    }
+    return ascending(codes);
+  }
+
+  /** One `## `-delimited section of the page, heading included. */
+  function docSection(doc: string, heading: string): string {
+    const start = doc.indexOf(heading);
+    expect(start).toBeGreaterThan(-1);
+    const next = doc.indexOf("\n## ", start + 1);
+    return next === -1 ? doc.slice(start) : doc.slice(start, next);
+  }
+
+  it("docs/CLI.md's flume tick section names every exit code the real tick range produces", async () => {
+    const { returned, spanned } = driveTickExitCodes();
+    // Non-vacuity, as above: a collapsed space or range agrees with prose
+    // that names almost anything.
+    expect(spanned).toBeGreaterThan(1);
+    expect(returned.size).toBeGreaterThan(1);
+    expect(PROCESS_LEVEL_EXIT_CODES.size).toBeGreaterThan(0);
+
+    const doc = await readFile(
+      fileURLToPath(new URL("../docs/CLI.md", import.meta.url)),
+      "utf8",
+    );
+    const section = docSection(doc, "## `flume tick`");
+    expect(section.length).toBeGreaterThan(0);
+
+    // Exactly the range, in both directions: a code the verb gained and the
+    // page never named is red, and so is a code the page names that the
+    // producer can no longer return.
+    expect(namedExitCodes(section)).toEqual(expectedTickExitCodes(returned));
   });
 });
 
