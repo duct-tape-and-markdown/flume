@@ -1,53 +1,5 @@
 [
   {
-    "tag": "PHASE-PROMPTS-STATE-THE-TURN-BOUNDARY",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/prompts.ts",
-          "description": "the turn boundary as a shared arg — one home, every phase prompt"
-        },
-        {
-          "path": "harness/prompts/build.md",
-          "description": "substitutes it"
-        },
-        {
-          "path": "harness/prompts/plan-inbox.md",
-          "description": "substitutes it"
-        },
-        {
-          "path": "harness/prompts/plan-derive.md",
-          "description": "substitutes it"
-        },
-        {
-          "path": "harness/prompts/plan-sweep.md",
-          "description": "substitutes it"
-        },
-        {
-          "path": "tests/harnessPrompts.test.ts",
-          "description": "the arg reaches every phase prompt, beside the discipline-page pin"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "no package prompt says a tick is one turn, so an agent arming a background wake on its own work ends the invocation and the work dies uncommitted",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "One tick is one fresh process"
-    },
-    "acceptance": "every phase prompt the package renders carries the turn boundary from one home: ending the turn ends the invocation, nothing wakes it afterwards, and unfinished work is waited on inside the turn or parked.",
-    "tests": [
-      "every phase prompt the package renders substitutes the shared turn-boundary arg"
-    ],
-    "pins": [],
-    "notes": "Field-traced: WINDOWS-LANE-TRIGGER-IS-PINNED's clean-exit at 7c93b2e armed a watcher on its own suite and ended the turn. One home, not four copies — a shared arg beside NO_COMMIT_MODES. No test reads the sentence: prose against prose is not this suite's (engineering.md, *Narration is the ladder's bottom rung*); the check is that the arg reaches every phase prompt, as the discipline-page pin already does."
-  },
-  {
     "tag": "SPAN-RENDERING-CASES-DECLARE-THE-LANE-BUDGET",
     "gate": {
       "kind": "open"
@@ -81,7 +33,18 @@
       "the spawn scan reports a case that renders inline-exec spans without a declared budget"
     ],
     "pins": [],
-    "notes": "Observed: tests/examples.test.ts's unreadable-artifact case timed out at vitest's 5s under full-suite contention, ~650ms alone. `sh` is no node launcher and the scan never follows an import, so NODE_COMMANDS cannot reach it — seed the render entry the spans go through, declared where NODE_COMMANDS is. The afterMerge gate runs this lane once per cherry-picked entry, so the flake reverts an innocent entry."
+    "notes": "Observed: tests/examples.test.ts's unreadable-artifact case timed out at vitest's 5s under full-suite contention, ~650ms alone. `sh` is no node launcher and the scan never follows an import, so NODE_COMMANDS cannot reach it — seed the render entry the spans go through, declared where NODE_COMMANDS is. The afterMerge gate runs this lane once per cherry-picked entry, so the flake reverts an innocent entry.",
+    "observedFiles": [
+      ".flume/plan/notes/SPAN-RENDERING-CASES-DECLARE-THE-LANE-BUDGET.md",
+      "tests/Prompt.test.ts",
+      "tests/examples.test.ts",
+      "tests/harnessBuildArgs.test.ts",
+      "tests/harnessChain.test.ts",
+      "tests/harnessPrompts.test.ts",
+      "tests/helpers/spawnBudget.ts",
+      "tests/priorAttempts.test.ts",
+      "tests/subprocessHelper.test.ts"
+    ]
   },
   {
     "tag": "INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE",
@@ -136,50 +99,11 @@
     "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content — the generic parse the boundary rule fences. The liveness fork is ruled and the spec holds it; derive files the leg and this entry ships under it unchanged. Name the reader's lane type distinctly: `lane` already means a Runner test lane in harness/. This repo's declaration now names the lane (`ci:`, 8d5dc56), so the first drain of the real run is the agreement case."
   },
   {
-    "tag": "PLAN-STATE-CARRIES-THE-DRAINED-RUN-STAMP",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/planState.ts",
-          "description": "the fourth field: the per-lane drained-run stamp, beside the two cursors and the rotation"
-        },
-        {
-          "path": "tests/harnessPlanState.test.ts",
-          "description": "the field's round-trip, its absence reading, and its refusal"
-        },
-        {
-          "path": "harness/prompts/plan-discipline.md",
-          "description": "the plan-state bullet names four fields, and what a lane with no stamp reads as"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the plan state carries three fields, so a slice that drained a lane's run has nowhere to stamp it and re-drains the same run every tick",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Plan state as declared state"
-    },
-    "acceptance": "the plan state's typed shape carries a per-lane drained-run stamp the accessor reads and writes, a lane with no stamp reads as never drained, and a malformed stamp is refused naming its field.",
-    "tests": [
-      "the plan state accessor round-trips a per-lane drained-run stamp",
-      "a plan state artifact carrying no lane stamp reads as no lane drained",
-      "a plan state artifact whose lane stamp is malformed is refused, naming the field"
-    ],
-    "pins": [],
-    "notes": "Absence is a lane never drained, not a refusal: every live state.json predates the field and the accessor runs on the selection path before any slice could write one, so a bare required field refuses the loop shut at the adopting commit. The field-by-field refusal loop in tests/harnessPlanState.test.ts walks `PlanStateSchema.shape`. `.flume/PROTOCOL.md` also says `three typed fields` and is outside every phase fence — the operator's edit, blocking nothing."
-  },
-  {
     "tag": "INBOX-SLICE-IS-LIVE-ON-A-RED-UNDRAINED-LANE",
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE",
-        "PLAN-STATE-CARRIES-THE-DRAINED-RUN-STAMP"
+        "INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE"
       ]
     },
     "dependsOnForks": [],
@@ -219,35 +143,6 @@
     ],
     "pins": [],
     "notes": "`PlanSliceWindow.live` is sync and runs on the selection path (planState.ts), so the lane read has a sync half — once per tick per lane, beside the render's. The agent writes the stamp as it writes a cursor, so the rendered lane block must name the run it would stamp. `harness/ci.ts` is INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE's new file; this widens its report with the run's identity and verdict."
-  },
-  {
-    "tag": "WINDOWS-LANE-TRIGGER-IS-PINNED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/bin.test.ts",
-          "description": "beside the case that already reads the workflow: the trigger and the windows lane's step set"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "nothing reads the trigger and lane content win32 support now rests on, so a lane that stops running on push to main still reads as supported",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "win32 is a supported host"
-    },
-    "acceptance": "the suite refuses a workflow whose push trigger drops `main`, or whose windows-latest lane drops one of the four steps the section names.",
-    "tests": [],
-    "pins": [
-      "the CI workflow runs on every push to main",
-      "the windows-latest lane runs typecheck, the default test lane, build and the install smoke"
-    ],
-    "notes": "Both properties hold on disk today (.github/workflows/ci.yml), so they are pins. The section's support claim is now conditional on the lane running, and the condition is a fact about a committed file that no rung above prose holds."
   },
   {
     "tag": "EXPORT-GRAPH-COMMENT-POINTS-AT-THE-RESOLUTION-FACT",
