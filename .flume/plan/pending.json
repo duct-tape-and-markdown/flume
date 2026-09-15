@@ -1,1 +1,33 @@
-[]
+[
+  {
+    "tag": "CITATION-RESOLVER-REPO-RELATIVE-PATH-ARM",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "path-shaped subject rule and a working-tree resolution arm"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "fixture cases for the new arm; REPO_FILE_VOCABULARY shrinks to what the arm cannot reach"
+        }
+      ]
+    },
+    "summary": "Resolve repo-relative path citations against the working tree, generalizing REPO_FILE_VOCABULARY's two hardcoded names into a resolution arm",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "Path-shaped citations are judged, so a renamed src/, spec/ or rules file reds the repo pin instead of leaving its citation sites standing",
+    "tests": [
+      "the citation scan resolves a repo-relative path citation against the working tree",
+      "the citation scan flags a repo-relative path citation naming no file on disk",
+      "the repo citation pin judges the repo-relative path citations src/ and harness/ comments carry"
+    ],
+    "pins": [
+      "the citation scan judges no backticked span carrying a path placeholder"
+    ],
+    "notes": "Measured on this tree: 478 sites / 61 distinct path citations unjudged, 54 distinct resolving on disk. Residue to exclude or repair: `dist/*` (published layout), `plan/pending.json` (state-root-relative), `.flume/loop.pid` (runtime) — 9 modules, so prefer an exclusion over editing them. `./X.js` specifiers are not repo-relative and stay refused. Rider: the repo pin's vacuity floor is still `> 500` against 1316 judged."
+    }
+]
