@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "tag": "CI-POSIX-SMOKE-RUNS-THE-SHARED-SCRIPT",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "description": "\"Consumer-install smoke\" collapses onto the script; the type-resolution gate reads the scratch the script leaves"
+        },
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "caller-supplied scratch root, kept rather than removed when supplied"
+        },
+        {
+          "path": "tests/bin.test.ts",
+          "description": "the CI-side agreement case, retitled to what the collapsed step now claims"
+        }
+      ]
+    },
+    "summary": "Run the POSIX lane's consumer-install smoke through scripts/smoke-install.mjs instead of re-spelling it inline, per *The fix lands at the mechanism*",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "ci.yml's Consumer-install smoke invokes the shared script and re-spells none of its steps; the Consumer type-resolution gate finds the consumer dir and tarball the script left standing.",
+    "tests": [
+      "the CI consumer-install smoke runs scripts/smoke-install.mjs rather than re-spelling its steps"
+    ],
+    "notes": "The inline copy is why the chain-load verb drifted on one side only. It re-spells pack / init / type=module / --no-save install / chain+prompt fixtures, and omits the script's shim --version and exports-subpath steps, so POSIX acceptance is weaker than windows under an equivalent name. Blocker: the type-resolution gate reuses $RUNNER_TEMP/flume-consumer and the tarball, which the script deletes with its scratch. The existing CI verb-agreement case is superseded once the copy is gone."
+  }
+]
