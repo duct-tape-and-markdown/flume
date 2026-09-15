@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "tag": "EXAMPLE-PLAN-PROMPT-DIGEST-SPANS-RENDER-BLIND",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "examples/prompts/plan.md",
+          "description": "corpus span refuses on an absent root; drop `<tsc>`'s unreachable `|| true`"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "seed a corpus in the span-rooting scratch cwd; pin the refusal and the swallowed-status scan"
+        }
+      ]
+    },
+    "summary": "Example plan prompt's corpus and tsc spans render empty-but-green when their command fails behind a pipe",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "Rendering examples/prompts/plan.md with no corpus root aborts the render; no shipped example span carries a fallback its pipeline cannot reach",
+    "tests": [
+      "the example plan template's corpus span fails the render when the corpus root is absent",
+      "no shipped example prompt span carries a || fallback behind a pipe that swallows its status"
+    ],
+    "notes": "Sites: examples/prompts/plan.md:20 (find behind head), :24 (|| true behind tail). Fork the note parked is already ruled — spec/prompt.md *Why: the measured transport facts* rejects per-span tolerance, naming both example chains' spans as digests whose failure means a blind tick. Consumer cost is deliberate: a cascade repo with no corpus now hard-fails tick one instead of planning blind. dash lacks pipefail and the engine spawns sh, so the guard is `test -d`, not a shell option."
+  }
+]
