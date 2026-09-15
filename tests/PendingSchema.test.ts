@@ -931,7 +931,8 @@ describe("renderSchemaForPrompt", () => {
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],
           "retire": [ "path", ... ]
-        }
+        },
+        "observedFiles": [ "path", ... ]                      // engine-maintained, never authored here: the dispatcher records the real footprint of an attempt that did not ship, so a retry partitions away from whatever it collided with. Carry it through unchanged when an entry already has one; omit it otherwise.
       }
 
       Output is a JSON array of these entries, ordered by execution priority (top = next).
@@ -1083,6 +1084,72 @@ describe("renderSchemaForPrompt", () => {
       testExtension,
     );
     expect(result.ok).toBe(false);
+  });
+
+  /**
+   * Core-field agreement gate (engineering.md § "A seam gate reads what the
+   * real writer wrote"). The check above judges *extension* names, and reads
+   * them off the same declaration record both surfaces are built from — the
+   * core fields have no such record, so nothing tied the render's header
+   * claim ("fields not listed here are rejected") to the field set the
+   * composed validator actually accepts. A hand-written list of core names
+   * here would be the tester re-authoring the writer's vocabulary, so both
+   * sides are read from the real thing: the names come off the composed
+   * validator, the render comes off the real `renderSchemaForPrompt`, and
+   * the acceptance direction runs through the real `parsePending`.
+   */
+  function coreFieldNamesFromValidator(): string[] {
+    const list = composePendingList() as unknown as z.ZodArray<z.ZodObject>;
+    return Object.keys(list.element.shape);
+  }
+
+  function renderedTopLevelFieldNames(rendered: string): string[] {
+    return rendered.split("\n").flatMap((line) => {
+      const match = /^ {2}"([^"]+)":/.exec(line);
+      return match ? [match[1] as string] : [];
+    });
+  }
+
+  it("every engine-core field the composed validator accepts is named in the rendered schema", () => {
+    const coreFields = coreFieldNamesFromValidator();
+    expect(
+      coreFields.length,
+      "composed validator exposed no fields — nothing to judge",
+    ).toBeGreaterThan(0);
+    const rendered = renderSchemaForPrompt();
+    for (const name of coreFields) {
+      expect(
+        rendered,
+        `core field "${name}" is accepted by the composed validator but unnamed in the rendered schema, which tells its reader unlisted fields are rejected`,
+      ).toContain(`"${name}":`);
+    }
+  });
+
+  it("parsePending accepts an entry carrying every field the rendered schema names", () => {
+    const renderedNames = renderedTopLevelFieldNames(renderSchemaForPrompt());
+    expect(
+      renderedNames.length,
+      "rendered schema named no top-level fields — nothing to judge",
+    ).toBeGreaterThan(0);
+    const fullEntry = {
+      tag: "EVERY-RENDERED-FIELD",
+      gate: { kind: "open" },
+      dependsOnForks: ["some-fork"],
+      files: {
+        new: [{ path: "src/new.ts", description: "the new" }],
+        edit: [{ path: "src/edit.ts", description: "the edit" }],
+        retire: ["src/retire.ts"],
+      },
+      observedFiles: ["src/observed.ts"],
+    };
+    for (const name of renderedNames) {
+      expect(
+        Object.keys(fullEntry),
+        `rendered field "${name}" carries no value in the entry this gate parses`,
+      ).toContain(name);
+    }
+    const result = parsePending(JSON.stringify([fullEntry]));
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   });
 
   /**

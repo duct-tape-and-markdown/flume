@@ -489,6 +489,14 @@ export function parsePendingLoose(raw: string): ParseResult {
  * the schema in the prompt and the parser cannot drift: both are built from
  * the same declaration.
  *
+ * The header's "fields not listed here are rejected" is a claim about the
+ * composed validator, so every core field that validator accepts is named
+ * here — including the ones a producer never authors, which render with the
+ * instruction to carry or omit rather than as authorable shape. Pinned
+ * against the real validator by tests/PendingSchema.test.ts, "every
+ * engine-core field the composed validator accepts is named in the rendered
+ * schema".
+ *
  * We don't use zod-to-json-schema here — the rendered form is human/LLM
  * facing, not a JSON Schema document. Brevity matters more than completeness.
  */
@@ -529,7 +537,8 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
     "new":  [ { "path": "...", "description": "..." } ],
     "edit": [ { "path": "...", "description": "..." } ],
     "retire": [ "path", ... ]
-  }`;
+  },
+  "observedFiles": [ "path", ... ]                      // engine-maintained, never authored here: the dispatcher records the real footprint of an attempt that did not ship, so a retry partitions away from whatever it collided with. Carry it through unchanged when an entry already has one; omit it otherwise.`;
 
   return `Each pending entry MUST conform to this shape (fields not listed here are rejected):
 
