@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "CITE-RESOLVER-INDENTED-HEADINGS",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/citeResolver.ts",
+          "description": "widen the heading grammar to CommonMark's leading indent, per the cited section"
+        },
+        {
+          "path": "tests/harnessCiteResolver.test.ts",
+          "description": "indented-heading cases in the existing fixture page"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Read a CommonMark-legal indented ATX heading as a heading in the cite resolver's section scan",
+    "per": { "path": "spec/harness.md", "section": "The cite resolver" },
+    "acceptance": "A heading indented one to three spaces both resolves as a cited section and bounds the section above it; four spaces stays content.",
+    "tests": [
+      "a heading indented up to three spaces resolves as the cited section",
+      "a heading indented up to three spaces bounds the section above it"
+    ],
+    "pins": [
+      "a four-space-indented hash line resolves no section"
+    ],
+    "notes": "One scan, two answers about what markdown is: FENCE already allows CommonMark's up-to-three leading spaces, HEADING is column 0 only. An indented heading resolves nothing (gate refuses a valid cite) and silently unbounds the section above it (prompt renders past it). Latent in this repo's spec locus; live for a consumer whose spec files flume does not write."
+  }
+]
