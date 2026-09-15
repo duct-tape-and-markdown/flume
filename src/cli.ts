@@ -1033,41 +1033,26 @@ async function main(): Promise<number> {
     // namespacedJoin (src/paths.ts) is the shared idiom — see
     // .claude/rules/platform-facts.md.
     const lockPath = namespacedJoin(loopLockPath(flumeDir));
-    mkdirSync(flumeDir, { recursive: true });
-    const priorPid = await liveLoopPid(flumeDir);
-    if (priorPid !== null) {
-      console.error(
-        `[flume] another loop (pid ${priorPid}) already runs against ${flumeDir}; refusing`,
-      );
-      return 1;
-    }
-    writeFileSync(lockPath, String(process.pid));
-    // Advisory per-ref tip claim — one flume writer per tip, the resource
-    // multiple jobs under one checkout actually contend on. Guards a different
-    // resource than loop.pid (a ref vs. a state root); both stand. A refusal
-    // here rolls back the loop.pid claim just taken above.
-    let tipClaim: Awaited<ReturnType<typeof acquireTipClaim>>;
-    try {
-      tipClaim = await acquireTipClaim(repoRoot, headRef);
-    } catch (err) {
-      try {
-        unlinkSync(lockPath);
-      } catch {
-        // already gone
-      }
-      if (err instanceof TipClaimHeldError) {
-        console.error(`[flume] ${err.message}`);
-        return 1;
-      }
-      throw err;
-    }
+    // Release is installed before either lock is taken, never after both. A
+    // signal landing between the two acquisitions must find a handler, not
+    // node's default disposition — which runs nothing and leaves whatever is
+    // already on disk. The handler drops what is held *at the moment it
+    // fires*: `lockHeld` gates the unlink, so a run refused over another
+    // supervisor's live `loop.pid` never deletes the file it lost to, and an
+    // unacquired `tipClaim` releases nothing. Both drops are idempotent, so
+    // the rollback below and the exit handler may both run.
+    let lockHeld = false;
+    let tipClaim: Awaited<ReturnType<typeof acquireTipClaim>> | undefined;
     const dropLock = () => {
-      try {
-        unlinkSync(lockPath);
-      } catch {
-        // already gone
+      if (lockHeld) {
+        lockHeld = false;
+        try {
+          unlinkSync(lockPath);
+        } catch {
+          // already gone
+        }
       }
-      tipClaim.release();
+      tipClaim?.release();
     };
     process.on("exit", dropLock);
     process.on("SIGINT", () => {
@@ -1078,6 +1063,31 @@ async function main(): Promise<number> {
       dropLock();
       process.exit(143);
     });
+    mkdirSync(flumeDir, { recursive: true });
+    const priorPid = await liveLoopPid(flumeDir);
+    if (priorPid !== null) {
+      console.error(
+        `[flume] another loop (pid ${priorPid}) already runs against ${flumeDir}; refusing`,
+      );
+      return 1;
+    }
+    writeFileSync(lockPath, String(process.pid));
+    lockHeld = true;
+    // Advisory per-ref tip claim — one flume writer per tip, the resource
+    // multiple jobs under one checkout actually contend on. Guards a different
+    // resource than loop.pid (a ref vs. a state root); both stand. A refusal
+    // here rolls back the loop.pid claim just taken above — through the same
+    // `dropLock` the signal handlers call, so the rollback has one owner.
+    try {
+      tipClaim = await acquireTipClaim(repoRoot, headRef);
+    } catch (err) {
+      dropLock();
+      if (err instanceof TipClaimHeldError) {
+        console.error(`[flume] ${err.message}`);
+        return 1;
+      }
+      throw err;
+    }
     // spec/loop.md "Crash equals stop": a merge marker still standing is a
     // pick that died before its ship bookkeeping — the picked commit may sit
     // on trunk ungated with its entry still `open`, and starting would pick

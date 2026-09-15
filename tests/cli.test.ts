@@ -1672,6 +1672,43 @@ describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the
     },
     SPAWN_BUDGET_MS,
   );
+
+  it(
+    "flume loop refuses a live-held tip claim and leaves no loop.pid behind",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        // Same state root as the loop about to run, so `loop.pid` is taken
+        // first and only the tip claim can refuse — which makes the absence
+        // below a rollback, not a lock never taken. (The cross-state-root
+        // pairing, where `loop.pid` never collides at all, is
+        // `tests/tip-claim.integration.test.ts`.)
+        const claimPath = tipClaimPath(
+          await gitCommonDir(repo.dir),
+          "refs/heads/main",
+        );
+        await mkdir(dirname(claimPath), { recursive: true });
+        // The vitest worker itself plays the live holder.
+        await writeFile(claimPath, String(process.pid), "utf8");
+        expect(existsSync(claimPath)).toBe(true);
+
+        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain(`refs/heads/main claimed by pid ${process.pid}`);
+        expect(r.out).not.toContain("reached --max");
+        // The loop lock it took on the way in is rolled back by the refusal —
+        // a `loop.pid` left here refuses the operator's next run against a
+        // supervisor that never started.
+        expect(existsSync(join(repo.dir, ".flume", "loop.pid"))).toBe(false);
+        // The live holder's claim survives the refused contender untouched.
+        expect(await readFile(claimPath, "utf8")).toBe(String(process.pid));
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
 });
 
 describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful stop — the stop flag\")", () => {
@@ -2830,7 +2867,11 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (platform-facts.md)", () => {
     expect(src).toMatch(/writeFileSync\(lockPath,/);
     const unlinkCalls = src.match(/unlinkSync\(lockPath\)/g);
     expect(unlinkCalls).not.toBeNull();
-    expect(unlinkCalls!.length).toBeGreaterThanOrEqual(2);
+    // Exactly one drop site: `dropLock`. The refused-tip-claim rollback and
+    // the signal handlers all call it rather than unlinking again, so a
+    // second occurrence here means a second owner has grown back
+    // (spec/loop.md "The loop lock and the tip claim").
+    expect(unlinkCalls!.length).toBe(1);
   });
 
   it("every loopLockPath call in cli.ts is wrapped in namespacedJoin", () => {
