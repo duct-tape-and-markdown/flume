@@ -77,7 +77,12 @@ The inbox and build-note conventions of
 
 The derive and sweep cursors and the
 continuation signal are fields the package reads through its own accessor,
-never a line regexed out of prose.
+never a line regexed out of prose. Absence is read three ways, on purpose: a
+missing plan state renders as no state yet and a missing questions file as
+none open, because both are the package's to bootstrap; a missing queue refuses
+the render, because a slice re-deriving a queue it could not read would write
+over work it never saw — adoption seeds the queue so that refusal is always a
+defect.
 
 
 ### The default `handoff`
@@ -181,8 +186,10 @@ is the same either way.
 `flume`, so the engine's verb set stays closed and never imports the harness —
 writes the declaration
 skeleton, a `chain.ts` that applies the factory to it (the engine refuses a
-load without one), the state root, the ignore set, and `PROTOCOL.md`, and adds
-the package as the consumer's dependency. A consumer never copies a prompt, a slice,
+load without one), the state root with an empty queue in it (nothing else
+creates one before the first build wave, and a plan slice refuses over an
+absent queue), the ignore set, and `PROTOCOL.md`, and adds the package as the
+consumer's dependency. A consumer never copies a prompt, a slice,
 or a judge from another consumer; what it wants to change it declares.
 
 Upgrading is one version bump plus the release's migration note. A harness
