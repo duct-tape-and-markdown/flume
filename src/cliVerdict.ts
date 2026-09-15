@@ -112,7 +112,7 @@ export function loopCompletionSummary(
  * committed, gate results, shipped tags, merge outcomes. A rendering of
  * those fields alone, nothing derived or reclassified from them — no
  * park/bail vocabulary, which is the chain's own reading, not engine
- * vocabulary (engine-boundary.md, "Told, not inferred").
+ * vocabulary (.claude/rules/engine-boundary.md, "Told, not inferred").
  */
 export function formatTickVerdictLine(v: TickVerdict): string {
   const gates = v.gateResults
@@ -122,8 +122,8 @@ export function formatTickVerdictLine(v: TickVerdict): string {
     // A singleton phase's own span carries no tag
     // (`TickVerdictMergeOutcome.tag`), so it renders as the bare outcome. Not
     // the phase name in its place: the line's first field already states it
-    // (engineering.md, "Derived state is computed, never restated beside its
-    // source").
+    // (.claude/rules/engineering.md, "Derived state is computed, never
+    // restated beside its source").
     .map((m) => (m.entryTag === undefined ? m.outcome : `${m.entryTag}:${m.outcome}`))
     .join(",");
   return (

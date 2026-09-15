@@ -57,6 +57,11 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * break-closed reading is shown discriminating rather than reporting every
  * wrap it meets.
  *
+ * Last come the page names no backtick fences, in both verdicts and beside
+ * the two placeholder spellings the path arm refuses — the same shapes the
+ * fenced citations above carry, so the two arms are shown agreeing rather
+ * than the unfenced one getting a rule of its own.
+ *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
  */
@@ -72,6 +77,7 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     },
     include: ["lib/**/*"],
   }),
+  "docs/guide.md": "# a page a comment cites without fencing it\n",
   "lib/dataShapes.ts": [
     `/** Cites \`WeakMap\`, a lib global no statement in this tree uses. */`,
     `export interface Shipped {`,
@@ -134,6 +140,12 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// a citation\` keeps a space of its own whatever the break does.`,
     `export const BROKEN = 5;`,
     ``,
+    `// The page name read without a fence, judged by the path arm all the`,
+    `// same: (docs/guide.md) names a file this tree holds, and`,
+    `// docs/vanished.md one it does not. Refused the way a fenced`,
+    `// placeholder is: <area>/notes.md and docs/*.md name no one file.`,
+    `export const PAGES = 6;`,
+    ``,
   ].join("\n"),
 };
 
@@ -185,6 +197,8 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "WeakMap",
     "blockedBy",
     "dataShapes.ts",
+    "docs/guide.md",
+    "docs/vanished.md",
     "lib/dataShapes.ts",
     "lib/vanished.ts",
     "surface.ts",
@@ -201,6 +215,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:31 Vanished",
     "lib/surface.ts:31 vanished.helper",
     "lib/surface.ts:36 lib/vanished.ts",
+    "lib/surface.ts:57 docs/vanished.md",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
@@ -212,6 +227,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "WeakMap",
     "blockedBy",
     "dataShapes.ts",
+    "docs/guide.md",
     "lib/dataShapes.ts",
     "surface.ts",
     "this.opts.maxDepth",
@@ -406,6 +422,48 @@ it("the citation scan reports a wrapped span that names a subject once its break
   );
 });
 
+// --- the page name no backtick fences -----------------------------------
+
+it("the citation scan judges an unbackticked *.md page name in a comment", () => {
+  // Vacuity guard: the fixture fences neither name anywhere, so the
+  // backticked arm cannot be what reached them, and both were collected with
+  // the brackets prose put around the first one already off.
+  expect(fixtureScan.backticked.map((s) => s.text)).not.toContain(
+    "docs/guide.md",
+  );
+  expect(fixtureScan.bare.map(formatCitation)).toEqual([
+    "lib/surface.ts:56 docs/guide.md",
+    "lib/surface.ts:57 docs/vanished.md",
+    "lib/surface.ts:58 <area>/notes.md",
+    "lib/surface.ts:58 docs/*.md",
+  ]);
+
+  // Judged, and judged in both directions by the arm the fenced paths go
+  // through: the page this tree holds resolves against the working tree and
+  // the one it does not dangles.
+  expect(fixtureScan.resolved.map(formatCitation)).toContain(
+    "lib/surface.ts:56 docs/guide.md",
+  );
+  expect(fixtureScan.dangling.map(formatCitation)).toContain(
+    "lib/surface.ts:57 docs/vanished.md",
+  );
+});
+
+it("the citation scan judges no unbackticked *.md name carrying a path placeholder", () => {
+  // Vacuity guard: each was collected as a page name, so the refusal below
+  // is the subject rule discriminating and not the reader missing the token.
+  const collected = fixtureScan.bare.map((s) => s.text);
+  expect(collected).toContain("<area>/notes.md");
+  expect(collected).toContain("docs/*.md");
+
+  // A placeholder names no one file, so no working tree can answer it:
+  // judging either would be a standing dangling finding nothing can repair.
+  // The same verdict the fenced placeholders get, off the same charset.
+  const judged = fixtureScan.scanned.map((s) => s.text);
+  expect(judged).not.toContain("<area>/notes.md");
+  expect(judged).not.toContain("docs/*.md");
+});
+
 // --- the pin -------------------------------------------------------------
 
 /**
@@ -483,6 +541,27 @@ it("the repo citation pin judges the repo-relative path citations src/ and harne
     "src/Dispatcher.ts",
   ]) {
     expect(`${path} -> ${resolved.has(path)}`).toBe(`${path} -> true`);
+  }
+});
+
+it("the repo citation pin judges the unbackticked page names src/ comments carry", () => {
+  // The judged set holds the very sites `bare` does, so membership is
+  // identity — no re-deriving the subject rule here to decide it.
+  const judged = new Set(repoScan.scanned);
+  const unjudged = repoScan.bare.filter((site) => !judged.has(site));
+
+  // Vacuity guard: these comments cite pages without a fence in quantity,
+  // and the subject rule admits every one of them. A page name left
+  // unspelled — a bare `engineering.md` the working tree cannot answer —
+  // would sit in the dangling set the pin above asserts empty.
+  expect(repoScan.bare.length).toBeGreaterThan(250);
+  expect(unjudged.map(formatCitation)).toEqual([]);
+
+  // Both families the trees name this way resolve, so renaming either page
+  // reds this suite rather than leaving every comment citing it standing.
+  const resolved = new Set(repoScan.resolved.map((s) => s.text));
+  for (const page of [".claude/rules/engineering.md", "spec/loop.md"]) {
+    expect(`${page} -> ${resolved.has(page)}`).toBe(`${page} -> true`);
   }
 });
 

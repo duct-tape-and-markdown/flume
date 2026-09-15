@@ -232,10 +232,10 @@ interface JobNewOptions {
   flumeDir?: string;
   log?: (line: string) => void;
   /**
-   * Override for the seed commit's message (engine-boundary.md "Capability
-   * vs convention"). Called with the job name; `jobNew` commits with
-   * whatever string it returns. The `chore(flume): seed job ...` wording is
-   * this harness's own convention, not something every chain need adopt.
+   * Override for the seed commit's message (.claude/rules/engine-boundary.md
+   * "Capability vs convention"). Called with the job name; `jobNew` commits
+   * with whatever string it returns. The `chore(flume): seed job ...` wording
+   * is this harness's own convention, not something every chain need adopt.
    * Default (omitted): reproduces that exact text.
    */
   commitMessage?: (name: string) => string;
@@ -431,10 +431,11 @@ interface JobRmOptions {
   name: string;
   log?: (line: string) => void;
   /**
-   * Override for the cleanup commit's message (engine-boundary.md
-   * "Capability vs convention"). Called with the job name; `jobRm` commits
-   * with whatever string it returns. The `chore(flume): rm job ...` wording
-   * is this harness's own convention, not something every chain need adopt.
+   * Override for the cleanup commit's message
+   * (.claude/rules/engine-boundary.md "Capability vs convention"). Called
+   * with the job name; `jobRm` commits with whatever string it returns. The
+   * `chore(flume): rm job ...` wording is this harness's own convention, not
+   * something every chain need adopt.
    * Default (omitted): reproduces that exact text.
    */
   commitMessage?: (name: string) => string;

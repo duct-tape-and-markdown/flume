@@ -120,10 +120,11 @@ export interface GateContext {
    * the cumulative `baseSha..commitSha` diff, computed once per commit by
    * the dispatcher and shared across every gate this tick runs. A gate that
    * needs touched-path detection reads this instead of shelling `git show
-   * --name-only` out on its own (engineering.md "The fix lands at the
-   * mechanism"); no gate carries a second derivation to fall back to, so a
-   * hand-built context states the same list a real tick would hand it
-   * (engineering.md "A seam gate reads what the real writer wrote").
+   * --name-only` out on its own (.claude/rules/engineering.md "The fix lands
+   * at the mechanism"); no gate carries a second derivation to fall back to,
+   * so a hand-built context states the same list a real tick would hand it
+   * (.claude/rules/engineering.md "A seam gate reads what the real writer
+   * wrote").
    */
   touchedPaths: string[];
   /**

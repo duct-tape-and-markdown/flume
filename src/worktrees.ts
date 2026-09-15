@@ -430,10 +430,10 @@ export async function createWorktree(
  * Tear down one worktree: the chain's best-effort `teardownWorktree` hook,
  * the friction harvest, removal, then branch deletion — the exact
  * per-worktree sequence `runFanout`'s wave-end cleanup loop ran inline,
- * now shared with a singleton tick's own single worktree (spec/
- * worktrees.md "Singleton runs in a worktree"). `tag` is the entry's tag
- * or the phase name, passed straight through to the hook's `worktreeKey` and
- * to the harvest's provenance prefix. Returns whether removal succeeded —
+ * now shared with a singleton tick's own single worktree
+ * (spec/worktrees.md "Singleton runs in a worktree"). `tag` is the entry's
+ * tag or the phase name, passed straight through to the hook's `worktreeKey`
+ * and to the harvest's provenance prefix. Returns whether removal succeeded —
  * the caller aggregates surviving paths itself, since a wave reports them
  * once at wave level, not once per worktree.
  */

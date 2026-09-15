@@ -12,6 +12,16 @@
  * working tree. One mechanism either way — the citation names something the
  * repo holds, or it names nothing and the tree renamed out from under it.
  *
+ * A `*.md` page name is a citation backticked or not, because a filename is
+ * never a sentence: the extension is the whole claim, so no surrounding prose
+ * has to be read to know the token names a file. Those are collected from the
+ * comment text the backticked spans leave over and judged by the path arm —
+ * the one rule, so a placeholder spelling is refused on the same filename
+ * charset whichever way the author fenced it. Unfenced, a name a comment line
+ * breaks needs no report of its own: the tail it leaves behind is a page name
+ * the working tree cannot answer, so the wrap reds exactly where a rename
+ * would.
+ *
  * Both the comments and the identifier half of the verdict go through the
  * TypeScript program. The comments are read off real trivia ranges rather
  * than matched out of the file text, so a `//` inside a string literal is
@@ -87,6 +97,11 @@ export interface CitationScan {
   /** Every backticked span one comment line opened and closed, subject or not. */
   readonly backticked: readonly CitationSite[];
   /**
+   * Every unbackticked `*.md` token those comments carry, outside the
+   * backticked spans — the page names the carve-out reads without a fence.
+   */
+  readonly bare: readonly CitationSite[];
+  /**
    * Every backticked span a comment line left open — the wrap, reported as
    * markdown joins it. Judged by nothing: the space markdown puts at the
    * break is not a character any subject spelling admits, so the citation the
@@ -101,7 +116,10 @@ export interface CitationScan {
    * renaming of what it cites can ever red it.
    */
   readonly broken: readonly WrappedCitation[];
-  /** The subset judged: the spans shaped like an identifier reference. */
+  /**
+   * The subset judged: the backticked spans shaped like a reference, and the
+   * page names spelled like a repo-relative file. In line order per module.
+   */
   readonly scanned: readonly CitationSite[];
   /** Judged citations whose every token names something the trees hold. */
   readonly resolved: readonly CitationSite[];
@@ -188,6 +206,23 @@ const isPathSubject = (text: string): boolean => {
     NAMED_EXTENSION.test(segments[segments.length - 1] ?? "")
   );
 };
+
+/**
+ * An unbackticked `*.md` token, read as prose delimits one: the run of
+ * non-whitespace characters ending at the extension. Nothing is trimmed from
+ * the right — the `.md` ends the token by construction, so a possessive, a
+ * comma or a closing paren behind it was never part of it — and the lookahead
+ * keeps `.mdx` and `.md-draft` from being read as a page name truncated.
+ */
+const BARE_PAGE = /\S*\.md(?![A-Za-z0-9_-])/g;
+
+/**
+ * The brackets prose opens with and a filename never starts with. Stripped
+ * from the left edge alone: everything else the non-whitespace run carried
+ * stays, so a placeholder spelling is refused on `PATH_SEGMENT` rather than
+ * trimmed down to a tail that resolves.
+ */
+const OPENING_PUNCTUATION = /^[([{"'*]+/;
 
 /**
  * Whether a backticked span is judged at all.
@@ -310,8 +345,9 @@ const joinWrapped = (raw: string, at: string): string =>
     .join(at);
 
 /**
- * Every backticked span in a file's comments, split by whether the line that
- * opened it also closed it.
+ * Every citation in a file's comments: the backticked spans, split by whether
+ * the line that opened one also closed it, and the unbackticked `*.md` page
+ * names the text between them carries.
  *
  * Pairing runs over a *run* of consecutive comment lines rather than over one
  * line at a time, because markdown does. A line that ends mid-span is closed
@@ -320,22 +356,34 @@ const joinWrapped = (raw: string, at: string): string =>
  * of the comment pairs one backtick out of step, so the citations after it go
  * unjudged too. Equal-length runs delimit a span, so a fenced block inside a
  * doc comment is one span rather than three stray backticks.
+ *
+ * The page names are read off the same pairing, from the text no span covers,
+ * so a fenced citation is collected once and by the arm its author chose.
  */
 const commentSpans = (
   sf: ts.SourceFile,
   module: string,
-): { readonly closed: CitationSite[]; readonly wrapped: WrappedCitation[] } => {
+): {
+  readonly closed: CitationSite[];
+  readonly bare: CitationSite[];
+  readonly wrapped: WrappedCitation[];
+} => {
   const closed: CitationSite[] = [];
+  const bare: CitationSite[] = [];
   const wrapped: WrappedCitation[] = [];
 
   const read = (run: readonly CommentLine[]): void => {
     if (run.length === 0) return;
     const joined = run.map((entry) => entry.text).join("\n");
     const first = run[0]?.line ?? 0;
+    const lineAt = (offset: number): number =>
+      first + (joined.slice(0, offset).match(/\n/g)?.length ?? 0);
     const marks = [...joined.matchAll(/`+/g)].map((m) => ({
       start: m.index,
       length: m[0].length,
     }));
+    /** Every span the pairing below closed, fences included. */
+    const fenced: Array<{ start: number; end: number }> = [];
     let index = 0;
     while (index < marks.length) {
       const open = marks[index];
@@ -350,11 +398,11 @@ const commentSpans = (
       }
       const close = marks[closeAt];
       if (!close) break;
+      fenced.push({ start: open.start, end: close.start + close.length });
       const raw = joined.slice(open.start + open.length, close.start);
-      const before = joined.slice(0, open.start);
       const site = {
         module,
-        line: first + (before.match(/\n/g)?.length ?? 0),
+        line: lineAt(open.start),
         text: raw,
       };
       if (raw.includes("\n")) {
@@ -367,6 +415,16 @@ const commentSpans = (
         closed.push(site);
       }
       index = closeAt + 1;
+    }
+
+    for (const match of joined.matchAll(BARE_PAGE)) {
+      const start = match.index;
+      const end = start + match[0].length;
+      // A page name inside a span was already collected as that span; taking
+      // it again here would judge one citation twice, by two rules.
+      if (fenced.some((span) => span.start < end && start < span.end)) continue;
+      const text = match[0].replace(OPENING_PUNCTUATION, "");
+      bare.push({ module, line: lineAt(start), text });
     }
   };
 
@@ -381,7 +439,7 @@ const commentSpans = (
   }
   read(run);
 
-  return { closed, wrapped };
+  return { closed, bare, wrapped };
 };
 
 /**
@@ -453,12 +511,23 @@ export const scanCommentCitations = (
   }
 
   // --- what their comments cite ------------------------------------------
+  // Each file's judged citations are ordered by line, whichever arm admitted
+  // them, so a finding reads in the order an author would scroll to it.
   const backticked: CitationSite[] = [];
+  const bare: CitationSite[] = [];
   const wrapped: WrappedCitation[] = [];
+  const scanned: CitationSite[] = [];
   for (const sf of sources) {
     const spans = commentSpans(sf, relPath(root, resolve(sf.fileName)));
     backticked.push(...spans.closed);
+    bare.push(...spans.bare);
     wrapped.push(...spans.wrapped);
+    scanned.push(
+      ...[
+        ...spans.closed.filter((site) => isSubject(site.text)),
+        ...spans.bare.filter((site) => isPathSubject(site.text)),
+      ].sort((a, b) => a.line - b.line),
+    );
   }
 
   // The working tree is the other thing the repo holds a citation's name in.
@@ -474,10 +543,10 @@ export const scanCommentCitations = (
       .split(".")
       .every((segment) => KEYWORDS.has(segment) || tokens.has(segment));
 
-  const scanned = backticked.filter((site) => isSubject(site.text));
   return {
     modules: [...modules],
     backticked,
+    bare,
     wrapped,
     // The wrap is read by the same rule as the judged set, with the break
     // closed: what the author spelled before markdown put a space in it.

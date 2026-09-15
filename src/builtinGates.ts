@@ -102,19 +102,19 @@ export function shellGate(opts: ShellGateOptions): Gate {
  * Package-manager override accepted by `tscGate`, `vitestGate`, and
  * `eslintGate`. The chain supplies which binary (and, since args stay
  * pnpm-shaped otherwise, which args) runs the check; the engine supplies the
- * enforcement (engine-boundary.md "Capability vs convention"). `cmd` alone is
- * only safe for a pnpm-args-compatible binary (e.g. yarn classic); npm's own
- * verb grammar has no bare `npm tsc --noEmit` — it needs `args: ["exec",
- * "--", "tsc", "--noEmit"]`. Omit both for pnpm — byte-identical to before
- * this option existed.
+ * enforcement (.claude/rules/engine-boundary.md "Capability vs convention").
+ * `cmd` alone is only safe for a pnpm-args-compatible binary (e.g. yarn
+ * classic); npm's own verb grammar has no bare `npm tsc --noEmit` — it needs
+ * `args: ["exec", "--", "tsc", "--noEmit"]`. Omit both for pnpm —
+ * byte-identical to before this option existed.
  *
  * `when` is the same injection point for gate placement, which is
  * chain-authoring doctrine and not the engine's to fix (spec/chain.md "Gate
  * placement is the chain's decision"): a chain that wants the same check over
  * the merged tree says `when: "afterMerge"` instead of copying the builtin's
- * own `cmd`/`args` into a hand-rolled `shellGate` (engine-boundary.md
- * "Surface, not prescription" — verbatim copying is the detector). Omitted
- * stays `afterCommit`.
+ * own `cmd`/`args` into a hand-rolled `shellGate`
+ * (.claude/rules/engine-boundary.md "Surface, not prescription" — verbatim
+ * copying is the detector). Omitted stays `afterCommit`.
  */
 export interface PkgManagerOverride {
   cmd?: string;
@@ -294,16 +294,16 @@ export interface PendingGateOptions {
    * A chain that exempts park-exempt `gate.kind` values (e.g. `"parked"`,
    * `"deferred"`) from the build fence supplies a predicate here; the
    * engine ships the injection point, the chain owns which `gate.kind`
-   * values count as park-exempt (engine-boundary.md's mechanism-vs-
-   * convention test).
+   * values count as park-exempt (.claude/rules/engine-boundary.md's
+   * mechanism-vs-convention test).
    */
   fenceWhen?: (entry: PendingEntry) => boolean;
   /**
    * Chain-authored operator guidance appended verbatim to both violation
    * messages (schema and fence). The chain supplies the text, the engine
    * supplies the enforcement — the same capability/convention split as
-   * `failHint` on `shellGate` (engine-boundary.md "Capability vs
-   * convention"). Omit for byte-identical behavior to before this option
+   * `failHint` on `shellGate` (.claude/rules/engine-boundary.md "Capability
+   * vs convention"). Omit for byte-identical behavior to before this option
    * existed.
    */
   hint?: string;

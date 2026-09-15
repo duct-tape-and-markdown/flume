@@ -361,17 +361,17 @@ export async function pruneWorktrees(repoRoot: string): Promise<void> {
 }
 
 /**
- * Loud or nothing (engineering.md): only the expected-benign "branch
- * doesn't exist" case is swallowed. "Told, not inferred"
- * (engine-boundary.md) rules out matching git's own English wording for
- * that case out of its stderr — a localized git configuration rephrases
- * it and the match silently stops firing. Structural check instead: probe
- * `refs/heads/<branch>` with `show-ref --verify --quiet` (no stdout, no
- * stderr, only the exit code) and key off that. Any other failure —
- * including a non-1 exit from the probe itself, and anything `branch -D`
- * throws once the ref is confirmed present (most commonly the branch
- * still checked out in a worktree that survived removal) — rethrows so
- * the caller can surface it rather than losing it silently.
+ * Loud or nothing (.claude/rules/engineering.md): only the expected-benign
+ * "branch doesn't exist" case is swallowed. "Told, not inferred"
+ * (.claude/rules/engine-boundary.md) rules out matching git's own English
+ * wording for that case out of its stderr — a localized git configuration
+ * rephrases it and the match silently stops firing. Structural check
+ * instead: probe `refs/heads/<branch>` with `show-ref --verify --quiet` (no
+ * stdout, no stderr, only the exit code) and key off that. Any other failure
+ * — including a non-1 exit from the probe itself, and anything `branch -D`
+ * throws once the ref is confirmed present (most commonly the branch still
+ * checked out in a worktree that survived removal) — rethrows so the caller
+ * can surface it rather than losing it silently.
  */
 export async function deleteBranch(
   repoRoot: string,
@@ -718,10 +718,10 @@ export async function acquireTipClaim(
       // Dead pid — reclaim: unlink and retry the exclusive create. A
       // concurrent reclaimer may win the unlink race first; the retried
       // create's own possible EEXIST re-probes rather than assuming this
-      // call won. Loud or nothing (engineering.md): only ENOENT (already
-      // gone — another reclaimer won the race) is swallowed; any other
-      // failure (e.g. EACCES) rethrows instead of spinning this loop
-      // forever.
+      // call won. Loud or nothing (.claude/rules/engineering.md): only
+      // ENOENT (already gone — another reclaimer won the race) is swallowed;
+      // any other failure (e.g. EACCES) rethrows instead of spinning this
+      // loop forever.
       try {
         await unlink(toNamespacedPath(claimPath));
       } catch (unlinkErr) {

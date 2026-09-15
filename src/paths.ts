@@ -139,8 +139,8 @@ function globToRegex(glob: string): RegExp {
  * union every fence in this engine is made of. Both derivations below take
  * it from here: {@link entryWriteScope} for the allowance one scoped tick
  * runs under, {@link queueFenceViolations} for the fence a whole queue is
- * pre-checked against (engineering.md "Derived state is computed, never
- * restated beside its source").
+ * pre-checked against (.claude/rules/engineering.md "Derived state is
+ * computed, never restated beside its source").
  */
 export function entryWriteScopeUnion(
   entryPaths: string[],

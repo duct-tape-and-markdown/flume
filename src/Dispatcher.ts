@@ -308,12 +308,13 @@ function reportedGateRow(gate: string, r: GateResult): ReportedGateResult {
  *                            gate; never reached
  *                            cherry-pick, so it never touched trunk on its
  *                            own.
- *  - `not-shipped`           landed and passed every gate, but the phase's
- *                            own `shipped` predicate returned false (spec/
- *                            pending.md "Ship detection trusts the agent's
- *                            own account") — commit stays on trunk, entry
- *                            stays pending. The engine records the chain's
- *                            verdict and holds no vocabulary for its reason.
+ *  - `not-shipped`           landed and passed every gate, but the phase's own
+ *                            `shipped` predicate returned false
+ *                            (spec/pending.md "Ship detection trusts the
+ *                            agent's own account") — commit stays on trunk,
+ *                            entry stays pending. The engine records the
+ *                            chain's verdict and holds no vocabulary for its
+ *                            reason.
  *  - `tip-moved`             the wave's own commit-onto-trunk step refused
  *                            because a live claim held the ref (a concurrent
  *                            engine instance, spec/loop.md "Tip verify") —
@@ -537,8 +538,8 @@ export interface TickVerdict {
    */
   provisionFailures?: ProvisionFailure[];
   /**
-   * Merge-stage cherry-pick-conflict failures this tick recorded (spec/
-   * loop.md "Repeated identical failures").
+   * Merge-stage cherry-pick-conflict failures this tick recorded
+   * (spec/loop.md "Repeated identical failures").
    * Absent/empty when the tick hit none.
    */
   mergeFailures?: MergeFailure[];
@@ -1164,13 +1165,13 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
  * (plain `await import()` would fail: node refuses .ts under node_modules,
  * and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
  *
- * In-process this returns a *pinned* evaluation — see .claude/rules/
- * platform-facts.md, "Node's ESM registry is keyed by resolved URL and cannot
- * be evicted". That is *why* per-tick re-resolution is a process boundary
- * rather than in-process re-eval: `flume loop` spawns one `flume tick` per
- * iteration, each a fresh process that loads chain.ts exactly once. A
- * rewritten chain.ts governs the next tick because the next tick is a new
- * process — not because anything re-imports it in-process.
+ * In-process this returns a *pinned* evaluation — see
+ * .claude/rules/platform-facts.md, "Node's ESM registry is keyed by resolved
+ * URL and cannot be evicted". That is *why* per-tick re-resolution is a
+ * process boundary rather than in-process re-eval: `flume loop` spawns one
+ * `flume tick` per iteration, each a fresh process that loads chain.ts
+ * exactly once. A rewritten chain.ts governs the next tick because the next
+ * tick is a new process — not because anything re-imports it in-process.
  */
 export async function loadChainModule(
   paths: FlumePaths,
@@ -1387,22 +1388,24 @@ export interface DispatcherOptions {
    * every cherry-pick and before the pending-ledger commit) excludes a live
    * claim matching this pid — without it, a run's own claim reads as a
    * concurrent engine instance to its own wave, which refuses every
-   * cherry-pick against itself. Engine-boundary.md "Told, not inferred":
-   * the CLI states which pid is self; the dispatcher never guesses from a
-   * bare pid match, which a unit test constructing a `Dispatcher` directly
-   * (no real claim of its own) relies on to keep simulating a genuinely
-   * foreign claim. Default: unset — every live claim reads as foreign,
-   * unchanged behavior for a caller that never acquired one.
+   * cherry-pick against itself. Per .claude/rules/engine-boundary.md "Told,
+   * not inferred": the CLI states which pid is self; the dispatcher never
+   * guesses from a bare pid match, which a unit test constructing a
+   * `Dispatcher` directly (no real claim of its own) relies on to keep
+   * simulating a genuinely foreign claim. Default: unset — every live claim
+   * reads as foreign, unchanged behavior for a caller that never acquired
+   * one.
    */
   ownTipClaimPid?: number;
   /**
-   * Override for the pending-ledger commit's message (engine-boundary.md
-   * "Capability vs convention"). `commitPendingUpdate` calls this with the
-   * tags shipped this wave (empty when the wave only recorded merge-failure
-   * footprints) and the tags whose footprints were recorded, and commits
-   * pending.json with whatever string it returns. The `chore(flume): ship
-   * ...` / `chore(flume): record merge-failure footprints for ...` wording
-   * is this harness's own convention, not something every chain need adopt.
+   * Override for the pending-ledger commit's message
+   * (.claude/rules/engine-boundary.md "Capability vs convention").
+   * `commitPendingUpdate` calls this with the tags shipped this wave (empty
+   * when the wave only recorded merge-failure footprints) and the tags whose
+   * footprints were recorded, and commits pending.json with whatever string
+   * it returns. The `chore(flume): ship ...` /
+   * `chore(flume): record merge-failure footprints for ...` wording is this
+   * harness's own convention, not something every chain need adopt.
    * Default (omitted): reproduces that exact text.
    */
   commitMessage?: (
@@ -1437,12 +1440,13 @@ export const EX_MOUNT_DEAD = 69;
 /**
  * Thrown by the strict `readPending()` — the reads that decide pickable work
  * (singleton/fanout tick start) or derive a rewrite (`commitPendingUpdate`) —
- * when `pending.json` exists but fails to parse. engineering.md "Loud or
- * nothing": a queue that never resolved must not read as an empty one, and
- * nothing downstream may derive a decision or a rewrite from it. `tick()`
- * catches this exactly where it catches chain-resolution failure and folds
- * it into the same {@link EX_MOUNT_DEAD} failed-outcome shape — a pending.json
- * no agent can parse is exactly as unusable next tick as this one.
+ * when `pending.json` exists but fails to parse. Per
+ * .claude/rules/engineering.md "Loud or nothing": a queue that never
+ * resolved must not read as an empty one, and nothing downstream may derive
+ * a decision or a rewrite from it. `tick()` catches this exactly where it
+ * catches chain-resolution failure and folds it into the same
+ * {@link EX_MOUNT_DEAD} failed-outcome shape — a pending.json no agent can
+ * parse is exactly as unusable next tick as this one.
  */
 export class PendingParseFailure extends Error {
   readonly errors: readonly ParseError[];
@@ -2689,9 +2693,9 @@ export class Dispatcher {
   /**
    * Wave-level no-commit cause, only meaningful when the wave shipped
    * nothing usable — shared by the wave's normal-completion verdict and by
-   * `WaveLedgerParseFailure`'s partial verdict (engineering.md "Derived
-   * state is computed, never restated beside its source"), so a ledger
-   * refusal reports the same cause a clean completion would have. The
+   * `WaveLedgerParseFailure`'s partial verdict (.claude/rules/engineering.md
+   * "Derived state is computed, never restated beside its source"), so a
+   * ledger refusal reports the same cause a clean completion would have. The
    * precedence is {@link WAVE_NO_COMMIT_RANK}.
    */
   private waveNoCommitCause(
@@ -2780,11 +2784,12 @@ export class Dispatcher {
     }
 
     const waveStart = Date.now();
-    // Chain-overridable default (engine-boundary.md's policy-constant rule):
-    // unlike quarantineScope/abortThreshold this needs no run-scoped binding
-    // in the CLI — `chain` here is this tick's freshly-resolved chain
-    // (tick() loads it once per process), so reading its declaration at the
-    // point of use is already byte-identical to a per-run bind.
+    // Chain-overridable default (.claude/rules/engine-boundary.md's
+    // policy-constant rule): unlike quarantineScope/abortThreshold this
+    // needs no run-scoped binding in the CLI — `chain` here is this tick's
+    // freshly-resolved chain (tick() loads it once per process), so reading
+    // its declaration at the point of use is already byte-identical to a
+    // per-run bind.
     const maxParallel = chain.supervisorPolicy?.maxParallel ?? this.maxParallel;
     // spec/pending.md "Fanout partition — disjoint touched paths": narrows
     // the collision set only — `declaredPaths` (fence, write guard, ship
@@ -3073,9 +3078,9 @@ export class Dispatcher {
       try {
         // The per-entry leg's ancestry check already cleared the whole
         // `spanBase..commitSha` span as one completed entry — cherry-pick
-        // the whole range, in order, not just the newest commit (spec/
-        // loop.md "N commits are completion"). Equivalent to a single-sha
-        // pick when the span holds exactly one commit.
+        // the whole range, in order, not just the newest commit
+        // (spec/loop.md "N commits are completion"). Equivalent to a
+        // single-sha pick when the span holds exactly one commit.
         await git.cherryPickRange(repoRoot, r.spanBase, r.commitSha);
       } catch (err) {
         const message = (err as Error).message;
@@ -3260,7 +3265,8 @@ export class Dispatcher {
       // Landing on trunk isn't shipping, and the engine does not decide
       // which of the two this is. It reports facts; the chain interprets
       // (spec/pending.md "Ship detection trusts the agent's own account";
-      // engine-boundary.md "Told, not inferred"). Undeclared means shipped.
+      // .claude/rules/engine-boundary.md "Told, not inferred"). Undeclared
+      // means shipped.
       let shipVerdict: boolean;
       // spec/chain.md "What a hook receives": a throwing `shipped` is not
       // `false`. The outcome is the one the seam already has for a predicate
@@ -3355,15 +3361,15 @@ export class Dispatcher {
       // not be reported as this wave's commit.
       const preUpdate = await git.revParse(repoRoot);
       // commitPendingUpdate's rewrite read is the strict `readPending()`
-      // (engineering.md "Loud or nothing"): if pending.json was corrupted by
-      // something outside this tick in the window since the wave's
-      // decide-read, the throw propagates past worktree cleanup below,
-      // straight to `tick()`'s PendingParseFailure catch — already-shipped
-      // commits stay on trunk (cherry-picked above), but the file itself is
-      // never overwritten with a rewrite derived from `[]`. Surviving
-      // worktrees are the accepted cost of refusing rather than proceeding;
-      // the next `pruneWorktrees` call reclaims their metadata once a human
-      // has fixed the file.
+      // (.claude/rules/engineering.md "Loud or nothing"): if pending.json was
+      // corrupted by something outside this tick in the window since the
+      // wave's decide-read, the throw propagates past worktree cleanup
+      // below, straight to `tick()`'s PendingParseFailure catch —
+      // already-shipped commits stay on trunk (cherry-picked above), but the
+      // file itself is never overwritten with a rewrite derived from `[]`.
+      // Surviving worktrees are the accepted cost of refusing rather than
+      // proceeding; the next `pruneWorktrees` call reclaims their metadata
+      // once a human has fixed the file.
       let update: { sha: string; tipMoved: boolean };
       try {
         update = await this.commitPendingUpdate(
@@ -3652,9 +3658,9 @@ export class Dispatcher {
     gateFailure?: GateFailure;
     /**
      * Set only when this entry's own commit landed and passed its
-     * afterCommit gates — the wave loop's ship-classification site (spec/
-     * pending.md "Ship detection trusts the agent's own account", ruling
-     * 2026-08-03) reads it instead of diffing the commit against
+     * afterCommit gates — the wave loop's ship-classification site
+     * (spec/pending.md "Ship detection trusts the agent's own account",
+     * ruling 2026-08-03) reads it instead of diffing the commit against
      * `declaredPaths(entry)`. Absent on every other return path: a no-commit
      * or gate-reverted entry never reaches cherry-pick, so there is nothing
      * for ship classification to consult.
@@ -3784,10 +3790,10 @@ export class Dispatcher {
     if (!verdict.ok) {
       // This revert never reaches cherry-pick, so it's the only chance
       // to capture what the commit actually touched — runAfterCommitGates
-      // already computed this for its gate loop (engineering.md "The fix
-      // lands at the mechanism"), so reuse it instead of re-deriving via a
-      // second `git show --name-only` before dropLastCommit discards the
-      // evidence.
+      // already computed this for its gate loop
+      // (.claude/rules/engineering.md "The fix lands at the mechanism"), so
+      // reuse it instead of re-deriving via a second `git show --name-only`
+      // before dropLastCommit discards the evidence.
       const { footprint, gateFailure } = await this.revertAfterCommitFailure(
         chain,
         wt.path,
@@ -4016,7 +4022,7 @@ export class Dispatcher {
   ): Promise<AgentTermination> {
     // Before the try: a record that cannot be written refuses the run
     // outright rather than reading as a platform-preempt of a run that
-    // never started (engineering.md "Loud or nothing").
+    // never started (.claude/rules/engineering.md "Loud or nothing").
     const promptPath = await this.recordRenderedPrompt(key, prompt);
     try {
       const result = await agent.invoke({
@@ -4134,16 +4140,17 @@ export class Dispatcher {
     results: ReportedGateResult[];
     /** The commit's touched paths, already computed for the gate loop below —
      * exposed so callers don't re-derive via a second `git show --name-only`
-     * for the same commit (engineering.md "The fix lands at the mechanism"). */
+     * for the same commit (.claude/rules/engineering.md "The fix lands at
+     * the mechanism"). */
     touchedPaths: string[];
   }> {
     // Entry-scoped write guard (spec/pending.md, "The entry-scoped write
     // guard is opt-in, and off by default"). The whole decision — whether
     // this tick is scoped at all, and to which paths — is `entryWriteScope`
     // (`src/paths.ts`), the one call `renderPrompt` also makes to state the
-    // fence in the agent's prompt (engineering.md "The fix lands at the
-    // mechanism"). Unscoped, a fanout tick's allowance is byte-identical to
-    // a singleton tick's — `writablePaths` alone.
+    // fence in the agent's prompt (.claude/rules/engineering.md "The fix
+    // lands at the mechanism"). Unscoped, a fanout tick's allowance is
+    // byte-identical to a singleton tick's — `writablePaths` alone.
     const gates: Gate[] = [
       ...phase.gates.filter((g) => g.when === "afterCommit"),
       writablePathsGate(
@@ -4154,7 +4161,7 @@ export class Dispatcher {
     // Computed once per commit and shared across every gate this loop runs —
     // chainLoadGate and writablePathsGate read it off the context instead of
     // each shelling out its own `git show --name-only` for the same commit
-    // (engineering.md "The fix lands at the mechanism").
+    // (.claude/rules/engineering.md "The fix lands at the mechanism").
     const commitTouchedPaths = await git.diffNameOnly(cwd, spanBase, commitSha);
     // `cwd` here is the fanout worktree (or a singleton's own worktree,
     // spec/worktrees.md "Singleton runs in a worktree") — a fresh checkout
@@ -4211,9 +4218,9 @@ export class Dispatcher {
   /**
    * The one `afterCommit`-revert path (spec/worktrees.md "Reverted prose
    * survives the reset"): every afterCommit gate revert — a fanout entry's
-   * worktree commit or, since singleton moved into a worktree too (spec/
-   * worktrees.md "Singleton runs in a worktree"), a singleton phase's own —
-   * snapshots the commit's files before dropping it and writes the
+   * worktree commit or, since singleton moved into a worktree too
+   * (spec/worktrees.md "Singleton runs in a worktree"), a singleton phase's
+   * own — snapshots the commit's files before dropping it and writes the
    * operator's revert note, whichever worktree it ran in. The former
    * asymmetry — snapshot singleton-only, note fanout-only — collapsed with
    * the paths themselves once both concurrencies commit to a private branch
@@ -4418,7 +4425,7 @@ export class Dispatcher {
    * entry — so the two records for one span share a name. The timestamp
    * keeps ticks apart; the key keeps a wave's entries apart. A write
    * failure propagates: a tick whose input record cannot be kept does not
-   * spend an invocation (engineering.md "Loud or nothing").
+   * spend an invocation (.claude/rules/engineering.md "Loud or nothing").
    */
   private async recordRenderedPrompt(
     key: string,
@@ -4434,9 +4441,9 @@ export class Dispatcher {
   /**
    * Persist the render-refused record and log it — the one
    * shared shape both the singleton and fanout render callsites route
-   * through (engineering.md "The fix lands at the mechanism"), the same way
-   * {@link classifyNoCommit} above already centralizes the no-commit
-   * persist+log.
+   * through (.claude/rules/engineering.md "The fix lands at the mechanism"),
+   * the same way {@link classifyNoCommit} above already centralizes the
+   * no-commit persist+log.
    * Each callsite still builds its own return shape from here, matching how
    * `classifyNoCommit`'s two callers already differ. `label` is the
    * phase name (singleton) or entry tag (fanout) — whichever scope `key`
@@ -4535,9 +4542,10 @@ export class Dispatcher {
    * Strict reader: throws {@link PendingParseFailure} on a parse error rather
    * than degrading to `[]`. Used at every read this dispatcher acts on — the
    * singleton/fanout decide-reads and `commitPendingUpdate`'s rewrite read
-   * (engineering.md "Loud or nothing": a decision or a rewrite must never
-   * derive from an input that failed to resolve). `readPendingTolerant`
-   * below is the one declared exception, for the two report-only reads.
+   * (.claude/rules/engineering.md "Loud or nothing": a decision or a rewrite
+   * must never derive from an input that failed to resolve).
+   * `readPendingTolerant` below is the one declared exception, for the two
+   * report-only reads.
    *
    * spec/pending.md "Dispatch reads come from the tip, not the tree":
    * resolves the committed `HEAD` tip (`git.readFileAtRef`), never the
@@ -4595,8 +4603,8 @@ export class Dispatcher {
    * and now; degrading to `[]` is bounded because `pendingAfter` — and the
    * `TickResult.pickableAfter` derived from it — feeds only the handoff's
    * advisory read of what is pickable next, never a rewrite or a work
-   * decision (engineering.md "Loud or nothing": the degraded-but-
-   * proceeding path, declared and cited at its two call sites).
+   * decision (.claude/rules/engineering.md "Loud or nothing": the
+   * degraded-but-proceeding path, declared and cited at its two call sites).
    *
    * Every way this read can fail degrades the same declared way — announced,
    * then `[]`. It cannot refuse the way `readPending` does: it runs after the
