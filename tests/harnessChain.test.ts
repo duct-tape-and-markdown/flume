@@ -22,7 +22,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
@@ -35,6 +35,7 @@ import {
   type HarnessPhase,
 } from "../harness/declaration.ts";
 import { defaultHandoff, type Handoff } from "../harness/handoff.ts";
+import { consumerIgnores } from "../harness/ignores.ts";
 import { promptPath, type PromptName } from "../harness/prompts.ts";
 import { notesDir } from "../harness/records.ts";
 import type { Runner } from "../harness/runner.ts";
@@ -239,6 +240,37 @@ it("the factory returns the three plan slices and the build phase from a declara
   // The package's six entry fields ride the chain, so the queue is validated
   // and the plan prompt's schema block rendered from one declaration.
   expect(Object.keys(chain.entryExtension ?? {})).toContain("per");
+});
+
+it("every phase's agent tees its transcript into a path the consumer ignore set names", () => {
+  // An agreement gate over the package's own per-run artifact
+  // (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+  // wrote*): the real writer is the factory's own agent wiring, and the real
+  // reader is `consumerIgnores` over the state root this fixture declares.
+  // A capture relocated on one side alone leaves every transcript untracked
+  // under a consumer's state root, which the clean-tree gate reads as a
+  // dirty tree on whatever tick runs next.
+  const captured: string[] = [];
+  const chain = harnessChain({
+    api: {
+      ...api,
+      withSessionCapture: (agent, options) => {
+        captured.push(options.dir);
+        return api.withSessionCapture(agent, options);
+      },
+    },
+    declaration: DECLARATION,
+  });
+
+  // Vacuity pin: one capture per phase the factory wired, so a chain that
+  // wrapped nothing cannot satisfy the loop below.
+  expect(captured).toHaveLength(chain.phases.length);
+  expect(chain.phases.length).toBeGreaterThan(0);
+
+  const ignored = new Set(consumerIgnores(STATE_ROOT));
+  for (const dir of captured) {
+    expect(ignored).toContain(`${relative(repo, dir).split(sep).join("/")}/`);
+  }
 });
 
 it("a plan slice the declaration does not enable is absent from the returned chain", () => {

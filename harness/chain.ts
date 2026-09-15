@@ -58,6 +58,7 @@ import {
 import { NamedLinesSchema, entryExtension } from "./entryExtension.js";
 import { harnessGates, type GateEngine } from "./gates.js";
 import { resolveHandoff } from "./handoff.js";
+import { SESSIONS_REL } from "./ignores.js";
 import { judgeNamedLines, type JudgeVerdict } from "./judge.js";
 import { planStatePath } from "./planState.js";
 import {
@@ -68,15 +69,6 @@ import {
 } from "./prompts.js";
 import { notePath, notesDir, recordDirs } from "./records.js";
 import { planSliceWindows, type PlanSliceWindow } from "./windows.js";
-
-/**
- * Where the package's agents tee their transcripts, under the consumer's
- * state root — the one per-run artifact the package itself places
- * (`spec/chain.md`, *Per-run artifacts belong under `FLUME_DIR`*), so a
- * relocated state root carries its own sessions and one `rm` removes the
- * whole footprint.
- */
-const SESSIONS_REL = "sessions";
 
 /**
  * One line per phase, as `flume status` and the dispatcher's log print it.

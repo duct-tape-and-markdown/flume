@@ -4,14 +4,15 @@
  * own `.gitignore` — the package's reference consumer — may carry under its
  * state root.
  *
- * The derivation cases read the engine's path record rather than a list by
- * the tester's hand: a restated set of names would pass over a rename that
- * moved both sides, which is the drift the derivation exists to end. The
- * `.gitignore` case is the seam the whole section is about — the real
- * derivation's output driven against the real file a consumer maintains
- * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
- * wrote*) — and it runs in both directions, so neither a line the engine no
- * longer owns nor a runtime path nothing ignores can sit there unnoticed.
+ * The derivation cases read the engine's path record and the package's own
+ * per-run artifact names rather than a list by the tester's hand: a restated
+ * set of names would pass over a rename that moved both sides, which is the
+ * drift the derivation exists to end. The `.gitignore` case is the seam the
+ * whole section is about — the real derivation's output driven against the
+ * real file a consumer maintains (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*) — and it runs in both directions
+ * over the whole footprint, so neither a line nobody owns any more nor a
+ * per-run path nothing ignores can sit there unnoticed.
  */
 
 import { readFileSync } from "node:fs";
@@ -19,7 +20,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
 
-import { consumerIgnores } from "../harness/index.ts";
+import { SESSIONS_REL, consumerIgnores } from "../harness/ignores.ts";
 import { STATE_ROOT_NAMES } from "../src/paths.ts";
 
 /** This repository's state root, as its `.gitignore` addresses it. */
@@ -37,12 +38,14 @@ const stateRootLines = (): string[] =>
     .filter((line) => line.startsWith(`${STATE_ROOT}/`));
 
 /**
- * The lines under this repo's state root that the engine does not own, so
- * the derived set must not name them. `sessions/` is this chain's session
- * capture (`.flume/chain.ts`) — a chain-convention dir, the consumer's to
- * add beside the derived set and the consumer's to retire.
+ * Every bare name the derived set may carry: the engine's path record plus
+ * the package's own per-run artifacts. Composed from both owners rather than
+ * spelled out, so neither side can rename a path past this file.
  */
-const CONSUMER_OWNED = [`${STATE_ROOT}/sessions/`];
+const FOOTPRINT: ReadonlySet<string> = new Set<string>([
+  ...Object.values(STATE_ROOT_NAMES),
+  SESSIONS_REL,
+]);
 
 it("the consumer ignore set prefixes every engine runtime path with the declared state root", () => {
   const derived = consumerIgnores(STATE_ROOT);
@@ -61,9 +64,6 @@ it("the consumer ignore set prefixes every engine runtime path with the declared
     );
     expect(under).toHaveLength(1);
   }
-  // Nothing but those: the record's size is the set's size.
-  expect(derived).toHaveLength(names.length);
-
   // The state root is the caller's, never baked in: a consumer whose root
   // sits deeper gets the same set addressed from where its file lives.
   expect(consumerIgnores("packages/app/.flume")).toEqual(
@@ -71,15 +71,26 @@ it("the consumer ignore set prefixes every engine runtime path with the declared
   );
 });
 
-it("the consumer ignore set names no path outside the engine's path record", () => {
+it("the consumer ignore set names the package's own session capture directory", () => {
+  // The dir the package's agent factory tees every transcript into
+  // (`SESSIONS_REL`, read off its one home rather than respelled here). It
+  // is the package's to place and so the package's to ignore: a consumer
+  // that had to add the line by hand would carry an untracked path under its
+  // own state root the first time it ran a tick.
+  expect(consumerIgnores(STATE_ROOT)).toContain(`${STATE_ROOT}/${SESSIONS_REL}/`);
+});
+
+it("the consumer ignore set names no path outside the package's runtime footprint", () => {
   const derived = consumerIgnores(STATE_ROOT);
   expect(derived.length).toBeGreaterThan(0);
 
-  const owned = new Set<string>(Object.values(STATE_ROOT_NAMES));
   for (const line of derived) {
     expect(line.startsWith(`${STATE_ROOT}/`)).toBe(true);
-    expect(owned).toContain(line.slice(STATE_ROOT.length + 1).replace(/\/$/, ""));
+    expect(FOOTPRINT).toContain(line.slice(STATE_ROOT.length + 1).replace(/\/$/, ""));
   }
+  // Nothing but those, and each exactly once: the footprint's size is the
+  // set's size.
+  expect(derived).toHaveLength(FOOTPRINT.size);
   // The one line the job-dir seed carries that the runtime does not own
   // (`RUNTIME_IGNORES`, `src/job.ts`) is dropped by that filter, not copied
   // through: a consumer's root is not a job dir's install.
@@ -92,9 +103,7 @@ it("this repository's .gitignore carries no state-root line the derived set does
   expect(lines.length).toBeGreaterThan(0);
 
   const derived = new Set(consumerIgnores(STATE_ROOT));
-  expect(
-    lines.filter((line) => !derived.has(line) && !CONSUMER_OWNED.includes(line)),
-  ).toEqual([]);
+  expect(lines.filter((line) => !derived.has(line))).toEqual([]);
 });
 
 it("this repository's .gitignore names every line the derived set carries", () => {
