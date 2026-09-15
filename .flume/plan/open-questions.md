@@ -708,3 +708,63 @@ are both outside every phase lane:
 alongside it if a second rung is wanted: the two say one thing at the two
 surfaces, and neither is paid per rotation. Held here rather than filed because
 both files are human-held.
+
+## A throwing chain hook has no contract, and two of them lose the tick (PARKED)
+
+Drained from two build notes (`HARNESS-WINDOW-RENDER-REFUSES-A-GIT-FAILURE`,
+`GATE-THROW-IS-A-GATE-FAILURE`); verified on disk this tick. One seam, two
+forks — rule them together.
+
+**Fork A — the four interpretation points throw uncaught.**
+`phase.promptArgs?.(ctx)` is invoked bare at `src/Dispatcher.ts:1957`
+(singleton) and `:3281` (fanout). A throw there ends the tick with no verdict,
+no prior-attempt record, and no teardown path of its own. Every sibling escape
+hatch *is* ruled: a throwing gate is that gate's failure (`spec/chain.md`,
+*What a gate returns*), a throwing `setupWorktree` is that entry's provisioning
+failure and a throwing `teardownWorktree` is logged while removal proceeds
+(`spec/worktrees.md`, *`setupWorktree` and `teardownWorktree`*). The four
+points *What a hook receives* names — `shouldRun`, `promptArgs`, `handoff`,
+`shipped` — are the unruled ones.
+
+Load-bearing now: `harness/windows.ts:641-649` declares the gap at the site and
+works around it, rendering a `REFUSE:` string instead of throwing. That
+workaround covers the git reads only — the inbox window's own material
+(`recordFiles` + `readFileSync`, `harness/windows.ts:316-319`) still throws
+straight out of `promptArgs`, and no consumer outside this repo has the
+workaround at all. Verbatim copying into every chain is the missing-surface
+detector (`engine-boundary.md`, *Surface, not prescription*).
+
+Options:
+
+- **Classify `promptArgs` as `render-refused`.** The mode's stated meaning —
+  "the prompt itself never resolved, so the agent was never invoked" — already
+  covers it, and the dispatcher already persists that record at both callsites
+  for `InlineExecRenderError`. Leaves `shouldRun`/`handoff`/`shipped`
+  unanswered: none is render-time.
+- **One ruling per hook**, following the sibling precedents: `promptArgs` →
+  `render-refused`; `shouldRun` → declined or refused (a hook that cannot
+  decide is not a decision to skip); `handoff` → logged like `teardownWorktree`,
+  since the facts are already written when it runs; `shipped` → a throw is not
+  a `false`, so it wants its own answer against *Ship detection trusts the
+  agent's own account*.
+- **Ratify the throw.** Say in *What a hook receives* that a throwing hook is a
+  chain defect that kills the tick by design and the chain owns its own
+  `try`/`catch`. Cheapest, and it makes `harness/windows.ts`'s wrapper the
+  sanctioned idiom every consumer copies.
+
+**Recommend** the second, taking the first's classification for `promptArgs`:
+the vocabulary exists, and the package already built the workaround that proves
+the demand.
+
+**Fork B — a caught gate throw carries no `details`.** `Dispatcher.runGate`
+(`src/Dispatcher.ts:3670`, the only caller of `gate.run`) records
+`{ ok: false, message }` — exactly what *What a gate returns* states — and
+drops the stack at the catch. A *returned* refusal usually rides `details`
+(stderr, a reporter dump), so the prior-attempt block a retrying agent reads is
+thinnest precisely where diagnosis is hardest: a runner that died, a hook that
+blew up. Either `details: err.stack` is the missing half (one line, one site),
+or the sentence already means message-only and says so. Nothing in the corpus
+distinguishes the two.
+
+Parked because both forks land on `spec/` sentences that read as deliberate,
+and `spec/` is the human's alone.

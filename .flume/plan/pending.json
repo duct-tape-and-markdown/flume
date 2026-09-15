@@ -1,1 +1,57 @@
-[]
+[
+  {
+    "tag": "CLIHELP-CASES-ARE-SINGLE-INVOCATION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "split the two-spawn render case; hoist the check case's shared real run off the per-test budget"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Make every spawning cliHelp case single-invocation — the fast lane's carve-out covers one spawn per test, not two",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "no `it` in tests/cliHelp.test.ts invokes runCli more than once; coverage unchanged and `pnpm test` green",
+    "tests": [],
+    "pins": [
+      "flume --help names no render",
+      "flume -h names no render"
+    ],
+    "notes": "Build note reported these two timing out at vitest's default 5s under full-suite load and proposed a timeout knob. Verified gap differs: both are double-spawn (`--help`+`-h`; skipClauseFromRealRun+`check --help`), and the lane carve-out is scoped to single-invocation. Fix the spawn count, not the budget. The docs/CLI.md case shares the hoisted run."
+  },
+  {
+    "tag": "BOOTSTRAP-WINDOW-NAMES-ITS-TIP",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/windows.ts",
+          "description": "bootstrap() resolves the tip once and names it, as renderSweepWindow already does"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the bootstrap header's named sha"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "bootstrap() names the tip it was drawn from instead of telling the tick to stamp HEAD — one edit covering the derive and sweep cursors",
+    "per": {
+      "path": ".claude/rules/posture-sweep.md",
+      "section": "The stamp"
+    },
+    "acceptance": "both bootstrap windows end naming a resolved sha; no window text says `stamp HEAD`",
+    "tests": [
+      "the bootstrap window names the tip it was drawn from rather than telling the tick to stamp HEAD"
+    ],
+    "pins": [],
+    "notes": "Sibling SWEEP-WINDOW-NAMES-ITS-TIP left this: bootstrap (harness/windows.ts:626-639) is shared by derivedThrough and sweptThrough, so one edit covers both cursors."
+  }
+]
