@@ -133,7 +133,7 @@
       "the inbox window renders a lane whose latest completed run passed as green"
     ],
     "pins": [],
-    "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content — the generic parse the boundary rule fences. The liveness fork is ruled and the spec holds it; derive files the leg and this entry ships under it unchanged. Name the reader's lane type distinctly: `lane` already means a Runner test lane in harness/. This repo's declaration carries no `ci:` line yet — a `chore(flume)` edit, outside every phase fence."
+    "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content — the generic parse the boundary rule fences. The liveness fork is ruled and the spec holds it; derive files the leg and this entry ships under it unchanged. Name the reader's lane type distinctly: `lane` already means a Runner test lane in harness/. This repo's declaration now names the lane (`ci:`, 8d5dc56), so the first drain of the real run is the agreement case."
   },
   {
     "tag": "PLAN-STATE-CARRIES-THE-DRAINED-RUN-STAMP",
