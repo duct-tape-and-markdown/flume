@@ -9,8 +9,6 @@
  * there.
  */
 
-import { spawn } from "node:child_process";
-
 import { Baton } from "./Baton.js";
 import {
   consoleLogger,
@@ -26,6 +24,7 @@ import {
 import { frictionCountLine } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
 import { defaultStateRoot, namespacedJoin, stopFlagPath } from "./paths.js";
+import { spawnProcessTree, terminateProcessTree } from "./processTree.js";
 
 /**
  * Engine default for the run-scoped quarantine — the scope `superviseLoop`
@@ -94,6 +93,18 @@ interface SuperviseLoopOptions {
    * undeclared falls through to the default here.
    */
   abortThreshold?: number;
+  /**
+   * Chain-declared override for the grace the default runner leaves between
+   * the SIGTERM it sends the tick tree on teardown and the SIGKILL that
+   * follows, in milliseconds. Defaults to `DEFAULT_KILL_GRACE_MS`
+   * (`src/processTree.ts`), which is what the escalation applies when nothing
+   * is forwarded. The CLI forwards this from the resolved chain's
+   * `supervisorPolicy.killGraceMs` (`src/Phase.ts`); undeclared falls through
+   * to that default. Read by the default runner alone — a caller supplying
+   * its own {@link SuperviseLoopOptions.runTick} owns its child's teardown
+   * and this never reaches it.
+   */
+  killGraceMs?: number;
   /**
    * The run's teardown, reaching the tick tree the run owns. Aborting it ends
    * the run: the in-flight tick child is terminated, awaited, and only then
@@ -244,7 +255,8 @@ export async function superviseLoop(
   const flumeDir = opts.flumeDir ?? defaultStateRoot(opts.repoRoot);
   const configDir = opts.configDir ?? defaultStateRoot(opts.repoRoot);
   const baton = new Baton(flumeDir);
-  const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot);
+  const runTick =
+    opts.runTick ?? defaultTickRunner(opts.repoRoot, opts.killGraceMs);
   // A caller with no teardown of its own gets one that never fires, so the
   // runner and both checks below read one shape rather than branching on
   // whether a signal was supplied.
@@ -604,15 +616,17 @@ export async function superviseLoop(
  * claim in `src/cli.ts`'s `loop` command — so the child tick trusts the
  * claim already held instead of acquiring (and colliding on) its own.
  *
- * `stopSignal` is the run's teardown reaching this child: on abort the child
- * is signalled, and the promise still resolves on its `exit` — the supervisor
- * hands its caller a settled tree, not a kill that was merely requested. The
- * child keeps its default signal disposition (`src/cli.ts`: only a bare tick
- * installs handlers), so the terminate is the kernel's and needs no
- * cooperation from a tick parked in an agent invocation.
+ * `stopSignal` is the run's teardown reaching this child: on abort the tick
+ * *tree* is signalled (`spawnProcessTree`/`terminateProcessTree`,
+ * `src/processTree.ts` — the child leads its own process group, and the agent
+ * it spawned is in that group), and the promise still resolves on the child's
+ * `exit` — the supervisor hands its caller a settled tree, not a kill that was
+ * merely requested. `graceMs` is what bounds the wait between the group's
+ * SIGTERM and its SIGKILL; undefined takes the engine default there.
  */
 function defaultTickRunner(
   repoRoot: string,
+  graceMs: number | undefined,
 ): (
   quarantinedSlugs: ReadonlySet<string>,
   stopSignal: AbortSignal,
@@ -624,7 +638,7 @@ function defaultTickRunner(
         env.FLUME_QUARANTINED_SLUGS = [...quarantinedSlugs].join(",");
       }
       env.FLUME_TIP_CLAIM_HELD = String(process.pid);
-      const child = spawn(
+      const child = spawnProcessTree(
         process.execPath,
         [...process.execArgv, process.argv[1]!, "tick"],
         { cwd: repoRoot, stdio: "inherit", env },
@@ -633,7 +647,9 @@ function defaultTickRunner(
       // option reports the abort as an `error` event, and a runner that
       // resolved there would hand the supervisor a still-running child.
       const terminate = (): void => {
-        child.kill("SIGTERM");
+        terminateProcessTree(child, {
+          ...(graceMs !== undefined ? { graceMs } : {}),
+        });
       };
       if (stopSignal.aborted) terminate();
       else stopSignal.addEventListener("abort", terminate, { once: true });

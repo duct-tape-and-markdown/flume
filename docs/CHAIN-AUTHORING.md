@@ -1692,8 +1692,10 @@ so fanout's in practice), and a consecutive-identical-failure backstop aborts
 the run outright when the same stage-tagged signature repeats with no clearing
 tick in between — the non-entry-scoped class quarantine can't isolate, which is
 a repo-level failure like `git worktree prune` *and* every singleton failure,
-since a singleton tick has no entry to blame. Both knobs ship as engine
-defaults; `Chain.supervisorPolicy` lets a chain choose otherwise:
+since a singleton tick has no entry to blame. Beside the net, the block
+carries the grace a signalled run gives its in-flight tick tree before it
+stops waiting. Each knob ships as an engine default; `Chain.supervisorPolicy`
+lets a chain choose otherwise:
 
 ```ts
 const chain: Chain = {
@@ -1702,6 +1704,7 @@ const chain: Chain = {
   supervisorPolicy: {
     quarantineScope: "none",
     abortThreshold: 5,
+    killGraceMs: 30_000,
   },
 };
 ```
@@ -1719,8 +1722,17 @@ const chain: Chain = {
   stage-tagged failure signature must repeat, with no clearing tick
   between them, before the supervisor aborts the run rather than burning
   the remaining `--max` ticks against the same wall. Default 3.
+- **`killGraceMs`** — milliseconds between the `SIGTERM` a signalled `flume
+  loop` sends its in-flight tick tree and the `SIGKILL` that follows. The
+  supervisor releases the loop lock and the tip claim only once that tree is
+  gone (`spec/loop.md`, "The loop lock and the tip claim"), so this is the
+  ceiling on how long a `Ctrl-C` takes to come back — and the window an agent
+  mid-invocation gets to finish writing under the state root. A tree that
+  exits on the `SIGTERM` never reaches it. Default 5000. POSIX only: win32
+  maps `SIGTERM` to `TerminateProcess`, which runs no handler, so there is no
+  disposition for a grace to bound.
 
-Both fields are optional and independent; a chain declaring neither gets the
+Every field here is optional and independent; a chain declaring none gets the
 engine defaults, byte-identical (`spec/loop.md`, "Repeated identical
 failures — quarantine, then abort"). `flume loop` reads this block from the
 resolved chain once at supervisor start — a chain that fails to load there

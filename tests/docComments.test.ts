@@ -7,6 +7,7 @@ import {
   DEFAULT_ABORT_THRESHOLD,
   DEFAULT_QUARANTINE_SCOPE,
 } from "../src/loopSupervisor.ts";
+import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
 
 // Declarations ship (tsconfig.build.json), so a doc comment on a chain-facing
@@ -91,6 +92,25 @@ it("the shipped `quarantineScope` doc comment marks no union member as the engin
   expect(doc).toContain("quarantine");
 
   expect(doc).not.toMatch(/defaults?/i);
+});
+
+/**
+ * `DEFAULT_KILL_GRACE_MS` (`src/processTree.ts`) is the one home for the
+ * teardown escalation's default; the chain-facing option's hover text
+ * describes the window without restating the number
+ * (`.claude/rules/engineering.md` § Derived state is computed, never restated
+ * beside its source). Read against the real constant, so bumping the default
+ * can never leave a stale literal passing this pin.
+ */
+it("the shipped `killGraceMs` doc comment restates no DEFAULT_KILL_GRACE_MS literal", () => {
+  const doc = docCommentFor(srcText("Phase.ts"), "killGraceMs");
+
+  // Vacuity guard: this is the block it claims to be before the absence is
+  // asserted over it — an absence over a vanished subject is a false green.
+  expect(doc).toContain("SIGKILL");
+  expect(doc).toContain("tick tree");
+
+  expect(doc).not.toContain(String(DEFAULT_KILL_GRACE_MS));
 });
 
 /**

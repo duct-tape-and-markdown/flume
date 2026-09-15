@@ -682,6 +682,17 @@ export interface Chain {
      */
     abortThreshold?: number;
     /**
+     * Milliseconds between the SIGTERM a signalled `flume loop` sends its
+     * in-flight tick tree and the SIGKILL that follows — the window an agent
+     * mid-invocation gets to finish writing before the supervisor stops
+     * waiting and releases the loop lock and the tip claim. A tree that exits
+     * on the SIGTERM never reaches it. Run-scoped like
+     * `quarantineScope`/`abortThreshold`: the supervisor binds it before the
+     * first child. POSIX only — win32 maps SIGTERM to TerminateProcess,
+     * which runs no handler, so there is no grace to bound.
+     */
+    killGraceMs?: number;
+    /**
      * Max parallel ticks per fanout batch — overrides
      * `DispatcherOptions.maxParallel` (`src/Dispatcher.ts`), whose own
      * default is 4. Unlike `quarantineScope`/`abortThreshold` this is not

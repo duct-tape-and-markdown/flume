@@ -1247,6 +1247,9 @@ async function main(): Promise<number> {
       ...(supervisorPolicy?.abortThreshold !== undefined
         ? { abortThreshold: supervisorPolicy.abortThreshold }
         : {}),
+      ...(supervisorPolicy?.killGraceMs !== undefined
+        ? { killGraceMs: supervisorPolicy.killGraceMs }
+        : {}),
     });
     const supervised = await supervisedRun;
     // Name surfaced tick errors in the completion summary even on a 0 exit

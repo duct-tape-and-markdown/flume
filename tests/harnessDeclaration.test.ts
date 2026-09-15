@@ -86,6 +86,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
     maxParallel: 4,
     tickTimeoutMs: 1_800_000,
     abortThreshold: 3,
+    killGraceMs: 15_000,
     quarantineScope: "none",
     partitionIgnore: ["pnpm-lock.yaml"],
   },
@@ -204,6 +205,7 @@ describe("the harness declaration schema", () => {
     expect(parsed.supervisor?.quarantineScope).toBe("none");
     // The other knobs survive the widening rather than being displaced by it.
     expect(parsed.supervisor?.maxParallel).toBe(4);
+    expect(parsed.supervisor?.killGraceMs).toBe(15_000);
     expect(parsed.supervisor?.partitionIgnore).toEqual(["pnpm-lock.yaml"]);
   });
 

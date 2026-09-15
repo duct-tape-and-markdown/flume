@@ -211,6 +211,7 @@ const supervisorShape = {
   maxParallel: z.number().int().positive().optional(),
   tickTimeoutMs: z.number().int().positive().optional(),
   abortThreshold: z.number().int().positive().optional(),
+  killGraceMs: z.number().int().positive().optional(),
   quarantineScope: z.enum(["run", "none"]).optional(),
   partitionIgnore: z.array(z.string().min(1)).optional(),
 } satisfies Record<keyof DeclaredSupervisor, z.ZodTypeAny>;

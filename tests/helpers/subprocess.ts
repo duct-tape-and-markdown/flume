@@ -464,3 +464,26 @@ export function pinGitAutoGcOff(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   env.GIT_CONFIG_COUNT = String(count + 1);
   return env;
 }
+
+/**
+ * Whether `pid` names a live process, by the probe signal every liveness
+ * check in the engine uses. ESRCH is the only reading of "gone": EPERM says
+ * the process is there and simply not ours to signal, and anything else is
+ * the caller's to see rather than a quiet `false`
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * Shared rather than restated per suite: the teardown suites assert over
+ * whole process *trees* (a tick child, the agent it spawned), so more than
+ * one file reads a pid this way and one errno decision governs them all.
+ */
+export function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return false;
+    if (code === "EPERM") return true;
+    throw err;
+  }
+}
