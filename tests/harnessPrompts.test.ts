@@ -629,7 +629,7 @@ it("each plan slice prompt's verdict on a plan state directory in place follows 
   await everySliceOverWrongKindAt("PLAN_STATE_PATH");
 });
 
-it("every plan slice prompt refuses when its open-questions artifact is a directory in place", async () => {
+it("each plan slice prompt's verdict on an open-questions directory in place follows whether its spans read that artifact", async () => {
   await everySliceOverWrongKindAt("QUESTIONS_PATH");
 });
 
