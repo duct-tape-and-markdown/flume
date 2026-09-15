@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "RUNNER-FAILING-FILES-DERIVED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/runner.ts", "description": "drop the restated field from RunResult" },
+        { "path": "harness/judge.ts", "description": "derive the verdict's failing files from run.failures" },
+        { "path": "harness/vitestRunner.ts", "description": "stop emitting the copy" },
+        { "path": "tests/harnessJudge.test.ts", "description": "the stand-in runner, and the derivation case" },
+        { "path": "tests/harnessRunner.test.ts", "description": "the real runner's assertion on the dropped field" },
+        { "path": "tests/harnessDeclaration.test.ts", "description": "the stub RunResult literal" }
+      ],
+      "retire": []
+    },
+    "summary": "Derive the judge's failingFiles from the run's failures; drop RunResult.failingFiles",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "acceptance": "RunResult carries no failingFiles; JudgeVerdict.failingFiles is computed from the failures the run reported, and the named-lines gate blames the same files it does today.",
+    "tests": [
+      "the judge names its failing files from the failures the run reported"
+    ],
+    "notes": "harness/runner.ts:84 asks every consumer's runner for a list harness/vitestRunner.ts:198 dedups straight off `failures`; harness/judge.ts:164 copies it onto the verdict and harness/chain.ts:425 onto GateResult.failingFiles, which src/priorAttempts.ts:153 keys suspectFlake on. A runner whose copy drifts from its failures silently changes the prior-attempt record. One judge-side derivation cannot disagree with its source."
+  }
+]

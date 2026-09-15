@@ -67,7 +67,8 @@
       "tests/helpers/vitestSetup.ts",
       "tests/helpers/dispatcherFixture.ts",
       "tests/harnessPackaging.test.ts",
-      "harness/index.ts"
+      "harness/index.ts",
+      "tests/harnessJudge.test.ts"
     ]
   }
 }
