@@ -1,48 +1,5 @@
 [
   {
-    "tag": "INBOX-SLICE-IS-LIVE-ON-A-RED-UNDRAINED-LANE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/windows.ts",
-          "description": "the inbox window's lane leg, beside the record and refusal legs"
-        },
-        {
-          "path": "harness/ci.ts",
-          "description": "the reader reports the run's identity and whether it failed, for the leg to compare against the stamp"
-        },
-        {
-          "path": "harness/prompts/plan-inbox.md",
-          "description": "the slice stamps the run it drained, as it stamps a cursor"
-        },
-        {
-          "path": "tests/harnessCi.test.ts",
-          "description": "the lane leg over the stub forge CLI: red past the stamp, red already stamped, green, unreadable"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "a declared lane never wakes the inbox slice, so a quiet tree hibernates over a red lane — and with no closing condition a woken lane would re-drain the same run every tick",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "CI lanes as a findings source"
-    },
-    "acceptance": "the inbox slice is live for a declared lane exactly when that lane's latest completed run for the tip's branch failed and is past the lane's stamp; a green run, an already-stamped run, and a lane it cannot read each make it live for nothing.",
-    "tests": [
-      "the inbox slice is live when a declared lane's latest completed run failed past the lane's stamp",
-      "the inbox slice is not live when the lane's failing run is the one already stamped",
-      "the inbox slice is not live when the lane's latest completed run passed",
-      "the inbox slice is not live when the forge CLI cannot read the lane"
-    ],
-    "pins": [],
-    "notes": "`PlanSliceWindow.live` is sync and runs on the selection path (planState.ts), so the lane read has a sync half — once per tick per lane, beside the render's. `SliceInputs` carries no working tree, so the liveness leg must read the branch at the same repo root the render does (`ci.ts`, *The branch is the repo's*) or the two readers name different runs. The agent writes the stamp as it writes a cursor, so the rendered block must name the run it would stamp."
-  },
-  {
     "tag": "CI-LANE-SHED-FRAMES-BY-THE-DECLARED-JOB-NAME",
     "gate": {
       "kind": "open"
@@ -104,70 +61,9 @@
     "notes": "Lane-observed: the `refuses` case rendered the real `gh`'s GH_TOKEN message, and the other four saw `calls().length === 0`. On win32 the stub is a `.cmd`, which a direct spawn skips; the search then walks on to the host's `gh.exe` further down PATH. The helper's own doc comment already states the isolation this breaks, and the absent-CLI case already shows the shape — PATH stripped to a single dir, the launcher naming `process.execPath` absolutely."
   },
   {
-    "tag": "DENIAL-IS-STRUCTURAL-NOT-A-PERMISSION-BIT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "tests/helpers/denial.ts",
-          "description": "the suite's denial primitive: a plain file where the code path reads a directory, a directory where it writes a file"
-        },
-        {
-          "path": "tests/denial.test.ts",
-          "description": "the helper's own cases"
-        }
-      ],
-      "edit": [
-        {
-          "path": "tests/friction.test.ts",
-          "description": "the frictionCountLine denial case onto the helper"
-        },
-        {
-          "path": "tests/loopSupervisor.test.ts",
-          "description": "the hibernation friction-line denial case onto the helper"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "eight denial cases — friction dir, jobs root, awake dir, pending.json, pidfile — onto the helper"
-        },
-        {
-          "path": "tests/cliJobVerbs.test.ts",
-          "description": "the friction-wording and null-awake denial cases onto the helper"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the merging-dir denial case onto the helper"
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "the unwritable-config case onto the helper"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`chmod(dir, 0o000)` is the suite's denial primitive and it denies nothing on win32, so a dozen loud-or-nothing refusal cases read as verified where they were never exercised",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "win32 is a supported host"
-    },
-    "acceptance": "every denial case with a structural substitute denies by shape rather than by a permission bit, so it runs on both hosts and survives a root-run; the moved titles stay green on posix and stop reading as green-over-nothing on win32.",
-    "tests": [],
-    "pins": [
-      "a structurally denied directory fails a readdir with a non-ENOENT error",
-      "a structurally denied file fails a write with a non-ENOENT error"
-    ],
-    "notes": "Ruled in the inbox (win32 lane subject); the fact is `.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*. `priorAttempts.test.ts` states the precedent and its reason at the site; `PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED` lands that one site's own fix, and adopts this helper if it ships second. Sites with no structural substitute are not moved here — see `A-POSIX-ONLY-CASE-DECLARES-ITS-HOST`."
-  },
-  {
     "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "DENIAL-IS-STRUCTURAL-NOT-A-PERMISSION-BIT"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -249,38 +145,6 @@
     "notes": "Lane-observed: all three failed `spawn git ENOENT`, which is win32 refusing a cwd past the limit rather than a missing git. The idiom is the one the section names and the cases already exercise on the engine side. `job new` pins `core.longpaths` repo-locally on win32; a fixture that inits its own repo wants the same."
   },
   {
-    "tag": "PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/priorAttempts.ts",
-          "description": "the silent arm takes absence from the path, not from an errno that means two things"
-        },
-        {
-          "path": "tests/priorAttempts.test.ts",
-          "description": "the obstructed-root case, asserted on the refusal rather than on a platform's errno"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "readAll reads `ENOENT` from the keyspace readdir as nothing-written, and on win32 a plain file at the prior-attempts root raises exactly that — an unreachable store reports as no records",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "acceptance": "an obstructed prior-attempts root refuses on every supported host, and only a genuinely absent path reads as no records.",
-    "tests": [],
-    "pins": [
-      "readAll refuses when a plain file sits at the prior-attempts root"
-    ],
-    "notes": "Lane-observed twice: `readAll refuses when the prior-attempts dir is present but unreadable` resolved `Map{}` on windows-latest where POSIX raises ENOTDIR. The doc comment on readAll already names this exact degradation as the one it refuses to make. No `tests[]`: the errno split is unreproducible on a POSIX base, so the windows lane's own title is the verification (`spec/cli.md`, *win32 is a supported host*). Sibling ENOENT-means-absent arms in src/job.ts are not yet lane-evidenced."
-  },
-  {
     "tag": "TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES",
     "gate": {
       "kind": "open"
@@ -312,6 +176,33 @@
       "the repo citation pin judges the repo-relative path citations src/, harness/ and tests/ comments carry",
       "the repo citation pin judges the unbackticked page names src/, harness/ and tests/ comments carry"
     ],
-    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges — one names `src/` alone — so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix."
+    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges — one names `src/` alone — so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix.",
+    "observedFiles": [
+      ".flume/plan/notes/TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES.md",
+      "tests/Dispatcher.test.ts",
+      "tests/Gate.test.ts",
+      "tests/PendingSchema.test.ts",
+      "tests/Prompt.test.ts",
+      "tests/builtinGates.test.ts",
+      "tests/chain.test.ts",
+      "tests/cli.test.ts",
+      "tests/cliHelp.test.ts",
+      "tests/cliJobResolution.test.ts",
+      "tests/commentCitations.test.ts",
+      "tests/docComments.test.ts",
+      "tests/examples.integration.test.ts",
+      "tests/examples.test.ts",
+      "tests/exportConsumers.test.ts",
+      "tests/git.test.ts",
+      "tests/harnessPrompts.test.ts",
+      "tests/helpers/chainVocabulary.ts",
+      "tests/helpers/commentCitations.ts",
+      "tests/helpers/exportGraph.ts",
+      "tests/job.test.ts",
+      "tests/paths.test.ts",
+      "tests/stubRunner.test.ts",
+      "tests/subprocessHelper.test.ts",
+      "tests/worktrees.test.ts"
+    ]
   }
 ]
