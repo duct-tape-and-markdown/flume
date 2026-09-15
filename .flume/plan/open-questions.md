@@ -499,6 +499,38 @@ ruling stands unchanged — but whoever rules should know the two surfaces want
 opposite pins, and that a single "pin the guide's defaults" entry therefore
 covers both bullets in one shape.
 
+**Seventh instance, and it rules out the cheapest option outright.** Drained
+from `FRICTION-LIST-STAT-REFUSAL-CLASSIFIED`'s note; verified on disk this
+tick. `docs/CLI.md` § `flume friction` closed at `69`, naming none of the
+verb's three `74` arms — and two of them (the named-note read, the bare list's
+readdir) shipped well before the entry that drained here. That is the second
+confirmed-stale section of the eleven, after § `flume tick` above.
+
+The note's own candidate was the cheap one: a gate asserting each
+`docs/CLI.md` verb section's exit-code set equals its `HELP_SUB` block's.
+`5850963` is the counterexample. `src/cliHelp.ts`'s friction block omitted
+`74` too — the commit adds it to both surfaces in one diff — so that gate
+would have been **green over this defect for as long as it existed**. Both
+copies drift together because one hand writes both in the commit that changes
+the behavior; that is the general case, not this instance's luck. A
+copy-to-copy comparison pins that the author was self-consistent and nothing
+else, which is the same door `bd75f27` closed. Rule it out.
+
+What did ship narrows the recommended option's price. `documentedExitCodes` is
+now a shared parser in `tests/cliHelp.test.ts`, and `flume friction` is the
+second verb whose help block is held by a real refusal driven through the real
+`--help`. But note where those pins land: **`--help` output, never
+`docs/CLI.md`.** Nothing in the suite reads a `docs/CLI.md` exit-code section —
+the one test that reads the page at all checks § `flume check` for a prose
+phrase. So the third copy this question is about is still unheld, in both
+confirmed-stale sections.
+
+One cost the estimate above understates: reaching `74` took a permission
+fixture (`chmod 0o444` on the channel dir), where § `flume tick`'s pin needed
+only a `TickOutcome` candidate table. The per-verb price is not uniform — some
+verbs' codes are reachable only through a real I/O failure, and that fixture is
+platform-shaped.
+
 ## Whether the engine's agent passes `--strict-mcp-config` (PARKED)
 
 Drained from the inbox (2026-09-14, consumer-chain survey); verified on disk
