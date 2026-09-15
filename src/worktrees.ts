@@ -126,23 +126,39 @@ export type WorktreeRegistry =
  *
  * Paths are resolved absolute before they enter the set: git prints its own
  * absolute spelling, which need not match a caller's character for character.
+ *
+ * `-z` is the form that can carry those paths: `--porcelain` alone separates
+ * its fields by newline and never escapes the path, so a worktree whose path
+ * holds a newline arrives split across two records and a trailing-space path
+ * arrives trimmed — each a *different* path silently entering the set in
+ * place of the one git named (`.claude/rules/engineering.md`, *Loud or
+ * nothing*), and every caller here judges membership by exact match: an
+ * occupied path the mangled spelling misses is refused as a directory git
+ * does not own, and residue the sweep would have removed is left standing.
+ * Under `-z` every field is NUL-terminated instead, so the path is whatever
+ * lies between the `worktree ` prefix and the next NUL, verbatim. (`-z` for
+ * `worktree list` needs git >= 2.36.)
  */
 export async function readWorktreeRegistry(
   repoRoot: string,
 ): Promise<WorktreeRegistry> {
   let stdout: string;
   try {
-    ({ stdout } = await execFileP("git", ["worktree", "list", "--porcelain"], {
-      cwd: repoRoot,
-      maxBuffer: 16 * 1024 * 1024,
-    }));
+    ({ stdout } = await execFileP(
+      "git",
+      ["worktree", "list", "--porcelain", "-z"],
+      {
+        cwd: repoRoot,
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    ));
   } catch (err) {
     return { read: false, reason: (err as Error).message };
   }
   const paths = new Set<string>();
-  for (const line of stdout.split("\n")) {
-    if (line.startsWith("worktree ")) {
-      paths.add(resolve(line.slice("worktree ".length).trim()));
+  for (const field of stdout.split("\0")) {
+    if (field.startsWith("worktree ")) {
+      paths.add(resolve(field.slice("worktree ".length)));
     }
   }
   return { read: true, paths };

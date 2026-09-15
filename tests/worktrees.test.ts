@@ -80,15 +80,23 @@ function collectingLogger(): Logger & { warnings: string[] } {
   };
 }
 
-/** Paths git currently considers a worktree of `repo`. */
+/**
+ * Paths git currently considers a worktree of `repo` — the independent read
+ * the probe's own result is judged against. NUL-separated, because
+ * `--porcelain` alone neither escapes nor quotes a path: a newline-bearing
+ * one arrives split across records there, so the reader a vacuity pin leans
+ * on would mangle exactly the paths these suites exist to carry.
+ */
 async function registeredWorktrees(repo: string): Promise<string[]> {
-  const { stdout } = await exec("git", ["worktree", "list", "--porcelain"], {
-    cwd: repo,
-  });
+  const { stdout } = await exec(
+    "git",
+    ["worktree", "list", "--porcelain", "-z"],
+    { cwd: repo },
+  );
   return stdout
-    .split("\n")
-    .filter((l) => l.startsWith("worktree "))
-    .map((l) => l.slice("worktree ".length).trim());
+    .split("\0")
+    .filter((f) => f.startsWith("worktree "))
+    .map((f) => f.slice("worktree ".length));
 }
 
 describe("worktrees — one lifecycle over one directory tree", () => {
@@ -513,4 +521,84 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     // reach for one and read absence out of a failure.
     expect(blind).not.toHaveProperty("paths");
   }, 30_000);
+
+  /**
+   * Register a worktree of the fixture repo at a path git spells verbatim,
+   * under the same base `createWorktree` provisions into — `git worktree
+   * add` is the real writer whose output the probe has to name back, and a
+   * path this odd is one `createWorktree`'s own slugified tag can never
+   * produce.
+   */
+  async function addWorktreeAt(name: string, branch: string): Promise<string> {
+    const path = join(worktreesBase(join(fx.repo, ".flume")), name);
+    await mkdir(dirname(path), { recursive: true });
+    await exec("git", ["worktree", "add", "-q", path, "-b", branch], {
+      cwd: fx.repo,
+    });
+    return path;
+  }
+
+  // Not win32: a control character is illegal in a path there, and trailing
+  // whitespace is stripped by path normalization before any file is created,
+  // so neither case can be built on that host.
+  const onPosix = process.platform !== "win32";
+
+  it.runIf(onPosix)(
+    "the worktree registry carries a newline-bearing path as the one path git named",
+    async () => {
+      const api = apiFor();
+      const odd = await addWorktreeAt("we ird\nnl", "flume/odd-newline");
+
+      // Vacuity pin, read off git's own list rather than the probe under
+      // test: git names the primary checkout and this worktree, and it names
+      // the odd one by its whole path.
+      const registered = await registeredWorktrees(fx.repo);
+      expect(registered.length).toBe(2);
+      expect(registered).toContain(odd);
+
+      const registry = await api.git.readWorktreeRegistry(fx.repo);
+      expect(registry.read).toBe(true);
+      if (!registry.read) throw new Error("unreachable: asserted above");
+
+      // Exactly what git named, path for path: nothing dropped, nothing
+      // invented.
+      expect([...registry.paths].sort()).toEqual(
+        registered.map((p) => resolve(p)).sort(),
+      );
+      expect(registry.paths.has(resolve(odd))).toBe(true);
+      // The spelling a newline-separated read leaves behind. Every caller
+      // judges membership by exact match, so this prefix standing in for the
+      // real path is an occupied path refused as git-unowned and residue the
+      // sweep declines to remove.
+      expect(registry.paths.has(resolve(odd.split("\n")[0]!))).toBe(false);
+    },
+    30_000,
+  );
+
+  it.runIf(onPosix)(
+    "the worktree registry keeps a worktree path's trailing whitespace",
+    async () => {
+      const api = apiFor();
+      const odd = await addWorktreeAt("trailing ", "flume/odd-trailing");
+
+      // Vacuity pin: git prints the trailing space, so the probe has
+      // something to lose.
+      const registered = await registeredWorktrees(fx.repo);
+      expect(registered.length).toBe(2);
+      expect(registered).toContain(odd);
+
+      const registry = await api.git.readWorktreeRegistry(fx.repo);
+      expect(registry.read).toBe(true);
+      if (!registry.read) throw new Error("unreachable: asserted above");
+
+      expect([...registry.paths].sort()).toEqual(
+        registered.map((p) => resolve(p)).sort(),
+      );
+      expect(registry.paths.has(resolve(odd))).toBe(true);
+      // The trimmed spelling names a directory that does not exist, and no
+      // caller's path ever matches it.
+      expect(registry.paths.has(resolve(odd.trimEnd()))).toBe(false);
+    },
+    30_000,
+  );
 });
