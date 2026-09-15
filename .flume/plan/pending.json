@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "ABSENT-QUEUE-TITLE-CLAIMS-A-REFUSAL-THE-HELPER-NEVER-ENTAILS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "retitle the PENDING_PATH absent case to the claim its body asserts, and rename the shared helper to name the fork it splits"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the absent-queue title names an unconditional refusal over a helper that is conditional by construction; the helper's own name is what keeps generating that title",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "the title names the two-branch claim the helper asserts, and the helper's name states that fork rather than the unconditional refusal its three callers kept inheriting",
+    "tests": [],
+    "pins": [
+      "each plan slice prompt's verdict on an absent queue follows whether its spans read that artifact"
+    ],
+    "notes": "Site: tests/harnessPrompts.test.ts:657 over everySliceOverAbsentArtifactAt (:649), both delegating to everySliceRefusesOn (:566) — refusal or clean render per spanSubstitutes. Third and last of the set; the PLAN_STATE_PATH and QUESTIONS_PATH siblings shipped at d8ea99c and 0aeed1a. All three plan prompts cat a PENDING_PATH span today, so the title reads true by accident. The rename lands the fix at the generator (engineering.md, *The fix lands at the mechanism*)."
+  }
+]
