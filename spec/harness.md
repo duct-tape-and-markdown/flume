@@ -158,7 +158,7 @@ one refuses the load naming the field and the valid set.
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
 | `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
 | `agents` | Model per phase, extra agent arguments, and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
-| `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore` — declared here so one file holds the environment and no knob is lost behind the factory. |
+| `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. |
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |
 | `slots` | Prompt slots the package renders into its prompts: an autonomy dial, domain context. Text only; a slot cannot add a directive the package's discipline already states. |

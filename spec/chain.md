@@ -337,15 +337,18 @@ resolved `flumeDir`, same idiom as `seedDir`.
 ## Supervisor policy is a chain-overridable default
 
 `Chain.supervisorPolicy?: { quarantineScope?: "run" | "none"; abortThreshold?:
-number; maxParallel?: number; tickTimeoutMs?: number; partitionIgnore?: string[] }`.
+number; maxParallel?: number; tickTimeoutMs?: number; partitionIgnore?: string[];
+killGraceMs?: number }`.
 The engine's loop policy — run-scoped quarantine of an
 entry slug whose worktree provisioning failed, abort after three consecutive
 identical failure signatures, fanout batch width, the per-invocation wall-clock
-cap, and the paths the fanout partition ignores — ships as **defaults, not
-behavior** (`superviseLoop`, `quarantineScope ?? "run"`,
-`abortThreshold ?? 3`; `runFanout`, `maxParallel ?? 4`; `tickTimeoutMs` default
-unset — no cap; `partitionIgnore` default `[]`). A chain declaring nothing gets
-the defaults byte-identically.
+cap, the paths the fanout partition ignores, and the grace a signalled release
+gives the in-flight tick tree before `SIGKILL` (`spec/loop.md`, *The loop lock
+and the tip claim*) — ships as **defaults, not behavior** (`superviseLoop`,
+`quarantineScope ?? "run"`, `abortThreshold ?? 3`; `runFanout`,
+`maxParallel ?? 4`; `tickTimeoutMs` default unset — no cap; `partitionIgnore`
+default `[]`; `killGraceMs ?? 5000`). A chain declaring nothing gets the
+defaults byte-identically.
 
 **The block's fields split by read scope, and the split is principled:**
 
@@ -367,6 +370,14 @@ the defaults byte-identically.
   handed to the partition, `spec/pending.md` *Fanout partition*). None
   accumulates run-scoped state, so there is nothing a mid-run change would
   corrupt — the per-tick chain reload governs.
+- **`killGraceMs` is read where the signal is sent.** On the loop path that is
+  the supervisor, which binds it once per run beside the run-scoped pair —
+  not because it accumulates anything, but because the supervisor is the
+  process that signals and it resolves the chain once; a mid-run change is
+  not seen until `flume loop` restarts, and that is stated here rather than
+  silent. A bare `flume tick` reads it off its own chain for the one teardown
+  it may perform: the block is named for the supervisor, and the bare tick
+  applies the same release with the same value.
 
 `tickTimeoutMs` is the wall-clock cap `DispatcherOptions.tickTimeoutMs`
 already enforces per agent invocation (exceeded → the invocation is aborted
