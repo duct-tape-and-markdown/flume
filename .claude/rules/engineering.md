@@ -37,10 +37,14 @@ Every check lives at the most deterministic layer that can express it — a
   harness's own prose is written is harness governance, which this page does
   not administer; a suite that reads prose against prose is that governance
   wearing engine discipline, and every section here becomes a generator
-  against it. The one carve-out is prose that compiles into the package's
-  public types: a doc comment reachable from the `exports` map's `.d.ts` is
-  the hover text a chain author reads, so it is engine surface and may be
-  pinned. Prose the package never ships stays with its authors.
+  against it. Two carve-outs, both reading prose against the program rather
+  than against prose. A doc comment reachable from the `exports` map's
+  `.d.ts` is the hover text a chain author reads, so it is engine surface and
+  may be pinned for what it says. And a backticked identifier in a `src/` or
+  `harness/` comment is a reference, not a sentence: a pin may resolve it
+  against the declarations those trees hold — the token, never its meaning —
+  so a deleted symbol cannot leave its citations standing. Prose the package
+  never ships, read for what it says, stays with its authors.
 
 **Why:** a defence that lives only in prose is one forgetful tick from
 being no defence at all; leaving it there when a rung above is available is
