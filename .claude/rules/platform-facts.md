@@ -166,3 +166,31 @@ open and stalled a whole fanout wave.
 Pass `--strict-mcp-config` so a tick loads only the MCP configuration the
 chain hands it. Whether the engine passes it by default is an open engine
 question; until it does, a chain passes it in `extraArgs`.
+
+## Git quotes porcelain output per subcommand and per config; `-z` is the one spelling right everywhere
+
+Measured on git 2.43. `status --porcelain` C-quotes and octal-escapes a path
+with a trailing space or a non-ASCII byte; `worktree list --porcelain` prints
+both raw (git 2.36's release note calls that a defect worked around by `-z`);
+`show --name-only` leaves a space raw, quotes a non-ASCII byte unless
+`core.quotePath=false`, and quotes a control character either way. A reader
+assuming v1 quoting is wrong at one subcommand and a reader assuming raw bytes
+is wrong at another.
+
+Read every porcelain-shaped output NUL-separated (`-z`) and never parse quoting
+by hand. `worktree list -z` is git 2.36+, which is the engine's git floor
+(`spec/chain.md`, *The package a chain loads through*).
+
+## Git pathspecs over-match, and the literal spelling depends on position
+
+A pathspec is matched literally first and then as a glob, so a name carrying a
+metacharacter matches itself *and* every glob sibling: `git add --
+'.flume/jobs/a*'` stages `.flume/jobs/ab/` beside it. A test asserting only
+that the named path was staged reads green on both sides. Three spellings make
+a pathspec literal, and they are not interchangeable: `--literal-pathspecs`
+is accepted by the main command only (`ls-tree` exits 129 on it),
+`GIT_LITERAL_PATHSPECS=1` applies to the whole invocation from anywhere, and
+`:(top,literal)<path>` applies to that one argument, anchored at the repo
+root. Compose git's pathspecs at one spelling and pin the over-match case,
+not the matched one.
+

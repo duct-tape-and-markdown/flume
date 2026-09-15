@@ -78,6 +78,12 @@ X" whose X is observable now. The sweep domain for this lens includes
 `.flume/chain.ts` and `.flume/PROTOCOL.md`, which carry decisions no other
 lens reads.
 
+A further lens is **a repo-relative path composed with `node:path`**: a value
+the engine reports in git's alphabet (`stateRootRel`, a pathspec, a
+name-only line) joined or resolved through the host's separator before it
+reaches git again. Correct on posix by accident, wrong on win32 silently; the
+fold belongs at the one reporter, never at the composer.
+
 A further lens reads the engine from the consumer's side: **consumer
 restatement** (`engineering.md`, *A fact the engine holds is reported*). The
 consumers this repo carries are `examples/` and `.flume/chain.ts`; a

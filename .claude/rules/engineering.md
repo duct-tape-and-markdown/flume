@@ -117,6 +117,12 @@ is the failure mode that hides longest.
 - A gate whose selection may legitimately be empty asserts the empty case
   **explicitly**, in its own test. Vacuous-by-design is spelled, never
   inherited.
+- **A test's title is a claim its body asserts, in the stated direction.** A
+  title naming a subject the body never exercises as titled — "both throw"
+  over a `not.toThrow` — is the same failure with `n > 0`: the pin fired and
+  the subject was wrong. A `pins[]` line buys exactly a title, so a mislabelled
+  test reads as covering a property it never touched. Fileable against this
+  section wherever a build or sweep tick reads one.
 
 ## A seam gate reads what the real writer wrote
 
