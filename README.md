@@ -409,9 +409,10 @@ responsibility.
 
 ## Status
 
-**v0.1** — stable enough to depend on for a project that lives ≥3 months
+**v0.x** — stable enough to depend on for a project that lives ≥3 months
 without rework. The four core types (`Phase`, `Chain`, `Gate`, and the
-pending entry schema) carry the v0.x compatibility line.
+pending entry schema) carry the compatibility line; the current version is
+the one `package.json` and the top of [`CHANGELOG.md`](CHANGELOG.md) name.
 
 Pre-1.0 ships minor-version breaking changes when the public API surface
 needs to shift; patch versions never break. Each break lands with a
