@@ -50,7 +50,12 @@
       "examples/cascade-chain.ts",
       "harness/citeResolver.ts",
       "examples/backlog-groomer-chain.ts",
-      "examples/minimal-chain.ts"
+      "examples/minimal-chain.ts",
+      "harness/cli.ts",
+      "bin/execEntry.js",
+      "bin/flume.js",
+      "bin/flume-harness.js",
+      "bin/flume"
     ]
   }
 }
