@@ -176,9 +176,9 @@ describe("examples/prompts — every shipped prompt has a phase that names it", 
  * exists to close the footgun where a template hardcodes `.flume/` while the
  * dispatcher resolved a relocated root. A shipped example is a template a
  * consumer copies, so a literal there teaches the footgun rather than the
- * affordance, and two of the plan template's spans carry an `|| echo`
- * fallback: a miss renders as "(none)" and the tick plans blind instead of
- * refusing (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * affordance, and the plan template's spans carry `|| echo` fallbacks: a
+ * miss renders as "(none)" and the tick plans blind instead of refusing
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * Agreement gate (`engineering.md`, *A seam gate reads what the real writer
  * wrote*): the real reader is the engine's `renderPrompt` over the shipped
@@ -206,6 +206,19 @@ describe("examples/prompts — the spans read the injected state root", () => {
         .flatMap((c) => c.phases)
         .find((p) => p.promptPath === `prompts/${file}`),
     }));
+
+  /**
+   * Every inline-exec span across the shipped set, paired with the template
+   * that carries it — one sweep, read by every absence pin below
+   * (`engineering.md`, *The fix lands at the mechanism*: detection a sibling
+   * surface already performs is shared, never re-derived beside it).
+   */
+  const allSpans = shipped.flatMap(({ file }) =>
+    [...readFileSync(join(PROMPT_DIR, file), "utf8").matchAll(SPAN)].map((m) => ({
+      file,
+      cmd: m[1]!,
+    })),
+  );
 
   /**
    * The artifacts a template's spans read under the state root. The queue's
@@ -351,16 +364,57 @@ describe("examples/prompts — the spans read the injected state root", () => {
   });
 
   it("no span in a shipped example prompt names a literal .flume/ path", () => {
-    const spans = shipped.flatMap(({ file }) =>
-      [...readFileSync(join(PROMPT_DIR, file), "utf8").matchAll(SPAN)].map((m) => ({
-        file,
-        cmd: m[1]!,
-      })),
-    );
     // Non-vacuity: a prompt set with no spans at all satisfies the absence.
-    expect(spans.length).toBeGreaterThan(0);
+    expect(allSpans.length).toBeGreaterThan(0);
 
-    expect(spans.filter((s) => s.cmd.includes(".flume/"))).toEqual([]);
+    expect(allSpans.filter((s) => s.cmd.includes(".flume/"))).toEqual([]);
+  });
+
+  /**
+   * `.claude/rules/engineering.md`, *An export earns its consumer* — the
+   * `specs/active` / `specs/_aligned` partition belonged to the `spec` phase
+   * cut in 58092d0. The fence and the phase list lost it there; the plan
+   * template did not, and nothing went red: a `find` over a missing directory
+   * exits non-zero behind `head`, whose zero the pipeline reports, so both
+   * spans rendered empty and the trailing `|| echo` never fired
+   * (`spec/prompt.md`, *An unresolved inline-exec span fails the tick*: exit
+   * status decides). Residue a reader cannot see is residue a test has to.
+   */
+  it("no shipped example prompt spans the retired specs/active or specs/_aligned partition", () => {
+    // Non-vacuity: a prompt set with no spans at all satisfies the absence.
+    expect(allSpans.length).toBeGreaterThan(0);
+
+    expect(
+      allSpans.filter((s) => /specs\/(?:active|_aligned)\b/.test(s.cmd)),
+    ).toEqual([]);
+  });
+
+  /**
+   * Agreement pin (`engineering.md`, *A seam gate reads what the real writer
+   * wrote*): one corpus root, declared twice. The chain spells it to the
+   * planning agent through `entryExtension.per`'s hint; the template spells
+   * it again in the span that indexes the corpus that agent cites into. Both
+   * sides are read from what ships — the hint off the real factory's chain,
+   * the span off the real markdown — so a root moved on one side is red
+   * rather than a listing the agent quietly plans without.
+   */
+  it("the plan template's corpus span reads the root the cascade per hint names", () => {
+    const hint = cascadeChain.entryExtension?.per?.hint;
+    expect(hint, "cascade declares a `per` field carrying a hint").toBeDefined();
+    // The hint spells a path under the corpus root: `specs/.../foo.md`.
+    const root = /([A-Za-z0-9_.-]+)\/\.\.\./.exec(hint!)?.[1];
+    expect(root, `a corpus root is readable from the per hint: ${hint}`).toBeDefined();
+
+    const planSpans = allSpans
+      .filter((s) => s.file === "plan.md")
+      .map((s) => s.cmd);
+    // Non-vacuity: a template carrying no spans satisfies any claim about one.
+    expect(planSpans.length).toBeGreaterThan(0);
+
+    const naming = planSpans.filter((cmd) =>
+      new RegExp(`(?:^|[^A-Za-z0-9_./-])${root}(?![A-Za-z0-9_.-])`).test(cmd),
+    );
+    expect(naming).toHaveLength(1);
   });
 });
 

@@ -16,13 +16,9 @@
 !`ls "{{FLUME_DIR}}"/inbox/*.md 2>/dev/null || echo "(drained)"`
 </inbox>
 
-<active-specs>
-!`find specs/active -name '*.md' 2>/dev/null | sort | head -60 || echo "(no specs/active)"`
-</active-specs>
-
-<aligned-specs>
-!`find specs/_aligned -name '*.md' 2>/dev/null | sort | head -60 || echo "(no specs/_aligned)"`
-</aligned-specs>
+<spec-corpus>
+!`find specs -name '*.md' | sort | head -60`
+</spec-corpus>
 
 <tsc>
 !`pnpm tsc --noEmit 2>&1 | tail -15 || true`
