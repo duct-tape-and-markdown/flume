@@ -1,42 +1,5 @@
 [
   {
-    "tag": "RUN-AT-BASE-USES-THE-ENGINE-CHECKOUT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/vitestRunner.ts",
-          "description": "the base checkout comes from the api; its own worktree plumbing goes"
-        },
-        {
-          "path": "tests/harnessRunner.test.ts",
-          "description": "the base run over an engine-supplied checkout, driven inside a gate checkout scope"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The vitest runner's base run takes its detached checkout from the engine instead of provisioning its own",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a gate receives"
-    },
-    "acceptance": "`runAtBase` adds and removes no worktree of its own — the checkout is the API's and the engine reclaims it.",
-    "tests": [
-      "runAtBase takes its base checkout from the engine's api rather than adding a worktree"
-    ],
-    "pins": [],
-    "notes": "`checkoutAt` refuses outside a gate scope, but runtime is already scoped: `namedLinesGate` (harness/chain.ts) runs through `Dispatcher.runGate`, which opens `withGateCheckouts`. The prior attempt reverted because tests/harnessRunner.test.ts drives `runAtBase` directly — wrap those drives in `withGateCheckouts` (src/worktrees.ts), no new seam. The addWorktree/removeWorktree/base-join block at harness/vitestRunner.ts:248-295 is what leaves; adopting also reaches the chain-declared base.",
-    "observedFiles": [
-      ".flume/plan/notes/RUN-AT-BASE-USES-THE-ENGINE-CHECKOUT.md",
-      "harness/vitestRunner.ts",
-      "tests/harnessRunner.test.ts"
-    ]
-  },
-  {
     "tag": "CHECKOUT-AT-PLANTS-UNDER-THE-JOB-NAMESPACE",
     "gate": {
       "kind": "open"
@@ -70,6 +33,12 @@
       "a namespaced job's checkoutAt plants under the namespace directory the startup sweep reads"
     ],
     "pins": [],
-    "notes": "`checkoutAt` plants at the bare `worktreesBase`; `sweepStaleWorktrees` scans `<base>/<ns>` when namespaced, so the residue `checkoutAt`'s own doc promises is reclaimed is never read. The scope `withGateCheckouts` opens already carries one dispatcher-known value (`declaredWorktreesBase`) — the namespace is `this.opts.namespace` at the same call site, src/Dispatcher.ts:3902. Bites under a shared FLUME_WORKTREES_DIR."
+    "notes": "`checkoutAt` plants at the bare `worktreesBase`; `sweepStaleWorktrees` scans `<base>/<ns>` when namespaced, so the residue `checkoutAt`'s own doc promises is reclaimed is never read. The scope `withGateCheckouts` opens already carries one dispatcher-known value (`declaredWorktreesBase`) — the namespace is `this.opts.namespace` at the same call site, src/Dispatcher.ts:3902. Bites under a shared FLUME_WORKTREES_DIR.",
+    "observedFiles": [
+      "src/Dispatcher.ts",
+      "src/flumeApi.ts",
+      "src/worktrees.ts",
+      "tests/Dispatcher.test.ts"
+    ]
   }
 ]
