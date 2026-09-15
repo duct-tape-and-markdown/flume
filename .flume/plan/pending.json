@@ -54,5 +54,33 @@
       "every guarded artifact the cold-root case renders is substituted by at least one plan slice prompt"
     ],
     "notes": "Sites: tests/harnessPrompts.test.ts:522+532 and :553+561 -- `if (!spanSubstitutes(...)) continue` closed by a bare `asserted > 0`. promptsReadingEachArtifact (:293) is the mechanism, but it reads PHASES; a plan-slice-scoped view is what these two want, so build's span counts here cannot cover for a plan slice's. Examples-side siblings already close with toBe(ARTIFACTS.length) (tests/examples.test.ts:684,719)."
+  },
+  {
+    "tag": "QUESTIONS-DIRECTORY-TITLE-CLAIMS-A-REFUSAL-THE-HELPER-NEVER-ENTAILS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "retitle the QUESTIONS_PATH wrong-kind case to the claim its body asserts, as its PLAN_STATE_PATH sibling now reads"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the open-questions-directory title names an unconditional refusal over a helper that is conditional by construction, true today only by accident",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "the title names the two-branch claim the helper actually asserts, so a slice losing its QUESTIONS_PATH span moves assertion and title together",
+    "tests": [],
+    "pins": [
+      "each plan slice prompt's verdict on an open-questions directory in place follows whether its spans read that artifact"
+    ],
+    "notes": "Site: tests/harnessPrompts.test.ts:502 over everySliceOverWrongKindAt (:453), whose per-slice verdict is refusal or clean render depending on spanSubstitutes. All three plan prompts substitute QUESTIONS_PATH today, so the title reads true; the moment one stops it claims a refusal the body asserts the absence of. Sibling shipped at d8ea99c; same helper, one `it` apart."
   }
 ]
