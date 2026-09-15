@@ -1,50 +1,5 @@
 [
   {
-    "tag": "CHAIN-COMPUTES-ITS-WORKTREE-BASE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "`Chain.worktreesBase?: (paths) => string`"
-        },
-        {
-          "path": "src/paths.ts",
-          "description": "the one resolution consults the declared value"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "evaluate it at load against the resolved roots"
-        },
-        {
-          "path": "tests/worktrees.test.ts",
-          "description": "creation and the startup sweep over a declared base"
-        },
-        {
-          "path": "tests/paths.test.ts",
-          "description": "the resolution order"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "A chain may declare how to compute its worktree base — a function of the resolved roots, evaluated at load, never a committed path literal",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Placement — the worktree base and the job namespace"
-    },
-    "acceptance": "A chain declaring `worktreesBase` moves creation, per-wave stale-slug removal and the startup sweep together, without an environment variable set before the engine's own module loads.",
-    "tests": [
-      "a chain-declared worktreesBase places the tick's worktree",
-      "the startup sweep reads the chain-declared base"
-    ],
-    "pins": [],
-    "notes": "A function, not a path: placement stays machine-local, and a committed literal is the wrong home. The one computation stays `worktreesBase` (src/paths.ts) — a second is the defect field-traced four times. `harness/vitestRunner.ts` reads the same resolution."
-  },
-  {
     "tag": "RUN-AT-BASE-USES-THE-ENGINE-CHECKOUT",
     "gate": {
       "kind": "open"
@@ -74,6 +29,11 @@
       "runAtBase takes its base checkout from the engine's api rather than adding a worktree"
     ],
     "pins": [],
-    "notes": "\"A differential gate never provisions its own\" is the ruling's second half; the named-lines judge is the differential gate and this runner is its only instance here. The `addWorktree`/`removeWorktree`/base-join block at harness/vitestRunner.ts:248-295 is what leaves."
+    "notes": "\"A differential gate never provisions its own\" is the ruling's second half; the named-lines judge is the differential gate and this runner is its only instance here. The `addWorktree`/`removeWorktree`/base-join block at harness/vitestRunner.ts:248-295 is what leaves.",
+    "observedFiles": [
+      ".flume/plan/notes/RUN-AT-BASE-USES-THE-ENGINE-CHECKOUT.md",
+      "harness/vitestRunner.ts",
+      "tests/harnessRunner.test.ts"
+    ]
   }
 ]
