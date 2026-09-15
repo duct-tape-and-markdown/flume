@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "tag": "CITATION-SUBJECT-RULE-DOTTED-AND-MIXED-CASE",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "the subject rule and the reason it states"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "fixture spans for the admitted shapes; the external vocabulary"
+        }
+      ]
+    },
+    "summary": "Widen the comment-citation subject rule to dotted and mixed-case spans; 192 more citations judged, including Phase.handoff and Dispatcher",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "The scan judges dotted and mixed-case spans, the repo pin stays green over the widened set, and every new exclusion is named with its own reason.",
+    "tests": [
+      "the citation scan judges a dotted citation whose segments carry no internal capital",
+      "the citation scan judges a leading-capital citation whose name carries no internal capital"
+    ],
+    "pins": [
+      "the citation scan judges neither a single lowercase word nor an all-caps word"
+    ],
+    "notes": "Measured on this tree: judged 1124 -> 1316, dangling 7 distinct / 11 sites, zero prose pulled in. New exclusions: cmd.exe, engineering.md, fs.rm, scripts.lint, sysexits.h, tsconfig.build.json. Judgment call for build: engineering.md and tsconfig.build.json are repo files outside the judged trees, so EXTERNAL_VOCABULARY's stated reason (no rung here can hold it) does not fit them - give them their own reason or resolve them."
+    }
+]
