@@ -56,7 +56,20 @@
       "a chain-declared kill grace, not the engine default, bounds a signalled loop's wait on its tick tree"
     ],
     "pins": [],
-    "notes": "Landed at 54f8e4c: the abort reaches the tick child and the run settles on its exit. Missing: the group, the escalation, the knob. `detached` takes the child out of the terminal's foreground group, so Ctrl-C reaches the supervisor alone and the handler's signal is the only path down; `defaultTickRunner`'s default-disposition paragraph is narration the escalation retires. POSIX arms declare their host. `spec/chain.md` does not yet name the sixth knob — question filed."
+    "notes": "Landed at 54f8e4c: the abort reaches the tick child and the run settles on its exit. Missing: the group, the escalation, the knob. `detached` takes the child out of the terminal's foreground group, so Ctrl-C reaches the supervisor alone and the handler's signal is the only path down; `defaultTickRunner`'s default-disposition paragraph is narration the escalation retires. POSIX arms declare their host. `spec/chain.md` does not yet name the sixth knob — question filed.",
+    "observedFiles": [
+      ".flume/plan/notes/A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE.md",
+      "harness/declaration.ts",
+      "src/Phase.ts",
+      "src/cli.ts",
+      "src/loopSupervisor.ts",
+      "src/processTree.ts",
+      "tests/cli.test.ts",
+      "tests/docComments.test.ts",
+      "tests/harnessDeclaration.test.ts",
+      "tests/helpers/subprocess.ts",
+      "tests/processTree.test.ts"
+    ]
   },
   {
     "tag": "A-BARE-TICK-TAKES-ITS-AGENT-DOWN-THE-SAME-WAY",
@@ -254,90 +267,6 @@
       "the repo citation pin judges the unbackticked page names src/, harness/ and tests/ comments carry"
     ],
     "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges — one names `src/` alone — so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix."
-  },
-  {
-    "tag": "A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the hook-refusal case's four negatives read the render-refused arm's own prose rather than the whole rendered prompt"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the four negatives at the hook-refusal case assert over the whole rendered prompt, so the case reds for any entry tag the worktree path spells into the quoted stack",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "acceptance": "each negative names the subject its title names — the prior-attempt block's own render-refused prose — so the case's verdict no longer turns on what the tick's worktree is called.",
-    "tests": [],
-    "pins": [
-      "the render-refused prior-attempt block does not send a hook-refused retry to fix an inline-exec span"
-    ],
-    "notes": "Build-observed: tests/Dispatcher.test.ts:16722-16725 `not.toMatch` over `retry`, the whole prompt. The `<prior-attempt>` block quotes the hook's stack, whose absolute frames are the worktree path, and a worktree is named after the entry tag — so the tag INLINE-EXEC-CAP-ABORT-AWAITS-ITS-KILLED-CHILD red it for that entry's whole fork, green in the trunk checkout. Scope the negatives; never constrain tags."
-  },
-  {
-    "tag": "PRIOR-ATTEMPT-PROSE-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/priorAttempts.ts",
-          "description": "`isDirectoryOrAbsent`'s doc and `readAll`'s each shrink to a cite of the section that owns the fact, keeping the decision each states"
-        },
-        {
-          "path": "tests/priorAttempts.test.ts",
-          "description": "`refusalOf`'s doc and the obstructed-ancestor case's comment, same shrink"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "four sites spell out the ENOTDIR/ENOENT split `platform-facts.md` now owns, so one measured external fact is held in five prose copies that can drift apart",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "every site turning on the two stat facts points at the section that owns them rather than restating it, and each keeps the decision it exists to state.",
-    "tests": [],
-    "pins": [],
-    "notes": "The leftovers DENIAL-HELPER-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS named, handed back by the ruling and re-verified on disk: src/priorAttempts.ts ~104 (cites *Loud or nothing* for the posture, not the page for the fact) and ~373 (no cite); tests/priorAttempts.test.ts ~369 (cites the neighbouring *chmod denies nothing on win32*) and ~412 (no cite). src/fsProbe.ts ~22 already cites it and declares its bound — out of scope. Collides with MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH on both files."
-  },
-  {
-    "tag": "DENIAL-HELPER-CARRIES-THE-EXCEPTION-THE-PAGE-NOW-NAMES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/denial.ts",
-          "description": "the never-deny-a-parent paragraph shrinks to a pointer carrying the amended section's exception"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the denial helper's head comment states never-deny-a-parent flatly — a rung-below copy the amended platform-facts section now contradicts at two live call sites",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "the paragraph points at the section that owns the rule and carries its converse, so an author writing a descent case is not sent to un-arm it.",
-    "tests": [],
-    "pins": [],
-    "notes": "Verified on disk: tests/helpers/denial.ts:15 states the rule flatly, while tests/Dispatcher.test.ts:4908 (denyDirectory(flumeDir)) and tests/fsProbe.test.ts's descent cover deny a parent on purpose. 51b3ae7 amended platform-facts, *win32 reports a path through a non-directory as not found*. The denyAncestor helper the closed question floated is unruled and out of scope. Moves prose, claims no property — no tests[], no pins[]."
   },
   {
     "tag": "EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER",
