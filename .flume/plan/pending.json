@@ -1,85 +1,5 @@
 [
   {
-    "tag": "SPAN-RENDERING-CASES-DECLARE-THE-LANE-BUDGET",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/spawnBudget.ts",
-          "description": "the seed gains the engine entry a case's spans start a shell through"
-        },
-        {
-          "path": "tests/subprocessHelper.test.ts",
-          "description": "the fixture proving the widened seed fires, beside the lane's own assertion"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "the span-rendering cases the widened scan reports declare the shared budget"
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      ".flume/plan/notes/SPAN-RENDERING-CASES-DECLARE-THE-LANE-BUDGET.md",
-      "tests/Prompt.test.ts",
-      "tests/examples.test.ts",
-      "tests/harnessBuildArgs.test.ts",
-      "tests/harnessChain.test.ts",
-      "tests/harnessPrompts.test.ts",
-      "tests/helpers/spawnBudget.ts",
-      "tests/priorAttempts.test.ts",
-      "tests/subprocessHelper.test.ts"
-    ],
-    "summary": "a default-lane case whose subject is inline-exec spans starts a shell per span, inherits vitest's 5s default, and the budget scan is blind to it",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "The default test lane must stay fast"
-    },
-    "acceptance": "the spawn scan reports a default-lane case that renders inline-exec spans, and every site it reports declares the shared budget.",
-    "tests": [
-      "the spawn scan reports a case that renders inline-exec spans without a declared budget"
-    ],
-    "pins": [],
-    "notes": "Observed: tests/examples.test.ts's unreadable-artifact case timed out at vitest's 5s under full-suite contention, ~650ms alone. `sh` is no node launcher and the scan never follows an import, so NODE_COMMANDS cannot reach it — seed the render entry the spans go through, declared where NODE_COMMANDS is. The afterMerge gate runs this lane once per cherry-picked entry, so the flake reverts an innocent entry."
-  },
-  {
-    "tag": "CI-LANE-LOG-SHEDS-ITS-FORGE-DECORATION",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/ci.ts",
-          "description": "the failing job's log sheds the forge's per-line framing before the tail trim"
-        },
-        {
-          "path": "tests/harnessCi.test.ts",
-          "description": "the shed, and the budget counting log lines, over the stub forge CLI"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "a failing lane's log arrives with every line carrying the forge's job/step/timestamp prefix and ANSI codes, so the window's budget buys decoration instead of failing titles",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "CI lanes as a findings source"
-    },
-    "acceptance": "the rendered lane block carries a failing job's log without the forge's per-line framing or ANSI codes, and the line budget is spent on log lines.",
-    "tests": [
-      "a failing lane's log arrives without the forge's per-line job and step framing",
-      "a failing lane's log arrives without ANSI escape sequences"
-    ],
-    "pins": [],
-    "notes": "Measured on the windows lane's 2026-09-15 run: ~1268 lines trimmed against the window's 1200-line budget, and 8 of the drained failures were keyable only by file:line because their titles sat in the trimmed head. Decoding the forge's own line framing is the package's GitHub-Actions opinion, beside `FORGE_CLI` — not a finding parsed out of the log. A lane-specific budget knob was the alternative; shedding needs no new surface."
-  },
-  {
     "tag": "INBOX-SLICE-IS-LIVE-ON-A-RED-UNDRAINED-LANE",
     "gate": {
       "kind": "open"
@@ -121,38 +41,6 @@
     ],
     "pins": [],
     "notes": "`PlanSliceWindow.live` is sync and runs on the selection path (planState.ts), so the lane read has a sync half — once per tick per lane, beside the render's. `SliceInputs` carries no working tree, so the liveness leg must read the branch at the same repo root the render does (`ci.ts`, *The branch is the repo's*) or the two readers name different runs. The agent writes the stamp as it writes a cursor, so the rendered block must name the run it would stamp."
-  },
-  {
-    "tag": "FIXTURE-ROOTS-SPEAK-GITS-PATH-ALPHABET",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/dispatcherFixture.ts",
-          "description": "the fixture root is canonicalized before anything composes a path from it"
-        },
-        {
-          "path": "tests/harnessRunner.test.ts",
-          "description": "the runner fixture's own mkdtemp root, same treatment"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "fixture roots come from `mkdtemp(tmpdir())` uncanonicalized, so every assertion comparing a composed path against git's worktree registry reads two spellings of one directory",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "acceptance": "a fixture's repo root is the spelling git reports for it, and the registry assertions hold on a host whose temp dir is reached through a link.",
-    "tests": [
-      "a fixture repo root is the path git reports for it, not the spelling the temp dir was named by"
-    ],
-    "pins": [],
-    "notes": "17 of the windows lane's 44 reds, in Dispatcher/worktrees/harnessRunner: expected `C:\\Users\\RUNNER~1\\...` against git's `C:\\Users\\runneradmin\\...`. The engine is not implicated — the reds are vacuity pins and registry-membership filters comparing the tester's spelling against the real writer's. Same class on macOS (`/var` -> `/private/var`), which is how the named test goes red on a POSIX base: drive the fixture with a temp root reached through a symlink."
   },
   {
     "tag": "PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED",
