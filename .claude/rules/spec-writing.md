@@ -62,9 +62,12 @@ satisfy; the artifact holds the value.
 ## A heading is an identifier
 
 `per.section` is the exact heading text, and the `per cites resolve` gate
-refuses a queue whose cite does not resolve. Renaming or splitting a
-heading re-homes every entry and question that cites it — do it, but in
-the same commit sweep the citing surfaces, and say so in the body.
+refuses a queue whose cite does not resolve or names a text the file heads
+twice (`spec/harness.md`, *The cite resolver*) — so the duplicate half is
+the gate's, not the author's. What stays the author's: renaming or splitting
+a heading re-homes every entry and question that cites it, and no gate reads
+those surfaces — do it, but in the same commit sweep them, and say so in the
+body.
 
 One topic per section, sized so a build tick can read it whole as the
 entry's *why*.
