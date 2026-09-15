@@ -874,3 +874,47 @@ Parked rather than filed: every option starts with a `spec/jobs.md` edit, and
 the first also needs a boundary ruling on a `Chain` field the engine never
 reads. Related but distinct from *The runtime ignore list has three unpinned
 copies* — that one is about the list's prose copies, this one about its writers.
+
+## The package guarantees every substituted value is inert, and no spec sentence says so (NEEDS AMENDMENT)
+
+Drained from `HARNESS-ADOPT-PROMPT-DATA-KEYS`'s note; verified on disk this
+tick. `spec/harness.md`, *The prompts and their discipline*, states exactly one
+property of the shipped prompts — the no-commit vocabulary comes from the
+engine's own declaration. The package now holds a second, stronger one that
+the section does not mention: **every key the factory's phases substitute is
+declared as data**, so the engine neutralizes inline-exec spans in all of them
+before stage 2 scans (`spec/prompt.md`, *The render pipeline*).
+
+Held mechanically, not by prose. `SHARED_PROMPT_DATA_KEYS` (13 keys),
+`BUILD_PROMPT_DATA_KEYS` (5) and `SLICE_DATA_KEYS` (one entry per slice) are
+typed as their producers' return types, so an undeclared key fails the
+typecheck at the object literal; `harness/chain.ts:236,299` spread them into
+`promptDataKeys`; and `tests/harnessChain.test.ts:408` reads the keys off a
+real `promptArgs` call rather than a list it spells. So this is a
+spec-coverage gap in the contract, not an unheld property.
+
+**Why the contract should carry it anyway.** `slots` (`harness/declaration.ts`)
+lets a consumer hand the package free prose — `autonomy`, `domain` — which the
+package substitutes into every prompt it renders. A consumer whose slot text
+quotes the span grammar has it reach the agent inert, and nothing it can read
+says that. The same guarantee covers the package's own composed values: a
+rendered schema, an entry's `summary`, and `PER_SECTION_TEXT` — which is
+routinely the very spec section *documenting* the grammar.
+
+Where the sentence lands:
+
+- **A clause in *The prompts and their discipline*** (recommended), beside the
+  no-commit-vocabulary sentence: both are properties of what the package
+  renders, and the guarantee is universal — every key, package-composed and
+  consumer-supplied alike.
+- **On the slot surface in *What a consumer declares*.** Narrower, and it
+  reads as if only slot text were protected, leaving the package's own
+  substitutions looking unguarded. Understates a guarantee that is total.
+
+**Recommend the first**, cross-referenced to `spec/prompt.md`'s *The render
+pipeline* so the engine half and the package half each name the other: the
+engine states that a phase substituting content it did not author declares
+those keys; the package states that it always does, for every key.
+
+Held here rather than filed because the fix is one sentence in `spec/`, and
+`spec/` is the human's alone.
