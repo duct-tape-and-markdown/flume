@@ -1,5 +1,54 @@
 [
   {
+    "tag": "HARNESS-PLAN-PROMPT-SPANS-PLACEHOLDER-OVER-UNREAD-ARTIFACT",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/prompts/plan-derive.md", "description": "guard the plan-state and questions-index spans; absence takes the placeholder, a failed read refuses" },
+        { "path": "harness/prompts/plan-sweep.md", "description": "same two spans" },
+        { "path": "harness/prompts/plan-inbox.md", "description": "the questions-index span" },
+        { "path": "tests/harnessPrompts.test.ts", "description": "refusal cases over the wrong kind in place; cold-root and no-headings pins" }
+      ],
+      "retire": []
+    },
+    "summary": "the package's plan-slice prompts answer an unreadable plan-state or questions artifact with the same placeholder they answer an absent one with",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "A plan slice whose plan-state or questions artifact exists but cannot be read renders no placeholder — the tick refuses as render-refused",
+    "tests": [
+      "every plan slice prompt refuses when its plan state artifact is a directory in place",
+      "every plan slice prompt refuses when its open-questions artifact is a directory in place"
+    ],
+    "pins": [
+      "a cold state root renders every plan slice prompt's placeholder as its block's whole content",
+      "a questions file carrying no headings renders the plan slices' none-open placeholder"
+    ],
+    "notes": "Sites: plan-derive.md:12,16; plan-sweep.md:8,16; plan-inbox.md:16. Reproduced: `cat P 2>/dev/null || echo` and `grep -n '^## ' P || echo` both exit 0 with the placeholder over a directory in place. The idiom shipped at c26e8fd (examples/prompts/plan.md:4) transfers for `cat`. `grep` needs its exit 1 (file read, no headings) kept legitimate and its exit 2 loud — hence the second pin. harness/planState.ts readPlanState already draws exactly this line ENOENT-vs-throw."
+  },
+  {
+    "tag": "ODD-ROOT-ARTIFACT-TABLES-DROP-A-MISSED-DETECTOR-GREEN",
+    "gate": { "kind": "open" },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "tests/harnessPrompts.test.ts", "description": "per-artifact coverage pin on the odd-root loop" },
+        { "path": "tests/examples.test.ts", "description": "same on the odd-root loop at :453" }
+      ],
+      "retire": []
+    },
+    "summary": "the odd-root loops skip an artifact whose detector matches no span and pin only asserted>0, so a table entry can stop being covered green",
+    "per": { "path": ".claude/rules/engineering.md", "section": "A green verdict is proven non-vacuous" },
+    "acceptance": "Breaking one artifact's detector in either table reds the default lane instead of silently narrowing the judged set",
+    "tests": [],
+    "pins": [
+      "every artifact in the harness prompt odd-root table is read by at least one shipped prompt",
+      "every artifact in the example prompt odd-root table is read by at least one shipped template"
+    ],
+    "notes": "Sites: tests/harnessPrompts.test.ts:294-309 (`if (!spanSubstitutes(...)) continue`, then `asserted > 0`); tests/examples.test.ts:452-469 (`if (reads.length === 0) continue`). The stronger pin already sits in the same file at examples.test.ts:656,691 and was not shared with its siblings (`engineering.md`, *The fix lands at the mechanism*). Equality with table length is wrong here — an artifact several prompts read counts several times; the property is per-artifact coverage."
+  },
+  {
     "tag": "CHAIN-AUTHORING-QUOTES-CASCADE-SLICEPHASE-UNPINNED",
     "gate": {
       "kind": "open"
