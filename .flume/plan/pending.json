@@ -1,1 +1,54 @@
-[]
+[
+  {
+    "tag": "CHECKOUT-AT-COMMENT-NAMES-THE-SHIPPED-ROUTE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/worktrees.ts",
+          "description": "checkoutAt's refusal paragraph: the gate-time contract, not an unexported escape hatch"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Trade `checkoutAt`'s doc-comment escape hatch for the gate-time contract the package ships",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "The comment on `api.git.checkoutAt` names no route the package does not export; the refusal reads as gate-time by design, per `spec/harness.md`, *The runner interface*.",
+    "tests": [],
+    "pins": [],
+    "notes": "`addWorktree`/`removeWorktree` (`src/git.ts`) are on neither `src/index.ts` nor `FlumeApi.git`, and `exports` reaches only `.` and `./harness` — the comment rides the shipped `.d.ts` and points at a route no consumer can take. `spec/harness.md` now rules the operation gate-time (0f9dfc8). `{@link}`s to internal symbols are TSDoc-normal and stay. Runtime unaffected: `namedLinesGate` runs through `runGate`, which opens the scope."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-MANAGED-STATE-POINTS-AT-THE-SPEC",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "shrink the Harness-managed state roster to a pointer"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Shrink the chain guide's **Harness-managed state** roster to a pointer at `spec/jobs.md`, *Runtime ignores*",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "acceptance": "The paragraph names no line of the ignore set and cites the section that owns it; the `plan/pending.json`/`Chain.pendingPath` and `sessions/` claims still read standing alone.",
+    "tests": [],
+    "pins": [],
+    "notes": "Ruled a copy this tick. The roster spells nine of ten `RUNTIME_IGNORES` names plus `plan/pending.json`, never ignored, and omits `node_modules/`, which is. Sibling of the `job new` bullet `CHAIN-AUTHORING-IGNORES-POINT-AT-THE-SPEC` shrank 45 lines below, which left this one standing pending the ruling. Pinning is off the table outside the `.d.ts` carve-out, so removing the copy is the whole fix."
+  }
+]
