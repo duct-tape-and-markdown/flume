@@ -398,12 +398,14 @@ it("the flume-harness bin adopts an empty repository against the published emit"
   );
   expect({ code: run.code, stderr: run.stderr }).toEqual({ code: 0, stderr: "" });
 
-  // The four artifacts *Adoption and upgrade* names, read off disk rather
-  // than off what the verb printed.
+  // The artifacts *Adoption and upgrade* names, read off disk rather than
+  // off what the verb printed.
   const stateRoot = join(adopt, ".flume");
   expect(existsSync(stateRoot)).toBe(true);
   const declaration = await readFile(join(stateRoot, "declaration.ts"), "utf8");
   expect(declaration).toContain('"@dtmd/flume/harness"');
+  const chain = await readFile(join(stateRoot, "chain.ts"), "utf8");
+  expect(chain).toContain("harnessChain({ api, declaration })");
   expect(await readFile(join(stateRoot, "PROTOCOL.md"), "utf8")).toBe(
     (await readFile(protocolTemplatePath(), "utf8")).split("{{STATE_ROOT}}").join(".flume"),
   );

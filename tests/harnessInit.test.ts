@@ -1,16 +1,17 @@
 /**
- * `flume-harness init` (`spec/harness.md`, *Adoption and upgrade*) — the four
+ * `flume-harness init` (`spec/harness.md`, *Adoption and upgrade*) — the
  * artifacts adoption writes, and the refusal that keeps it from running twice.
  *
  * The cases here are agreement gates (`.claude/rules/engineering.md`, *A seam
  * gate reads what the real writer wrote*): the real writer is `harnessInit`
  * over a real temporary repository, and the readers are the real ones — the
  * package's own `DeclarationSchema` over the skeleton it wrote, `tsx`'s
- * module loader over that skeleton as a consumer's chain would load it,
- * `tsc` over that skeleton against the package's exported input type, and
- * `consumerIgnores` over the `.gitignore` lines it merged. A hand-authored
- * expectation of any of the four would re-author the writer's output by the
- * tester's hand and let a one-sided change ship green.
+ * module loader over that skeleton as a consumer's chain would load it, the
+ * engine's own `loadChainModule` over the `chain.ts` it wrote, `tsc` over
+ * both against the package's exported types, and `consumerIgnores` over the
+ * `.gitignore` lines it merged. A hand-authored expectation of any of them
+ * would re-author the writer's output by the tester's hand and let a
+ * one-sided change ship green.
  *
  * The one thing simulated is the install: a temporary repository has no
  * `node_modules`, so the package specifier the skeleton imports is satisfied
@@ -39,6 +40,16 @@ import { TSX_CLI, runNodeStreams } from "./helpers/subprocess.ts";
 
 /** This checkout's harness entry point — what the install shim re-exports. */
 const HARNESS_INDEX = fileURLToPath(new URL("../harness/index.ts", import.meta.url));
+
+/**
+ * This checkout's engine entry point — the package root, which the written
+ * `chain.ts` imports `ChainFactory` from. Type-only there, so it is the
+ * typecheck that needs it and never the loader.
+ */
+const ENGINE_INDEX = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+
+/** The engine's real chain loader, for the probe that drives it in-process. */
+const DISPATCHER = new URL("../src/Dispatcher.ts", import.meta.url).href;
 
 let repoRoot: string;
 
@@ -293,26 +304,32 @@ const TYPE_ROOTS = fileURLToPath(
 );
 
 /**
- * Typecheck the declaration `result` wrote, and nothing else: `files` names
- * the one module, `include: []` clears the base config's own roots, and
- * `paths` answers the bare specifier the skeleton imports without an
- * install. Everything the skeleton reaches — the package's entry point, its
- * exported type, the engine beneath both — is this checkout's real source.
+ * Typecheck the modules `result` wrote and nothing else: `files` names them,
+ * `include: []` clears the base config's own roots, and `paths` answers both
+ * bare specifiers the written files import — the package root and its
+ * `/harness` subpath, the two halves of the published `exports` map —
+ * without an install. Everything they reach — the package's entry points,
+ * its exported types, the engine beneath both — is this checkout's real
+ * source.
  */
-async function typecheckDeclaration(
+async function typecheckWritten(
   root: string,
   result: HarnessInitResult,
+  files: readonly string[],
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  const config = join(root, "tsconfig.declaration.json");
+  const config = join(root, "tsconfig.written.json");
   await writeFile(
     config,
     JSON.stringify({
       extends: BASE_TSCONFIG,
       compilerOptions: {
-        paths: { [`${result.packageName}/harness`]: [HARNESS_INDEX] },
+        paths: {
+          [result.packageName]: [ENGINE_INDEX],
+          [`${result.packageName}/harness`]: [HARNESS_INDEX],
+        },
         typeRoots: [TYPE_ROOTS],
       },
-      files: [`${result.stateRoot}/declaration.ts`],
+      files,
       include: [],
     }),
     "utf8",
@@ -334,7 +351,9 @@ it("the declaration skeleton init writes typechecks against the package's export
   );
   expect(source).toContain("} satisfies DeclarationInput;");
 
-  const clean = await typecheckDeclaration(repoRoot, result);
+  const clean = await typecheckWritten(repoRoot, result, [
+    `${result.stateRoot}/declaration.ts`,
+  ]);
   expect({ code: clean.code, out: clean.stdout }).toEqual({ code: 0, out: "" });
 
   // And the annotation bears weight. The typo below is exactly what the
@@ -345,8 +364,106 @@ it("the declaration skeleton init writes typechecks against the package's export
   expect(typo).not.toBe(source);
   await writeFile(declarationPath, typo, "utf8");
 
-  const broken = await typecheckDeclaration(repoRoot, result);
+  const broken = await typecheckWritten(repoRoot, result, [
+    `${result.stateRoot}/declaration.ts`,
+  ]);
   expect(broken.code).not.toBe(0);
   expect(broken.stdout).toContain("plan-inbx");
   expect(broken.stdout).toContain("plan-inbox");
 }, 180_000);
+
+/**
+ * The hop that makes an adopted repository tickable (`spec/harness.md`,
+ * *Adoption and upgrade*): the engine refuses a load with no
+ * `<configDir>/chain.ts`, so adoption writes the one that applies the
+ * package's factory to the declaration beside it.
+ *
+ * Two readers, both real: `tsc` over the written module against the
+ * package's exported `ChainFactory`, and the engine's own `loadChainModule`
+ * — the single load+validate path the runtime trusts — over the file on
+ * disk, from the roots a consumer's tick resolves.
+ */
+it("init writes a chain.ts applying the package factory to the declaration beside it", async () => {
+  const result = await harnessInit({ repoRoot });
+
+  // Non-vacuity: the bytes typechecked below are the hop — the package's
+  // factory, over the declaration init wrote beside this file, exported in
+  // the shape the engine's loader demands.
+  expect(result.written).toContain(`${result.stateRoot}/chain.ts`);
+  const source = await readFile(
+    join(repoRoot, result.stateRoot, "chain.ts"),
+    "utf8",
+  );
+  expect(source).toContain(
+    `import { harnessChain } from "${result.packageName}/harness"`,
+  );
+  expect(source).toContain("harnessChain({ api, declaration })");
+  expect(source).toContain("export default factory;");
+
+  // And it compiles against the real exported types, resolving both bare
+  // specifiers to this checkout: a hop annotated `ChainFactory` whose return
+  // is not a `ChainModule`, or one importing a name the package does not
+  // export, reds here rather than at a consumer's first tick.
+  const clean = await typecheckWritten(repoRoot, result, [
+    `${result.stateRoot}/chain.ts`,
+  ]);
+  expect({ code: clean.code, out: clean.stdout }).toEqual({ code: 0, out: "" });
+}, 180_000);
+
+it("the chain.ts init writes loads through the engine's chain loader as a valid Chain", async () => {
+  // A repository as the loader meets one: a manifest for init's dependency
+  // clause to land in, and the package resolvable by the specifier the
+  // written chain imports.
+  await writeFile(
+    join(repoRoot, "package.json"),
+    `${JSON.stringify({ name: "consumer", version: "0.0.0", type: "module" }, null, 2)}\n`,
+    "utf8",
+  );
+  const result = await harnessInit({ repoRoot });
+  await installShim(repoRoot, result.packageName);
+  expect(result.written).toContain(`${result.stateRoot}/chain.ts`);
+
+  // `loadChainModule` is what every tick, `jobNew` and `chainLoadGate` reach
+  // a chain through, so driving it over the adopted roots — repo root, and
+  // the state root as both config dir and state dir, exactly as a consumer's
+  // `flume tick` resolves them — is the load a first tick performs. It runs
+  // in a child under `tsx` because the chain resolves its own bare imports
+  // from the consumer's `node_modules`, not from this checkout's.
+  const configDir = join(repoRoot, result.stateRoot);
+  const probe = join(repoRoot, "load-chain.mjs");
+  await writeFile(
+    probe,
+    `import { loadChainModule } from ${JSON.stringify(DISPATCHER)};\n` +
+      `const configDir = ${JSON.stringify(configDir)};\n` +
+      `const { chain } = await loadChainModule({\n` +
+      `  repoRoot: ${JSON.stringify(repoRoot)},\n` +
+      `  configDir,\n` +
+      `  flumeDir: configDir,\n` +
+      `});\n` +
+      `const declaration = (await import("./${result.stateRoot}/declaration.ts")).default;\n` +
+      `process.stdout.write(JSON.stringify({\n` +
+      `  phases: chain.phases.map((p) => p.name),\n` +
+      `  enabled: declaration.slices.enabled,\n` +
+      `}));\n`,
+    "utf8",
+  );
+
+  const loaded = await runNodeStreams(repoRoot, [TSX_CLI, probe]);
+  expect({ code: loaded.code, stderr: loaded.stderr }).toEqual({
+    code: 0,
+    stderr: "",
+  });
+
+  // A `Chain` the engine validated — the loader throws on a factory shape it
+  // cannot use, a promise, or a `phases[]` that is not an array — carrying
+  // the phases this declaration asked for: every slice it enabled, and the
+  // build phase the package always ships. The expectation comes off the
+  // declaration on disk, so a skeleton that enables a different set moves
+  // both sides together.
+  const { phases, enabled } = JSON.parse(loaded.stdout) as {
+    phases: string[];
+    enabled: string[];
+  };
+  expect(enabled.length).toBeGreaterThan(0);
+  expect([...phases].sort()).toEqual([...enabled, "build"].sort());
+}, 60_000);

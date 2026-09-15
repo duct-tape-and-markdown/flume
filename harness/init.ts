@@ -1,9 +1,12 @@
 /**
  * `flume-harness init` — what adopting the harness package writes into a
  * repository (`spec/harness.md`, *Adoption and upgrade*): the declaration
- * skeleton, the state root, the ignore set, `PROTOCOL.md`, and the dependency
+ * skeleton, the `chain.ts` that applies the package's factory to it, the
+ * state root, the ignore set, `PROTOCOL.md`, and the dependency
  * line that makes `@dtmd/flume/harness` resolve from the declaration that
- * imports it.
+ * imports it. The engine refuses a load with no `<configDir>/chain.ts`, so
+ * an adoption that stopped at the declaration would leave a repository one
+ * hand-written file short of its first tick.
  *
  * **A verb on the harness bin, never on the engine's.** The engine's verb set
  * is closed and `src/` never imports this directory, so an adoption verb on
@@ -51,6 +54,13 @@ export const DEFAULT_STATE_ROOT = ".flume";
 
 /** Where the declaration sits under a state root (`spec/harness.md`). */
 const DECLARATION_REL = "declaration.ts";
+
+/**
+ * Where the chain the engine loads sits — `<configDir>/chain.ts` and nowhere
+ * else (`spec/chain.md`, *Chain residency*), which for a consumer adopting
+ * the package is the state root init just made.
+ */
+const CHAIN_REL = "chain.ts";
 
 /** Where the project's own conventions sit under a state root. */
 const PROTOCOL_REL = "PROTOCOL.md";
@@ -213,6 +223,59 @@ export default declaration;
 }
 
 /**
+ * The hop the engine's loader lands on: `<configDir>/chain.ts`, applying the
+ * package's factory to the declaration beside it.
+ *
+ * Written rather than left to the consumer because it is the same three
+ * lines in every repository that adopts the package — a block that appears
+ * unchanged in every consumer's chain is a missing surface, not a chain
+ * concern (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+ * Everything a consumer decides lives one file over, in the declaration this
+ * module just wrote; nothing here is theirs to tune, and a behavior edited
+ * in belongs in the package, where every consumer gets it.
+ *
+ * The declaration rides in unparsed: the schema's refusal is a fact of chain
+ * load rather than of a consumer remembering to call `parseDeclaration`
+ * (`chain.ts`, *The declaration is parsed here*).
+ *
+ * `ChainFactory` comes from the package root and `harnessChain` from its
+ * `/harness` subpath — the two halves of the `exports` map, and the reason
+ * the type import is spelled `import type`: the root specifier is erased
+ * before the loader ever resolves it, so the engine value a chain never
+ * imports stays un-imported (`src/flumeApi.ts`).
+ */
+function chainSkeleton(packageName: string): string {
+  return `/**
+ * This repository's chain — the harness package's factory applied to the
+ * declaration beside it, and nothing else (\`${packageName}\`,
+ * spec/harness.md, *Adoption and upgrade*). The engine loads this file and
+ * refuses a tick without it; every slice, prompt, judge and gate it then
+ * runs comes from the package.
+ *
+ * Written by \`flume-harness init\`, and the same hop in every repository
+ * that adopts the package. What this environment decides it declares in
+ * \`./declaration.ts\` — a behavior edited in here is one no version bump
+ * carries forward.
+ */
+
+import type { ChainFactory } from "${packageName}";
+import { harnessChain } from "${packageName}/harness";
+
+// The \`.js\` names the \`declaration.ts\` beside this file: a TypeScript
+// import carries the extension the emit would have, which every
+// \`moduleResolution\` mode — and the loader that runs this file — resolves
+// back to the source.
+import { declaration } from "./declaration.js";
+
+const factory: ChainFactory = (api) => ({
+  chain: harnessChain({ api, declaration }),
+});
+
+export default factory;
+`;
+}
+
+/**
  * Adopt the harness package into `repoRoot`.
  *
  * Refuses rather than overwrites when the state root is already there: a
@@ -256,6 +319,7 @@ export async function harnessInit(
   const written: string[] = [];
   for (const [rel, body] of [
     [DECLARATION_REL, declarationSkeleton(self.name)],
+    [CHAIN_REL, chainSkeleton(self.name)],
     [PROTOCOL_REL, protocol],
   ] as const) {
     await writeFile(namespacedJoin(stateRootAbs, rel), body, "utf8");

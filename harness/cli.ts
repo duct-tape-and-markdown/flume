@@ -22,9 +22,11 @@ const HELP = `flume-harness — adopt flume's harness package in this repository
 Usage: flume-harness <command>
 
 Commands:
-  init                Write the declaration skeleton, the state root, the
-                      runtime ignore lines and PROTOCOL.md into the current
-                      directory, and declare the package in its package.json.
+  init                Write the declaration skeleton, the chain.ts that
+                      applies the package's factory to it, the state root,
+                      the runtime ignore lines and PROTOCOL.md into the
+                      current directory, and declare the package in its
+                      package.json.
                       Refuses if ${DEFAULT_STATE_ROOT}/ is already there.
 
 Options:
