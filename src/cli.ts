@@ -61,6 +61,7 @@ import { parsePending } from "./PendingSchema.js";
 import {
   DEFAULT_PENDING_REL,
   loopLockPath,
+  mergingDir,
   namespacedJoin,
   queueFenceViolations,
   resolvePendingPath,
@@ -979,7 +980,32 @@ async function main(): Promise<number> {
     // startup sweep below, so the run touches nothing and the abandoned
     // branch each marker names survives for the operator. Removal is the
     // acknowledgement — as with the stop flag, no engine verb performs it.
-    const interrupted = await readMergingMarkers(flumeDir);
+    //
+    // The listing's own non-ENOENT failure is classified here, not left to
+    // escape: `readMergingMarkers` rethrows anything but absence
+    // (src/Dispatcher.ts), and uncaught the throw reached `main().catch` as a
+    // raw stack and an exit 1 — indistinguishable from a harness error, when
+    // it is the same unreadable-state refusal every other stat failure in
+    // this file maps (`.claude/rules/platform-facts.md`, "Exit codes come
+    // from `sysexits.h`"). EX_IOERR, not EX_TERMINAL_MISCONFIG: nothing was
+    // read, so whether a marker stands is unknown — the operator must make
+    // the dir readable before that question can even be asked.
+    const mergingPath = mergingDir(flumeDir);
+    let interrupted: Awaited<ReturnType<typeof readMergingMarkers>>;
+    try {
+      interrupted = await readMergingMarkers(flumeDir);
+    } catch (err) {
+      console.error(
+        `[flume] loop refuses: merging markers at ${mergingPath} failed to list: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      console.error(
+        "[flume] an unreadable merging dir is not an empty one — a marker " +
+          "standing behind it would mean a merge interrupted before its ship " +
+          "bookkeeping. Nothing was touched and the startup sweep has not " +
+          "run. Make the directory readable, then start again.",
+      );
+      return EX_IOERR;
+    }
     if (interrupted.length > 0) {
       console.error(
         "[flume] loop refuses: a merge interrupted before its ship " +

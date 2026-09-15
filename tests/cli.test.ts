@@ -1876,6 +1876,51 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
     },
     30_000,
   );
+
+  it(
+    "`flume loop` exits EX_IOERR naming the merging dir when its listing fails for a reason other than absence",
+    async () => {
+      // The listing's ENOENT-vs-other split is held at the reader
+      // (tests/Dispatcher.test.ts, "the merging dir's ENOENT/EACCES split");
+      // this holds what the operator sees when the non-ENOENT leg fires at a
+      // loop start. An unclassifiable exit 1 and a raw stack is the one
+      // outcome ruled out (`.claude/rules/platform-facts.md`, "Exit codes
+      // come from `sysexits.h`").
+      const repo = await makeJobRepo("main");
+      const mergingPath = join(repo.dir, ".flume", "merging");
+      try {
+        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+        new Baton(flumeDir).wake("probe");
+        const { markerPath } = await seedInterruptedMerge(repo.dir, flumeDir);
+
+        // Vacuity: unsealed, this very dir is the one the startup refusal
+        // reads — it refuses on the marker it found. So the EX_IOERR below is
+        // the seal talking, not a path the CLI never looked at.
+        const readable = await runCli(repo.dir, ["loop", "--max", "3"]);
+        expect(readable.code).toBe(EX_TERMINAL_MISCONFIG);
+        expect(readable.out).toContain(markerPath);
+
+        // Strip traversal permission: the dir exists and the marker still
+        // stands, but neither can be seen — EACCES, not ENOENT.
+        await chmod(mergingPath, 0o000);
+
+        const r = await runCli(repo.dir, ["loop", "--max", "3"]);
+
+        expect(r.code).toBe(EX_IOERR);
+        expect(r.out).toContain(mergingPath);
+        // No tick ran, the baton is where the operator left it, and the
+        // abandoned branch the unseen marker names still stands.
+        expect(r.out).not.toMatch(/tick → probe/);
+        expect(existsSync(join(flumeDir, "awake", "probe"))).toBe(true);
+        expect(await branchExists(repo.dir)).toBe(true);
+      } finally {
+        await chmod(mergingPath, 0o755).catch(() => {});
+        await repo.cleanup();
+      }
+    },
+    60_000,
+  );
 });
 
 // ---------- flume check (spec/cli.md §Subcommand surface, cli-check-verb) ----------
