@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "HARNESS-TEST-RUNNER-STUBS-TYPED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [
+        {
+          "path": "tests/helpers/stubRunner.ts",
+          "description": "the one typed `RunResult`/`Runner` no-op stand-in the harness tests share"
+        }
+      ],
+      "edit": [
+        { "path": "tests/harnessGates.test.ts", "description": "adopt the shared stand-in; drop the `unknown` cast" },
+        { "path": "tests/harnessChain.test.ts", "description": "adopt the shared stand-in; drop the `unknown` cast" },
+        { "path": "tests/harnessRunner.test.ts", "description": "adopt the shared stand-in; drop the `unknown` cast" },
+        { "path": "tests/harnessDeclaration.test.ts", "description": "adopt the shared stand-in; delete its local `EMPTY_RUN`/`stubRunner`" }
+      ],
+      "retire": []
+    },
+    "summary": "Type the harness tests' Runner stand-ins so a RunResult field change is a tsc error at every consumer",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "No harness test casts a runner stand-in through `unknown`; every one is a typed literal from the shared helper, and tsc rejects a stale `RunResult` shape at each site.",
+    "tests": [
+      "no harness test stands a `Runner` in through an `unknown` cast"
+    ],
+    "notes": "Field-traced (RUNNER-FAILING-FILES-DERIVED): the cast at harnessGates.test.ts:81 let `passed: []` for a `number` and missing `names`/`failed` sit green, so dropping `failingFiles` was a manual sweep, not a compiler hit. Same cast at harnessChain.test.ts:89 and harnessRunner.test.ts:156; harnessDeclaration.test.ts:33 is the typed model that did fail the typecheck. The scan test's home is build's call."
+  }
+]
