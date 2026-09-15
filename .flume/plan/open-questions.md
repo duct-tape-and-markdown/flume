@@ -918,3 +918,60 @@ those keys; the package states that it always does, for every key.
 
 Held here rather than filed because the fix is one sentence in `spec/`, and
 `spec/` is the human's alone.
+
+## An open rotation has no armed-at sha, so its close stamps a HEAD that moved (PARKED)
+
+Verified on disk this tick, sweeping `harness/windows.ts`.
+`.claude/rules/posture-sweep.md`, *The stamp*, says the cursor is "the sha the
+frontier was derived from, never a HEAD that moved mid-rotation." Nothing
+records that sha.
+
+- The open rotation carries `covered` and nothing else — `Rotation`'s open arm
+  is `strict({ kind: "open", covered })` (`harness/planState.ts`), so there is
+  no field an armed-at sha could live in.
+- The frontier is re-derived every tick from the cursor against a live tip:
+  `renderSweepWindow` (`harness/windows.ts:489`) computes `commitsPast(ctx.cwd,
+  state.sweptThrough)` and `retiredLines` diffs `cursor..HEAD`. Each tick of an
+  open rotation therefore draws a *wider* frontier than the last.
+- The sweep window also never names the sha it was derived from. Its sibling
+  does: `renderSpecWindow` prints "`derivedThrough` may advance to
+  <sha>" (`harness/windows.ts:419`), pinned by "a rendered window names the sha
+  its cursor may advance to and defers the commits past its budget"
+  (`tests/harnessWindows.test.ts:272`). So the closing tick has to rediscover
+  the value by running `git rev-parse HEAD` itself.
+
+**The hole is live in this repo.** `sweptThrough` is `b7972ec` and the rotation
+has carried `src/priorAttempts.ts` as covered since `72db2ec`. `7c0f21e`
+("stop calling this repo's plan state prose scratch") then touched
+`src/priorAttempts.ts`. Covered is settled, so that module is never re-swept;
+stamping HEAD at close carries the cursor past `7c0f21e` all the same. The
+change ships swept by nobody, and the plan state cannot tell you it happened.
+
+The fork:
+
+- **Freeze the base at arming.** Add the sha to the open arm
+  (`rotation: { kind: "open", armedAt, covered }`); every tick of the rotation
+  renders its window from `armedAt`, and the close stamps exactly that.
+  Literal to the rule's words, and the rotation becomes a bounded unit of work.
+  Against it: commits landing mid-rotation are invisible to the sweep until the
+  *next* rotation arms, which on this repo's cadence is a long silence; and the
+  window then goes stale in a way no tick can widen.
+- **Keep re-deriving, and qualify `covered` by sha.** Record each covered
+  module with the sha it was swept at; a later commit touching it puts it back
+  in the frontier. Closes the hole exactly, at the cost of making `covered` a
+  map and of re-opening boundaries the rule currently calls settled ("A later
+  tick never re-sweeps or re-draws it").
+- **Accept, and rewrite the rule.** Say the frontier re-derives each tick and
+  the close stamps the render's own tip; then have the window *name* that tip,
+  as the derive window does, so the slice stops rediscovering it. Cheapest, and
+  it makes the stamp honest — but it ratifies the coverage hole above.
+
+**Recommend the third**, with the window-names-the-tip half filed regardless of
+how the rest rules: the sweep's whole warrant is that it is insurance, and the
+second option buys exact coverage by turning the cursor into a per-module
+ledger the loop then pays to carry every tick. What should not stand either way
+is a rule whose stamp names a sha no artifact holds and no window prints.
+
+Parked rather than filed: every option starts with a `.claude/rules/posture-sweep.md`
+edit — *The stamp* under the first and third, *The frontier is decidable; the
+neighborhood is judged* under the second — and that page is the human's.

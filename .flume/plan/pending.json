@@ -1,1 +1,21 @@
-[]
+[
+  {
+    "tag": "HARNESS-WINDOW-RENDER-REFUSES-A-GIT-FAILURE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/windows.ts", "description": "bound both render entry points, per the fail-open's own cite" },
+        { "path": "tests/harnessWindows.test.ts", "description": "the non-cursor git failure case" }
+      ],
+      "retire": []
+    },
+    "summary": "A window render refuses by name on any git failure, not only an unresolvable cursor — touchedPast's fail-open already promises that bound",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "Every git failure inside a window render reaches the woken slice as the named refusal; nothing escapes promptArgs into an uncaught tick.",
+    "tests": [
+      "a window render refuses by name when git fails for a reason other than an unresolvable cursor"
+    ],
+    "notes": "touchedPast (harness/windows.ts:783) wakes the slice on any git failure and names refusal as its bound; refusal is reached only from the !resolves leg of renderSpecWindow:391 and renderSweepWindow:497. A throw out of commitsPast/diffOf/retiredLines/bootstrap escapes phase.promptArgs — uncaught at src/Dispatcher.ts:1957 and :3281 — so the tick dies with no verdict. Carry the failure's own text into the refusal."
+  }
+]

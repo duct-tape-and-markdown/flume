@@ -10,7 +10,10 @@
       "src/cliVerdict.ts",
       "src/friction.ts",
       "src/paths.ts",
-      "src/builtinGates.ts"
+      "src/builtinGates.ts",
+      "harness/windows.ts",
+      "harness/planState.ts",
+      "harness/records.ts"
     ]
   }
 }
