@@ -72,7 +72,8 @@
       "tests/harnessWindows.test.ts",
       "tests/harnessDeclaration.test.ts",
       "tests/helpers/stubRunner.ts",
-      "tests/priorAttempts.test.ts"
+      "tests/priorAttempts.test.ts",
+      "tests/harnessPrompts.test.ts"
     ]
   }
 }

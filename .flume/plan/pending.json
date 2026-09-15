@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "tag": "HARNESS-PROMPTS-SLICE-ROSTER",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "iterate PLAN_SLICES instead of filtering PHASES by name prefix"
+        }
+      ]
+    },
+    "summary": "tests/harnessPrompts.test.ts:199 derives the plan-slice roster by `plan-` name prefix; read harness/declaration.ts's PLAN_SLICES",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "the discipline-pointer loop iterates the declared roster; no name-prefix filter over PHASES survives in the file",
+    "pins": [
+      "every plan slice the package declares points its reader at the discipline page"
+    ],
+    "notes": "Every sibling reads PLAN_SLICES (harness/windows.ts:204, tests/harnessChain.test.ts). A slice named off-prefix leaves the judged set silently; the n>0 pin beside it cannot see a subset. Whole diff is the test file, so the property is a pin, not a tests[] line."
+  }
+]
