@@ -130,7 +130,8 @@ other.
     and before they drop it they take down the in-flight tick and everything it
     spawned: on POSIX the tick child runs in its own process group, the handler
     signals that group with `SIGTERM`, escalates to `SIGKILL` after a bounded grace
-    the supervisor declares, and waits for it — so the release is the whole tree's,
+    the supervisor declares, and waits for it, saying so on the log at receipt
+    with the bound it waits under — so the release is the whole tree's,
     and the state root the claim protected has no writer left when the claim goes.
     A bare `flume tick` takes its agent down the same way. Release-on-signal is a
     POSIX guarantee only; on win32 `SIGTERM` maps to `TerminateProcess`, which runs

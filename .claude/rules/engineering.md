@@ -203,6 +203,11 @@ ticks produce by default, and this section is how the sweep sees it.
   verdict shape spelled three ways by three siblings has one vocabulary.
 - A second copy of a sequence — two legs that spell the same steps and
   differ only in how they return — is one function with two callers.
+- **A split re-homes the citations it strands.** A comment naming the old
+  file for a fact that moved with the job still resolves — the citation pin
+  reads the token, never its meaning, and the old file still exists — so the
+  pointer is the split's to move, in the same commit, or the split has left a
+  green citation at the wrong door.
 
 A finding under this section files as an **entry**, never a debt line: the
 refactor is behavior-free, and the typecheck, the suite, and the export and
