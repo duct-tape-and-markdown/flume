@@ -16,7 +16,6 @@
  * never a false signal.
  */
 
-import type { Dirent } from "node:fs";
 import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, toNamespacedPath } from "node:path";
@@ -24,7 +23,7 @@ import { promisify } from "node:util";
 
 import { bound, headTailBound, tailBound } from "./bounds.js";
 import type { Logger } from "./Dispatcher.js";
-import { existsLoud } from "./fsProbe.js";
+import { existsLoud, statLoud } from "./fsProbe.js";
 import * as git from "./git.js";
 import { priorAttemptsDir, slugify } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -96,6 +95,29 @@ const KEYSPACE_NAMES = Object.keys(KEYSPACES) as PriorAttemptKeyspace[];
  */
 function isKeyspace(value: unknown): value is PriorAttemptKeyspace {
   return typeof value === "string" && Object.hasOwn(KEYSPACES, value);
+}
+
+/**
+ * One step of {@link PriorAttemptStore.readAll}'s descent: `true` when a
+ * directory is at `path`, `false` when the path is absent, and a throw for
+ * everything else — a plain file at the path, a symlink loop, permission
+ * denied (`statLoud`, src/fsProbe.ts).
+ *
+ * `false` is a *proven* absence only when every ancestor above `path` has
+ * already answered `true` here, which is why `readAll` descends rather than
+ * probing the leaf alone. An errno cannot make that proof: a plain file at an
+ * ancestor raises `ENOTDIR` for the paths beneath it on posix and `ENOENT` on
+ * win32, so an obstructed store refuses on one host and reports "nothing
+ * written" on the other (`.claude/rules/engineering.md`, "Loud or nothing").
+ * The path answers the same on both.
+ */
+function isDirectoryOrAbsent(path: string): boolean {
+  const st = statLoud(toNamespacedPath(path));
+  if (st === undefined) return false;
+  if (st.isDirectory()) return true;
+  throw new Error(
+    `[flume] prior-attempt store is unreadable: ${path} is present but is not a directory`,
+  );
 }
 
 /**
@@ -334,29 +356,40 @@ export class PriorAttemptStore {
    * belongs to is known from where it was found and never guessed from the
    * text of its stem.
    *
-   * Absent (`ENOENT`) is the only silent reading: nothing written is no
-   * records. A directory that is present but cannot be enumerated — a plain
-   * file sitting at the path (`ENOTDIR`), permission denied, a path too long
-   * for the platform — escapes, the same ENOENT-vs-other split
-   * `countFrictionFiles` (src/job.ts) gives a friction dir. This map feeds
-   * every `TickContext.priorAttempts` a tick's hooks read, so an unreachable
-   * directory reported as an empty map tells every `shouldRun` "no prior
-   * attempt" and silently resets the repeated-failure count spec/loop.md
-   * "Repeated identical failures" keeps — the same refusal {@link read}
-   * makes per file, where the degrade to "no prior" is only ever for a
-   * record that was *read* and found garbled.
+   * Absence is the only silent reading — nothing written is no records — and
+   * it is **proven from the path**, never read off the errno a listing
+   * happened to raise. A store that is present but cannot be enumerated — a
+   * plain file sitting at the state root, at `prior-attempts/` or at a
+   * keyspace directory, permission denied, a path too long for the platform
+   * — escapes. This map feeds every `TickContext.priorAttempts` a tick's
+   * hooks read, so an unreachable store reported as an empty map tells every
+   * `shouldRun` "no prior attempt" and silently resets the repeated-failure
+   * count spec/loop.md "Repeated identical failures" keeps — the same
+   * refusal {@link read} makes per file, where the degrade to "no prior" is
+   * only ever for a record that was *read* and found garbled.
+   *
+   * Hence the descent: the state root, then `prior-attempts/`, then each
+   * keyspace directory, each proven a directory before the next is probed
+   * ({@link isDirectoryOrAbsent}). `ENOENT` is not that proof — a plain file
+   * at any of those paths makes the ones beneath it `ENOENT` on win32 while
+   * posix raises `ENOTDIR`, so an errno-keyed silent arm reads one host's
+   * obstructed store as an empty one. The state root is where the descent
+   * starts: the store is constructed with it, and what stands above it is
+   * the caller's to answer for.
    */
   async readAll(): Promise<ReadonlyMap<string, PriorAttempt>> {
     const out = new Map<string, PriorAttempt>();
+    const root = priorAttemptsDir(this.flumeDir);
+    if (!isDirectoryOrAbsent(this.flumeDir)) return out;
+    if (!isDirectoryOrAbsent(root)) return out;
     for (const keyspace of KEYSPACE_NAMES) {
-      const dir = join(priorAttemptsDir(this.flumeDir), keyspace);
-      let entries: Dirent[];
-      try {
-        entries = await readdir(toNamespacedPath(dir), { withFileTypes: true });
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
-        throw err;
-      }
+      const dir = join(root, keyspace);
+      if (!isDirectoryOrAbsent(dir)) continue;
+      // Every ancestor is proven above, so a listing failure here is real:
+      // a keyspace dir that vanished mid-walk, or one that cannot be read.
+      const entries = await readdir(toNamespacedPath(dir), {
+        withFileTypes: true,
+      });
       for (const e of entries) {
         if (!e.isFile() || !e.name.endsWith(".json")) continue;
         const stem = e.name.slice(0, -".json".length);

@@ -366,35 +366,111 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     await expect(store.read(ref)).resolves.toBeUndefined();
   });
 
-  it("readAll refuses when the prior-attempts dir is present but unreadable", async () => {
+  /**
+   * The refusal, not the platform's spelling of it. A plain file at the root
+   * makes `readdir` beneath it `ENOTDIR` on posix and `ENOENT` on win32
+   * (`.claude/rules/platform-facts.md`, *chmod denies nothing on win32* — a
+   * structural denial is the one that denies on every host, and the errno it
+   * raises is the one thing about it that is not portable). Asserting the
+   * errno pins one host's accident; asserting the store's own message pins
+   * the behavior the entry is about.
+   */
+  const refusalOf = async (p: Promise<unknown>): Promise<string> => {
+    const err = await p.then(
+      () => undefined,
+      (e: unknown) => e as Error,
+    );
+    expect(err, "readAll resolved where it must refuse").toBeInstanceOf(Error);
+    return err!.message;
+  };
+
+  it("readAll refuses when a plain file sits at the prior-attempts root", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
     const dir = priorAttemptsDir(flumeDir);
     await mkdir(dirname(dir), { recursive: true });
-    // ENOTDIR — present at the path the store enumerates, unenumerable. Not
-    // a permission bit: a root-run test would bypass that.
+    // Present at the path the store enumerates, unenumerable. Structural,
+    // not a permission bit: a root-run test would bypass that, and on win32
+    // a permission bit denies nothing at all.
     await writeFile(dir, "not a directory");
 
     // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
     // proven non-vacuous"): something really occupies the path `readAll`
-    // reads, and the readdir that decides really does fail on it.
+    // reads, and it really is not a directory.
     expect(existsSync(dir)).toBe(true);
     expect((await lstat(dir)).isDirectory()).toBe(false);
 
     // Reported as an empty map this would tell every `shouldRun` "no prior
-    // attempt" — the repeated-failure signal reset by an unreachable dir.
-    await expect(store.readAll()).rejects.toThrow(/ENOTDIR/);
+    // attempt" — the repeated-failure signal reset by an unreachable store.
+    const message = await refusalOf(store.readAll());
+    expect(message).toContain("is not a directory");
+    expect(message).toContain(dir);
+  });
+
+  it("readAll refuses when a plain file sits above the prior-attempts root", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    // The obstruction is an *ancestor* of every path the store reads, which
+    // is where the two hosts disagree hardest: nothing beneath it exists to
+    // stat, so the leaf answers "absent" on win32 and "ENOTDIR" on posix.
+    // Only the descent tells them apart, and it must refuse on both.
+    await writeFile(flumeDir, "not a directory");
+
+    expect(existsSync(flumeDir)).toBe(true);
+    expect((await lstat(flumeDir)).isDirectory()).toBe(false);
+    expect(existsSync(priorAttemptsDir(flumeDir))).toBe(false);
+
+    const message = await refusalOf(store.readAll());
+    expect(message).toContain("is not a directory");
+    expect(message).toContain(flumeDir);
+  });
+
+  it("readAll refuses when a plain file sits at a keyspace directory", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    // The last rung of the descent: the two directories above it are real,
+    // so only the keyspace dir's own type decides. A record written to the
+    // sibling keyspace proves the walk reaches this one at all.
+    const ref: PriorAttemptRef = { key: "build", keyspace: "phase" };
+    await store.write(ref, buildCleanExit("no commit"));
+    const obstructed = join(priorAttemptsDir(flumeDir), "entry");
+    await writeFile(obstructed, "not a directory");
+
+    expect((await lstat(obstructed)).isDirectory()).toBe(false);
+    expect(existsSync(priorAttemptPath(flumeDir, ref))).toBe(true);
+
+    const message = await refusalOf(store.readAll());
+    expect(message).toContain("is not a directory");
+    expect(message).toContain(obstructed);
   });
 
   it("readAll reads an absent prior-attempts dir as no records", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    await mkdir(flumeDir, { recursive: true });
 
-    // Vacuity pin: the ENOENT leg is the one under test, so nothing may sit
-    // at the path.
+    // Vacuity pins: the absent leg is the one under test, so nothing may sit
+    // at the path — and the root above it is a real directory, which is what
+    // makes that absence a proof rather than an errno.
+    expect(existsSync(flumeDir)).toBe(true);
     expect(existsSync(priorAttemptsDir(flumeDir))).toBe(false);
 
     expect((await store.readAll()).size).toBe(0);
+  });
+
+  it("readAll reads an absent keyspace directory as no records of that keyspace", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const ref: PriorAttemptRef = { key: "build", keyspace: "phase" };
+    await store.write(ref, buildCleanExit("no commit"));
+
+    // Vacuity pins: one keyspace dir exists and holds a record, the other
+    // was never created — the mixed case the descent must walk through
+    // rather than refuse on.
+    expect(existsSync(join(priorAttemptsDir(flumeDir), "phase"))).toBe(true);
+    expect(existsSync(join(priorAttemptsDir(flumeDir), "entry"))).toBe(false);
+
+    expect([...(await store.readAll()).keys()]).toEqual(["phase:build"]);
   });
 });
 

@@ -715,13 +715,11 @@ function isMergingMarker(rec: unknown): rec is MergingMarker {
  * exists to stop (`.claude/rules/engineering.md`, "Loud or nothing"). Its
  * `marker` is `undefined` and the caller names the file alone.
  *
- * The directory read takes the same line, as the ENOENT-vs-other split
- * `PriorAttemptStore.readAll` (src/priorAttempts.ts) gives its own record dir:
- * an *absent* `merging/` is the honest empty answer — nothing was ever
- * staked — while any other listing failure (permission denied, a file
- * sitting at the path, a path too long for the platform) escapes. An
- * unreachable dir reported as empty would tell the refusal "no interrupted
- * merge" over markers it could not see.
+ * The directory read takes the same line: an *absent* `merging/` is the
+ * honest empty answer — nothing was ever staked — while any other listing
+ * failure (permission denied, a file sitting at the path, a path too long
+ * for the platform) escapes. An unreachable dir reported as empty would tell
+ * the refusal "no interrupted merge" over markers it could not see.
  */
 export async function readMergingMarkers(
   flumeDir: string,
