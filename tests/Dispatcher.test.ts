@@ -1264,6 +1264,134 @@ describe("hook-side gate results — the reported row, not a narrowed copy", () 
   }, 20_000);
 });
 
+// ---------- GateResult.failingFiles → ReportedGateResult.failingFiles
+// (VERDICT-GATE-ROW-CARRIES-THE-GATES-FAILING-FILES, spec/loop.md "The tick
+// verdict — one facts artifact") ----------
+
+describe("ReportedGateResult.failingFiles — what the gate blamed, reported not rebuilt", () => {
+  it("a gate's failingFiles ride the reported gate result", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    // Disjoint from what the commit touches, so the engine's own
+    // suspect-flake derivation fires off the same list — the fact is one the
+    // engine already decoded, and the row is where a chain reads it instead
+    // of re-parsing the gate's output beside it.
+    const blamed = ["tests/unrelated.test.ts", "tests/also-unrelated.test.ts"];
+    const failing: Gate = {
+      name: "suite",
+      when: "afterCommit",
+      async run() {
+        return {
+          ok: false,
+          message: "2 failing files",
+          details: blamed.join("\n"),
+          verdict: "suite-red",
+          failingFiles: blamed,
+        };
+      },
+    };
+
+    let seen: TickResult["gateResults"] | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [failing],
+      handoff: (r) => {
+        seen = r.gateResults;
+        return [];
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "docs/note.md", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.verdict?.noCommit).toBe("gate-revert");
+    const rows = outcome.verdict?.gateResults ?? [];
+    // Vacuity pin: the gate loop really ran and really produced this row.
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.find((g) => g.gate === "suite")).toEqual({
+      gate: "suite",
+      ok: false,
+      message: "2 failing files",
+      details: blamed.join("\n"),
+      verdict: "suite-red",
+      failingFiles: blamed,
+    });
+
+    // The handoff surface carries the same row — one builder, so a field
+    // cannot reach the verdict and be dropped on the way to a hook.
+    expect(seen).toBeDefined();
+    expect(seen!.length).toBeGreaterThan(0);
+    expect(seen!.find((g) => g.gate === "suite")?.failingFiles).toEqual(blamed);
+
+    // Persisted, not merely in-memory: the real writer's output through the
+    // real artifact (`.claude/rules/engineering.md`, "A seam gate reads what
+    // the real writer wrote").
+    const flumeDir = join(fx.repo, ".flume");
+    await writeTickVerdict(flumeDir, outcome.verdict!);
+    const onDisk = JSON.parse(
+      await readFile(tickVerdictPath(flumeDir), "utf8"),
+    ) as TickVerdict;
+    expect(onDisk.gateResults.find((g) => g.gate === "suite")?.failingFiles).toEqual(
+      blamed,
+    );
+
+    // The same list still drives the derivation it already fed: the row is an
+    // additional reader of the fact, never a replacement for it.
+    const record = JSON.parse(
+      await readFile(priorAttemptPath(flumeDir, "plan"), "utf8"),
+    ) as PriorAttempt;
+    expect(record).toMatchObject({
+      mode: "gate-revert",
+      gate: "suite",
+      suspectFlake: true,
+    });
+  });
+
+  it("a gate that named no failingFiles leaves the field absent on its row", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const quiet: Gate = {
+      name: "unattributed",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "something broke" };
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [quiet],
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "docs/note.md", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.verdict?.noCommit).toBe("gate-revert");
+    const rows = outcome.verdict?.gateResults ?? [];
+    expect(rows.length).toBeGreaterThan(0);
+    // Absence is a fact: no attribution, no empty list standing in for one.
+    for (const row of rows) expect(row).not.toHaveProperty("failingFiles");
+  });
+});
+
 describe("Dispatcher singleton — handoff wakes the successor", () => {
   it("sleeps the running phase and wakes only the named successor", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));

@@ -243,6 +243,40 @@ export interface ReportedGateResult {
    * `message` (spec/chain.md "What a gate returns").
    */
   skipped?: string;
+  /**
+   * The gate's own `GateResult.failingFiles` (`./Gate.js`), copied verbatim:
+   * the repo-relative paths the gate attributed the failure to. Absent when
+   * the gate named none. The engine already decodes this to derive the
+   * suspect-flake marker on a prior-attempt record, so a chain reading the
+   * verdict or a `handoff` reads the same list instead of re-parsing the
+   * gate's output beside it (`.claude/rules/engineering.md`, *A fact the
+   * engine holds is reported, never rediscovered*).
+   */
+  failingFiles?: string[];
+}
+
+/**
+ * The one construction of a {@link ReportedGateResult} from the
+ * {@link GateResult} a gate just returned. Every reporting surface — the
+ * afterCommit loop, both afterMerge loops, and the failure record each hands
+ * to `buildGateRevert` — reads the row from here, so a field the engine
+ * decodes cannot reach one surface and be dropped from the next
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * Optional fields ride only when the gate authored them: `exactOptionalPropertyTypes`
+ * makes an explicit `undefined` a different shape from absence, and absence is
+ * what "the gate said nothing" means on disk.
+ */
+function reportedGateRow(gate: string, r: GateResult): ReportedGateResult {
+  return {
+    gate,
+    ok: r.ok,
+    message: r.message,
+    ...(r.details ? { details: r.details } : {}),
+    ...(r.verdict ? { verdict: r.verdict } : {}),
+    ...(r.skipped ? { skipped: r.skipped } : {}),
+    ...(r.failingFiles ? { failingFiles: r.failingFiles } : {}),
+  };
 }
 
 /**
@@ -2477,15 +2511,7 @@ export class Dispatcher {
             preCherry,
             mergedSha,
           );
-          let entryFailure:
-            | {
-                gate: string;
-                message: string;
-                verdict?: string;
-                details?: string;
-                failingFiles?: string[];
-              }
-            | undefined;
+          let entryFailure: ReportedGateResult | undefined;
           for (const gate of afterMergeGates) {
             const gr = await this.runGate(gate, {
               cwd: repoRoot,
@@ -2504,22 +2530,10 @@ export class Dispatcher {
               baseSha: preWtHead,
               log: (l) => this.log.info(l),
             });
-            gateResults.push({
-              gate: gate.name,
-              ok: gr.ok,
-              message: gr.message,
-              ...(gr.details ? { details: gr.details } : {}),
-              ...(gr.verdict ? { verdict: gr.verdict } : {}),
-              ...(gr.skipped ? { skipped: gr.skipped } : {}),
-            });
+            const row = reportedGateRow(gate.name, gr);
+            gateResults.push(row);
             if (!gr.ok) {
-              entryFailure = {
-                gate: gate.name,
-                message: gr.message,
-                ...(gr.verdict ? { verdict: gr.verdict } : {}),
-                ...(gr.details ? { details: gr.details } : {}),
-                ...(gr.failingFiles ? { failingFiles: gr.failingFiles } : {}),
-              };
+              entryFailure = row;
               break;
             }
           }
@@ -3111,15 +3125,7 @@ export class Dispatcher {
         preCherry,
         mergedSha,
       );
-      let entryFailure:
-        | {
-            gate: string;
-            message: string;
-            verdict?: string;
-            details?: string;
-            failingFiles?: string[];
-          }
-        | undefined;
+      let entryFailure: ReportedGateResult | undefined;
       // `mergeGateResults` is a wave-cumulative accumulator (never reset
       // per entry — `allGateResults` below needs the whole wave's worth).
       // Capture this entry's own starting offset so `ShipContext.gateResults`
@@ -3148,22 +3154,10 @@ export class Dispatcher {
           baseSha: r.spanBase,
           log: (l) => this.log.info(l),
         });
-        mergeGateResults.push({
-          gate: gate.name,
-          ok: gr.ok,
-          message: gr.message,
-          ...(gr.details ? { details: gr.details } : {}),
-          ...(gr.verdict ? { verdict: gr.verdict } : {}),
-          ...(gr.skipped ? { skipped: gr.skipped } : {}),
-        });
+        const row = reportedGateRow(gate.name, gr);
+        mergeGateResults.push(row);
         if (!gr.ok) {
-          entryFailure = {
-            gate: gate.name,
-            message: gr.message,
-            ...(gr.verdict ? { verdict: gr.verdict } : {}),
-            ...(gr.details ? { details: gr.details } : {}),
-            ...(gr.failingFiles ? { failingFiles: gr.failingFiles } : {}),
-          };
+          entryFailure = row;
           break;
         }
       }
@@ -4128,14 +4122,10 @@ export class Dispatcher {
     spanBase: string,
   ): Promise<{
     ok: boolean;
-    /** First failing gate, structured so callers can persist a prior-attempt record. */
-    failure?: {
-      gate: string;
-      message: string;
-      verdict?: string;
-      details?: string;
-      failingFiles?: string[];
-    };
+    /** First failing gate — the same row `results` carries, so a prior-attempt
+     * record a caller persists from it cannot name a different failure than the
+     * verdict reports. */
+    failure?: ReportedGateResult;
     results: ReportedGateResult[];
     /** The commit's touched paths, already computed for the gate loop below —
      * exposed so callers don't re-derive via a second `git show --name-only`
@@ -4198,25 +4188,13 @@ export class Dispatcher {
         ...(assignedEntry ? { entry: assignedEntry } : {}),
         log: (l) => this.log.info(l),
       });
-      results.push({
-        gate: gate.name,
-        ok: r.ok,
-        message: r.message,
-        ...(r.details ? { details: r.details } : {}),
-        ...(r.verdict ? { verdict: r.verdict } : {}),
-        ...(r.skipped ? { skipped: r.skipped } : {}),
-      });
+      const row = reportedGateRow(gate.name, r);
+      results.push(row);
       if (!r.ok) {
         if (r.details) this.log.warn(r.details);
         return {
           ok: false,
-          failure: {
-            gate: gate.name,
-            message: r.message,
-            ...(r.verdict ? { verdict: r.verdict } : {}),
-            ...(r.details ? { details: r.details } : {}),
-            ...(r.failingFiles ? { failingFiles: r.failingFiles } : {}),
-          },
+          failure: row,
           results,
           touchedPaths: commitTouchedPaths,
         };
@@ -4250,13 +4228,7 @@ export class Dispatcher {
     ref: PriorAttemptRef,
     label: string,
     blamed: PendingEntry | undefined,
-    failure: {
-      gate: string;
-      message: string;
-      verdict?: string;
-      details?: string;
-      failingFiles?: string[];
-    },
+    failure: ReportedGateResult,
     touchedPaths: string[],
   ): Promise<{ footprint: string[]; gateFailure: GateFailure }> {
     const record = await buildGateRevert(
