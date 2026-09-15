@@ -35,9 +35,9 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## Rosters that read exhaustive and lag the shipped surface (PARKED — six in spec, one in docs with no spec owner)
+## Rosters that read exhaustive and lag the shipped surface (PARKED — seven in spec, one in docs with no spec owner)
 
-Seven sites, one shape; all verified on disk this tick.
+Eight sites, one shape; sites 1-7 verified on disk when filed, site 8 this tick.
 
 1. **`spec/pending.md`, *What the package exports*** reads "`src/index.ts` and
    `FlumeApi` are the canonical lists. Both carry the *values*
@@ -91,6 +91,19 @@ Seven sites, one shape; all verified on disk this tick.
    same record through the same builder (`src/Dispatcher.ts:3040`). No fork —
    one producer named where two exist. The *behavioral* half of that same
    change is its own question below.
+8. **`spec/loop.md:561`, *The tick verdict*** enumerates the verdict's gate
+   result row as "`TickVerdictGateResult`: the `gate` name, its `ok` verdict,
+   its one-line `message`, its captured `details` … and its `skipped` reason",
+   citing `spec/chain.md`, *What a gate returns*. Two lags, both landed by
+   `e3882d0`: the type is `ReportedGateResult` (`src/Dispatcher.ts:218`,
+   exported at `src/index.ts:103`), so the spelled name resolves nowhere in
+   the package — a dangling referent, not a short list; and `verdict?` is
+   absent from the enumeration, though the cited section documents it as
+   "persisted verbatim onto the tick verdict's gate result". **This is the
+   recommended option's cheapest case**: the sentence already carries the
+   pointer, so the roster beside it is a second copy that can simply go
+   (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+   beside its source*). The name has to move either way.
 
 Beside them, one drift in `spec/harness.md` that is **not** an enumeration and
 carries no fork — it rides the same edit pass. `spec/harness.md`, *The
@@ -102,11 +115,11 @@ handoff path, and live for this repo's own loop, which declares no override.
 `spec/loop.md`, *One tick is one fresh process*, sanctions the mechanism, so
 the drift is in this sentence alone.
 
-Options; one ruling covers all seven:
+Options; one ruling covers all eight:
 
 - **Transcribe.** Name the missing values in each sentence. Cheapest, and
-  leaves seven hand-maintained lists that go stale at the next export — which
-  is how all seven of these got here.
+  leaves eight hand-maintained lists that go stale at the next export — which
+  is how all eight of these got here.
 - **State the property, not the roster** (recommended). Say what makes a value
   canonical — the two lists carry the same values, held by the `.d.ts`
   doc-comment scan the carve-out sanctions — and say what a hook record
