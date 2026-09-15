@@ -197,8 +197,24 @@ export interface EntryExtensionField {
  */
 export type EntryExtension = Record<string, EntryExtensionField>;
 
-/** Core field names — an extension may not shadow them, except `tag` (refined, not replaced; see below). */
-const CORE_FIELDS = new Set(Object.keys(PendingEntryCore.shape));
+/**
+ * The engine-core entry field names, in declaration order — an extension may
+ * not shadow them, except `tag` (refined, not replaced; see below).
+ *
+ * Exported because this vocabulary is a fact the engine holds and acts on:
+ * it gates extension composition and it is the set the rendered prompt
+ * schema claims to enumerate. A consumer that needs the names otherwise
+ * rebuilds them by reaching through `composePendingList`'s returned
+ * `z.ZodType` into zod's `.element.shape` — internals this module keeps
+ * private precisely so a zod major cannot rename them out from under a
+ * reader.
+ */
+export const CORE_ENTRY_FIELDS: readonly string[] = Object.keys(
+  PendingEntryCore.shape,
+);
+
+/** O(1) shadow lookup, derived from {@link CORE_ENTRY_FIELDS} — one home. */
+const CORE_FIELDS = new Set(CORE_ENTRY_FIELDS);
 
 /**
  * Reject a duplicate `tag` value within the queue — tag identity must be

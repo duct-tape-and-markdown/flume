@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import {
   AsyncEntryExtensionValidatorError,
+  CORE_ENTRY_FIELDS,
   composePendingList,
   declaredPaths,
   isPickableNow,
@@ -299,11 +300,30 @@ describe("chain-declared extension (v0.8 §2)", () => {
     expect(result.entries[0]!.tests).toEqual([]);
   });
 
-  it("throws on an extension that shadows a core field — chain-config defect", () => {
-    const shadowing = {
-      files: { schema: z.string(), hint: `"..."` },
-    } satisfies EntryExtension;
-    expect(() => composePendingList(shadowing)).toThrow(/shadows/);
+  /**
+   * Shadow refusal, judged over the engine's own vocabulary rather than one
+   * hand-picked name: `CORE_ENTRY_FIELDS` is what `composePendingList`
+   * checks against, so every name it holds — and every name a later core
+   * field adds to it — is covered here without the test being edited.
+   */
+  it("an extension shadowing any exported core entry field name other than tag throws", () => {
+    const shadowable = CORE_ENTRY_FIELDS.filter((name) => name !== "tag");
+    expect(
+      shadowable.length,
+      "no shadowable core field names exported — nothing to judge",
+    ).toBeGreaterThan(0);
+    for (const name of shadowable) {
+      const shadowing: EntryExtension = {
+        [name]: { schema: z.string(), hint: `"..."` },
+      };
+      expect(() => composePendingList(shadowing)).toThrow(
+        new RegExp(`"${name}".*shadows`),
+      );
+    }
+    // `tag` is the one declared exception: refined, never replaced.
+    expect(() =>
+      composePendingList({ tag: { schema: z.string(), hint: `"..."` } }),
+    ).not.toThrow();
   });
 });
 
@@ -1094,15 +1114,12 @@ describe("renderSchemaForPrompt", () => {
    * claim ("fields not listed here are rejected") to the field set the
    * composed validator actually accepts. A hand-written list of core names
    * here would be the tester re-authoring the writer's vocabulary, so both
-   * sides are read from the real thing: the names come off the composed
-   * validator, the render comes off the real `renderSchemaForPrompt`, and
-   * the acceptance direction runs through the real `parsePending`.
+   * sides are read from the real thing: the names come off the engine's
+   * `CORE_ENTRY_FIELDS` — the same list `composePendingList` composes and
+   * refuses shadows against — the render comes off the real
+   * `renderSchemaForPrompt`, and the acceptance direction runs through the
+   * real `parsePending`.
    */
-  function coreFieldNamesFromValidator(): string[] {
-    const list = composePendingList() as unknown as z.ZodArray<z.ZodObject>;
-    return Object.keys(list.element.shape);
-  }
-
   function renderedTopLevelFieldNames(rendered: string): string[] {
     return rendered.split("\n").flatMap((line) => {
       const match = /^ {2}"([^"]+)":/.exec(line);
@@ -1111,10 +1128,10 @@ describe("renderSchemaForPrompt", () => {
   }
 
   it("every engine-core field the composed validator accepts is named in the rendered schema", () => {
-    const coreFields = coreFieldNamesFromValidator();
+    const coreFields = CORE_ENTRY_FIELDS;
     expect(
       coreFields.length,
-      "composed validator exposed no fields — nothing to judge",
+      "engine exposed no core field names — nothing to judge",
     ).toBeGreaterThan(0);
     const rendered = renderSchemaForPrompt();
     for (const name of coreFields) {
