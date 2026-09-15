@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -738,6 +739,25 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
   });
 });
 
+/** The module declaring `parsePendingLoose` — the call-site scan drops it. */
+const LOOSE_DECLARATION = "PendingSchema.ts";
+
+/** Every `src/` module mentioning `parsePendingLoose(`, with its count. */
+const looseMentions = (): { file: string; count: number }[] =>
+  filesUnder(SRC_FILES).flatMap((file) => {
+    const count = (readFileSync(file, "utf8").match(/\bparsePendingLoose\(/g) ?? []).length;
+    return count > 0 ? [{ file, count }] : [];
+  });
+
+/**
+ * Those mentions minus the declaring module. `basename`, not a `"/"`-spelled
+ * suffix: `filesUnder` hands back host-native paths, so on win32 a `/`-suffix
+ * test matches nothing and the declaration counts itself as a call site
+ * (`spec/cli.md`, *win32 is a supported host*).
+ */
+const looseCallSites = (): { file: string; count: number }[] =>
+  looseMentions().filter((site) => basename(site.file) !== LOOSE_DECLARATION);
+
 describe("parsePendingLoose — chain-less informational reads", () => {
   it("passes undeclared fields through unvalidated", () => {
     const result = parsePendingLoose(
@@ -763,17 +783,19 @@ describe("parsePendingLoose — chain-less informational reads", () => {
   });
 
   it("has exactly one production call site — job.ts's read-only job-listing (PendingSchema.ts:324-329)", () => {
-    const callSites = filesUnder(SRC_FILES)
-      .filter((file) => !file.endsWith("/PendingSchema.ts")) // the declaration, not a call
-      .flatMap((file) => {
-        const src = readFileSync(file, "utf8");
-        const count = (src.match(/\bparsePendingLoose\(/g) ?? []).length;
-        return count > 0 ? [{ file, count }] : [];
-      });
+    const callSites = looseCallSites();
 
     expect(callSites).toHaveLength(1);
-    expect(callSites[0]!.file).toMatch(/\/job\.ts$/);
+    expect(basename(callSites[0]!.file)).toBe("job.ts");
     expect(callSites[0]!.count).toBe(1);
+  });
+
+  it("the parsePendingLoose call-site scan excludes its own declaration from a set that really contained it", () => {
+    const leaves = (sites: { file: string }[]): string[] =>
+      sites.map((site) => basename(site.file));
+
+    expect(leaves(looseMentions())).toContain(LOOSE_DECLARATION);
+    expect(leaves(looseCallSites())).not.toContain(LOOSE_DECLARATION);
   });
 
   it("its one call site never rewrites pending.json — readPendingLoose (job.ts, shared by jobStatus and flume status) is read-only", () => {
