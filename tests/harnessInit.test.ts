@@ -182,10 +182,11 @@ it("flume-harness init writes the state root and its derived ignore lines", asyn
 /**
  * The queue is the one artifact an adopted repository needs before its first
  * tick that no tick writes (`spec/harness.md`, *Adoption and upgrade*): every
- * plan slice opens it with a bare reader and refuses on absence
- * (`tests/harnessPrompts.test.ts`, *every plan slice prompt refuses when its
- * queue artifact is absent*), and only a plan tick that got to run would
- * write one. Seeded here, or the first wave never starts.
+ * plan slice opens it with a bare reader, so absence walls each of them
+ * (`tests/harnessPrompts.test.ts`, *each plan slice prompt's verdict on an
+ * absent queue follows whether its spans read that artifact*), and only a
+ * plan tick that got to run would write one. Seeded here, or the first wave
+ * never starts.
  *
  * Addressed through the engine's own `resolvePendingPath` rather than a
  * layout spelled by the tester: a queue seeded at a path the dispatcher does

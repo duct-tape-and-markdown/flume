@@ -563,7 +563,7 @@ const NOTHING: Damage = {
  * recognised is here, once (`engineering.md`, *The fix lands at the
  * mechanism*).
  */
-async function everySliceRefusesOn(
+async function eachSliceVerdictFollowsItsSpansOn(
   artifact: (typeof ARTIFACTS)[number],
   damage: Damage,
 ): Promise<void> {
@@ -622,7 +622,7 @@ async function everySliceRefusesOn(
 async function everySliceOverWrongKindAt(key: SharedPromptArg): Promise<void> {
   const artifact = GUARDED.find((a) => a.key === key);
   expect(artifact, `${key} is a guarded artifact`).toBeDefined();
-  await everySliceRefusesOn(artifact!, WRONG_KIND);
+  await eachSliceVerdictFollowsItsSpansOn(artifact!, WRONG_KIND);
 }
 
 it("each plan slice prompt's verdict on a plan state directory in place follows whether its spans read that artifact", async () => {
@@ -651,10 +651,10 @@ async function everySliceOverAbsentArtifactAt(
 ): Promise<void> {
   const artifact = UNGUARDED.find((a) => a.key === key);
   expect(artifact, `${key} is an unguarded artifact`).toBeDefined();
-  await everySliceRefusesOn(artifact!, NOTHING);
+  await eachSliceVerdictFollowsItsSpansOn(artifact!, NOTHING);
 }
 
-it("every plan slice prompt refuses when its queue artifact is absent", async () => {
+it("each plan slice prompt's verdict on an absent queue follows whether its spans read that artifact", async () => {
   await everySliceOverAbsentArtifactAt("PENDING_PATH");
 });
 
