@@ -78,7 +78,9 @@
       "tests/harnessChain.test.ts",
       "tests/harnessGates.test.ts",
       "tests/harnessHandoff.test.ts",
-      "tests/harnessRunner.test.ts"
+      "tests/harnessRunner.test.ts",
+      "tests/chain.test.ts",
+      "tests/worktrees.test.ts"
     ]
   }
 }
