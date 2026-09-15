@@ -21,7 +21,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -125,6 +125,29 @@ async function consumerDocPages(): Promise<{ page: string; body: string }[]> {
       body: await readFile(join(REPO_ROOT, ...page.split("/")), "utf8"),
     })),
   );
+}
+
+/**
+ * The two pages a consumer arrives on. Everything under `docs/` is reached
+ * by following a link out of one of them; a `docs/` page linked only from a
+ * sibling `docs/` page is reachable only by a reader already inside the
+ * directory.
+ */
+const DOC_ROOTS = ["README.md", "CHANGELOG.md"];
+
+/**
+ * Every link destination a markdown page states — inline `[text](target)`
+ * and the reference definition `[label]: target` — with any `#anchor`
+ * dropped. A destination that names nothing on the tree (a URL, a bare
+ * anchor) is left in rather than filtered: the caller resolves, and a
+ * target naming no file simply matches no page.
+ */
+function markdownLinkTargets(body: string): string[] {
+  const targets = [
+    ...[...body.matchAll(/\[[^\]]*\]\(\s*([^)\s]+)/g)].map((m) => m[1] ?? ""),
+    ...[...body.matchAll(/^\[[^\]]+\]:\s*(\S+)/gm)].map((m) => m[1] ?? ""),
+  ];
+  return targets.map((t) => t.split("#")[0] ?? "").filter((t) => t !== "");
 }
 
 /**
@@ -768,3 +791,56 @@ it("no README or docs page names a flume-harness verb the bin does not dispatch"
     });
   }
 }, SPAWN_BUDGET_MS);
+
+/**
+ * The upgrade half of adoption (`spec/harness.md`, *Adoption and upgrade*):
+ * one version bump plus the release's migration note. The note is only half
+ * of that if a consumer can find it, and the pages a consumer arrives on are
+ * the two roots above — a note written for a cut and linked from neither
+ * ships unreachable, which is the state this case was written over.
+ *
+ * Not a claim about what a link says: the scan resolves each destination
+ * against the working tree, the token rather than its meaning, so the
+ * verdict is that a file on disk has an inbound edge from a root. Which root
+ * carries a given note is free — the changelog links the notes it cut, the
+ * README carries the current line — because either is a place a reader is
+ * already standing.
+ *
+ * The scanner's own detection is proven before the verdict: a no-hits pass
+ * over both roots is what a matcher that stopped matching produces, and it
+ * is indistinguishable from a page that links nothing.
+ */
+it("every docs/MIGRATING page is linked from README.md or CHANGELOG.md", async () => {
+  // The scanner, over a body naming a page in each voice it has to tell
+  // apart: an anchored link, a reference definition, an off-tree URL, and a
+  // bare code-voice mention, which is not an edge.
+  expect(
+    markdownLinkTargets(
+      "see [`docs/MIGRATING-9.9.md`](docs/MIGRATING-9.9.md#section-3) and\n" +
+        "[home](https://example.test/x), while `docs/MIGRATING-9.7.md` is only named.\n\n" +
+        "[ref]: docs/MIGRATING-9.8.md\n",
+    ),
+  ).toEqual(["docs/MIGRATING-9.9.md", "https://example.test/x", "docs/MIGRATING-9.8.md"]);
+
+  const notes = (await filesUnder(join(REPO_ROOT, "docs"), "docs")).filter((p) =>
+    /^docs\/MIGRATING-[^/]+\.md$/.test(p),
+  );
+  // Non-vacuity: with no note on the tree the loop below judges nothing.
+  expect(notes.length).toBeGreaterThan(0);
+
+  const linked = new Set<string>();
+  for (const root of DOC_ROOTS) {
+    const body = await readFile(join(REPO_ROOT, root), "utf8");
+    for (const target of markdownLinkTargets(body)) {
+      linked.add(resolve(REPO_ROOT, dirname(root), target));
+    }
+  }
+  expect(linked.size).toBeGreaterThan(0);
+
+  for (const note of notes) {
+    expect({ note, linked: linked.has(resolve(REPO_ROOT, ...note.split("/"))) }).toEqual({
+      note,
+      linked: true,
+    });
+  }
+});
