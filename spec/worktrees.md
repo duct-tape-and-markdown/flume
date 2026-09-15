@@ -70,7 +70,9 @@ sweep*, below). A second computation is a defect: a sweep basing on the default 
 creation honored the override found nothing to remove, then failed every `git branch -D`
 against worktrees still standing at the real base (field-traced four times). A chain
 does not commit a base path: placement is machine-local, the operator's per host, and
-a committed literal is the wrong home for it. A chain may declare how to compute one —
+a committed literal is the wrong home for it. The operator's `FLUME_WORKTREES_DIR`
+outranks whatever a chain declares, which outranks the default, because the env var is
+the operator's on a host whose committed `chain.ts` they may not own. A chain may declare how to compute one —
 `Chain.worktreesBase?: (paths) => string`, evaluated at load against the resolved
 roots — so a chain that wants worktrees outside the checkout says so once, without
 an environment variable set before the engine's own module loads.

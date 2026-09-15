@@ -516,11 +516,13 @@ dispatcher-owned `<prior-attempt>` block:
   `spec/chain.md`, *The agent seam*). The engine names no intent: a refused constraint,
   a bail, and "nothing to do" all exit clean, and the message is the chain's to read.
 - `platform-preempt` — the failure class, marked as not a defect in the prior work.
-- `render-refused` — every failing inline-exec span's command text and stderr.
+- `render-refused` — every failing inline-exec span's command text and stderr, or
+  the pre-invocation hook that threw and what it said; either way the agent was
+  never invoked.
 - `tip-moved` — the expected and observed tips.
-- `not-shipped` — the chain's `shipped` hook returned `false` (`spec/pending.md`, *Ship
-  detection trusts the agent's own account*): the merged sha and the commit's touched
-  paths. No reason vocabulary — the engine records that the chain said no, never why.
+- `not-shipped` — the chain's `shipped` hook returned `false`, or threw (the record
+  says which) (`spec/pending.md`, *Ship detection trusts the agent's own account*): the
+  merged sha and the commit's touched paths. No reason vocabulary — the engine records that the chain said no, never why.
   The record is a fact the next tick and every `shouldRun` can read from
   `TickContext.priorAttempts`; without it a park is visible only in the verdict log,
   and two chains independently rebuilt "was the last build a park" from there.
@@ -558,9 +560,9 @@ dispatcher-owned `<prior-attempt>` block:
 
 Every tick that actually runs a phase writes **one verdict artifact** carrying: phase
 name, entry tags provisioned, `committed`, the no-commit class, `tipMoved`/`declined`,
-each gate result in run order (`TickVerdictGateResult`: the `gate` name, its `ok`
-verdict, its one-line `message`, its captured `details` — where `writablePathsGate`
-lists the violating paths — and its `skipped` reason when the gate declared one,
+each gate result in run order (what a gate returns, persisted verbatim under the
+gate's name — `spec/chain.md`, *What a gate returns*; `writablePathsGate`'s details
+list the violating paths,
 `spec/chain.md`, *What a gate returns*), shipped tags,
 each provisioned span's cherry-pick/merge fate with its footprint, **its base sha,
 and its head sha** — per entry under fanout, the phase's own single span under
@@ -625,8 +627,9 @@ store until gc, and the verdict is the only place their sha outlives the branch.
 - **No interpretation fields.** The artifact records what happened, never what it
   means. "Errored" is not stored: `superviseLoop` derives it at the read site from the
   facts (`gate-revert`, `platform-preempt`, `render-refused`, `tipMoved`, or a
-  provisioning failure that left nothing shipped — never `clean-exit` or
-  `not-shipped`, which are the agent and the chain correctly declining). "Park", "bail worth waking for" are chain readings, not
+  provisioning failure that left nothing shipped, or a `not-shipped` the chain's
+  `shipped` hook *threw* into — never `clean-exit` or a `not-shipped` the chain
+  returned, which are the agent and the chain correctly declining). "Park", "bail worth waking for" are chain readings, not
   engine vocabulary.
 - **It is the supervisor's only fact channel.** Child stdio stays `inherit` —
   live-streamed agent output is operationally load-bearing, and piped-and-parsed stdout

@@ -21,8 +21,10 @@ runtime.
   factory's return, because a named export cannot receive the API.
 - `FlumeApi` carries the runtime surface a chain
   composes with — builtin gates, `setupWorktree`, the pending-schema helpers,
-  the agent constructors and decorators, the path-glob matcher `matchesAny`
-  (the same matcher the write fence enforces with, so chain
+  the agent constructors and decorators, and every path rule the engine
+  keys files by — the glob matcher `matchesAny`, the host-to-git path rule
+  `gitPath`, the state-root layout (the same rules the write fence and the
+  at-ref readers enforce with, so chain
   path policy such as a shipped predicate never hand-rolls a second grammar
   beside the engine's), read-only git helpers, and the error
   classes chains branch on with `instanceof`. Each member is declared with
@@ -595,8 +597,10 @@ the merge bookkeeping completes.
     land on trunk that this tick could not have seen" compares against the
     engine's number rather than the worktree's reflog.
   - **`entries`** (fanout only) — one record per entry the wave handed to its
-    agent, `{ tag, committed, shipped, reverted, declined?, noCommit?, mergeOutcome? }` —
-    `mergeOutcome` being the entry's merge-stage fact as the verdict records it
+    agent, carrying what the wave knew about it: its tag, whether it committed,
+    shipped, reverted or declined, its no-commit class, its merge-stage fact, and
+    the entry's chain-declared payload as the queue held it — the shipped type is
+    the roster. `mergeOutcome` is the entry's merge-stage fact as the verdict records it
     (`merged`, `not-shipped`, `cherry-pick-conflict`, …), so a handoff can tell a park
     from a conflict without reading the verdict log — the same
     facts the wave already folds into `shippedTags`, `revertedTags`,

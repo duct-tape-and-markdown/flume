@@ -45,9 +45,11 @@ agent inert, whoever wrote it.
 
 ### The entry extension
 
-`summary`, `per`, `acceptance`, `tests[]`, `pins[]`,
-`notes`, with their caps and hints. A consumer may add fields; it may not
-remove these.
+The fields the package's discipline reads — a summary, a `per` cite, an
+acceptance criterion, the `tests[]` and `pins[]` lines the judge proves, a note
+to plan, and the contract-touching flag the default handoff stops on — with
+their caps and hints, held by the package's schema rather than by a roster
+here. A consumer may add fields; it may not remove the package's.
 
 
 ### The judges
@@ -81,7 +83,9 @@ never a line regexed out of prose.
 ### The default `handoff`
 
 Reads the engine's reported pickable set and
-no-commit facts. A consumer overrides it by declaration, not by copying it.
+no-commit facts, and writes exactly one thing: the stop flag, after a shipped
+entry marked contract-touching, so the next run starts on the contract it
+changed. A consumer overrides it by declaration, not by copying it.
 
 
 ### Committed-path discipline
@@ -119,8 +123,8 @@ one refuses the load naming the field and the valid set.
 | `runner` | A factory, `({ api, provision }) => Runner`, for the test runner the judge drives — see *The runner interface*. The package calls it at chain load with the chain's own `FlumeApi` and the declared `setup` as a provisioning function, so a runner constructs neither by hand. |
 | `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
-| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script; the package's own gates are always present and always first. |
-| `agents` | Model per phase and extra agent arguments; absent means the package's default. |
+| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
+| `agents` | Model per phase, extra agent arguments, and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. |
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |
@@ -139,7 +143,9 @@ than exit codes the judge would have to interpret:
   and report, per name, whether one passing test carried it.
 - **`runAtBase(names, files, baseSha, cwd)`** — lay the merged bytes of `files`
   over a detached checkout of `baseSha` and run the same names there; the judge
-  refuses a `tests[]` line that passes here.
+  refuses a `tests[]` line that passes here. The checkout is the engine's and is
+  reclaimed at the gate boundary, so this operation runs only inside a gate
+  invocation; nothing drives it from outside one.
 - **`lanes`** — the runner's declared lanes and which files each excludes. The
   running lane's exclusions are rendered into plan's `tests[]` and `pins[]`
   hints, so plan is told at authorship which globs no judge will reach — never
