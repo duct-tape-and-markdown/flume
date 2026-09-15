@@ -7,7 +7,8 @@
  * guard that refuses a state root planted above the fixtures
  * (`installStateRootLeakGuard`, wired through `vitest.config.ts`), and the
  * one number every spawning site in the default lane declares as its budget
- * (`SPAWN_BUDGET_MS`).
+ * (`SPAWN_BUDGET_MS`), and the git-config pin every fixture repository runs
+ * under (`pinGitAutoGcOff`, armed through the same setup file).
  * Not *.test.ts, so neither vitest lane (unit or integration) collects it
  * as a suite of its own.
  */
@@ -374,4 +375,60 @@ export async function runCli(
 export async function gitOut(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await exec("git", args, { cwd });
   return stdout.trimEnd();
+}
+
+/**
+ * The config git must see in every fixture repository: auto gc off.
+ *
+ * Git runs `gc --auto` after ordinary write commands (commit, merge, am), and
+ * `gc.autoDetach` defaults on, so the gc it starts is a **detached
+ * grandchild that outlives the test that provoked it**. It then walks
+ * `.git/objects` while the fixture's teardown is recursively removing the
+ * same tree, and the remove reds with ENOTEMPTY — a failure in no assertion,
+ * on whichever case happened to be holding the directory. Retrying the remove
+ * would hide the same race behind a wait rather than stop the process.
+ */
+const GIT_AUTO_GC_OFF: readonly [key: string, value: string] = ["gc.auto", "0"];
+
+/**
+ * Pin auto gc off on `env`, for every git child that inherits it.
+ *
+ * Through git's `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`
+ * sequence rather than a `git config` call per fixture: the pin then reaches
+ * every git process the run starts — the suite's own ~25 `git init` sites,
+ * the git a spawned `flume` runs (`src/git.ts` inherits this process's
+ * environment), and the git a spawned git runs — from one home, instead of
+ * from each creation site remembering it (`.claude/rules/engineering.md`,
+ * "The fix lands at the mechanism").
+ *
+ * Appends to whatever sequence the host already declared, and overwrites in
+ * place when the host pinned this same key, so arming is idempotent — a
+ * worker that loads the setup file once per test file does not grow the
+ * sequence. A `GIT_CONFIG_COUNT` that is not a count refuses here rather than
+ * reaching git as a clobbered sequence: git would reject the value we wrote
+ * over, and the suite would read a git failure with no cause
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ */
+export function pinGitAutoGcOff(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const [key, value] = GIT_AUTO_GC_OFF;
+  const declared = env.GIT_CONFIG_COUNT ?? "0";
+  if (!/^\d+$/.test(declared)) {
+    throw new Error(
+      `flume test harness: GIT_CONFIG_COUNT is not a count (${declared}), so ` +
+        `this run cannot append \`${key}=${value}\` to the host's git config ` +
+        `sequence without clobbering it. Unset GIT_CONFIG_COUNT, or set it to ` +
+        `the number of GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n pairs it declares.`,
+    );
+  }
+  const count = Number(declared);
+  for (let i = 0; i < count; i++) {
+    if (env[`GIT_CONFIG_KEY_${i}`] === key) {
+      env[`GIT_CONFIG_VALUE_${i}`] = value;
+      return env;
+    }
+  }
+  env[`GIT_CONFIG_KEY_${count}`] = key;
+  env[`GIT_CONFIG_VALUE_${count}`] = value;
+  env.GIT_CONFIG_COUNT = String(count + 1);
+  return env;
 }

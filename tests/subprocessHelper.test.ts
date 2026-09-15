@@ -8,7 +8,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,7 @@ import {
   TSX_CLI,
   exitStatusOf,
   mkFixtureRoot,
+  pinGitAutoGcOff,
   refuseLeakedStateRoots,
   refusePreexistingStateRoots,
   requireEntryPoint,
@@ -877,4 +878,87 @@ it("the timer scan reports an awaited timer in a spawning fixture case", async (
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+/**
+ * The end of the pin that matters: not what `pinGitAutoGcOff` returns, but
+ * what a real `git` resolves inside a fixture the suite created, with the
+ * environment `tests/helpers/vitestSetup.ts` armed for this worker
+ * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+ * wrote").
+ *
+ * Top-level rather than under the describe below, because its subject is the
+ * wiring rather than the function.
+ */
+it("a temp git repository the suite creates has git's auto gc disabled", async () => {
+  const repo = await mkFixtureRoot("flume-auto-gc-");
+  try {
+    const opts = { cwd: repo };
+    await exec("git", ["init", "-q", "-b", "main"], opts);
+
+    // Non-vacuity: git answered from inside the fixture this test created,
+    // not from an ancestor repository whose own config would otherwise be
+    // what the assertion below reads.
+    const { stdout: top } = await exec(
+      "git",
+      ["rev-parse", "--show-toplevel"],
+      opts,
+    );
+    expect(await realpath(top.trim())).toBe(await realpath(repo));
+
+    const { stdout } = await exec(
+      "git",
+      ["config", "--type=int", "--get", "gc.auto"],
+      opts,
+    );
+    expect(stdout.trim()).toBe("0");
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
+
+describe("pinGitAutoGcOff — appended to the host's git config sequence, never over it", () => {
+  it("appends beside a sequence the host already declared", () => {
+    const env: NodeJS.ProcessEnv = {
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "protocol.version",
+      GIT_CONFIG_VALUE_0: "2",
+    };
+
+    expect(pinGitAutoGcOff(env)).toBe(env);
+    expect(env).toEqual({
+      GIT_CONFIG_COUNT: "2",
+      GIT_CONFIG_KEY_0: "protocol.version",
+      GIT_CONFIG_VALUE_0: "2",
+      GIT_CONFIG_KEY_1: "gc.auto",
+      GIT_CONFIG_VALUE_1: "0",
+    });
+  });
+
+  it("re-arming one environment overwrites in place rather than growing the sequence", () => {
+    const env: NodeJS.ProcessEnv = {
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "gc.auto",
+      GIT_CONFIG_VALUE_0: "6700",
+    };
+
+    pinGitAutoGcOff(env);
+    pinGitAutoGcOff(env);
+
+    expect(env).toEqual({
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "gc.auto",
+      GIT_CONFIG_VALUE_0: "0",
+    });
+  });
+
+  it("refuses a GIT_CONFIG_COUNT that is not a count, rather than writing over the pair it names", () => {
+    const env: NodeJS.ProcessEnv = {
+      GIT_CONFIG_COUNT: "two",
+      GIT_CONFIG_KEY_0: "protocol.version",
+    };
+
+    expect(() => pinGitAutoGcOff(env)).toThrow(/GIT_CONFIG_COUNT/);
+    expect(env.GIT_CONFIG_KEY_0).toBe("protocol.version");
+  });
 });
