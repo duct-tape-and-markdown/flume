@@ -627,6 +627,14 @@ function isMergingMarker(rec: unknown): rec is MergingMarker {
  * "no interrupted merge" would proceed over exactly the state this refusal
  * exists to stop (`engineering.md`, "Loud or nothing"). Its `marker` is
  * `undefined` and the caller names the file alone.
+ *
+ * The directory read takes the same line, as the ENOENT-vs-other split
+ * `PriorAttempts.readAll` (src/priorAttempts.ts) gives its own record dir:
+ * an *absent* `merging/` is the honest empty answer — nothing was ever
+ * staked — while any other listing failure (permission denied, a file
+ * sitting at the path, a path too long for the platform) escapes. An
+ * unreachable dir reported as empty would tell the refusal "no interrupted
+ * merge" over markers it could not see.
  */
 export async function readMergingMarkers(
   flumeDir: string,
@@ -635,8 +643,9 @@ export async function readMergingMarkers(
   let names: string[];
   try {
     names = await readdir(namespacedJoin(dir));
-  } catch {
-    return [];
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
   }
   const out: Array<{ path: string; marker: MergingMarker | undefined }> = [];
   for (const name of names.filter((n) => n.endsWith(".json")).sort()) {

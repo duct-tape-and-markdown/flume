@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -22,6 +22,7 @@ import {
   PendingParseFailure as realPendingParseFailure,
   Dispatcher,
   loadChainModule,
+  readMergingMarkers,
   writeTickVerdict,
   clearTickVerdict,
   readTickVerdicts,
@@ -37,7 +38,7 @@ import {
 } from "../src/Dispatcher.ts";
 import { frictionCountLine } from "../src/friction.ts";
 import { worktreeDirName } from "../src/worktrees.ts";
-import { slugify } from "../src/paths.ts";
+import { mergingDir, slugify } from "../src/paths.ts";
 import { priorAttemptPath, priorAttemptsDir } from "../src/priorAttempts.ts";
 import type { Agent } from "../src/Agent.ts";
 import { extractFinalMessage, withTerminalRenderer } from "../src/Agent.ts";
@@ -4177,6 +4178,73 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
     // The queue rewrite is what the removal waits on — and it landed.
     expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
   }, 30_000);
+});
+
+/**
+ * The one consumer of `readMergingMarkers` is the CLI's startup refusal
+ * (`flume loop` / `flume job run`), where an empty read means *start*. So
+ * the listing's ENOENT-vs-other split is load-bearing: absent is the honest
+ * empty answer, and anything else must escape rather than read as "no
+ * interrupted merge" (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * EACCES is the reachable non-ENOENT listing failure on this platform:
+ * strip traversal permission and the dir exists but cannot be read. Same
+ * fixture shape `countFrictionFiles` and `PriorAttempts.readAll` are pinned
+ * with. The unreadable leg reads its fixture once *before* sealing it, so
+ * the throw afterwards is judged against a dir that really held a marker
+ * rather than a mistyped path (`.claude/rules/engineering.md`, "A green
+ * verdict is proven non-vacuous").
+ */
+describe("readMergingMarkers — the merging dir's ENOENT/EACCES split", () => {
+  it("readMergingMarkers reads an absent merging dir as no interrupted merge", async () => {
+    const flumeDir = await mkdtemp(join(tmpdir(), "flume-mm-absent-"));
+    try {
+      expect(existsSync(mergingDir(flumeDir))).toBe(false);
+      expect(await readMergingMarkers(flumeDir)).toEqual([]);
+    } finally {
+      await rm(flumeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("readMergingMarkers throws when the merging dir cannot be read for a reason other than absence", async () => {
+    const flumeDir = await mkdtemp(join(tmpdir(), "flume-mm-sealed-"));
+    const dir = mergingDir(flumeDir);
+    try {
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        join(dir, "sealed.json"),
+        JSON.stringify({
+          tag: "SEALED",
+          branch: "flume/sealed",
+          baseSha: "0".repeat(40),
+        }),
+        "utf8",
+      );
+      // Vacuity: the marker is readable *now*, so the refusal below is the
+      // seal talking and not an empty dir.
+      expect(await readMergingMarkers(flumeDir)).toHaveLength(1);
+
+      // Strip traversal permission on the merging dir itself: readdir now
+      // fails EACCES — the dir exists, the marker still stands, but neither
+      // can be seen — not ENOENT.
+      await chmod(dir, 0o000);
+
+      let caught: NodeJS.ErrnoException | undefined;
+      try {
+        await readMergingMarkers(flumeDir);
+      } catch (err) {
+        caught = err as NodeJS.ErrnoException;
+      }
+      expect(
+        caught,
+        "the sealed merging dir read as no interrupted merge",
+      ).toBeDefined();
+      expect(caught?.code).not.toBe("ENOENT");
+    } finally {
+      await chmod(dir, 0o755).catch(() => {});
+      await rm(flumeDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("Dispatcher fanout — afterMerge gate failure reverts only the offending entry (§7b)", () => {
