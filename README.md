@@ -37,6 +37,53 @@ error.
 `git worktree list --porcelain -z`, which git grew in 2.36; on an older git,
 worktree reclamation degrades loudly and nothing else does.
 
+One npm package ships two things. The **engine** (`@dtmd/flume`) is
+mechanism: ticks, worktrees, gates, verdicts, pickability. The **harness
+package** (`@dtmd/flume/harness`) is flume's own opinion about how to run it
+— plan slices, a build phase, their prompts and discipline, the entry
+extension, the judges, the records. Adopting the harness is one command:
+
+```bash
+npx flume-harness init
+```
+
+It writes, into the current repository:
+
+- **`.flume/declaration.ts`** — the one file your environment decides: where
+  a `per` cite may point, what each phase may write, the test runner the
+  judge drives, which plan slices run. A skeleton; its placeholders are
+  yours to fill in.
+- **`.flume/chain.ts`** — the hop the engine loads, applying the package's
+  factory to that declaration. The engine refuses a load without it, and
+  nothing in it is yours to tune.
+- **`.flume/plan/pending.json`** — the empty queue. Nothing else creates one,
+  and a plan slice refuses over an absent queue.
+- **`.flume/PROTOCOL.md`** — the project-side conventions no declaration
+  encodes.
+- the runtime `.gitignore` lines, and `@dtmd/flume` in your `package.json`.
+
+It never rewrites what it wrote: adoption is once (a second `init` refuses
+over a state root that is already there), and upgrading is one version bump
+plus the release's migration note.
+
+Install the dependency with whichever package manager this repo uses, edit
+the declaration's placeholders, then:
+
+```bash
+npx flume tick      # one phase × one agent invocation
+npx flume status    # baton state
+npx flume loop      # tick until hibernation
+```
+
+A consumer never copies a prompt, a slice, or a judge out of the package —
+what it wants to change, it declares.
+
+### The engine-level path: a chain you write
+
+Take this one when flume's workflow is not the workflow you want: different
+phases, different discipline, or just the plugin surface with nothing layered
+over it. No harness package involved.
+
 ```bash
 npm install --save-dev @dtmd/flume
 ```
@@ -69,13 +116,8 @@ Gates, agents, and schema helpers arrive on that `flume` parameter
 [docs/CHAIN-AUTHORING.md](docs/CHAIN-AUTHORING.md).
 
 Author `.flume/prompts/echo.md` — the prompt template (Markdown plus
-`{{KEY}}` placeholders from `promptArgs`). Then:
-
-```bash
-npx flume tick      # one phase × one agent invocation
-npx flume status    # baton state
-npx flume loop      # tick until hibernation
-```
+`{{KEY}}` placeholders from `promptArgs`) — and the same three verbs above
+drive it.
 
 For a readable single-phase starter with each field on its own line, see
 [`examples/minimal-chain.ts`](examples/minimal-chain.ts). For multi-phase

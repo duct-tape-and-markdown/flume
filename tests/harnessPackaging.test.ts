@@ -80,6 +80,47 @@ async function prerequisiteClaim(): Promise<string> {
   return lines.slice(start, blank === -1 ? undefined : blank).join(" ");
 }
 
+/** The README heading the adoption command has to lead. */
+const QUICKSTART_HEADING = "## Quickstart";
+
+/**
+ * The Quickstart section, from its heading to the next `##` one — its own
+ * `###` subsections included, since a verb demoted into one is still inside
+ * the section a reader is in. An absent heading yields the empty string,
+ * which the case below refuses before asserting anything over it.
+ */
+async function quickstartSection(): Promise<string> {
+  const lines = (await readFile(join(REPO_ROOT, "README.md"), "utf8")).split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trimEnd() === QUICKSTART_HEADING);
+  if (start === -1) return "";
+  const end = lines.findIndex((line, i) => i > start && /^## /.test(line));
+  return lines.slice(start, end === -1 ? undefined : end).join("\n");
+}
+
+/** The body of a markdown section's first shell block, or the empty string. */
+function firstShellBlock(section: string): string {
+  return /```bash\n([\s\S]*?)```/.exec(section)?.[1] ?? "";
+}
+
+/**
+ * Every verb a `--help` text lists under its `Commands:` block, read the way
+ * `tests/cliHelp.test.ts` reads the engine's exit-code block: off the real
+ * output, so the set comes from the bin rather than from a spelling here.
+ * A continuation line is indented past its verb and carries none.
+ */
+function listedVerbs(help: string): string[] {
+  const start = help.indexOf("Commands:\n");
+  expect(start).toBeGreaterThan(-1);
+  const verbs: string[] = [];
+  for (const line of help.slice(start).split("\n").slice(1)) {
+    if (line.trim() === "") continue;
+    if (!line.startsWith("  ")) break;
+    const listed = /^ {2}(\S+) {2,}\S/.exec(line);
+    if (listed?.[1] !== undefined) verbs.push(listed[1]);
+  }
+  return verbs;
+}
+
 let scratch: string;
 /** A package-shaped tree: the real manifest and bins over a real emit. */
 let pkgDir: string;
@@ -520,3 +561,50 @@ it("the README prerequisite line names the git floor", async () => {
   expect(claim).toContain(PREREQUISITE_LABEL);
   expect(claim).toMatch(/\bgit 2\.36\b/i);
 });
+
+/**
+ * The install floor's neighbour claim: what a reader is told to *run* first.
+ * Adoption is a verb on the package's own bin (`spec/harness.md`, *Adoption
+ * and upgrade*), and a Quickstart that opens on a hand-written `chain.ts`
+ * sends every new consumer down the engine-level path with the package they
+ * just installed unmentioned.
+ *
+ * An agreement gate, and the reason the verb is not spelled here: the real
+ * writer is the shipped `bin/flume-harness.js` over the build's own emit, the
+ * reader is the README's Quickstart, so a verb renamed or added in
+ * `harness/cli.ts` reds this rather than leaving the README naming a command
+ * the bin no longer dispatches. That the listed verb is one the bin really
+ * runs is carried end to end by the adoption case above; what is pinned here
+ * is that the block is the dispatcher's set rather than decorative prose.
+ */
+it("the README quickstart names the adoption verb the flume-harness bin dispatches", async () => {
+  const bin = join(pkgDir, "bin", "flume-harness.js");
+  const help = await runNodeStreams(pkgDir, [bin, "--help"], hermeticEnv());
+  expect({ code: help.code, stderr: help.stderr }).toEqual({ code: 0, stderr: "" });
+
+  // Non-vacuity: a Commands block that parsed to nothing would leave every
+  // containment below iterating an empty set.
+  const verbs = listedVerbs(help.stdout);
+  expect(verbs.length).toBeGreaterThan(0);
+
+  const outside = "adopt-everything";
+  expect(verbs).not.toContain(outside);
+  const refused = await runNodeStreams(scratch, [bin, outside], hermeticEnv());
+  expect(refused.code).not.toBe(0);
+  expect(refused.stderr).toContain(`unknown command \`${outside}\``);
+
+  const quickstart = await quickstartSection();
+  expect(quickstart).toContain(QUICKSTART_HEADING);
+  for (const verb of verbs) {
+    expect({ verb, named: quickstart.includes(`flume-harness ${verb}`) }).toEqual({
+      verb,
+      named: true,
+    });
+  }
+
+  // And it *leads*: the first command the section hands a reader is the
+  // adoption verb, not the engine-level install under it.
+  const opener = firstShellBlock(quickstart);
+  expect(opener.trim().length).toBeGreaterThan(0);
+  expect(verbs.some((verb) => opener.includes(`flume-harness ${verb}`))).toBe(true);
+}, SPAWN_BUDGET_MS);
