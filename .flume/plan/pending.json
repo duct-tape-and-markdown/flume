@@ -14,6 +14,10 @@
           "description": "callsites pass the ref where a bare key goes today"
         },
         {
+          "path": "src/Prompt.ts",
+          "description": "`keyedAs` doc comments state the map key the new keying uses (5 sites)"
+        },
+        {
           "path": "tests/priorAttempts.test.ts",
           "description": "agreement case: both refs through the real store, read back distinct"
         },
@@ -43,6 +47,6 @@
       "readAll keys a fanout record under entry:<slug> and a singleton record under phase:<name>",
       "clearStale keeps a phase record whose name slugifies onto a tag the queue no longer carries"
     ],
-    "notes": "Ruled option A; spec moved at 0bdce80 and the park closed this tick. Breaking for a consumer calling priorAttemptPath(flumeDir, tag) or reading TickContext.priorAttempts by bare identity — CHANGELOG names both. harness/windows.ts iterates .values() and discriminates on rec.key, so the map-key change does not reach it."
+    "notes": "Ruled option A; spec moved at 0bdce80 and the park closed at 37de846. Breaking for a consumer calling priorAttemptPath(flumeDir, tag) or reading TickContext.priorAttempts by bare identity — CHANGELOG names both. Dispatcher already holds a ref at every callsite and passes ref.key; the change is passing the ref. harness/windows.ts iterates .values() and discriminates on rec.key, so the map-key change does not reach it."
   }
 ]
