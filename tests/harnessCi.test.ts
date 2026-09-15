@@ -239,6 +239,14 @@ const ESC = "\u001B";
 const framed = (content: string): string =>
   `${LANE.job}\tRun tests\t2026-09-15T09:12:33.1234567Z ${content}`;
 
+/**
+ * The same frame the forge writes when the runner stamped no timestamp on the
+ * line: the two tab-separated names, then the content directly. One job's
+ * `--log-failed` output carries both shapes, so both are fixture vocabulary
+ * here rather than one being the tester's invention.
+ */
+const unstamped = (content: string): string => `${LANE.job}\tRun tests\t${content}`;
+
 /** Everything the rendered block says from the log header down. */
 function loggedLines(rendered: string): string[] {
   const header = "--- the failing job's log ---";
@@ -476,6 +484,56 @@ it("the inbox window spends a failing lane's line budget on log lines, not the f
   expect(loggedLines(rendered)).toEqual(
     titles.flatMap((title) => ["one failing case", title]),
   );
+  expect(rendered).not.toContain("above this tick's budget");
+}, SPAWN_BUDGET_MS);
+
+it("the shed strips the forge's frame from a log line the job name frames without a timestamp", () => {
+  const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
+  // Real suite output whose own content carries tabs: the frame comes off it,
+  // and its leading column does not go with the frame.
+  const columns = "tests/paths.test.ts\t2\tfailed";
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: [unstamped(failure), unstamped(columns), ""].join("\n"),
+  });
+
+  const rendered = inboxArgs()["CI_LANES"] ?? "";
+
+  // Vacuity: the forge answered all three questions and the log reached the
+  // block, so the lines asserted below are over material.
+  expect(calls().length).toBe(3);
+  expect(rendered).toContain("FAILING");
+
+  expect(loggedLines(rendered)).toEqual([failure, columns]);
+  expect(rendered).not.toContain(`${LANE.job}\tRun tests`);
+}, SPAWN_BUDGET_MS);
+
+it("the shed drops a log line the forge framed around an empty message", () => {
+  const titles = [
+    "FAIL tests/a.test.ts > the first case is refused",
+    "FAIL tests/b.test.ts > the second case is refused",
+  ];
+  const log = [
+    unstamped(""),
+    unstamped(titles[0] ?? ""),
+    unstamped(""),
+    unstamped(""),
+    unstamped(titles[1] ?? ""),
+    unstamped(""),
+    "",
+  ].join("\n");
+  plantForge({ runs: [RUN], jobs: [job("failure")], log });
+
+  // Vacuity: the budget is smaller than what the forge printed, so a block
+  // carrying both titles untrimmed is the drop's doing and not slack.
+  const budget = 2;
+  expect(log.split("\n").length).toBeGreaterThan(budget);
+
+  const rendered = inboxArgs(budget)["CI_LANES"] ?? "";
+
+  expect(rendered).toContain("FAILING");
+  expect(loggedLines(rendered)).toEqual(titles);
   expect(rendered).not.toContain("above this tick's budget");
 }, SPAWN_BUDGET_MS);
 

@@ -14,12 +14,12 @@
  * it is for a record's prose.
  *
  * **What the forge wrote around the log is the forge's, and comes off.** The
- * per-line job/step/timestamp frame, the ANSI a test runner coloured its
- * output with, the workflow-command markers: the package is reading back
- * decoration it knows the shape of because it chose this forge — the same
- * opinion as {@link FORGE_CLI} and the lane's workflow-and-job vocabulary —
- * not reconstructing a statement out of prose the log's author wrote. What
- * the author wrote survives byte for byte.
+ * per-line frame keyed by the declared job's name, the ANSI a test runner
+ * coloured its output with, the workflow-command markers: the package is
+ * reading back decoration it knows the shape of because it chose this forge
+ * — the same opinion as {@link FORGE_CLI} and the lane's workflow-and-job
+ * vocabulary — not reconstructing a statement out of prose the log's author
+ * wrote. What the author wrote survives byte for byte.
  *
  * **A lane is failing, green, or unread — never green by default.** Every way
  * the read can come up short — no forge CLI on the host, no completed run
@@ -75,12 +75,37 @@ type CiLane = NonNullable<Declaration["ci"]>[number];
 const FORGE_CLI = "gh";
 
 /**
- * The frame the forge puts on every line of a job log: the job name and the
- * step name, tab-separated, then the timestamp the runner stamped the line
- * with. The third field is anchored to that timestamp so a log line whose own
- * content holds tabs cannot be mistaken for a framed one.
+ * The timestamp the runner stamps a framed line with, where it stamped one.
+ * Optional in {@link framing}: the forge frames every line of a job log, but
+ * only some of those lines carry a stamp, and a frame read as absent because
+ * its third field was blank is a frame left on the line.
  */
-const FORGE_FRAMING = /^[^\t]*\t[^\t]*\t\d{4}-\d{2}-\d{2}T[\d:.]+Z ?/;
+const FORGE_STAMP = String.raw`(?:\d{4}-\d{2}-\d{2}T[\d:.]+Z ?)?`;
+
+/**
+ * The frame the forge puts on every line of one job's log: that job's name
+ * and the step name, tab-separated, then the runner's stamp where there is
+ * one.
+ *
+ * Keyed by the name the lane *declared* for the job, never by the shape of
+ * two leading fields — the job name is a fact the declaration states
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*), and without it
+ * a two-field strip over an unstamped line would eat the leading
+ * tab-separated columns of whatever the log's own author wrote.
+ */
+function framing(job: string): RegExp {
+  return new RegExp(String.raw`^${escapeRegExp(job)}\t[^\t]*\t` + FORGE_STAMP);
+}
+
+/**
+ * One literal as a regex source — every special character spelled inert. A
+ * matrix job's declared name routinely carries `(`, `)` and `.`, and none of
+ * them is this frame's syntax. Not `src/paths.ts`'s escape, which leaves `*`
+ * live on purpose because its literals are glob tokens.
+ */
+function escapeRegExp(literal: string): string {
+  return literal.replace(/[.*+^${}()|[\]\\?]/g, "\\$&");
+}
 
 /**
  * ANSI control sequences a test runner colours its output with — CSI
@@ -393,6 +418,7 @@ function withMaterial(
           String(status.jobId),
           "--log-failed",
         ]),
+        status.lane.job,
       ),
       options.logLines,
     );
@@ -462,7 +488,8 @@ function detailOf(err: unknown): string {
 
 /**
  * A job log's own lines, with the forge's decoration off each and the lines
- * that carried nothing else dropped.
+ * that carried nothing else dropped. `job` is the declared name the forge
+ * framed those lines with — see {@link framing}.
  *
  * Run *before* {@link tail}, and that order is the point: shedding a prefix
  * buys no room in a budget counted in lines, but the frame the forge writes
@@ -470,11 +497,12 @@ function detailOf(err: unknown): string {
  * a budget spent on those is a budget not spent on the failing titles the
  * slice is here to read.
  */
-function shed(log: string): string[] {
+function shed(log: string, job: string): string[] {
+  const frame = framing(job);
   const kept: string[] = [];
   for (const line of log.split("\n")) {
     const bare = line
-      .replace(FORGE_FRAMING, "")
+      .replace(frame, "")
       .replace(ANSI, "")
       .replace(WORKFLOW_COMMAND, "")
       .trimEnd();
