@@ -1173,3 +1173,42 @@ the API; `runAtBase` *is* a checkout-at-sha plus provisioning, written inside
 the package. Whatever answers that one decides where the provisioning half of
 this one lives — a helper carrying it, or the factory parameter recommended
 here. Two consumers for that surface, not one.
+
+## `spec/cli.md` specs `flume status` to exit 0 always; it exits 74 on three paths (NEEDS AMENDMENT)
+
+**Section:** `spec/cli.md`, *Subcommand surface* — two sentences state it:
+"`status` — observational; prints baton and liveness state, **exits 0
+always**" and "`status` is the one named exception: specced to exit 0 always,
+it ignores extras rather than acquiring its first failure mode."
+
+**What the code does.** The status branch returns `EX_IOERR` (74) at
+`src/cli.ts:375` (`loop.pid` present but unstattable), `:404` (the stop flag),
+and `:436` (the tip claim file). A fourth 74 at `:318` is the shared
+`--job` state-root guard, reached by every subcommand including `status`.
+Each of the three cites `.claude/rules/engineering.md`, *Loud or nothing* at
+the site, verbatim: reading an unstattable file as absent would tell the
+operator there is no live supervisor, no pending stop, or no claim holder when
+there may be one. `HELP_SUB.status` (`src/cliHelp.ts:91-99`) documents the 74
+and names all three files. So the runtime help — which the same spec section
+calls "the authoritative statement of the surface" — already contradicts the
+spec prose beside it.
+
+**The fork.**
+
+1. **Amend the spec** (recommended). The sentences were written when status
+   had no detectable failure it could refuse on; *Loud or nothing* ratified
+   later gave it three. The honest restatement is narrower and still carries
+   the intent the exception exists for: *`status` never exits non-zero on
+   anything it observes — a dead supervisor, a corrupt queue, a detached HEAD,
+   a chain that will not load are all reports, not failures. It refuses only
+   when a file it must read is present and unreadable, so no observation is
+   printed as its opposite.* The "ignores extras" clause is a separate claim
+   and stands untouched.
+2. **Revert the three arms** to reading a stat failure as absent, restoring a
+   literal always-0. This buys the spec sentence back at the cost of the one
+   outcome each arm exists to rule out, and would have to declare the
+   degradation at the site against *Loud or nothing*. Not recommended.
+
+Either way the resolution belongs to whoever owns `spec/`: the sweep cannot
+edit it, and a derive tick reading the stale sentence as current truth is the
+route by which option 2 happens without anyone choosing it.

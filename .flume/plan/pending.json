@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "FRICTION-LIST-STAT-REFUSAL-CLASSIFIED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the bare-list statSync joins the verb's own EX_IOERR arm"
+        },
+        {
+          "path": "src/cliHelp.ts",
+          "description": "HELP_SUB.friction's exit-code list gains 74"
+        },
+        { "path": "tests/cli.test.ts", "description": "the refusal case" },
+        { "path": "tests/cliHelp.test.ts", "description": "the help agreement" }
+      ],
+      "retire": []
+    },
+    "summary": "flume friction's bare list escapes an unstattable note as a raw stack at exit 1, and its --help omits the 74 the verb already returns",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "src/cli.ts:758's statSync refuses behind the same EX_IOERR arm as the verb's readdir (746) and named-note read (723); HELP_SUB.friction names 74.",
+    "tests": [
+      "flume friction refuses with EX_IOERR when a listed note cannot be stat'd",
+      "flume friction --help names exit 74 for an I/O failure in the channel dir"
+    ],
+    "notes": "Repro measured this tick: chmod 444 on the channel dir — readdirSync succeeds, statSync throws EACCES. Uncaught it reaches main().catch, so the one detectable I/O failure in the CLI that still reads as a harness bug. 723 and 746 already return 74, so the help omission stands on its own."
+  }
+]

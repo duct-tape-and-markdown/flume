@@ -42,7 +42,10 @@
       "src/Dispatcher.ts",
       "src/Agent.ts",
       "src/bounds.ts",
-      "src/partition.ts"
+      "src/partition.ts",
+      "src/cli.ts",
+      "src/cliHelp.ts",
+      "src/cliJobResolution.ts"
     ]
   }
 }
