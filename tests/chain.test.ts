@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { loadChainModule } from "../src/Dispatcher.ts";
 import { slugify } from "../src/paths.ts";
@@ -24,6 +24,13 @@ import { readFileAtRef } from "../src/git.ts";
 import { gitPath, matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 import { declaration } from "../.flume/declaration.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+
+// This file's cases drive real git repositories, and a git spawn is a spawn
+// like any other: the lane's one budget, for its cases and its hooks alike,
+// declared once for the file rather than inherited from the runner
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 function git(repo: string, args: string[]): string {
   return execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();

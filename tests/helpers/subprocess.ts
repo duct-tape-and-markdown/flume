@@ -6,7 +6,7 @@
  * Also home to the fixture-rooting idiom (`mkTempDir`, `mkFixtureRoot`), the
  * suite-wide guard that refuses a state root planted above the fixtures
  * (`installStateRootLeakGuard`, wired through `vitest.config.ts`), and the
- * one number every spawning site in the default lane declares as its budget
+ * one number every spawning file in the default lane declares as its budget
  * (`SPAWN_BUDGET_MS`), and the git-config pin every fixture repository runs
  * under (`pinGitAutoGcOff`, armed through the same setup file).
  * Not *.test.ts, so neither vitest lane (unit or integration) collects it
@@ -26,22 +26,28 @@ import { afterEach, beforeAll, expect } from "vitest";
 const exec = promisify(execFile);
 
 /**
- * The wall-clock budget a default-lane case or hook declares when it starts a
- * node process (spec/worktrees.md, "The default test lane must stay fast").
+ * The wall-clock budget a default-lane file declares, at file scope, when any
+ * of its cases or hooks starts a process — a node launcher, a shell, or `git`
+ * (spec/worktrees.md, "The default test lane must stay fast").
  *
- * Without one a site inherits vitest's 5s default, and a CLI spawn is not a
- * 5s-shaped subject: a `cliHelp.test.ts` case that passes alone timed out at
- * 5000ms under the afterMerge gate's full-suite contention, and a gate timeout
- * there reverts an innocent entry. The budget is a ceiling, not a cost — a
- * passing site never pays it — so it is sized off the slowest spawning case
- * this lane has measured (~16s: `flume loop --max 5` against a real chain,
+ * Without one a site inherits vitest's 5s default, and no spawn is a
+ * 5s-shaped subject, whichever binary it starts: a `cliHelp.test.ts` case that
+ * passes alone timed out at 5000ms under the afterMerge gate's full-suite
+ * contention, and a case spawning nothing but `git` timed out on that same
+ * default on the windows lane — its teardown then failed EBUSY on the fixture
+ * repository the timed-out case was still holding, so one slow spawn reds two
+ * cases. A gate timeout there reverts an innocent entry. The budget is a
+ * ceiling, not a cost — a passing site never pays it — so it is sized off the
+ * slowest spawning case this lane has measured (~16s: `flume loop --max 5` against a real chain,
  * timed inside a full parallel run) with room for a host slower than the one
  * that measured it. A hung child still reds its own case rather than hanging
  * the run.
  *
- * One number, one home: every spawning site imports it, so the lane's budget
+ * One number, one home: every spawning file imports it, so the lane's budget
  * moves in a single edit, and `tests/subprocessHelper.test.ts` holds the scan
- * that proves the lane declares it rather than restating numbers of its own.
+ * that proves the lane declares it rather than restating numbers of its own —
+ * over the sites its own vocabulary reaches, which is where `git` and the
+ * file-scope form are still to land.
  */
 export const SPAWN_BUDGET_MS = 120_000;
 

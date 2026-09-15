@@ -27,7 +27,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import {
   defaultHandoff,
@@ -53,6 +53,13 @@ import {
   type PriorAttemptMode,
 } from "../src/Prompt.ts";
 import { slugify } from "../src/paths.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+
+// This file's cases drive real git repositories, and a git spawn is a spawn
+// like any other: the lane's one budget, for its cases and its hooks alike,
+// declared once for the file rather than inherited from the runner
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 /** The repo every case commits into; also the state root the windows read. */
 let repo: string;
