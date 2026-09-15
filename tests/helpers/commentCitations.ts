@@ -98,18 +98,45 @@ const KEYWORDS: ReadonlySet<string> = new Set(
 /** One segment of a dotted citation: an identifier, no `_`, no digits first. */
 const SEGMENT = /^[A-Za-z][A-Za-z0-9]*$/;
 
-/**
- * The internal capital is what separates a reference from a sentence. Prose
- * backticks plenty that is not a symbol — a flag, a path, an English word
- * under emphasis — and a camel or dotted-camel hump is the one shape that
- * says *identifier* without reading the surrounding sentence. A single
- * lowercase word is out of scope by construction, never by exception.
- */
+/** A camel hump — the shape `parsedCommandLine` has and `parsed` does not. */
 const INTERNAL_CAPITAL = /[a-z0-9][A-Z]/;
 
-/** Whether a backticked span is judged at all. */
-const isSubject = (text: string): boolean =>
-  INTERNAL_CAPITAL.test(text) && text.split(".").every((s) => SEGMENT.test(s));
+/** A leading capital — the shape `Dispatcher` has and `dispatcher` does not. */
+const LEADING_CAPITAL = /^[A-Z]/;
+
+/** Capitals and digits alone — the shape `JSON`, `README` and `EX_OK` have. */
+const ALL_CAPS = /^[A-Z][A-Z0-9]*$/;
+
+/**
+ * Whether a backticked span is judged at all.
+ *
+ * Prose backticks plenty that is not a symbol — a flag, an English word under
+ * emphasis, a sentence fragment — so the subject rule admits only spans whose
+ * *spelling* says identifier without reading the surrounding sentence. Three
+ * such spellings, each a shape prose does not reach for:
+ *
+ * - **A dot between identifier segments.** `Phase.handoff`, `fs.rm`,
+ *   `chain.ts` — a member access, a qualified name, a filename. Prose that
+ *   wanted a sentence would not have punctuated it this way, so the dot
+ *   carries the claim with no capital needed anywhere in the span.
+ * - **A camel hump**, the classic `scanCommentCitations`.
+ * - **A leading capital** on a word that is not capitals alone: `Dispatcher`,
+ *   `Runner`. A type name reads as prose only at the start of a sentence,
+ *   which a backtick is not.
+ *
+ * Two spellings stay out of scope by construction, never by exception: a
+ * single lowercase word, which is how prose emphasises an ordinary noun, and
+ * a word in capitals alone, which is how it names an acronym or a constant it
+ * did not spell out — `EX_OK` fails `SEGMENT` besides, but `JSON` would not.
+ */
+const isSubject = (text: string): boolean => {
+  const segments = text.split(".");
+  if (!segments.every((segment) => SEGMENT.test(segment))) return false;
+  if (segments.length > 1) return true;
+  return LEADING_CAPITAL.test(text)
+    ? !ALL_CAPS.test(text)
+    : INTERNAL_CAPITAL.test(text);
+};
 
 /**
  * Every comment in a file, once.
