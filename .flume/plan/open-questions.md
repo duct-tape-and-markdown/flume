@@ -35,9 +35,9 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## Rosters that read exhaustive and lag the shipped surface (PARKED — four in spec, one in docs with no spec owner)
+## Rosters that read exhaustive and lag the shipped surface (PARKED — six in spec, one in docs with no spec owner)
 
-Five sites, one shape; all verified on disk this tick.
+Seven sites, one shape; all verified on disk this tick.
 
 1. **`spec/pending.md`, *What the package exports*** reads "`src/index.ts` and
    `FlumeApi` are the canonical lists. Both carry the *values*
@@ -72,6 +72,25 @@ Five sites, one shape; all verified on disk this tick.
    (`CHAIN-AUTHORING-IGNORES-POINT-AT-THE-SPEC` shipped the `job new` bullet
    45 lines below as a pointer into `spec/jobs.md` *Runtime ignores*, and left
    this one standing deliberately.)
+6. **`spec/loop.md:519` and `spec/prompt.md:144`** each name one producer of
+   `render-refused`: the record "every failing inline-exec span's command text
+   and stderr", the mode "produced by this file's own refusal". A
+   pre-invocation hook that throws is a second producer since `0f4b08b`
+   (`src/Dispatcher.ts:4176-4197`, `src/priorAttempts.ts:543-558`), writing the
+   same record with `<hook> hook threw:` text. **This one carries a fork too**,
+   and reuse of the mode was forced rather than chosen: the taxonomy is ratified
+   at four modes (*The no-commit taxonomy*), a thrown `shouldRun` is "a refused
+   tick, not a decline" (`spec/chain.md`, *What a hook receives*), and no other
+   class means "no agent was invoked and this was not a decline". So either the
+   two sentences widen to name both producers, or the spec wants a fifth mode —
+   which reopens `NO_COMMIT_MODES`, the precedence order at `spec/loop.md:494`,
+   and every table keyed on it. Widening is cheaper; a fifth mode buys a typed
+   distinction a chain today reads out of the record's `failures` prose.
+7. **`spec/loop.md:521`** defines the `not-shipped` record as "the chain's
+   `shipped` hook returned `false`". A throw out of `shipped` now writes the
+   same record through the same builder (`src/Dispatcher.ts:3040`). No fork —
+   one producer named where two exist. The *behavioral* half of that same
+   change is its own question below.
 
 Beside them, one drift in `spec/harness.md` that is **not** an enumeration and
 carries no fork — it rides the same edit pass. `spec/harness.md`, *The
@@ -83,11 +102,11 @@ handoff path, and live for this repo's own loop, which declares no override.
 `spec/loop.md`, *One tick is one fresh process*, sanctions the mechanism, so
 the drift is in this sentence alone.
 
-Options; one ruling covers all five:
+Options; one ruling covers all seven:
 
 - **Transcribe.** Name the missing values in each sentence. Cheapest, and
-  leaves five hand-maintained lists that go stale at the next export — which
-  is how all five of these got here.
+  leaves seven hand-maintained lists that go stale at the next export — which
+  is how all seven of these got here.
 - **State the property, not the roster** (recommended). Say what makes a value
   canonical — the two lists carry the same values, held by the `.d.ts`
   doc-comment scan the carve-out sanctions — and say what a hook record
@@ -211,3 +230,51 @@ declares*: the `agents` row reads "Model per phase and extra agent arguments."
 - **Withhold.** The package ships flume's opinion by name, and inheriting
   by-user runtime state into a stateless tick is outside what it recommends at
   any setting. Costs such a consumer the package entirely, not just the knob.
+
+## A `shipped` predicate that throws reads back as a deliberate park (NEEDS AMENDMENT — two spec sections rule differently)
+
+Drained from `HOOK-THROWS-ANSWERED-LIKE-THEIR-SEAMS`'s note; verified on disk
+this tick.
+
+`spec/chain.md`, *What a hook receives*: "`shipped` throwing is not `false`:
+the entry stays pending and the verdict names the throw, as it names a declined
+ship." That shipped — `TickVerdictMergeOutcome.threw` (`src/Dispatcher.ts:360`)
+is set only on a `not-shipped` a throw produced.
+
+**Nothing in the engine reads it, and the one consumer that would is fenced by
+the other section.** `superviseLoop` derives "errored" from an allowlist that
+excludes `not-shipped` by name, "which are the agent and the chain correctly
+declining" (`spec/loop.md:627-629`, *The tick verdict — one facts artifact*, *No
+interpretation fields*; `src/loopSupervisor.ts:264-293`). A throw is not the
+chain correctly declining, so the two collapse at exactly the seam the new field
+exists to keep apart.
+
+What that costs, traced on disk: a throw-produced `not-shipped` pushes no
+`mergeFailure` (`src/Dispatcher.ts:3040-3049`, against the conflict leg at
+`:2824`), so the tick is not errored *and* the quarantine leg has no signature to
+key on (*Repeated identical failures*). The entry stays pending, the next tick
+re-picks it, pays a full agent invocation, lands another commit that stays on
+trunk unshipped, and throws again — to hibernation or the tick budget, with
+`erroredTicks` empty and exit code 0. The sibling seam's identical defect class,
+`promptArgs` throwing, is `render-refused` and *is* counted errored.
+
+Fork: which sentence moves.
+
+- **Narrow the exclusion** (recommended). `spec/loop.md:629`'s parenthetical
+  excludes a `not-shipped` *the chain declined*; one carrying `threw` counts
+  errored and its line names the throw. One clause, and the exclusion keeps
+  reading as decided rather than overlooked — which is what the comment at
+  `src/loopSupervisor.ts:271-279` already claims for it.
+- **Leave it, and say so.** A hook throw is the chain's defect, the verdict
+  records it, the operator reads `threw`. Costs a silent runaway for any chain
+  whose predicate breaks — the shape `.claude/rules/engineering.md`, *Loud or
+  nothing*, fences.
+- **Quarantine instead.** Give the throw a merge-failure signature so the
+  repeated-identical-failure leg drops the entry. Bounds the runaway without
+  touching the exit-code allowlist, but files a chain-hook defect as a merge
+  failure, which it is not.
+
+Parked because both candidate homes are `spec/`, and because filing it as an
+entry against `spec/chain.md` alone would send build at a line `spec/loop.md`
+currently states. Once the sentence moves the work is one allowlist clause plus
+its test in `tests/loopSupervisor.test.ts` — both inside build's fence.
