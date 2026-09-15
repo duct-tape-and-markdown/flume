@@ -76,7 +76,8 @@
       "tests/harnessPrompts.test.ts",
       "harness/refusal.ts",
       "tests/harnessChain.test.ts",
-      "tests/harnessGates.test.ts"
+      "tests/harnessGates.test.ts",
+      "tests/harnessHandoff.test.ts"
     ]
   }
 }
