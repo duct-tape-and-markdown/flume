@@ -182,14 +182,14 @@ outlives its scaffold and becomes API someone must excavate later.
 - An entry in `src/index.ts`, or any widened visibility, needs a caller
   outside its own module (a test counts) **or** its place in the package's
   public surface as declared API.
-- An absence verdict never rests on a bare text search. Confirm a
-  zero-consumer or dead-symbol finding with a search that resolves symbols
-  — LSP references (`code-navigation.md`) — never a plain no-hits. The
-  instrument is a host prerequisite (`platform-facts.md`, *nvm scopes
-  global packages to one node version*), so a host that lacks it leaves
-  the verdict unmade, never approximated by grep.
-- This bullet is the ladder's bottom rung for its property and queues its
-  own promotion: a pin that fails on an export reachable from no entry of
-  the package's `exports` map and referenced from no other module makes
-  the verdict mechanical, and this bullet shrinks to a pointer in the
-  commit that ships it.
+- Over the package's exports the verdict is mechanical: the suite resolves
+  every `src/` and `harness/` export against the `exports` map and
+  cross-module references through the TypeScript program, and an unearned
+  export reds the default lane. Reachability reads type positions only — a
+  helper a public method calls is not public surface for having been called.
+- Beyond that pin, an absence verdict never rests on a bare text search.
+  Confirm a dead-symbol finding with a search that resolves symbols — LSP
+  references (`code-navigation.md`), a host prerequisite
+  (`platform-facts.md`, *nvm scopes global packages to one node version*) —
+  never a plain no-hits. A host without the instrument leaves the verdict
+  unmade, never approximated by grep.
