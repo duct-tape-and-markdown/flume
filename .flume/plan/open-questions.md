@@ -991,3 +991,23 @@ are corrected on the tree as of
 page: `.claude/rules/platform-facts.md` is the human's, and the fact it should
 carry is the table above — quoting is per-subcommand *and* per-config — not the
 prose any of the three fixes wrote.
+
+**Amendment (drained from `READ-FILE-AT-REF-PROBES-LITERAL-PATHSPECS`'s
+note).** A second git dialect now wants the same page, and the fix for it
+ships as `PATHSPECS-LITERAL-AT-ONE-SPELLING` without waiting on this park —
+what stays here is the transcription. Measured on git 2.43:
+
+| spelling | position | effect |
+| --- | --- | --- |
+| `--literal-pathspecs` | main-command only; `ls-tree` exits 129 on it | whole invocation |
+| `GIT_LITERAL_PATHSPECS=1` | any | whole invocation |
+| `:(top,literal)<path>` | per argument | that pathspec, anchored at repo root |
+
+And the fact that makes the class subtle: matching is **over**-match, not
+under-match. An exact-literal compare runs before wildmatch, so a name
+carrying a metacharacter matches itself *and* every glob sibling — `git add
+-- '.flume/jobs/a*'` stages `.flume/jobs/ab/` alongside it. A spelling test
+that only checks "the named path was staged" reads green on both sides.
+
+Same page, same reason as Part 1: three fixes have now each written their own
+prose for this, and `.claude/rules/platform-facts.md` is the human's.

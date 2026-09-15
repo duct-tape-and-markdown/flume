@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "PATHSPECS-LITERAL-AT-ONE-SPELLING",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "src/git.ts", "description": "the shared literal spelling; commitPaths adopts it" },
+        { "path": "src/job.ts", "description": "add/status/commit/ls-files/rm over .flume/jobs/<name>" },
+        { "path": "harness/windows.ts", "description": "local `literal` gives way to the shared spelling" },
+        { "path": "tests/git.test.ts", "description": "commitPaths over-match case" },
+        { "path": "tests/job.test.ts", "description": "job new / job rm over-match cases" },
+        { "path": "tests/harnessWindows.test.ts", "description": "the window-diff pin" }
+      ]
+    },
+    "summary": "One shared literal-pathspec spelling in src/, adopted by commitPaths, job.ts's five call sites and harness/windows.ts's local :(top,literal)",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "No src/ or harness/ git invocation matches a host-composed path as a pattern; one spelling, three call surfaces adopting it.",
+    "tests": [
+      "job rm on a glob-metacharacter job name leaves a sibling job's files tracked",
+      "job new on a glob-metacharacter job name leaves a dirty sibling job unstaged",
+      "commitPaths stages only its given path when a sibling name glob-matches it"
+    ],
+    "pins": [
+      "a window diff narrows by a path whose name carries a glob metacharacter"
+    ],
+    "notes": "Measured git 2.43. Over-match, not under-match: exact-literal always matches, so a metachar name matches itself AND its glob siblings — `git add -- '.flume/jobs/a*'` stages sibling `ab` too. Three spellings exist today: `--literal-pathspecs` (main-command position only, ls-tree exits 129 on it), `GIT_LITERAL_PATHSPECS=1` (any position), `:(top,literal)` prefix (anchors at repo root). validateJobName admits `*`/`[`; job rm's `git rm -r` over the glob is the destructive end."
+    }
+]
