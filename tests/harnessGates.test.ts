@@ -130,11 +130,18 @@ function commitAll(message: string): Span {
   };
 }
 
-/** One queued entry: the engine core plus every package extension field. */
+/**
+ * One queued entry: the engine core plus every package extension field.
+ *
+ * Typed as the engine's own {@link PendingEntry} rather than a bag cast into
+ * one, so a core-field change is a tsc error here and at every case built
+ * from it. The package's extension fields ride the type's open half, which is
+ * where a chain's declared fields live.
+ */
 const queueEntry = (
   tag: string,
   over: { per?: { path: string; section: string }; edit?: string } = {},
-): Record<string, unknown> => ({
+): PendingEntry => ({
   tag,
   gate: { kind: "open" },
   dependsOnForks: [],
@@ -190,8 +197,7 @@ function ctxFor(
 }
 
 /** An entry as the wave selected it — only its tag is read by these gates. */
-const assigned = (tag: string): PendingEntry =>
-  queueEntry(tag) as unknown as PendingEntry;
+const assigned = (tag: string): PendingEntry => queueEntry(tag);
 
 /** The package's set for this phase, plus whatever the case declares. */
 const gates = (declared: readonly Gate[] = []): Gate[] =>
