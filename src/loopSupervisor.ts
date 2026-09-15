@@ -48,7 +48,7 @@ export const DEFAULT_QUARANTINE_SCOPE = "run" as const;
 export const DEFAULT_ABORT_THRESHOLD = 3;
 
 /** Options for {@link superviseLoop}. */
-export interface SuperviseLoopOptions {
+interface SuperviseLoopOptions {
   /** Repo root; child ticks spawn with this as their cwd. */
   repoRoot: string;
   /**

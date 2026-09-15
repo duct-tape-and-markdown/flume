@@ -112,7 +112,7 @@ export async function frictionCountLine(
  * relocated outside it — spec/chain.md "What a gate receives"), and where
  * to log the failures harvest swallows.
  */
-export interface FrictionHarvestContext {
+interface FrictionHarvestContext {
   flumeDir: string;
   stateRootRel: string | undefined;
   log: Logger;

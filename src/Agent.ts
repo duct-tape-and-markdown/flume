@@ -441,7 +441,7 @@ export function withTerminalRenderer(
 }
 
 /** One parsed `claude -p --output-format stream-json` NDJSON event. */
-export type NdjsonEvent = Record<string, unknown>;
+type NdjsonEvent = Record<string, unknown>;
 
 /**
  * Result of {@link parseNdjsonLine}: `"blank"` for a whitespace-only line,
@@ -450,7 +450,7 @@ export type NdjsonEvent = Record<string, unknown>;
  * parses but isn't an event object (e.g. a bare number or array), and
  * `"event"` for a genuine stream-json event.
  */
-export type NdjsonLineResult =
+type NdjsonLineResult =
   | { kind: "blank" }
   | { kind: "parse-error"; raw: string }
   | { kind: "non-object" }

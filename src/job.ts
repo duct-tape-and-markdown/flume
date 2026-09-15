@@ -212,7 +212,7 @@ export function frictionIgnoreEntry(friction: string): string {
   return `${gitPath(friction).replace(/\/+$/, "")}/`;
 }
 
-export interface JobNewOptions {
+interface JobNewOptions {
   repoRoot: string;
   name: string;
   /**
@@ -340,7 +340,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   log(`[flume] next: flume job run ${name}`);
 }
 
-export interface JobRunOptions {
+interface JobRunOptions {
   name: string;
   /** Primary repo root — one leg of the roots the chain factory receives. */
   repoRoot: string;
@@ -426,7 +426,7 @@ export async function liveLoopPid(dir: string): Promise<number | null> {
   }
 }
 
-export interface JobRmOptions {
+interface JobRmOptions {
   repoRoot: string;
   name: string;
   log?: (line: string) => void;
@@ -503,7 +503,7 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
 }
 
 /** One row of `flume job status`. */
-export interface JobStatus {
+interface JobStatus {
   /** Job name — the directory segment under `.flume/jobs/`. */
   name: string;
   /**

@@ -208,7 +208,7 @@ interface PlantedCheckout {
  * `checkoutAt` call, since a gate is free to ask for a tree of some repo
  * other than the dispatcher's.
  */
-export type GateCheckoutContext = Pick<
+type GateCheckoutContext = Pick<
   WorktreeContext,
   "log" | "namespace" | "declaredWorktreesBase"
 >;

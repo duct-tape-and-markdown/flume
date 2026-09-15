@@ -183,7 +183,7 @@ export function entryWriteScope(
 }
 
 /** One queue entry's declared paths that the consumer fence would not admit. */
-export interface QueueFenceViolation {
+interface QueueFenceViolation {
   /** The offending entry's `tag`, as the queue spells it. */
   tag: string;
   /** Its declared paths that match no glob in the fence, declaration order. */

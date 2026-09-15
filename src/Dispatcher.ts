@@ -159,7 +159,7 @@ export type StageFailureEntry =
  * (no entry to quarantine — same rationale as {@link StageFailureEntry}, it
  * falls to the consecutive-failure backstop alone).
  */
-export type MergeFailure = StageFailureEntry & {
+type MergeFailure = StageFailureEntry & {
   /** Same comparison-key contract as `ProvisionFailure.signature`. */
   signature: string;
   message: string;
@@ -173,7 +173,7 @@ export type MergeFailure = StageFailureEntry & {
  * it falls to the consecutive-failure backstop alone) and present for a
  * fanout entry/wave gate revert.
  */
-export type GateFailure = StageFailureEntry & {
+type GateFailure = StageFailureEntry & {
   /** Same comparison-key contract as `ProvisionFailure.signature`. */
   signature: string;
   message: string;
@@ -680,7 +680,7 @@ export async function writeTickVerdict(
  * them — nothing here is re-derived from commit shape or authorship
  * (`engine-boundary.md`, "Told, not inferred").
  */
-export type MergingMarker = {
+type MergingMarker = {
   /** The entry whose span the merge stage was picking. */
   tag: string;
   /** That entry's worktree branch — still standing, since the startup sweep runs after the refusal. */
@@ -1648,7 +1648,7 @@ const WAVE_NO_COMMIT_RANK: Record<NoCommitMode, number> = {
  * selection to {@link Dispatcher.render}'s own batch arithmetic, exactly as a
  * tick makes it.
  */
-export interface RenderRequest {
+interface RenderRequest {
   phase: string;
   entryTag?: string;
 }
@@ -2930,8 +2930,8 @@ export class Dispatcher {
     // its pre-cherry-pick trunk — so revert *only* its commit (reset to that
     // point) and leave it pending. The N−1 clean siblings already on trunk
     // stay shipped; later siblings are evaluated against the trunk without
-    // the reverted commit. No `hardResetTo(preHead)` whole-wave blast
-    // radius: one flaky merge-time gate no longer kills N−1 clean commits.
+    // the reverted commit. No `reset --hard` back to preHead, so no whole-wave
+    // blast radius: one flaky merge-time gate no longer kills N−1 clean commits.
     // Per-entry agent fanout (above) is unchanged — only the serial
     // post-fanout merge/gate/revert granularity changes.
     const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");

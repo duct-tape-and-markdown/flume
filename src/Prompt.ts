@@ -439,7 +439,7 @@ export type PriorAttempt =
  * and `cwd` come from the per-tick `TickContext` and the phase's
  * `promptArgs` builder.
  */
-export interface RenderOptions {
+interface RenderOptions {
   phase: Phase;
   /**
    * The prompt file to read, already resolved against the chain's config
@@ -554,7 +554,7 @@ function neutralizeInlineExec(value: string): string {
 }
 
 /** One inline-exec span that failed to resolve — its command text and stderr. */
-export interface InlineExecFailure {
+interface InlineExecFailure {
   cmd: string;
   stderr: string;
 }

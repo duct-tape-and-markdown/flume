@@ -55,7 +55,7 @@ export function resolvePackageJson(fromDir: string): string {
 }
 
 /** How flume names and versions itself, as its own manifest declares it. */
-export interface SelfPackage {
+interface SelfPackage {
   /** The name flume publishes under — the specifier a consumer depends on. */
   readonly name: string;
   /** The version that manifest declares. */

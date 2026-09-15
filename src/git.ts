@@ -73,30 +73,6 @@ export async function revParse(cwd: string, ref = "HEAD"): Promise<string> {
   return stdout;
 }
 
-/** Soft reset by N commits. Working tree preserved; index reset. */
-export async function softReset(cwd: string, n: number): Promise<void> {
-  await run(cwd, ["reset", "--soft", `HEAD~${n}`]);
-}
-
-/**
- * Count of commits reachable from `to` but not from `from` (`git rev-list
- * --count from..to`) — the depth a tip-verify revert must soft-reset to
- * undo everything a tick produced, not just its newest commit.
- */
-export async function commitsSince(
-  cwd: string,
-  from: string,
-  to: string,
-): Promise<number> {
-  const { stdout } = await run(cwd, ["rev-list", "--count", `${from}..${to}`]);
-  return Number(stdout);
-}
-
-/** Hard reset to a specific SHA. Discards working tree changes. */
-export async function hardResetTo(cwd: string, sha: string): Promise<void> {
-  await run(cwd, ["reset", "--hard", sha]);
-}
-
 /**
  * Thrown by {@link resetKeepTo} when git refuses the reset — a path the
  * reset would touch also carries an uncommitted change of its own. `git
@@ -131,7 +107,7 @@ export class ResetKeepRefusedError extends Error {
  * refuse the whole reset atomically rather than silently discard either
  * side, which this surfaces as {@link ResetKeepRefusedError}. The caller's
  * only safe move on that refusal is to propagate it — never fall back to
- * `hardResetTo`, which is exactly the wipe this primitive exists to avoid.
+ * `reset --hard`, which is exactly the wipe this primitive exists to avoid.
  */
 export async function resetKeepTo(cwd: string, sha: string): Promise<void> {
   try {
@@ -145,13 +121,12 @@ export async function resetKeepTo(cwd: string, sha: string): Promise<void> {
 /**
  * Soft reset directly to a specific sha, rather than a commit count back
  * from HEAD. Used by the per-entry tip-verify leg (spec/loop.md "Tip
- * verify"): unlike the trunk leg's `softReset`, the target here is the
- * recorded base itself, which on a refusal is not necessarily an ancestor of
- * the current tip (that is exactly what the ancestry check failed on) — so
- * counting commits back from HEAD does not apply. `reset --soft` accepts any
- * commit-ish regardless of ancestry: it moves the branch ref and index,
- * leaving the working tree (and therefore the abandoned commits' content) in
- * place as uncommitted state.
+ * verify"): the target is the recorded base itself, which on a refusal is
+ * not necessarily an ancestor of the current tip (that is exactly what the
+ * ancestry check failed on) — so counting commits back from HEAD does not
+ * apply. `reset --soft` accepts any commit-ish regardless of ancestry: it
+ * moves the branch ref and index, leaving the working tree (and therefore
+ * the abandoned commits' content) in place as uncommitted state.
  */
 export async function softResetTo(cwd: string, sha: string): Promise<void> {
   await run(cwd, ["reset", "--soft", sha]);
@@ -707,7 +682,7 @@ export class TipClaimHeldError extends Error {
   }
 }
 
-export interface TipClaim {
+interface TipClaim {
   path: string;
   /** Remove the claim file. Idempotent — safe to call from an exit handler. */
   release: () => void;
