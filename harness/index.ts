@@ -67,6 +67,7 @@ export {
 } from "./handoff.js";
 
 export {
+  CONTRACT_TOUCHING_FIELD,
   ENTRY_CAPS,
   EntryFieldRemovalError,
   entryExtension,

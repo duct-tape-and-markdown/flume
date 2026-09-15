@@ -25,9 +25,20 @@
  * over, and how each is computed from disk, belong to the slices; this
  * module knows only their order and whether each says it is live. The chain
  * factory supplies them.
+ *
+ * **One write, beside the routing rather than inside it.** A wave that
+ * shipped an entry marked {@link CONTRACT_TOUCHING_FIELD} leaves the stop
+ * flag on disk ({@link stopAfterContractTouchingShip}) — the mechanization
+ * `spec/loop.md`, *One tick is one fresh process*, points a chain at. It
+ * never changes which phases the ladder names: the run ends at the next tick
+ * boundary, and whatever this handoff woke is what the relaunched
+ * supervisor picks up.
  */
 
+import { writeFileSync } from "node:fs";
+
 import type { MergeOutcome } from "../src/Dispatcher.js";
+import { namespacedJoin, stopFlagPath } from "../src/paths.js";
 import type { Phase, TickResult } from "../src/Phase.js";
 import type { NoCommitMode } from "../src/Prompt.js";
 
@@ -37,6 +48,7 @@ import {
   type HarnessPhase,
   type PlanSlice,
 } from "./declaration.js";
+import { CONTRACT_TOUCHING_FIELD } from "./entryExtension.js";
 
 /**
  * A phase's `handoff` as the engine declares it, aliased so the declaration
@@ -150,6 +162,40 @@ function refusedForPlan(result: TickResult): boolean {
 }
 
 /**
+ * End the run when this tick shipped an entry the plan marked
+ * contract-touching (`spec/loop.md`, *One tick is one fresh process*).
+ *
+ * A `flume loop` supervisor stays resident at its launch version while its
+ * tick children re-read HEAD on every spawn, so a commit changing a
+ * contract the two share is unsafe to absorb mid-run. The stop flag is the
+ * documented operational answer, and this is that answer on existing
+ * surface: the same file `flume stop` writes, read by the supervisor at the
+ * same between-children boundary it re-reads the baton, so the in-flight
+ * tick and the merge it is in the middle of complete untouched. The next
+ * `loop` refuses over the flag until an operator removes it, which is the
+ * relaunch the rule asks for.
+ *
+ * Keyed on the shipped entry's own reported `extension`, which is the only
+ * place the mark survives: a shipped entry has left the queue, so nothing
+ * else on the result still carries what it declared (`TickResult.entries`).
+ * Singleton slices report no entries and so never write here — the mark, not
+ * a branch on the phase name, is what scopes this to a fanout wave.
+ *
+ * The write is unguarded on purpose. A stop that failed silently is the
+ * livelock this exists to prevent, wearing a green tick
+ * (`.claude/rules/engineering.md`, *Loud or nothing*); the state root the
+ * tick just ran out of is the directory being written to, so a throw here
+ * means something an operator needs to see.
+ */
+function stopAfterContractTouchingShip(result: TickResult): void {
+  const marked = (result.entries ?? []).some(
+    (entry) => entry.shipped && entry.extension[CONTRACT_TOUCHING_FIELD] === true,
+  );
+  if (!marked) return;
+  writeFileSync(namespacedJoin(stopFlagPath(result.flumeDir)), "");
+}
+
+/**
  * The ladder itself: the first live slice, else build while anything is
  * pickable, else hibernation.
  *
@@ -199,6 +245,8 @@ export function defaultHandoff(slices: readonly HandoffSlice[]): Handoff {
   }
 
   return (result: TickResult): string[] => {
+    stopAfterContractTouchingShip(result);
+
     const window: SliceWindow = {
       flumeDir: result.flumeDir,
       pickable: result.pickableAfter.length > 0,

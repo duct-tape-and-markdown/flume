@@ -1,7 +1,8 @@
 /**
  * The entry extension the harness package declares (`spec/harness.md`, *The
  * entry extension*) — `summary`, `per`, `acceptance`, `tests[]`, `pins[]`,
- * `notes`, with their caps and their hints.
+ * `notes`, with their caps and their hints, plus the optional
+ * {@link CONTRACT_TOUCHING_FIELD} the package's default handoff acts on.
  *
  * Each field is declared **once**, as the engine's `EntryExtensionField`:
  * the `schema` side validates at parse and gate time, the `hint` side
@@ -69,9 +70,24 @@ export const PerSchema = z.strictObject({
 export const NamedLinesSchema = z.array(z.string().min(1)).default([]);
 
 /**
- * The six fields, in the order `spec/harness.md` lists them — which is the
- * order they render in, since `renderSchemaForPrompt` follows declaration
- * order.
+ * The name of the risk flag `spec/loop.md`, *One tick is one fresh process*,
+ * calls "marked contract-touching": an entry whose work changes a contract a
+ * resident supervisor and a fresh tick child must agree on, which a run that
+ * started before it cannot safely absorb.
+ *
+ * One spelling, two readers: the field declared below, and `handoff.ts`
+ * reading it back off a shipped entry's reported extension. A string literal
+ * at the reader would be a second copy of this declaration's key, kept in
+ * sync by discipline (`.claude/rules/engineering.md`, *Derived state is
+ * computed, never restated beside its source*).
+ */
+export const CONTRACT_TOUCHING_FIELD = "contractTouching";
+
+/**
+ * The package's fields, in the order `spec/harness.md` lists them — which is
+ * the order they render in, since `renderSchemaForPrompt` follows
+ * declaration order — with {@link CONTRACT_TOUCHING_FIELD} last, after the
+ * six that section names.
  *
  * No hint here names a test tool. The judge speaks to whatever runner the
  * consumer declared (`spec/harness.md`, *The runner interface*), so a hint
@@ -114,6 +130,20 @@ const PACKAGE_FIELDS = {
   notes: {
     schema: z.string().max(ENTRY_CAPS.notes).optional(),
     hint: `"≤${ENTRY_CAPS.notes} chars; optional context not in the spec"`,
+  },
+  /**
+   * The risk flag the package's default handoff acts on: shipping a marked
+   * entry ends the run (`harness/handoff.ts`), because a supervisor resident
+   * at its launch version meeting fresh children on the new contract is the
+   * livelock `spec/loop.md` documents.
+   *
+   * Optional and unset by default, so a consumer whose plan never marks an
+   * entry never meets the stop. Nothing reads the value but that handoff, so
+   * nothing beyond the boolean is enforced on it.
+   */
+  [CONTRACT_TOUCHING_FIELD]: {
+    schema: z.boolean().optional(),
+    hint: `true when the work changes a contract a resident loop supervisor and a fresh tick child must agree on — shipping one ends the run; omit otherwise`,
   },
 } satisfies Record<string, EntryExtensionField>;
 

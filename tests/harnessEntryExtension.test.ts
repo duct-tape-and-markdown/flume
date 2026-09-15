@@ -18,6 +18,7 @@
 import { expect, it } from "vitest";
 
 import {
+  CONTRACT_TOUCHING_FIELD,
   ENTRY_CAPS,
   EntryFieldRemovalError,
   entryExtension,
@@ -27,6 +28,9 @@ import type { EntryExtension } from "../src/index.ts";
 
 /** The six the spec section lists, in the order it lists them. */
 const SPEC_FIELDS = ["summary", "per", "acceptance", "tests", "pins", "notes"];
+
+/** Those six plus the package's risk flag, which renders and parses beside them. */
+const PACKAGE_FIELDS = [...SPEC_FIELDS, CONTRACT_TOUCHING_FIELD];
 
 /** One core-valid entry, with the extension fields a caller wants over it. */
 const entryJson = (fields: Record<string, unknown>): string =>
@@ -56,12 +60,14 @@ const riskField: EntryExtension = {
 it("the package's entry extension declares summary, per, acceptance, tests, pins and notes", () => {
   const extension = entryExtension();
 
-  expect(Object.keys(extension)).toEqual(SPEC_FIELDS);
+  // The six the title names, in the spec's order, ahead of whatever the
+  // package declares beside them — the risk flag's own case is below.
+  expect(Object.keys(extension).slice(0, SPEC_FIELDS.length)).toEqual(SPEC_FIELDS);
 
-  // The acceptance: the six reach a prompt through the engine's own
-  // renderer, each carrying the hint its declaration holds. Read off the
-  // declaration rather than restated here — a hint list by the tester's hand
-  // is the second copy this module exists to prevent.
+  // The acceptance: every declared field reaches a prompt through the
+  // engine's own renderer, each carrying the hint its declaration holds.
+  // Read off the declaration rather than restated here — a hint list by the
+  // tester's hand is the second copy this module exists to prevent.
   const rendered = renderSchemaForPrompt(extension);
   for (const [name, field] of Object.entries(extension)) {
     expect(rendered).toContain(`"${name}": `);
@@ -84,7 +90,7 @@ it("the package's entry extension declares summary, per, acceptance, tests, pins
 it("a consumer field is merged into the entry extension beside the package's own", () => {
   const extension = entryExtension(riskField);
 
-  expect(Object.keys(extension)).toEqual([...SPEC_FIELDS, "risk"]);
+  expect(Object.keys(extension)).toEqual([...PACKAGE_FIELDS, "risk"]);
 
   // Beside, not instead: the package's own still parse and still render.
   const parsed = parsePending(entryJson({ risk: "low" }), extension);
@@ -93,18 +99,19 @@ it("a consumer field is merged into the entry extension beside the package's own
 
   const rendered = renderSchemaForPrompt(extension);
   expect(rendered).toContain(riskField.risk!.hint);
-  for (const name of SPEC_FIELDS) expect(rendered).toContain(`"${name}": `);
+  for (const name of PACKAGE_FIELDS) expect(rendered).toContain(`"${name}": `);
 });
 
 it("a consumer extension that drops a package field is refused, naming the field", () => {
   // Redeclaring a package field displaces its schema and its hint — removal
   // spelled as addition, which is what the spec section denies.
-  for (const name of SPEC_FIELDS) {
+  for (const name of PACKAGE_FIELDS) {
     const usurper: EntryExtension = { [name]: { schema: anything, hint: `"anything"` } };
     expect(() => entryExtension(usurper)).toThrow(EntryFieldRemovalError);
     expect(() => entryExtension(usurper)).toThrow(new RegExp(`"${name}"`));
   }
   expect(SPEC_FIELDS.length).toBe(6);
+  expect(PACKAGE_FIELDS.length).toBeGreaterThan(SPEC_FIELDS.length);
 });
 
 it("a summary past the package's cap is refused", () => {
@@ -124,4 +131,37 @@ it("a summary past the package's cap is refused", () => {
   );
   expect(past.ok).toBe(false);
   expect(past.errors.map((e) => e.path)).toContain("summary");
+});
+
+it("the package entry extension accepts an entry that omits contractTouching", () => {
+  const extension = entryExtension();
+
+  // Non-vacuity first: the field is really declared, so "omitting it parses"
+  // is a statement about an optional field rather than about a key the
+  // extension never had.
+  expect(Object.keys(extension)).toContain(CONTRACT_TOUCHING_FIELD);
+
+  // The ordinary entry — no risk flag — through the real parser.
+  const omitted = parsePending(entryJson({}), extension);
+  expect(omitted.errors).toEqual([]);
+  expect(omitted.entries).toHaveLength(1);
+  expect(omitted.entries[0]).not.toHaveProperty(CONTRACT_TOUCHING_FIELD);
+
+  // And the marked entry parses to the boolean the handoff reads back off
+  // `FanoutEntryOutcome.extension`, so the two sides of that read agree.
+  const marked = parsePending(
+    entryJson({ [CONTRACT_TOUCHING_FIELD]: true }),
+    extension,
+  );
+  expect(marked.errors).toEqual([]);
+  expect(marked.entries[0]).toMatchObject({ [CONTRACT_TOUCHING_FIELD]: true });
+
+  // A non-boolean is refused, naming the field — without this the two cases
+  // above would pass over a schema that accepted anything.
+  const bogus = parsePending(
+    entryJson({ [CONTRACT_TOUCHING_FIELD]: "yes" }),
+    extension,
+  );
+  expect(bogus.ok).toBe(false);
+  expect(bogus.errors.map((e) => e.path)).toContain(CONTRACT_TOUCHING_FIELD);
 });

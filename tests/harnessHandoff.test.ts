@@ -13,11 +13,22 @@
  * Each routing case carries its control — the same result with the one fact
  * changed — so "routes to the inbox" is proven to be that fact's doing and
  * not the ladder's default answer for the whole fixture.
+ *
+ * The stop-flag cases run over a real temp state root, and ask about the
+ * flag through the engine's own `stopFlagPath` — the accessor the supervisor
+ * reads the flag back through (`src/loopSupervisor.ts`). A literal `"stop"`
+ * here would pin the tester's spelling of the name rather than the one the
+ * two real sides share.
  */
 
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  CONTRACT_TOUCHING_FIELD,
   defaultHandoff,
   resolveHandoff,
   type Handoff,
@@ -30,6 +41,7 @@ import {
   type PlanSlice,
 } from "../harness/declaration.ts";
 import type { FanoutEntryOutcome, TickResult } from "../src/Phase.ts";
+import { namespacedJoin, stopFlagPath } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { NO_COMMIT_MODES, type NoCommitMode } from "../src/Prompt.ts";
 
@@ -302,5 +314,88 @@ describe("the default handoff's reading of the engine's facts", () => {
     expect(() =>
       defaultHandoff([slice(INBOX_PHASE), slice(DERIVE), slice(SWEEP)]),
     ).not.toThrow();
+  });
+});
+
+describe("the default handoff's stop after a contract-touching ship", () => {
+  let flumeDir: string;
+
+  beforeEach(() => {
+    flumeDir = mkdtempSync(join(tmpdir(), "flume-handoff-stop-"));
+  });
+  afterEach(() => {
+    rmSync(flumeDir, { recursive: true, force: true });
+  });
+
+  /** Whether the graceful-stop flag stands in this case's state root. */
+  const stopped = (): boolean => existsSync(namespacedJoin(stopFlagPath(flumeDir)));
+
+  /** A build wave over the case's real state root, with work still queued. */
+  const wave = (...entries: FanoutEntryOutcome[]): TickResult =>
+    tickResult({
+      flumeDir,
+      shippedTags: entries.filter((e) => e.shipped).map((e) => e.tag),
+      pickableAfter: [entry("READY")],
+      entries,
+    });
+
+  it("the default handoff writes the stop flag after a contractTouching entry ships", () => {
+    const handoff = defaultHandoff(ladder());
+    const shipped = wave(
+      outcome({ tag: "CONTRACT", extension: { [CONTRACT_TOUCHING_FIELD]: true } }),
+    );
+
+    // The flag is the tick's doing, not the fixture's: nothing wrote it into
+    // the fresh state root before the handoff ran.
+    expect(stopped()).toBe(false);
+
+    // Routing is untouched — the queue still holds pickable work and the
+    // ladder still names build. The run ends at the supervisor's next tick
+    // boundary, with build awake for the relaunch.
+    expect(shipped.pickableAfter.length).toBeGreaterThan(0);
+    expect(handoff(shipped)).toEqual([BUILD_PHASE]);
+    expect(stopped()).toBe(true);
+  });
+
+  it("the default handoff writes no stop flag when no shipped entry is contractTouching", () => {
+    const handoff = defaultHandoff(ladder());
+
+    // An unmarked ship: the ordinary wave, which must leave the loop running.
+    expect(handoff(wave(outcome({ tag: "PLAIN" })))).toEqual([BUILD_PHASE]);
+    expect(stopped()).toBe(false);
+
+    // Marked but never shipped — a park — is also "no shipped entry is
+    // contractTouching": the mark alone does not end the run, and this one
+    // routes to the inbox exactly as an unmarked park does.
+    const parked = wave(
+      outcome({
+        tag: "CONTRACT",
+        shipped: false,
+        mergeOutcome: "not-shipped",
+        extension: { [CONTRACT_TOUCHING_FIELD]: true },
+      }),
+    );
+    expect(handoff(parked)).toEqual([INBOX_PHASE]);
+    expect(stopped()).toBe(false);
+
+    // The control for both: the same wave with the one fact changed does
+    // write the flag, so the absences above are the missing ship and the
+    // missing mark — not a handoff that never writes at all.
+    expect(
+      handoff(wave(outcome({ tag: "CONTRACT", extension: { [CONTRACT_TOUCHING_FIELD]: true } }))),
+    ).toEqual([BUILD_PHASE]);
+    expect(stopped()).toBe(true);
+  });
+
+  it("a singleton slice's tick writes no stop flag", () => {
+    const handoff = defaultHandoff(ladder(slice(DERIVE, true)));
+
+    // A plan slice reports no `entries` at all, so the mark has nowhere to
+    // be read from and the write is scoped to a fanout wave by that fact
+    // rather than by a branch on the phase name.
+    const planned = tickResult({ flumeDir, phaseName: DERIVE, committed: true });
+    expect(planned.entries).toBeUndefined();
+    expect(handoff(planned)).toEqual([DERIVE]);
+    expect(stopped()).toBe(false);
   });
 });
