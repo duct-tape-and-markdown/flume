@@ -1,8 +1,8 @@
 /**
  * The harness package's plan state (`spec/harness.md`, *Plan state as
- * declared state*): the derive and sweep cursors and the sweep's
- * continuation signal, as fields of a typed artifact rather than lines read
- * out of prose.
+ * declared state*): the derive and sweep cursors, the sweep's continuation
+ * signal, and the per-lane drained-run stamp, as fields of a typed artifact
+ * rather than lines read out of prose.
  *
  * The round-trip cases are agreement gates (`.claude/rules/engineering.md`,
  * *A seam gate reads what the real writer wrote*): the real writer puts the
@@ -13,8 +13,10 @@
  * the writer cannot produce the malformed artifact the reader must refuse.
  *
  * Nothing here restates the field list. The required-field case iterates the
- * schema's own keys, so a field added to the artifact is covered by it
- * rather than silently skipped.
+ * schema's own keys and asks each whether it refuses absence, so a field
+ * added to the artifact is covered by it rather than silently skipped, and a
+ * field that reads absence as a state is told apart from a missing cursor by
+ * the schema rather than by a name this file hardcodes.
  */
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -128,7 +130,12 @@ it("the plan state accessor reads the continuation signal and its covered set", 
 });
 
 it("a plan state artifact missing a required field is refused, naming the field", async () => {
-  const fields = Object.keys(PlanStateSchema.shape);
+  // Asked of the schema, never listed here: a field whose absence is a state
+  // the artifact carries on purpose (the lane stamps) is not a lost cursor,
+  // and which fields those are is the schema's to say.
+  const fields = Object.entries(PlanStateSchema.shape)
+    .filter(([, field]) => !field.safeParse(undefined).success)
+    .map(([name]) => name);
   // Vacuity pin: an artifact with no required fields would pass every arm
   // below by running none of them.
   expect(fields.length).toBeGreaterThan(0);
@@ -177,4 +184,94 @@ it("an absent plan state artifact reads as no cursor rather than throwing", asyn
   // answering those as "no cursor" would re-derive a whole spec history
   // confidently (`.claude/rules/engineering.md`, *Loud or nothing*).
   expect(await refusalFor("Spec derived through: `4758d60`\n")).toContain("not JSON");
+});
+
+it("the plan state accessor round-trips a per-lane drained-run stamp", async () => {
+  const drainedRuns = { windows: "17420993001", posix: "17420993002" };
+  writePlanState(stateRoot, { ...planState(), drainedRuns });
+
+  expect(readPlanState(stateRoot)?.drainedRuns).toEqual(drainedRuns);
+
+  // A field on the JSON the writer actually wrote, keyed by lane name — the
+  // same key the declaration files a lane's findings under, so the slice
+  // looks a stamp up by the name it already holds.
+  const raw = JSON.parse(await readFile(onDisk(), "utf8")) as Record<string, unknown>;
+  expect(raw["drainedRuns"]).toEqual(drainedRuns);
+
+  // The stamps are per lane, not one stamp for CI: draining one lane's new
+  // run leaves every other lane stamped where it was, which is what keeps a
+  // still-red second lane from reading as drained.
+  writePlanState(stateRoot, {
+    ...planState(),
+    drainedRuns: { ...drainedRuns, windows: "17421004417" },
+  });
+  expect(readPlanState(stateRoot)?.drainedRuns).toEqual({
+    windows: "17421004417",
+    posix: "17420993002",
+  });
+
+  // And the stamps ride beside the cursors rather than through them: writing
+  // a stamp leaves the two cursors and the rotation byte-identical.
+  const read = readPlanState(stateRoot);
+  expect({
+    derivedThrough: read?.derivedThrough,
+    sweptThrough: read?.sweptThrough,
+    rotation: read?.rotation,
+  }).toEqual({
+    derivedThrough: DERIVED,
+    sweptThrough: SWEPT,
+    rotation: { kind: "closed" },
+  });
+});
+
+it("a plan state artifact carrying no lane stamp reads as no lane drained", async () => {
+  // The artifact as every state root written before any lane was declared
+  // holds it: no stamp field at all. Absent is a lane never drained, not a
+  // refusal — the reader runs on the selection path, so refusing here would
+  // shut the loop at the commit that adopts the field.
+  writePlanState(stateRoot, planState());
+  expect(readPlanState(stateRoot)?.drainedRuns?.["windows"]).toBeUndefined();
+
+  // Declared lanes, none drained yet: an empty map is the same verdict, so a
+  // slice that stamps its first lane never has to invent the field's absence.
+  writePlanState(stateRoot, { ...planState(), drainedRuns: {} });
+  expect(readPlanState(stateRoot)?.drainedRuns?.["windows"]).toBeUndefined();
+
+  // And a stamp is a claim about its own lane alone: one lane drained leaves
+  // every lane missing from the map reading as never drained, which is what
+  // makes a lane declared after the last drain live on its first red run.
+  writePlanState(stateRoot, { ...planState(), drainedRuns: { posix: "17420993002" } });
+  const read = readPlanState(stateRoot);
+  expect(read?.drainedRuns?.["windows"]).toBeUndefined();
+  expect(read?.drainedRuns?.["posix"]).toBe("17420993002");
+});
+
+it("a plan state artifact whose lane stamp is malformed is refused, naming the field", async () => {
+  // Named down to the lane: a stamp naming no run would read as that lane
+  // drained while matching nothing the forge can report, and the refusal
+  // says which lane's stamp is at fault rather than that the map is bad.
+  const empty = await refusalFor(
+    JSON.stringify({ ...planState(), drainedRuns: { windows: "" } }),
+  );
+  expect(empty).toContain("drainedRuns.windows");
+  expect(empty).toContain(onDisk());
+  // The field is read, not merely tolerated: an artifact carrying a stamp is
+  // parsed as a stamp map, never refused wholesale as an unknown key.
+  expect(empty).not.toContain("unknown field");
+
+  // A run identity the forge could not have reported — a number where the
+  // stamp is the identity as read — is named at the same path.
+  const typed = await refusalFor(
+    JSON.stringify({ ...planState(), drainedRuns: { windows: 17420993001 } }),
+  );
+  expect(typed).toContain("drainedRuns.windows");
+  expect(typed).not.toContain("unknown field");
+
+  // And a stamp field that is not a per-lane map at all — one stamp for all
+  // of CI — is refused at the field rather than silently keyed by nothing.
+  const flat = await refusalFor(
+    JSON.stringify({ ...planState(), drainedRuns: "17420993001" }),
+  );
+  expect(flat).toContain("drainedRuns");
+  expect(flat).not.toContain("unknown field");
 });

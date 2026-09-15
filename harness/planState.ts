@@ -1,12 +1,12 @@
 /**
  * The plan state the package's slices keep between ticks (`spec/harness.md`,
- * *Plan state as declared state*): the derive cursor, the sweep cursor, and
- * the sweep's continuation signal, as fields of a typed artifact the package
- * reads through this accessor.
+ * *Plan state as declared state*): the derive cursor, the sweep cursor, the
+ * sweep's continuation signal, and the per-lane drained-run stamp, as fields
+ * of a typed artifact the package reads through this accessor.
  *
- * **Never a line regexed out of prose.** These three facts decide which
- * slice runs next, and a slice's window is the difference between deriving a
- * spec change and skipping it. Read out of a narrative document, each fact
+ * **Never a line regexed out of prose.** These facts decide which slice runs
+ * next, and a slice's window is the difference between deriving a spec
+ * change and skipping it. Read out of a narrative document, each fact
  * is one rewording away from vanishing: a cursor line an agent reflows, a
  * paragraph whose opening words drift, a covered set punctuated differently
  * — and the reader that misses it reports no cursor, which every window
@@ -68,10 +68,20 @@ const Rotation = z.discriminatedUnion("kind", [
 ]);
 
 /**
- * The three facts, as `spec/harness.md`, *Plan state as declared state*
- * names them. All required: a present artifact missing a cursor is a slice
- * that wrote away another slice's window, and reading that as "no cursor"
- * would re-arm the window it lost rather than say so.
+ * The run a forge names, as the slice read it. Shape-checked for being
+ * something and nothing more: the package compares a stamp against the
+ * identity the forge reports for a lane's latest completed run and never
+ * interprets it, so a numeric run id and an opaque token are equally a
+ * stamp. Empty is not — it names no run, so it would read as a lane drained
+ * while matching nothing the forge can report.
+ */
+const runName = z.string().min(1);
+
+/**
+ * The facts, as `spec/harness.md`, *Plan state as declared state* names
+ * them. The cursors and the rotation are required: a present artifact
+ * missing one is a slice that wrote away another slice's window, and reading
+ * that as "no cursor" would re-arm the window it lost rather than say so.
  */
 export const PlanStateSchema = strict({
   /** The derive cursor: the sha `spec/` has been derived through. */
@@ -80,6 +90,24 @@ export const PlanStateSchema = strict({
   sweptThrough: objectName,
   /** The sweep's continuation signal, with its covered set while open. */
   rotation: Rotation,
+  /**
+   * The per-lane drained-run stamp: per declared CI lane, the run the inbox
+   * slice drained it at (`spec/harness.md`, *CI lanes as a findings
+   * source*). A lane whose latest completed run failed is live exactly while
+   * that run is not the one stamped here, so without this field the slice
+   * re-drains one red run every tick.
+   *
+   * **The one absence this artifact reads as a state.** The map is optional
+   * and a lane missing from it reads as never drained — which is honest
+   * twice over: a state root written before any lane was declared carries no
+   * map, and a lane declared this tick has been drained by nothing. Both
+   * want the same next move, draining the lane's latest failing run. A
+   * required map would instead refuse every artifact written before the
+   * field existed, from the selection path, before any slice could write
+   * one — a cursor has no such history, which is why it has no such
+   * exemption.
+   */
+  drainedRuns: z.record(z.string().min(1), runName).optional(),
 });
 
 /** The plan state as a slice reads it. */
