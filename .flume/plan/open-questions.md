@@ -291,3 +291,41 @@ Parked because both candidate homes are `spec/`, and because filing it as an
 entry against `spec/chain.md` alone would send build at a line `spec/loop.md`
 currently states. Once the sentence moves the work is one allowlist clause plus
 its test in `tests/loopSupervisor.test.ts` — both inside build's fence.
+
+## `FLUME_WORKTREES_DIR` outranks a chain's declared worktree base, and no spec sentence says so (NEEDS AMENDMENT — the order is unstated, not disputed)
+
+Drained from `CHAIN-COMPUTES-ITS-WORKTREE-BASE`'s note; verified on disk this
+tick.
+
+`spec/worktrees.md`, *Placement — the worktree base and the job namespace*
+states both branches and never their order: "The base directory is
+`FLUME_WORKTREES_DIR` when set (resolved absolute), else `<flumeDir>/worktrees`"
+and, separately, "A chain may declare how to compute one —
+`Chain.worktreesBase?: (paths) => string`". With two of the three inputs live
+at once, the spec rules nothing.
+
+Build chose, and said so at the site: `worktreesBase` (`src/paths.ts:456`)
+resolves env → declared → `<flumeDir>/worktrees`, reasoned in its doc comment
+("An operator's env var still outranks it: the chain is committed, the host is
+not") and pinned in `tests/paths.test.ts:422-445`. The reasoning is sound — a
+chain's declaration is committed and travels to every host, an operator's env
+var is that host's alone — but it is a precedence decision living one rung
+below the spec that governs placement, where a chain author reading
+`spec/worktrees.md` cannot find it.
+
+Fork: which sentence lands.
+
+- **Ratify the shipped order** (recommended). One clause in *Placement*: the
+  override outranks a declared base, which outranks the default, because the
+  env var is the operator's on a host whose committed `chain.ts` they may not
+  own. Nothing moves in `src/`; the prose catches up to the code and the pins
+  stop being the only statement of it.
+- **Flip it — declared outranks env.** Reads a chain's declaration as the
+  deliberate placement and the env var as the fallback. Costs an operator the
+  escape hatch on a host running someone else's chain, which is the one
+  measured vector *Placement* cites the override for. A one-line flip in
+  `worktreesBase` plus two pins in `tests/paths.test.ts`.
+- **Refuse the collision.** Both set and disagreeing is an error at chain load.
+  Loudest, and no silent precedence to get wrong; costs the common case where an
+  operator relocates a base on a host whose chain already declares one, which
+  would then need the declaration edited rather than overridden.
