@@ -399,18 +399,20 @@ The suite has two lanes:
   full Node runtime startup, and engine behavior stacks several per test), invoking a
   **real agent**, or asserting on **wall-clock timing**. A CLI-surface test may spawn a
   fixed, small number of processes when each spawn is the test's subject — an exit
-  code, an agreement between two surfaces, an idempotent re-run — and declares a
-  per-case budget rather than inheriting the runner's default; what moves a test to
-  this lane is the cost drivers above, never a spawn count. Such a spawn is the
+  code, an agreement between two surfaces, an idempotent re-run — and its file
+  declares the lane's one spawn budget at file scope rather than inheriting the
+  runner's default; what moves a test to this lane is the cost drivers above, never
+  a spawn count. Such a spawn is the
   test's subject, not overhead, and
   (~100 such default-lane tests, zero flakes ever) is not what this lane exists to
   exclude. Marked by the `*.integration.test.ts` filename convention and
   **excluded from the default run** by `vitest.config.ts`, so the gate never runs them. They
   run via `pnpm test:integration`, which selects the lane with `vitest run --mode integration`.
 
-  Raw `git` plumbing on temp fixtures is **not** a trigger by itself: measured across ~190
-  default-lane tests it is fast and has never flaked, and naming it here would move most of
-  the dispatcher's default-lane suite for a cost it does not pay. The lane boundary names the measured cost
+  Raw `git` plumbing on temp fixtures is **not** a trigger by itself: naming it here would
+  move most of the dispatcher's default-lane suite for a cost it does not pay. It is a spawn
+  all the same, and a file that spawns it declares the budget the same way — a git-only case
+  has exceeded the runner's default on a slow host. The lane boundary names the measured cost
   drivers — Node startup, agent invocations, timing probes — not "subprocess" as a category.
   A load-sensitive timing assertion belongs in *neither* lane until it is event-based: under
   the afterMerge gate's full-suite contention it reverts innocent entries (three in one day,
