@@ -60,7 +60,12 @@
       "scripts/pack-harness-assets.mjs",
       "scripts/smoke-install.mjs",
       "tests/docComments.test.ts",
-      "tests/helpers/chainVocabulary.ts"
+      "tests/helpers/chainVocabulary.ts",
+      "tests/subprocessHelper.test.ts",
+      "tests/helpers/subprocess.ts",
+      "tests/helpers/spawnBudget.ts",
+      "tests/helpers/vitestSetup.ts",
+      "tests/helpers/dispatcherFixture.ts"
     ]
   }
 }
