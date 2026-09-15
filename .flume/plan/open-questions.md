@@ -807,3 +807,70 @@ rediscovered*. The fork is where the seam goes:
 declaration's shape. **Rule it with *The worktree base is reachable only as an
 env read at chain import*** — that question decides where the base lives and
 whether it is readable at all, and this one decides who gets to read it.
+
+## The package's ignore lines are written once, at adoption, and never re-asserted (PARKED)
+
+Drained from `HARNESS-IGNORES-PACKAGE-SESSIONS`'s note; verified on disk. Two
+writers fill ignore lines for the same state root, with unequal sets and
+unequal lifetimes:
+
+- `ensureRuntimeIgnores` (`src/job.ts`) writes `<stateRoot>/.gitignore` —
+  `RUNTIME_IGNORES` plus exactly one chain-supplied extra,
+  `frictionIgnoreEntry(friction)`. Re-asserted at `job new` **and every
+  `loop` / `job run` start**, idempotently.
+- `consumerIgnores` (`harness/ignores.ts`) writes the repo-root `.gitignore` —
+  the engine's lines prefixed, plus the package's `sessions/`. Written **once**,
+  by `flume-harness init`, which then refuses to run again over an existing
+  state root ("upgrading is a version bump plus the release's migration note").
+
+So the engine re-asserts its own lines forever and the package asserts its own
+never again. This repo is covered — root `.gitignore` carries `.flume/sessions/`
+while `.flume/.gitignore` does not — but a consumer that adopted before a
+package artifact existed, or that hand-edited its root file, has no second
+chance. The failure is the one `harness/ignores.ts` already names: the path
+arrives untracked and clean-tree reads a dirty tree on whatever tick runs next.
+
+**The spec's stated escape hatch does not reach the root that matters.**
+`spec/jobs.md` *Runtime ignores* closes with "The runtime owns its own layout,
+and only that. Chain-convention directories (`sessions/`) are the seed's to
+add." `seedDir` is copied by `job new` into a job dir; nothing seeds the default
+`<repoRoot>/.flume`, which is the root `sessions/` actually lands under. No
+chain in this repo declares a `seedDir` at all. The bullet names `sessions/` by
+name and routes it to a mechanism that cannot carry it.
+
+The fork:
+
+- **Widen the engine's extra to a chain-declared set.** An optional `Chain`
+  field of state-root-relative per-run paths; both `ensureRuntimeIgnores` call
+  sites pass it; `harnessChain` declares `sessions`. Every state root then
+  re-asserts the whole footprint every loop start, and `Chain.friction` stops
+  being the one specific instance branched on inside otherwise generic
+  machinery (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+  Against it: the `spec/jobs.md` bullet forbids exactly this and must move
+  first, and the engine would carry a field behind which it consumes nothing —
+  a capability by the letter of `engine-boundary.md` (*Capability vs
+  convention*: injection point, chain supplies the value, engine supplies the
+  merge), convention-serving by its spirit. `friction` is the precedent either
+  way, and it is a weak one: the engine folds `friction` in because it *reads*
+  friction.
+- **Make the bullet true instead.** Leave the engine alone and give the
+  default state root a seed path, so "the seed's to add" means something for
+  the root it was written about. Larger change, and it invents a seeding step
+  on a root that has never had one.
+- **Accept, and say so at the site.** Adoption is the only writer of the
+  package's lines by design; upgrade drift is the migration note's job, which
+  `init`'s refusal already states out loud. Costs a `.gitignore` line per
+  package artifact added after a consumer adopted, paid by hand.
+
+**Recommend the third, with the second sentence of the `spec/jobs.md` bullet
+struck.** The asymmetry is real but its blast radius is one hand-added line at
+upgrade time, which the package already routes to migration notes; adding an
+engine field to close it buys re-assertion for a hazard the release process
+owns. What should not stand is the bullet pointing `sessions/` at a seed that
+never runs for the default root — that sentence is wrong today regardless of
+how the rest is ruled.
+
+Parked rather than filed: every option starts with a `spec/jobs.md` edit, and
+the first also needs a boundary ruling on a `Chain` field the engine never
+reads. Related but distinct from *The runtime ignore list has three unpinned
+copies* — that one is about the list's prose copies, this one about its writers.
