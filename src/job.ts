@@ -92,7 +92,7 @@ export function validateJobName(name: string): string | null {
  * The verbs' porcelain wrapper — a different surface from `src/git.ts`'s
  * dispatcher plumbing, under the same pathspec dialect
  * ({@link literalPathspecEnv}). Every pathspec these verbs pass is
- * `.flume/jobs/<name>`, composed from a name an operator chose, and
+ * {@link jobDirPathspec}, composed from a name an operator chose, and
  * `validateJobName` admits the glob metacharacters: read as a pattern, `a*`
  * names sibling job `ab` as well as itself, which `add`/`commit` sweep into
  * one job's commit and `rm -r` deletes outright.
@@ -110,6 +110,29 @@ async function git(cwd: string, args: string[]): Promise<string> {
     const detail = (e.stderr ?? e.message ?? "").trim();
     throw new Error(`git ${args.join(" ")} failed: ${detail}`);
   }
+}
+
+/**
+ * A job's dir as a **pathspec** — `.flume/jobs/<name>`, repo-relative and in
+ * the forward-slash alphabet git names every path with on every platform
+ * ({@link gitPath}, `src/paths.ts`). The one derivation the verbs' `add`,
+ * `status`, `commit`, `ls-files` and `rm` all take their pathspec from.
+ *
+ * `join` alone composes in the *host's* alphabet: on win32 it yields
+ * `.flume\jobs\<name>`, and under {@link literalPathspecEnv} git compares
+ * that byte-for-byte against paths it spells with `/`, so it selects nothing.
+ * Every verb then acts on the empty set without saying so — `job new` reports
+ * "already baselined" over a job it just seeded, and `job rm` logs "no
+ * tracked harness", leaves the harness committed, and removes the dir anyway.
+ * Folding the engine's one host-to-git rule over the composition is what
+ * keeps these pathspecs in git's alphabet rather than the host's
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * The verbs report this same string to the operator, so a log line and the
+ * pathspec behind it cannot name the dir differently.
+ */
+function jobDirPathspec(name: string): string {
+  return gitPath(join(".flume", "jobs", name));
 }
 
 /**
@@ -295,7 +318,7 @@ export async function jobNew(opts: JobNewOptions): Promise<void> {
   // produce clean deltas. The commit is pathspec-scoped: anything the
   // operator pre-staged outside the job dir stays in the index instead of
   // being swept into the seed.
-  const rel = join(".flume", "jobs", name);
+  const rel = jobDirPathspec(name);
   await git(repoRoot, ["add", "--", rel]);
   const staged = await git(repoRoot, ["status", "--porcelain", "--", rel]);
   if (staged.length > 0) {
@@ -431,7 +454,7 @@ export async function jobRm(opts: JobRmOptions): Promise<void> {
   if (invalid) throw new JobUsageError(invalid);
 
   const jobDir = join(repoRoot, ".flume", "jobs", name);
-  const rel = join(".flume", "jobs", name);
+  const rel = jobDirPathspec(name);
   // Absent (`ENOENT`) is the only "no job" reading — an unreachable jobDir
   // (permission denied, a path too long for the platform) throws rather than
   // reporting "no job" for one that exists. win32 MAX_PATH: namespacedJoin

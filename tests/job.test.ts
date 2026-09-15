@@ -1327,6 +1327,45 @@ it.runIf(process.platform !== "win32")(
   60_000,
 );
 
+/**
+ * The alphabet pin for the same pathspecs. git names every path with `/` on
+ * every platform, and under `GIT_LITERAL_PATHSPECS` it matches a pathspec
+ * byte-for-byte — so a job dir composed with `node:path` reaches git in the
+ * host's alphabet, and on win32 (`.flume\jobs\alpha`) selects nothing at
+ * all. `add` then stages nothing and the seed commit never happens, which
+ * `jobNew` reports as "harness already baselined".
+ *
+ * Asserting the commit exists *and* names the dir with `/` covers both legs:
+ * the pathspec selected the seeded files, and the name git recorded for them
+ * is the one the pathspec has to be spelled in.
+ *
+ * Top-level rather than inside a describe: the title is the queue entry's
+ * `pins[]` line, matched on the full name.
+ */
+it("jobNew's seed commit names its job dir in git's forward-slash alphabet", async () => {
+  const repo = await makeRepo();
+  try {
+    await writeRepoChain(repo.dir);
+    await jobNew({ repoRoot: repo.dir, name: "alpha", log: () => {} });
+
+    // The pathspec selected the seeded harness: a seed commit exists …
+    expect(await gitOut(repo.dir, ["log", "--format=%s", "-1"])).toBe(
+      "chore(flume): seed job alpha",
+    );
+    // … and every path in it is git's spelling of the job dir, no `\`.
+    const named = (
+      await gitOut(repo.dir, ["show", "--name-only", "--format=", "HEAD"])
+    )
+      .split("\n")
+      .filter((l) => l.length > 0);
+    expect(named.length).toBeGreaterThan(0);
+    expect(named).toEqual([".flume/jobs/alpha/.gitignore"]);
+    for (const path of named) expect(path).not.toContain("\\");
+  } finally {
+    await repo.cleanup();
+  }
+}, 60_000);
+
 // ---------- v0.5 §5d — `flume job status` enumeration units ----------
 
 /** Minimal valid pending entry (schema defaults fill the rest). */
