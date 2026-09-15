@@ -1,33 +1,5 @@
 [
   {
-    "tag": "PLAN-STATE-DIRECTORY-TITLE-CLAIMS-A-REFUSAL-ONE-SLICE-NEVER-MAKES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/harnessPrompts.test.ts",
-          "description": "retitle the PLAN_STATE_PATH wrong-kind case to the claim its body asserts"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the plan-state-directory title names a refusal by every plan slice, but plan-inbox opens no such span and the body asserts it resolves",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "acceptance": "the title names the two-branch claim the helper actually asserts, so a slice gaining or losing the span cannot leave the title stale",
-    "tests": [],
-    "pins": [
-      "each plan slice prompt's verdict on a plan state directory in place follows whether its spans read that artifact"
-    ],
-    "notes": "Site: tests/harnessPrompts.test.ts:470 over everySliceOverWrongKindAt. Only plan-derive.md and plan-sweep.md substitute PLAN_STATE_PATH into a span; plan-inbox.md names it in its artifacts block only, so its branch is `opens: false` and the render resolves. The sibling QUESTIONS_PATH title at :474 is true today by accident of all three reading it."
-  },
-  {
     "tag": "PACKAGE-QUEUE-SPAN-ABSENCE-REFUSAL-LIVES-ONLY-IN-TEST-PROSE",
     "gate": {
       "kind": "open"
