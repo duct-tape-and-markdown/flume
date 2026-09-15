@@ -100,7 +100,7 @@ export {
   type TerminalMisconfiguration,
   type TickOutcome,
   type TickVerdict,
-  type TickVerdictGateResult,
+  type ReportedGateResult,
   type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
   type MergeOutcome,

@@ -241,7 +241,10 @@ Things to notice:
   reverts on out-of-glob paths. This replaces "You may NOT modify X" rules
   in prompts.
 - **`handoff` reads the `TickResult`.** Fields: `committed`, `commitSha`,
-  `gateResults`, `pendingAfter`, `shippedTags`, `revertedTags` (entries a
+  `gateResults` (the same `ReportedGateResult` rows the verdict persists —
+  `details`, `verdict` and `skipped` included, so a handoff keys on the field
+  rather than re-reading `message`), `pendingAfter`, `shippedTags`,
+  `revertedTags` (entries a
   fanout wave reverted at merge — lets a handoff distinguish merge-thrash
   from a clean wave). Return `[]` to leave nobody awake — the system
   hibernates when no flag files are present.
@@ -1453,7 +1456,7 @@ engine writes it; nothing in the shape says what the facts *mean* — no
 `park`, no `bail worth waking for`. That interpretation is the chain's job.
 
 `readTickVerdicts(flumeDir, n?)` (exported from `flume`, alongside the
-`TickVerdict` / `TickVerdictGateResult` / `TickVerdictMergeOutcome` /
+`TickVerdict` / `ReportedGateResult` / `TickVerdictMergeOutcome` /
 `MergeOutcome` types it returns) reads the last `n` verdicts, oldest first,
 from the bounded on-disk history log — default `n` is the log's own cap
 (200). Absent or corrupt history reads as `[]`, never a thrown error.

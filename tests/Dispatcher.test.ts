@@ -56,6 +56,7 @@ import type { Gate } from "../src/Gate.ts";
 import type {
   Chain,
   Phase,
+  ShipContext,
   TickContext,
   TickResult,
   WorktreeSetupContext,
@@ -813,10 +814,10 @@ describe("Dispatcher singleton — afterCommit gate failure reverts the commit",
   });
 });
 
-// ---------- GateResult.skipped → TickVerdictGateResult.skipped
+// ---------- GateResult.skipped → ReportedGateResult.skipped
 // (GATE-RESULT-SKIPPED, spec/chain.md "What a gate returns") ----------
 
-describe("TickVerdictGateResult.skipped — a verdict row states a green no judge earned", () => {
+describe("ReportedGateResult.skipped — a verdict row states a green no judge earned", () => {
   it("a gate returning `skipped` lands its reason on the tick verdict's gate row unchanged", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
@@ -907,11 +908,11 @@ describe("TickVerdictGateResult.skipped — a verdict row states a green no judg
   });
 });
 
-// ---------- GateResult.verdict → TickVerdictGateResult.verdict + the
+// ---------- GateResult.verdict → ReportedGateResult.verdict + the
 // gate-revert record (GATE-VERDICT-FIELD, spec/chain.md "What a gate
 // returns") ----------
 
-describe("TickVerdictGateResult.verdict — a chain's own reason, carried not re-parsed", () => {
+describe("ReportedGateResult.verdict — a chain's own reason, carried not re-parsed", () => {
   it("a gate's verdict lands on the tick verdict's gate row verbatim", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
@@ -1039,6 +1040,228 @@ describe("TickVerdictGateResult.verdict — a chain's own reason, carried not re
     // chain's own gate and on the auto-attached builtin alike.
     for (const row of rows) expect(row).not.toHaveProperty("verdict");
   });
+});
+
+// ---------- the reported gate-result row reaches the hooks
+// (HOOK-GATE-RESULTS-CARRY-WHAT-THE-ENGINE-HANDS-OUT, spec/chain.md "What a
+// hook receives") ----------
+
+describe("hook-side gate results — the reported row, not a narrowed copy", () => {
+  it("a handoff's gate results carry a failing gate's details", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const detail = "docs/note.md, docs/other.md";
+    const failing: Gate = {
+      name: "writable-paths-mirror",
+      when: "afterCommit",
+      async run() {
+        return { ok: false, message: "2 paths outside the fence", details: detail };
+      },
+    };
+
+    let seen: TickResult["gateResults"] | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [failing],
+      handoff: (r) => {
+        seen = r.gateResults;
+        return [];
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "docs/note.md", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.verdict?.noCommit).toBe("gate-revert");
+    // Vacuity pin: handoff really ran and really saw the gate loop's rows.
+    expect(seen).toBeDefined();
+    expect(seen!.length).toBeGreaterThan(0);
+    const row = seen!.find((g) => g.gate === "writable-paths-mirror");
+    expect(row).toEqual({
+      gate: "writable-paths-mirror",
+      ok: false,
+      message: "2 paths outside the fence",
+      details: detail,
+    });
+    // The point of the row: the evidence is a field, not something a chain
+    // re-derives by splitting `message`.
+    expect(row?.details).toBe(detail);
+  });
+
+  it("a handoff's gate results carry the gate's own verdict", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const greenVerdict = "every-cite-resolved";
+    const gate: Gate = {
+      name: "cites-parse",
+      when: "afterCommit",
+      async run() {
+        return { ok: true, message: "3 cites parsed", verdict: greenVerdict };
+      },
+    };
+
+    let seen: TickResult["gateResults"] | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [gate],
+      handoff: (r) => {
+        seen = r.gateResults;
+        return [];
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "docs/note.md", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(seen).toBeDefined();
+    expect(seen!.length).toBeGreaterThan(0);
+    expect(seen!.find((g) => g.gate === "cites-parse")).toEqual({
+      gate: "cites-parse",
+      ok: true,
+      message: "3 cites parsed",
+      verdict: greenVerdict,
+    });
+    // A gate that authored none leaves the field absent — the auto-attached
+    // builtin ran on this same tick and says so.
+    const auto = seen!.find((g) => g.gate === "writable-paths");
+    expect(auto).toBeDefined();
+    expect(auto).not.toHaveProperty("verdict");
+  });
+
+  it("a handoff's gate results carry a skipped gate's reason", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const reason = "no TypeScript among the touched paths — judge not run";
+    const gate: Gate = {
+      name: "vacuous-by-design",
+      when: "afterCommit",
+      async run() {
+        return { ok: true, message: "type-check skipped", skipped: reason };
+      },
+    };
+
+    let seen: TickResult["gateResults"] | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [gate],
+      handoff: (r) => {
+        seen = r.gateResults;
+        return [];
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "docs/note.md", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(seen).toBeDefined();
+    expect(seen!.length).toBeGreaterThan(0);
+    expect(seen!.find((g) => g.gate === "vacuous-by-design")).toEqual({
+      gate: "vacuous-by-design",
+      ok: true,
+      message: "type-check skipped",
+      skipped: reason,
+    });
+    // A green a judge did earn is told apart from this one by the field, not
+    // by reading `message`.
+    const auto = seen!.find((g) => g.gate === "writable-paths");
+    expect(auto).toBeDefined();
+    expect(auto).not.toHaveProperty("skipped");
+  });
+
+  it("a shipped predicate's gate results carry details, verdict and skipped", async () => {
+    await writePending(fx.repo, [makeEntry("ROW-RIDES", ["src/row-rides.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const reason = "nothing merged that this judge reads";
+    const detail = "src/row-rides.ts:1 — advisory only";
+    const talkative: Gate = {
+      name: "talkative",
+      when: "afterMerge",
+      async run() {
+        return {
+          ok: true,
+          message: "merged tree inspected",
+          details: detail,
+          verdict: "advisory-clean",
+          skipped: reason,
+        };
+      },
+    };
+
+    let seen: ShipContext["gateResults"] | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [talkative],
+      shipped: (ctx) => {
+        seen = ctx.gateResults;
+        return true;
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "row-rides": async (cwd) => {
+          await writeAndCommit(cwd, "src/row-rides.ts", "x\n", "build(ROW-RIDES)");
+        },
+      }),
+      log: silent,
+      maxParallel: 1,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["ROW-RIDES"]);
+    // Vacuity pin: the predicate really ran and really saw this entry's rows.
+    expect(seen).toBeDefined();
+    expect(seen!.length).toBeGreaterThan(0);
+    const row = seen!.find((g) => g.gate === "talkative");
+    expect(row).toEqual({
+      gate: "talkative",
+      ok: true,
+      message: "merged tree inspected",
+      details: detail,
+      verdict: "advisory-clean",
+      skipped: reason,
+    });
+    // All three reachable as fields — `shipped` is the seam most tempted to
+    // pattern-match, since it is the one deciding whether the entry leaves
+    // the queue.
+    expect(row?.details).toBe(detail);
+    expect(row?.verdict).toBe("advisory-clean");
+    expect(row?.skipped).toBe(reason);
+  }, 20_000);
 });
 
 describe("Dispatcher singleton — handoff wakes the successor", () => {

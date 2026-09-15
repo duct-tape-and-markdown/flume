@@ -7,7 +7,11 @@
  */
 
 import type { Agent } from "./Agent.js";
-import type { MergeOutcome, ProvisionFailure } from "./Dispatcher.js";
+import type {
+  MergeOutcome,
+  ProvisionFailure,
+  ReportedGateResult,
+} from "./Dispatcher.js";
 import type { Gate } from "./Gate.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { NoCommitMode, PriorAttempt } from "./Prompt.js";
@@ -53,8 +57,15 @@ export interface ShipContext {
   baseSha: string;
   /** Repo-relative paths the merged commit touched (`git show --name-only`). */
   touchedPaths: readonly string[];
-  /** This entry's own gate results — `afterCommit` in the worktree, then `afterMerge` on trunk. */
-  gateResults: readonly { gate: string; ok: boolean; message: string }[];
+  /**
+   * This entry's own gate results — `afterCommit` in the worktree, then
+   * `afterMerge` on trunk — as the engine reports them everywhere else
+   * ({@link ReportedGateResult}): `details`, `verdict` and `skipped` ride
+   * along, so a `shipped` predicate keying on a discriminant its own chain
+   * authored reads the field instead of pattern-matching `message`
+   * (spec/chain.md "What a hook receives").
+   */
+  gateResults: readonly ReportedGateResult[];
   /** Absolute path to the entry's worktree, still present. */
   worktreePath: string;
   /** Repo root — the trunk checkout the commit landed on. */
@@ -226,12 +237,14 @@ export interface TickResult {
   committed: boolean;
   /** SHA of the produced commit, when present. */
   commitSha?: string;
-  /** All gates that ran, in order, with their results. */
-  gateResults: ReadonlyArray<{
-    gate: string;
-    ok: boolean;
-    message: string;
-  }>;
+  /**
+   * All gates that ran, in order, with their results — the same
+   * {@link ReportedGateResult} row the tick verdict persists, so a `handoff`
+   * routing on *why* a gate ruled as it did reads `details`, `verdict` or
+   * `skipped` rather than re-parsing prose the engine already decoded
+   * (spec/chain.md "What a hook receives").
+   */
+  gateResults: readonly ReportedGateResult[];
   /** The pending list as it stands after this tick (re-parsed from disk). */
   pendingAfter: readonly PendingEntry[];
   /**

@@ -83,20 +83,6 @@ import {
 import { entryExtensionPayload, parsePending } from "./PendingSchema.js";
 import type { EntryExtension, ParseError, PendingEntry } from "./PendingSchema.js";
 
-/**
- * Local-mutable shape for accumulating gate results before they widen to
- * TickResult.gateResults (which erases `details`) or a {@link TickVerdict}'s
- * `gateResults` (which keeps it) — `details` is where a failing
- * writable-paths gate lists the actual violating paths.
- */
-type GateResultEntry = {
-  gate: string;
-  ok: boolean;
-  message: string;
-  details?: string;
-  verdict?: string;
-  skipped?: string;
-};
 import type {
   Chain,
   FanoutEntryOutcome,
@@ -219,15 +205,26 @@ function throwFacts(err: unknown): { message: string; stack?: string } {
 }
 
 /**
- * One gate's result as recorded in a {@link TickVerdict} — unlike
- * `TickResult.gateResults` (`./Phase.js`), this keeps `details`: for a
- * failing writable-paths gate that is the actual list of violating paths,
- * not a re-derived summary.
+ * One gate's result as the engine reports it — the single row shape every
+ * reporting surface carries: a {@link TickVerdict}'s `gateResults` on disk,
+ * `TickResult.gateResults` for `handoff`, and `ShipContext.gateResults` for
+ * `shipped` (`./Phase.js`, spec/chain.md "What a hook receives"). One shape,
+ * so a hook reads the same fields a verdict reader does and never
+ * pattern-matches `message` for a discriminant its own chain authored
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported*).
+ * It doubles as the local accumulator the gate loops push into: the fields
+ * are mutable, so nothing widens or narrows on the way out.
  */
-export interface TickVerdictGateResult {
+export interface ReportedGateResult {
   gate: string;
   ok: boolean;
   message: string;
+  /**
+   * The gate's own `GateResult.details` (`./Gate.js`), copied verbatim — the
+   * long-form evidence behind `message`: for a failing writable-paths gate
+   * that is the actual list of violating paths, never a re-derived summary.
+   * Absent when the gate offered none.
+   */
   details?: string;
   /**
    * The gate's own `GateResult.verdict` (`./Gate.js`), copied verbatim — the
@@ -483,7 +480,7 @@ export interface TickVerdict {
    */
   bystanderCheckpointSha?: string;
   /** Every gate that ran this tick, in run order, across every entry. */
-  gateResults: TickVerdictGateResult[];
+  gateResults: ReportedGateResult[];
   /** Entry tags shipped by this tick (entries the phase's `shipped` predicate rejected already excluded); empty for a singleton phase. */
   shippedTags: string[];
   /** Fanout only; empty for a singleton phase or a wave with nothing provisioned. */
@@ -1826,7 +1823,7 @@ export class Dispatcher {
       ...(tipMoved ? { tipMoved } : {}),
       ...(declined ? { declined } : {}),
       ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
-      gateResults: [...result.gateResults] as TickVerdictGateResult[],
+      gateResults: [...result.gateResults],
       shippedTags: [...result.shippedTags],
       mergeOutcomes: mergeOutcomes ?? [],
       invocations: invocations ?? [],
@@ -2020,7 +2017,7 @@ export class Dispatcher {
     // spec/loop.md "Crash equals stop": set the one time this tick's merge
     // stage actually begins a pick range — see the checkpoint call below.
     let bystanderCheckpointSha: string | undefined;
-    const gateResults: GateResultEntry[] = [];
+    const gateResults: ReportedGateResult[] = [];
     // A singleton's own afterCommit/afterMerge gate
     // revert carries no entry tag (nothing to quarantine — see
     // GateFailure's doc), so it falls to the consecutive-failure backstop
@@ -2664,7 +2661,7 @@ export class Dispatcher {
     // gate-revert classification, which cares that a gate failed, not
     // whether the follow-up reset landed.
     const revertRefused: PendingEntry[] = [];
-    const mergeGateResults: GateResultEntry[] = [];
+    const mergeGateResults: ReportedGateResult[] = [];
     // Each provisioned entry's cherry-pick/merge fate, for this
     // wave's TickVerdict — the sole capture of what happened to each entry,
     // footprint included. `commitPendingUpdate` below reads a wave's
@@ -3128,7 +3125,7 @@ export class Dispatcher {
           ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
           ...(waveDeclined ? { declined: waveDeclined } : {}),
           ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
-          gateResults: allGateResults as TickVerdictGateResult[],
+          gateResults: [...allGateResults],
           shippedTags,
           mergeOutcomes,
           invocations,
@@ -3333,7 +3330,7 @@ export class Dispatcher {
      * commit landed.
      */
     spanBase?: string;
-    gateResults: GateResultEntry[];
+    gateResults: ReportedGateResult[];
     /** No-commit mode when this entry produced no usable commit; absent when it shipped. */
     noCommit?: NoCommitMode;
     /**
@@ -3492,7 +3489,7 @@ export class Dispatcher {
       }
     }
 
-    const gateResults: GateResultEntry[] = [];
+    const gateResults: ReportedGateResult[] = [];
     if (!committed) {
       // No commit, no gate: classify per-entry and persist the matching
       // prior-attempt record — the durable per-entry channel, so an entry
@@ -3858,7 +3855,7 @@ export class Dispatcher {
       details?: string;
       failingFiles?: string[];
     };
-    results: GateResultEntry[];
+    results: ReportedGateResult[];
     /** The commit's touched paths, already computed for the gate loop below —
      * exposed so callers don't re-derive via a second `git show --name-only`
      * for the same commit (engineering.md "The fix lands at the mechanism"). */
@@ -3904,7 +3901,7 @@ export class Dispatcher {
       configDirRel === undefined
         ? this.opts.configDir
         : join(cwd, configDirRel);
-    const results: GateResultEntry[] = [];
+    const results: ReportedGateResult[] = [];
     for (const gate of gates) {
       const r: GateResult = await this.runGate(gate, {
         cwd,
