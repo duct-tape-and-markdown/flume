@@ -325,6 +325,30 @@ it("the flume-harness bin is a Node script whose first line is the env-node sheb
 });
 
 /**
+ * The chain-load verb, read off `scripts/smoke-install.mjs` — one reader for
+ * both cases below, so neither restates the script's constant
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ */
+async function declaredChainLoadVerb(): Promise<string> {
+  const scriptPath = fileURLToPath(new URL("../scripts/smoke-install.mjs", import.meta.url));
+  const source = await readFile(scriptPath, "utf8");
+
+  const declared = /^const CHAIN_LOAD_VERB = "([a-z][a-z-]*)";$/m.exec(source);
+  // Non-vacuity, twice over: the verb was really read off the script, and the
+  // script really hands that constant to the shim rather than an inlined
+  // copy these cases would then be judging nothing about.
+  expect(
+    declared?.[1],
+    `${scriptPath} must name the verb its chain-load step drives the shim ` +
+      `through, as \`const CHAIN_LOAD_VERB = "<verb>";\` — these cases read it ` +
+      `from there rather than restating it`,
+  ).toBeTypeOf("string");
+  expect(source).toContain("[CHAIN_LOAD_VERB]");
+  return declared![1]!;
+}
+
+/**
  * `scripts/smoke-install.mjs` scaffolds a `.flume/chain.ts` under its scratch
  * consumer and drives the installed shim at it — the only exercise anywhere
  * of "the installed CLI finds a consumer's chain where the consumer wrote
@@ -341,21 +365,7 @@ it("the flume-harness bin is a Node script whose first line is the env-node sheb
  * one that tolerates a failed load reds this, on the script's own word.
  */
 it("the install smoke's chain-load fixture is verified by a CLI verb that exits non-zero when the chain is absent", async () => {
-  const scriptPath = fileURLToPath(new URL("../scripts/smoke-install.mjs", import.meta.url));
-  const source = await readFile(scriptPath, "utf8");
-
-  const declared = /^const CHAIN_LOAD_VERB = "([a-z][a-z-]*)";$/m.exec(source);
-  // Non-vacuity, twice over: the verb was really read off the script, and the
-  // script really hands that constant to the shim rather than an inlined
-  // copy this case would then be judging nothing about.
-  expect(
-    declared?.[1],
-    `${scriptPath} must name the verb its chain-load step drives the shim ` +
-      `through, as \`const CHAIN_LOAD_VERB = "<verb>";\` — this case reads it ` +
-      `from there rather than restating it`,
-  ).toBeTypeOf("string");
-  expect(source).toContain("[CHAIN_LOAD_VERB]");
-  const verb = declared![1]!;
+  const verb = await declaredChainLoadVerb();
 
   // A bay with no chain.ts — the shape the smoke's step exists to rule out.
   const dir = await mkFixtureRoot("flume-smoke-verb-");
@@ -368,3 +378,48 @@ it("the install smoke's chain-load fixture is verified by a CLI verb that exits 
     await rm(dir, { recursive: true, force: true });
   }
 }, 30_000);
+
+/**
+ * ci.yml's "Consumer-install smoke" runs the same exercise from the CI side:
+ * install the packed tarball into a scratch consumer, write a `.flume/chain.ts`
+ * at a literal path, then drive the installed CLI at it. It carries the same
+ * vacuity risk — a verb that proceeds over a chain it could not load answers 0
+ * whether the CLI reached that path or not — and the risk is live in both
+ * places independently, because a `run:` block cannot import the script's
+ * constant.
+ *
+ * So the second copy is bounded rather than deleted: the verb the CI step
+ * actually invokes is compared against the one the script declares, and a
+ * change to either side alone reds this. The refusal itself is the case above.
+ */
+it("the CI consumer-install smoke drives its chain-load fixture through the verb scripts/smoke-install.mjs declares", async () => {
+  const verb = await declaredChainLoadVerb();
+
+  const workflowPath = fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url));
+  const lines = (await readFile(workflowPath, "utf8")).split(/\r?\n/);
+
+  const start = lines.findIndex((l) => /^\s*- name: Consumer-install smoke$/.test(l));
+  expect(
+    start,
+    `${workflowPath} must carry a step named "Consumer-install smoke" — this ` +
+      `case reads the chain-load verb out of that step`,
+  ).toBeGreaterThanOrEqual(0);
+
+  // The step's own lines only: the next sibling list item at the same indent
+  // starts the following step, whose invocations are not this claim's.
+  const indent = /^(\s*)- /.exec(lines[start]!)![1]!;
+  const after = lines.findIndex((l, i) => i > start && new RegExp(`^${indent}- `).test(l));
+  const step = lines.slice(start, after === -1 ? lines.length : after);
+
+  const invoked = step.flatMap((l) => {
+    // Comment lines name verbs in prose; the claim is about what runs.
+    if (/^\s*#/.test(l)) return [];
+    const m = /npx --no-install flume ([a-z][a-z-]*)/.exec(l);
+    return m ? [m[1]!] : [];
+  });
+
+  // Non-vacuity: the step really drives the installed CLI at the chain it
+  // scaffolds, so there is a verb here to judge at all.
+  expect(invoked).toHaveLength(1);
+  expect(invoked[0]).toBe(verb);
+});

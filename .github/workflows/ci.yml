@@ -100,8 +100,15 @@ jobs:
           # published package (NOT ../src/ — that's the in-repo dogfood
           # path). The factory takes `shellGate` from its `api` parameter
           # rather than importing it as a value (spec/chain.md: "The chain is
-          # a plugin, not a consumer"); `flume status` below best-effort loads
-          # this file through tsx (spec/cli.md: "Chain-declared extras").
+          # a plugin, not a consumer"); `flume check` below loads this file
+          # through tsx in the *refusing* load mode (EX_MOUNT_DEAD on a chain
+          # that does not load), so the step reds unless the installed CLI
+          # reaches the chain at the literal path written here. A verb taking
+          # the best-effort observational load instead (`status`, spec/cli.md:
+          # "Chain-declared extras") reports the failure on stderr and leaves
+          # the exit code alone — the step would answer 0 either way. The verb
+          # is the one scripts/smoke-install.mjs declares; tests/bin.test.ts
+          # pins the agreement.
           cat > .flume/chain.ts <<'EOF'
           import type { Chain, ChainFactory, Phase } from "@dtmd/flume";
 
@@ -128,7 +135,9 @@ jobs:
 
           # --no-install: the unscoped `flume` is an unrelated registry package
           # (§4) — fail loudly rather than silently run the wrong binary.
-          npx --no-install flume status
+          # `check` exits 0 over this consumer's absent queue and non-git
+          # working dir, so the success path stays one step.
+          npx --no-install flume check
 
       - name: Consumer type-resolution gate
         # attw's binding value: can a consumer's TS compiler resolve the
