@@ -8266,7 +8266,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
 const GATE_REVERT_INTRO = "committed and was REVERTED by a gate";
 const CLEAN_EXIT_INTRO = "exited cleanly and committed";
 const PREEMPT_INTRO = "cut short by a PLATFORM failure";
-const RENDER_REFUSED_INTRO = "could not even be rendered";
+const RENDER_REFUSED_INTRO = "refused BEFORE the agent was invoked";
 const TIP_MOVED_INTRO = "was DISCARDED because the base its";
 
 describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
@@ -16577,6 +16577,68 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
       "promptArgs hook threw",
     );
   }, 30_000);
+
+  it("the render-refused prior-attempt block does not send a hook-refused retry to fix an inline-exec span", async () => {
+    // The agreement case for the block's one shared arm (engineering.md "A
+    // seam gate reads what the real writer wrote"): the record is written by
+    // the real hook-refusal writer and read back through the real renderer,
+    // because the two writers share one `failures` string and the rendered
+    // prose is the only place the reader can be told the wrong thing. The
+    // span writer's own side is pinned by the §6 taxonomy test above, which
+    // still asserts its failing span and stderr reach the retry.
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    // Throws on the first tick only, so the retry's render succeeds and its
+    // prompt — the artifact under test — can be inspected.
+    let calls = 0;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      promptArgs: () => {
+        if (calls++ === 0) throw new Error(BOOM);
+        return {};
+      },
+    });
+
+    const prompts: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "reads-the-hook-refusal",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+      log: silent,
+    });
+
+    const first = await dispatcher.tick();
+    expect(first.noCommit).toBe("render-refused");
+    expect(prompts).toHaveLength(0);
+
+    baton.wake("plan");
+    await dispatcher.tick();
+
+    // Non-vacuity: the retry really rendered, and really carries the record
+    // the hook refusal wrote — nothing below is asserted over an absent block.
+    expect(prompts).toHaveLength(1);
+    const retry = prompts[0]!;
+    expect(retry).toContain("<prior-attempt>");
+    expect(retry).toContain(RENDER_REFUSED_INTRO);
+    expect(retry).toContain("promptArgs hook threw");
+    expect(retry).toContain(BOOM);
+
+    // What the arm must not tell this retry: that a span it never had failed,
+    // and that removing a command it never ran is the fix.
+    expect(retry).not.toMatch(/inline-exec/i);
+    expect(retry).not.toMatch(/failing span/i);
+    expect(retry).not.toMatch(/failing command/i);
+    expect(retry).not.toMatch(/fix or remove/i);
+  }, 20_000);
 
   it("a throwing handoff is logged and the tick's facts stand", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));

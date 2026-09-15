@@ -794,12 +794,13 @@ function modeLines(prior: PriorAttempt): string[] {
       ];
     case "render-refused":
       return [
-        `A previous attempt's prompt could not even be rendered — one or`,
-        `more inline-exec spans failed to resolve, so the agent was NEVER`,
-        `invoked. This is not the agent's own clean exit and not a platform`,
-        `failure: something in the prompt itself is broken. Fix or remove`,
-        `the failing command(s) before retrying.`,
-        `Failing span(s):`,
+        `A previous attempt refused BEFORE the agent was invoked, so the`,
+        `agent NEVER ran. This is not the agent's own clean exit and not a`,
+        `platform failure: something the tick needed in order to invoke —`,
+        `the prompt itself, or a pre-invocation hook — did not resolve. The`,
+        `record below is the whole of what refused; read it and fix that,`,
+        `rather than a wall in the task.`,
+        `What refused:`,
         indentBlock(prior.failures),
       ];
     case "tip-moved":
