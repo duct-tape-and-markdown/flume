@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "CITATION-SCAN-REPORTS-AN-UNFENCED-PAGE-CITE-A-LINE-BREAKS",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "the bare arm reports a wrap through the set the fenced arm already reports into"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "fixture wrap at a directory boundary whose tail a root-level page answers"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Report an unfenced *.md cite a comment line breaks, rather than judging the tail the break leaves behind",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "A bare page cite split by a line break is reported as a wrap and judged by nothing; the existing repo wrap pin covers both fencings.",
+    "tests": [
+      "the citation scan reports an unfenced page name broken across a comment line",
+      "the citation scan judges no tail an unfenced page name's line break left behind"
+    ],
+    "notes": "Measured on the current helper: a comment wrapping `docs/` + `guide.md` is judged as `guide.md` alone — a name the author never wrote, dangling under the wrong cite, and resolving silently whenever a root-level page answers the tail (root holds README.md, CHANGELOG.md, CLAUDE.md). The fenced arm already detects the wrap; share it rather than spell a second rule (engineering.md, *The fix lands at the mechanism*). A comment line ending in `/` is the break prose never makes."
+  }
+]
