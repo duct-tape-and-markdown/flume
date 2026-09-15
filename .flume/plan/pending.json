@@ -1,8 +1,64 @@
 [
   {
-    "tag": "A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE",
+    "tag": "RECORD-CAP-IS-THE-DRAINS-TO-REPORT",
     "gate": {
       "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/gates.ts",
+          "description": "the records gate drops its byte-cap arm; its green message stops counting bytes"
+        },
+        {
+          "path": "harness/records.ts",
+          "description": "`RECORD_MAX_BYTES`'s doc names the drain as the reporter, not the gate"
+        },
+        {
+          "path": "harness/windows.ts",
+          "description": "the rendered records block names an over-cap record's byte count; the render's comment stops resting on the gate"
+        },
+        {
+          "path": "harness/prompts/build.md",
+          "description": "drops the cap-revert claim; states the measure per `.flume/PROTOCOL.md`, *A record is short*"
+        },
+        {
+          "path": "harness/prompts/plan-inbox.md",
+          "description": "the drain names an overrun in the plan commit body"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "the cap arm's refusal case becomes its admission case"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the render's overrun mark"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a nine-byte note overrun reverted 742 lines of engine change and then quarantined it \u2014 the cap is a shape rule on a prose channel, not a revert",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The gates the discipline needs"
+    },
+    "acceptance": "a build commit whose note is over the cap lands with its entry, and the rendered records block names the overrun for the drain to report.",
+    "tests": [
+      "the records gate passes a commit whose record is over the byte cap",
+      "the rendered records block names the byte count of a record over the cap"
+    ],
+    "pins": [],
+    "notes": "Ruled at dc1a2fb. The gate's collision arms stay reverts \u2014 they protect the queue. The arm is `harness/gates.ts:315`; `harness/windows.ts:534` rests 'bounded by the gate that admitted it' on it; `build.md`'s 'or one over the cap' goes, and the measure PROTOCOL now states (`wc -c`, an em-dash is three) replaces it \u2014 the retry overshot with the byte count in front of it. Blocks A-SIGNALLED so a third attempt misses the same arm."
+  },
+  {
+    "tag": "A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "RECORD-CAP-IS-THE-DRAINS-TO-REPORT"
+      ]
     },
     "dependsOnForks": [],
     "files": {
