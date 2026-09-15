@@ -106,9 +106,15 @@ vacuous verdict over load-bearing machinery.
 - Correctness-adjacent, purely mechanical fix → a **pending entry**, `per`
   citing the owning section of the posture page.
 - Pure shape — duplication, narration drift, style, a vacuity whose subject
-  is not load-bearing → an **accepted-debt line in the plan commit body**,
-  never an entry. A later rotation re-noting the same debt is cheaper than
-  a queue that grows faster than build drains it.
+  is not load-bearing → an **accepted-debt line in the plan commit body**.
+  A later rotation re-noting the same debt is cheaper than a queue that
+  grows faster than build drains it — until the re-note is itself the
+  recurring cost. **A shape family accepted as debt in three plan commit
+  bodies of one rotation is filed once**: a single entry `per` this section
+  that claims no property (no `tests[]`, no `pins[]`), names every site in
+  `files`, and ships in a wave of its own. The count is read off `git log`
+  from the rotation's cursor, never estimated; below it, shape stays out of
+  the queue.
 - Needs a design decision → an **open question**, naming the section and the
   fork.
 
