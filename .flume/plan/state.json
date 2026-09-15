@@ -58,7 +58,9 @@
       "bin/flume",
       "scripts/build-changelog.mjs",
       "scripts/pack-harness-assets.mjs",
-      "scripts/smoke-install.mjs"
+      "scripts/smoke-install.mjs",
+      "tests/docComments.test.ts",
+      "tests/helpers/chainVocabulary.ts"
     ]
   }
 }
