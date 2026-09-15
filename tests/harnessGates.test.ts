@@ -277,6 +277,43 @@ it("the per gate refuses a commit whose cited file is not in it, naming the tag"
   expect(refused.details).toContain("spec/absent.md is not in the commit");
 });
 
+it("the per gate reports a drained queue as skipped, not as a judged green", async () => {
+  const gate = named("per cites resolve");
+
+  // A queue with one entry first: the same gate, on the same repo, rules and
+  // says so — so the skip below is the empty queue's verdict and not a gate
+  // that never judges anything.
+  await writeQueue([queueEntry("RESOLVES")]);
+  const judged = await gate.run(
+    ctxFor(commitAll("plan: a queue carrying one cite"), { phaseName: "plan-derive" }),
+  );
+  expect(judged).toMatchObject({ ok: true });
+  expect(judged.skipped).toBeUndefined();
+  expect(judged.message).toContain("1 per cite(s) resolve");
+
+  await writeQueue([]);
+  const span = commitAll("plan: drain the last entry");
+  // The queue the gate is about to read, at the commit it reads it from:
+  // present and parsing, carrying nothing. Absent would be the gate's
+  // refusal arm, which is a different verdict entirely.
+  const raw = await readFileAtRef(
+    repo,
+    span.commitSha,
+    `${STATE_ROOT}/plan/pending.json`,
+  );
+  expect(raw).not.toBeNull();
+  expect(JSON.parse(raw ?? "null")).toEqual([]);
+
+  const skipped = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
+
+  // Vacuous by design, and spelled: green, with the fact that nothing was
+  // judged carried on the verdict rather than read back out of the message.
+  expect(skipped.ok).toBe(true);
+  expect(skipped.skipped).toBe("the queue is empty");
+  expect(skipped.message).toContain("cites nothing");
+  expect(skipped.message).not.toContain("per cite(s) resolve");
+});
+
 it("the records gate refuses a record written outside the tick's own tag", async () => {
   const entry = assigned("MINE");
 
@@ -388,6 +425,102 @@ it("the records gate refuses a record past the byte cap", async () => {
   expect(refused.details).toContain(`cap ${RECORD_MAX_BYTES}`);
   // The cap is the package's, and the message reports what was measured.
   expect(refused.details).toContain(`${RECORD_MAX_BYTES + 13} bytes`);
+});
+
+it("the records gate reports a commit that touches no record as skipped", async () => {
+  await write("src/widget.ts", `export const widget = "shipped";\n`);
+  const span = commitAll("build: work, and no record beside it");
+
+  // Non-vacuity: git named paths, and none of them is under a record
+  // directory — so the skip below is the gate's filter emptying, not an
+  // empty commit.
+  const dirs = recordDirs(STATE_ROOT);
+  expect(dirs.length).toBeGreaterThan(0);
+  expect(span.touchedPaths.length).toBeGreaterThan(0);
+  expect(
+    span.touchedPaths.filter((path) => dirs.some((dir) => path.startsWith(dir))),
+  ).toEqual([]);
+
+  const skipped = await records(span, {
+    phaseName: "build",
+    entry: assigned("MINE"),
+  });
+
+  // Vacuous by design, and spelled: a tick that wrote no record has nothing
+  // to be held to, and the verdict says so rather than reading as judged.
+  expect(skipped.ok).toBe(true);
+  expect(skipped.skipped).toBe("no record in the gated span");
+  expect(skipped.message).toBe("the commit touches no record");
+});
+
+it("the records gate skips a state root resolved outside the repository", async () => {
+  const entry = assigned("MINE");
+  const own = notePath(STATE_ROOT, "MINE");
+
+  // A commit that genuinely carries a record: read against the repo's own
+  // state root, the same span is judged.
+  await write(own, "# what I saw\n\nIn `src/`.\n");
+  const span = commitAll("build: a note beside a relocated state root");
+  expect(span.touchedPaths).toContain(own);
+  const judged = await records(span, { phaseName: "build", entry });
+  expect(judged).toMatchObject({ ok: true });
+  expect(judged.skipped).toBeUndefined();
+  expect(judged.message).toContain("1 record(s) touched, 1 written");
+
+  // The offset the engine reports for a state root outside the repo: absent,
+  // because no path in a commit's tree can address it.
+  const relocated = { segments: ["..", "elsewhere", ".flume"] };
+  expect(computeStateRootRel(repo, join(repo, ...relocated.segments))).toBeUndefined();
+
+  const skipped = await records(span, {
+    phaseName: "build",
+    entry,
+    stateRoot: relocated,
+  });
+
+  // Same span, same record-shaped path in it, and still no judgement — the
+  // skip is the reported offset's, spelled on the verdict.
+  expect(skipped.ok).toBe(true);
+  expect(skipped.skipped).toBe(
+    "no path in a commit can be a record under a relocated state root",
+  );
+  expect(skipped.message).toBe("the state root is outside the repository");
+});
+
+it("the records gate ignores a sibling directory that only prefixes a record directory", async () => {
+  const dirs = recordDirs(STATE_ROOT);
+  expect(dirs.length).toBeGreaterThan(0);
+
+  // One sibling per record directory, each named so that a prefix match
+  // without the separator would claim it — `inbox-archive` under `inbox`.
+  const siblings = dirs.map((dir) => `${dir}-archive/2026-09-14-a-record.md`);
+  for (const [i, path] of siblings.entries()) {
+    expect(path.startsWith(dirs[i] ?? "")).toBe(true);
+    await write(path, "# archived, not a record\n");
+  }
+  const span = commitAll("build: files beside the record directories");
+  for (const path of siblings) expect(span.touchedPaths).toContain(path);
+
+  // Build's own tag, so a path read as a record would be refused as another
+  // tick's — the guard is what stands between these files and that refusal.
+  const skipped = await records(span, {
+    phaseName: "build",
+    entry: assigned("MINE"),
+  });
+
+  expect(skipped.ok).toBe(true);
+  expect(skipped.skipped).toBe("no record in the gated span");
+
+  // And the directories themselves still match: the guard narrows the globs
+  // to the separator, it does not stop them matching.
+  await write(notePath(STATE_ROOT, "MINE"), "# what I saw\n\nIn `src/`.\n");
+  const judged = await records(commitAll("build: the tick's own note"), {
+    phaseName: "build",
+    entry: assigned("MINE"),
+  });
+  expect(judged).toMatchObject({ ok: true });
+  expect(judged.skipped).toBeUndefined();
+  expect(judged.message).toContain("1 record(s) touched, 1 written");
 });
 
 it("the clean-tree gate refuses a leftover path the phase may not write", async () => {
