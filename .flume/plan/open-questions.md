@@ -35,39 +35,67 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## Does the citation carve-out reach a `describe`/`it` title? (PARKED — needs a rule-page amendment)
+## Does `flume loop --help` owe the operator `killGraceMs`? (PARKED — a UX call)
 
-Drained from `TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES` (879e877). The
-comment-citation scan resolves `src/`, `harness/` and `tests/` **comments**.
-A `describe`/`it` title is a string literal, not trivia, so ~14 titles citing
-a bare rule page (`engineering.md` ×8, `engine-boundary.md` ×4,
-`platform-facts.md` ×2) are unjudged: renaming a rule page leaves every one
-of them standing while the comments beside them red.
+Drained from `A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE`'s note
+(f432830). The supervisor now bounds a signalled run's wait with
+`supervisorPolicy.killGraceMs` (default 5000). `src/cliHelp.ts` quotes
+`abortThreshold` and no other supervisor knob, and `flume loop --help` says
+nothing about the grace.
 
-**Not derivable as filed.** `.claude/rules/engineering.md` *Narration is the
-ladder's bottom rung* scopes the carve-out to "a reference in a `src/`,
-`harness/`, or `tests/` comment". Widening the scan contradicts that cite
-rather than deriving from it, so the phrase moves first.
-
-**The asymmetry the answering session should not re-derive.** Only the
-`*.md` arm would bite. A title is a string literal, and a string literal is
-itself a resolution arm (`tests/helpers/commentCitations.ts`, the tokens
-loop) — so a backticked identifier inside a title resolves *itself*, exactly
-the decorative-override failure `EXTERNAL_VOCABULARY` was moved to a `.json`
-to escape. The `*.md` filename arm resolves against the working tree, not
-the token set, so it is the one arm a title cannot answer for.
+**Not derivable as filed.** `spec/cli.md` line 82 scopes `--help` to "usage
+and its exit codes". `abortThreshold` is quoted only because it explains
+exit 1; `killGraceMs` changes no exit code — it changes how long `Ctrl-C`
+takes to return, which is operator-visible in a way `maxParallel` is not but
+is not a thing the spec says help owes. Which knobs help names, and in what
+words, is the call.
 
 Options:
 
-- **Widen the phrase to "a comment or a test title", `*.md` arm only.** ~14
-  titles get rewritten to their directory-qualified spelling; the identifier
-  arm is declared out at the site with the self-resolution reason above.
-- **Widen to comment *and* title, both arms.** Needs the literal arm
-  narrowed first, which the record measured: narrowing it to `src/`+`harness/`
-  costs ~39 fixture citations, each then excused by name — worse.
-- **Leave the carve-out at comments.** A title's cite stays an author's
-  claim, and page renames are caught by the comment beside the title, which
-  the suite already holds.
+- **Name it under the graceful-stop text, not the exit codes.** One line:
+  the release waits on the tick tree, bounded by
+  `supervisorPolicy.killGraceMs` (default 5000, POSIX only). Smallest edit;
+  leaves the exit-code list keyed to exit codes.
+- **Widen help to the whole block.** Name all six knobs wherever each
+  belongs. Consistent, and the pin is mechanical (help against the type) —
+  but it makes `--help` a second copy of `docs/CHAIN-AUTHORING.md` §9, which
+  `CHAIN-AUTHORING-WALKS-EVERY-SUPERVISOR-KNOB` is already fixing.
+- **Name nothing.** The guide and `spec/chain.md` carry the block; help
+  stays at usage and exit codes as the spec scopes it.
 
-Recommended: the first. It is the whole finding at the one arm that can
-carry it, and it leaves the literal arm's declared divergence untouched.
+Recommended: the first, if a line is wanted at all. A `Ctrl-C` that appears
+to hang for five seconds is the kind of thing an operator looks up in
+`--help` before anywhere else; the other five knobs are not.
+
+## Should the sweep read a citation that resolves but no longer points at the fact? (PARKED — needs a posture-page amendment)
+
+Drained from `HARNESS-WINDOWS-IS-FIVE-MODULES`'s note (f432830). The split
+left nine comment citations naming `harness/windows.ts` for facts that had
+moved to the new modules. The build tick re-homed them by hand. Nothing
+would have caught them: the citation scan resolves a **token** against the
+tree, and `harness/windows.ts` still exists, so a pointer at the wrong file
+is green.
+
+**Not derivable as filed, and not promotable.** `.claude/rules/engineering.md`
+*Narration is the ladder's bottom rung* scopes the pin to "the token, never
+its meaning" — deliberately, and that limit is right: whether a file still
+holds the fact a comment cites is a judgement, not a resolution. So the rung
+this belongs on is the judged one, and `.claude/rules/posture-sweep.md` is
+where a judged lens is declared. Plan cannot write either page.
+
+Options:
+
+- **Add a standing sweep lens** beside *expired narration*: a citation whose
+  named file no longer holds what the citing sentence claims of it, read
+  within the neighborhood the tick is already judging. Costs nothing on a
+  quiet tree; the frontier already bounds it.
+- **Bind it to the split instead.** A commit that moves a job between files
+  re-homes the citations pointing at the old home, stated once in
+  *A module is one job* as part of what a split ships. Narrower, and it
+  fires exactly where the nine were created.
+- **Accept it.** Stale pointers are prose drift, and prose is the bottom
+  rung by design.
+
+Recommended: the second. The nine were made by one commit shape, and naming
+the obligation at that shape is cheaper to hold than a lens every sweep tick
+re-reads — the finding class is created by splits, not by time.

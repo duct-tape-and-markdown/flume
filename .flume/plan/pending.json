@@ -39,7 +39,7 @@
       ],
       "retire": []
     },
-    "summary": "a signalled bare `flume tick` drops its claim and exits while the agent it started keeps writing into the worktree — the loop path's orphan, one level further down",
+    "summary": "a signalled bare `flume tick` drops its claim and exits while the agent it started keeps writing into the worktree \u2014 the loop path's orphan, one level further down",
     "per": {
       "path": "spec/loop.md",
       "section": "The loop lock and the tip claim"
@@ -52,7 +52,7 @@
     "pins": [
       "a signalled bare `flume tick` exits 143"
     ],
-    "notes": "Today the handler is `dropBareTipClaim(); process.exit(143)` — synchronous, and the agent is a child of this process with children of its own. Same knob, read off the bare tick's own chain. Blocked on the group/escalation entry: a second teardown beside it is the mechanism-depth defect (`engineering.md`, *The fix lands at the mechanism*). Once the agent leads its own group a supervisor's group signal no longer reaches it — the tick's own handler carries it, on both paths."
+    "notes": "Today the handler is `dropBareTipClaim(); process.exit(143)` \u2014 synchronous, and the agent is a child of this process with children of its own. Same knob, read off the bare tick's own chain. Blocked on the group/escalation entry: a second teardown beside it is the mechanism-depth defect (`engineering.md`, *The fix lands at the mechanism*). Once the agent leads its own group a supervisor's group signal no longer reaches it \u2014 the tick's own handler carries it, on both paths."
   },
   {
     "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
@@ -119,7 +119,7 @@
       "tests/priorAttempts.test.ts",
       "tests/worktrees.test.ts"
     ],
-    "summary": "the cases with no structural substitute — a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one — red the lane on their fixture, not a defect",
+    "summary": "the cases with no structural substitute \u2014 a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one \u2014 red the lane on their fixture, not a defect",
     "per": {
       "path": "spec/cli.md",
       "section": "win32 is a supported host"
@@ -131,6 +131,149 @@
       "every declared-host case carries the reason it cannot run on the other host"
     ],
     "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do. `bin/flume` is the sh shim; the published win32 bin is `bin/flume.js`, so the walk's subject is POSIX-only by construction."
+  },
+  {
+    "tag": "RECORDS-READ-DISK-IN-THE-HOSTS-ALPHABET",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/records.ts",
+          "description": "the disk-reading leg composes host-native; the git-alphabet leg is untouched"
+        },
+        {
+          "path": "tests/harnessRecords.test.ts",
+          "description": "the alphabet each leg answers in"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the lane-red record-cap case, unchanged in subject"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "recordFiles slash-joins an absolute state root, so the inbox window renders every record at a mixed-dialect path on win32 and the lane reds on the record-cap case",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "win32 is a supported host"
+    },
+    "acceptance": "the inbox window names each record at the path node:path composes under the state root, and the windows lane's record-cap case is green.",
+    "tests": [],
+    "pins": [
+      "recordFiles names each record at the path node:path composes under the state root"
+    ],
+    "notes": "Lane red, run 35027829885: expected `...\\.flume\\inbox\\x.md`, got `...\\.flume/inbox/x.md`. `recordDirs`/`notesDir`/`notePath` take a repo-relative root and stay in git's alphabet; `recordFiles`/`recordsPending` take `flumeDir` and read disk. Compose from RECORD_DIR_NAMES so one names list still feeds both. No posix-decidable regression \u2014 the win32 case is it; name the exception in the commit body (`engineering.md`, *A fix ships the test that would have caught it*)."
+  },
+  {
+    "tag": "A-TEST-TITLE-CITES-A-PAGE-THE-TREE-HOLDS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "the title arm: a describe/it/test title's `*.md` name resolves against the working tree, identifier arm declared out at the site"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "the arm's own cases and the repo-wide title pin"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "its titles spell the page's directory"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "its titles spell the page's directory"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "its titles spell the page's directory"
+        },
+        {
+          "path": "tests/chain.test.ts",
+          "description": "its titles spell the page's directory"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "its titles spell the page's directory"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "its titles spell the page's directory"
+        },
+        {
+          "path": "tests/Baton.test.ts",
+          "description": "its titles spell the page's directory"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "its titles spell the page's directory"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "a title naming a page no checkout holds"
+        },
+        {
+          "path": "tests/harnessInit.test.ts",
+          "description": "a title naming a page no checkout holds"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the ratified carve-out reaches a test title's page name, and the scan does not read titles \u2014 17 titles cite a page the working tree cannot answer",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "every `*.md` page name a describe/it/test title carries resolves against the working tree, and a renamed page reds the title citing it as it already reds the comment beside it.",
+    "tests": [
+      "the citation scan judges an unbackticked *.md page name a describe or it title carries",
+      "the citation scan judges a title's page name and not a backticked identifier beside it"
+    ],
+    "pins": [
+      "every *.md page name a src/, harness/ or tests/ title carries names a file the working tree holds"
+    ],
+    "notes": "Ruled 2026-09-15, rule landed at ea26ffe. 17 unresolved titles, not the record's 14: `engineering.md` x8, `engine-boundary.md` x4, `platform-facts.md` x2, plus `state.md/open-questions.md` (Dispatcher, stale since state.json), `SHIPPED.md` (examples, a runtime artifact no checkout holds), `PROTOCOL.md` (harnessInit). The repo pin is green at base by construction, so it needs its own non-vacuity assertion \u2014 titles scanned > 0."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-WALKS-EVERY-SUPERVISOR-KNOB",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "section 9 walks the three knobs it omits"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "the agreement pin, beside the walkthrough case already reading this page"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CHAIN-AUTHORING.md section 9 walks 3 of the 6 supervisorPolicy knobs the spec names, and nothing holds the page to the type",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "Supervisor policy is a chain-overridable default"
+    },
+    "acceptance": "the chain-authoring guide's supervisor-policy section walks every field of Chain.supervisorPolicy, and a knob added to the type without a paragraph reds.",
+    "tests": [
+      "docs/CHAIN-AUTHORING.md's supervisor-policy section names every Chain.supervisorPolicy field the engine reads"
+    ],
+    "pins": [],
+    "notes": "From A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE's note. Documented: `quarantineScope`, `abortThreshold`, `killGraceMs`. Absent: `maxParallel`, `tickTimeoutMs`, `partitionIgnore` \u2014 the last two appear only in docs/MIGRATING-0.10.md and -0.11.md, which are history, not surface. The knob list reads off the type through the repo program, never a second list beside it."
   },
   {
     "tag": "DISPATCHER-HOMES-ITS-FIVE-FRONT-JOBS",
@@ -154,7 +297,7 @@
         },
         {
           "path": "src/log.ts",
-          "description": "`Logger` and `consoleLogger` — the file whose absence is the cycle"
+          "description": "`Logger` and `consoleLogger` \u2014 the file whose absence is the cycle"
         },
         {
           "path": "src/exitCodes.ts",
@@ -168,7 +311,7 @@
         },
         {
           "path": "src/index.ts",
-          "description": "re-exports the same names from their new homes — the surface does not move"
+          "description": "re-exports the same names from their new homes \u2014 the surface does not move"
         },
         {
           "path": "src/cliVerdict.ts",
@@ -204,15 +347,15 @@
         },
         {
           "path": "src/worktrees.ts",
-          "description": "takes `Logger` from its own file — one leg of the cycle"
+          "description": "takes `Logger` from its own file \u2014 one leg of the cycle"
         },
         {
           "path": "src/priorAttempts.ts",
-          "description": "takes `Logger` from its own file — one leg of the cycle"
+          "description": "takes `Logger` from its own file \u2014 one leg of the cycle"
         },
         {
           "path": "src/friction.ts",
-          "description": "takes `Logger` from its own file — one leg of the cycle"
+          "description": "takes `Logger` from its own file \u2014 one leg of the cycle"
         },
         {
           "path": "harness/handoff.ts",
@@ -265,7 +408,7 @@
       ],
       "retire": []
     },
-    "summary": "src/Dispatcher.ts fronts its class with five jobs that have no file — tick-verdict I/O, merging markers, chain loading, the exit codes, and `Logger`, whose homelessness is a type cycle",
+    "summary": "src/Dispatcher.ts fronts its class with five jobs that have no file \u2014 tick-verdict I/O, merging markers, chain loading, the exit codes, and `Logger`, whose homelessness is a type cycle",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
@@ -273,7 +416,7 @@
     "acceptance": "each of the five jobs sits in the file its name is, src/Dispatcher.ts holds the dispatch class and its own helpers alone, and no module Dispatcher imports imports a type back out of it.",
     "tests": [],
     "pins": [],
-    "notes": "Filed at 57bd960, unchanged since. About 1,300 lines out, behavior-free: the module is 4,894 lines, the class 3,070. `worktrees.ts`, `priorAttempts.ts` and `friction.ts` take `Logger` as a type from the module that imports them — a cycle that exists only because `Logger` has no file. `src/index.ts` keeps the same exported names, so the export pin and the citation pins hold the surface."
+    "notes": "Filed at 57bd960, unchanged since. About 1,300 lines out, behavior-free: the module is 4,894 lines, the class 3,070. `worktrees.ts`, `priorAttempts.ts` and `friction.ts` take `Logger` as a type from the module that imports them \u2014 a cycle that exists only because `Logger` has no file. `src/index.ts` keeps the same exported names, so the export pin and the citation pins hold the surface."
   },
   {
     "tag": "ONE-ATTEMPT-LEG-AND-ONE-BATCH-SELECTION",
@@ -303,7 +446,7 @@
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
     },
-    "acceptance": "one attempt function carries render → tip read → invoke → tip verify → afterCommit gates → revert for both concurrencies, one batch selection serves `runFanout` and `render`, and the suite is unchanged.",
+    "acceptance": "one attempt function carries render \u2192 tip read \u2192 invoke \u2192 tip verify \u2192 afterCommit gates \u2192 revert for both concurrencies, one batch selection serves `runFanout` and `render`, and the suite is unchanged.",
     "tests": [],
     "pins": [],
     "notes": "Target: `runAttempt(phase, wt, ref, label, entry?)` returning `{ termination, committed, tipMoved, verdict }`, called by both legs; `selectBatch(chain, pending)` called by `runFanout` and `render`. The `renderPrompt` try/catch is copied at both legs, and `render` repeats `pickableEntries` + `partitionByFileOverlap` with the same two `supervisorPolicy` reads. Blocked on the split so the sequence is unified once, at its final home."
@@ -357,7 +500,7 @@
     "acceptance": "chain.ts holds only the wiring its header names, the judge-as-gate and the consumer-gate construction each have their own module, and every header naming where they live agrees.",
     "tests": [],
     "pins": [],
-    "notes": "The record proposed `gates.ts` for the construction; that header disclaims it twice — 'this module spawns no process', and construction belongs to 'the chain factory that calls this' — so a third module is what makes the two headers agree rather than leaving one wrong. `shellCommand` spawns, which is exactly what gates.ts says it does not do."
+    "notes": "The record proposed `gates.ts` for the construction; that header disclaims it twice \u2014 'this module spawns no process', and construction belongs to 'the chain factory that calls this' \u2014 so a third module is what makes the two headers agree rather than leaving one wrong. `shellCommand` spawns, which is exactly what gates.ts says it does not do."
   },
   {
     "tag": "ONE-SYNC-SPAWN-WRAPPER-IN-THE-PACKAGE",
@@ -374,7 +517,7 @@
       ],
       "edit": [
         {
-          "path": "harness/windows.ts",
+          "path": "harness/gitRange.ts",
           "description": "`git()` becomes a one-liner over the shared spawn"
         },
         {
@@ -400,7 +543,7 @@
       ],
       "retire": []
     },
-    "summary": "three sync spawn wrappers in the package spell one job — the shim retry, the 64 MiB buffer and the error-detail fold are copied across windows.ts, ci.ts and vitestRunner.ts",
+    "summary": "three sync spawn wrappers in the package spell one job \u2014 the shim retry, the 64 MiB buffer and the error-detail fold are copied across windows.ts, ci.ts and vitestRunner.ts",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
@@ -408,7 +551,7 @@
     "acceptance": "one module carries the package's sync spawn, and `git()`, `branchAt()` and `forge()` are each a call into it rather than a third copy of the retry, the buffer and the fold.",
     "tests": [],
     "pins": [],
-    "notes": "`64 << 20` at ci.ts, windows.ts and vitestRunner.ts; `err instanceof Error ? err.message : String(err)` at ci.ts, windows.ts and cli.ts. `branchAt`'s sync-ness is declared and cited at the site — what files is the triplicated wrapper, not that divergence. Only `forge()` carries the shim retry today. Lands wherever `git()` sits once HARNESS-WINDOWS-IS-FIVE-MODULES has moved it. The sync surfaces upstream are an engine question, not proposed here."
+    "notes": "`64 << 20` at ci.ts, gitRange.ts and vitestRunner.ts; `err instanceof Error ? err.message : String(err)` at ci.ts, cursorWindow.ts and cli.ts. `branchAt`'s sync-ness is declared and cited at the site \u2014 what files is the triplicated wrapper, not that divergence. Only `forge()` carries the shim retry. `git()` sits in gitRange.ts since the windows split. The sync surfaces upstream are an engine question, not proposed here."
   },
   {
     "tag": "THE-PLAN-ARTIFACT-LAYOUT-HAS-ONE-HOME",
@@ -479,7 +622,7 @@
     "acceptance": "one module states where every plan artifact sits under a state root, chain.ts, init.ts and gates.ts each take theirs from it, and the queue's path is spelled once.",
     "tests": [],
     "pins": [],
-    "notes": "`pending.json` is the engine's, `state.json` is planState.ts's, `inbox/` and `notes/` are records.ts's, `open-questions.md` is prompts.ts's — 'Spelled here because nothing else owns it' is the smell in prose. gates.ts reaches the queue through `join(ctx.stateRootRel, …)` while chain.ts and init.ts use `gitPath(resolvePendingPath(...))`; `readFileAtRef` folds a native separator today, so that leg is vocabulary rather than a live red."
+    "notes": "`pending.json` is the engine's, `state.json` is planState.ts's, `inbox/` and `notes/` are records.ts's, `open-questions.md` is prompts.ts's \u2014 'Spelled here because nothing else owns it' is the smell in prose. gates.ts reaches the queue through `join(ctx.stateRootRel, \u2026)` while chain.ts and init.ts use `gitPath(resolvePendingPath(...))`; `readFileAtRef` folds a native separator today, so that leg is vocabulary rather than a live red."
   },
   {
     "tag": "SUBPROCESS-HELPER-IS-THREE-MODULES",
@@ -586,7 +729,7 @@
       ],
       "retire": []
     },
-    "summary": "tests/helpers/subprocess.ts is four jobs under one name — spawn wrappers, env hygiene, fixture rooting and the state-root leak guard — and its own header lists them as 'also home to'",
+    "summary": "tests/helpers/subprocess.ts is four jobs under one name \u2014 spawn wrappers, env hygiene, fixture rooting and the state-root leak guard \u2014 and its own header lists them as 'also home to'",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
@@ -771,12 +914,12 @@
       ],
       "retire": []
     },
-    "summary": "163 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), …))`, each correct-by-accident until a comparison against git's output grows beside it",
+    "summary": "163 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), \u2026))`, each correct-by-accident until a comparison against git's output grows beside it",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
     },
-    "acceptance": "every temp fixture root in tests/ is made by the one helper that folds the spelling at creation, and a scan holds the suite to it — so a new bare root reds where it is written rather than on a Windows lane months later.",
+    "acceptance": "every temp fixture root in tests/ is made by the one helper that folds the spelling at creation, and a scan holds the suite to it \u2014 so a new bare root reds where it is written rather than on a Windows lane months later.",
     "tests": [
       "every temp fixture root in tests/ is created through the helper that folds it to git's spelling"
     ],
