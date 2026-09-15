@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "SPAWN-SCAN-NAME-MAP-KEEPS-EVERY-DECLARATION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/spawnBudget.ts",
+          "description": "namedFunctions keys every declaration of a name, not the last; spawnNames reaches if any does"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "fixture case for the shadowed-wrapper miss"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "spawn-budget scan silently drops a spawn site when a same-named function is declared elsewhere in the file",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "a case calling a file-local spawn wrapper is still flagged when an unrelated same-named function exists elsewhere in the file",
+    "tests": [
+      "a same-named function elsewhere in the file does not hide a spawning case from the scan"
+    ],
+    "pins": [],
+    "notes": "namedFunctions is a Map<string,Node>, so Map.set last-wins collapses shadowed declarations; the surviving node decides reach for the whole file. Measured this tick: a file-local `boot` reaching process.execPath plus a later unrelated `const boot` in a sibling describe scans to []. That is under-approximation, the opposite of the posture the module's doc comment declares. Widen, never scope-bound."
+  }
+]
