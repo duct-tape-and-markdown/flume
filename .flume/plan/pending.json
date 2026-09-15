@@ -116,5 +116,35 @@
       "a substituted value carrying an inline-exec span reaches the agent inert"
     ],
     "notes": "The engine's list is static and the package's args are computed, so each producer (`sharedPromptArgs`, the three window `args`, `buildPromptArgs`) names its keys beside the map it builds — type the return against them and the sync is structural, not disciplined. A declared key a tick never returns is unused, so over-declaring is safe; an undeclared one loses neutralization silently, which the agreement test catches."
+  },
+  {
+    "tag": "STATE-MD-CLAIM-RETIRED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "README.md",
+          "description": "what this repo's own chain writes under the state root"
+        },
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "the snapshot doc comment names no chain's file"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Retire the `.flume/plan/state.md` claim from the code layer: this repo's plan state is the typed artifact, and the engine names no chain's file.",
+    "per": {
+      "path": ".claude/rules/spec-plan-build.md",
+      "section": "Spec → Plan → Build"
+    },
+    "acceptance": "nothing under build's fence describes this repo's plan state as `state.md` or as prose scratch.",
+    "tests": [],
+    "pins": [],
+    "notes": "Two sites, one retired claim. README's *This repo's own chain writes* lists `.flume/plan/state.md` as prose scratch; it is the typed artifact (`spec/harness.md`, *Plan state as declared state*). `src/priorAttempts.ts`'s snapshot doc names it as the loss it prevents — the engine names no chain's file. Out of scope: `docs/CHAIN-AUTHORING.md`, `examples/`, `docs/surveys/`, whose `state.md` is another chain's. No test: prose the package never ships as types."
   }
 ]
