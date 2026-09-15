@@ -40,11 +40,14 @@ Every check lives at the most deterministic layer that can express it — a
   against it. Two carve-outs, both reading prose against the program rather
   than against prose. A doc comment reachable from the `exports` map's
   `.d.ts` is the hover text a chain author reads, so it is engine surface and
-  may be pinned for what it says. And a backticked identifier in a `src/` or
-  `harness/` comment is a reference, not a sentence: a pin may resolve it
-  against the declarations those trees hold — the token, never its meaning —
-  so a deleted symbol cannot leave its citations standing. Prose the package
-  never ships, read for what it says, stays with its authors.
+  may be pinned for what it says. And a reference in a `src/` or `harness/`
+  comment — a backticked identifier, a backticked repo-relative path, or a
+  `*.md` page name with or without backticks, since a filename is never a
+  sentence — is not prose: a pin may resolve it against the declarations
+  those trees hold and the working tree — the token, never its meaning — so
+  a deleted symbol or a renamed page cannot leave its citations standing.
+  Prose the package never ships, read for what it says, stays with its
+  authors.
 
 **Why:** a defence that lives only in prose is one forgetful tick from
 being no defence at all; leaving it there when a rung above is available is
