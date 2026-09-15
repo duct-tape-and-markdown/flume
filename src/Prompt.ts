@@ -67,8 +67,9 @@ const INLINE_EXEC_MAX_BUFFER = 4 * 1024 * 1024;
  *  - `platform-preempt` the agent process failed for non-work reasons
  *                       (rate-limit, auth, dispatcher-killed, timeout) —
  *                       NOT a defect in the work,
- *  - `render-refused`   the prompt itself never resolved, so the agent was
- *                       never invoked at all.
+ *  - `render-refused`   the tick refused before invocation — the prompt
+ *                       itself never resolved, or a pre-invocation hook
+ *                       threw — so the agent was never invoked at all.
  *
  * The taxonomy's one home, and a runtime value rather than a type alone so a
  * prompt or a chain names the modes from the engine instead of from a copy
@@ -222,15 +223,21 @@ export interface PlatformPreemptAttempt {
 }
 
 /**
- * The render aborted before the agent was invoked — one or more inline-exec
- * spans in the prompt did not resolve. Distinct from `clean-exit` (the agent
- * ran and committed nothing) and from `platform-preempt` (the agent process
- * itself failed): here the agent never ran at all, so a chain's `handoff` can
- * tell "could not see" from "chose not to act".
+ * The tick aborted before the agent was invoked. Two writers reach this
+ * record: one or more inline-exec spans in the prompt did not resolve, or a
+ * pre-invocation hook — `shouldRun` or `promptArgs` (`spec/chain.md`, *What a
+ * hook receives*) — threw. Distinct from `clean-exit` (the agent ran and
+ * committed nothing) and from `platform-preempt` (the agent process itself
+ * failed): under either writer the agent never ran at all, so a chain's
+ * `handoff` can tell "could not see" from "chose not to act".
  */
 export interface RenderRefusedAttempt {
   mode: "render-refused";
-  /** Every failing span's command text and stderr, bounded. */
+  /**
+   * What refused, bounded: every failing span's command text and stderr, or
+   * the hook that threw and what it said. One field for both writers — the
+   * retrying tick reads the text, and the two have no error type in common.
+   */
   failures: string;
   /**
    * Which keyspace this record's key lives in (spec/loop.md "No false
