@@ -90,7 +90,8 @@
       "tests/harnessBuildArgs.test.ts",
       "harness/prompts/build.md",
       "tests/Gate.test.ts",
-      "tests/loopSupervisor.test.ts"
+      "tests/loopSupervisor.test.ts",
+      "tests/git.test.ts"
     ]
   }
 }
