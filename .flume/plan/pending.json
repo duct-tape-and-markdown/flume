@@ -159,7 +159,7 @@
         },
         {
           "path": "src/processTree.ts",
-          "description": "the group signal the runner takes, beside the escalation src/Agent.ts keeps"
+          "description": "the group signal the runner takes, beside the escalation src/Agent.ts keeps; its two comments stop naming the supervisor as the grace's forwarder"
         },
         {
           "path": "src/cli.ts",
@@ -172,6 +172,10 @@
         {
           "path": "src/Agent.ts",
           "description": "the killGraceMs doc comment stops cross-referencing the supervisor's retired bound"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the three killGraceMs passages name the tick's grace over its agent tree, and the per-tick read scope"
         },
         {
           "path": "tests/cli.test.ts",
@@ -193,13 +197,13 @@
       "path": "spec/loop.md",
       "section": "The loop lock and the tip claim"
     },
-    "acceptance": "a signalled loop signals the tick child's group and waits on the child's exit with no bound of its own, so the one timer in the tree is the child's over the agent it can see.",
+    "acceptance": "a signalled loop signals the tick child's group and waits on the child's exit with no bound of its own, so the one timer in the tree is the child's over the agent it can see. No shipped narration — doc comment or authoring page — still names the supervisor as the grace's binder or classes killGraceMs run-scoped.",
     "tests": [
       "an agent that swallows SIGTERM for the whole grace is dead when a signalled loop's run ends",
       "a signalled loop still holds its lock and tip claim past the declared grace while its wedged tick child lives"
     ],
     "pins": [],
-    "notes": "Spec at d9e80fe. Live at HEAD: defaultTickRunner calls terminateProcessTree(child, { graceMs }); that timer starts strictly before the child’s own, so the agent’s group is orphaned at the grace. SuperviseLoopOptions.killGraceMs has no other consumer once it goes. Test 1 wants bareTickAgentChainSrc’s spawned agent under the loop driver; test 2 a driver arm that does not await the run’s exit. docs/CHAIN-AUTHORING.md is out of scope — see the open question on spec/chain.md."
+    "notes": "Spec at d9e80fe, read scope at ce37152. Live at HEAD: defaultTickRunner calls terminateProcessTree(child, { graceMs }); that timer starts strictly before the child's own, so the agent's group is orphaned at the grace. SuperviseLoopOptions.killGraceMs loses its only consumer. Test 1 wants bareTickAgentChainSrc's spawned agent under the loop driver; test 2 a driver arm that does not await the run's exit. CHAIN-AUTHORING 1700/1732/1771 and processTree's comments carry the retired binder."
   },
   {
     "tag": "A-SIGNALLED-RELEASE-ANNOUNCES-ITS-WAIT",
