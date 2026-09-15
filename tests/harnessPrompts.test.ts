@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
-import { PHASES } from "../harness/declaration.ts";
+import { PHASES, PLAN_SLICES } from "../harness/declaration.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
 import {
   PROMPT_NAMES,
@@ -193,12 +193,18 @@ it("the discipline page names no placeholder, since no tick renders it", async (
   const raw = await readFile(promptPath("plan-discipline"), "utf8");
   expect(raw.length).toBeGreaterThan(0);
   expect([...raw.matchAll(PLACEHOLDER)].map((m) => m[0])).toEqual([]);
+});
 
-  // Every plan slice sends its reader here, by the address the package
-  // resolves rather than by a path spelled in the markdown.
-  const slices = PHASES.filter((name) => name.startsWith("plan-"));
-  expect(slices.length).toBeGreaterThan(0);
-  for (const name of slices) {
+it("every plan slice the package declares points its reader at the discipline page", async () => {
+  // The roster is read off the declaration, not filtered out of PHASES by
+  // name: a slice named off-prefix would leave the judged set silently, and
+  // the non-vacuity pin below counts a subset as happily as the whole
+  // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  // Each one sends its reader there by the address the package resolves,
+  // rather than by a path spelled in the markdown.
+  for (const name of PLAN_SLICES) {
     expect({ name, points: (await render(name)).includes(promptPath("plan-discipline")) }).toEqual({
       name,
       points: true,
