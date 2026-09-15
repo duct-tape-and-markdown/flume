@@ -37,7 +37,7 @@ import { tsImport } from "tsx/esm/api";
 
 import type { Agent, AgentUsage } from "./Agent.js";
 import { Baton } from "./Baton.js";
-import type { Gate, GateResult } from "./Gate.js";
+import type { Gate, GateContext, GateResult } from "./Gate.js";
 import { bound } from "./bounds.js";
 import { writablePathsGate } from "./builtinGates.js";
 // `buildFlumeApi` is a function, not a constant, precisely so this
@@ -2113,7 +2113,7 @@ export class Dispatcher {
               }
             | undefined;
           for (const gate of afterMergeGates) {
-            const gr = await gate.run({
+            const gr = await this.runGate(gate, {
               cwd: repoRoot,
               repoRoot,
               flumeDir: this.flumeDir,
@@ -2737,7 +2737,7 @@ export class Dispatcher {
       // detection trusts the agent's own account").
       const entryMergeGateResultsStart = mergeGateResults.length;
       for (const gate of afterMergeGates) {
-        const gr = await gate.run({
+        const gr = await this.runGate(gate, {
           cwd: repoRoot,
           repoRoot,
           flumeDir: this.flumeDir,
@@ -3654,6 +3654,31 @@ export class Dispatcher {
     }
   }
 
+  /**
+   * The one place a gate's `run` is called — every gate-run site in this
+   * class goes through here rather than pasting its own guard
+   * (`.claude/rules/engineering.md` "The fix lands at the mechanism").
+   *
+   * **A gate that throws is a gate that failed** (spec/chain.md "What a gate
+   * returns"): the throw is recorded as `{ ok: false, message: <the error's
+   * message> }` and the tick continues into exactly the bookkeeping a
+   * returned refusal gets — verdict written, merge reverted or refused. A
+   * gate's exception is a fact about the gate, never a reason to lose the
+   * tick's facts or to strand a merge behind the crash marker (spec/loop.md
+   * "Crash equals stop").
+   */
+  private async runGate(gate: Gate, ctx: GateContext): Promise<GateResult> {
+    try {
+      return await gate.run(ctx);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.log.warn(
+        `[flume] gate '${gate.name}' threw: ${message}; recorded as that gate's failure`,
+      );
+      return { ok: false, message };
+    }
+  }
+
   private async runAfterCommitGates(
     phase: Phase,
     cwd: string,
@@ -3726,7 +3751,7 @@ export class Dispatcher {
         : join(cwd, configDirRel);
     const results: GateResultEntry[] = [];
     for (const gate of gates) {
-      const r: GateResult = await gate.run({
+      const r: GateResult = await this.runGate(gate, {
         cwd,
         repoRoot: cwd,
         flumeDir: this.flumeDir,

@@ -187,6 +187,21 @@ async function readPendingFromDisk(repo: string): Promise<PendingEntry[]> {
   return r.entries;
 }
 
+/**
+ * Every `<flumeDir>/merging/*.json` as it stands right now, name → contents
+ * (spec/loop.md "Crash equals stop", "A merge the crash interrupted is
+ * refused, never resumed").
+ */
+async function markersNow(repo: string): Promise<Map<string, unknown>> {
+  const dir = join(repo, ".flume", "merging");
+  const out = new Map<string, unknown>();
+  if (!existsSync(dir)) return out;
+  for (const name of (await readdir(dir)).sort()) {
+    out.set(name, JSON.parse(await readFile(join(dir, name), "utf8")));
+  }
+  return out;
+}
+
 function makeEntry(tag: string, editPaths: string[]): PendingEntry {
   return {
     tag,
@@ -4014,17 +4029,6 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
 // rewrite lands, so a death anywhere in between leaves the fact on disk for
 // the next start to refuse over (`src/cli.ts`; pinned in tests/cli.test.ts).
 describe("Dispatcher fanout — the merge-stage crash marker", () => {
-  /** Every `<flumeDir>/merging/*.json` as it stands right now, name → contents. */
-  async function markersNow(repo: string): Promise<Map<string, unknown>> {
-    const dir = join(repo, ".flume", "merging");
-    const out = new Map<string, unknown>();
-    if (!existsSync(dir)) return out;
-    for (const name of (await readdir(dir)).sort()) {
-      out.set(name, JSON.parse(await readFile(join(dir, name), "utf8")));
-    }
-    return out;
-  }
-
   it("the merge stage writes a merging marker naming the branch, the base sha and the entry before the pick", async () => {
     // Three entries, picked in batch order. MARK-B's pick *conflicts* and is
     // aborted — it never reaches an afterMerge gate, never lands on trunk,
@@ -4349,6 +4353,234 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     expect(failPrompts[1]).toContain("Reverted at: afterMerge");
     expect(failPrompts[1]).toContain("ISO-FAIL-DETAIL-QQQ");
   }, 30_000);
+});
+
+// ---------- a gate that throws is a gate that failed (GATE-THROW-IS-A-GATE-
+// FAILURE, spec/chain.md "What a gate returns") ----------
+
+describe("Dispatcher — a gate that throws is a gate that failed", () => {
+  /** An `Error` a gate raises instead of returning its refusal. */
+  const BOOM = "gate runner died: ENOENT spawning vitest";
+
+  function throwingGate(name: string, when: Gate["when"]): Gate {
+    return {
+      name,
+      when,
+      async run() {
+        throw new Error(BOOM);
+      },
+    };
+  }
+
+  it("a gate that throws is recorded as that gate's failure carrying the error's message", async () => {
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [throwingGate("explodes", "afterCommit")],
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/output.ts", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity (engineering.md "A green verdict is proven non-vacuous"): the
+    // gate loop really reached the throwing gate and really produced a row.
+    const reported = outcome.result?.gateResults ?? [];
+    expect(reported, "the gate loop produced no rows").not.toHaveLength(0);
+    // The throw is the gate's refusal, verbatim — no wrapper prose, no
+    // synthesized message the chain never authored.
+    expect(reported[0]).toEqual({ gate: "explodes", ok: false, message: BOOM });
+    // …and the tick took the returned-refusal path from there: commit
+    // reverted, verdict written, failure signature derived the same way.
+    expect(outcome.result?.committed).toBe(false);
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(existsSync(join(fx.repo, "src", "output.ts"))).toBe(false);
+    expect(outcome.verdict?.noCommit).toBe("gate-revert");
+    expect(outcome.verdict?.gateResults).toEqual([
+      { gate: "explodes", ok: false, message: BOOM },
+    ]);
+    expect(outcome.verdict?.gateFailures).toEqual([
+      { signature: `explodes: ${BOOM}`, message: BOOM },
+    ]);
+    // Short-circuit is unchanged: writable-paths never ran.
+    expect(reported.some((g) => g.gate === "writable-paths")).toBe(false);
+  }, 20_000);
+
+  it("a tick whose gate throws writes its verdict instead of dying at the crash marker", async () => {
+    await writePending(fx.repo, [makeEntry("THROW-M", ["src/throw-m.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // The marker window: this gate runs between THROW-M's pick onto trunk
+    // and the wave's queue rewrite, so a throw escaping here is exactly the
+    // death that would strand `merging/throw-m.json` and refuse the next
+    // `loop` start (spec/loop.md "A merge the crash interrupted is refused").
+    let staked: string[] = [];
+    const probeThenThrow: Gate = {
+      name: "merge-explodes",
+      when: "afterMerge",
+      async run() {
+        staked = [...(await markersNow(fx.repo)).keys()];
+        throw new Error(BOOM);
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            gates: [probeThenThrow],
+          }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "throw-m": async (cwd) => {
+          await writeAndCommit(cwd, "src/throw-m.ts", "m\n", "build: M");
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: the throw happened mid-merge, with this entry's marker staked
+    // — otherwise "no marker afterwards" would be an absence, not a removal.
+    expect(staked, "the afterMerge gate never ran mid-merge").toEqual([
+      "throw-m.json",
+    ]);
+    // The tick's facts survive the gate's exception.
+    expect(outcome.verdict).toBeDefined();
+    expect(outcome.verdict?.gateResults).toContainEqual({
+      gate: "merge-explodes",
+      ok: false,
+      message: BOOM,
+    });
+    // Nothing is left behind for the next start to refuse over: the wave
+    // reached its bookkeeping and retired the marker it staked.
+    expect([...(await markersNow(fx.repo)).keys()]).toEqual([]);
+  }, 30_000);
+
+  it("an afterMerge gate that throws reverts the merge as a returned refusal would", async () => {
+    await writePending(fx.repo, [makeEntry("THROW-R", ["src/throw-r.ts"])]);
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const prompts: string[] = [];
+    const agent: Agent = {
+      name: "recording-fanout",
+      async invoke(inv) {
+        prompts.push(inv.prompt);
+        await writeAndCommit(inv.cwd, "src/throw-r.ts", "r\n", "build: R");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            gates: [throwingGate("merge-explodes", "afterMerge")],
+          }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: the entry really was picked and really was gated.
+    expect(outcome.verdict?.mergeOutcomes ?? []).not.toHaveLength(0);
+    // The merge came back off trunk, and the entry stayed in the queue.
+    expect(outcome.result?.shippedTags ?? []).toEqual([]);
+    expect(existsSync(join(fx.repo, "src", "throw-r.ts"))).toBe(false);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "THROW-R",
+    ]);
+    expect(outcome.verdict?.mergeOutcomes).toContainEqual({
+      entryTag: "THROW-R",
+      outcome: "afterMerge-reverted",
+      footprint: ["src/throw-r.ts"],
+      baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+    });
+    expect(outcome.verdict?.gateFailures).toEqual([
+      {
+        tag: "THROW-R",
+        quarantineKey: expect.stringMatching(/^throw-r@[0-9a-f]{10}$/),
+        signature: `merge-explodes: ${BOOM}`,
+        message: BOOM,
+      },
+    ]);
+
+    // The retry carries the same §5 gate-revert block a returned refusal
+    // would have written — the throw reached the agent as a gate failure.
+    baton.wake("build");
+    await dispatcher.tick();
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).not.toContain("<prior-attempt>");
+    expect(prompts[1]).toContain("<prior-attempt>");
+    expect(prompts[1]).toContain("Failing gate: merge-explodes");
+    expect(prompts[1]).toContain("Reverted at: afterMerge");
+    expect(prompts[1]).toContain(BOOM);
+  }, 30_000);
+
+  it("a singleton phase's afterMerge gate that throws reverts the merged commit off trunk", async () => {
+    const preHead = await head(fx.repo);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [throwingGate("merge-explodes", "afterMerge")],
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/plan-out.ts", "content\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    const reported = outcome.verdict?.gateResults ?? [];
+    expect(reported, "the afterMerge gate loop produced no rows").not.toHaveLength(0);
+    expect(reported).toContainEqual({
+      gate: "merge-explodes",
+      ok: false,
+      message: BOOM,
+    });
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.verdict?.noCommit).toBe("gate-revert");
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(existsSync(join(fx.repo, "src", "plan-out.ts"))).toBe(false);
+  }, 20_000);
 });
 
 // ---------- shared-checkout keep-semantics revert (spec/loop.md "Tip
