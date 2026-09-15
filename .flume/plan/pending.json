@@ -1,33 +1,5 @@
 [
   {
-    "tag": "GUARDED-SPAN-CASES-JUDGE-A-PLAN-SLICE-TABLE-THEY-NEVER-COVER",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/harnessPrompts.test.ts",
-          "description": "close the two guarded-span loops on the shared reader detector, scoped to the plan slices"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the cold-root and no-headings cases skip-then-count over PLAN_SLICES x GUARDED, so an artifact no plan slice substitutes leaves the judged set green",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "acceptance": "a GUARDED artifact that no plan slice substitutes reds the cold-root case instead of leaving it green over the artifacts that remain",
-    "tests": [],
-    "pins": [
-      "every guarded artifact the cold-root case renders is substituted by at least one plan slice prompt"
-    ],
-    "notes": "Sites: tests/harnessPrompts.test.ts:522+532 and :553+561 -- `if (!spanSubstitutes(...)) continue` closed by a bare `asserted > 0`. promptsReadingEachArtifact (:293) is the mechanism, but it reads PHASES; a plan-slice-scoped view is what these two want, so build's span counts here cannot cover for a plan slice's. Examples-side siblings already close with toBe(ARTIFACTS.length) (tests/examples.test.ts:684,719)."
-  },
-  {
     "tag": "QUESTIONS-DIRECTORY-TITLE-CLAIMS-A-REFUSAL-THE-HELPER-NEVER-ENTAILS",
     "gate": {
       "kind": "open"
