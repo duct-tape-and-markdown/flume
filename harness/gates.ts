@@ -47,7 +47,7 @@ import type { Phase } from "../src/Phase.js";
 import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js";
 import { BUILD_PHASE, type Declaration } from "./declaration.js";
 import { entryExtension, PerSchema } from "./entryExtension.js";
-import { RECORD_MAX_BYTES, notePath, recordDirs } from "./records.js";
+import { notePath, recordDirs } from "./records.js";
 
 /**
  * The engine values the package's gates run through, named by the shape they
@@ -241,8 +241,15 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
  * Records are one file each (`spec/harness.md`, *Records as one file each*),
  * and the two rules that are not layout hold at the commit: a build tick
  * touches only the note its own tag names, and a plan slice drains records
- * rather than writing one. A written record opens with a title line and fits
- * the package's byte cap.
+ * rather than writing one. A written record opens with a title line.
+ *
+ * **The byte cap is not this gate's** (`spec/harness.md`, *The gates the
+ * discipline needs*). What this gate reverts is what protects the tree — two
+ * ticks writing one file, a slice writing into a queue it only drains. A
+ * record's length is a shape rule on a prose channel, so it refuses the
+ * prose and not the code it rode in with: an over-cap record ships with its
+ * entry and the drain that reads it names the overrun
+ * (`renderRecords`, `harness/windows.ts`).
  *
  * The layout itself is composed from `records.ts`, never re-spelled: a
  * directory renamed there moves this gate with it rather than leaving it
@@ -250,7 +257,7 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
  *
  * Written and drained are told apart by asking for the record's bytes at the
  * commit — absent is deleted — so the gate reads the same span every sibling
- * gate does, and the bytes it judges are the bytes that landed.
+ * gate does, and the text it judges is the text that landed.
  */
 function recordsGate(engine: GateEngine): Gate {
   return {
@@ -311,19 +318,13 @@ function recordsGate(engine: GateEngine): Gate {
         if (!/^# \S/.test(text)) {
           problems.push(`${path}: first line is not a "# title"`);
         }
-        const bytes = Buffer.byteLength(text);
-        if (bytes > RECORD_MAX_BYTES) {
-          problems.push(
-            `${path}: ${bytes} bytes, cap ${RECORD_MAX_BYTES} — what, where, why it matters; cut the rest`,
-          );
-        }
       }
       if (problems.length > 0) {
         return refuse(`${problems.length} record problem(s)`, problems);
       }
       return {
         ok: true,
-        message: `${touched.length} record(s) touched, ${written} written within ${RECORD_MAX_BYTES} bytes`,
+        message: `${touched.length} record(s) touched, ${written} written`,
       };
     },
   };

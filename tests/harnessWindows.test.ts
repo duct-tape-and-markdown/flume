@@ -33,6 +33,7 @@ import {
   defaultHandoff,
   parseDeclaration,
   planSliceWindows,
+  RECORD_MAX_BYTES,
   writePlanState,
   type Declaration,
   type PlanSliceWindow,
@@ -762,6 +763,44 @@ it("the inbox window renders every waiting record's bytes and marks the refusals
   expect(args.BUILD_RECORDS).toContain("--- plan-derive (phase keyspace) ---");
   // The record's own fields, verbatim from the engine's shape.
   expect(args.BUILD_RECORDS).toContain(`"mode": "not-shipped"`);
+});
+
+it("the rendered records block names the byte count of a record over the cap", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+
+  const inboxDir = join(stateRoot(), "inbox");
+  mkdirSync(inboxDir, { recursive: true });
+  // Under the cap in characters and over it in bytes — the overrun the cap
+  // is actually made of, and the reason this render measures the file's
+  // bytes rather than the decoded string's length.
+  const body = "\u2014".repeat(RECORD_MAX_BYTES / 2);
+  const over = `# Too much\n\n${body}\n`;
+  const overPath = join(inboxDir, "2026-09-14-over-the-cap.md");
+  writeFileSync(overPath, over);
+  const underPath = join(inboxDir, "2026-09-15-under-the-cap.md");
+  writeFileSync(underPath, "# Short\n\nObserved.\n");
+
+  // Non-vacuity, both arms: one record really is over the cap in bytes while
+  // its character count is under it, and the other really is under.
+  expect(over.length).toBeLessThan(RECORD_MAX_BYTES);
+  const bytes = Buffer.byteLength(over);
+  expect(bytes).toBeGreaterThan(RECORD_MAX_BYTES);
+
+  const rendered = windows()[INBOX_PHASE].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).RECORDS;
+
+  // The overrun is named where the drain reads it, with the count it must
+  // report — and the under-cap record beside it carries no mark.
+  expect(rendered).toContain(
+    `--- ${overPath} (${bytes} bytes, cap ${RECORD_MAX_BYTES} — name this overrun in the commit body) ---`,
+  );
+  expect(rendered).toContain(`--- ${underPath} ---`);
+  // The over-cap record is still rendered whole; the mark is a mark, not a
+  // truncation.
+  expect(rendered).toContain(body);
 });
 
 it("a state root with no plan state opens every window over the whole declared corpus", () => {

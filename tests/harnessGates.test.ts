@@ -413,18 +413,27 @@ it("the records gate refuses a record a plan slice wrote", async () => {
   }
 });
 
-it("the records gate refuses a record past the byte cap", async () => {
-  const body = "x".repeat(RECORD_MAX_BYTES);
-  await write(notePath(STATE_ROOT, "MINE"), `# too much\n\n${body}\n`);
-  const refused = await records(commitAll("build: a note past the cap"), {
+it("the records gate passes a commit whose record is over the byte cap", async () => {
+  const text = `# too much\n\n${"x".repeat(RECORD_MAX_BYTES)}\n`;
+  await write(notePath(STATE_ROOT, "MINE"), text);
+  await write("src/widget.ts", `export const widget = "shipped";\n`);
+  const span = commitAll("build: a note past the cap, and the work it rode in with");
+
+  // Non-vacuity: the note this gate admitted really is over the cap, and the
+  // commit really does carry code beside it — so the green below is the
+  // dropped arm, not an under-cap note sliding by.
+  expect(Buffer.byteLength(text)).toBeGreaterThan(RECORD_MAX_BYTES);
+  expect(span.touchedPaths).toContain("src/widget.ts");
+
+  const admitted = await records(span, {
     phaseName: "build",
     entry: assigned("MINE"),
   });
 
-  expect(refused.ok).toBe(false);
-  expect(refused.details).toContain(`cap ${RECORD_MAX_BYTES}`);
-  // The cap is the package's, and the message reports what was measured.
-  expect(refused.details).toContain(`${RECORD_MAX_BYTES + 13} bytes`);
+  // The cap is a shape rule on a prose channel: the drain reports the
+  // overrun, and no gate reverts the code beside it.
+  expect(admitted).toMatchObject({ ok: true });
+  expect(admitted.message).toContain("1 record(s) touched, 1 written");
 });
 
 it("the records gate reports a commit that touches no record as skipped", async () => {

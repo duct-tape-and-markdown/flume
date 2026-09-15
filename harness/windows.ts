@@ -72,7 +72,7 @@ import {
   type SliceWindow,
 } from "./handoff.js";
 import { planStatePath, readPlanState, type PlanState } from "./planState.js";
-import { recordFiles, recordsPending } from "./records.js";
+import { RECORD_MAX_BYTES, recordFiles, recordsPending } from "./records.js";
 
 /**
  * How many lines of diff one window renders before deferring the rest to the
@@ -528,18 +528,30 @@ function renderLane(reading: CiLaneReading, woke: boolean): string {
 
 /**
  * Every waiting record's bytes, oldest first, each under the path it sits
- * at.
+ * at, with an over-cap record marked by what it measured.
  *
- * Read whole rather than previewed: a record is already bounded to
- * `RECORD_MAX_BYTES` by the gate that admitted it, so the queue's whole
- * content is the material and a head of it would be a pointer at a file the
- * slice would then have to open anyway.
+ * Read whole rather than previewed: a record is written against
+ * `RECORD_MAX_BYTES`, so the queue's whole content is the material and a
+ * head of it would be a pointer at a file the slice would then have to open
+ * anyway. Nothing upstream enforced that bound — the records gate reverts
+ * only what protects the tree (`spec/harness.md`, *The gates the discipline
+ * needs*) — so this render is where an overrun becomes visible, and the mark
+ * is the drain's cue to name it in the plan commit body. Measured off the
+ * bytes on disk, not the decoded string: the cap is bytes and a multi-byte
+ * character is what the overrun is usually made of.
  */
 function renderRecords(flumeDir: string): string {
   const files = recordFiles(flumeDir);
   if (files.length === 0) return "(no records)";
   return files
-    .map((file) => `--- ${file} ---\n${readFileSync(file, "utf8").trimEnd()}`)
+    .map((file) => {
+      const bytes = readFileSync(file);
+      const mark =
+        bytes.byteLength > RECORD_MAX_BYTES
+          ? ` (${bytes.byteLength} bytes, cap ${RECORD_MAX_BYTES} — name this overrun in the commit body)`
+          : "";
+      return `--- ${file}${mark} ---\n${bytes.toString("utf8").trimEnd()}`;
+    })
     .join("\n\n");
 }
 

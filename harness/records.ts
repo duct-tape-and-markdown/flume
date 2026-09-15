@@ -56,8 +56,14 @@ const RECORD_EXT = ".md";
  * The package's value, not a declaration knob: the discipline the cap
  * enforces is the package's, and a consumer free to raise it would be free
  * to turn the record channel back into the design document the cap exists to
- * refuse. A record over this is refused by the records gate rather than
- * truncated (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * refuse.
+ *
+ * **The drain reports an overrun; no gate reverts one** (`spec/harness.md`,
+ * *The gates the discipline needs*). A record over this ships with the
+ * commit that wrote it, and the inbox window marks it with its byte count
+ * for the drain to name in the plan commit body — so the overrun is loud at
+ * the prose channel it belongs to rather than costing the code beside it
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 export const RECORD_MAX_BYTES = 1200;
 

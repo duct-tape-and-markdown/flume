@@ -56,7 +56,9 @@ implementation.**
 A finding for plan and a note from a build tick are **records**: one file
 each, drained by the inbox slice and deleted on the way out. The paths, the
 title line, and the byte cap are the package's (`spec/harness.md`, *Records
-as one file each*); what belongs in one here is this project's:
+as one file each*) — the cap measured in bytes, and reported by the drain
+rather than reverted by the records gate; what belongs in one here is this
+project's:
 
 - **Inbox** — `{{STATE_ROOT}}/inbox/<YYYY-MM-DD>-<slug>.md`, from whoever
   observes something in the field.
