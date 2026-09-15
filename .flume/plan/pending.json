@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "RENDER-CORE-EXTENSION-SEPARATOR",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "renderSchemaForPrompt: one comment-aware separator, reached at the core-to-extension junction too"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "pin the core-to-extension junction"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "renderSchemaForPrompt appends the core/extension separator past observedFiles' trailing `//` comment; share the comment-aware separator",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "A render carrying any extension separates the last core line before its trailing `// ` comment, not after it; the bare-core snapshot is unchanged.",
+    "tests": [
+      "the list separator lands before the last core field's trailing line comment when an extension follows"
+    ],
+    "notes": "Verified on disk: src/PendingSchema.ts:586 joins `,` onto coreLines, whose last line (:581) ends in a `// ` comment — rendered output reads `omit it otherwise.,` and the first extension field follows with no separator. The extension-to-extension path already handles this at :563-565; that detection is not shared with the junction beside it."
+  }
+]
