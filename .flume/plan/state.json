@@ -88,7 +88,8 @@
       "tests/Agent.test.ts",
       "tests/Prompt.test.ts",
       "tests/harnessBuildArgs.test.ts",
-      "harness/prompts/build.md"
+      "harness/prompts/build.md",
+      "tests/Gate.test.ts"
     ]
   }
 }
