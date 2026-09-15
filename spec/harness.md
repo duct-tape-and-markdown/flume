@@ -87,11 +87,18 @@ slice decides from what the forge holds (`.claude/rules/engine-boundary.md`,
 no completed run for the tip yet — renders as unread and says so, never as
 green.
 
+A lane makes the inbox slice live exactly when its latest completed run for
+the tip's branch failed and that run is past the stamp the slice last wrote
+for the lane; the slice stamps the run it drained as it stamps a cursor. So a
+red lane is drained once per run and never re-read every tick, a green run
+needs no drain, and a lane the slice cannot read makes it live for nothing —
+unread renders only when the slice is live for another reason.
+
 
 ### Plan state as declared state
 
-The derive and sweep cursors and the
-continuation signal are fields the package reads through its own accessor,
+The derive and sweep cursors, the continuation signal, and the per-lane
+drained-run stamp are fields the package reads through its own accessor,
 never a line regexed out of prose. Absence is read three ways, on purpose: a
 missing plan state renders as no state yet and a missing questions file as
 none open, because both are the package's to bootstrap; a missing queue refuses
