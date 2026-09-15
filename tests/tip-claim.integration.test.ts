@@ -23,6 +23,7 @@ import { describe, expect, it } from "vitest";
 import { Baton } from "../src/Baton.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { CLI, TSX_CLI, hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
 
 const exec = promisify(execFile);
 
@@ -227,13 +228,15 @@ describe("flume loop/tick — tip claim wiring", () => {
           env: hermeticEnv(),
         });
 
-        // Long enough for the bare tick to acquire its own claim and reach
-        // the slow agent's sleep — mid-tick, not racing the process's own
-        // startup.
-        await new Promise((r) => setTimeout(r, 1500));
-
+        // The event the assertion is about: the bare tick's own claim, taken
+        // before the slow agent's sleep. The wait's refusal names the claim
+        // path, so the mid-tick presence this case exists to prove no longer
+        // rests on a fixed guess at how long a `node`+`tsx` startup takes.
         const claimPath = await headClaimPath(repo.dir);
-        expect(existsSync(claimPath)).toBe(true);
+        await waitFor(
+          `the bare tick's tip claim at ${claimPath}`,
+          () => fileWithContent(claimPath),
+        );
 
         const exitCode = await new Promise<number | null>((resolveExit) => {
           child.on("exit", (code) => resolveExit(code));
@@ -288,15 +291,23 @@ describe("flume loop/tick — tip claim wiring", () => {
           [TSX_CLI, CLI, "loop", "--max", "1"],
           { cwd: repo.dir, env: hermeticEnv() },
         );
-
-        // Long enough for the loop to acquire both locks, load the chain,
-        // and spawn its child tick — now mid-sleep inside `invoke()`, well
-        // inside the process's lifetime rather than racing its startup.
-        await new Promise((r) => setTimeout(r, 1500));
+        let out = "";
+        child.stdout?.on("data", (d: Buffer) => (out += d));
+        child.stderr?.on("data", (d: Buffer) => (out += d));
 
         const claimPath = await headClaimPath(repo.dir);
         const pidPath = join(repo.dir, ".flume", "loop.pid");
-        expect(existsSync(claimPath)).toBe(true);
+        // The event this case needs is not "a file appeared" but "the
+        // supervisor is mid-run": its child tick announcing itself proves the
+        // loop is past acquiring both locks *and* past installing the
+        // SIGTERM handler whose release this case asserts, with the child
+        // parked in the slow agent's sleep. A fixed sleep guessed at that,
+        // and a wait on the claim file alone would land a hair earlier than
+        // the handler it is about to test.
+        await waitFor(
+          "the loop's child tick to announce its phase",
+          () => (/tick → probe \(singleton\)/.test(out) ? out : undefined),
+        );
         expect(existsSync(pidPath)).toBe(true);
         // tsx re-execs itself into a second node process to run the ESM
         // loader, so the spawned `child`'s own pid is the bootstrapper's,
@@ -304,7 +315,10 @@ describe("flume loop/tick — tip claim wiring", () => {
         // pid into both files — read the real holder back off disk and
         // signal that process directly, matching what an operator's
         // SIGTERM/taskkill targets in production (no tsx wrapper there).
-        const recordedPid = await readFile(claimPath, "utf8");
+        const recordedPid = await waitFor(
+          `the loop supervisor's tip claim at ${claimPath}`,
+          () => fileWithContent(claimPath),
+        );
 
         const exited = new Promise<void>((resolveExit) => {
           child.on("exit", () => resolveExit());

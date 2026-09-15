@@ -27,6 +27,7 @@ import {
   hermeticEnv,
   runCli,
 } from "./helpers/subprocess.ts";
+import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
 
 const exec = promisify(execFile);
 
@@ -488,13 +489,15 @@ describe(
         child.stdout?.on("data", (d: Buffer) => (out += d));
         child.stderr?.on("data", (d: Buffer) => (out += d));
 
-        // Long enough for the supervisor to acquire the tip claim, spawn its
-        // child tick, and land that child mid-sleep inside the probe agent's
-        // `invoke()` — well inside the window the claim file exists.
-        await new Promise((r) => setTimeout(r, 800));
-
-        expect(existsSync(claimPath)).toBe(true);
-        const recordedPid = await readFile(claimPath, "utf8");
+        // The event, not a guess at how long it takes: the supervisor's tip
+        // claim carrying the pid it recorded. Waiting on the content rather
+        // than on existence closes `writeFile`'s create-then-write window, and
+        // the wait's own refusal names the claim, so no bare `existsSync`
+        // assertion stands between the spawn and the comparison below.
+        const recordedPid = await waitFor(
+          `the loop supervisor's tip claim at ${claimPath}`,
+          () => fileWithContent(claimPath),
+        );
 
         const exitCode = await new Promise<number | null>((resolveExit) => {
           child.on("exit", (code) => resolveExit(code));
