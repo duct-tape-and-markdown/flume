@@ -13,6 +13,7 @@ import { z } from "zod";
 import { computeStateRootRel } from "../src/Dispatcher.ts";
 import { diffNameOnly } from "../src/git.ts";
 
+import * as builtinGates from "../src/builtinGates.ts";
 import {
   shellGate,
   tscGate,
@@ -342,6 +343,36 @@ describe("writablePathsGate — git-backed checks", () => {
   });
 });
 
+/**
+ * A factory export carries no lifecycle until it is called, so each names the
+ * minimal construction the roster claim below judges it through. An export in
+ * neither this table nor `LIFECYCLE_FROM_CALLER` fails that test's
+ * completeness assertion rather than being dropped from the roster silently.
+ */
+const BUILTIN_GATE_FACTORIES: Record<string, () => Gate> = {
+  tscGate: () => tscGate(),
+  vitestGate: () => vitestGate(),
+  eslintGate: () => eslintGate(),
+  writablePathsGate: () => writablePathsGate(["**"]),
+  pendingGate: () => pendingGate({ targetFence: { writablePaths: ["**"] } }),
+};
+
+/**
+ * Exports that take their lifecycle from the caller (`ShellGateOptions.when`),
+ * so they declare no default for the roster to judge. Spelled out, never
+ * inherited by omission.
+ */
+const LIFECYCLE_FROM_CALLER = new Set(["shellGate"]);
+
+function isGate(value: unknown): value is Gate {
+  if (value === null) return false;
+  if (typeof value !== "object" && typeof value !== "function") return false;
+  const candidate = value as Partial<Gate>;
+  return (
+    typeof candidate.when === "string" && typeof candidate.run === "function"
+  );
+}
+
 describe("afterCommit vs afterMerge wiring", () => {
   it("shellGate carries the declared lifecycle phase", () => {
     const earlyGate = shellGate({
@@ -360,11 +391,49 @@ describe("afterCommit vs afterMerge wiring", () => {
     expect(lateGate.when).toBe("afterMerge");
   }, SPAWN_BUDGET_MS);
 
-  it("the built-in afterCommit gates all declare when=afterCommit", () => {
-    expect(tscGate.when).toBe("afterCommit");
-    expect(vitestGate.when).toBe("afterCommit");
-    expect(eslintGate.when).toBe("afterCommit");
-    expect(writablePathsGate(["**"]).when).toBe("afterCommit");
+  it("every builtin gate src/builtinGates.ts exports declares when=afterCommit by default", () => {
+    // Subjects are read off the module's namespace, never hand-listed: a
+    // builtin landing after this tick is judged the tick it lands.
+    const exports = Object.entries(builtinGates);
+    // The exclusion names real exports, so a stale entry cannot quietly
+    // shrink the roster by excusing something the module no longer ships.
+    expect(
+      [...LIFECYCLE_FROM_CALLER].filter(
+        (name) => !exports.some(([exported]) => exported === name),
+      ),
+    ).toEqual([]);
+
+    const exported = exports.filter(
+      ([name]) => !LIFECYCLE_FROM_CALLER.has(name),
+    );
+    // Nothing exported is skipped in silence — every runtime export is a gate
+    // as it stands, a factory with a thunk above, or named caller-lifecycled.
+    const unclassified = exported
+      .filter(
+        ([name, value]) => !isGate(value) && !(name in BUILTIN_GATE_FACTORIES),
+      )
+      .map(([name]) => name);
+    expect(unclassified).toEqual([]);
+
+    const subjects: Array<[string, Gate]> = [
+      ...exported
+        .filter(([, value]) => isGate(value))
+        .map(([name, value]): [string, Gate] => [
+          `${name} (as exported)`,
+          value as Gate,
+        ]),
+      ...Object.entries(BUILTIN_GATE_FACTORIES).map(
+        ([name, construct]): [string, Gate] => [`${name}()`, construct()],
+      ),
+    ];
+    // Vacuity pin: the roster is populated, and it reaches the gate whose
+    // lifecycle nothing else under tests/ asserts.
+    expect(subjects.length).toBeGreaterThan(0);
+    expect(subjects.map(([label]) => label)).toContain("pendingGate()");
+
+    expect(subjects.map(([label, gate]) => `${label}=${gate.when}`)).toEqual(
+      subjects.map(([label]) => `${label}=afterCommit`),
+    );
   });
 
   it("the same shellGate body works in either lifecycle slot", async () => {
