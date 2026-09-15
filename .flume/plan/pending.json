@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "tag": "MERGING-MARKERS-READ-FAILURE-CLASSIFIED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/cli.ts", "description": "classify the merging-marker listing failure at the loop/job-run startup refusal, per the cite" },
+        { "path": "tests/cli.test.ts", "description": "the sealed-merging-dir exit-code pin" }
+      ],
+      "retire": []
+    },
+    "summary": "Classify the merging-marker listing failure at loop/job-run startup as EX_IOERR instead of letting it escape as a raw stack",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "Exit codes come from `sysexits.h`"
+    },
+    "acceptance": "A loop/job-run start over an unreadable `<flumeDir>/merging/` exits EX_IOERR naming the offending path; the absent and populated readings are unchanged.",
+    "tests": [
+      "`flume loop` exits EX_IOERR naming the merging dir when its listing fails for a reason other than absence"
+    ],
+    "pins": [],
+    "notes": "readMergingMarkers already rethrows non-ENOENT (src/Dispatcher.ts); the sole consumer catches nothing, so the throw lands in main().catch as exit 1 — unclassifiable from the status, the shape src/cli.ts:154-163 maps one boundary earlier. Fixture idiom: the sealed-dir + vacuity read at tests/Dispatcher.test.ts \"readMergingMarkers — the merging dir's ENOENT/EACCES split\"."
+  }
+]
