@@ -31,6 +31,10 @@ stage's output. A substituted value is therefore prompt text. Stage 2 scans the
 *substituted* text, so an inline-exec span carried in by a `promptArgs` value is
 executed, and — the same fact in the other direction — a span whose command contains a
 placeholder resolves, because the placeholder was already replaced when the span runs.
+A value substituted into a span's command is text in a shell string, nothing more:
+the engine cannot know a placeholder was meant as one shell word, so the author
+quotes it (`` !`cat "{{PENDING_PATH}}"` ``), and a path carrying a space or a
+backslash reaches the command intact.
 The engine neither delimits nor escapes what it substitutes by default: whatever a value
 carries reaches the agent as prompt syntax, including text shaped like a structural block.
 A phase that substitutes content it did not author — a spec section, a queue entry, a
