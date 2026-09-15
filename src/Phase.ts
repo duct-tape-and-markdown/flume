@@ -12,6 +12,7 @@ import type {
   ProvisionFailure,
   ReportedGateResult,
 } from "./Dispatcher.js";
+import type { FlumePaths } from "./flumeApi.js";
 import type { Gate } from "./Gate.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { NoCommitMode, PriorAttempt } from "./Prompt.js";
@@ -613,6 +614,33 @@ export interface Chain {
    * without one.
    */
   pendingPath?: string;
+  /**
+   * How this chain computes the directory its worktrees are placed under
+   * (spec/worktrees.md, *Placement — the worktree base and the job
+   * namespace*) — a function of the roots the runtime resolved, evaluated
+   * once per chain load, never a stored path.
+   *
+   * A function rather than a string because placement is machine-local —
+   * the operator's, per host — and `chain.ts` is committed: a chain that
+   * wants its worktrees outside the checkout derives the base from
+   * `paths.repoRoot`/`paths.flumeDir` (or from whatever the host tells it)
+   * at load, in the one place the engine asks for it, instead of exporting
+   * `FLUME_WORKTREES_DIR` at module scope before the engine's own module
+   * has loaded.
+   *
+   * Must return a non-empty absolute path: the engine resolves nothing
+   * relative here, because a gate and a tick run with different working
+   * directories and a relative base would name a different place at each of
+   * them. A value that is not one refuses the chain at load rather than
+   * scattering worktrees (`.claude/rules/engineering.md`, *Loud or
+   * nothing*).
+   *
+   * `FLUME_WORKTREES_DIR` still outranks it: the env var is the operator's
+   * override on a host they may not own the chain of. Undeclared leaves the
+   * engine's own `<flumeDir>/worktrees` default (`worktreesBase`,
+   * `src/paths.ts` — the one resolution every reader takes the base from).
+   */
+  worktreesBase?: (paths: FlumePaths) => string;
   /**
    * Environment facts this chain asserts — the strings a pending entry's
    * `gate: { kind: "requiresCapability", capability }` is matched against.

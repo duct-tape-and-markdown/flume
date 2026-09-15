@@ -421,16 +421,18 @@ export function renderedPromptsDir(flumeDir: string): string {
 }
 
 /**
- * The worktree base, every tick's alike: `FLUME_WORKTREES_DIR` when set
- * (resolved absolute), else `<flumeDir>/worktrees` (spec/worktrees.md,
- * "Placement — the worktree base and the job namespace").
+ * The worktree base, every tick's alike, in resolution order:
+ * `FLUME_WORKTREES_DIR` when set (resolved absolute), else the chain's
+ * declared base when it declared one, else `<flumeDir>/worktrees`
+ * (spec/worktrees.md, "Placement — the worktree base and the job
+ * namespace").
  *
  * **The one resolution in `src/`.** `createWorktree`, the per-wave
- * stale-slug removal it runs, and `sweepStaleWorktrees` all take the base
- * from here. Two resolutions agreed only by luck: a sweep basing on the
- * default while creation honored the override found nothing to remove, then
- * failed every `git branch -D` against worktrees still standing at the real
- * base (field-traced four times).
+ * stale-slug removal it runs, `sweepStaleWorktrees` and `checkoutAt` all
+ * take the base from here. Two resolutions agreed only by luck: a sweep
+ * basing on the default while creation honored the override found nothing to
+ * remove, then failed every `git branch -D` against worktrees still standing
+ * at the real base (field-traced four times).
  *
  * The override exists for one measured vector: an agent whose `pwd` contains
  * the root checkout's path as a prefix can derive the root and write there
@@ -439,17 +441,23 @@ export function renderedPromptsDir(flumeDir: string): string {
  * prefix, and with it the inference. The default tracks the state root,
  * itself relocatable via `FLUME_DIR`, so the one-`rm` teardown promise holds.
  *
+ * `declared` is `Chain.worktreesBase` already **evaluated** — a chain
+ * declares how to compute a base, not a path, and the engine runs that
+ * computation once per chain load (`src/Dispatcher.ts`) and carries the
+ * string from there. An operator's env var still outranks it: the chain is
+ * committed, the host is not. Empty is no declaration, the same reading an
+ * empty override gets — `resolve("")` is cwd, which would scatter worktrees
+ * across the checkout.
+ *
  * Read at call time, not at module load: the CLI resolves `FLUME_DIR` and a
  * chain may export `FLUME_WORKTREES_DIR` during its own load, both after
  * this module is first evaluated.
- *
- * Machine-local placement is the operator's per host — there is deliberately
- * no `Chain.worktreesDir`, since a committed chain file is the wrong home
- * for it.
  */
-export function worktreesBase(flumeDir: string): string {
+export function worktreesBase(flumeDir: string, declared?: string): string {
   const override = process.env.FLUME_WORKTREES_DIR;
-  return override ? resolve(override) : join(flumeDir, STATE_ROOT_NAMES.worktrees);
+  if (override) return resolve(override);
+  if (declared) return declared;
+  return join(flumeDir, STATE_ROOT_NAMES.worktrees);
 }
 
 /**

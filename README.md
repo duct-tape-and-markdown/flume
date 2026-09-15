@@ -161,8 +161,9 @@ Harness-managed state — every name here is one the runtime spells itself
 - `.flume/rendered-prompts/` — each invocation's fully rendered prompt,
   persisted before the agent runs.
 - `.flume/worktrees/<slug>/` — one worktree per tick: the entry's slug under
-  fanout, the phase's own under singleton. The base dir is overridable via
-  `FLUME_WORKTREES_DIR` (below).
+  fanout, the phase's own under singleton. The base dir is relocatable — by
+  the operator via `FLUME_WORKTREES_DIR`, by the chain via
+  `Chain.worktreesBase` (below).
 - `.flume/merging/<entry-slug>.json` — one marker per entry whose span the
   merge stage is mid-way through putting on trunk, written before the
   cherry-pick and removed once the queue rewrite lands. A survivor is a merge
@@ -229,17 +230,27 @@ under `FLUME_DIR` — see
 [`docs/CHAIN-AUTHORING.md`](docs/CHAIN-AUTHORING.md) for the chain-author
 requirement.
 
-### Relocating worktrees: `FLUME_WORKTREES_DIR`
+### Relocating worktrees: `FLUME_WORKTREES_DIR`, `Chain.worktreesBase`
 
 Every tick provisions a worktree — a fanout entry's, or a singleton phase's
 own (`spec/worktrees.md`, "Singleton runs in a worktree") — and both default
 to `<flumeDir>/worktrees` — inside the state root, so they move with
 `FLUME_DIR` and are covered by the one-`rm` teardown.
-`FLUME_WORKTREES_DIR` overrides just the worktree base, resolved as
-`FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")`; a relative value resolves
-against the cwd.
 
-The override exists for one specific hazard: an agent whose working directory
+Two things move that base, in this order: `FLUME_WORKTREES_DIR` when set (a
+relative value resolves against the cwd), else the chain's own
+`Chain.worktreesBase` when it declares one, else the default. The env var is
+the operator's, on a host whose chain file they may not own, so it wins.
+
+`Chain.worktreesBase` is a **function** of the roots the runtime resolved —
+`(paths) => string`, returning an absolute path, called once when the chain
+loads (see [`docs/CHAIN-AUTHORING.md`](docs/CHAIN-AUTHORING.md)). A function
+rather than a path because `chain.ts` is committed and placement is per
+host; declaring one is how a chain relocates its worktrees without exporting
+an environment variable at module scope, before flume's own module has
+loaded.
+
+The relocation exists for one specific hazard: an agent whose working directory
 *contains the root checkout's path as a prefix* (the default
 `<repoRoot>/.flume/worktrees/<entry>` does) can derive the root from its own
 cwd and operate there instead of in its worktree — a stray write the

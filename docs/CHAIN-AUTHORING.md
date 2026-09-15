@@ -900,16 +900,43 @@ Two properties the return type carries, and the reason to take this over a
 **primary checkout is in it** too. Which of those paths are yours to reap is
 your chain's to decide; the engine reports the fact and stops there.
 
-### Where worktrees live: `FLUME_WORKTREES_DIR`
+### Where worktrees live: `FLUME_WORKTREES_DIR`, `Chain.worktreesBase`
 
 Every tick's worktree is created under `<flumeDir>/worktrees/<slug>/` — the
 entry's slug under fanout, the phase's own under singleton
-(`spec/worktrees.md`, "Singleton runs in a worktree");
-the `FLUME_WORKTREES_DIR` env var overrides that base
-(`FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")`, resolved against the
-cwd when relative).
+(`spec/worktrees.md`, "Singleton runs in a worktree"). Two things move that
+base, in this order: the `FLUME_WORKTREES_DIR` env var when set (resolved
+against the cwd when relative), else `Chain.worktreesBase` when your chain
+declares one, else the default. The env var is the operator's — on a host
+whose chain file they may not own — so it outranks the declaration.
 
-Reach for the override when worktrees must sit **outside every repo-path
+```ts
+export default (api: FlumeApi): ChainModule => ({
+  chain: {
+    phases: [...],
+    humanOnly: [],
+    // A function of the roots the runtime resolved, called once when the
+    // chain loads. Must return an absolute path; a relative one is refused
+    // at load, because a tick runs at the repo root and a gate runs inside
+    // a worktree.
+    worktreesBase: (paths) => join(dirname(paths.repoRoot), "flume-worktrees"),
+  },
+});
+```
+
+A function rather than a path, and evaluated rather than stored: `chain.ts`
+is committed and placement is machine-local, so the chain declares *how* to
+compute a base — off `paths.repoRoot`/`paths.flumeDir`, off whatever the
+host tells it — instead of carrying someone else's directory layout in the
+repo. It is also what lets a chain relocate its worktrees without the
+module-scope `process.env.FLUME_WORKTREES_DIR = …` side effect that has to
+run before flume's own module loads.
+
+Creation, the per-wave stale-directory removal, the startup sweep and a
+gate's `api.git.checkoutAt` all read the one resolution, so declaring a base
+moves them together.
+
+Reach for a relocated base when worktrees must sit **outside every repo-path
 prefix**. The observed failure it exists for: an agent whose cwd contains
 the root checkout's path as a prefix (the default
 `<repoRoot>/.flume/worktrees/<entry>` does) derives the root from its own

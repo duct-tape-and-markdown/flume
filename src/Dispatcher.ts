@@ -1002,6 +1002,46 @@ function validatePendingPathDeclaration(chain: Chain): void {
 }
 
 /**
+ * Evaluate a chain's declared worktree base (spec/worktrees.md, *Placement —
+ * the worktree base and the job namespace*): `Chain.worktreesBase` is how to
+ * compute a base, not a base, so the engine runs it **once per chain load**
+ * against the roots it resolved and carries the string from there. Every
+ * reader — creation, the per-wave stale-slug removal, the startup sweep, a
+ * gate's differential checkout — takes it through `worktreesBase`
+ * (`src/paths.ts`), which is also where an operator's `FLUME_WORKTREES_DIR`
+ * outranks it. Undeclared is a strict no-op.
+ *
+ * A value that is not a non-empty absolute path refuses the chain here
+ * rather than scattering worktrees somewhere no sweep reads
+ * (`.claude/rules/engineering.md`, *Loud or nothing*): nothing resolves a
+ * relative base, because a tick runs at the repo root and a gate runs inside
+ * a worktree, so the same relative value would name two different places.
+ */
+function resolveWorktreesBaseDeclaration(
+  chain: Chain,
+  paths: FlumePaths,
+): string | undefined {
+  if (chain.worktreesBase === undefined) return undefined;
+  const value = chain.worktreesBase(paths);
+  if (typeof value !== "string" || value === "") {
+    throw new Error(
+      `chain's worktreesBase(paths) returned ${JSON.stringify(value)}; ` +
+        `Chain.worktreesBase must return a non-empty absolute directory path ` +
+        `(e.g. join(paths.repoRoot, "..", "flume-worktrees"))`,
+    );
+  }
+  if (!isAbsolute(value)) {
+    throw new Error(
+      `chain's worktreesBase(paths) returned the relative path '${value}'; ` +
+        `Chain.worktreesBase must return an absolute directory path — a tick ` +
+        `and a gate run from different working directories, so a relative base ` +
+        `names a different place at each`,
+    );
+  }
+  return value;
+}
+
+/**
  * Refuse the one decidable dead-declaration shape (spec/chain.md, *A dead
  * declaration is refused at load*): a chain field whose only consumer is statically
  * unreachable from the rest of the same declaration. Checkable from the
@@ -1585,13 +1625,15 @@ export class Dispatcher {
   private readonly tickTimeoutMs: number | undefined;
   private readonly flumeDir: string;
   private readonly stateRootRel: string | undefined;
+  /** The roots this dispatcher resolved, as the chain factory receives them. */
+  private readonly paths: FlumePaths;
   /**
-   * This dispatcher's view of itself for `src/worktrees.ts` — the repo
-   * root, state root, that root's relative path, the job namespace and the
-   * logger the worktree lifecycle reads. Assembled once, from construction
-   * state that never changes after it.
+   * `Chain.worktreesBase` evaluated, for the chain this dispatcher last
+   * loaded — `undefined` until one is loaded, and whenever the chain
+   * declares none. Held rather than re-evaluated per worktree, which is what
+   * "evaluated at load" buys (spec/worktrees.md, *Placement*).
    */
-  private readonly worktreeCtx: WorktreeContext;
+  private chainWorktreesBase: string | undefined;
   private pendingPath: string;
   private readonly chainLoader: () => Promise<ChainModule>;
   /** Set when tick() loads the chain; composes pending parses. */
@@ -1603,12 +1645,10 @@ export class Dispatcher {
     this.stateRootRel = computeStateRootRel(opts.repoRoot, this.flumeDir);
     this.baton = new Baton(this.flumeDir);
     this.log = opts.log ?? consoleLogger;
-    this.worktreeCtx = {
+    this.paths = {
       repoRoot: opts.repoRoot,
+      configDir: opts.configDir,
       flumeDir: this.flumeDir,
-      stateRootRel: this.stateRootRel,
-      namespace: opts.namespace,
-      log: this.log,
     };
     this.attempts = new PriorAttemptStore(
       this.flumeDir,
@@ -1618,13 +1658,33 @@ export class Dispatcher {
     this.maxParallel = opts.maxParallel ?? 4;
     this.tickTimeoutMs = opts.tickTimeoutMs;
     this.pendingPath = resolvePendingPath(this.flumeDir);
-    this.chainLoader =
-      opts.chainLoader ??
-      diskChainLoader({
-        repoRoot: opts.repoRoot,
-        configDir: opts.configDir,
-        flumeDir: this.flumeDir,
-      });
+    this.chainLoader = opts.chainLoader ?? diskChainLoader(this.paths);
+  }
+
+  /**
+   * This dispatcher's view of itself for `src/worktrees.ts` — the repo root,
+   * state root, that root's relative path, the job namespace, the logger the
+   * worktree lifecycle reads, and the chain-declared worktree base as of the
+   * last chain load.
+   *
+   * Composed on read rather than stored, because its last field is not
+   * construction state: the chain that declares the base is loaded per tick,
+   * after this object would have been frozen. One composition, so every
+   * worktree call site the dispatcher makes reads the same base
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*).
+   */
+  private get worktreeCtx(): WorktreeContext {
+    return {
+      repoRoot: this.opts.repoRoot,
+      flumeDir: this.flumeDir,
+      stateRootRel: this.stateRootRel,
+      namespace: this.opts.namespace,
+      log: this.log,
+      ...(this.chainWorktreesBase !== undefined
+        ? { declaredWorktreesBase: this.chainWorktreesBase }
+        : {}),
+    };
   }
 
   /** Run one phase × one tick. Returns hibernated outcome if nothing awake. */
@@ -1649,6 +1709,16 @@ export class Dispatcher {
     let chainModule: ChainModule;
     try {
       chainModule = await this.chainLoader();
+      // spec/worktrees.md "Placement": the declared base is evaluated here,
+      // at the one point per process where a chain is in hand, and every
+      // worktree this tick touches reads it off `worktreeCtx`. A declaration
+      // that cannot be evaluated is a chain that cannot be run, so it lands
+      // in the refusal below rather than surfacing as a worktree at a path
+      // nothing sweeps.
+      this.chainWorktreesBase = resolveWorktreesBaseDeclaration(
+        chainModule.chain,
+        this.paths,
+      );
     } catch (err) {
       if (err instanceof CjsContextLoadError) {
         // A nameable usage fix, not a dead chain — `flume tick` exits 2
@@ -3829,7 +3899,9 @@ export class Dispatcher {
    */
   private async runGate(gate: Gate, ctx: GateContext): Promise<GateResult> {
     try {
-      return await withGateCheckouts(this.log, () => gate.run(ctx));
+      return await withGateCheckouts(this.log, this.chainWorktreesBase, () =>
+        gate.run(ctx),
+      );
     } catch (err) {
       const { message, stack } = throwFacts(err);
       this.log.warn(
@@ -4017,6 +4089,32 @@ export class Dispatcher {
    * acquired and before the first tick.
    */
   async sweepStaleWorktrees(): Promise<void> {
+    // The sweep runs before the first tick, so nothing has loaded a chain
+    // into this process yet — and the base it sweeps has to be the base the
+    // ticks create under, or it reads an empty directory and then fails
+    // every `git branch -D` against worktrees still standing elsewhere
+    // (spec/worktrees.md, *Placement*: the base is resolved once). Hence the
+    // load here rather than a value the caller passes: the declaration is
+    // the engine's to evaluate, at one spelling shared with `tick`.
+    //
+    // Declared degradation (`.claude/rules/engineering.md`, *Loud or
+    // nothing*): a chain that will not load — or whose `worktreesBase`
+    // refuses — leaves the engine's own base swept, silently. The refusal
+    // that bounds it is `tick`'s: the very next thing this run does is load
+    // the same chain through the same spelling, and it names the failure and
+    // does no work. A chain that cannot run creates no worktree under any
+    // base, so there is nothing at the declared one for this sweep to have
+    // missed — and a second copy of that message here would break the one
+    // thing an operator reads this sweep's output for, which is silence when
+    // there was no residue.
+    try {
+      this.chainWorktreesBase = resolveWorktreesBaseDeclaration(
+        (await this.chainLoader()).chain,
+        this.paths,
+      );
+    } catch {
+      // bounded above
+    }
     await sweepStaleWorktrees(this.worktreeCtx);
   }
 

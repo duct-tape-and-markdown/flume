@@ -55,9 +55,9 @@ export class JobUsageError extends Error {}
  * it stays spelled here.
  *
  * `worktrees/` is the default base alone (`worktreesBase`, `src/paths.ts`):
- * an operator who relocates it via `FLUME_WORKTREES_DIR` has already moved
- * it outside the job dir, so there is nothing under this `.gitignore` to
- * ignore.
+ * a base relocated by the operator (`FLUME_WORKTREES_DIR`) or by the chain
+ * (`Chain.worktreesBase`) has already moved outside the job dir, so there is
+ * nothing under this `.gitignore` to ignore.
  */
 export const RUNTIME_IGNORES = [
   `${STATE_ROOT_NAMES.awake}/`,

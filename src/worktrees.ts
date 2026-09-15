@@ -62,6 +62,15 @@ export interface WorktreeContext {
   stateRootRel: string | undefined;
   namespace: string | undefined;
   log: Logger;
+  /**
+   * `Chain.worktreesBase` already evaluated — the string the dispatcher got
+   * back from the chain's declared computation at load, absent when the
+   * chain declared none. Carried rather than re-evaluated here: the
+   * declaration is a function, and a module that called it per worktree
+   * would be a second evaluation of a value the engine already holds.
+   * `worktreesBase` (`src/paths.ts`) decides what it outranks.
+   */
+  declaredWorktreesBase?: string;
 }
 
 /**
@@ -179,7 +188,23 @@ interface PlantedCheckout {
 }
 
 /**
- * The in-flight gate invocation's checkout ledger. Async-local rather than
+ * One gate invocation's checkout scope: the ledger of what it planted, and
+ * the chain-declared worktree base it plants under.
+ *
+ * The declared base rides the scope rather than the caller's `opts` because
+ * `checkoutAt`'s caller is the *gate* — a chain hook, which cannot be asked
+ * for a value the engine evaluated for it without re-deriving it
+ * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*: a hook
+ * receives facts, never re-derives them). The dispatcher knows it, and the
+ * gate boundary it already opens is where it hands it over.
+ */
+interface GateCheckoutScope {
+  planted: PlantedCheckout[];
+  declaredWorktreesBase: string | undefined;
+}
+
+/**
+ * The in-flight gate invocation's checkout scope. Async-local rather than
  * module-global because gate invocations overlap: a fanout wave runs its
  * entries concurrently (`Dispatcher.runFanout`), so a single shared list
  * would hand one gate's reclamation another gate's live tree. The store is
@@ -187,7 +212,7 @@ interface PlantedCheckout {
  * through every `await` the gate makes, which is exactly the scope
  * `spec/chain.md` ("What a gate receives") promises the checkout lives for.
  */
-const gateCheckouts = new AsyncLocalStorage<PlantedCheckout[]>();
+const gateCheckouts = new AsyncLocalStorage<GateCheckoutScope>();
 
 /** Disambiguates two checkouts of the same sha in one process. */
 let checkoutSeq = 0;
@@ -223,16 +248,18 @@ export async function checkoutAt(opts: {
   /** The sha to check out, detached — a differential gate's `baseSha`. */
   sha: string;
 }): Promise<string> {
-  const planted = gateCheckouts.getStore();
-  if (!planted) {
+  const scope = gateCheckouts.getStore();
+  if (!scope) {
     throw new Error(
       `checkoutAt: no gate invocation is in flight, so nothing would remove a checkout of ${opts.sha}; ` +
         `this API is reclaimed by the engine at the gate boundary and is not available outside one`,
     );
   }
   // One resolution for the base, shared with `createWorktree` and the
-  // startup sweep (`worktreesBase`, src/paths.ts).
-  const base = worktreesBase(opts.flumeDir);
+  // startup sweep (`worktreesBase`, src/paths.ts) — the chain's declared
+  // base included, taken from the gate scope the dispatcher opened rather
+  // than from the gate that called in here.
+  const base = worktreesBase(opts.flumeDir, scope.declaredWorktreesBase);
   const path = join(
     base,
     `checkout-${opts.sha.slice(0, 7)}-${process.pid}-${checkoutSeq++}`,
@@ -244,7 +271,7 @@ export async function checkoutAt(opts: {
   // Recorded before the add, not after: an add that fails partway through
   // still leaves a directory, and a ledger written only on success would
   // leave it standing.
-  planted.push({ repoRoot: opts.repoRoot, path });
+  scope.planted.push({ repoRoot: opts.repoRoot, path });
   await git.addWorktree({ repoRoot: opts.repoRoot, path, fromRef: opts.sha });
   return path;
 }
@@ -268,11 +295,12 @@ export async function checkoutAt(opts: {
  */
 export async function withGateCheckouts<T>(
   log: Logger,
+  declaredWorktreesBase: string | undefined,
   body: () => Promise<T>,
 ): Promise<T> {
   const planted: PlantedCheckout[] = [];
   try {
-    return await gateCheckouts.run(planted, body);
+    return await gateCheckouts.run({ planted, declaredWorktreesBase }, body);
   } finally {
     for (const c of planted.reverse()) {
       try {
@@ -309,8 +337,9 @@ export async function createWorktree(
     : `flume/${slug}`;
   // One resolution for the base, shared with the startup sweep
   // (`worktreesBase`, src/paths.ts — which is also where the override's
-  // stray-write rationale lives).
-  const wtBase = worktreesBase(ctx.flumeDir);
+  // stray-write rationale lives, and where a chain's declared base is
+  // ranked against it).
+  const wtBase = worktreesBase(ctx.flumeDir, ctx.declaredWorktreesBase);
   // The path mirrors the branch namespacing: under a shared
   // FLUME_WORKTREES_DIR two jobs with identical slugs would otherwise
   // collide on <base>/<dirName>, and the stale-cleanup below would rm the
@@ -472,7 +501,7 @@ export async function sweepStaleWorktrees(
   ctx: WorktreeContext,
 ): Promise<void> {
   const repoRoot = ctx.repoRoot;
-  const wtBase = worktreesBase(ctx.flumeDir);
+  const wtBase = worktreesBase(ctx.flumeDir, ctx.declaredWorktreesBase);
   const sweepBase = ctx.namespace
     ? join(wtBase, ctx.namespace)
     : wtBase;

@@ -418,6 +418,34 @@ describe("worktreesBase — the one worktree-base resolution", () => {
       join("state", "root", STATE_ROOT_NAMES.worktrees),
     );
   });
+
+  // The third input: `Chain.worktreesBase` already evaluated (spec/
+  // worktrees.md, "Placement — the worktree base and the job namespace").
+  // All three inputs meet at this one function, so the order they outrank
+  // each other in is stated once, here, rather than at each reader.
+  it("a chain-declared base replaces the state-root default", () => {
+    delete process.env.FLUME_WORKTREES_DIR;
+    const declared = resolve(join("elsewhere", "chain-base"));
+    expect(worktreesBase(join("state", "root"), declared)).toBe(declared);
+  });
+
+  it("an operator's override outranks a chain-declared base", () => {
+    const override = join(process.cwd(), "operator", "wt");
+    process.env.FLUME_WORKTREES_DIR = override;
+    // The env var is the host's, the chain file is the repo's: a chain
+    // committed by someone else never takes placement away from the
+    // operator running it.
+    expect(worktreesBase(join("state", "root"), resolve("chain-base"))).toBe(
+      override,
+    );
+  });
+
+  it("an empty declared base is no declaration — the default stands", () => {
+    delete process.env.FLUME_WORKTREES_DIR;
+    expect(worktreesBase(join("state", "root"), "")).toBe(
+      join("state", "root", STATE_ROOT_NAMES.worktrees),
+    );
+  });
 });
 
 // Mechanism pin (RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS, per

@@ -2593,6 +2593,154 @@ describe("Dispatcher fanout — worktree base resolution (v0.4 §2a)", () => {
     // Teardown cleaned the slug dir under the state root.
     expect(existsSync(join(flumeDir, "worktrees", "wt-def"))).toBe(false);
   }, 20_000);
+
+  // spec/worktrees.md "Placement — the worktree base and the job namespace":
+  // the third input to the same resolution — a chain declaring *how* to
+  // compute its base, evaluated once at chain load against the roots the
+  // runtime resolved. Driven through the real dispatcher with a real
+  // declaration rather than by calling `worktreesBase` with a string: what
+  // the entry buys is that a chain can move placement with no environment
+  // variable set before the engine's own module loads, and only the tick
+  // path proves that.
+  it("a chain-declared worktreesBase places the tick's worktree", async () => {
+    delete process.env.FLUME_WORKTREES_DIR;
+    const container = await mkdtemp(join(tmpdir(), "flume-wt-declared-"));
+    try {
+      const flumeDir = join(fx.repo, ".flume");
+      // A function of the roots, not a committed path literal: the chain
+      // composes the base from what it was handed at load.
+      const base = join(container, "declared-base");
+      const rootsSeen: FlumePaths[] = [];
+
+      await writePending(fx.repo, [makeEntry("WT-DECL", ["src/wt-decl.ts"])]);
+      new Baton(flumeDir).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = {
+        phases: [phase],
+        humanOnly: [],
+        worktreesBase: (paths) => {
+          rootsSeen.push(paths);
+          return base;
+        },
+      };
+
+      let observedCwd: string | undefined;
+      const agent = fanoutAgent({
+        "wt-decl": async (cwd) => {
+          observedCwd = cwd;
+          await writeAndCommit(cwd, "src/wt-decl.ts", "decl\n", "build(WT-DECL): ship");
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.committed).toBe(true);
+      expect(outcome.result?.shippedTags).toEqual(["WT-DECL"]);
+      // The agent ran inside `<declared>/<slug>` …
+      expect(observedCwd).toBe(join(base, "wt-decl"));
+      // … the declaration was called with the runtime's own resolved roots,
+      // once for the tick's one chain load — not once per worktree …
+      expect(rootsSeen).toEqual([
+        { repoRoot: fx.repo, configDir: fx.configDir, flumeDir },
+      ]);
+      // … the default `<flumeDir>/worktrees` base never materialized …
+      expect(existsSync(join(flumeDir, "worktrees"))).toBe(false);
+      // … and teardown found the relocated worktree, so the wave left no
+      // residue at the base creation actually used.
+      expect(existsSync(join(base, "wt-decl"))).toBe(false);
+    } finally {
+      await rm(container, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("FLUME_WORKTREES_DIR outranks a chain-declared base", async () => {
+    const container = await mkdtemp(join(tmpdir(), "flume-wt-rank-"));
+    try {
+      const override = join(container, "operator-base");
+      const declared = join(container, "chain-base");
+      process.env.FLUME_WORKTREES_DIR = override;
+
+      await writePending(fx.repo, [makeEntry("WT-RANK", ["src/wt-rank.ts"])]);
+      new Baton(join(fx.repo, ".flume")).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = {
+        phases: [phase],
+        humanOnly: [],
+        worktreesBase: () => declared,
+      };
+
+      let observedCwd: string | undefined;
+      const agent = fanoutAgent({
+        "wt-rank": async (cwd) => {
+          observedCwd = cwd;
+          await writeAndCommit(cwd, "src/wt-rank.ts", "rank\n", "build(WT-RANK): ship");
+        },
+      });
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      expect(outcome.result?.shippedTags).toEqual(["WT-RANK"]);
+      // The operator's host wins over the chain's commit.
+      expect(observedCwd).toBe(join(override, "wt-rank"));
+      expect(existsSync(declared)).toBe(false);
+    } finally {
+      await rm(container, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("a chain whose worktreesBase returns a relative path is refused, and no tick work happens", async () => {
+    delete process.env.FLUME_WORKTREES_DIR;
+    await writePending(fx.repo, [makeEntry("WT-REL", ["src/wt-rel.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      // Relative reads as "under whatever the cwd happens to be", which is
+      // the repo root for a tick and a worktree for a gate.
+      worktreesBase: () => join("..", "wt-base"),
+    };
+
+    let agentRan = false;
+    const agent = fanoutAgent({
+      "wt-rel": async () => {
+        agentRan = true;
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.failed).toBe(true);
+    expect(outcome.summary).toContain("worktreesBase");
+    expect(agentRan).toBe(false);
+  }, 20_000);
 });
 
 /**
@@ -3064,6 +3212,80 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     );
     expect(branches.trim()).toBe("");
   });
+
+  // spec/worktrees.md "Placement": *the base is resolved once* — creation
+  // and the sweep read one resolution, the chain's declaration included.
+  // The failure this pins is the one field-traced four times: a sweep that
+  // bases on the default reads an empty directory, removes nothing, and then
+  // fails every `git branch -D` against worktrees still standing at the real
+  // base. Residue is planted by hand rather than by a prior tick because
+  // what the sweep exists for is a run that died before teardown.
+  it("the startup sweep reads the chain-declared base", async () => {
+    const savedOverride = process.env.FLUME_WORKTREES_DIR;
+    delete process.env.FLUME_WORKTREES_DIR;
+    const container = await mkdtemp(join(tmpdir(), "flume-sweep-declared-"));
+    const repoOpts = { cwd: fx.repo };
+    const base = join(container, "declared-base");
+    const orphan = join(base, "orphan");
+    try {
+      await mkdir(base, { recursive: true });
+      await exec(
+        "git",
+        ["worktree", "add", "-B", "flume/orphan", orphan, "HEAD"],
+        repoOpts,
+      );
+
+      // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is
+      // proven non-vacuous"): the residue is really there, really
+      // registered, and really outside the default base — so the removals
+      // asserted below are removals rather than three things that were
+      // never created.
+      expect(existsSync(orphan)).toBe(true);
+      expect(
+        (await exec("git", ["worktree", "list", "--porcelain"], repoOpts))
+          .stdout,
+      ).toContain(orphan);
+      expect(existsSync(join(fx.repo, ".flume", "worktrees"))).toBe(false);
+
+      const chain: Chain = {
+        phases: [makePhase({ name: "build", concurrency: "fanout" })],
+        humanOnly: [],
+        worktreesBase: () => base,
+      };
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent: singleAgent(async () => {}),
+        log: silent,
+      });
+
+      await dispatcher.sweepStaleWorktrees();
+
+      expect(existsSync(orphan)).toBe(false);
+      const { stdout: worktreeList } = await exec(
+        "git",
+        ["worktree", "list", "--porcelain"],
+        repoOpts,
+      );
+      expect(worktreeList).not.toContain(orphan);
+      const { stdout: branches } = await exec(
+        "git",
+        ["branch", "--list", "flume/orphan"],
+        repoOpts,
+      );
+      expect(branches.trim()).toBe("");
+    } finally {
+      if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+      else process.env.FLUME_WORKTREES_DIR = savedOverride;
+      await exec("git", ["worktree", "remove", "--force", orphan], repoOpts).catch(
+        () => {},
+      );
+      await rm(container, { recursive: true, force: true });
+      await exec("git", ["worktree", "prune"], repoOpts).catch(() => {});
+      await exec("git", ["branch", "-D", "flume/orphan"], repoOpts).catch(() => {});
+    }
+  }, 20_000);
 
   it("an unnamespaced instance's sweep does not remove a sibling namespaced job's live worktree directory or branches under a shared FLUME_WORKTREES_DIR", async () => {
     const savedOverride = process.env.FLUME_WORKTREES_DIR;
