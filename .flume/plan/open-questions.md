@@ -35,67 +35,48 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## Does `flume loop --help` owe the operator `killGraceMs`? (PARKED — a UX call)
+## Does a signalled loop's outer grace nest over the tick child's own? (PARKED — a design call plus a spec amendment)
 
-Drained from `A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE`'s note
-(f432830). The supervisor now bounds a signalled run's wait with
-`supervisorPolicy.killGraceMs` (default 5000). `src/cliHelp.ts` quotes
-`abortThreshold` and no other supervisor knob, and `flume loop --help` says
-nothing about the grace.
+Drained from `A-BARE-TICK-TAKES-ITS-AGENT-DOWN-THE-SAME-WAY`'s note
+(db16e6c). Verified on disk this tick: `defaultTickRunner`
+(`src/loopSupervisor.ts`) terminates the tick child's group with
+`terminateProcessTree(child, { graceMs })`, `graceMs` being the chain's
+`supervisorPolicy.killGraceMs`; the tick child's own handler
+(`src/cli.ts`, `releaseAndExit`) aborts its tick and awaits an agent
+teardown bounded by that same value. Two timers, one number, and the
+supervisor's starts first — so at T+grace the supervisor SIGKILLs the tick
+child while the child's own escalation is still milliseconds away.
 
-**Not derivable as filed.** `spec/cli.md` line 82 scopes `--help` to "usage
-and its exit codes". `abortThreshold` is quoted only because it explains
-exit 1; `killGraceMs` changes no exit code — it changes how long `Ctrl-C`
-takes to return, which is operator-visible in a way `maxParallel` is not but
-is not a thing the spec says help owes. Which knobs help names, and in what
-words, is the call.
+**The common case is strictly better than before**: the supervisor's release
+now waits on the agent's real exit, which it never did. The pathological one
+is new — an agent that swallows SIGTERM for the whole grace is orphaned under
+a loop, where the old shared process group killed it.
 
-Options:
-
-- **Name it under the graceful-stop text, not the exit codes.** One line:
-  the release waits on the tick tree, bounded by
-  `supervisorPolicy.killGraceMs` (default 5000, POSIX only). Smallest edit;
-  leaves the exit-code list keyed to exit codes.
-- **Widen help to the whole block.** Name all six knobs wherever each
-  belongs. Consistent, and the pin is mechanical (help against the type) —
-  but it makes `--help` a second copy of `docs/CHAIN-AUTHORING.md` §9, which
-  `CHAIN-AUTHORING-WALKS-EVERY-SUPERVISOR-KNOB` is already fixing.
-- **Name nothing.** The guide and `spec/chain.md` carry the block; help
-  stays at usage and exit codes as the spec scopes it.
-
-Recommended: the first, if a line is wanted at all. A `Ctrl-C` that appears
-to hang for five seconds is the kind of thing an operator looks up in
-`--help` before anywhere else; the other five knobs are not.
-
-## Should the sweep read a citation that resolves but no longer points at the fact? (PARKED — needs a posture-page amendment)
-
-Drained from `HARNESS-WINDOWS-IS-FIVE-MODULES`'s note (f432830). The split
-left nine comment citations naming `harness/windows.ts` for facts that had
-moved to the new modules. The build tick re-homed them by hand. Nothing
-would have caught them: the citation scan resolves a **token** against the
-tree, and `harness/windows.ts` still exists, so a pointer at the wrong file
-is green.
-
-**Not derivable as filed, and not promotable.** `.claude/rules/engineering.md`
-*Narration is the ladder's bottom rung* scopes the pin to "the token, never
-its meaning" — deliberately, and that limit is right: whether a file still
-holds the fact a comment cites is a judgement, not a resolution. So the rung
-this belongs on is the judged one, and `.claude/rules/posture-sweep.md` is
-where a judged lens is declared. Plan cannot write either page.
+`spec/loop.md` *The loop lock and the tip claim* reads one group short either
+way: "the tick child runs in its own process group, the handler signals that
+group … so the release is the whole tree's" describes one group where the
+agent now leads a second.
 
 Options:
 
-- **Add a standing sweep lens** beside *expired narration*: a citation whose
-  named file no longer holds what the citing sentence claims of it, read
-  within the neighborhood the tick is already judging. Costs nothing on a
-  quiet tree; the frontier already bounds it.
-- **Bind it to the split instead.** A commit that moves a job between files
-  re-homes the citations pointing at the old home, stated once in
-  *A module is one job* as part of what a split ships. Narrower, and it
-  fires exactly where the nine were created.
-- **Accept it.** Stale pointers are prose drift, and prose is the bottom
-  rung by design.
+- **The supervisor delegates.** Signal the child's group and wait on the
+  child unbounded; the one timer in the tree lives at the level that owns the
+  agent. This is already the argued position one level down — `src/cli.ts`
+  says of the bare tick's wait, "exiting anyway is the release-over-a-live-
+  writer this whole path exists to stop". Removes a timer rather than adding
+  a constant. Cost: a child wedged *after* installing its handler holds the
+  run open, which is the intended outcome by that same argument.
+- **The outer grace nests.** The supervisor's bound becomes the child's plus
+  a margin for the child's own escalation and reap. Keeps a backstop at every
+  level; costs a margin constant in the engine, which is a policy number
+  (`engine-boundary.md`, *Routing rule*) and wants to be chain-overridable if
+  it exists at all.
+- **Two declared knobs.** Per-level grace on `supervisorPolicy`. Most
+  explicit, and the most surface for a distinction almost no chain author
+  wants to reason about.
 
-Recommended: the second. The nine were made by one commit shape, and naming
-the obligation at that shape is cheaper to hold than a lens every sweep tick
-re-reads — the finding class is created by splits, not by time.
+Recommended: the first. Established practice nests an outer timeout over an
+inner one, but here the inner level is the only one that can see the agent at
+all, and the outer one's job is to not release a guard over a live writer —
+which a timer at that level is precisely how it fails to do.
+
