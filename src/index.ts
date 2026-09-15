@@ -71,11 +71,15 @@ export {
   type ParseResult,
 } from "./PendingSchema.js";
 
-export { partitionByFileOverlap } from "./partition.js";
+export { partitionByFileOverlap, type PartitionOptions } from "./partition.js";
 
 export { gitPath, matchesAny, slugify, stopFlagPath } from "./paths.js";
 
-export { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
+export {
+  priorAttemptPath,
+  priorAttemptsDir,
+  type PriorAttemptRef,
+} from "./priorAttempts.js";
 
 export {
   renderPrompt,
@@ -85,6 +89,7 @@ export {
   type PriorAttempt,
   type PriorAttemptKeyspace,
   type PriorAttemptMode,
+  type RenderOptions,
 } from "./Prompt.js";
 
 export { type FlumeApi } from "./flumeApi.js";

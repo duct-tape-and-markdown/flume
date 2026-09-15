@@ -14,7 +14,7 @@ import { matchesAny } from "./paths.js";
 import { touchedPaths } from "./PendingSchema.js";
 import type { PendingEntry } from "./PendingSchema.js";
 
-interface PartitionOptions {
+export interface PartitionOptions {
   /** Maximum parallel ticks the harness will spawn. */
   maxParallel: number;
   /**

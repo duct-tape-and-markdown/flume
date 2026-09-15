@@ -64,6 +64,26 @@ export interface ExportScan {
   readonly referenced: readonly ExportSite[];
   /** Judged exports neither reachable nor referenced — the residue. */
   readonly unearned: readonly ExportSite[];
+  /**
+   * Every function signature the `exports` map reaches — the set `unnamable`
+   * is judged over, so a walk that stopped finding functions is visible
+   * rather than reading as a clean verdict.
+   */
+  readonly signatures: readonly ExportSite[];
+  /**
+   * Signature types a consumer can read but cannot name: a type the shipped
+   * surface's parameter and return positions mention, declared in the shipped
+   * tree, that no entry module exports under any name.
+   */
+  readonly unnamable: readonly SignatureType[];
+}
+
+/** One signature position naming a type the `exports` map cannot hand out. */
+export interface SignatureType {
+  /** The function-like declaration whose signature names it. */
+  readonly signature: ExportSite;
+  /** Where the unnamable type is declared. */
+  readonly type: ExportSite;
 }
 
 const parseConfig = (path: string): ts.ParsedCommandLine => {
@@ -124,6 +144,13 @@ const siteOf = (
   };
 };
 
+/** `module:line name`, the form a failure message cites a finding in. */
+export const formatSite = (site: ExportSite): string =>
+  `${site.module}:${site.line} ${site.name}`;
+/** `<signature> names <type>`, the form a failure message cites a finding in. */
+export const formatSignatureType = (found: SignatureType): string =>
+  `${formatSite(found.signature)} names ${formatSite(found.type)}`;
+
 /**
  * Scan a package's shipped modules for exports nothing earns.
  *
@@ -134,6 +161,11 @@ const siteOf = (
  * function bodies are skipped: a module-local helper a public method happens to
  * call is not public surface, and counting it would let the scan earn exports
  * on evidence a consumer can never see.
+ *
+ * The same walk carries a second, stricter verdict alongside it. Reachability
+ * asks whether a consumer can *read* a type; `unnamable` asks whether one can
+ * *write* it — a signature type is nameable only when some entry module
+ * exports it under a name an import specifier can carry.
  */
 export const scanExports = (request: ExportScanRequest): ExportScan => {
   const root = resolve(request.root);
@@ -229,6 +261,97 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     }
   }
 
+  // --- signature types the exports map cannot hand out --------------------
+  // Reachability above proves a type is *readable*: it lands in the emitted
+  // `.d.ts` and hover text shows it. It does not prove the type is
+  // *nameable* — a consumer writing `const o: RenderOptions = …` needs an
+  // import specifier, and only an entry module's own export list supplies
+  // one. So this arm re-asks the stricter question over the signatures the
+  // map reaches: every type a parameter or return position names, declared
+  // in the shipped tree, must be exported by some entry module.
+  //
+  // Scope is the reached *function* — a top-level declaration whose own
+  // symbol the map reaches. A member signature inside a reached type is not
+  // one: a private method carries no signature into the `.d.ts` at all, and
+  // a namespace member is named through its namespace rather than imported.
+  const entryExported = new Set<ts.Symbol>();
+  for (const entry of entryFiles) {
+    for (const sym of moduleExports(entry)) entryExported.add(unalias(sym));
+  }
+  const shippedFiles = new Set(build.fileNames.map((f) => resolve(f)));
+
+  /**
+   * The signature a declaration carries, if it is a function at all. A
+   * `function` statement is one; so is `const f = (…) => …` and the
+   * function-type annotation a `const` may carry instead of an initializer.
+   */
+  const signatureOf = (
+    decl: ts.Declaration,
+  ): ts.SignatureDeclaration | undefined => {
+    if (ts.isFunctionLike(decl)) return decl;
+    if (ts.isVariableDeclaration(decl)) {
+      if (decl.type && ts.isFunctionLike(decl.type)) return decl.type;
+      if (decl.initializer && ts.isFunctionLike(decl.initializer)) {
+        return decl.initializer;
+      }
+    }
+    return undefined;
+  };
+
+  const signatures: ExportSite[] = [];
+  const unnamable: SignatureType[] = [];
+  const reported = new Set<string>();
+
+  for (const owner of reachable) {
+    for (const decl of owner.declarations ?? []) {
+      if (ts.isSourceFile(decl)) continue;
+      const file = decl.getSourceFile();
+      if (!shippedFiles.has(resolve(file.fileName))) continue;
+      const fn = signatureOf(decl);
+      if (!fn) continue;
+
+      const signature: ExportSite = {
+        module: relPath(root, file.fileName),
+        name: owner.getName(),
+        line: file.getLineAndCharacterOfPosition(decl.getStart()).line + 1,
+      };
+      signatures.push(signature);
+
+      const named = (node: ts.Node): void => {
+        if (ts.isTypeReferenceNode(node)) {
+          const sym = checker.getSymbolAtLocation(node.typeName);
+          const target = sym ? unalias(sym) : undefined;
+          // A type parameter is declared by this signature and named by
+          // writing the signature, never by importing it.
+          if (
+            target &&
+            !(target.flags & ts.SymbolFlags.TypeParameter) &&
+            !entryExported.has(target) &&
+            (target.declarations ?? []).some((d) =>
+              shippedFiles.has(resolve(d.getSourceFile().fileName)),
+            )
+          ) {
+            const found: SignatureType = {
+              signature,
+              type: siteOf(root, target, signature.module),
+            };
+            const key = formatSignatureType(found);
+            if (!reported.has(key)) {
+              reported.add(key);
+              unnamable.push(found);
+            }
+          }
+        }
+        ts.forEachChild(node, named);
+      };
+
+      for (const param of fn.parameters) {
+        if (param.type) named(param.type);
+      }
+      if (fn.type) named(fn.type);
+    }
+  }
+
   // --- referenced from some other module ---------------------------------
   // One pass over every non-declaration source: each identifier that resolves
   // to a symbol records the file it was read from. A namespace import's
@@ -291,9 +414,7 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     reachable: reachedSites,
     referenced: referencedSites,
     unearned,
+    signatures,
+    unnamable,
   };
 };
-
-/** `module:line name`, the form a failure message cites a finding in. */
-export const formatSite = (site: ExportSite): string =>
-  `${site.module}:${site.line} ${site.name}`;

@@ -441,7 +441,7 @@ export type PriorAttempt =
  * and `cwd` come from the per-tick `TickContext` and the phase's
  * `promptArgs` builder.
  */
-interface RenderOptions {
+export interface RenderOptions {
   phase: Phase;
   /**
    * The prompt file to read, already resolved against the chain's config
