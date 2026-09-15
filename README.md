@@ -33,6 +33,10 @@ error.
 
 ## Quickstart
 
+**Prerequisites:** Node 22 or newer, and git 2.36 or newer — the engine reads
+`git worktree list --porcelain -z`, which git grew in 2.36; on an older git,
+worktree reclamation degrades loudly and nothing else does.
+
 ```bash
 npm install --save-dev @dtmd/flume
 ```

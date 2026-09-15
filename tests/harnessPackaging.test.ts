@@ -54,6 +54,25 @@ interface Manifest {
   readonly exports?: unknown;
   readonly files?: unknown;
   readonly scripts?: Record<string, string>;
+  readonly engines?: Record<string, string>;
+}
+
+/** The label the README's prerequisite paragraph opens with. */
+const PREREQUISITE_LABEL = "**Prerequisites:**";
+
+/**
+ * That paragraph, joined to one string: markdown wraps it across source
+ * lines, so the claim under test is the block from its label to the next
+ * blank line rather than whichever line the wrap happened to land on. An
+ * absent label yields the empty string, which the cases below refuse before
+ * asserting anything over it.
+ */
+async function prerequisiteClaim(): Promise<string> {
+  const lines = (await readFile(join(REPO_ROOT, "README.md"), "utf8")).split(/\r?\n/);
+  const start = lines.findIndex((line) => line.startsWith(PREREQUISITE_LABEL));
+  if (start === -1) return "";
+  const blank = lines.findIndex((line, i) => i > start && line.trim() === "");
+  return lines.slice(start, blank === -1 ? undefined : blank).join(" ");
 }
 
 let scratch: string;
@@ -457,4 +476,42 @@ it("the package's files allowlist covers the emitted harness assets", async () =
   for (const asset of emittedAssets) {
     expect({ asset, packed: tarball.has(asset) }).toEqual({ asset, packed: true });
   }
+});
+
+/**
+ * The install floors a consumer reads before running any of the above. Both
+ * are packaging policy (`spec/chain.md`, *The package a chain loads
+ * through*), and the README states them where the install command is — the
+ * one place a reader is looking when the answer still matters.
+ *
+ * The node half is an agreement gate (`.claude/rules/engineering.md`, *A
+ * seam gate reads what the real writer wrote*): the real writer is the
+ * manifest npm enforces `engines` from, the reader is the README's own
+ * sentence, so a bumped floor that stops at the manifest reds here rather
+ * than sending a consumer at an unsupported runtime.
+ */
+it("the README prerequisite line names the node floor package.json engines declares", async () => {
+  // Non-vacuity, both sides: an undeclared floor or a missing paragraph
+  // would leave the containment below asserting a substring of nothing.
+  const declared = manifest.engines?.node ?? "";
+  const major = /(\d+)/.exec(declared)?.[1];
+  expect({ declared, major }).toEqual({ declared, major: expect.any(String) });
+
+  const claim = await prerequisiteClaim();
+  expect(claim).toContain(PREREQUISITE_LABEL);
+  expect(claim).toContain(`Node ${major}`);
+});
+
+/**
+ * The git half has no manifest to agree with — npm's `engines` speaks only
+ * of runtimes — so the floor is named on both sides rather than derived.
+ * `worktree list --porcelain -z` is the 2.36 feature
+ * (`src/worktrees.ts`, `readWorktreeRegistry`); below it, worktree
+ * reclamation degrades loudly and nothing else does, which is a thing to
+ * learn before installing rather than at the first stranded worktree.
+ */
+it("the README prerequisite line names the git floor", async () => {
+  const claim = await prerequisiteClaim();
+  expect(claim).toContain(PREREQUISITE_LABEL);
+  expect(claim).toMatch(/\bgit 2\.36\b/i);
 });
