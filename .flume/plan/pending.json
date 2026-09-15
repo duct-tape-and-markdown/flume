@@ -1,47 +1,5 @@
 [
   {
-    "tag": "API-CHECKOUT-AT-FOR-A-DIFFERENTIAL-GATE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/flumeApi.ts",
-          "description": "`checkoutAt` beside the other git verbs"
-        },
-        {
-          "path": "src/worktrees.ts",
-          "description": "the detached checkout, placed under the worktree base"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "reclaim what a gate checked out, at the one gate-run site"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "placement and both reclamation legs"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Give a differential gate `api.git.checkoutAt` — a detached tree under the state root's worktree base, removed by the engine when the gate returns",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a gate receives"
-    },
-    "acceptance": "A gate needing the tree at `baseSha` asks the API for it and provisions nothing: the checkout lands under the worktree base and is gone when the gate returns, however it returns.",
-    "tests": [
-      "api.git.checkoutAt plants a detached checkout under the state root's worktree base",
-      "the engine removes a gate's checkout when the gate returns",
-      "the engine removes a gate's checkout when the gate throws"
-    ],
-    "pins": [],
-    "notes": "`Dispatcher.runGate` is the one gate-run site and so the one reclamation point. Under the worktree base, not a temp dir, so a run killed mid-flight leaves a directory the startup sweep reclaims. `harness/vitestRunner.ts`'s `runAtBase` is the standing hand-rolled checkout this replaces."
-  },
-  {
     "tag": "CHAIN-COMPUTES-ITS-WORKTREE-BASE",
     "gate": {
       "kind": "open"
@@ -89,10 +47,7 @@
   {
     "tag": "RUN-AT-BASE-USES-THE-ENGINE-CHECKOUT",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "API-CHECKOUT-AT-FOR-A-DIFFERENTIAL-GATE"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
