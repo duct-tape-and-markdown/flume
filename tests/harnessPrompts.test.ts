@@ -285,6 +285,38 @@ function spanSubstitutes(raw: string, key: SharedPromptArg): boolean {
 }
 
 /**
+ * Which shipped prompts substitute each artifact's path — the detector the
+ * coverage pin and the odd-root loop both read, rather than one re-deriving
+ * it beside the other (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
+ */
+async function promptsReadingEachArtifact(): Promise<ReadonlyMap<SharedPromptArg, PromptName[]>> {
+  const readers = new Map<SharedPromptArg, PromptName[]>(ARTIFACTS.map((a) => [a.key, []]));
+  for (const name of PHASES) {
+    const raw = await readFile(promptPath(name), "utf8");
+    for (const artifact of ARTIFACTS) {
+      if (spanSubstitutes(raw, artifact.key)) readers.get(artifact.key)!.push(name);
+    }
+  }
+  return readers;
+}
+
+/**
+ * The table's own coverage, per artifact rather than in aggregate: an entry
+ * whose detector stops matching any span leaves every loop below silently,
+ * and a total count cannot tell that from a table that shrank
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ */
+function expectEveryArtifactRead(readers: ReadonlyMap<SharedPromptArg, PromptName[]>): void {
+  expect(ARTIFACTS.length).toBeGreaterThan(0);
+  expect(ARTIFACTS.filter((a) => readers.get(a.key)!.length === 0).map((a) => a.key)).toEqual([]);
+}
+
+it("every artifact in the harness prompt odd-root table is read by at least one shipped prompt", async () => {
+  expectEveryArtifactRead(await promptsReadingEachArtifact());
+});
+
+/**
  * Every shipped prompt rendered against a state root whose path is awkward in
  * a shell, asserting each span's artifact actually reached the text.
  *
@@ -296,13 +328,14 @@ function spanSubstitutes(raw: string, key: SharedPromptArg): boolean {
 async function everyPromptReadsItsArtifactsUnder(root: string): Promise<void> {
   await seed(root);
 
-  let asserted = 0;
+  const readers = await promptsReadingEachArtifact();
+  expectEveryArtifactRead(readers);
+
   for (const name of PHASES) {
-    const raw = await readFile(promptPath(name), "utf8");
+    const reads = ARTIFACTS.filter((a) => readers.get(a.key)!.includes(name));
+    if (reads.length === 0) continue;
     const rendered = await render(name, root);
-    for (const artifact of ARTIFACTS) {
-      if (!spanSubstitutes(raw, artifact.key)) continue;
-      asserted++;
+    for (const artifact of reads) {
       expect({
         name,
         key: artifact.key,
@@ -310,11 +343,6 @@ async function everyPromptReadsItsArtifactsUnder(root: string): Promise<void> {
       }).toEqual({ name, key: artifact.key, read: true });
     }
   }
-
-  // Non-vacuity: a prompt set whose spans stopped substituting these paths
-  // would pass the loop over nothing (`.claude/rules/engineering.md`, *A
-  // green verdict is proven non-vacuous*).
-  expect(asserted).toBeGreaterThan(0);
 }
 
 it("every package prompt's spans read their artifacts under a state root path carrying a space", async () => {

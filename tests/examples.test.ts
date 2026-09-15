@@ -436,6 +436,39 @@ describe("examples/prompts — the spans read the injected state root", () => {
     return templateNamed("plan.md");
   }
 
+  /**
+   * Which shipped templates name each artifact in a span — the detector the
+   * coverage pin and the odd-root loop both read, rather than one re-deriving
+   * it beside the other (`engineering.md`, *The fix lands at the mechanism*).
+   * The sweep is `allSpans`, so a template that stops carrying spans at all
+   * moves this with it.
+   */
+  function templatesReadingEachArtifact(): ReadonlyMap<string, string[]> {
+    return new Map(
+      ARTIFACTS.map((a) => [
+        a.span,
+        [...new Set(allSpans.filter(({ cmd }) => cmd.includes(a.span)).map(({ file }) => file))],
+      ]),
+    );
+  }
+
+  /**
+   * The table's own coverage, per artifact rather than in aggregate: an entry
+   * whose detector stops naming any span leaves the loop below silently, and
+   * a total count cannot tell that from a table that shrank
+   * (`engineering.md`, *A green verdict is proven non-vacuous*).
+   */
+  function expectEveryArtifactRead(readers: ReadonlyMap<string, string[]>): void {
+    expect(ARTIFACTS.length).toBeGreaterThan(0);
+    expect(ARTIFACTS.filter((a) => readers.get(a.span)!.length === 0).map((a) => a.span)).toEqual(
+      [],
+    );
+  }
+
+  it("every artifact in the example prompt odd-root table is read by at least one shipped template", () => {
+    expectEveryArtifactRead(templatesReadingEachArtifact());
+  });
+
   async function everyPromptReadsItsArtifactsUnder(root: string): Promise<void> {
     scratch.push(root);
     for (const artifact of ARTIFACTS) {
@@ -444,17 +477,16 @@ describe("examples/prompts — the spans read the injected state root", () => {
       writeFileSync(at, artifact.body, "utf8");
     }
 
-    let asserted = 0;
+    const readers = templatesReadingEachArtifact();
+    expectEveryArtifactRead(readers);
+
     for (const { file, phase } of shipped) {
       expect(phase, `${file} is named by an example phase`).toBeDefined();
-      const spans = [...readFileSync(join(PROMPT_DIR, file), "utf8").matchAll(SPAN)]
-        .map((m) => m[1]!);
-      const reads = ARTIFACTS.filter((a) => spans.some((s) => s.includes(a.span)));
+      const reads = ARTIFACTS.filter((a) => readers.get(a.span)!.includes(file));
       if (reads.length === 0) continue;
 
       const rendered = await render(file, phase!, root);
       for (const artifact of reads) {
-        asserted++;
         expect({
           file,
           span: artifact.span,
@@ -462,11 +494,6 @@ describe("examples/prompts — the spans read the injected state root", () => {
         }).toEqual({ file, span: artifact.span, read: true });
       }
     }
-
-    // Non-vacuity (`engineering.md`, *A green verdict is proven non-vacuous*):
-    // a prompt set whose spans stopped naming these artifacts would pass the
-    // loop over nothing.
-    expect(asserted).toBeGreaterThan(0);
   }
 
   it("every example prompt's spans read their artifacts under a state root path carrying a space", async () => {
