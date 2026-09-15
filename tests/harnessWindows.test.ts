@@ -39,7 +39,10 @@ import {
 } from "../harness/index.ts";
 import { INBOX_PHASE, type PlanSlice } from "../harness/declaration.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
-import type { PriorAttempt } from "../src/Prompt.ts";
+import type {
+  PriorAttempt,
+  PriorAttemptKeyspace,
+} from "../src/Prompt.ts";
 import { slugify } from "../src/paths.ts";
 
 /** The repo every case commits into; also the state root the windows read. */
@@ -136,11 +139,21 @@ const entry = (tag: string): PendingEntry => ({
   files: { new: [], edit: [], retire: [] },
 });
 
-/** One standing prior-attempt record, keyed as the engine keys an entry's. */
-function record(tag: string, mode: PriorAttempt["mode"]): PriorAttempt {
+/**
+ * One standing prior-attempt record, keyed as the engine keys one: an entry's
+ * identity is `slugify(tag)`, a phase's is the phase name verbatim
+ * (`src/priorAttempts.ts`, `priorAttemptRef`). Both keyspaces, because the
+ * window discriminates on the record's own `key` field and a fixture that can
+ * only write one of them judges that leg over zero of its subject.
+ */
+function record(
+  name: string,
+  mode: PriorAttempt["mode"],
+  keyspace: PriorAttemptKeyspace = "entry",
+): PriorAttempt {
   const anchor = {
-    key: "entry" as const,
-    keyedAs: slugify(tag),
+    key: keyspace,
+    keyedAs: keyspace === "entry" ? slugify(name) : name,
     headSha: "0".repeat(40),
     at: "2026-09-14T00:00:00.000Z",
   };
@@ -306,6 +319,47 @@ it("the inbox window is live while a standing build refusal is keyed to an entry
     cleanExit: true,
     retiredEntry: false,
     gateRevert: false,
+  });
+});
+
+/**
+ * The two keyspaces share one `keyedAs` map, so a phase named `build` and a
+ * tag slugged `build` collide on one key — the window's only discriminator is
+ * the record's own stated `key` field. Both arms below are written over that
+ * one colliding stem, so the verdicts differ by the keyspace and nothing else.
+ */
+it("the inbox window ignores a phase-keyed prior-attempt record whose key matches a queued entry's slug", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const inbox = windows()[INBOX_PHASE];
+
+  // A queued tag that slugs to a phase name the engine also keys records by.
+  const pending = [entry("BUILD")];
+  const entryKeyed = record("BUILD", "not-shipped");
+  const phaseKeyed = record("build", "not-shipped", "phase");
+
+  const live = (rec: PriorAttempt): boolean =>
+    inbox.live({
+      flumeDir: stateRoot(),
+      pickable: true,
+      pending,
+      priorAttempts: new Map([[rec.keyedAs, rec]]),
+    });
+
+  expect({
+    // Vacuity guard: the phase-keyed record is judged against a populated
+    // queue it genuinely collides with, so `false` below is the keyspace's
+    // doing rather than a stem the queue never carried.
+    collides: phaseKeyed.keyedAs === slugify(pending[0]!.tag),
+    sameStem: phaseKeyed.keyedAs === entryKeyed.keyedAs,
+    // Control: the same stem, the same mode, in the queue's own keyspace.
+    entryKeyed: live(entryKeyed),
+    phaseKeyed: live(phaseKeyed),
+  }).toEqual({
+    collides: true,
+    sameStem: true,
+    entryKeyed: true,
+    phaseKeyed: false,
   });
 });
 
@@ -540,6 +594,9 @@ it("the inbox window renders every waiting record's bytes and marks the refusals
   const records = [
     record("LIVE-ENTRY", "not-shipped"),
     record("RETIRED-ENTRY", "clean-exit"),
+    // A singleton phase's record: never this slice's to reconcile, however
+    // the queue is shaped, so it renders with its keyspace and no mark.
+    record("plan-derive", "clean-exit", "phase"),
   ];
   const args = windows()[INBOX_PHASE].args({
     cwd: repo,
@@ -551,12 +608,13 @@ it("the inbox window renders every waiting record's bytes and marks the refusals
   expect(args.RECORDS).toContain("2026-09-14-a-finding.md");
   expect(args.RECORDS).toContain("Observed.");
   expect(args.BUILD_RECORDS).toContain(
-    "=== 2 standing prior-attempt record(s) ===",
+    "=== 3 standing prior-attempt record(s) ===",
   );
   expect(args.BUILD_RECORDS).toContain(
     "--- live-entry (entry keyspace) ← the queue still carries this entry; reconcile it ---",
   );
   expect(args.BUILD_RECORDS).toContain("--- retired-entry (entry keyspace) ---");
+  expect(args.BUILD_RECORDS).toContain("--- plan-derive (phase keyspace) ---");
   // The record's own fields, verbatim from the engine's shape.
   expect(args.BUILD_RECORDS).toContain(`"mode": "not-shipped"`);
 });
