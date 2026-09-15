@@ -41,6 +41,7 @@ import {
   execFileWithShimRetry,
   isWin32ShimSpawnFailure,
 } from "../src/spawnShim.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 const execFileMock = vi.mocked(execFile);
 
@@ -119,7 +120,7 @@ describe("spawnShim — the shared retry decision", () => {
       expect(execFileMock.mock.calls[1]![1]).toEqual(["install"]);
       expect((optsOf(1) as { cwd?: string }).cwd).toBe("C:\\wt");
     });
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a shelled retry that ENOENTs again is the failure the caller sees — no third attempt", async () => {
     await withPlatform("win32", async () => {
@@ -130,7 +131,7 @@ describe("spawnShim — the shared retry decision", () => {
       ).rejects.toMatchObject({ code: "ENOENT" });
       expect(execFileMock).toHaveBeenCalledTimes(2);
     });
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a non-ENOENT win32 spawn failure propagates without a shell retry", async () => {
     await withPlatform("win32", async () => {
@@ -142,7 +143,7 @@ describe("spawnShim — the shared retry decision", () => {
       expect(execFileMock).toHaveBeenCalledOnce();
       expect(optsOf(0).shell).toBeUndefined();
     });
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("an ENOENT on a non-win32 host propagates without a shell retry", async () => {
     await withPlatform("linux", async () => {
@@ -156,7 +157,7 @@ describe("spawnShim — the shared retry decision", () => {
       expect(execFileMock).toHaveBeenCalledOnce();
       expect(optsOf(0).shell).toBeUndefined();
     });
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("the predicate reads the platform at call time, so one error answers differently per host", async () => {
     const err = errno("ENOENT");

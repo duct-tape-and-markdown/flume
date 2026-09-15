@@ -644,6 +644,7 @@ describe("tscGate / vitestGate / eslintGate — pnpm cmd override (BUILTINGATES-
       expect(result.message).toBe(failHint);
       expect(result.details ?? "").toContain("MODULE_NOT_FOUND");
     },
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -694,7 +695,7 @@ describe("tscGate / vitestGate / eslintGate — args override (BUILTINGATES-CMD-
     const result = await tscGate({ cmd: "npm" }).run(ctx(process.cwd()));
     expect(result.ok).toBe(false);
     expect(result.details ?? "").toContain("Unknown command");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it(
     "tscGate({ cmd: 'npm', args: [...] }) composes a working npm invocation and actually runs tsc",
@@ -738,7 +739,7 @@ describe("tscGate / vitestGate / eslintGate — args override (BUILTINGATES-CMD-
         await rm(broken, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -776,7 +777,7 @@ describe("tscGate / vitestGate / eslintGate — gate-placement override (BUILTIN
     });
     expect(merged.when).toBe("afterMerge");
     expect(merged.command).toBe("npm exec -- tsc --noEmit");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("tscGate, vitestGate and eslintGate stay at afterCommit when called with no override", () => {
     // The default survives every shape of the injection point: the bare gate
@@ -789,7 +790,7 @@ describe("tscGate / vitestGate / eslintGate — gate-placement override (BUILTIN
       expect(gate({ cmd: "npm" }).when).toBe("afterCommit");
       expect(gate({ args: ["run", "check"] }).when).toBe("afterCommit");
     }
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("an explicit when: 'afterCommit' override is byte-identical to omitting it", () => {
     const explicit = tscGate({ when: "afterCommit" });
@@ -951,7 +952,7 @@ describe("Gate.command — shellGate renders cmd+args as one line (spec/chain.md
       args: [],
     });
     expect(gate.command).toBe("pnpm");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("tscGate/vitestGate/eslintGate declare their pnpm-flavored command bare", () => {
     expect(tscGate.command).toBe("pnpm tsc --noEmit");
@@ -966,7 +967,7 @@ describe("Gate.command — shellGate renders cmd+args as one line (spec/chain.md
     });
     expect(overridden.command).toBe("npm exec -- tsc --noEmit");
     expect(tscGate.command).toBe("pnpm tsc --noEmit");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("chainLoadGate declares no command — no single command line to run", () => {
     expect(chainLoadGate.command).toBeUndefined();

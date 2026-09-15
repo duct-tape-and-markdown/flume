@@ -13,7 +13,9 @@
  * exported numbers, and which files the lane even contains out of
  * `vitest.config.ts`, so a wrapper, a rename, or a widened include arms the
  * scan without a second edit (`.claude/rules/engineering.md`, *Derived state
- * is computed, never restated beside its source*).
+ * is computed, never restated beside its source*). The one list held here is
+ * `NODE_COMMANDS`, which has no source to be read off; it is declared at its
+ * site below rather than left looking derived.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -40,6 +42,46 @@ const HOOK = /^(beforeAll|beforeEach|afterAll|afterEach)$/;
  * through a wrapper, so the scan tracks the two as one.
  */
 const EXEC_PATH = "process.execPath";
+
+/**
+ * The same startup spelled as a command *name*, folded to one name the
+ * propagation carries exactly like `EXEC_PATH`: a case that hands `"node"`
+ * to a gate, or shells out to `npm`, pays the runtime startup the lane's
+ * budget exists for just as a case holding `process.execPath` does.
+ */
+const NODE_COMMAND = "<node command>";
+
+/**
+ * Which command names are that startup. This list is the one copy — no
+ * surface in this repo enumerates the node launchers, so unlike the lane's
+ * globs, the spawn wrappers and the budget's number there is nothing to read
+ * it off (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*: declared here rather than looking derived).
+ *
+ * Launchers only. A name that merely *runs under* node once a launcher has
+ * started it — `tsc`, `vitest`, a bin on PATH — is already covered by the
+ * launcher that spawns it, and listing it would flag prose. `git` is
+ * deliberately absent: raw plumbing is measured fast and is not a lane
+ * trigger (spec/worktrees.md, "The default test lane must stay fast").
+ *
+ * Over-approximating on the same trade the propagation below takes: a name
+ * asserted on rather than handed to a runner, or handed to a mocked one,
+ * reads as a startup here and costs the case one declared ceiling it never
+ * pays. A missed one costs the flake, which is the cost this scan exists to
+ * prevent.
+ */
+const NODE_COMMANDS: ReadonlySet<string> = new Set([
+  "node",
+  "npm",
+  "npx",
+  "pnpm",
+  "pnpx",
+  "tsx",
+  "yarn",
+]);
+
+/** Both spellings of a node startup, as the propagation's seed. */
+const NODE_STARTS: readonly string[] = [EXEC_PATH, NODE_COMMAND];
 
 export interface SpawnSite {
   /** Repo-relative, forward-slashed. */
@@ -206,7 +248,7 @@ function calleeRoot(expr: ts.Expression): string | null {
   return ts.isIdentifier(node) ? node.text : null;
 }
 
-/** Every name referenced under `node`, with `process.execPath` folded in. */
+/** Every name referenced under `node`, with both node spellings folded in. */
 function referenced(node: ts.Node): Set<string> {
   const names = new Set<string>();
   const walk = (n: ts.Node): void => {
@@ -218,6 +260,8 @@ function referenced(node: ts.Node): Set<string> {
       n.expression.text === "process"
     )
       names.add(EXEC_PATH);
+    if (ts.isStringLiteralLike(n) && NODE_COMMANDS.has(n.text))
+      names.add(NODE_COMMAND);
     ts.forEachChild(n, walk);
   };
   walk(node);
@@ -299,7 +343,7 @@ function exportedNames(src: ts.SourceFile): Set<string> {
 export function harnessSpawnExports(): string[] {
   const src = parse(HARNESS);
   const exported = exportedNames(src);
-  return [...spawnNames(src, [EXEC_PATH])].filter((n) => exported.has(n));
+  return [...spawnNames(src, NODE_STARTS)].filter((n) => exported.has(n));
 }
 
 /**
@@ -396,7 +440,7 @@ export async function scanDefaultLaneSpawnSites(
     const file = relative(REPO_ROOT, path).split(sep).join("/");
     const imported = harnessImports(src);
     const spawns = spawnNames(src, [
-      EXEC_PATH,
+      ...NODE_STARTS,
       ...wrappers.filter((n) => imported.has(n)),
     ]);
     const named = new Set([...budgets].filter((n) => imported.has(n)));

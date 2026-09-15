@@ -23,6 +23,7 @@ import {
   pendingGate,
 } from "../src/builtinGates.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -71,7 +72,7 @@ describe("shellGate — ok path", () => {
     expect(result.ok).toBe(true);
     expect(result.message).toBe("shout green");
     expect(result.details).toContain("hello-stdout");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("falls back to stderr in details when stdout is empty", async () => {
     const gate = shellGate({
@@ -83,7 +84,7 @@ describe("shellGate — ok path", () => {
     const result = await gate.run(ctx(process.cwd()));
     expect(result.ok).toBe(true);
     expect(result.details).toContain("warn-stderr");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("shellGate — env option", () => {
@@ -97,7 +98,7 @@ describe("shellGate — env option", () => {
     const result = await gate.run(ctx(process.cwd()));
     expect(result.ok).toBe(true);
     expect(result.details).toContain("unset");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("with env, the spawned command observes the merged var", async () => {
     const gate = shellGate({
@@ -110,7 +111,7 @@ describe("shellGate — env option", () => {
     const result = await gate.run(ctx(process.cwd()));
     expect(result.ok).toBe(true);
     expect(result.details).toContain("bar");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("merges env over process.env rather than replacing it", async () => {
     const gate = shellGate({
@@ -126,7 +127,7 @@ describe("shellGate — env option", () => {
     const result = await gate.run(ctx(process.cwd()));
     expect(result.ok).toBe(true);
     expect(result.details).toContain("both-present");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("shellGate — fail path", () => {
@@ -142,7 +143,7 @@ describe("shellGate — fail path", () => {
     expect(result.ok).toBe(false);
     expect(result.message).toBe("boom blew up");
     expect(result.details).toContain("explosion");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("defaults the fail message to '<name> failed'", async () => {
     const gate = shellGate({
@@ -154,7 +155,7 @@ describe("shellGate — fail path", () => {
     const result = await gate.run(ctx(process.cwd()));
     expect(result.ok).toBe(false);
     expect(result.message).toBe("bare failed");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("returns ok=false when the binary is missing", async () => {
     const gate = shellGate({
@@ -357,7 +358,7 @@ describe("afterCommit vs afterMerge wiring", () => {
     });
     expect(earlyGate.when).toBe("afterCommit");
     expect(lateGate.when).toBe("afterMerge");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("the built-in afterCommit gates all declare when=afterCommit", () => {
     expect(tscGate.when).toBe("afterCommit");
@@ -378,7 +379,7 @@ describe("afterCommit vs afterMerge wiring", () => {
     const afterMergeResult = await make("afterMerge").run(ctx(process.cwd()));
     expect(afterCommitResult.ok).toBe(true);
     expect(afterMergeResult.ok).toBe(true);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("chainLoadGate declares afterCommit", () => {
     expect(chainLoadGate.when).toBe("afterCommit");

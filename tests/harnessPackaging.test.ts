@@ -481,7 +481,7 @@ it("the package's files allowlist covers the emitted harness assets", async () =
   for (const asset of emittedAssets) {
     expect({ asset, packed: tarball.has(asset) }).toEqual({ asset, packed: true });
   }
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * The install floors a consumer reads before running any of the above. Both

@@ -441,7 +441,8 @@ it("every default-lane suite that spawns the CLI declares the shared spawn budge
     .map((s) => `${s.file}:${s.line} ${s.kind} — ${s.title}`);
   expect(
     inheriting,
-    `these sites start a node process on vitest's 5s default: declare ` +
+    `these sites name a node startup — \`process.execPath\`, or a launcher ` +
+      `like \`node\`/\`npm\`/\`pnpm\` — on vitest's 5s default: declare ` +
       `SPAWN_BUDGET_MS (tests/helpers/subprocess.ts) on each, rather than a ` +
       `number of its own`,
   ).toEqual([]);
@@ -505,6 +506,62 @@ it("the spawn-budget scan's lane rule agrees with the default lane vitest.config
   expect(() =>
     reduceLaneGlobs({ include: declared.include, exclude: ["**/fixtures/**"] }),
   ).toThrow("drops files by suffix");
+});
+
+/**
+ * The other spelling of the same startup: a command *name*.
+ *
+ * `process.execPath` was the scan's whole node vocabulary, so a case handing
+ * `"node"` to a gate, or shelling out to `npm`, read as spawning nothing and
+ * kept vitest's 5s default — the exact inheritance this scan exists to
+ * report. Both spellings pay one Node startup, so both are reported.
+ *
+ * The negative half is the lane boundary itself: `git` plumbing is measured
+ * fast and is explicitly *not* a trigger (spec/worktrees.md, "The default
+ * test lane must stay fast"), so a vocabulary wide enough to catch it would
+ * be reporting most of the dispatcher's suite.
+ *
+ * Top-level rather than inside the describe below: the fixture it drives is
+ * its own, and the two shapes it separates are the ones the widening turns
+ * on.
+ */
+it("the spawn-budget scan reports a case that starts node under a command-string name", async () => {
+  const FIXTURE = [
+    `import { SPAWN_BUDGET_MS } from "../helpers/subprocess.ts";`,
+    ``,
+    `it("hands a bare node to a gate", async () => {`,
+    `  await shellGate({ name: "n", when: "afterCommit", cmd: "node" }).run(ctx());`,
+    `});`,
+    ``,
+    `it("shells out to npm", async () => {`,
+    `  await exec("npm", ["pack", "--dry-run"], { cwd: dir });`,
+    `}, SPAWN_BUDGET_MS);`,
+    ``,
+    `it("runs git plumbing on a temp fixture", async () => {`,
+    `  await exec("git", ["rev-parse", "HEAD"], { cwd: dir });`,
+    `});`,
+    ``,
+    `it("spawns nothing at all", () => {`,
+    `  expect(1).toBe(1);`,
+    `});`,
+    ``,
+  ].join("\n");
+
+  const dir = await mkdtemp(join(tmpdir(), "flume-budget-command-"));
+  try {
+    await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+    const sites = await scanDefaultLaneSpawnSites(dir);
+
+    // The whole list, so the two shapes the scan must *not* report — git
+    // plumbing and a case that spawns nothing — are pinned by their absence
+    // rather than by a filter that could quietly match nothing.
+    expect(sites.map((s) => [s.title, s.budget])).toEqual([
+      ["hands a bare node to a gate", null],
+      ["shells out to npm", "SPAWN_BUDGET_MS"],
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 /**

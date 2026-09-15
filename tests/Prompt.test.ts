@@ -32,6 +32,7 @@ import type {
   PriorAttempt,
 } from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 const spawnMock = vi.mocked(spawn);
 
@@ -353,7 +354,7 @@ describe("renderPrompt <harness> gate list renders a declared command (spec/chai
 
     expect(out).toContain(`  - tsc (afterCommit): ${gate.command}`);
     expect(out).toContain("  - tsc (afterCommit): pnpm tsc --noEmit");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 // Agreement case (ENTRY-WRITE-SCOPE-ONE-DERIVATION, per engineering.md "The

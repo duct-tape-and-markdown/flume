@@ -11,6 +11,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { setupWorktree } from "../src/setupWorktree.js";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 const execFileMock = vi.mocked(execFile);
 
@@ -96,7 +97,7 @@ describe("setupWorktree", () => {
     expect(cmd).toBe("pnpm");
     expect(args).toEqual(["install", "--frozen-lockfile"]);
     expect((opts as { cwd: string }).cwd).toBe(dir);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("runs npm ci when package-lock.json is present", async () => {
     await writeFile(join(dir, "package-lock.json"), "{}\n");
@@ -109,7 +110,7 @@ describe("setupWorktree", () => {
     expect(cmd).toBe("npm");
     expect(args).toEqual(["ci"]);
     expect((opts as { cwd: string }).cwd).toBe(dir);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("prefers pnpm when both lockfiles are present", async () => {
     await writeFile(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
@@ -120,7 +121,7 @@ describe("setupWorktree", () => {
 
     expect(execFileMock).toHaveBeenCalledOnce();
     expect(execFileMock.mock.calls[0]![0]).toBe("pnpm");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("refuses cleanly when neither lockfile is present", async () => {
     await expect(setupWorktree(dir)).rejects.toThrow(
@@ -216,7 +217,7 @@ describe("setupWorktree", () => {
     expect(secondCmd).toBe("pnpm");
     expect(secondArgs).toEqual(["install", "--frozen-lockfile"]);
     expect((secondOpts as { shell?: boolean }).shell).toBe(true);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("on non-win32, a direct-spawn ENOENT propagates without retrying through the shell", async () => {
     await writeFile(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
