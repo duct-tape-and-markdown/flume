@@ -43,6 +43,212 @@
     "notes": "`PlanSliceWindow.live` is sync and runs on the selection path (planState.ts), so the lane read has a sync half — once per tick per lane, beside the render's. `SliceInputs` carries no working tree, so the liveness leg must read the branch at the same repo root the render does (`ci.ts`, *The branch is the repo's*) or the two readers name different runs. The agent writes the stamp as it writes a cursor, so the rendered block must name the run it would stamp."
   },
   {
+    "tag": "CI-LANE-SHED-FRAMES-BY-THE-DECLARED-JOB-NAME",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/ci.ts",
+          "description": "the frame the shed strips is keyed by the lane's declared job name, with the timestamp field optional"
+        },
+        {
+          "path": "tests/harnessCi.test.ts",
+          "description": "the shed over a forge line framed without a timestamp, and over one framed around an empty message"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`FORGE_FRAMING` requires the timestamp field, so every forge line framed without one keeps its whole `job\\tstep\\t` prefix — and a framed empty line survives the drop, spending the budget",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "CI lanes as a findings source"
+    },
+    "acceptance": "a failing lane's rendered log carries no forge decoration on any line, and a line the forge framed around nothing costs no budget; the drain reads failing titles from the head of the log rather than trimming them away.",
+    "tests": [
+      "the shed strips the forge's frame from a log line the job name frames without a timestamp",
+      "the shed drops a log line the forge framed around an empty message"
+    ],
+    "pins": [],
+    "notes": "Lane-observed on run 35008214078: ~380 tail lines rendered as `windows\\tRun pnpm test\\t…`, many holding nothing but the prefix, while 1160 head lines — carrying three reds' titles — were trimmed. The job name is a fact the lane declared (`CiLane.job`), so the frame is read, not guessed (`engine-boundary.md`, *Told, not inferred*); a bare two-field strip would eat the leading columns of any tab-carrying test output."
+  },
+  {
+    "tag": "FORGE-STUB-ANSWERS-BEFORE-THE-HOSTS-OWN-CLI",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessCi.test.ts",
+          "description": "`plantForge` puts the stub's dir on a PATH the host's own forge CLI is not on, so the direct spawn reaches the stub or nothing"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`plantForge` prepends its dir but leaves the host's PATH behind it, so on a host whose real `gh` the direct spawn can reach, five cases read the forge instead of the stub",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "win32 is a supported host"
+    },
+    "acceptance": "every lane-reader case is answered by the planted stub on every host, and the vacuity pins on the stub's call count hold for the stub's own invocations rather than for a CLI the fixture never planted.",
+    "tests": [],
+    "pins": [
+      "every lane-reader case reads its planted forge stub, with the host's own forge CLI off PATH"
+    ],
+    "notes": "Lane-observed: the `refuses` case rendered the real `gh`'s GH_TOKEN message, and the other four saw `calls().length === 0`. On win32 the stub is a `.cmd`, which a direct spawn skips; the search then walks on to the host's `gh.exe` further down PATH. The helper's own doc comment already states the isolation this breaks, and the absent-CLI case already shows the shape — PATH stripped to a single dir, the launcher naming `process.execPath` absolutely."
+  },
+  {
+    "tag": "DENIAL-IS-STRUCTURAL-NOT-A-PERMISSION-BIT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/helpers/denial.ts",
+          "description": "the suite's denial primitive: a plain file where the code path reads a directory, a directory where it writes a file"
+        },
+        {
+          "path": "tests/denial.test.ts",
+          "description": "the helper's own cases"
+        }
+      ],
+      "edit": [
+        {
+          "path": "tests/friction.test.ts",
+          "description": "the frictionCountLine denial case onto the helper"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "the hibernation friction-line denial case onto the helper"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "eight denial cases — friction dir, jobs root, awake dir, pending.json, pidfile — onto the helper"
+        },
+        {
+          "path": "tests/cliJobVerbs.test.ts",
+          "description": "the friction-wording and null-awake denial cases onto the helper"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the merging-dir denial case onto the helper"
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "the unwritable-config case onto the helper"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`chmod(dir, 0o000)` is the suite's denial primitive and it denies nothing on win32, so a dozen loud-or-nothing refusal cases read as verified where they were never exercised",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "win32 is a supported host"
+    },
+    "acceptance": "every denial case with a structural substitute denies by shape rather than by a permission bit, so it runs on both hosts and survives a root-run; the moved titles stay green on posix and stop reading as green-over-nothing on win32.",
+    "tests": [],
+    "pins": [
+      "a structurally denied directory fails a readdir with a non-ENOENT error",
+      "a structurally denied file fails a write with a non-ENOENT error"
+    ],
+    "notes": "Ruled in the inbox (win32 lane subject); the fact is `.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*. `priorAttempts.test.ts` states the precedent and its reason at the site; `PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED` lands that one site's own fix, and adopts this helper if it ships second. Sites with no structural substitute are not moved here — see `A-POSIX-ONLY-CASE-DECLARES-ITS-HOST`."
+  },
+  {
+    "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "DENIAL-IS-STRUCTURAL-NOT-A-PERMISSION-BIT"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/hostDeclarations.test.ts",
+          "description": "the declared-host list with a reason each, and the scan holding the suite to it"
+        }
+      ],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the readdir-succeeds/stat-fails friction arms declare their host"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "the same arm under `flume friction --help`"
+        },
+        {
+          "path": "tests/Baton.test.ts",
+          "description": "the symlink-loop ELOOP case declares its host"
+        },
+        {
+          "path": "tests/harnessRunner.test.ts",
+          "description": "the declared-setup case drops the symlinked `node_modules` and declares its host"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the EBUSY-survives-removal case declares its host"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the cases with no structural substitute — a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, an EBUSY removal — still red the win32 lane on their fixture rather than on a defect",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "win32 is a supported host"
+    },
+    "acceptance": "every case whose subject is POSIX error semantics names its host and the reason it skips elsewhere, so the win32 lane's remaining reds are engine or fixture defects and nothing skips silently.",
+    "tests": [],
+    "pins": [
+      "no case in tests/ denies with a permission bit outside the declared-host list",
+      "every declared-host case carries the reason it cannot run on the other host"
+    ],
+    "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do, so the symlink goes whatever the host ruling."
+  },
+  {
+    "tag": "LONG-PATH-FIXTURES-COMPOSE-THROUGH-THE-NAMESPACED-JOIN",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/job.test.ts",
+          "description": "the two deep-nest fixtures build and run git through the namespaced join the cases themselves pin"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the long pendingPath fixture, same"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the three win32 total-path cases nest their tree with a bare `join` and then run git in it, so the fixture hits the very limit the case exists to prove the engine clears",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "win32 is a supported host"
+    },
+    "acceptance": "each long-path case builds its fixture through `namespacedJoin` and reaches the engine call it names on win32, so the lane's verdict on these three is the engine's and not the fixture's.",
+    "tests": [],
+    "pins": [
+      "jobRm finds and removes a job whose dir nests past win32's ~260-char limit",
+      "jobNew doesn't misread an existing chain.ts or seedDir as absent when configDir/seedDir nests past win32's ~260-char limit",
+      "readPending/readPendingTolerant/commitPendingUpdate don't misread an existing or writable pending.json as absent when pendingPath exceeds win32's ~260-char limit"
+    ],
+    "notes": "Lane-observed: all three failed `spawn git ENOENT`, which is win32 refusing a cwd past the limit rather than a missing git. The idiom is the one the section names and the cases already exercise on the engine side. `job new` pins `core.longpaths` repo-locally on win32; a fixture that inits its own repo wants the same."
+  },
+  {
     "tag": "PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED",
     "gate": {
       "kind": "open"
@@ -72,6 +278,39 @@
     "pins": [
       "readAll refuses when a plain file sits at the prior-attempts root"
     ],
-    "notes": "Lane-observed: `readAll refuses when the prior-attempts dir is present but unreadable` resolved `Map{}` on windows-latest where POSIX raises ENOTDIR. The doc comment on readAll already names this exact degradation as the one it refuses to make. No `tests[]`: the errno split is unreproducible on a POSIX base, so the windows lane's own title is the verification (`spec/cli.md`, *win32 is a supported host*). Sibling ENOENT-means-absent arms in src/job.ts are not yet lane-evidenced."
+    "notes": "Lane-observed twice: `readAll refuses when the prior-attempts dir is present but unreadable` resolved `Map{}` on windows-latest where POSIX raises ENOTDIR. The doc comment on readAll already names this exact degradation as the one it refuses to make. No `tests[]`: the errno split is unreproducible on a POSIX base, so the windows lane's own title is the verification (`spec/cli.md`, *win32 is a supported host*). Sibling ENOENT-means-absent arms in src/job.ts are not yet lane-evidenced."
+  },
+  {
+    "tag": "TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "the repo scan's tree list gains `tests/`; the standing pins retitle to the three trees the carve-out now names"
+        },
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "the head comment names the carve-out's three trees"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the comment-citation scan judges `src/` and `harness/` only, so the nine `tests/` citations of a rule page — three by section name — stand silently through a rename",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "a citation in a `tests/` comment resolves against the declarations the three trees hold and the working tree, so a deleted symbol or a renamed page reds the suite rather than leaving its citations standing.",
+    "tests": [],
+    "pins": [
+      "every backticked identifier in a src/, harness/ or tests/ comment names a declaration those trees hold",
+      "the repo citation pin judges the repo-relative path citations tests/ comments carry"
+    ],
+    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`, and the existing pin titles name two trees, so they retitle in the same commit. Whatever citations the widen turns up dangling are repaired here — the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix beside the two standing ones."
   }
 ]
