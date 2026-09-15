@@ -292,6 +292,63 @@ it("flume-harness init leaves the repository untouched when the consumer manifes
 });
 
 /**
+ * The refusal's second shape. A manifest that parses fine but is not a JSON
+ * object — `null`, an array, a bare scalar — cannot have `dependencies` read
+ * off it either, so it is the same unresolved input wearing a `TypeError`
+ * instead of a `SyntaxError`, and it refuses in the same pre-write phase.
+ *
+ * Every arm of that branch gets a fixture: `null` is the one that reached
+ * `pkg["dependencies"]` and threw bare before the refusal moved forward, and
+ * an array is the arm that would not throw at all — `dependencies` is simply
+ * absent on it, so a dropped `Array.isArray` check writes the whole adoption
+ * and then silently hangs a dependency field off a JSON list.
+ *
+ * Hand-authored, for the reason the unparseable pair above is (*A seam gate
+ * reads what the real writer wrote*, last bullet).
+ */
+const NON_OBJECT_MANIFESTS = ["null", "[]", '"consumer"', "42"] as const;
+
+it("flume-harness init refuses a consumer package.json that parses to a non-object before writing anything", async () => {
+  // Non-vacuity, and the line between this case and the unparseable pair:
+  // each fixture really does parse, and really is not an object once it has.
+  expect(NON_OBJECT_MANIFESTS.length).toBeGreaterThan(0);
+  for (const source of NON_OBJECT_MANIFESTS) {
+    const parsed: unknown = JSON.parse(source);
+    expect(typeof parsed !== "object" || parsed === null || Array.isArray(parsed)).toBe(
+      true,
+    );
+  }
+
+  const gitignore = "node_modules/\ndist/\n";
+  for (const [index, source] of NON_OBJECT_MANIFESTS.entries()) {
+    // A bay of its own per fixture: init writing anything for one shape must
+    // not be mistaken for the next shape's tree being dirty.
+    const adopter = join(repoRoot, `non-object-${index}`);
+    await mkdir(adopter, { recursive: true });
+    const manifestPath = join(adopter, "package.json");
+    await writeFile(join(adopter, ".gitignore"), gitignore, "utf8");
+    await writeFile(manifestPath, source, "utf8");
+
+    const thrown = await harnessInit({ repoRoot: adopter }).then(
+      () => undefined,
+      (reason: unknown) => reason,
+    );
+
+    // Flume's own voice naming the file, not a `TypeError` from the write
+    // that would have read `dependencies` off it.
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain("flume-harness init");
+    expect((thrown as Error).message).toContain(manifestPath);
+
+    // And the refusal came before the first byte, exactly as the unparseable
+    // case's does: no state root, and the consumer's two files untouched.
+    expect(existsSync(join(adopter, DEFAULT_STATE_ROOT))).toBe(false);
+    expect(await readFile(join(adopter, ".gitignore"), "utf8")).toBe(gitignore);
+    expect(await readFile(manifestPath, "utf8")).toBe(source);
+  }
+});
+
+/**
  * The reason the verb lives on a bin of its own (`spec/harness.md`,
  * *Adoption and upgrade*): the engine's verb set is closed, so `flume` gains
  * no adoption verb however convenient one would be. The import direction
