@@ -1011,3 +1011,45 @@ that only checks "the named path was staged" reads green on both sides.
 
 Same page, same reason as Part 1: three fixes have now each written their own
 prose for this, and `.claude/rules/platform-facts.md` is the human's.
+
+## `spec/cli.md` counts three install fixtures; CI installs against two (NEEDS AMENDMENT)
+
+Drained from `CI-POSIX-SMOKE-RUNS-THE-SHARED-SCRIPT`'s note; re-verified on
+disk this tick. `spec/cli.md:354-358`, under *Install acceptance is exercised,
+not asserted*, reads "All three fixtures CI installs the tarball against —
+`CHAIN_FIXTURE` in `scripts/smoke-install.mjs` (Windows lane), the POSIX
+consumer-install heredoc, and the POSIX second-reference-chain
+(backlog-groomer) heredoc …".
+
+Two of its claims are false as of `a201aef`. The POSIX consumer-install
+heredoc no longer exists — `.github/workflows/ci.yml:98` runs `node
+scripts/smoke-install.mjs --scratch …`, the same script `pnpm run
+smoke:install` drives on the Windows lane. So `CHAIN_FIXTURE`
+(`scripts/smoke-install.mjs:77`) is **both** lanes, not "(Windows lane)", and
+the fixtures are two: it and the backlog-groomer heredoc
+(`ci.yml:166`). The sentence still reads as current.
+
+Not fileable from here: `spec/` is the human's, and the bullet is not a
+heading, so no entry could carry a resolving `per` at it either way.
+
+**Options.**
+
+- **A — transcribe the count.** "Both fixtures … `CHAIN_FIXTURE` in
+  `scripts/smoke-install.mjs` (both lanes) and the POSIX second-reference-chain
+  (backlog-groomer) heredoc". One edit, true today, stale again the next time a
+  lane is added or dropped.
+- **B — state the property, drop the enumeration** (recommended). "Every
+  fixture CI installs the tarball against exports the factory form
+  `loadChainModule` requires", keeping the backlog-groomer's own clause (it
+  drives a real `wake` + `tick` and asserts the committed result), which is a
+  distinct claim rather than an enumeration item. Prefers the condition to the
+  era (`engineering.md`, *Narration is the ladder's bottom rung*) and survives
+  lane churn; costs the reader the inline pointer to where each fixture lives.
+
+**The arming gap behind it.** Nothing in the rotation arms on a `spec/` claim
+about `.github/**`: the retired-claim delta fires on a `spec/` deletion and
+widens the domain into `docs/` and `README.md`, so a CI change that strands a
+spec sentence arms nothing in either direction. Same class as *Nothing arms on
+a `docs/` claim that drifted out of `src/`* above, one layer up — resolving
+that one does not cover this one. Recorded here rather than opened as a
+sibling, since this instance closes with the amendment either way.
