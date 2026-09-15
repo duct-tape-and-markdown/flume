@@ -11,11 +11,26 @@
  * name appearing only in a doc comment is not an AST node and counts for
  * nothing.
  *
+ * The shipped surface is read from the **declaration emit** the build config
+ * produces, not from the sources it is built from (`engineering.md`, *A seam
+ * gate reads what the real writer wrote*): `tsc` is the writer of what a
+ * consumer imports, and a source annotation is at best a partial transcript of
+ * it. A `const` whose type is inferred carries no annotation to walk yet ships
+ * a full type, so reading the source drops it silently. This scan runs the
+ * real declaration emit in memory and walks its output.
+ *
+ * Two alphabets meet here, and each site says which it is in. A **position**
+ * — and the type it names — is cited in the emit (`dist/src/….d.ts`), because
+ * an inferred annotation has a line there and nowhere else. Everything a
+ * reader acts on by module — the entry modules, the judged exports, the
+ * residue — is folded back and cited in the sources, because that is where an
+ * export is deleted and where the consumers that earn one live.
+ *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
 import { readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 import ts from "typescript";
 
@@ -28,10 +43,10 @@ export interface ExportScanRequest {
   /** Absolute path to the package root — the directory holding the manifest. */
   readonly root: string;
   /**
-   * The tsconfig whose file list *is* the shipped surface. Its `outDir` and
-   * `rootDir` also fold the manifest's emitted `exports` targets back to the
-   * sources they are built from, so a third entry added to the map joins the
-   * roots with no edit here.
+   * The tsconfig whose file list *is* the shipped surface. The scan runs its
+   * declaration emit, so the walk reads what a consumer imports. Its `outDir`
+   * and `rootDir` fold each emitted declaration back to the source it is built
+   * from, which is how the export verdicts below reach source coordinates.
    */
   readonly buildConfig: string;
   /**
@@ -44,17 +59,25 @@ export interface ExportScanRequest {
   readonly manifest?: string;
 }
 
-/** One exported symbol of one shipped module. */
+/** One exported symbol of one shipped module, or one position it carries. */
 export interface ExportSite {
-  /** Module path, relative to `root` and in posix form. */
+  /**
+   * Module path, relative to `root` and in posix form — an emitted
+   * declaration for the shipped-surface sites, a source for the export
+   * verdicts.
+   */
   readonly module: string;
   readonly name: string;
-  /** 1-based line of the symbol's declaration. */
+  /** 1-based line of the symbol's declaration, in that module. */
   readonly line: number;
 }
 
 export interface ExportScan {
-  /** The shipped modules the manifest's `exports` map names, relative to `root`. */
+  /**
+   * The shipped modules the manifest's `exports` map names, relative to
+   * `root`. The map names each as an emitted declaration; this is that target
+   * folded back to the source it is built from.
+   */
   readonly entryModules: readonly string[];
   /** Every export of every shipped module — the judged set. */
   readonly scanned: readonly ExportSite[];
@@ -116,10 +139,118 @@ const parseConfig = (path: string): ts.ParsedCommandLine => {
 };
 
 /**
+ * The build config's declaration emit, run for real and kept in memory: every
+ * emitted `.d.ts` by absolute path. Nothing reaches disk — the `dist/` that
+ * `pnpm build` leaves behind is not this scan's to create or to clobber.
+ *
+ * A skipped or diagnosed emit throws rather than yielding a short map: a scan
+ * over a partial surface would report every absence verdict green for having
+ * read nothing (`engineering.md`, *Loud or nothing*).
+ */
+const emitDeclarations = (
+  build: ts.ParsedCommandLine,
+  configPath: string,
+): ReadonlyMap<string, string> => {
+  const program = ts.createProgram({
+    rootNames: build.fileNames,
+    options: {
+      ...build.options,
+      noEmit: false,
+      declaration: true,
+      emitDeclarationOnly: true,
+      // The build writes these beside the emit for an editor to follow back;
+      // the scan reads the declarations themselves, so they are noise here.
+      declarationMap: false,
+      sourceMap: false,
+      inlineSourceMap: false,
+      inlineSources: false,
+    },
+  });
+  const emitted = new Map<string, string>();
+  const result = program.emit(
+    undefined,
+    (fileName, text) => {
+      emitted.set(resolve(fileName), text);
+    },
+    undefined,
+    /* emitOnlyDtsFiles */ true,
+  );
+  const errors = result.diagnostics.filter(
+    (d) => d.category === ts.DiagnosticCategory.Error,
+  );
+  if (result.emitSkipped || errors.length > 0) {
+    const detail =
+      errors
+        .map((d) => ts.flattenDiagnosticMessageText(d.messageText, " "))
+        .join("; ") || "emit skipped";
+    throw new Error(`${configPath}: declaration emit failed — ${detail}`);
+  }
+  if (emitted.size === 0) {
+    throw new Error(`${configPath}: declaration emit produced no declarations`);
+  }
+  return emitted;
+};
+
+/**
+ * A program over the emitted declarations, served from memory. The emit's
+ * relative specifiers (`./Agent.js`) resolve against the `outDir` layout a
+ * published consumer resolves them in, and whatever the emit reaches outside
+ * it — `lib`, `node_modules` — comes off disk through the base host.
+ *
+ * The `outDir` tree exists only in that map, so the host answers for its
+ * directories as well as its files: module resolution abandons a lookup whose
+ * containing directory it believes is absent, which would resolve every
+ * cross-module import to `unknown` and report an empty reach graph as a clean
+ * surface.
+ */
+const declarationProgram = (
+  emitted: ReadonlyMap<string, string>,
+  options: ts.CompilerOptions,
+): ts.Program => {
+  const opts: ts.CompilerOptions = {
+    ...options,
+    noEmit: true,
+    declaration: false,
+    declarationMap: false,
+    emitDeclarationOnly: false,
+    sourceMap: false,
+    allowImportingTsExtensions: false,
+  };
+  const dirs = new Set<string>();
+  for (const file of emitted.keys()) {
+    for (let dir = dirname(file); !dirs.has(dir); dir = dirname(dir)) {
+      dirs.add(dir);
+      if (dir === dirname(dir)) break;
+    }
+  }
+  const base = ts.createCompilerHost(opts, true);
+  const host: ts.CompilerHost = {
+    ...base,
+    fileExists: (fileName) =>
+      emitted.has(resolve(fileName)) || base.fileExists(fileName),
+    readFile: (fileName) =>
+      emitted.get(resolve(fileName)) ?? base.readFile(fileName),
+    directoryExists: (directoryName) =>
+      dirs.has(resolve(directoryName)) ||
+      (base.directoryExists?.(directoryName) ?? false),
+    getSourceFile: (fileName, languageVersion, onError, shouldCreate) => {
+      const text = emitted.get(resolve(fileName));
+      return text === undefined
+        ? base.getSourceFile(fileName, languageVersion, onError, shouldCreate)
+        : ts.createSourceFile(fileName, text, languageVersion, true);
+    },
+  };
+  return ts.createProgram({
+    rootNames: [...emitted.keys()],
+    options: opts,
+    host,
+  });
+};
+
+/**
  * Every string leaf of a conditional-`exports` subtree. Conditions nest
  * arbitrarily (`types`/`import`/`default`, and the sugar form where the value
- * is a bare string), and each leaf is an emitted artifact this scan folds back
- * to a source.
+ * is a bare string), and each leaf names an emitted artifact this scan holds.
  */
 const exportTargets = (node: unknown): string[] => {
   if (typeof node === "string") {
@@ -134,6 +265,10 @@ const exportTargets = (node: unknown): string[] => {
 /** Repo-relative, posix-separated — the alphabet every reported path uses. */
 const relPath = (root: string, path: string): string =>
   relative(root, path).split(/[\\/]/).join("/");
+
+/** Resolve an alias — a re-export — to the symbol it forwards. */
+const unalias = (checker: ts.TypeChecker, sym: ts.Symbol): ts.Symbol =>
+  sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
 
 /**
  * The declaration a symbol's site is reported from. An alias resolves to what
@@ -158,9 +293,9 @@ const siteOf = (
 };
 
 /**
- * A `private` member or one named by a `#name`. TypeScript emits neither's
- * type into the `.d.ts` — a private property declaration loses its
- * annotation entirely — so neither walk below treats one as public surface.
+ * A `private` member or one named by a `#name`. The emit keeps a private
+ * property's name and drops its type entirely, so neither walk below treats
+ * one as public surface.
  */
 const isPrivateMember = (node: ts.Node): boolean => {
   if (!ts.isClassElement(node) && !ts.isTypeElement(node)) return false;
@@ -197,13 +332,11 @@ export const formatUnnamableType = (found: UnnamableType): string =>
 /**
  * Scan a package's shipped modules for exports nothing earns.
  *
- * Reachability starts at the `exports` map's entry modules and expands through
- * **type positions only** — a type reference, a `typeof` query, an `import()`
- * type, a heritage clause — descending into namespace and interface members.
- * That is the graph the emitted `.d.ts` files actually expose, which is why
- * function bodies are skipped: a module-local helper a public method happens to
- * call is not public surface, and counting it would let the scan earn exports
- * on evidence a consumer can never see.
+ * Reachability starts at the `exports` map's entry declarations and expands
+ * through **type positions only** — a type reference, a `typeof` query, an
+ * `import()` type, a heritage clause — descending into namespace and interface
+ * members. Over the emit that restriction costs nothing: a `.d.ts` holds no
+ * function bodies to skip, so what the walk sees is what a consumer sees.
  *
  * The same walk carries a second, stricter verdict alongside it. Reachability
  * asks whether a consumer can *read* a type; `unnamable` asks whether one can
@@ -215,52 +348,75 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   const root = resolve(request.root);
   const build = parseConfig(join(root, request.buildConfig));
   const domain = parseConfig(join(root, request.programConfig));
+
+  const { outDir, rootDir } = build.options;
+  if (outDir === undefined || rootDir === undefined) {
+    throw new Error(
+      `${request.buildConfig} must state both outDir and rootDir: each emitted declaration folds back to its source through them`,
+    );
+  }
+
+  const emitted = emitDeclarations(build, request.buildConfig);
+  const emit = declarationProgram(emitted, build.options);
+  const emitChecker = emit.getTypeChecker();
+
   const program = ts.createProgram({
     rootNames: domain.fileNames,
     options: domain.options,
   });
   const checker = program.getTypeChecker();
 
-  const { outDir, rootDir } = build.options;
-  if (outDir === undefined || rootDir === undefined) {
-    throw new Error(
-      `${request.buildConfig} must state both outDir and rootDir: the exports map's emitted targets fold back to sources through them`,
-    );
-  }
-
   const manifest = JSON.parse(
     readFileSync(join(root, request.manifest ?? "package.json"), "utf8"),
   ) as { readonly exports?: unknown };
 
   /**
-   * An emitted target folded back to the source it is built from. `outDir` and
-   * `rootDir` are already absolute here (the config parser resolves them), so
-   * the fold is the same one `tsc` performed in the other direction.
+   * An emitted declaration folded back to the source it is built from —
+   * `outDir` and `rootDir` are already absolute here (the config parser
+   * resolves them), so the fold is the one `tsc` performed in reverse.
+   */
+  const sourceOf = (emittedPath: string): string =>
+    resolve(rootDir, relative(outDir, emittedPath)).replace(/\.d\.ts$/, ".ts");
+
+  /**
+   * The map's declaration targets, which are the roots. A `default` condition
+   * names the `.js` beside them, carrying no declarations of its own, so it
+   * folds onto the same entry rather than adding one.
    */
   const entryFiles = new Set(
-    exportTargets(manifest.exports).map((target) =>
-      resolve(rootDir, relative(outDir, resolve(root, target))).replace(
-        /\.d\.ts$|\.js$/,
-        ".ts",
-      ),
-    ),
+    exportTargets(manifest.exports)
+      .map((target) => resolve(root, target).replace(/\.js$/, ".d.ts"))
+      .filter((path) => emitted.has(path)),
   );
+  if (entryFiles.size === 0) {
+    throw new Error(
+      `no exports-map target of ${request.manifest ?? "package.json"} names a declaration ${request.buildConfig} emits`,
+    );
+  }
 
-  const sourceFileAt = (path: string): ts.SourceFile => {
+  const emittedFileAt = (path: string): ts.SourceFile => {
+    const sf = emit.getSourceFile(path);
+    if (!sf) {
+      throw new Error(`${relPath(root, path)} is not in the declaration emit`);
+    }
+    return sf;
+  };
+
+  /** The exports of one emitted declaration. */
+  const emitExports = (path: string): readonly ts.Symbol[] => {
+    const modSym = emitChecker.getSymbolAtLocation(emittedFileAt(path));
+    return modSym ? emitChecker.getExportsOfModule(modSym) : [];
+  };
+
+  /** The exports of one source module, in the consumer-wide program. */
+  const sourceExports = (path: string): readonly ts.Symbol[] => {
     const sf = program.getSourceFile(path);
     if (!sf) {
       throw new Error(
         `${relPath(root, path)} is not in the program ${request.programConfig} describes`,
       );
     }
-    return sf;
-  };
-
-  const unalias = (sym: ts.Symbol): ts.Symbol =>
-    sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
-
-  const moduleExports = (path: string): readonly ts.Symbol[] => {
-    const modSym = checker.getSymbolAtLocation(sourceFileAt(path));
+    const modSym = checker.getSymbolAtLocation(sf);
     return modSym ? checker.getExportsOfModule(modSym) : [];
   };
 
@@ -269,14 +425,14 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   const frontier: ts.Symbol[] = [];
   const reach = (sym: ts.Symbol | undefined): void => {
     if (!sym) return;
-    const target = unalias(sym);
+    const target = unalias(emitChecker, sym);
     if (reachable.has(target)) return;
     reachable.add(target);
     frontier.push(target);
   };
 
   for (const entry of entryFiles) {
-    for (const sym of moduleExports(entry)) reach(sym);
+    for (const sym of emitExports(entry)) reach(sym);
   }
 
   for (let sym = frontier.pop(); sym !== undefined; sym = frontier.pop()) {
@@ -284,21 +440,21 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
       // A module symbol on the frontier is an `export * as ns` — the whole
       // module is public under a name, so every one of its exports is reached.
       if (ts.isSourceFile(decl)) {
-        for (const nested of checker.getExportsOfModule(sym)) reach(nested);
+        for (const nested of emitChecker.getExportsOfModule(sym)) reach(nested);
         continue;
       }
       const visit = (node: ts.Node): void => {
-        // Neither a body nor a private member is public surface — neither
-        // reaches a `.d.ts` in a form a consumer can read.
-        if (ts.isBlock(node) || isPrivateMember(node)) return;
+        // A private member is not public surface: the emit carries no type for
+        // one, so nothing it would have named is readable.
+        if (isPrivateMember(node)) return;
         if (ts.isTypeReferenceNode(node)) {
-          reach(checker.getSymbolAtLocation(node.typeName));
+          reach(emitChecker.getSymbolAtLocation(node.typeName));
         } else if (ts.isTypeQueryNode(node)) {
-          reach(checker.getSymbolAtLocation(node.exprName));
+          reach(emitChecker.getSymbolAtLocation(node.exprName));
         } else if (ts.isImportTypeNode(node) && node.qualifier) {
-          reach(checker.getSymbolAtLocation(node.qualifier));
+          reach(emitChecker.getSymbolAtLocation(node.qualifier));
         } else if (ts.isExpressionWithTypeArguments(node)) {
-          reach(checker.getSymbolAtLocation(node.expression));
+          reach(emitChecker.getSymbolAtLocation(node.expression));
         }
         ts.forEachChild(node, visit);
       };
@@ -307,7 +463,7 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   }
 
   // --- types the exports map reaches but cannot hand out ------------------
-  // Reachability above proves a type is *readable*: it lands in the emitted
+  // Reachability above proves a type is *readable*: it sits in the emitted
   // `.d.ts` and hover text shows it. It does not prove the type is
   // *nameable* — a consumer writing `const o: RenderOptions = …` needs an
   // import specifier, and only an entry module's own export list supplies
@@ -317,23 +473,28 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   //
   // A position is an annotation a consumer reads but may not be able to
   // write — a function's parameters and return, and a property's own type.
-  // Scope is every position a reached symbol carries into the `.d.ts`: the
-  // reached function or variable itself, and the members of a reached type.
-  // `Chain.worktreesBase` names a parameter type and `FlumeApi.paths` a
-  // property type, each of which a chain author must be able to annotate
-  // exactly as `renderPrompt`'s parameter demands.
+  // Scope is every position a reached symbol carries: the reached function or
+  // variable itself, and the members of a reached type. `Chain.worktreesBase`
+  // names a parameter type and `FlumeApi.paths` a property type, each of which
+  // a chain author must be able to annotate exactly as `renderPrompt`'s
+  // parameter demands.
+  //
+  // Reading the emit rather than the sources is what makes that scope hold: a
+  // `const` the source leaves un-annotated still ships an annotation, written
+  // by `tsc`, and a walk over source nodes finds none and judges nothing.
   //
   // Three exclusions, each for the reason the verdict exists. A `private`
-  // member carries no annotation into the `.d.ts` at all. A namespace member
-  // is named through its namespace rather than through an import specifier.
-  // And a type alias's own type node is a *second name* for what it points
-  // at rather than a position naming it — importing the alias imports the
-  // type — so the walk descends through one without reporting it.
+  // member carries no annotation into the emit at all. A namespace member is
+  // named through its namespace rather than through an import specifier. And
+  // a type alias's own type node is a *second name* for what it points at
+  // rather than a position naming it — importing the alias imports the type —
+  // so the walk descends through one without reporting it.
   const entryExported = new Set<ts.Symbol>();
   for (const entry of entryFiles) {
-    for (const sym of moduleExports(entry)) entryExported.add(unalias(sym));
+    for (const sym of emitExports(entry)) {
+      entryExported.add(unalias(emitChecker, sym));
+    }
   }
-  const shippedFiles = new Set(build.fileNames.map((f) => resolve(f)));
 
   /**
    * One position the walk found, under the name a consumer reads it by —
@@ -414,13 +575,14 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   }
 
   /**
-   * Every position one reached declaration carries. A `function` statement is
-   * a signature; so is `const f = (…) => …`, while any other annotation a
-   * `const` carries is a property position. An interface or a class carries
-   * its members' positions instead of one of its own, and so does a type
-   * alias — except that the alias's own type node is descended into rather
-   * than reported, being the name it was reached under. A namespace and an
-   * enum carry none the map hands out by name.
+   * Every position one emitted declaration carries. A `function` is a
+   * signature; so is a `const` the emit typed with a function type, while any
+   * other type it carries is a property position — and a `const` the emit gave
+   * a literal initializer instead of a type names nothing at all. An interface
+   * or a class carries its members' positions rather than one of its own, and
+   * so does a type alias — except that the alias's own type node is descended
+   * into rather than reported, being the name it was reached under. A
+   * namespace and an enum carry none the map hands out by name.
    */
   const positionsOf = (
     decl: ts.Declaration,
@@ -431,13 +593,6 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
       out.push({ kind: "signature", node: decl, name });
     } else if (ts.isVariableDeclaration(decl)) {
       if (decl.type) fromAnnotation(decl.type, name, out);
-      if (
-        out.length === 0 &&
-        decl.initializer &&
-        ts.isFunctionLike(decl.initializer)
-      ) {
-        out.push({ kind: "signature", node: decl.initializer, name });
-      }
     } else if (ts.isInterfaceDeclaration(decl) || ts.isClassDeclaration(decl)) {
       fromMembers(decl.members, name, out);
     } else if (ts.isTypeAliasDeclaration(decl)) {
@@ -455,7 +610,7 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     for (const decl of owner.declarations ?? []) {
       if (ts.isSourceFile(decl)) continue;
       const file = decl.getSourceFile();
-      if (!shippedFiles.has(resolve(file.fileName))) continue;
+      if (!emitted.has(resolve(file.fileName))) continue;
       if (inNamespace(decl)) continue;
 
       for (const found of positionsOf(decl, owner.getName())) {
@@ -469,13 +624,13 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
 
         const named = (node: ts.Node): void => {
           if (ts.isTypeReferenceNode(node)) {
-            const sym = checker.getSymbolAtLocation(node.typeName);
-            const target = sym ? unalias(sym) : undefined;
-            // Where the named type is declared in the shipped tree. A type
-            // declared nowhere the package ships is the consumer's own or the
-            // lib's, and nameable already.
+            const sym = emitChecker.getSymbolAtLocation(node.typeName);
+            const target = sym ? unalias(emitChecker, sym) : undefined;
+            // Where the named type is declared inside the emit. One declared
+            // outside it is the consumer's own or a dependency's, and nameable
+            // already.
             const shipped = (target?.declarations ?? []).filter((d) =>
-              shippedFiles.has(resolve(d.getSourceFile().fileName)),
+              emitted.has(resolve(d.getSourceFile().fileName)),
             );
             // A type parameter is declared by this position's own scope and
             // named by writing it; a namespace member is named through its
@@ -515,6 +670,26 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     }
   }
 
+  /**
+   * Which names of which source module the emit walk reached, folded back
+   * through `outDir`/`rootDir`. The export verdicts below are cited and fixed
+   * in the sources, so reachability crosses back the way the emit came.
+   */
+  const reachedNames = new Map<string, Set<string>>();
+  for (const sym of reachable) {
+    for (const decl of sym.declarations ?? []) {
+      const path = resolve(decl.getSourceFile().fileName);
+      if (!emitted.has(path)) continue;
+      const source = sourceOf(path);
+      let names = reachedNames.get(source);
+      if (!names) {
+        names = new Set<string>();
+        reachedNames.set(source, names);
+      }
+      names.add(sym.getName());
+    }
+  }
+
   // --- referenced from some other module ---------------------------------
   // One pass over every non-declaration source: each identifier that resolves
   // to a symbol records the file it was read from. A namespace import's
@@ -528,7 +703,7 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
       if (ts.isIdentifier(node)) {
         const sym = checker.getSymbolAtLocation(node);
         if (sym) {
-          const target = unalias(sym);
+          const target = unalias(checker, sym);
           let files = referencedFrom.get(target);
           if (!files) {
             files = new Set<string>();
@@ -550,16 +725,21 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
 
   for (const path of build.fileNames.map((f) => resolve(f))) {
     const module = relPath(root, path);
-    for (const exported of moduleExports(path)) {
-      const sym = unalias(exported);
+    const reached = reachedNames.get(path) ?? new Set<string>();
+    for (const exported of sourceExports(path)) {
+      const sym = unalias(checker, exported);
       // A barrel forwarding someone else's symbol is not declaring an export
       // of its own; the declaring module is where that one is judged.
-      if (!sym.declarations?.some((d) => resolve(d.getSourceFile().fileName) === path)) {
+      if (
+        !sym.declarations?.some(
+          (d) => resolve(d.getSourceFile().fileName) === path,
+        )
+      ) {
         continue;
       }
       const site = siteOf(root, sym, module);
       scanned.push(site);
-      if (reachable.has(sym)) {
+      if (reached.has(sym.getName())) {
         reachedSites.push(site);
       } else if (
         [...(referencedFrom.get(sym) ?? [])].some((file) => file !== path)
@@ -572,7 +752,7 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   }
 
   return {
-    entryModules: [...entryFiles].map((f) => relPath(root, f)),
+    entryModules: [...entryFiles].map((f) => relPath(root, sourceOf(f))),
     scanned,
     reachable: reachedSites,
     referenced: referencedSites,

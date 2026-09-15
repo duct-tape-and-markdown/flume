@@ -8,6 +8,12 @@
  * half — a type the shipped signature and property positions name that no
  * entry module exports, so the hover text shows a name no `import` can carry.
  *
+ * Both are read off the **declaration emit** the build config produces: the
+ * scan runs the real writer and walks what it wrote (`engineering.md`, *A seam
+ * gate reads what the real writer wrote*), which is why every position below
+ * is cited at a `dist/…d.ts` line. Modules stay in source coordinates, being
+ * what a reader opens.
+ *
  * Each is asserted over a fixture as well as over this tree, because a pin
  * asserting an absence needs its detector shown working. The fixture arms
  * drive the scanner over a package whose residue and whose unnamable
@@ -58,9 +64,9 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 /**
  * A miniature package with the same shape as this one: an `exports` map naming
- * an emitted entry, a build config that folds that entry back to its source,
- * and a wider config adding a consumer module outside the shipped surface —
- * this repo's `tests/` in miniature.
+ * an emitted entry, a build config that emits it, and a wider config adding a
+ * consumer module outside the shipped surface — this repo's `tests/` in
+ * miniature.
  *
  * Its shipped exports cover every way one is earned and the one way none is.
  * `publicEntry` sits on the map; `Shipped` is off the map but reachable
@@ -87,6 +93,13 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * `Box.Lid.open` is a namespace member, and the `Box.Key` it names is written
  * through the namespace, as is the `Box.Lid` that `Box.lid` holds — the
  * exclusion reads from both sides, the position's and the named type's.
+ *
+ * `inferredSurface` is the case a source walk cannot see at all: an entry
+ * export with **no type annotation anywhere in the source**, whose whole type
+ * `tsc` writes into the emit. Its two properties split the verdict the way
+ * `Container`'s do — `named` holds a `Named` the entry module re-exports,
+ * `seed` an `Inferred` it does not — so the arm that reads it discriminates
+ * rather than flagging a position it merely reached.
  */
 const FIXTURE_FILES: Readonly<Record<string, string>> = {
   "package.json": JSON.stringify({
@@ -120,7 +133,7 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     include: ["lib/**/*"],
   }),
   "lib/index.ts": [
-    `export { publicEntry } from "./surface.js";`,
+    `export { inferredSurface, publicEntry } from "./surface.js";`,
     `export type { Container, Guarded } from "./surface.js";`,
     `export type { Box, Named } from "./shapes.js";`,
     ``,
@@ -146,6 +159,10 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `  readonly held: number;`,
     `}`,
     ``,
+    `export interface Inferred {`,
+    `  readonly deep: number;`,
+    `}`,
+    ``,
     `export interface Box {`,
     `  readonly lid: Box.Lid;`,
     `}`,
@@ -161,7 +178,15 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     ``,
   ].join("\n"),
   "lib/surface.ts": [
-    `import type { Box, Held, Hushed, Membered, Named, Shipped } from "./shapes.js";`,
+    `import type {`,
+    `  Box,`,
+    `  Held,`,
+    `  Hushed,`,
+    `  Inferred,`,
+    `  Membered,`,
+    `  Named,`,
+    `  Shipped,`,
+    `} from "./shapes.js";`,
     ``,
     `export const publicEntry = (s: Shipped, k: Named): number =>`,
     `  s.n + k.label.length;`,
@@ -177,6 +202,13 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `    return h.h;`,
     `  }`,
     `}`,
+    ``,
+    `const seed: Inferred = { deep: 1 };`,
+    `const label: Named = { label: "l" };`,
+    ``,
+    `// No annotation: the source says nothing about this export's type and the`,
+    `// emit says all of it. A walk over source nodes finds no position here.`,
+    `export const inferredSurface = { seed, named: label };`,
     ``,
     `export const testOnly = (n: number): number => n * 2;`,
     ``,
@@ -216,9 +248,10 @@ afterAll(async () => {
 });
 
 /**
- * One scan per package, shared by the arms that read it. A scan builds a whole
- * TypeScript program, so running one per assertion would pay that cost four
- * times over to reach the same four verdicts.
+ * One scan per package, shared by the arms that read it. A scan runs a whole
+ * declaration emit and builds two TypeScript programs over it, so running one
+ * per assertion would pay that cost six times over to reach the same six
+ * verdicts.
  */
 const once = (build: () => ExportScan): (() => ExportScan) => {
   let memo: ExportScan | undefined;
@@ -255,16 +288,18 @@ it("the export scan flags an export that no other module references and the expo
     "Guarded",
     "Held",
     "Hushed",
+    "Inferred",
     "Membered",
     "Named",
     "Shipped",
+    "inferredSurface",
     "internal",
     "publicEntry",
     "residue",
     "testOnly",
   ]);
 
-  expect(scan.unearned.map(formatSite)).toEqual(["lib/surface.ts:22 residue"]);
+  expect(scan.unearned.map(formatSite)).toEqual(["lib/surface.ts:37 residue"]);
 
   // Both earning arms fired, each over the exports it belongs to — so the
   // single finding above is a discrimination, not a scan that flagged
@@ -276,9 +311,11 @@ it("the export scan flags an export that no other module references and the expo
     "Container",
     "Guarded",
     "Held",
+    "Inferred",
     "Membered",
     "Named",
     "Shipped",
+    "inferredSurface",
     "publicEntry",
   ]);
   expect(scan.referenced.map((s) => s.name).sort()).toEqual([
@@ -297,7 +334,7 @@ it("the export scan flags a signature type no entry module exports", () => {
   // was never walked at all.
   expect(scan.entryModules).toEqual(["lib/index.ts"]);
   expect(scan.signatures.map(formatSite)).toContain(
-    "lib/surface.ts:3 publicEntry",
+    "dist/lib/surface.d.ts:2 publicEntry",
   );
   expect(scan.reachable.map((s) => s.name).sort()).toContain("Shipped");
 
@@ -306,7 +343,9 @@ it("the export scan flags a signature type no entry module exports", () => {
   // verdicts — the arm discriminates rather than flagging what it walked.
   expect(
     scan.unnamable.filter(isTopLevelSignature).map(formatUnnamableType),
-  ).toEqual(["lib/surface.ts:3 publicEntry names lib/shapes.ts:1 Shipped"]);
+  ).toEqual([
+    "dist/lib/surface.d.ts:2 publicEntry names dist/lib/shapes.d.ts:1 Shipped",
+  ]);
 });
 
 it("the export scan walks a member signature and skips a private member and a namespace member", () => {
@@ -317,9 +356,9 @@ it("the export scan walks a member signature and skips a private member and a na
   // holding only the top-level function — would make every exclusion below
   // read green for having walked nothing.
   expect(scan.entryModules).toEqual(["lib/index.ts"]);
-  expect(scan.signatures.map(formatSite)).toEqual([
-    "lib/surface.ts:3 publicEntry",
-    "lib/surface.ts:7 Container.reach",
+  expect(scan.signatures.map(formatSite).sort()).toEqual([
+    "dist/lib/surface.d.ts:2 publicEntry",
+    "dist/lib/surface.d.ts:4 Container.reach",
   ]);
 
   // The member signature's parameter type is the finding, exactly as a
@@ -327,7 +366,7 @@ it("the export scan walks a member signature and skips a private member and a na
   expect(
     scan.unnamable.filter(isMemberSignature).map(formatUnnamableType),
   ).toEqual([
-    "lib/surface.ts:7 Container.reach names lib/shapes.ts:9 Membered",
+    "dist/lib/surface.d.ts:4 Container.reach names dist/lib/shapes.d.ts:7 Membered",
   ]);
 
   // Both exclusions, read off the types they would otherwise have flagged:
@@ -347,27 +386,92 @@ it("the export scan flags a property type no entry module exports", () => {
   // `unnamable` below for having walked nothing at all.
   expect(scan.entryModules).toEqual(["lib/index.ts"]);
   expect(scan.properties.map(formatSite).sort()).toEqual([
-    "lib/shapes.ts:10 Membered.m",
-    "lib/shapes.ts:18 Held.held",
-    "lib/shapes.ts:2 Shipped.n",
-    "lib/shapes.ts:22 Box.lid",
-    "lib/shapes.ts:6 Named.label",
-    "lib/surface.ts:8 Container.boxed",
-    "lib/surface.ts:9 Container.held",
+    "dist/lib/shapes.d.ts:14 Held.held",
+    "dist/lib/shapes.d.ts:17 Inferred.deep",
+    "dist/lib/shapes.d.ts:2 Shipped.n",
+    "dist/lib/shapes.d.ts:20 Box.lid",
+    "dist/lib/shapes.d.ts:5 Named.label",
+    "dist/lib/shapes.d.ts:8 Membered.m",
+    "dist/lib/surface.d.ts:12 inferredSurface.seed",
+    "dist/lib/surface.d.ts:13 inferredSurface.named",
+    "dist/lib/surface.d.ts:5 Container.boxed",
+    "dist/lib/surface.d.ts:6 Container.held",
   ]);
 
   // `Box` is re-exported by `lib/index.ts` and so `Container.boxed` is
   // silent; `Held` is not, and is the finding. Same container, same
   // reachability, opposite verdicts — the arm discriminates rather than
   // flagging every property it walked.
-  expect(scan.unnamable.filter(isProperty).map(formatUnnamableType)).toEqual([
-    "lib/surface.ts:9 Container.held names lib/shapes.ts:17 Held",
+  expect(
+    scan.unnamable
+      .filter(isProperty)
+      .filter((f) => f.position.name.startsWith("Container."))
+      .map(formatUnnamableType),
+  ).toEqual([
+    "dist/lib/surface.d.ts:6 Container.held names dist/lib/shapes.d.ts:13 Held",
   ]);
 
   // The namespace exclusion read from the named type's side rather than the
   // position's: `Box.lid` is an ordinary property of an ordinary interface,
   // and the `Box.Lid` it holds is written through the namespace.
   expect(scan.unnamable.map((f) => f.type.name)).not.toContain("Lid");
+});
+
+// --- what only the emit can see ------------------------------------------
+
+it("the export scan carries a property position for a reached export that carries no source annotation", () => {
+  const scan = repoScan();
+
+  // Vacuity guard: the map resolved and the walk carries property positions
+  // at all, so the three named below are absent-or-present on their own
+  // merits rather than for a surface the scan never opened.
+  expect([...scan.entryModules].sort()).toEqual([
+    "harness/index.ts",
+    "src/index.ts",
+  ]);
+  const walked = new Set(scan.properties.map((site) => site.name));
+  expect(walked.size).toBeGreaterThan(0);
+
+  // Three shapes whose type exists only because `tsc` wrote it down.
+  // `PendingEntryCore` and `DeclarationSchema` are `const`s the source leaves
+  // to inference; `TipClaimHeldError.refPath` is a constructor parameter
+  // property, which has no member declaration in the source at all. A walk
+  // over source nodes reads no position from any of the three.
+  for (const property of [
+    "PendingEntryCore",
+    "DeclarationSchema",
+    "TipClaimHeldError.refPath",
+  ]) {
+    expect(walked).toContain(property);
+  }
+});
+
+it("the export scan flags an unnamable type an export infers without a type annotation", () => {
+  const scan = fixtureScan();
+
+  // Vacuity guard: the inferred export's positions were walked, both of them,
+  // so the single finding below is a discrimination between them and not the
+  // one position the walk happened to reach.
+  expect(scan.entryModules).toEqual(["lib/index.ts"]);
+  expect(
+    scan.properties
+      .filter((site) => site.name.startsWith("inferredSurface."))
+      .map(formatSite)
+      .sort(),
+  ).toEqual([
+    "dist/lib/surface.d.ts:12 inferredSurface.seed",
+    "dist/lib/surface.d.ts:13 inferredSurface.named",
+  ]);
+
+  // `named` holds a `Named` the entry module re-exports and is silent;
+  // `seed` holds an `Inferred` it does not, and is the finding.
+  expect(
+    scan.unnamable
+      .filter((f) => f.position.name.startsWith("inferredSurface."))
+      .map(formatUnnamableType),
+  ).toEqual([
+    "dist/lib/surface.d.ts:12 inferredSurface.seed names dist/lib/shapes.d.ts:16 Inferred",
+  ]);
 });
 
 // --- the pins ------------------------------------------------------------
