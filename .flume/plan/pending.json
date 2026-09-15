@@ -1,49 +1,12 @@
 [
   {
-    "tag": "FLUME-API-REPORTS-THE-STATE-ROOT-OFFSET",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        {
-          "path": "src/flumeApi.ts",
-          "description": "`api.paths` gains `stateRootRel`, absent when the root is outside the repo"
-        },
-        {
-          "path": "harness/chain.ts",
-          "description": "`repoRelativeStateRoot` reads the reported field; drop the `../src/Dispatcher.js` import"
-        },
-        {
-          "path": "examples/cascade-chain.ts",
-          "description": "plan slice fence roots at the reported offset, not the `.flume/` literal"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the chain-load bullet and the placement rule name `stateRootRel` for fences"
-        },
-        {
-          "path": "tests/chain.test.ts",
-          "description": "the reported offset and its absent case"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "cascade's fence under a relocated root; re-pin the roots-by-identity case"
-        }
-      ]
-    },
-    "summary": "api.paths carries no stateRootRel, so a chain roots a fence at the state root only by literal or hand-rolled relative()",
-    "per": { "path": "spec/chain.md", "section": "Per-run artifacts belong under `FLUME_DIR`" },
-    "acceptance": "A chain roots a fence or pathspec at the state root from `api.paths.stateRootRel` alone; no consumer in this repo derives the offset itself",
-    "tests": [
-      "buildFlumeApi reports the state root's repo-relative offset on api.paths.stateRootRel",
-      "api.paths.stateRootRel is absent when the state root resolves outside the repository",
-      "the cascade chain's plan fence follows a relocated state root"
-    ],
-    "notes": "Ruled at e01acd6, option 1 of the closed question. `computeStateRootRel` (src/Dispatcher.ts) already runs per tick for the gate and tick contexts — report that value, never a second derivation. The spec scopes identity-sameness to the three root values, so tests/examples.test.ts:932's whole-object `toBe` is build's to re-pin per root. Adopters: harness/chain.ts:641, cascade-chain.ts:589 — both refuse on an absent offset the way `repoRelativeStateRoot` already does."
-  },
-  {
     "tag": "EXAMPLE-PLAN-PROMPT-DIGEST-SPANS-RENDER-BLIND",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "examples/prompts/plan.md",
@@ -53,15 +16,20 @@
           "path": "tests/examples.test.ts",
           "description": "seed a corpus in the span-rooting scratch cwd; pin the refusal and the swallowed-status scan"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "Example plan prompt's corpus and tsc spans render empty-but-green when their command fails behind a pipe",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
     "acceptance": "Rendering examples/prompts/plan.md with no corpus root aborts the render; no shipped example span carries a fallback its pipeline cannot reach",
     "tests": [
       "the example plan template's corpus span fails the render when the corpus root is absent",
       "no shipped example prompt span carries a || fallback behind a pipe that swallows its status"
     ],
+    "pins": [],
     "notes": "Sites: examples/prompts/plan.md:20 (find behind head), :24 (|| true behind tail). Fork the note parked is already ruled — spec/prompt.md *Why: the measured transport facts* rejects per-span tolerance, naming both example chains' spans as digests whose failure means a blind tick. Consumer cost is deliberate: a cascade repo with no corpus now hard-fails tick one instead of planning blind. dash lacks pipefail and the engine spawns sh, so the guard is `test -d`, not a shell option."
   }
 ]
