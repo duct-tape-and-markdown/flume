@@ -22,12 +22,22 @@
  * `flumeDir`) where disk is read. The package hardcodes neither — a
  * consumer's state root is wherever its declaration sits.
  *
+ * **Which alphabet a leg answers in follows from which of the two it is
+ * for.** {@link recordDirs}, {@link notesDir} and {@link notePath} name what
+ * git and the fence name — a diff-tree line, a pathspec, a glob — so they
+ * slash-join on every host. {@link recordFiles} and {@link recordsPending}
+ * take the absolute state root and read disk, so they compose through
+ * `node:path` (`spec/cli.md`, *win32 is a supported host*, path discipline).
+ *
  * This module is the layout alone. What a record must *contain* — the title
  * line, whose tag it may carry, that a plan slice drains rather than writes
  * — belongs to the gate that reads these paths.
  */
 
 import { readdirSync } from "node:fs";
+import { join } from "node:path";
+
+import { namespacedJoin } from "../src/paths.js";
 
 /** The build-note directory's name under a state root. */
 const NOTES_REL = "plan/notes";
@@ -36,9 +46,10 @@ const NOTES_REL = "plan/notes";
  * The record directories' names under a state root, in the order
  * `.flume/PROTOCOL.md`, *Records: one file each* lists them: findings from
  * the field, then notes from build ticks. The one spelling — {@link
- * recordDirs} and {@link notesDir} compose from here, and {@link
- * recordFiles} composes from {@link recordDirs}, rather than each walking
- * its own list.
+ * recordDirs}, {@link notesDir} and {@link recordFiles} each compose from
+ * here, in this order, rather than each walking its own list. They differ
+ * only in the separator they join with, never in which directories exist or
+ * in what order they are named.
  */
 const RECORD_DIR_NAMES = ["inbox", NOTES_REL] as const;
 
@@ -105,10 +116,25 @@ export function notePath(stateRoot: string, tag: string): string {
 }
 
 /**
- * Every record waiting under `stateRoot`, as slash-joined paths in queue
- * order: the directories in the order {@link recordDirs} names them, each
- * directory's files sorted by name — an inbox record's name leads with its
- * date, so the order is oldest first.
+ * Every record waiting under `stateRoot`, as **host-native paths** in queue
+ * order: the directories in the order {@link RECORD_DIR_NAMES} lists them,
+ * each directory's files sorted by name — an inbox record's name leads with
+ * its date, so the order is oldest first.
+ *
+ * `stateRoot` here is the absolute one, and these paths are read, rendered
+ * and compared as filesystem paths rather than handed to git, so they are
+ * composed with `node:path` rather than slash-joined like {@link
+ * recordDirs} beside them. A separator appended to an absolute win32 root
+ * yields a path fs accepts and nothing else equals: the window would name
+ * every record at a spelling no `join`-built path — the one its own reader
+ * and every consumer compose — matches.
+ *
+ * The listing itself goes through `namespacedJoin`, since a record sits
+ * under a chain-declared state root and a note's name is an entry's tag
+ * (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks
+ * fs calls with no long component*). The names handed back stay plain: they
+ * are what a prompt renders and a human opens, and the extended-length
+ * prefix belongs at the fs call, not in the queue's vocabulary.
  *
  * One listing, two readers: the inbox slice's liveness predicate below asks
  * whether this is empty, and the slice's own window renders these files'
@@ -129,10 +155,11 @@ export function notePath(stateRoot: string, tag: string): string {
  * directory listings.
  */
 export function recordFiles(stateRoot: string): string[] {
-  return recordDirs(stateRoot).flatMap((dir) => {
+  return RECORD_DIR_NAMES.flatMap((name) => {
+    const dir = join(stateRoot, name);
     let names: string[];
     try {
-      names = readdirSync(dir);
+      names = readdirSync(namespacedJoin(dir));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
@@ -140,7 +167,7 @@ export function recordFiles(stateRoot: string): string[] {
     return names
       .filter((entry) => entry.endsWith(RECORD_EXT))
       .sort()
-      .map((entry) => `${dir}/${entry}`);
+      .map((entry) => join(dir, entry));
   });
 }
 

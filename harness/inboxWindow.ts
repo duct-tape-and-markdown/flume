@@ -20,7 +20,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { slugify } from "../src/paths.js";
+import { namespacedJoin, slugify } from "../src/paths.js";
 import type { PriorAttempt } from "../src/Prompt.js";
 
 import { laneLeg } from "./ciLane.js";
@@ -132,13 +132,18 @@ function standingRefusals(ctx: TickFacts): PriorAttempt[] {
  * is the drain's cue to name it in the plan commit body. Measured off the
  * bytes on disk, not the decoded string: the cap is bytes and a multi-byte
  * character is what the overrun is usually made of.
+ *
+ * The path is rendered as `recordFiles` composed it and namespaced only for
+ * the read, so what the tick is told to open is the path it can open
+ * (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks
+ * fs calls with no long component*).
  */
 function renderRecords(flumeDir: string): string {
   const files = recordFiles(flumeDir);
   if (files.length === 0) return "(no records)";
   return files
     .map((file) => {
-      const bytes = readFileSync(file);
+      const bytes = readFileSync(namespacedJoin(file));
       const mark =
         bytes.byteLength > RECORD_MAX_BYTES
           ? ` (${bytes.byteLength} bytes, cap ${RECORD_MAX_BYTES} — name this overrun in the commit body)`

@@ -27,6 +27,7 @@ import {
   notePath,
   notesDir,
   recordDirs,
+  recordFiles,
   recordsPending,
 } from "../harness/index.ts";
 
@@ -42,9 +43,13 @@ afterEach(async () => {
 });
 
 /**
- * The fs form of a path the package composed. The package slash-joins,
- * because its paths are git paths and fence globs; `resolve` normalizes that
- * to the host's separator so these cases read disk the same way on win32.
+ * The fs form of a path the package composed in git's alphabet. `recordDirs`,
+ * `notesDir` and `notePath` slash-join, because what they name is a diff-tree
+ * line, a pathspec or a fence glob; `resolve` normalizes that to the host's
+ * separator so these cases read disk the same way on win32.
+ *
+ * `recordFiles` needs no such conversion — it reads disk, so it already
+ * answers host-native — and the case below is the pin on that difference.
  */
 const onDisk = (path: string): string => resolve(path);
 
@@ -115,6 +120,28 @@ it("a record directory holding no file reports the record window empty", async (
   // never returns true.
   await writeFile(join(onDisk(dirs[0]!), "a-record.md"), "# a record\n");
   expect(recordsPending(stateRoot)).toBe(true);
+});
+
+it("recordFiles names each record at the path node:path composes under the state root", async () => {
+  const dirs = recordDirs(stateRoot);
+  // Vacuity pin: with no record directories every arm below judges nothing.
+  expect(dirs.length).toBeGreaterThan(0);
+
+  // One record per directory, each written at the host's own spelling of that
+  // directory — which is the spelling every consumer of this listing holds:
+  // the window `readFileSync`s these, renders them for a tick to open, and
+  // the tick joins its own paths against them.
+  const written = dirs.map((dir) => join(onDisk(dir), "2026-09-15-a-record.md"));
+  for (const file of written) {
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, "# a record\n");
+  }
+
+  // Host-native and in queue order. A slash-joined absolute root agrees with
+  // this on posix and names every record at `C:\repo\.flume/inbox/x.md` on
+  // win32 — a spelling fs accepts and no `join` reproduces, so the rendered
+  // path would match nothing the tick that must open it composes.
+  expect(recordFiles(stateRoot)).toEqual(written);
 });
 
 it("a record's byte cap is the package's own value, not a per-consumer knob", () => {

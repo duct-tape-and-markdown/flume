@@ -793,7 +793,11 @@ it("the rendered records block names the byte count of a record over the cap", (
   }).RECORDS;
 
   // The overrun is named where the drain reads it, with the count it must
-  // report — and the under-cap record beside it carries no mark.
+  // report — and the under-cap record beside it carries no mark. Both paths
+  // are the `join`-built ones this case wrote at: the window names a record
+  // where the tick draining it can open the file, so the rendered path is
+  // host-native, not git's alphabet (`spec/cli.md`, *win32 is a supported
+  // host*, path discipline).
   expect(rendered).toContain(
     `--- ${overPath} (${bytes} bytes, cap ${RECORD_MAX_BYTES} — name this overrun in the commit body) ---`,
   );
