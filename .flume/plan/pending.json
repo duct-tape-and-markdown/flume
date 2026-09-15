@@ -1,1 +1,48 @@
-[]
+[
+  {
+    "tag": "PRIOR-ATTEMPT-KEYSPACE-SCOPED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "stem/path/read/clear/snapshotDir take the ref; readAll keys by keyspace+identity; clearStale keys off the scoped map"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "callsites pass the ref where a bare key goes today"
+        },
+        {
+          "path": "tests/priorAttempts.test.ts",
+          "description": "agreement case: both refs through the real store, read back distinct"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "callsites take the ref"
+        },
+        {
+          "path": "tests/cliRender.test.ts",
+          "description": "callsite takes the ref"
+        },
+        {
+          "path": "CHANGELOG.md",
+          "description": "Unreleased › Breaking: the export signature and the map key"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Scope prior-attempt records by keyspace: prior-attempts/<keyspace>/<slug>.json, priorAttemptPath(flumeDir, ref), map keyed entry:<slug> / phase:<name>",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Prior-outcome feedback to the retrying tick"
+    },
+    "acceptance": "A phase name and an entry tag that slugify alike hold distinct records through the real store; tsc and vitest green.",
+    "tests": [
+      "a singleton phase and a fanout entry whose identities slugify alike write distinct prior-attempt records through the store",
+      "readAll keys a fanout record under entry:<slug> and a singleton record under phase:<name>",
+      "clearStale keeps a phase record whose name slugifies onto a tag the queue no longer carries"
+    ],
+    "notes": "Ruled option A; spec moved at 0bdce80 and the park closed this tick. Breaking for a consumer calling priorAttemptPath(flumeDir, tag) or reading TickContext.priorAttempts by bare identity — CHANGELOG names both. harness/windows.ts iterates .values() and discriminates on rec.key, so the map-key change does not reach it."
+  }
+]
