@@ -24,7 +24,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { slugify } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { Phase } from "../src/Phase.ts";
-import { InlineExecRenderError } from "../src/Prompt.ts";
+import {
+  InlineExecRenderError,
+  renderPrompt,
+  type PriorAttempt,
+} from "../src/Prompt.ts";
 import {
   buildCleanExit,
   buildGateRevert,
@@ -181,7 +185,106 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     expect(plain?.mode).toBe("gate-revert");
     expect(plain).not.toHaveProperty("verdict");
   });
+
+  /**
+   * spec/loop.md "Prior-outcome feedback to the retrying tick": `not-shipped`
+   * has two causes — the predicate returned `false`, or it threw — and the
+   * record says which. Driven the whole way for the same reason the round
+   * trip above is: the retry reaches this fact through the real `write` →
+   * `readAll` → `renderPrompt` path, and a hand dropping it anywhere along it
+   * serves a broken `shipped` hook to the next tick dressed as a deliberate
+   * park.
+   */
+  it("a not-shipped record distinguishes a thrown shipped hook from a returned false", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+    const THREW = "TypeError: ctx.gateResults.every is not a function";
+
+    const declined = buildNotShipped(head, ["src/seed.ts"]);
+    const threw = buildNotShipped(head, ["src/seed.ts"], THREW);
+
+    // At the builder: absence is the fact "the chain decided", never a
+    // placeholder standing in for a throw that did not happen.
+    expect(declined).not.toHaveProperty("threw");
+    expect(threw).toMatchObject({ threw: THREW });
+
+    // Through the store under two keys, read back by the reader a tick's
+    // `TickContext.priorAttempts` is assembled from.
+    const declinedRef = priorAttemptRef({ name: "declined" } as Phase);
+    const threwRef = priorAttemptRef({ name: "threw" } as Phase);
+    await store.write(declinedRef, declined);
+    await store.write(threwRef, threw);
+
+    const all = await store.readAll();
+    const backDeclined = all.get(declinedRef.key);
+    const backThrew = all.get(threwRef.key);
+    // Vacuity: both records really came back, as the mode under judgement.
+    expect(backDeclined?.mode).toBe("not-shipped");
+    expect(backThrew?.mode).toBe("not-shipped");
+    expect(backDeclined).not.toHaveProperty("threw");
+    expect(backThrew).toMatchObject({ threw: THREW });
+
+    // And into the prompt: the block names which of the two happened, and
+    // quotes a throw only where there was one.
+    const declinedBlock = await renderPriorBlock(fx.repo, backDeclined!);
+    const threwBlock = await renderPriorBlock(fx.repo, backThrew!);
+    expect(declinedBlock).toContain("RETURNED FALSE");
+    expect(declinedBlock).not.toContain("THREW");
+    expect(declinedBlock).not.toContain(THREW);
+    expect(threwBlock).toContain("THREW");
+    expect(threwBlock).toContain(THREW);
+    expect(threwBlock).not.toContain("RETURNED FALSE");
+  });
+
+  it("a thrown shipped hook's message is bounded on the record like every other captured text", async () => {
+    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+    // A throw carries whatever the chain's own frames put in it — a stack, a
+    // dumped payload — and the record renders straight into a prompt.
+    const huge = "x".repeat(64 * 1024);
+    const rec = buildNotShipped(head, ["src/seed.ts"], huge);
+
+    expect(rec.threw).toBeDefined();
+    expect(rec.threw!.length).toBeLessThan(huge.length);
+    // Elided visibly, never passed off as the whole message (spec/loop.md
+    // "Bounded by construction").
+    expect(rec.threw).toMatch(/truncated \d+ chars/);
+  });
 });
+
+/**
+ * One prior-attempt record through the real `renderPrompt`, so what a block
+ * claims is read off the renderer the dispatcher runs rather than a fixture
+ * restating it (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*). The prompt file sits under the fixture's flume dir —
+ * harness runtime state, not a tracked path the repo's own tree would show
+ * as dirty.
+ */
+async function renderPriorBlock(
+  repo: string,
+  prior: PriorAttempt,
+): Promise<string> {
+  const flumeDir = join(repo, ".flume");
+  await mkdir(flumeDir, { recursive: true });
+  const promptFile = join(flumeDir, "prompt.md");
+  await writeFile(promptFile, "task body\n", "utf8");
+  return renderPrompt({
+    phase: {
+      name: "build",
+      description: "renders a prior-attempt block",
+      promptPath: "prompt.md",
+      concurrency: "singleton",
+      writablePaths: ["**"],
+      gates: [],
+      handoff: () => [],
+    },
+    flumeDir,
+    promptFile,
+    cwd: repo,
+    args: {},
+    priorAttempt: prior,
+  });
+}
 
 /**
  * `existsSync` collapsed every stat failure to `false`, so a record that is

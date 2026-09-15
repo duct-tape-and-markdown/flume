@@ -583,20 +583,27 @@ export function buildTipMoved(
 
 /**
  * Build the not-shipped record from the facts the engine already holds at the
- * ship decision — the cherry-picked sha and the paths that commit touched,
- * the same two the chain's own predicate was handed. Nothing about *why* the
- * chain declined: the engine has no such vocabulary (`engine-boundary.md`,
- * *Told, not inferred*), and the predicate returned a boolean, not a reason.
+ * ship decision — the cherry-picked sha, the paths that commit touched (the
+ * same two the chain's own predicate was handed), and `threw`: the message
+ * the predicate threw instead of returning, or `undefined` when it returned
+ * `false` outright. Nothing about *why* the chain declined: the engine has no
+ * such vocabulary (`engine-boundary.md`, *Told, not inferred*), and a
+ * predicate that ran returned a boolean, not a reason. Whether it ran at all
+ * is the engine's own fact, and the one the dispatcher already reports on the
+ * tick's merge outcome — a record that dropped it would leave the retry and
+ * every `shouldRun` reading a broken hook as a deliberate park.
  *
  * Bounded like every other variant (spec/loop.md "Bounded by construction"):
  * a wide commit's footprint is elided to {@link MAX_PRIOR_TOUCHED_PATHS}
  * entries with the omitted count stated, never silently cut — a truncated
  * list passing for a whole footprint is the false signal the bound must not
- * introduce.
+ * introduce — and a throw's message rides the same
+ * {@link MAX_PRIOR_NOCOMMIT} head bound the other captured texts do.
  */
 export function buildNotShipped(
   mergedSha: string,
   touchedPaths: readonly string[],
+  threw?: string,
 ): Omit<NotShippedAttempt, "headSha" | "at" | "key" | "keyedAs"> {
   const omitted = touchedPaths.length - MAX_PRIOR_TOUCHED_PATHS;
   return {
@@ -604,5 +611,6 @@ export function buildNotShipped(
     mergedSha,
     touchedPaths: touchedPaths.slice(0, MAX_PRIOR_TOUCHED_PATHS),
     ...(omitted > 0 ? { omittedPaths: omitted } : {}),
+    ...(threw === undefined ? {} : { threw: bound(threw, MAX_PRIOR_NOCOMMIT) }),
   };
 }

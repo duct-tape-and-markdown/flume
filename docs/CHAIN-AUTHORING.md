@@ -1299,10 +1299,12 @@ per record — and the block renders the variant that fired:
   tip reports `tipMoved` as a tick fact and writes nothing here, because nothing
   was discarded — the commit is still sitting on its worktree branch.
 - `not-shipped` — the commit landed, passed every gate, and your own `shipped`
-  predicate returned `false`. Carries the merged sha and the paths that commit
-  touched. No reason vocabulary: the engine records that the chain said no,
-  never why. This is what a chain reads instead of rebuilding "was the last
-  attempt a park" out of the verdict log.
+  predicate then did not ship it: it returned `false`, or it threw. Carries the
+  merged sha, the paths that commit touched, and `threw` — the message a
+  throwing predicate raised, absent when it deliberately returned `false`, so a
+  broken hook never reads back as a park. No reason vocabulary beyond that: the
+  engine records that the chain said no, never why. This is what a chain reads
+  instead of rebuilding "was the last attempt a park" out of the verdict log.
 
 Rendered, for the `gate-revert` variant:
 

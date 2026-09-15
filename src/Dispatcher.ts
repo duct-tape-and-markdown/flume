@@ -3295,10 +3295,13 @@ export class Dispatcher {
         // by re-deriving "was the last attempt declined" from history —
         // exactly the rebuild `TickContext.priorAttempts` exists to spare
         // it. Cleared by the existing shipped-entry sweep below the moment
-        // a later attempt ships clean.
+        // a later attempt ships clean. `shipThrew` rides it for the same
+        // reason it rides the merge outcome below: the disk record is what
+        // the *next* process reads, and a broken predicate collapsing into
+        // "the chain parked this" is a wall the retry would invent.
         await this.attempts.write(
           priorAttemptRef(phase, r.entry),
-          buildNotShipped(mergedSha, commitTouchedPaths),
+          buildNotShipped(mergedSha, commitTouchedPaths, shipThrew),
         );
         mergeOutcomes.push({
           entryTag: r.entry.tag,

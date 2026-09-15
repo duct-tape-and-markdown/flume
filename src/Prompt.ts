@@ -301,23 +301,37 @@ export interface TipMovedAttempt {
 
 /**
  * The commit landed on trunk and passed every gate, and the chain's own
- * `shipped` predicate then returned `false` (`spec/pending.md`, *Ship
- * detection trusts the agent's own account*): the commit stays, the entry
- * stays pending. A sibling fact beside the four {@link NoCommitMode}
- * variants, exactly like {@link TipMovedAttempt} — a tick that committed is
- * not a no-commit tick at all, and the cause here is the chain's verdict
- * rather than any failure the four modes classify.
+ * `shipped` predicate then did not ship it (`spec/pending.md`, *Ship
+ * detection trusts the agent's own account*) — it returned `false`, or it
+ * threw, and {@link threw} says which. The commit stays, the entry stays
+ * pending. A sibling fact beside the four {@link NoCommitMode} variants,
+ * exactly like {@link TipMovedAttempt} — a tick that committed is not a
+ * no-commit tick at all, and the cause here is the chain's verdict rather
+ * than any failure the four modes classify.
  *
  * **No reason vocabulary.** The engine records that the chain said no, never
  * why: a park, a partial, a deliberate hand-off are one chain's words for
  * one chain's workflow (`engine-boundary.md`, *Told, not inferred*). The
- * facts carried are the ones the engine itself holds — the merged sha and
- * what that commit touched.
+ * facts carried are the ones the engine itself holds — the merged sha, what
+ * that commit touched, and whether the predicate ran to a verdict at all.
  */
 export interface NotShippedAttempt {
   mode: "not-shipped";
   /** The cherry-picked commit on trunk the predicate declined — still reachable, so the next tick can read it. */
   mergedSha: string;
+  /**
+   * The message the `shipped` predicate *threw* instead of returning
+   * (`spec/chain.md`, *What a hook receives*: a throw is not `false`),
+   * bounded like every other captured text on a record. Absent when the
+   * predicate deliberately returned `false`, so the retrying tick and every
+   * `shouldRun` reading `TickContext.priorAttempts` tells a declined ship
+   * from a broken predicate instead of collapsing the two into one record —
+   * the same split `TickResult`'s merge outcome already reports for the tick
+   * that wrote this. Not a reason: it is the engine's own account of a
+   * predicate that never reached a verdict, never the chain's words for
+   * declining one.
+   */
+  threw?: string;
   /**
    * Paths that commit touched, bounded (see {@link omittedPaths}) — the same
    * list the predicate itself was handed on `ShipContext.touchedPaths`.
@@ -794,12 +808,24 @@ function modeLines(prior: PriorAttempt): string[] {
     case "not-shipped":
       return [
         `A previous attempt at this work COMMITTED and passed every gate,`,
-        `and this chain's own \`shipped\` predicate then declined it: the`,
-        `commit is on trunk, the work is still queued. The harness records`,
-        `that the chain said no, never why — read the landed change below`,
-        `and the chain's own rules for what "shipped" means here before`,
-        `redoing anything. The commit is still reachable; do not reproduce`,
-        `what it already landed.`,
+        `and this chain's own \`shipped\` predicate then did not ship it: the`,
+        `commit is on trunk, the work is still queued. The commit is still`,
+        `reachable; do not reproduce what it already landed.`,
+        ...(prior.threw === undefined
+          ? [
+              `The predicate RETURNED FALSE — a deliberate decline. The`,
+              `harness records that the chain said no, never why — read the`,
+              `landed change below and the chain's own rules for what`,
+              `"shipped" means here before redoing anything.`,
+            ]
+          : [
+              `The predicate THREW rather than returning — the chain never`,
+              `reached a verdict, so this is a broken \`shipped\` hook, NOT a`,
+              `deliberate decline. Nothing about the landed work is`,
+              `discredited by it.`,
+              `Predicate threw:`,
+              indentBlock(prior.threw),
+            ]),
         `Landed commit: ${prior.mergedSha}`,
         `Paths it touched:`,
         indentBlock(touchedPathsBlock(prior)),
