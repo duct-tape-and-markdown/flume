@@ -40,7 +40,7 @@ import { join, relative } from "node:path";
 import type { PendingGateOptions } from "../src/builtinGates.js";
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 import type { GitStatusRecord } from "../src/git.js";
-import { gitPath, matchesAny } from "../src/paths.js";
+import { matchesAny } from "../src/paths.js";
 import type { EntryExtension } from "../src/PendingSchema.js";
 import type { Phase } from "../src/Phase.js";
 
@@ -262,12 +262,11 @@ function recordsGate(engine: GateEngine): Gate {
           skipped: "no path in a commit can be a record under a relocated state root",
         };
       }
-      // The engine reports the offset in the host's dialect, and the paths
-      // this gate matches are git's — converted once here, through the
-      // engine's own rule, so the directory globs and the note path below
-      // are in the same alphabet as `ctx.touchedPaths`
-      // (`gitPath`, `src/paths.ts`).
-      const stateRoot = gitPath(ctx.stateRootRel);
+      // The engine reports the offset in git's alphabet, which is the one
+      // `ctx.touchedPaths` speaks, so the directory globs and the note path
+      // below are built from it straight (`computeStateRootRel`,
+      // `src/Dispatcher.ts`).
+      const stateRoot = ctx.stateRootRel;
       // Trailing separator per directory, so `inbox` cannot prefix-match
       // `inbox-archive`.
       const dirs = recordDirs(stateRoot).map((dir) => `${dir}/`);

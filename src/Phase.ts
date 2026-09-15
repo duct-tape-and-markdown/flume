@@ -120,12 +120,13 @@ export interface TickContext {
    */
   priorAttempts?: ReadonlyMap<string, PriorAttempt>;
   /**
-   * The state root's path relative to the primary repo root, or `undefined`
-   * when the state root is relocated outside it — the same value
-   * `GateContext.stateRootRel` carries, from the same `computeStateRootRel`
-   * (`src/Dispatcher.ts`; spec/chain.md "What a hook receives"). A hook
-   * composing a path some commit must hold — a note the phase's own gate
-   * keys, an artifact read at a ref — reads this rather than deriving it,
+   * The state root's path relative to the primary repo root, in git's own
+   * alphabet, or `undefined` when the state root is relocated outside it —
+   * the same value `GateContext.stateRootRel` carries, from the same
+   * `computeStateRootRel` (`src/Dispatcher.ts`; spec/chain.md "What a hook
+   * receives"). A hook composing a path some commit must hold — a note the
+   * phase's own gate keys, an artifact read at a ref — reads this
+   * forward-slashed value straight rather than deriving or re-folding it,
    * which it cannot do from the rest of the context: `cwd` is the tick's
    * worktree and `flumeDir` is not nested under it. Optional in the type for
    * the same hand-built-fixture reason as `pickable` above; a

@@ -53,6 +53,7 @@ import { partitionByFileOverlap } from "./partition.js";
 import {
   assertStateRootRelative,
   chainModulePath,
+  gitPath,
   matchesAny,
   defaultStateRoot,
   fsStamp,
@@ -865,9 +866,16 @@ function blamedOn(entry: PendingEntry): {
 }
 
 /**
- * The state root's path relative to the primary repo root, or `undefined`
- * when the state root is relocated outside it (climbs out via `..`, or is
- * already absolute — a relocated `flumeDir` set by an absolute `FLUME_DIR`).
+ * The state root's path relative to the primary repo root **in git's own
+ * alphabet** ({@link gitPath}, `src/paths.ts`), or `undefined` when the state
+ * root is relocated outside it (climbs out via `..`, or is already absolute —
+ * a relocated `flumeDir` set by an absolute `FLUME_DIR`).
+ *
+ * The fold lands here, at the one reporter, because every consumer of this
+ * value composes a path git will name — a pathspec at a sha, a fence glob, a
+ * commit's touched path. `relative` answers in the host's dialect, so
+ * reporting it raw makes the conversion each reader's problem and puts a
+ * sibling path in the other alphabet the first time one reader forgets.
  * Computed once, from the two roots that never change after construction,
  * and shared by every `GateContext.stateRootRel` and by `harvestFriction`'s
  * own worktree-mirror check (`src/friction.ts`; spec/chain.md "What a gate
@@ -887,7 +895,7 @@ export function computeStateRootRel(
 ): string | undefined {
   const rel = relative(repoRoot, flumeDir);
   const outside = rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
-  return outside ? undefined : rel;
+  return outside ? undefined : gitPath(rel);
 }
 
 /**

@@ -12390,6 +12390,38 @@ describe("Dispatcher — the span base is reported: GateContext.baseSha, TickRes
   }, 20_000);
 });
 
+describe("Dispatcher — the offset's alphabet (STATE-ROOT-REL-IS-REPORTED-IN-GITS-ALPHABET, spec/chain.md 'What a gate receives')", () => {
+  it("computeStateRootRel reports a nested state root in git's alphabet, so no consumer re-folds the offset", () => {
+    const repoRoot = join(fx.repo, "wherever");
+    const nested = join(repoRoot, "jobs", "alpha", ".flume");
+    // Non-vacuity: the offset under test is a multi-segment path, so the
+    // separator between its segments is a real character the claim is about
+    // — not a single segment where every alphabet agrees.
+    expect(relative(repoRoot, nested).split(/[\\/]/)).toHaveLength(3);
+
+    expect(computeStateRootRel(repoRoot, nested)).toBe("jobs/alpha/.flume");
+  });
+
+  it("a state-root segment carrying the host's other separator is reported folded too, so a mixed-dialect offset never reaches a gate half-converted", () => {
+    // `relative` answers in the host's dialect and nothing guarantees the
+    // segments it joins are free of the other one — on win32 a declared
+    // `jobs/alpha` tail rides a backslash-separated head, and this is that
+    // shape reachable from a posix run. The reporter folds both separators
+    // (`gitPath`, `src/paths.ts`), so the value a gate compares against a
+    // commit's touched path is git's alphabet whole, never half.
+    const repoRoot = join(fx.repo, "wherever");
+    const odd = join(repoRoot, String.raw`jobs\alpha`, ".flume");
+    expect(relative(repoRoot, odd)).toContain("\\");
+
+    expect(computeStateRootRel(repoRoot, odd)).toBe("jobs/alpha/.flume");
+  });
+
+  it("a relocated state root is still reported absent, not as a folded climb-out", () => {
+    const outside = join(fx.repo, "..", "elsewhere", ".flume");
+    expect(computeStateRootRel(fx.repo, outside)).toBeUndefined();
+  });
+});
+
 describe("Dispatcher — GateContext.stateRootRel (GATE-CONTEXT-STATE-ROOT-REL, spec/chain.md 'What a gate receives')", () => {
   it("singleton tick: an afterCommit gate's stateRootRel is flumeDir's offset from repoRoot, with the worktree nested inside flumeDir (the real afterCommit shape)", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");

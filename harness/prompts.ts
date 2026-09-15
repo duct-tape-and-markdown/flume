@@ -42,7 +42,7 @@ import {
   type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.js";
-import { gitPath, resolvePendingPath } from "../src/paths.js";
+import { resolvePendingPath } from "../src/paths.js";
 import { NO_COMMIT_MODES } from "../src/Prompt.js";
 
 import { resolveCiteSync } from "./citeResolver.js";
@@ -360,12 +360,11 @@ function inTree(cwd: string): (path: string) => string | null {
  * here rather than rendered as a path that silently writes nowhere the tick's
  * commit reaches (*Loud or nothing*).
  *
- * The offset the engine does report is in the host's dialect, so a nested
- * root under win32 arrives backslash-separated. Converted through the
- * engine's own rule (`gitPath`, `src/paths.ts`): the note this names is the
- * path the agent commits, the records gate keys, and the park predicate reads
- * back — all of them git's alphabet, and a prompt naming the other one sends
- * a tick to write where none of the three looks.
+ * The offset the engine does report is already git's alphabet
+ * (`computeStateRootRel`, `src/Dispatcher.ts`), which is what the note this
+ * names has to be: the path the agent commits, the records gate keys, and the
+ * park predicate reads back are all git paths, and a prompt naming the host's
+ * spelling instead sends a tick to write where none of the three looks.
  */
 function noteRoot(ctx: BuildTickContext): string {
   if (ctx.stateRootRel === undefined) {
@@ -376,5 +375,5 @@ function noteRoot(ctx: BuildTickContext): string {
         `Committed-path discipline)`,
     );
   }
-  return gitPath(ctx.stateRootRel);
+  return ctx.stateRootRel;
 }

@@ -57,12 +57,15 @@ export interface GateContext {
    */
   flumeDir: string;
   /**
-   * `flumeDir`'s path relative to the primary repo root, set when the state
-   * root lives inside the repo and absent when it is relocated outside it
-   * (an absolute `FLUME_DIR`, or one that climbs out via `..`). The one value
-   * a gate needs to read a **tracked** state-root file as a given commit
+   * `flumeDir`'s path relative to the primary repo root **in git's own
+   * alphabet** — forward-slashed whatever the host's separator — set when the
+   * state root lives inside the repo and absent when it is relocated outside
+   * it (an absolute `FLUME_DIR`, or one that climbs out via `..`). The one
+   * value a gate needs to read a **tracked** state-root file as a given commit
    * held it — `git show <commitSha>:<stateRootRel>/plan/pending.json` —
-   * without hardcoding `.flume` or re-deriving the offset itself. Computed
+   * without hardcoding `.flume`, re-deriving the offset, or re-folding it: a
+   * gate composes a pathspec, a fence glob or a touched-path comparison from
+   * this value and each of those is git's alphabet already. Computed
    * once by the dispatcher and shared with its own friction-harvest use of
    * the same offset (`.claude/rules/engineering.md` "The fix lands at the
    * mechanism"). The key is required and its `undefined` is stated, never

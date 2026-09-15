@@ -594,15 +594,17 @@ describe("the chain module's path has one derivation", () => {
 // Mechanism pin (HARNESS-STATE-ROOT-IS-A-GIT-PATH, per
 // .claude/rules/engineering.md "A fact the engine holds is reported, never
 // rediscovered"): git names every path with `/`, and a value that has been
-// through `join`/`relative` on win32 does not. The engine applied that
-// conversion at four sites and kept the rule to itself, so the harness
-// package — which composes a commit's paths from the state-root offset the
-// engine reports — carried its own copy, and applied it to one of the five
-// paths it builds.
+// through `join`/`relative` on win32 does not. This is the one rule that
+// converts one, exported so that a consumer composing a committed path is
+// reading the engine's fold rather than spelling a second. The state-root
+// offset is the value that most wanted it, and the engine now applies it
+// there before reporting (`computeStateRootRel`, `src/Dispatcher.ts`), so no
+// consumer folds that one at all.
 describe("gitPath — the one host-path-to-git-path rule", () => {
   it("the engine's path surface renders a backslash-separated relative path as a git path", () => {
-    // The shape `computeStateRootRel` reports for a nested state root on
-    // win32: `relative()` in the host's own dialect.
+    // What `relative()` answers for a nested state root on win32 — the
+    // host's own dialect, which is what the reporter folds before a gate
+    // ever sees it.
     expect(gitPath(String.raw`jobs\alpha\.flume`)).toBe("jobs/alpha/.flume");
 
     // A path already in git's alphabet is itself, so a posix host pays
@@ -616,8 +618,8 @@ describe("gitPath — the one host-path-to-git-path rule", () => {
       "jobs/alpha/.flume/plan/notes/TAG.md",
     );
 
-    // And it is the rule the engine keys its own committed paths by: the
-    // offset a nested state root reports, joined to the queue's default
+    // And it is the rule the engine keys its own committed paths by: a
+    // nested state root's host-dialect offset, joined to the queue's default
     // relative path, is the git path a commit names.
     expect(gitPath(resolvePendingPath(String.raw`jobs\alpha\.flume`))).toBe(
       "jobs/alpha/.flume/plan/pending.json",

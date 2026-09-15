@@ -260,22 +260,22 @@ it("build's per-tick args name the entry's note path from the tick context alone
   expect(args.NOTE_PATH!.startsWith(cwd)).toBe(false);
 });
 
-it("buildPromptArgs renders NOTE_PATH slash-joined from a backslash-separated state root", () => {
+it("buildPromptArgs renders NOTE_PATH from the offset the engine reports for a nested state root", () => {
   const assigned = entry();
 
-  // A nested state root, as a job namespace produces one. The engine reports
-  // the offset `relative()` computed, which is the **host's** dialect — so on
-  // win32 a root more than one segment deep arrives backslash-separated.
-  // Spelled rather than computed: a posix run cannot produce that shape, and
-  // it is the shape the note path still has to be composed from.
-  const nested = String.raw`jobs\alpha\.flume`;
+  // A nested state root, as a job namespace produces one, with its offset
+  // from the real reporter rather than the tester's hand
+  // (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+  // wrote*): whatever the host's separator, `computeStateRootRel` answers in
+  // git's alphabet, and that is the value this composes the note path from.
   const asGit = "jobs/alpha/.flume";
-  // The two spellings are one root.
-  expect(nested.split("\\").join("/")).toBe(asGit);
+  const nestedDir = join(repoRoot, ...asGit.split("/"));
+  const nested = computeStateRootRel(repoRoot, nestedDir);
+  expect(nested).toBe(asGit);
 
   const args = buildPromptArgs({
     declaration: declare(),
-    ctx: { ...tick(assigned), flumeDir: join(repoRoot, ...asGit.split("/")), stateRootRel: nested },
+    ctx: { ...tick(assigned), flumeDir: nestedDir, stateRootRel: nested },
   });
 
   // The path the agent writes, the records gate keys and the park predicate

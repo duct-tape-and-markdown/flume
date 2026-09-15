@@ -61,19 +61,17 @@ const engine: GateEngine = {
 const STATE_ROOT = ".flume";
 
 /**
- * A nested state root, as a job namespace produces one: its segments under
- * the repo, and the offset the engine reports for it.
+ * A nested state root, as a job namespace produces one — the segments under
+ * the repo that the case writes its records at.
  *
- * The reported form is `relative()`'s, which is the **host's** dialect — so
- * on win32 a root more than one segment deep arrives backslash-separated.
- * Spelled here rather than computed because a posix run cannot produce that
- * shape, and it is the shape every record path the gate matches still has to
- * be composed from.
+ * The offset the gate reads is not spelled beside them: `ctxFor` runs the
+ * engine's own `computeStateRootRel` over the same two roots a dispatcher
+ * would, so the gate is driven by what the real reporter reports rather than
+ * by the tester's hand (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*). That reporter folds to git's alphabet, which
+ * is what every record path this gate matches is in.
  */
-const NESTED = {
-  segments: ["jobs", "alpha", ".flume"],
-  rel: String.raw`jobs\alpha\.flume`,
-};
+const NESTED = { segments: ["jobs", "alpha", ".flume"] };
 
 /** The runner a declared factory returns here; no case runs a test. */
 const runner = {
@@ -163,15 +161,16 @@ const writeQueue = (entries: readonly unknown[]): Promise<void> =>
 
 /**
  * The context a dispatcher builds for a gate on this repo — `.flume` at the
- * repo root by default, or the nested root a case names, whose host path and
- * reported offset travel together.
+ * repo root by default, or the nested root a case names. The offset is the
+ * engine's own, computed from the same two roots a dispatcher computes it
+ * from, never a spelling of the tester's.
  */
 function ctxFor(
   span: Span,
   over: {
     phaseName: string;
     entry?: PendingEntry;
-    stateRoot?: { segments: string[]; rel: string };
+    stateRoot?: { segments: string[] };
   },
 ): GateContext {
   const flumeDir = over.stateRoot
@@ -181,7 +180,7 @@ function ctxFor(
     cwd: repo,
     repoRoot: repo,
     flumeDir,
-    stateRootRel: over.stateRoot?.rel ?? computeStateRootRel(repo, flumeDir),
+    stateRootRel: computeStateRootRel(repo, flumeDir),
     pendingPath: join(flumeDir, "plan", "pending.json"),
     configDir: flumeDir,
     phaseName: over.phaseName,
@@ -298,10 +297,13 @@ it("the records gate refuses a record written outside the tick's own tag", async
   expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
 });
 
-it("the records gate matches a touched record under a backslash-separated state root", async () => {
-  // The two spellings are one root: what the case writes on disk, and what
-  // the engine reports as the offset to it.
-  expect(NESTED.rel.split("\\").join("/")).toBe(NESTED.segments.join("/"));
+it("the records gate matches a touched record under a nested state root, reading the engine's offset straight", async () => {
+  // The offset the gate will read, from the real reporter: git's alphabet,
+  // which is the one `touchedPaths` is in — so the gate composes its record
+  // globs from it without a conversion of its own.
+  expect(computeStateRootRel(repo, join(repo, ...NESTED.segments))).toBe(
+    NESTED.segments.join("/"),
+  );
 
   const entry = assigned("MINE");
   const own = notePath(NESTED.segments.join("/"), "MINE");
