@@ -71,6 +71,61 @@ describe("src/loopSupervisor.ts — the supervisor's own module", () => {
   });
 });
 
+/**
+ * The run's teardown, at the supervisor's own seam (spec/loop.md "The loop
+ * lock and the tip claim"): the caller aborts, the abort reaches whoever
+ * holds the in-flight tick child, and `superviseLoop` resolves only once
+ * that tick has settled — which is what lets `flume loop`'s signal handler
+ * drop `loop.pid` and the tip claim with no writer of this run's left under
+ * the state root. The real runner's terminate-and-reap is exercised through
+ * the CLI in `tests/cli.test.ts`; here the stub stands in for the child.
+ */
+describe("superviseLoop — the run's teardown reaches the in-flight tick", () => {
+  it("an aborted stopSignal reaches the running tick's runner, and the run resolves only after that tick settles, spawning no further child", async () => {
+    // Awake for the whole case: hibernation never ends this run, and
+    // maxTicks is 5, so a second `runTick` call would mean the abort was
+    // read by nothing.
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const stop = new AbortController();
+    const seen: AbortSignal[] = [];
+    let abortedInsideRunner = false;
+    let inFlightSettled = false;
+    const runTick = async (
+      _quarantined: ReadonlySet<string>,
+      stopSignal: AbortSignal,
+    ): Promise<{ exitCode: number | null }> => {
+      seen.push(stopSignal);
+      // The operator's signal lands mid-tick — the moment the real runner
+      // turns into a kill on the child it holds.
+      stop.abort();
+      abortedInsideRunner = stopSignal.aborted;
+      // ...and the runner resolves only once that child is gone.
+      await new Promise((r) => setTimeout(r, 10));
+      inFlightSettled = true;
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      stopSignal: stop.signal,
+      log: silent,
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(abortedInsideRunner).toBe(true);
+    expect(inFlightSettled).toBe(true);
+    expect(res.ticks).toBe(1);
+    expect(res.hibernated).toBe(false);
+    // The phase is still awake — the run ended on the signal, not on a
+    // baton state the supervisor could have reached on its own.
+    expect(baton.awake()).toContain("build");
+  });
+});
+
 describe("superviseLoop — tip-moved counts as errored", () => {
   it("a tip-moved tick is distinguishable in the run's errored-tick classification, even though it is never a NoCommitMode", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));

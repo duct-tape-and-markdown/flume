@@ -95,6 +95,19 @@ interface SuperviseLoopOptions {
    */
   abortThreshold?: number;
   /**
+   * The run's teardown, reaching the tick tree the run owns. Aborting it ends
+   * the run: the in-flight tick child is terminated, awaited, and only then
+   * does `superviseLoop` resolve — so a caller that releases a resource the
+   * run held (the loop lock and the tip claim, `src/cli.ts`) releases it with
+   * no process of this run's still writing under it. No further child is
+   * spawned once it has aborted.
+   *
+   * A caller that declines one gets a signal that never aborts: the run is
+   * then bounded by `maxTicks`, hibernation and the stop flag alone, exactly
+   * as before.
+   */
+  stopSignal?: AbortSignal;
+  /**
    * Run one `flume tick` as a fresh child process; resolves with its exit
    * code when it exits. Defaults to re-execing the running flume entrypoint
    * (mirrors `process.execArgv`/`argv[1]`, so it works whether launched from
@@ -103,9 +116,17 @@ interface SuperviseLoopOptions {
    * accumulated run-scoped quarantine so far — the default runner carries it
    * to the child via the `FLUME_QUARANTINED_SLUGS` env var; a test stub may
    * ignore it.
+   *
+   * `stopSignal` is {@link SuperviseLoopOptions.stopSignal}, handed to the
+   * runner because the child handle lives here and nowhere else: a runner
+   * that spawns a process **terminates it on abort and still resolves on the
+   * child's `exit`**, never on the abort itself — resolving early is what
+   * leaves the supervisor's caller releasing a claim out from under a live
+   * writer. A stub with nothing to terminate may ignore it.
    */
   runTick?: (
     quarantinedSlugs: ReadonlySet<string>,
+    stopSignal: AbortSignal,
   ) => Promise<{ exitCode: number | null }>;
 }
 
@@ -224,6 +245,10 @@ export async function superviseLoop(
   const configDir = opts.configDir ?? defaultStateRoot(opts.repoRoot);
   const baton = new Baton(flumeDir);
   const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot);
+  // A caller with no teardown of its own gets one that never fires, so the
+  // runner and both checks below read one shape rather than branching on
+  // whether a signal was supplied.
+  const stopSignal = opts.stopSignal ?? new AbortController().signal;
 
   // Best-effort — a missing or broken chain must never fail
   // the loop-end summary, only silently withhold the friction line.
@@ -266,9 +291,26 @@ export async function superviseLoop(
   // index 0 let a varying sibling there shadow a genuinely-repeating
   // signature elsewhere in the list forever.
   const failureStreaks = new Map<string, number>();
+  // The run's teardown, read at the two boundaries that matter: before a
+  // child is spawned (so an abort landing in the bookkeeping below never
+  // starts one more tick) and immediately after one exits (so nothing is read
+  // off a half-tick's leavings). `runTick` has already terminated and reaped
+  // the in-flight child by the time the second check runs, so the returned
+  // result is the whole tree's — the caller may release what it held.
+  const stoppedBySignal = (): SuperviseResult => {
+    log.info(`[flume] signalled; stopping after ${ticks} tick(s)`);
+    return {
+      ticks,
+      hibernated: false,
+      shippedTags: [...shippedTags],
+      erroredTicks,
+    };
+  };
   for (let i = 0; i < maxTicks; i++) {
-    const { exitCode } = await runTick(quarantinedSlugs);
+    if (stopSignal.aborted) return stoppedBySignal();
+    const { exitCode } = await runTick(quarantinedSlugs, stopSignal);
     ticks++;
+    if (stopSignal.aborted) return stoppedBySignal();
 
     // Recover this tick's facts from its verdict artifact — the
     // exit code alone (settled/errored/mount-dead) is the only signal that
@@ -561,13 +603,21 @@ export async function superviseLoop(
  * carries this supervisor process's own pid — the one that acquired the tip
  * claim in `src/cli.ts`'s `loop` command — so the child tick trusts the
  * claim already held instead of acquiring (and colliding on) its own.
+ *
+ * `stopSignal` is the run's teardown reaching this child: on abort the child
+ * is signalled, and the promise still resolves on its `exit` — the supervisor
+ * hands its caller a settled tree, not a kill that was merely requested. The
+ * child keeps its default signal disposition (`src/cli.ts`: only a bare tick
+ * installs handlers), so the terminate is the kernel's and needs no
+ * cooperation from a tick parked in an agent invocation.
  */
 function defaultTickRunner(
   repoRoot: string,
 ): (
   quarantinedSlugs: ReadonlySet<string>,
+  stopSignal: AbortSignal,
 ) => Promise<{ exitCode: number | null }> {
-  return (quarantinedSlugs) =>
+  return (quarantinedSlugs, stopSignal) =>
     new Promise((resolveExit) => {
       const env = { ...process.env };
       if (quarantinedSlugs.size > 0) {
@@ -579,12 +629,24 @@ function defaultTickRunner(
         [...process.execArgv, process.argv[1]!, "tick"],
         { cwd: repoRoot, stdio: "inherit", env },
       );
-      child.on("exit", (code) => resolveExit({ exitCode: code }));
+      // Wired by hand rather than through spawn's own `signal` option: that
+      // option reports the abort as an `error` event, and a runner that
+      // resolved there would hand the supervisor a still-running child.
+      const terminate = (): void => {
+        child.kill("SIGTERM");
+      };
+      if (stopSignal.aborted) terminate();
+      else stopSignal.addEventListener("abort", terminate, { once: true });
+      const settle = (result: { exitCode: number | null }): void => {
+        stopSignal.removeEventListener("abort", terminate);
+        resolveExit(result);
+      };
+      child.on("exit", (code) => settle({ exitCode: code }));
       child.on("error", (err) => {
         consoleLogger.error(
           `[flume] failed to spawn 'flume tick': ${(err as Error).message}`,
         );
-        resolveExit({ exitCode: 1 });
+        settle({ exitCode: 1 });
       });
     });
 }

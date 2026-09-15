@@ -9,7 +9,7 @@
  * env-set-relative cases.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,6 +34,7 @@ import { RUNTIME_IGNORES } from "../src/job.ts";
 import { DEFAULT_PENDING_REL, resolvePendingPath } from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { denyDirectory } from "./helpers/denial.ts";
+import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
 import {
   CLI,
   HERMETIC_ENV_STRIP_KEYS,
@@ -1704,6 +1705,152 @@ describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the
         // The live holder's claim survives the refused contender untouched.
         expect(await readFile(claimPath, "utf8")).toBe(String(process.pid));
       } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
+/**
+ * A chain whose agent records the pid of the process running it, then parks
+ * in a sleep — so a test can observe the loop's tick *child* mid-tick and
+ * signal the supervisor while that child is still writing under the state
+ * root the claim protects. The pid is the tick child's own: a chain-declared
+ * agent runs in-process in the `flume tick` the supervisor spawned.
+ *
+ * `pidPath` is absolute and outside the fixture repo — the file is the
+ * test's sync point, not a tick artifact, and a write into the working tree
+ * would be one more thing the tick has to explain.
+ */
+function tickChildPidChainSrc(pidPath: string): string {
+  return (
+    `import { writeFileSync } from "node:fs";\n` +
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: "probe",\n` +
+    `    description: "signalled-loop probe",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `},\n` +
+    `agent: {\n` +
+    `  name: "parked",\n` +
+    `  async invoke() {\n` +
+    `    writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));\n` +
+    `    await new Promise((r) => setTimeout(r, 30_000));\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `} });\n`
+  );
+}
+
+/**
+ * Whether `pid` names a live process, by the probe signal every liveness
+ * check in the engine uses. ESRCH is the only reading of "gone": EPERM says
+ * the process is there and simply not ours to signal, and anything else is
+ * the caller's to see rather than a quiet `false`
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return false;
+    if (code === "EPERM") return true;
+    throw err;
+  }
+}
+
+/**
+ * The release `loop.pid` and the tip claim promise is the whole tick tree's.
+ * The supervisor spawns one `flume tick` child per iteration, and that child
+ * writes under the same state root — so a signalled loop that dropped both
+ * guards and exited while its child ran handed the root to the next
+ * acquirer with a live writer still inside it, which is the race the POSIX
+ * lane saw as an orphan's last write landing after teardown.
+ *
+ * Fast lane despite the real subprocesses: the case is event-based
+ * throughout (the child's own pid file, then `loop.pid`), so a warm host
+ * pays a startup and nothing more.
+ */
+describe("flume loop — a signalled run takes its tick child with it (spec/loop.md \"The loop lock and the tip claim\")", () => {
+  /**
+   * win32 maps SIGTERM to TerminateProcess, which runs no handler at all —
+   * release-on-signal is a POSIX guarantee and the cross-platform one is
+   * stale-reclaim (spec/loop.md). There is no teardown to reach the child
+   * there, so the property is POSIX's alone. Declared skip, not a silent
+   * pass.
+   */
+  it.skipIf(process.platform === "win32")(
+    "a signalled `flume loop` leaves no tick child alive against the state root whose claim it released",
+    async () => {
+      const repo = await makeJobRepo("main");
+      // Outside the repo: the pid file is the test's sync point, not
+      // something the tick should have to leave the tree clean around.
+      const scratch = await mkdtemp(join(tmpdir(), "flume-signalled-loop-"));
+      const childPidPath = join(scratch, "tick-child.pid");
+      try {
+        await writeRepoConfig(repo.dir, tickChildPidChainSrc(childPidPath));
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const loop = spawn(
+          process.execPath,
+          [TSX_CLI, CLI, "loop", "--max", "1"],
+          { cwd: repo.dir, env: hermeticEnv(), stdio: ["ignore", "pipe", "pipe"] },
+        );
+        let out = "";
+        loop.stdout?.on("data", (d: Buffer) => (out += d));
+        loop.stderr?.on("data", (d: Buffer) => (out += d));
+
+        // The event this case turns on: a tick child parked mid-agent, past
+        // the supervisor's lock and claim and past its signal handlers.
+        const tickChildPid = Number(
+          await waitFor(
+            `the loop's tick child to record its pid at ${childPidPath}`,
+            () => fileWithContent(childPidPath),
+          ),
+        );
+        // tsx re-execs itself into a second node process, so the spawned
+        // `loop`'s own pid is the bootstrapper's — the process that took the
+        // locks wrote its own pid into `loop.pid`, and that is what an
+        // operator's SIGTERM targets in production.
+        const pidPath = join(repo.dir, ".flume", "loop.pid");
+        const supervisorPid = Number(
+          await waitFor(
+            `the loop supervisor's pid at ${pidPath}`,
+            () => fileWithContent(pidPath),
+          ),
+        );
+        // Non-vacuity: the subject of the assertion below must be a live
+        // *other* process at the moment the signal lands, or "no tick child
+        // alive" is green over a child that never ran.
+        expect(tickChildPid).not.toBe(supervisorPid);
+        expect(processAlive(tickChildPid)).toBe(true);
+
+        const exited = new Promise<void>((resolveExit) => {
+          loop.on("exit", () => resolveExit());
+        });
+        process.kill(supervisorPid, "SIGTERM");
+        await exited;
+
+        // The supervisor released both guards...
+        expect(existsSync(pidPath)).toBe(false);
+        expect(
+          existsSync(tipClaimPath(await gitCommonDir(repo.dir), "refs/heads/main")),
+        ).toBe(false);
+        // ...and took the writer they were held for with it. The child was
+        // reaped before the release, so this is a settled fact, not a race:
+        // no wait stands between the parent's exit and this read.
+        expect(processAlive(tickChildPid)).toBe(false);
+      } finally {
+        await rm(scratch, { recursive: true, force: true });
         await repo.cleanup();
       }
     },

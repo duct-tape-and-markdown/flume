@@ -56,7 +56,7 @@ import {
 } from "./Dispatcher.js";
 import { frictionCountLine } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
-import { superviseLoop } from "./loopSupervisor.js";
+import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
@@ -1082,15 +1082,34 @@ async function main(): Promise<number> {
       }
       tipClaim?.release();
     };
+    // The release the signal handlers perform is the whole tick tree's, never
+    // this process's alone. `superviseLoop` spawns a `flume tick` child that
+    // writes under the very state root `loop.pid` and the tip claim guard, so
+    // dropping both while that child still runs hands the root to the next
+    // acquirer with a live writer inside it — the release the section
+    // promises has not happened yet. `stopRun` reaches the supervisor, which
+    // terminates the in-flight child and resolves only once it has exited;
+    // the drop and the exit ride that promise.
+    //
+    // Before the run starts (and after it returns) `supervisedRun` is
+    // undefined and the handler drops immediately: there is no tree to take
+    // with it, and waiting on nothing would only delay the exit.
+    const stopRun = new AbortController();
+    let supervisedRun: Promise<SuperviseResult> | undefined;
+    const releaseAndExit = async (code: number): Promise<never> => {
+      stopRun.abort();
+      if (supervisedRun !== undefined) {
+        // The run's own failure is the run's to report; this path owes the
+        // operator a released lock and the signal's exit code, and a throw
+        // escaping here would replace both with an unhandled rejection.
+        await supervisedRun.catch(() => undefined);
+      }
+      dropLock();
+      process.exit(code);
+    };
     process.on("exit", dropLock);
-    process.on("SIGINT", () => {
-      dropLock();
-      process.exit(130);
-    });
-    process.on("SIGTERM", () => {
-      dropLock();
-      process.exit(143);
-    });
+    process.on("SIGINT", () => void releaseAndExit(130));
+    process.on("SIGTERM", () => void releaseAndExit(143));
     mkdirSync(flumeDir, { recursive: true });
     const priorPid = await liveLoopPid(flumeDir);
     if (priorPid !== null) {
@@ -1216,11 +1235,12 @@ async function main(): Promise<number> {
     //
     // `supervisorPolicy` was read above, alongside the ignore merge's
     // `friction`, from the one best-effort chain resolve this start makes.
-    const supervised = await superviseLoop({
+    supervisedRun = superviseLoop({
       repoRoot,
       flumeDir,
       configDir,
       maxTicks: max,
+      stopSignal: stopRun.signal,
       ...(supervisorPolicy?.quarantineScope !== undefined
         ? { quarantineScope: supervisorPolicy.quarantineScope }
         : {}),
@@ -1228,6 +1248,7 @@ async function main(): Promise<number> {
         ? { abortThreshold: supervisorPolicy.abortThreshold }
         : {}),
     });
+    const supervised = await supervisedRun;
     // Name surfaced tick errors in the completion summary even on a 0 exit
     // (partial success) — they must not vanish silently.
     const completion = loopCompletionSummary(supervised);
