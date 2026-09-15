@@ -98,6 +98,10 @@
           "description": "declares the budget once at file scope — today it declares nothing"
         },
         {
+          "path": "tests/fixtureRoots.test.ts",
+          "description": "declares the budget once at file scope — a git-only file, today it declares nothing"
+        },
+        {
           "path": "tests/cliRender.test.ts",
           "description": "declares the budget once at file scope"
         },
@@ -187,7 +191,7 @@
       "the spawn scan reads a git spawn as a process startup"
     ],
     "pins": [],
-    "notes": "Ruled at 4d6d7ad; the parked question closes this tick. Today `NODE_COMMANDS` excludes `git` with a cite and `declaredBudget` reads the registrar call. The per-file form wants `vi.setConfig({ testTimeout, hookTimeout })` — used nowhere in the suite yet — and the scan reading it. Budget-less git suites are more than the three queued: `worktrees` restates `30_000`, `friction` and `exportConsumers` declare nothing. Per-case declarations stay standing; removing them is the sweep's."
+    "notes": "Ruled at 4d6d7ad. Today `NODE_COMMANDS` excludes `git` with a cite and `declaredBudget` reads the registrar call. The per-file form wants `vi.setConfig({ testTimeout, hookTimeout })` — used nowhere in the suite yet — and the scan reading it. Declaring nothing at all: `friction`, `exportConsumers`, `fixtureRoots` (git-only, via `gitOut`); `worktrees` restates `30_000`. Per-case declarations stay standing; removing them is the sweep's."
   },
   {
     "tag": "THE-SUPERVISOR-DELEGATES-THE-RELEASE-GRACE",
