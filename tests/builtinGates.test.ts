@@ -645,6 +645,25 @@ describe("tscGate / vitestGate / eslintGate — pnpm cmd override (BUILTINGATES-
   );
 });
 
+/**
+ * A self-contained tsc project in a temp dir: its own tsconfig, one source
+ * file, no reference to this repo's sources or its tsconfig. Lets a gate
+ * case drive the real tsc without its verdict being the repo's typecheck.
+ */
+async function makeTsProject(source: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "flume-tsc-project-"));
+  await writeFile(
+    join(dir, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: { strict: true, noEmit: true, types: [] },
+      include: ["*.ts"],
+    }),
+    "utf8",
+  );
+  await writeFile(join(dir, "main.ts"), source, "utf8");
+  return dir;
+}
+
 describe("tscGate / vitestGate / eslintGate — args override (BUILTINGATES-CMD-OVERRIDE-PNPM-SHAPED-ARGS)", () => {
   it.each([
     ["tscGate", tscGate],
@@ -677,11 +696,44 @@ describe("tscGate / vitestGate / eslintGate — args override (BUILTINGATES-CMD-
   it(
     "tscGate({ cmd: 'npm', args: [...] }) composes a working npm invocation and actually runs tsc",
     async () => {
-      const result = await tscGate({
-        cmd: "npm",
-        args: ["exec", "--", "tsc", "--noEmit"],
-      }).run(ctx(process.cwd()));
-      expect(result.ok).toBe(true);
+      // The gate still runs at the repo root, so `npm exec` resolves tsc
+      // from this repo's node_modules with no network. tsc itself is
+      // pointed at a throwaway project: what this case judges is whether
+      // the composed invocation ran, and asserting the repo's own type
+      // health here reds it for whatever an unrelated entry broke.
+      const clean = await makeTsProject("export const n: number = 1;\n");
+      const broken = await makeTsProject('export const n: number = "no";\n');
+      try {
+        const npmExec = (project: string) =>
+          tscGate({
+            cmd: "npm",
+            args: [
+              "exec",
+              "--",
+              "tsc",
+              "--noEmit",
+              "--project",
+              join(project, "tsconfig.json"),
+            ],
+          }).run(ctx(process.cwd()));
+
+        const green = await npmExec(clean);
+        expect(green.ok).toBe(true);
+
+        // Non-vacuity (engineering.md "A green verdict is proven
+        // non-vacuous"): green over the clean project is evidence tsc *ran*
+        // only if the same composed invocation reports the one error the
+        // other project carries. An npm that silently no-op'd — which is
+        // the failure this case exists to catch — reads identically
+        // otherwise.
+        const red = await npmExec(broken);
+        expect(red.ok).toBe(false);
+        expect(red.message).toBe("TypeScript errors — commit reverted");
+        expect(red.details ?? "").toContain("TS2322");
+      } finally {
+        await rm(clean, { recursive: true, force: true });
+        await rm(broken, { recursive: true, force: true });
+      }
     },
     30_000,
   );
