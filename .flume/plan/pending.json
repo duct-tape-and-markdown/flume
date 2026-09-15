@@ -1,1 +1,55 @@
-[]
+[
+  {
+    "tag": "PROPERTY-TYPE-POSITIONS-RESOLVE-FROM-THE-EXPORTS-MAP",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/helpers/exportGraph.ts",
+          "description": "widen the nameability walk past function-type positions"
+        },
+        {
+          "path": "tests/exportConsumers.test.ts",
+          "description": "the fixture case and the repo-wide property verdict"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "whatever the widened walk turns up gains its entry line"
+        }
+      ]
+    },
+    "summary": "Widen the export-nameability walk to a reached type's non-function property positions",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "An export earns its consumer"
+    },
+    "acceptance": "A reached type's `readonly x: Internal` reds the scan until `Internal` is exported from an entry module; default lane green.",
+    "tests": ["the export scan flags a property type no entry module exports"],
+    "pins": [
+      "every type a reached property position names is exported from an entry module"
+    ],
+    "notes": "`fromTypeNode` (tests/helpers/exportGraph.ts) yields a signature only for a function type or a type literal, so `readonly x: Internal` on a reached type carries no verdict at all. Same private/namespace exclusions as the signature walk."
+  },
+  {
+    "tag": "README-ADOPTION-LIST-AGREES-WITH-INIT",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "agreement pin beside the README's other claims"
+        }
+      ]
+    },
+    "summary": "Pin the README adoption bullets against the file list harnessInit reports writing",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "acceptance": "A file added to or renamed in init's write list reds the suite, instead of leaving the landing page listing a file init no longer writes.",
+    "pins": [
+      "the README adoption section names every file flume-harness init writes"
+    ],
+    "notes": "README ~50-67 restates docs/CLI.md § `flume-harness init`: the four-file list, the gitignore/manifest line, the second-init refusal, the upgrade rule. The list is the enumerable half and `HarnessInitResult.written` is the real writer. What the front door should carry stays the human's."
+  }
+]
