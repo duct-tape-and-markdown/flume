@@ -78,6 +78,13 @@ X" whose X is observable now. The sweep domain for this lens includes
 `.flume/chain.ts` and `.flume/PROTOCOL.md`, which carry decisions no other
 lens reads.
 
+A further lens is **a negative assertion over a whole rendered artifact**: a
+`not.toMatch` or `not.toContain` whose subject is an entire rendered prompt,
+log, or verdict turns on whatever else that artifact happens to quote — a
+stack trace carrying the worktree path, and so the entry tag — rather than on
+the arm the case is about. Green by accident today, red for any tag spelling
+the forbidden phrase tomorrow. The assertion reads its own block.
+
 A further lens is **a repo-relative path composed with `node:path`**: a value
 the engine reports in git's alphabet (`stateRootRel`, a pathspec, a
 name-only line) joined or resolved through the host's separator before it

@@ -20,6 +20,11 @@ Every check lives at the most deterministic layer that can express it — a
   a test now pins is residue fileable against this section.
 - A directive repeated in a prompt *and* a rule is drift: the rule is the
   home, the prompt points at it.
+- **A shrink is not complete until the facts the removed prose was covering
+  for are re-homed.** A doc comment shrunk to a pointer may have been the only
+  citation a sibling site in the same file was leaning on; the promoting
+  commit moves that cite to the site that decides on the fact, or the shrink
+  has orphaned a claim while looking like tidying.
 - **Narration that anticipates its own obsolescence names both the trigger
   and the actor that retires it.** "Unpin when X", "revisit after Y", "for
   the v0.N line" — each is a decision carrying an expiry predicate. A
