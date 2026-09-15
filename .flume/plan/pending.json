@@ -1,1 +1,74 @@
-[]
+[
+  {
+    "tag": "CLI-DOCS-CARRY-THE-FLUME-HARNESS-VERB-SET",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CLI.md",
+          "description": "a per-verb section for the flume-harness bin, in the form the flume verbs already take"
+        },
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "widen the doc-vs-bin verb scan past the README"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CLI.md documents the flume-harness bin's verbs; the doc-vs-bin verb scan widens past the README",
+    "per": { "path": "spec/harness.md", "section": "Adoption and upgrade" },
+    "acceptance": "docs/CLI.md carries a section per verb the flume-harness bin dispatches — steps, refusals, exit codes, as the flume verbs have — and the packaging suite reds when a doc page omits one or names one the bin does not dispatch.",
+    "tests": ["docs/CLI.md names every verb the flume-harness bin dispatches"],
+    "pins": ["no README or docs page names a flume-harness verb the bin does not dispatch"],
+    "notes": "README's job-rm paragraph sends readers to docs/CLI.md for \"full per-verb contracts — steps, refusals, exit codes\"; the second bin is absent there (0 hits). `listedVerbs`/`runNodeStreams` in that suite already read the verb set off the bin's --help rather than a spelling in the test."
+  },
+  {
+    "tag": "PUBLIC-SIGNATURE-TYPES-RESOLVE-FROM-THE-EXPORTS-MAP",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/index.ts",
+          "description": "re-export PartitionOptions, PriorAttemptRef, RenderOptions"
+        },
+        {
+          "path": "tests/helpers/exportGraph.ts",
+          "description": "second arm: signature types no entry module exports"
+        },
+        {
+          "path": "tests/exportConsumers.test.ts",
+          "description": "the repo-wide verdict and its fixture arm"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "three public functions name a parameter type a consumer cannot import: PartitionOptions, PriorAttemptRef, RenderOptions",
+    "per": { "path": "spec/chain.md", "section": "The package a chain loads through" },
+    "acceptance": "Those three are named exports of src/index.ts, and the export scan reds when a function the exports map reaches names a src/ or harness/ type no entry module exports.",
+    "tests": ["every type an exported function's signature names is exported from an entry module"],
+    "pins": ["the export scan flags a signature type no entry module exports"],
+    "notes": "Measured over tsconfig.json: exactly these three on src/index.ts. harness/index.ts's three (Chain, EntryExtension, Gate) resolve through the \".\" entry, so the rule is \"some entry module\", not \"the same one\". Same shape as CHAIN-EXPORT-GATE-OPTION-TYPES (tests/builtinGates.test.ts)."
+  },
+  {
+    "tag": "MIGRATION-NOTES-ARE-REACHABLE-FROM-THE-DOCS-ROOT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "README.md", "description": "Pointers: the 0.16 note" },
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "every docs/MIGRATING page resolves from a link"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/MIGRATING-0.16.md is linked from nothing; pin every migration note's reachability",
+    "per": { "path": "spec/harness.md", "section": "Adoption and upgrade" },
+    "acceptance": "README's Pointers section links docs/MIGRATING-0.16.md, and the suite reds on a docs/MIGRATING-*.md page no README or CHANGELOG link resolves to.",
+    "tests": ["every docs/MIGRATING page is linked from README.md or CHANGELOG.md"],
+    "notes": "0.10 is linked from both, 0.11 and 0.12 from CHANGELOG, 0.16 from neither. CHANGELOG's own link lands at the cut — its [Unreleased] block is empty — so README is the site now."
+  }
+]
