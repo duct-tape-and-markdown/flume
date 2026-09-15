@@ -36,6 +36,44 @@
     "notes": "Verified on disk: `dropLock` (src/cli.ts) unlinks loop.pid, releases the claim and exits 143; `superviseLoop` keeps no handle on the child `defaultTickRunner` spawned \u2014 no kill, no wait. The posix lane's red (tests/tip-claim.integration.test.ts, the SIGTERM case) is that orphan's last write racing teardown; the case needs no edit once the tree is gone at exit. The integration lane is outside the judge's, so the named line lands in the default lane."
   },
   {
+    "tag": "AN-UNREAD-WAKE-STAMPS-THE-RUN-IT-WOKE-ON",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/windows.ts",
+          "description": "the unread arm names the stamp for the run it woke over, as the failing arm does for the run it drained"
+        },
+        {
+          "path": "harness/prompts/plan-inbox.md",
+          "description": "the lane paragraph's stamp directive follows the amended section"
+        },
+        {
+          "path": "tests/harnessCi.test.ts",
+          "description": "the named case, beside the unread-over-a-run case already there"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a lane woken by a failing run whose log the forge refuses renders no stamp to write, so it wakes the inbox slice every tick with no way out",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "CI lanes as a findings source"
+    },
+    "acceptance": "an unread block over the run that woke the slice names the stamp that closes the lane, so a forge that will not surrender a log costs one wake per run rather than one per tick.",
+    "tests": [
+      "the unread block over the run a lane woke on names the stamp that closes that lane"
+    ],
+    "pins": [
+      "a lane stamped at the run whose log the forge refused no longer makes the inbox slice live"
+    ],
+    "notes": "Verified on disk: `renderLane`'s unread arm (harness/windows.ts ~456) names the run off `CiUnreadOver` but writes no stamp, and plan-inbox.md still says such a lane \"wakes the next tick the same way until the forge answers\". The liveness leg needs no edit \u2014 `wokenLanes` compares the cheap `failing` status's run id, so stamping that id already closes the lane; that is the pin. The stamp line rides `over`, present on exactly this unread."
+  },
+  {
     "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
     "gate": {
       "kind": "open"
@@ -277,6 +315,32 @@
     "tests": [],
     "pins": [],
     "notes": "The leftovers DENIAL-HELPER-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS named, handed back by the ruling and re-verified on disk: src/priorAttempts.ts ~104 (cites *Loud or nothing* for the posture, not the page for the fact) and ~373 (no cite); tests/priorAttempts.test.ts ~369 (cites the neighbouring *chmod denies nothing on win32*) and ~412 (no cite). src/fsProbe.ts ~22 already cites it and declares its bound \u2014 out of scope. Collides with MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH on both files."
+  },
+  {
+    "tag": "LONG-PATH-FIXTURE-PROSE-CITES-THE-CEILING-THAT-OWNS-IT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/job.test.ts",
+          "description": "`longJobName`'s doc shrinks to a cite of the section that owns the ceiling, keeping the decision it states"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`longJobName`'s doc spells out the spawn-cwd MAX_PATH ceiling `platform-facts.md` now owns, so one measured external fact is held in two prose copies that can drift apart",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "the fixture helper turning on the spawn-cwd ceiling points at the section that owns it rather than restating it, and keeps the decision it exists to state \u2014 why the depth rides the name.",
+    "tests": [],
+    "pins": [],
+    "notes": "The leftover the inbox record handed derive, re-verified on disk: tests/job.test.ts ~2011-2019 restates the CreateProcess refusal, its `spawn git ENOENT` surfacing and the `toNamespacedPath` bound in full. All three are now owned by `.claude/rules/platform-facts.md`, *win32 refuses to spawn a process whose working directory exceeds MAX_PATH*. The two callers (~2057, ~2103) already point at `longJobName` and stay. Sole site; no other comment states the fact."
   },
   {
     "tag": "EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER",
