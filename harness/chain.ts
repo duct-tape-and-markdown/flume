@@ -5,12 +5,13 @@
  * prompt, gates, judge, windows, handoff and agent.
  *
  * **The assembly point, and nothing else.** Every part it wires already has
- * a home and its own tests — the gate set in `gates.ts`, the ladder in
- * `handoff.ts`, the windows in `windows.ts`, the args in `prompts.ts`, the
- * fields in `entryExtension.ts`, the ruling in `judge.ts`. What is decided
- * here is only what a `Phase` object needs that none of them can answer
- * alone: which fence each phase carries, which prompt it addresses, and the
- * order the gates sit in.
+ * a home and its own tests — the gate set in `gates.ts`, the consumer's
+ * declared gates in `declaredGates.ts`, the judge's gate in `judgeGate.ts`,
+ * the ladder in `handoff.ts`, the windows in `windows.ts`, the args in
+ * `prompts.ts`, the fields in `entryExtension.ts`, the ruling in `judge.ts`.
+ * What is decided here is only what a `Phase` object needs that none of them
+ * can answer alone: which fence each phase carries, which prompt it
+ * addresses, which of them a park is, and the order the gates sit in.
  *
  * **The declaration is parsed here, not by the consumer.** The whole of
  * adoption is one declaration module and the hop that applies this factory
@@ -40,7 +41,7 @@ import { resolve } from "node:path";
 
 import type { Agent } from "../src/Agent.js";
 import type { FlumeApi } from "../src/flumeApi.js";
-import type { Gate, GateContext, GatePhase, GateResult } from "../src/Gate.js";
+import type { Gate } from "../src/Gate.js";
 import { gitPath, resolvePendingPath } from "../src/paths.js";
 import type { EntryExtension, PendingEntry } from "../src/PendingSchema.js";
 import type { Chain, Phase, TickContext } from "../src/Phase.js";
@@ -53,11 +54,12 @@ import {
   type HarnessPhase,
   type PlanSlice,
 } from "./declaration.js";
-import { NamedLinesSchema, entryExtension } from "./entryExtension.js";
+import { constructGate } from "./declaredGates.js";
+import { entryExtension } from "./entryExtension.js";
 import { harnessGates, type GateEngine } from "./gates.js";
 import { resolveHandoff } from "./handoff.js";
 import { SESSIONS_REL } from "./ignores.js";
-import { judgeNamedLines, type JudgeVerdict } from "./judge.js";
+import { namedLinesGate } from "./judgeGate.js";
 import { planStatePath } from "./planState.js";
 import {
   BUILD_PROMPT_DATA_KEYS,
@@ -68,7 +70,6 @@ import {
   sharedPromptArgs,
 } from "./prompts.js";
 import { notePath, notesDir, recordDirs } from "./records.js";
-import type { Runner } from "./runner.js";
 import type { PlanSliceWindow } from "./sliceWindow.js";
 import { planSliceWindows } from "./windows.js";
 
@@ -86,18 +87,6 @@ const DESCRIPTIONS: Record<HarnessPhase, string> = {
     "Sweep one neighborhood of the posture rotation against the declared posture pages.",
   build: "Ship one (or N disjoint) pending entries to the trunk.",
 };
-
-/**
- * One gate a consumer declared, as the declaration's own union — read off
- * the schema's inferred type rather than respelled here, so a kind the
- * declaration adds is a typecheck failure at {@link constructGate} instead
- * of a shape that falls through its switch
- * (`.claude/rules/engineering.md`, *Derived state is computed, never
- * restated beside its source*).
- */
-type GateDeclaration = NonNullable<
-  NonNullable<Declaration["gates"]>[typeof BUILD_PHASE]
->[number];
 
 /** What {@link harnessChain} needs to build a consumer's chain. */
 export interface HarnessChainOptions {
@@ -355,160 +344,6 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     humanOnly: [],
     ...(policy ? { supervisorPolicy: policy } : {}),
   };
-}
-
-// ------------------------------------------------------------- the judge
-
-/**
- * The judge as a gate on the merged tree (`spec/harness.md`, *The judges*):
- * the consumer's suite is green, every `tests[]` line has a passing test
- * that fails at the base, and every `pins[]` line has one here.
- *
- * `afterMerge`, not `afterCommit`: under fanout, N parallel suites contend
- * for the host and revert clean commits on timing alone, while an
- * `afterMerge` revert is per-entry. The base half needs a base sha, which
- * is a fact of the gated span either way.
- *
- * A park is not judged. Its named lines belong to work the park did not
- * attempt, and judging them would revert the note — throwing away the one
- * channel the tick had for saying why it could not ship. Spelled as a skip
- * rather than an unexplained green (`.claude/rules/engineering.md`, *A green
- * verdict is proven non-vacuous*).
- */
-function namedLinesGate(
-  runner: Runner,
-  isPark: (entry: PendingEntry, touched: readonly string[]) => boolean,
-): Gate {
-  return {
-    name: "named lines",
-    when: "afterMerge",
-    async run(ctx: GateContext): Promise<GateResult> {
-      const entry = ctx.entry;
-      if (entry === undefined) {
-        return {
-          ok: true,
-          message: "no entry on this span",
-          skipped: "the judge rules on one entry's named lines",
-        };
-      }
-      if (isPark(entry, ctx.touchedPaths)) {
-        return {
-          ok: true,
-          message: `${entry.tag}: parked — the note alone`,
-          skipped: "a park attempts none of the entry's named lines",
-        };
-      }
-      const verdict = await judgeNamedLines(runner, {
-        tests: NamedLinesSchema.parse(entry.tests),
-        pins: NamedLinesSchema.parse(entry.pins),
-        baseSha: ctx.baseSha,
-        cwd: ctx.repoRoot,
-      });
-      if (verdict.outcome === "proven") {
-        return { ok: true, message: verdict.message };
-      }
-      if (verdict.outcome === "empty") {
-        // The entry named no behavior, and the suite is green over it. The
-        // empty case is asserted rather than inherited: what it costs is
-        // the chain's policy, and this package's is "nothing" — plan not
-        // naming a line is plan's defect to fix, not this commit's.
-        return {
-          ok: true,
-          message: verdict.message,
-          skipped: "the entry named no line to judge",
-        };
-      }
-      return {
-        ok: false,
-        message: verdict.message,
-        details: details(verdict),
-        ...(verdict.failingFiles.length > 0
-          ? { failingFiles: [...verdict.failingFiles] }
-          : {}),
-      };
-    },
-  };
-}
-
-/**
- * Every fact the judge ruled from, one line each — the line verdicts the
- * agent has to act on, then the failures the suite reported.
- *
- * Composed from the verdict's own fields rather than parsed back out of its
- * message: the judge reports facts precisely so a caller does not have to
- * pattern-match its prose (`.claude/rules/engineering.md`, *A fact the
- * engine holds is reported, never rediscovered*).
- */
-function details(verdict: JudgeVerdict): string {
-  const lines = verdict.lines.map(
-    (line) =>
-      `${line.lane}[] ${line.state}: ${JSON.stringify(line.line)}` +
-      (line.files.length > 0 ? ` (${line.files.join(", ")})` : ""),
-  );
-  const failures = verdict.failures.map(
-    (failure) =>
-      `FAIL ${failure.file}${failure.name ? ` × ${failure.name}` : ""}: ${failure.message}`,
-  );
-  return [...lines, ...failures].join("\n");
-}
-
-// ------------------------------------------------- the consumer's gates
-
-/**
- * The gates a consumer may hang on a phase by name — the engine's own
- * builtins that need nothing but a gate point, keyed by each one's own
- * `name` rather than by a second spelling of it.
- *
- * `chain-load` is spread rather than called: it is a plain `Gate`, so the
- * only thing a declaration can move on it is where it runs.
- */
-function registry(api: FlumeApi): Record<string, (when: GatePhase) => Gate> {
-  const entries: readonly [Gate, (when: GatePhase) => Gate][] = [
-    [api.tscGate, (when) => api.tscGate({ when })],
-    [api.vitestGate, (when) => api.vitestGate({ when })],
-    [api.eslintGate, (when) => api.eslintGate({ when })],
-    [api.chainLoadGate, (when) => ({ ...api.chainLoadGate, when })],
-  ];
-  return Object.fromEntries(entries.map(([gate, make]) => [gate.name, make]));
-}
-
-/**
- * One declared gate as the `Gate` the phase runs.
- *
- * A registry name the package does not ship is refused at load naming the
- * set it could have been — the other half of the declaration schema's
- * ruling that a name is any non-empty string until the factory reads it
- * (`declaration.ts`). A shell command and a committed script are one
- * mechanism with two names: both run through `sh -c` in the gate's own tree,
- * which resolves a relative path against that tree and honours a script's
- * own shebang.
- */
-function constructGate(api: FlumeApi, declared: GateDeclaration): Gate {
-  switch (declared.kind) {
-    case "registry": {
-      const table = registry(api);
-      const make = table[declared.name];
-      if (make === undefined) {
-        throw new Error(
-          `gate "${declared.name}" is not one the harness package's registry ` +
-            `ships — declare one of ${Object.keys(table)
-              .map((name) => `\`${name}\``)
-              .join(", ")}, or a \`shell\`/\`script\` gate ` +
-            `(spec/harness.md, What a consumer declares)`,
-        );
-      }
-      return make(declared.when);
-    }
-    case "shell":
-      return shellCommand(api, declared.command, declared.when);
-    case "script":
-      return shellCommand(api, declared.path, declared.when);
-  }
-}
-
-/** A command line as a gate, named by the line itself. */
-function shellCommand(api: FlumeApi, command: string, when: GatePhase): Gate {
-  return api.shellGate({ name: command, when, cmd: "sh", args: ["-c", command] });
 }
 
 // ------------------------------------------------- agents and provisioning

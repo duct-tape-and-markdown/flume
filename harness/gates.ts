@@ -29,9 +29,11 @@
  * decode. **This module spawns no process:** every fact the four judge on
  * either rides the context or comes off `GateEngine`.
  *
- * This module is the gates alone. Which phases exist, what fence each
- * carries, and how a consumer's declared gates are constructed belong to the
- * chain factory that calls this.
+ * This module is the package's own four alone. Which phases exist and what
+ * fence each carries belong to the chain factory that calls this
+ * (`chain.ts`); constructing a consumer's declared gates — including the
+ * shell line that does spawn — belongs to `declaredGates.ts`, which is why
+ * the sentence above holds here.
  */
 
 import { readFile } from "node:fs/promises";
