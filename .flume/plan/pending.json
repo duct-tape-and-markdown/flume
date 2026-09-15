@@ -1,45 +1,10 @@
 [
   {
-    "tag": "CITATION-WRAP-PIN-REFUSES-A-BROKEN-IDENTIFIER-CITE",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/commentCitations.ts",
-          "description": "report a wrapped span by whether its break-closed text is a subject"
-        },
-        {
-          "path": "tests/commentCitations.test.ts",
-          "description": "fixture arm for an identifier wrap, then the repo refusal widened off `/`"
-        },
-        {
-          "path": "src/cliVerdict.ts",
-          "description": "rewrap so the `TickVerdictMergeOutcome.tag` cite sits on one line"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Report a wrapped span that is a subject once its break is closed, not path spans alone; rewrap the identifier cite the wrap broke",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "A wrapped span whose break-closed text passes the subject rule is reported; the repo pin reds on any such wrap rather than on `/` alone, and `src/cliVerdict.ts` cites the type on one line.",
-    "tests": [
-      "the citation scan reports a wrapped span that names a subject once its break is closed",
-      "the repo citation pin refuses any citation broken across a comment line"
-    ],
-    "pins": [],
-    "notes": "Answers the note's fork: no narrower rule and no exclusion. Run over all 31 wrapped spans in `src/`/`harness/`, closing the break and applying the existing subject rule finds exactly `src/cliVerdict.ts:122` (`TickVerdictMergeOutcome.` + `tag`); the `Directory not empty` wraps at `src/git.ts:21`/`:305` keep a prose space and fail `SEGMENT` either way."
-  },
-  {
     "tag": "CITATION-SCAN-JUDGES-AN-UNBACKTICKED-MD-PAGE-NAME",
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
