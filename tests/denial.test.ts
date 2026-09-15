@@ -100,7 +100,7 @@ describe("denyDirectory — a plain file where a directory is read", () => {
     expect(readFileSync(dir, "utf8")).toBe(DENIAL_NOTE);
   });
 
-  it("denying a parent instead of the read path reads as plain absence to an existence probe, which is why the primitive targets the read path", async () => {
+  it("denying a parent instead of the read path reads as plain absence to `throwIfNoEntry: false`, which is why the primitive targets the read path", async () => {
     const root = await scratch();
     const jobDir = join(root, "job");
     mkdirSync(join(jobDir, "plan"), { recursive: true });
@@ -111,10 +111,12 @@ describe("denyDirectory — a plain file where a directory is read", () => {
     // The tempting seal: one denial covering every read beneath it.
     denyDirectory(join(jobDir, "plan"));
 
-    // And the gate above the refusal now answers "absent" rather than
-    // refusing — `throwIfNoEntry` suppresses ENOTDIR alongside ENOENT, so the
-    // case would assert its loud-or-nothing verdict over the silent arm.
-    // The refusal is reached only when the read path itself is denied.
+    // And the option answers "absent" rather than refusing: it suppresses
+    // ENOTDIR alongside ENOENT. `existsLoud` (src/fsProbe.ts) is off it for
+    // exactly this reason and refuses here on posix — but win32 raises ENOENT
+    // for the same lookup, so a parent denial still reads as absence on that
+    // host whatever the probe does. The refusal is reached on every host only
+    // when the read path itself is denied.
     expect(statSync(read, { throwIfNoEntry: false })).toBeUndefined();
   });
 

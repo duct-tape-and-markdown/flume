@@ -1585,8 +1585,9 @@ describe("jobStatus — enumeration units", () => {
       // Deny the queue file structurally (`tests/helpers/denial.ts`): the
       // path is still there to a stat, and the read fails EISDIR — not
       // ENOENT (`.claude/rules/engineering.md`, "Loud or nothing"). Denying
-      // the *parent* would not arm this: `statSync` with `throwIfNoEntry`
-      // folds ENOTDIR into absence, so the gate would take its absent arm.
+      // the *parent* would not arm this on every host: win32 reports a path
+      // through a non-directory as ENOENT, so the gate would take its absent
+      // arm there (`tests/helpers/denial.ts`, *deny the exact path*).
       denyFile(pendingPath);
 
       let caught: NodeJS.ErrnoException | undefined;
@@ -1792,6 +1793,55 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  /*
+   * The obstructed-ancestor arm of the case above. `jobStatus` enumerates
+   * `jobs/` by dirent and skips a non-directory, so the job dir itself cannot
+   * be replaced by a plain file without dropping the row — the obstruction
+   * goes on the baton's path *inside* the job's own dir, and `awake` reaches
+   * it through a symlink, which is the one shape that keeps the job dir a
+   * directory to the enumeration while the lookup still passes through a
+   * plain file.
+   *
+   * win32 answers that lookup ENOENT rather than ENOTDIR
+   * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+   * non-directory as not found*), so the probe reads it as absent there and
+   * the case declares its host and skips rather than asserting a refusal that
+   * host cannot make.
+   */
+  it.runIf(process.platform !== "win32")(
+    "jobStatus reads a job whose own dir is obstructed as an unreadable baton, not as hibernating",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+      const jobDir = join(dir, ".flume", "jobs", "sealed");
+      try {
+        // The baton lives one hop away, inside the job's own dir, and is read
+        // through that hop. Non-vacuity first: the row really reports the
+        // awake phase before anything is obstructed.
+        await mkdir(join(jobDir, "store", "awake"), { recursive: true });
+        await writeFile(join(jobDir, "store", "awake", "build"), "");
+        await symlink(join("store", "awake"), awakeDir(jobDir));
+        expect(jobStatus(dir)).toEqual([
+          { name: "sealed", awake: ["build"], pending: 0 },
+        ]);
+
+        // Obstruct the job dir's own store: the baton's path now runs through
+        // a plain file. The job dir stays a directory, so the row is still
+        // enumerated — and the probe above the read must refuse rather than
+        // fold the obstruction into "no awake/ dir".
+        denyDirectory(join(jobDir, "store"));
+        // The obstruction really is there, and the job dir really is still a
+        // directory to the enumeration.
+        expect(await readdir(jobDir)).toEqual(["awake", "store"]);
+
+        expect(jobStatus(dir)).toEqual([
+          { name: "sealed", awake: null, pending: 0 },
+        ]);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("jobStatus never hides sibling jobs when one job's awake dir cannot be read", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));

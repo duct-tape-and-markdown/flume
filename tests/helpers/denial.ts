@@ -14,18 +14,20 @@
  *
  * **Deny the exact path the code reads, never one of its parents.** A parent
  * is the tempting target, because one seal covers every read beneath it; it
- * is also the one shape that silently un-arms the fixture, for two
- * independent reasons. `statSync` with `throwIfNoEntry: false` — what
- * `existsLoud` (`src/fsProbe.ts`) probes with — suppresses `ENOTDIR`
- * alongside `ENOENT`, so a plain file standing in for a parent directory
- * reads as plain absence on every host and each existence gate above the
- * refusal takes its absent arm. And win32 reports a path *through* a
- * non-directory as not-found outright rather than as not-a-directory, which
- * is the divergence the Windows lane read off `PriorAttemptStore.readAll`'s
- * own refusal case: it enumerates a child of the path its fixture denies, so
- * the listing resolved empty there where it raises `ENOTDIR` here. Denied at
- * the read path itself, the stat stays truthful (the entry really is there)
- * and the failure lands on the read, which is where the case is looking.
+ * is also the one shape that silently un-arms the fixture. win32 reports a
+ * path *through* a non-directory as not-found outright rather than as
+ * not-a-directory, so a plain file standing in for a parent directory reads
+ * as plain absence there and each existence gate above the refusal takes its
+ * absent arm — the divergence the Windows lane read off
+ * `PriorAttemptStore.readAll`'s own refusal case: it enumerates a child of
+ * the path its fixture denies, so the listing resolved empty there where it
+ * raises `ENOTDIR` here. Posix no longer joins it: `existsLoud`
+ * (`src/fsProbe.ts`) stats without `throwIfNoEntry: false` and refuses an
+ * obstructed ancestor (`tests/fsProbe.test.ts`), which leaves a parent
+ * denial arming the case on one host and not the other — the shape that
+ * reads green on the lane that never exercised it. Denied at the read path
+ * itself, the stat stays truthful (the entry really is there) and the
+ * failure lands on the read, which is where the case is looking.
  *
  * What a denied path raises is therefore the **split**, not an errno: every
  * consumer here is a gate that folds `ENOENT` into absence and must refuse on
