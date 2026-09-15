@@ -34,29 +34,3 @@ secret, and whether release automation is wanted at all for a package whose
 cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
-
-## `spec/cli.md` still calls the exports map single-entry (NEEDS AMENDMENT)
-
-Swept out of the harness-bin neighborhood. `spec/cli.md:348` reads "ESM-only:
-`"type": "module"`, Node ≥ 22, one strict `"."` export." The map has carried
-two entries since the harness package shipped: `package.json:24-33` declares
-`"."` and `"./harness"`, and `spec/chain.md:715-719` already states the pair by
-name ("**A strict, enumerated `exports` map.** `"."` and `"./harness"`").
-
-Why it is worth a park rather than a debt line: derive reads this corpus as
-current truth, and the two sentences disagree about a shape a change would act
-on. A derive tick that lands on `spec/cli.md` can file a perfectly cite-clean
-entry to narrow the map back to one entry — which breaks every consumer
-importing `@dtmd/flume/harness`. Plan cannot fix it (spec is the human's
-surface) and build cannot (spec is outside its fence), so it stays here until
-someone edits the line.
-
-Recommended: strike the clause rather than restate the pair. The same bullet
-already says "The export map, its condition, and the reason are the packaging
-half of the chain-loading contract — see `spec/chain.md`", so the count is a
-second copy beside the source it defers to. Dropping five words leaves
-`"type": "module"` and the node floor, and `spec/chain.md` stays the one home.
-
-Alternative, if the ESM-only bullet should stay self-contained: replace "one
-strict `"."` export" with "a strict, enumerated exports map (`spec/chain.md`)"
-— still a pointer, no number to drift.
