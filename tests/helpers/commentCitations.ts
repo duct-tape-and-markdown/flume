@@ -26,7 +26,10 @@
  * span behind it. A wrapped span is reported apart from the judged set,
  * because the space markdown puts at the break is not a character any subject
  * spelling admits: it names nothing the scan can resolve, whatever the author
- * meant by it.
+ * meant by it. Which of those wraps broke a *citation* is read by closing the
+ * break and applying the same subject rule the judged set is held to — the
+ * one rule, in either alphabet, rather than a shape the wrap gets its own
+ * spelling for.
  *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
@@ -64,6 +67,20 @@ export interface CitationSite {
   readonly text: string;
 }
 
+/**
+ * A backticked span a comment line left open, read both ways its break can
+ * be read: `text` as markdown joins it, `closed` as the author spelled it
+ * before the wrap.
+ */
+export interface WrappedCitation extends CitationSite {
+  /**
+   * The span with the break itself removed — the spelling the wrap broke.
+   * Only the break goes: a span carrying a space of its own still carries it,
+   * so prose closes to prose and stays out of the subject rule.
+   */
+  readonly closed: string;
+}
+
 export interface CitationScan {
   /** The modules read, relative to `root` — the scan's domain. */
   readonly modules: readonly string[];
@@ -76,7 +93,14 @@ export interface CitationScan {
    * span meant to carry falls out of the scan whatever it named. Reported so
    * the wrap cannot do that quietly.
    */
-  readonly wrapped: readonly CitationSite[];
+  readonly wrapped: readonly WrappedCitation[];
+  /**
+   * The wraps that broke a citation: `closed` is a subject, so the span was
+   * a name the scan would have judged had the author not wrapped it. A defect
+   * at the comment rather than a resolution arm the scan is missing — no
+   * renaming of what it cites can ever red it.
+   */
+  readonly broken: readonly WrappedCitation[];
   /** The subset judged: the spans shaped like an identifier reference. */
   readonly scanned: readonly CitationSite[];
   /** Judged citations whose every token names something the trees hold. */
@@ -271,18 +295,19 @@ const commentLines = (sf: ts.SourceFile): readonly CommentLine[] => {
 const CONTINUATION_MARGIN = /^\s*(?:\/\/+|\*+)\s*/;
 
 /**
- * A wrapped span as markdown reads it: the line break and the next line's
- * margin collapse into the single space that breaks whatever the span was
- * spelling.
+ * A wrapped span read across its break. The line break and the next line's
+ * margin collapse into `at`: a space is what markdown renders and what breaks
+ * whatever the span was spelling; nothing at all is the spelling the author
+ * had before the wrap.
  */
-const joinWrapped = (raw: string): string =>
+const joinWrapped = (raw: string, at: string): string =>
   raw
     .split(/\r?\n/)
     .map((line, index) =>
       index === 0 ? line : line.replace(CONTINUATION_MARGIN, ""),
     )
     .map((line) => line.trim())
-    .join(" ");
+    .join(at);
 
 /**
  * Every backticked span in a file's comments, split by whether the line that
@@ -299,9 +324,9 @@ const joinWrapped = (raw: string): string =>
 const commentSpans = (
   sf: ts.SourceFile,
   module: string,
-): { readonly closed: CitationSite[]; readonly wrapped: CitationSite[] } => {
+): { readonly closed: CitationSite[]; readonly wrapped: WrappedCitation[] } => {
   const closed: CitationSite[] = [];
-  const wrapped: CitationSite[] = [];
+  const wrapped: WrappedCitation[] = [];
 
   const read = (run: readonly CommentLine[]): void => {
     if (run.length === 0) return;
@@ -330,9 +355,17 @@ const commentSpans = (
       const site = {
         module,
         line: first + (before.match(/\n/g)?.length ?? 0),
-        text: raw.includes("\n") ? joinWrapped(raw) : raw,
+        text: raw,
       };
-      (raw.includes("\n") ? wrapped : closed).push(site);
+      if (raw.includes("\n")) {
+        wrapped.push({
+          ...site,
+          text: joinWrapped(raw, " "),
+          closed: joinWrapped(raw, ""),
+        });
+      } else {
+        closed.push(site);
+      }
       index = closeAt + 1;
     }
   };
@@ -421,7 +454,7 @@ export const scanCommentCitations = (
 
   // --- what their comments cite ------------------------------------------
   const backticked: CitationSite[] = [];
-  const wrapped: CitationSite[] = [];
+  const wrapped: WrappedCitation[] = [];
   for (const sf of sources) {
     const spans = commentSpans(sf, relPath(root, resolve(sf.fileName)));
     backticked.push(...spans.closed);
@@ -446,6 +479,9 @@ export const scanCommentCitations = (
     modules: [...modules],
     backticked,
     wrapped,
+    // The wrap is read by the same rule as the judged set, with the break
+    // closed: what the author spelled before markdown put a space in it.
+    broken: wrapped.filter((site) => isSubject(site.closed)),
     scanned,
     resolved: scanned.filter((site) => resolves(site.text)),
     dangling: scanned.filter((site) => !resolves(site.text)),

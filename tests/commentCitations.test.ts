@@ -50,9 +50,12 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * sitting past a division pair that a raw token scan reads as a regular
  * expression (unscanned, its finding would be lost).
  *
- * The last comment is a path citation broken across the line, with a resolving
- * citation behind it — the wrap costs both if the reader pairs backticks one
- * line at a time.
+ * The last comments are the wraps: a path citation broken across the line
+ * with a resolving citation behind it — the wrap costs both if the reader
+ * pairs backticks one line at a time — then an identifier citation broken the
+ * same way, and a span of prose that carries a space of its own, so the
+ * break-closed reading is shown discriminating rather than reporting every
+ * wrap it meets.
  *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
@@ -123,6 +126,13 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// so \`Shipped\` behind it is read rather than taking the wrap's own`,
     `// backtick as its opening.`,
     `export const WRAPPED = 4;`,
+    ``,
+    `// A wrap breaks an identifier the same way, and closing the break is what`,
+    `// reads it: \`Shipped.`,
+    `// maxDepth\` is the member it meant, which markdown's space hides. A wrap`,
+    `// carrying prose closes to no subject at all: \`not`,
+    `// a citation\` keeps a space of its own whatever the break does.`,
+    `export const BROKEN = 5;`,
     ``,
   ].join("\n"),
 };
@@ -343,10 +353,12 @@ it("the citation scan judges neither an extensionless path nor a relative specif
 
 it("the citation scan reports a backticked span its comment line leaves open", () => {
   // Vacuity guard: every other comment in the fixture closes its spans on the
-  // line that opened them, so the single report below is the wrap the fixture
-  // authored rather than a parity artifact of some earlier comment.
+  // line that opened them, so the three reports below are the wraps the
+  // fixture authored rather than a parity artifact of some earlier comment.
   expect(fixtureScan.wrapped.map(formatCitation)).toEqual([
     "lib/surface.ts:42 lib/ dataShapes.ts",
+    "lib/surface.ts:49 Shipped. maxDepth",
+    "lib/surface.ts:51 not a citation",
   ]);
 
   // Reported because nothing else can reach it: neither half is a span of its
@@ -363,6 +375,34 @@ it("the citation scan reports a backticked span its comment line leaves open", (
   // wrap's backtick and taking every span after it out of step.
   expect(fixtureScan.resolved.map(formatCitation)).toContain(
     "lib/surface.ts:44 Shipped",
+  );
+});
+
+it("the citation scan reports a wrapped span that names a subject once its break is closed", () => {
+  // Vacuity guard: all three wraps were read and closed, in both alphabets
+  // and in prose, before any subset of them is judged. Closing the break
+  // removes the break alone — the prose span keeps the space it spelled
+  // itself, which is why it closes to no subject.
+  expect(fixtureScan.wrapped.map((s) => s.closed)).toEqual([
+    "lib/dataShapes.ts",
+    "Shipped.maxDepth",
+    "nota citation",
+  ]);
+
+  // The two that close to a name are reported as broken citations, and the
+  // one that closes to prose is not: the wrap is read by the subject rule the
+  // judged set is held to, in either alphabet, rather than by the slash.
+  expect(fixtureScan.broken.map(formatCitation)).toEqual([
+    "lib/surface.ts:42 lib/ dataShapes.ts",
+    "lib/surface.ts:49 Shipped. maxDepth",
+  ]);
+
+  // Reported because nothing else can reach the identifier wrap either: the
+  // member it names resolves when spelled on one line, and carries markdown's
+  // space when the author wraps it, so no resolution arm answers it.
+  expect(fixtureScan.resolved.map((s) => s.text)).toContain("Shipped.maxDepth");
+  expect(fixtureScan.scanned.map((s) => s.text)).not.toContain(
+    "Shipped. maxDepth",
   );
 });
 
@@ -446,17 +486,17 @@ it("the repo citation pin judges the repo-relative path citations src/ and harne
   }
 });
 
-it("the repo citation pin refuses a path citation broken across a comment line", () => {
+it("the repo citation pin refuses any citation broken across a comment line", () => {
   // Vacuity guard: these trees wrap backticked spans in quantity — commands,
-  // literal payloads, a fenced example — so the emptiness below is the path
-  // filter discriminating rather than a reader that found no wrap at all.
+  // literal payloads, a fenced example — so the emptiness below is the
+  // subject rule reading those wraps and passing over them as prose, not a
+  // reader that found no wrap to read at all.
   expect(repoScan.wrapped.length).toBeGreaterThan(20);
 
-  // A path citation the wrap broke is judged by nothing, so it is a defect at
-  // the comment rather than a resolution arm the scan is missing: the space
-  // markdown inserts is not a character any path segment spells, and the pin
-  // above stays green over it however the file is renamed. Rewrap the span.
-  expect(
-    repoScan.wrapped.filter((s) => s.text.includes("/")).map(formatCitation),
-  ).toEqual([]);
+  // A citation the wrap broke is judged by nothing, so it is a defect at the
+  // comment rather than a resolution arm the scan is missing: the space
+  // markdown inserts is not a character any subject spelling admits, and the
+  // pins above stay green over it however the name it cites is renamed.
+  // Rewrap the span.
+  expect(repoScan.broken.map(formatCitation)).toEqual([]);
 });
