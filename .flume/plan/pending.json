@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "BUILD-ARGS-RENDER-THROUGH-THE-DECLARED-PHASE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessBuildArgs.test.ts",
+          "description": "the render case's phase, and the file's agreement-gate docblock"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "drive the build-args render case through a phase carrying the package's declared prompt data keys, not a hand-authored one",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "acceptance": "the render case's consumer carries the package's declared build+shared prompt data keys; no phase in the file omits them",
+    "tests": [],
+    "pins": [
+      "build's per-tick args reach the renderer through a phase carrying the package's declared prompt data keys"
+    ],
+    "notes": "tests/harnessBuildArgs.test.ts:369 buildPhase() omits promptDataKeys; harness/chain.ts:341 declares [...SHARED,...BUILD] and names the hazard at 338-340 — a cited spec section is routinely the prose documenting the span grammar. So the file's docblock (lines 8-14) claims the real reader while configuring it unlike any tick: PER_SECTION_TEXT from the real spec/harness.md is scanned un-neutralized, and a span landing in that section runs sh from this suite."
+  }
+]

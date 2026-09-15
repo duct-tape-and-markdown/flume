@@ -86,7 +86,9 @@
       "tests/paths.test.ts",
       "tests/harnessCiteResolver.test.ts",
       "tests/Agent.test.ts",
-      "tests/Prompt.test.ts"
+      "tests/Prompt.test.ts",
+      "tests/harnessBuildArgs.test.ts",
+      "harness/prompts/build.md"
     ]
   }
 }
