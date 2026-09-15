@@ -114,10 +114,12 @@ import {
   revParse,
   showNameOnly,
   softResetTo,
+  statusRecords,
   tipClaimPath,
   trackedModifications,
   TipClaimHeldError,
 } from "../src/git.ts";
+import { buildFlumeApi } from "../src/flumeApi.ts";
 
 const exec = promisify(execFile);
 
@@ -1301,6 +1303,63 @@ describe.runIf(process.platform === "win32")(
     });
   },
 );
+
+/**
+ * The decode a chain reads, driven through `buildFlumeApi` rather than the
+ * module export: the claim is that the fact reaches the API surface a gate
+ * is handed, not merely that a function in `src/` exists
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ */
+describe("buildFlumeApi().git.statusRecords", () => {
+  const api = (): ReturnType<typeof buildFlumeApi> =>
+    buildFlumeApi({ repoRoot: repo, configDir: repo, flumeDir: repo });
+
+  it("api.git reports a status record's code and path with a rename's origin field consumed", async () => {
+    const git = api().git;
+    expect(git.statusRecords).toBe(statusRecords);
+
+    await writeFile(join(repo, "old name.ts"), "content\n");
+    await writeFile(join(repo, "edited.ts"), "one\n");
+    await exec("git", ["add", "--", "old name.ts", "edited.ts"], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "seed rename source"], {
+      cwd: repo,
+    });
+    await exec("git", ["mv", "old name.ts", "new name.ts"], { cwd: repo });
+    await writeFile(join(repo, "edited.ts"), "two\n");
+    await writeFile(join(repo, "scratch.log"), "untracked\n");
+
+    const records = await git.statusRecords(repo);
+
+    // Three records, not four: `-z` spends a second NUL field on the path a
+    // rename came from, and that field carries no status code — read as a
+    // record of its own it would arrive as a path with its first three bytes
+    // eaten, under a code sliced out of the middle of a filename.
+    expect(records).toEqual([
+      { code: " M", path: "edited.ts" },
+      { code: "R ", path: "new name.ts" },
+      { code: "??", path: "scratch.log" },
+    ]);
+    // Both bytes verbatim, so staged and unstaged stay distinguishable and a
+    // caller can tell untracked from tracked without a second git call.
+    expect(records.map((r) => r.code.trim())).toEqual(["M", "R", "??"]);
+  });
+
+  it("drops no record the porcelain listing carries, so trackedModifications is its filter", async () => {
+    await writeFile(join(repo, "tracked.ts"), "one\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "seed"], { cwd: repo });
+    await writeFile(join(repo, "tracked.ts"), "edited\n");
+    await writeFile(join(repo, "scratch.log"), "untracked\n");
+
+    const records = await api().git.statusRecords(repo);
+    // Vacuity pin: an empty listing would satisfy the filter claim below.
+    expect(records.length).toBe(2);
+    expect(await trackedModifications(repo)).toEqual(
+      records.filter((r) => r.code !== "??").map((r) => r.path),
+    );
+  });
+});
 
 describe("trackedModifications", () => {
   it("names a staged rename by the path on disk and consumes the origin field", async () => {

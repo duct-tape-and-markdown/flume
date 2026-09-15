@@ -171,7 +171,10 @@ export function harnessChain(options: HarnessChainOptions): Chain {
    */
   const engine: GateEngine = {
     pendingGate: api.pendingGate,
-    git: { readFileAtRef: api.git.readFileAtRef },
+    git: {
+      readFileAtRef: api.git.readFileAtRef,
+      statusRecords: api.git.statusRecords,
+    },
   };
 
   const windows = planSliceWindows({

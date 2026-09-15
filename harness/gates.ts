@@ -24,21 +24,22 @@
  * diff, rebuilds a state-root path, or infers which phase it is running for
  * from the shape of a commit (`.claude/rules/engine-boundary.md`, *Told, not
  * inferred*). Whether a touched record was written or drained is read by
- * asking for its bytes at the commit — absent is deleted — rather than by
- * shelling out for a name-status the engine does not report.
+ * asking for its bytes at the commit — absent is deleted — and what the
+ * worktree still holds uncommitted is read off the engine's own status
+ * decode. **This module spawns no process:** every fact the four judge on
+ * either rides the context or comes off `GateEngine`.
  *
  * This module is the gates alone. Which phases exist, what fence each
  * carries, and how a consumer's declared gates are constructed belong to the
  * chain factory that calls this.
  */
 
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { promisify } from "node:util";
 
 import type { PendingGateOptions } from "../src/builtinGates.js";
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
+import type { GitStatusRecord } from "../src/git.js";
 import { gitPath, matchesAny } from "../src/paths.js";
 import type { EntryExtension } from "../src/PendingSchema.js";
 import type { Phase } from "../src/Phase.js";
@@ -47,8 +48,6 @@ import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js
 import { BUILD_PHASE, type Declaration } from "./declaration.js";
 import { entryExtension, PerSchema } from "./entryExtension.js";
 import { RECORD_MAX_BYTES, notePath, recordDirs } from "./records.js";
-
-const exec = promisify(execFile);
 
 /**
  * The engine values the package's gates run through, named by the shape they
@@ -74,6 +73,13 @@ export interface GateEngine {
       ref: string,
       path: string,
     ) => Promise<string | null>;
+    /**
+     * Every path `git status` reports dirty in a worktree right now, already
+     * decoded — NUL-separated, so a quoted spelling never reaches a fence
+     * glob, and a rename's origin field consumed rather than read as a
+     * record of its own.
+     */
+    readonly statusRecords: (cwd: string) => Promise<GitStatusRecord[]>;
   };
 }
 
@@ -333,39 +339,38 @@ function recordsGate(engine: GateEngine): Gate {
  * and is left alone; a tracked one is residue wherever it sits, because the
  * tick is what dirtied it.
  *
- * **Read NUL-separated, because the default form is quoted.** Porcelain v1
- * wraps any path carrying a space, a control character, or a non-ASCII byte
- * in double quotes with the offending bytes escaped, and a quoted spelling
- * matches no fence glob — so an untracked file the tick was meant to commit
- * reads as out-of-fence and the gate passes over the very discard it exists
- * to refuse. `-z` is the unquoted form; `core.quotePath=false` is not, since
- * a space still quotes.
+ * **The status walk is the engine's, not this gate's.** What git printed
+ * about a path is a fact the engine already decodes to name a tick's
+ * uncommitted tracked edits, so it arrives on `engine.git.statusRecords`
+ * rather than being re-derived from a second `git status` here
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*) — which is also why this module still shells out for
+ * nothing. The decode is the part a copy gets wrong: porcelain v1 wraps any
+ * path carrying a space, a control character, or a non-ASCII byte in double
+ * quotes with the offending bytes escaped, and a quoted spelling matches no
+ * fence glob, so an untracked file the tick was meant to commit would read
+ * as out-of-fence and this gate would pass over the very discard it exists
+ * to refuse.
+ *
+ * What stays the gate's is the **verdict**: which codes are residue, and
+ * which untracked paths the fence makes this tick's to answer for.
  *
  * `afterCommit` only: `repoRoot` is the tick's own worktree there, and the
  * trunk after a merge holds nothing of the agent's to read.
  */
-function cleanTreeGate(writablePaths: readonly string[]): Gate {
+function cleanTreeGate(
+  writablePaths: readonly string[],
+  engine: GateEngine,
+): Gate {
   const fence = [...writablePaths];
   return {
     name: "clean-tree",
     when: "afterCommit",
     async run(ctx) {
-      const { stdout } = await exec(
-        "git",
-        ["status", "--porcelain", "-z", "--untracked-files=all"],
-        { cwd: ctx.repoRoot },
-      );
-      const records = stdout.split("\0");
       const left: string[] = [];
-      for (let i = 0; i < records.length; i += 1) {
-        const record = records[i];
-        if (!record) continue;
-        const code = record.slice(0, 2);
-        const path = record.slice(3);
-        // A rename or copy spends a second record on the path it came from;
-        // that field carries no status, so it is consumed here rather than
-        // read as one. The surviving path is the one on disk now.
-        if (code.includes("R") || code.includes("C")) i += 1;
+      for (const { code, path } of await engine.git.statusRecords(
+        ctx.repoRoot,
+      )) {
         if (code === "??" && !matchesAny(path, fence)) continue;
         left.push(`${path} (${code.trim()})`);
       }
@@ -417,7 +422,7 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
   const { phase, declaration, engine, entryFields, declared = [] } = options;
   return [
     recordsGate(engine),
-    cleanTreeGate(phase.writablePaths),
+    cleanTreeGate(phase.writablePaths, engine),
     engine.pendingGate({
       extension: entryExtension(entryFields),
       targetFence: buildFence(declaration),

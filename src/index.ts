@@ -50,6 +50,10 @@ export { setupWorktree } from "./setupWorktree.js";
 // type is named here, for a chain that holds one in a variable.
 export { type WorktreeRegistry } from "./worktrees.js";
 
+// Likewise for `FlumeApi.git.statusRecords`: the decoded record shape, for a
+// chain that filters the list into a named variable.
+export { type GitStatusRecord } from "./git.js";
+
 export { type StandardSchemaV1 } from "./standardSchema.js";
 
 export {

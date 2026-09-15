@@ -763,8 +763,28 @@ export async function acquireTipClaim(
 }
 
 /**
- * Tracked paths dirty in `cwd` right now — staged, unstaged, or both — as
- * `git status --porcelain` reports them.
+ * One `git status --porcelain` record, decoded.
+ *
+ * The record's own two fields and nothing derived from them: what git said
+ * about a path, never what a caller should do about it
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported*).
+ */
+export interface GitStatusRecord {
+  /**
+   * The two-byte `XY` code porcelain v1 prefixes the record with, verbatim —
+   * index status then worktree status, spaces included, so `" M"` and `"M "`
+   * stay distinguishable and `"??"` is readable as untracked.
+   */
+  readonly code: string;
+  /** The path the record is about, as it stands on disk now. */
+  readonly path: string;
+}
+
+/**
+ * Every path `git status` reports dirty in `cwd` right now, decoded — the
+ * single porcelain walk in the tree. A caller wanting a subset filters these
+ * records; it does not spawn its own `git status` and re-decode the same
+ * bytes beside this one.
  *
  * spec/loop.md "Tip verify": an agent's worktree is removed at teardown along
  * with everything uncommitted in it, and a soft-reset span's content lands
@@ -772,10 +792,11 @@ export async function acquireTipClaim(
  * the worktree still exists so the tick verdict can name what was lost —
  * the fact alone; what it means is the chain's.
  *
- * **Tracked only.** An untracked file has no committed counterpart to have
- * been modified away from, and a worktree's untracked set is dominated by
- * build output nobody lost (`node_modules`, caches). `??` records are
- * therefore dropped; the porcelain default already omits `!!`.
+ * `--untracked-files=all` is asked for unconditionally, so an untracked
+ * directory arrives as the files inside it rather than as one directory
+ * record a caller filtering on names could not match. A caller that drops
+ * `??` outright — {@link trackedModifications} — is unaffected by the
+ * expansion, which is why one call serves both.
  *
  * `-z`, for {@link nameOnlyPaths}' reasons applied to a status listing: the
  * default form double-quotes any path carrying a space, a control character,
@@ -784,19 +805,39 @@ export async function acquireTipClaim(
  * it came from; that field carries no status code, so it is consumed here
  * rather than read as a record of its own — the surviving path is the one
  * reported.
+ *
+ * The porcelain default already omits `!!`, so ignored paths never appear.
+ */
+export async function statusRecords(cwd: string): Promise<GitStatusRecord[]> {
+  const { stdout } = await run(cwd, [
+    "status",
+    "--porcelain",
+    "-z",
+    "--untracked-files=all",
+  ]);
+  const fields = stdout.split("\0");
+  const decoded: GitStatusRecord[] = [];
+  for (let i = 0; i < fields.length; i += 1) {
+    const field = fields[i];
+    if (!field) continue;
+    const code = field.slice(0, 2);
+    if (code.includes("R") || code.includes("C")) i += 1;
+    decoded.push({ code, path: field.slice(3) });
+  }
+  return decoded;
+}
+
+/**
+ * {@link statusRecords} filtered to tracked paths — staged, unstaged, or
+ * both. The decode, the `-z` reasoning and the rename-origin handling all
+ * live there.
+ *
+ * **Tracked only.** An untracked file has no committed counterpart to have
+ * been modified away from, and a worktree's untracked set is dominated by
+ * build output nobody lost (`node_modules`, caches). `??` records are
+ * therefore dropped.
  */
 export async function trackedModifications(cwd: string): Promise<string[]> {
-  const { stdout } = await run(cwd, ["status", "--porcelain", "-z"]);
-  const records = stdout.split("\0");
-  const paths: string[] = [];
-  for (let i = 0; i < records.length; i += 1) {
-    const record = records[i];
-    if (!record) continue;
-    const code = record.slice(0, 2);
-    const path = record.slice(3);
-    if (code.includes("R") || code.includes("C")) i += 1;
-    if (code === "??") continue;
-    paths.push(path);
-  }
-  return paths;
+  const records = await statusRecords(cwd);
+  return records.filter((r) => r.code !== "??").map((r) => r.path);
 }

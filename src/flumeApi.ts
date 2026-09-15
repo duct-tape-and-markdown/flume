@@ -36,7 +36,12 @@ import {
   readTickVerdicts,
   readLatestVerdictsSync,
 } from "./Dispatcher.js";
-import { readFileAtRef, showNameOnly, TipClaimHeldError } from "./git.js";
+import {
+  readFileAtRef,
+  showNameOnly,
+  statusRecords,
+  TipClaimHeldError,
+} from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
 import { gitPath, matchesAny, slugify, stopFlagPath } from "./paths.js";
 import { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
@@ -160,6 +165,27 @@ export interface FlumeApi {
      */
     readFileAtRef: typeof readFileAtRef;
     /**
+     * Every path `git status` reports dirty in a worktree right now, decoded
+     * — the porcelain walk the engine already runs to name a tick's
+     * uncommitted tracked edits, handed out rather than left for a gate to
+     * repeat.
+     *
+     * A chain judging what a tick left behind filters this list; it does not
+     * spawn `git status` beside the engine and re-decode the same bytes. The
+     * decode is not the trivia it looks like: `-z` is what keeps a path
+     * carrying a space from arriving in porcelain v1's quoted-and-escaped
+     * spelling, which names a different path than the one on disk and so
+     * matches no fence glob, and a rename or copy spends a second NUL field
+     * on its origin that carries no status code — read as a record of its own
+     * it arrives as a path with its first three bytes eaten. A chain-local
+     * copy gets one of those right and ships green on the other.
+     *
+     * Reported as **facts**: the code git printed and the path it printed it
+     * about. Which codes are residue, and which paths are the chain's to
+     * refuse, stay the chain's (`engine-boundary.md`).
+     */
+    statusRecords: typeof statusRecords;
+    /**
      * Every path git currently registers as a worktree of `repoRoot`, or the
      * reason the registry could not be read — the same probe the harness
      * judges an occupied worktree path on.
@@ -227,7 +253,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     priorAttemptPath,
     priorAttemptsDir,
     stopFlagPath,
-    git: { showNameOnly, readFileAtRef, readWorktreeRegistry },
+    git: { showNameOnly, readFileAtRef, statusRecords, readWorktreeRegistry },
     CjsContextLoadError,
     PendingParseFailure,
     InlineExecRenderError,

@@ -38,17 +38,24 @@ import {
 import { pendingGate } from "../src/builtinGates.ts";
 import { computeStateRootRel } from "../src/Dispatcher.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
-import { readFileAtRef } from "../src/git.ts";
+import { readFileAtRef, statusRecords } from "../src/git.ts";
 import { matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { Runner, RunnerFactory } from "../harness/runner.ts";
 
 /**
- * The engine, as a chain hands it in: the real builtin and the real at-ref
- * reader, never a stand-in. A stubbed reader would decide for itself what
- * "absent from the commit" means, which is half of what the records gate is.
+ * The engine, as a chain hands it in: the real builtin, the real at-ref
+ * reader and the real status decode, never a stand-in. A stubbed reader
+ * would decide for itself what "absent from the commit" means, which is half
+ * of what the records gate is; a stubbed decode would re-author, by the
+ * tester's hand, the porcelain vocabulary the clean-tree gate exists to read
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
  */
-const engine: GateEngine = { pendingGate, git: { readFileAtRef } };
+const engine: GateEngine = {
+  pendingGate,
+  git: { readFileAtRef, statusRecords },
+};
 
 /** The state root every case addresses, repo-relative. */
 const STATE_ROOT = ".flume";
@@ -461,6 +468,49 @@ it("the clean-tree gate reads a rename's origin field as its origin, not as a se
   expect(refused.ok).toBe(false);
   expect(refused.message).toContain("1 path(s) left uncommitted");
   expect(refused.details).toBe(`${to} (R)`);
+});
+
+it("the clean-tree gate takes its status records from the engine rather than spawning git", async () => {
+  // The engine's decode, wrapped to count calls and to answer with a listing
+  // no `git status` on this tree could produce. A gate running its own
+  // `git status` would see the clean tree beneath and pass.
+  const calls: string[] = [];
+  const planted = [
+    { code: " M", path: "spec/a page.md" },
+    { code: "??", path: "src/a widget.ts" },
+    { code: "??", path: "scratch/stray.txt" },
+  ];
+  const wired: GateEngine = {
+    pendingGate,
+    git: {
+      readFileAtRef,
+      statusRecords: async (cwd: string) => {
+        calls.push(cwd);
+        // Vacuity pin on the seam: the real decode runs and agrees the tree
+        // is clean, so every path named below came off the injected value.
+        expect(await statusRecords(cwd)).toEqual([]);
+        return planted;
+      },
+    },
+  };
+  const gate = harnessGates({ phase, declaration, engine: wired, declared: [] }).find(
+    (g) => g.name === "clean-tree",
+  );
+  if (!gate) throw new Error(`the package's set has no gate named "clean-tree"`);
+
+  await write("src/widget.ts", `export const widget = "shipped";\n`);
+  const span = commitAll("build: the tick's whole output");
+  const ctx = ctxFor(span, { phaseName: "build", entry: assigned("MINE") });
+
+  const refused: GateResult = await gate.run(ctx);
+
+  // Asked once, for the worktree the engine reported on the context.
+  expect(calls).toEqual([repo]);
+  expect(refused.ok).toBe(false);
+  // The verdict stays the gate's: a tracked edit is residue wherever it
+  // sits, an untracked file inside the fence is the tick's, and one outside
+  // it is not.
+  expect(refused.details).toBe("spec/a page.md (M)\nsrc/a widget.ts (??)");
 });
 
 it("the package's gates precede a consumer's declared gates for the same phase", async () => {
