@@ -137,14 +137,6 @@ const inGateScope = <T>(
     body,
   );
 
-/** Every path git registers as a worktree of `repo`, the primary aside. */
-const checkoutsOf = (repo: string): string[] =>
-  git(repo, ["worktree", "list", "--porcelain"])
-    .split("\n")
-    .filter((l) => l.startsWith("worktree "))
-    .map((l) => resolve(l.slice("worktree ".length)))
-    .filter((p) => p !== resolve(repo));
-
 describe("the vitest runner", () => {
   let fixture: string;
   let flumeDir: string;
@@ -153,6 +145,29 @@ describe("the vitest runner", () => {
   let api: FlumeApi;
   let ctx: RunnerContext;
   let runner: Runner;
+
+  /**
+   * Every path git registers as a worktree of `repo`, the primary aside —
+   * asked of the engine's own registry probe through the api the runner was
+   * handed, never re-spelled here. The reclamation assertions below are
+   * absence verdicts over that probe's own result, so a second decoder beside
+   * it would judge membership by a different reading of git's output than the
+   * engine acted on (`.claude/rules/engineering.md`, *The fix lands at the
+   * mechanism*: detection a sibling surface already performs is shared, never
+   * re-derived).
+   *
+   * `read: false` throws rather than returning an empty set: "the registry
+   * could not be read" is not "no checkout is registered", and an absence
+   * assertion handed the former would go green over nothing
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  const checkoutsOf = async (repo: string): Promise<string[]> => {
+    const registry = await api.git.readWorktreeRegistry(repo);
+    if (!registry.read) {
+      throw new Error(`worktree registry unreadable: ${registry.reason}`);
+    }
+    return [...registry.paths].filter((p) => p !== resolve(repo));
+  };
 
   /** `node_modules` for a tree that has none of its own. */
   const link = async (tree: string): Promise<void> => {
@@ -324,7 +339,7 @@ describe("the vitest runner", () => {
     // The checkout is gone with the gate scope: the engine reclaims it
     // whether the gate ruled or threw, so the worktree base holds no
     // residue of it.
-    expect(checkoutsOf(fixture)).toEqual([]);
+    expect(await checkoutsOf(fixture)).toEqual([]);
   }, 180_000);
 
   it("the judge proves a named line over the real vitest runner's merged-tree and base reports", async () => {
@@ -357,7 +372,7 @@ describe("the vitest runner", () => {
 
     // The base checkout is gone with the gate that drove the ruling, as it
     // is with a bare run.
-    expect(checkoutsOf(fixture)).toEqual([]);
+    expect(await checkoutsOf(fixture)).toEqual([]);
   }, 240_000);
 
   it("the judge reports green-on-base for a line the real vitest runner already carries at the base", async () => {
@@ -424,7 +439,7 @@ describe("the vitest runner", () => {
       // Read while the scope is still open: the run has returned and the
       // checkout is still registered, so the runner removed nothing of its
       // own.
-      standing = checkoutsOf(fixture);
+      standing = await checkoutsOf(fixture);
       return r;
     }, declaredBase);
 
@@ -439,7 +454,7 @@ describe("the vitest runner", () => {
 
     // And reclaimed by the engine when the scope closed, not by the runner.
     expect(existsSync(standing[0]!)).toBe(false);
-    expect(checkoutsOf(fixture)).toEqual([]);
+    expect(await checkoutsOf(fixture)).toEqual([]);
   }, 180_000);
 
   it("the vitest runner provisions a base checkout through the declared setup", async () => {
