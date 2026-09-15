@@ -71,15 +71,14 @@ export function existsLoud(path: string): boolean {
  * and a throw for everything else — a plain file at one of them, a symlink
  * loop, permission denied ({@link statLoud}).
  *
- * `false` is a **proven** absence, which a single stat cannot make. A plain
- * file at an ancestor raises `ENOTDIR` for the paths beneath it on posix and
- * `ENOENT` on win32 (`.claude/rules/platform-facts.md`, *win32 reports a
- * path through a non-directory as not found*), so a reader keying its silent
- * arm off the errno a listing happened to raise refuses on one host and
- * reports "nothing there" on the other. Hence the descent: `descent` is the
- * chain of directories from the outermost one the caller is willing to answer
- * for down to the one being read, each asserted a directory before the next
- * is probed, so both hosts answer alike.
+ * `false` is a **proven** absence, which a single stat cannot make: the errno
+ * an obstructed ancestor raises is the one thing about it that is not
+ * portable (`.claude/rules/platform-facts.md`, *win32 reports a path through
+ * a non-directory as not found*), so a reader keying its silent arm off that
+ * errno refuses on one host and reports "nothing there" on the other. Hence
+ * the descent: `descent` is the chain of directories from the outermost one
+ * the caller is willing to answer for down to the one being read, each
+ * asserted a directory before the next is probed, so both hosts answer alike.
  *
  * `what` names the subject in the refusal — the store or dir whose read is
  * being proven, as a bare noun phrase ("prior-attempt store").

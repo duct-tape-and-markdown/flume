@@ -367,13 +367,12 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
   });
 
   /**
-   * The refusal, not the platform's spelling of it. A plain file at the root
-   * makes `readdir` beneath it `ENOTDIR` on posix and `ENOENT` on win32
-   * (`.claude/rules/platform-facts.md`, *chmod denies nothing on win32* — a
-   * structural denial is the one that denies on every host, and the errno it
-   * raises is the one thing about it that is not portable). Asserting the
-   * errno pins one host's accident; asserting the store's own message pins
-   * the behavior the entry is about.
+   * The refusal, not the platform's spelling of it: the errno a plain file at
+   * the root raises for the paths beneath it is host-dependent
+   * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+   * non-directory as not found*). Asserting the errno pins one host's
+   * accident; asserting the store's own message pins the behavior these
+   * cases are about.
    */
   const refusalOf = async (p: Promise<unknown>): Promise<string> => {
     const err = await p.then(
@@ -390,8 +389,9 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     const dir = priorAttemptsDir(flumeDir);
     await mkdir(dirname(dir), { recursive: true });
     // Present at the path the store enumerates, unenumerable. Structural,
-    // not a permission bit: a root-run test would bypass that, and on win32
-    // a permission bit denies nothing at all.
+    // not a permission bit: a root-run test would bypass that, and a bit
+    // denies nothing on the other host anyway
+    // (`.claude/rules/platform-facts.md`, *chmod denies nothing on win32*).
     await writeFile(dir, "not a directory");
 
     // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
@@ -411,9 +411,10 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
     // The obstruction is an *ancestor* of every path the store reads, which
-    // is where the two hosts disagree hardest: nothing beneath it exists to
-    // stat, so the leaf answers "absent" on win32 and "ENOTDIR" on posix.
-    // Only the descent tells them apart, and it must refuse on both.
+    // is where the two hosts disagree hardest
+    // (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+    // non-directory as not found*): only the descent tells absent from
+    // obstructed, and it must refuse on both.
     await writeFile(flumeDir, "not a directory");
 
     expect(existsSync(flumeDir)).toBe(true);

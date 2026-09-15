@@ -355,12 +355,12 @@ export class PriorAttemptStore {
    * Hence the descent: the state root, then `prior-attempts/`, then each
    * keyspace directory, each proven a directory before the next is probed
    * ({@link isDirectoryOrAbsent}, src/fsProbe.ts, which `readMergingMarkers`
-   * proves its own dir from too). `ENOENT` is not that proof — a plain file
-   * at any of those paths makes the ones beneath it `ENOENT` on win32 while
-   * posix raises `ENOTDIR`, so an errno-keyed silent arm reads one host's
-   * obstructed store as an empty one. The state root is where the descent
-   * starts: the store is constructed with it, and what stands above it is
-   * the caller's to answer for.
+   * proves its own dir from too). An errno is not that proof
+   * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+   * non-directory as not found*), so an errno-keyed silent arm reads one
+   * host's obstructed store as an empty one. The state root is where the
+   * descent starts: the store is constructed with it, and what stands above
+   * it is the caller's to answer for.
    */
   async readAll(): Promise<ReadonlyMap<string, PriorAttempt>> {
     const out = new Map<string, PriorAttempt>();
