@@ -106,6 +106,44 @@
     "notes": "Windows lane, run 35029787262. `filesUnder` (tests/helpers/repoProgram.ts) hands back `join`-built absolute paths; `relPath` beside it folds, and `basename` is what spec/cli.md prescribes for leaf extraction. Only two sites in the suite carry this shape, both in this one case. No posix-decidable regression — the pin holds on both hosts and bites on win32, the exception RECORDS-READ-DISK-IN-THE-HOSTS-ALPHABET already took."
   },
   {
+    "tag": "A-GIT-SPAWNING-SUITE-DECLARES-ITS-BUDGET",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "every case takes the shared budget instead of the runner's 5s default"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "same — its cases report 7.5s on the same lane"
+        },
+        {
+          "path": "tests/chain.test.ts",
+          "description": "same — the third suite spawning git under no declared budget"
+        },
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "the budget's doc comment names a process, not a node process"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "three git-spawning default-lane suites declare no budget at all; on win32 the first harnessGates case crossed vitest's 5s default and red the lane",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "win32 is a supported host"
+    },
+    "acceptance": "no case in the lane's three budget-less git-spawning suites inherits the runner's 5s default, so the windows lane's harnessGates red is gone and the other two sit off the runner's number.",
+    "tests": [],
+    "pins": [],
+    "notes": "Windows lane, run 35032751113: `the per gate refuses a commit whose cited file is not in it, naming the tag` timed out at 5000ms (9993ms reported), its afterEach then EBUSY on the still-held repo. No scan change here: the budget scan's git exclusion is declared and cited, and whether it widens — against the 209 restated `20_000` literals in Dispatcher/worktrees it would then flag — is the open question this tick files."
+  },
+  {
     "tag": "HARNESS-FS-CALLS-CLEAR-WIN32-MAX-PATH",
     "gate": {
       "kind": "open"
