@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "RENDER-PASSTHROUGH-CLAIMS-VERBATIM-OVER-A-TRIMMED-LINE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Agent.ts",
+          "description": "renderStreamJsonLine's doc block: state the trim parseNdjsonLine performs, as NdjsonLineResult already does"
+        },
+        {
+          "path": "tests/Agent.test.ts",
+          "description": "retitle the pass-through case to what it asserts; drive a line whose untrimmed form differs"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The terminal renderer's non-JSON pass-through is titled and documented `verbatim`; parseNdjsonLine trims it, and the case never drives a line where that shows.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "The pass-through case's title and `renderStreamJsonLine`'s doc both state the trim, and the case drives an input whose trimmed and untrimmed forms differ.",
+    "tests": [],
+    "pins": [
+      "the terminal renderer emits a non-JSON line trimmed behind the tag prefix"
+    ],
+    "notes": "src/Agent.ts:471 returns `raw: trimmed`; :592 emits it; :582 calls that `verbatim`, while the sibling NdjsonLineResult doc (:456) says `carries the trimmed raw text` — two doc blocks in one module, one of them false. tests/Agent.test.ts:642 carries the same word and feeds `warning: something off`, which has no surrounding whitespace, so the direction is untested. Trim direction looks load-bearing (a win32 child's trailing CR); narration is the side to move."
+  }
+]

@@ -84,7 +84,8 @@
       "tests/PendingSchema.test.ts",
       "src/standardSchema.ts",
       "tests/paths.test.ts",
-      "tests/harnessCiteResolver.test.ts"
+      "tests/harnessCiteResolver.test.ts",
+      "tests/Agent.test.ts"
     ]
   }
 }
