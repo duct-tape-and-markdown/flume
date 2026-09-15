@@ -40,6 +40,7 @@ import { promptPath, type PromptName } from "../harness/prompts.ts";
 import { notesDir } from "../harness/records.ts";
 import type { Runner, RunnerContext, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
+import type { ClaudeCodeOptions } from "../src/Agent.ts";
 import { computeStateRootRel } from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import type {
@@ -713,4 +714,68 @@ it("the package's judge runs after a consumer's declared gates at the same when"
   // build's afterCommit set is the four, then the declared typecheck, and
   // the judge hangs on afterMerge alone.
   expect(at("afterCommit")).toEqual([...DISCIPLINE, declared.afterCommit]);
+});
+
+it("a declared agents inheritUserMcp reaches the phase's claudeCode options", () => {
+  // The engine owns the knob and its default; the declaration is the only
+  // spelling a consumer has for it, because the `agents` schema is strict —
+  // an undeclared field is refused at load rather than carried through. So
+  // the claim is a pass-through one, read off the real factory's calls into
+  // the real engine surface.
+  //
+  // Each phase declares its own model, which is what links a captured call
+  // back to the phase that asked for it without leaning on call order.
+  const models: Record<HarnessPhase, string> = {
+    build: "claude-opus-5",
+    "plan-inbox": "claude-sonnet-5",
+    "plan-derive": "claude-haiku-4-5-20251001",
+    "plan-sweep": "claude-fable-5-1",
+  };
+  const captured: ClaudeCodeOptions[] = [];
+  const chain = harnessChain({
+    api: {
+      ...api,
+      claudeCode: (opts) => {
+        captured.push(opts ?? {});
+        return api.claudeCode(opts);
+      },
+    },
+    declaration: {
+      ...DECLARATION,
+      runner: recordingRunner([]),
+      agents: Object.fromEntries(
+        PHASES.map((phase) => [
+          phase,
+          {
+            model: models[phase],
+            ...(phase === BUILD_PHASE ? { inheritUserMcp: true } : {}),
+          },
+        ]),
+      ),
+    },
+  });
+
+  // Vacuity pin: one call per phase the factory wired, so a chain that built
+  // no agent at all cannot satisfy the assertions below.
+  expect(captured).toHaveLength(chain.phases.length);
+  expect(chain.phases.length).toBeGreaterThan(0);
+
+  const optionsFor = (phase: HarnessPhase): ClaudeCodeOptions => {
+    const found = captured.find((opts) => opts.model === models[phase]);
+    if (found === undefined) {
+      throw new Error(
+        `no claudeCode call carried ${phase}'s model; captured ${captured
+          .map((opts) => String(opts.model))
+          .join(", ")}`,
+      );
+    }
+    return found;
+  };
+
+  // The phase that declared it gets it; every other phase is left on the
+  // engine's own default rather than handed a `false` the package invented.
+  expect(optionsFor(BUILD_PHASE).inheritUserMcp).toBe(true);
+  for (const phase of PLAN_SLICES) {
+    expect([phase, "inheritUserMcp" in optionsFor(phase)]).toEqual([phase, false]);
+  }
 });

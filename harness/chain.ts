@@ -524,6 +524,10 @@ function shellCommand(api: FlumeApi, command: string, when: GatePhase): Gate {
  * to turn off (`.claude/rules/engine-boundary.md`, *Surface, not
  * prescription*). What the package does choose is the shape: a transcript
  * per tick, because a loop nobody can read back is a loop nobody can cost.
+ *
+ * Every declared agent field is handed to the engine's own option of the
+ * same name and nothing else: the MCP inheritance the declaration spells is
+ * the engine's knob, defaulted by the engine when no consumer states one.
  */
 function agentFactory(
   api: FlumeApi,
@@ -539,6 +543,9 @@ function agentFactory(
           ...(declared?.model !== undefined ? { model: declared.model } : {}),
           ...(declared?.extraArgs !== undefined
             ? { extraArgs: [...declared.extraArgs] }
+            : {}),
+          ...(declared?.inheritUserMcp !== undefined
+            ? { inheritUserMcp: declared.inheritUserMcp }
             : {}),
         }),
         { dir },

@@ -300,11 +300,22 @@ export const DeclarationSchema = strict({
    * seconds-long check reports before a minutes-long suite.
    */
   gates: byPhase(z.array(GateDeclaration)).optional(),
-  /** Model per phase and extra agent arguments; absent means the package's default. */
+  /**
+   * Model per phase, extra agent arguments, and whether the tick inherits
+   * the user's own MCP servers; absent means the package's default.
+   *
+   * `inheritUserMcp` is the engine's own knob (`ClaudeCodeOptions`), spelled
+   * here because the schema is strict: without a field a consumer whose
+   * ticks need their own MCP servers has no spelling at all, and the
+   * declaration refuses the one they would reach for. Undeclared it stays
+   * off, which is the engine's default rather than the package's opinion —
+   * a tick loads only the MCP configuration the chain hands it.
+   */
   agents: byPhase(
     strict({
       model: z.string().min(1).optional(),
       extraArgs: z.array(z.string().min(1)).optional(),
+      inheritUserMcp: z.boolean().optional(),
     }),
   ).optional(),
   /**

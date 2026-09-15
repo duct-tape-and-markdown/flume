@@ -92,7 +92,11 @@ const fullDeclaration = (): Record<string, unknown> => ({
     ],
   },
   agents: {
-    build: { model: "claude-opus-5", extraArgs: ["--verbose"] },
+    build: {
+      model: "claude-opus-5",
+      extraArgs: ["--verbose"],
+      inheritUserMcp: true,
+    },
     "plan-sweep": { model: "claude-sonnet-5" },
   },
   supervisor: {
@@ -154,6 +158,7 @@ describe("the harness declaration schema", () => {
       when: "afterCommit",
     });
     expect(parsed.agents?.build?.model).toBe("claude-opus-5");
+    expect(parsed.agents?.build?.inheritUserMcp).toBe(true);
     expect(parsed.supervisor?.maxParallel).toBe(4);
     expect(parsed.setup?.directories).toEqual(["."]);
     expect(parsed.slices.enabled).toContain("plan-sweep");
