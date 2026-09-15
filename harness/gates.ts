@@ -103,8 +103,10 @@ export interface HarnessGatesOptions {
    */
   readonly entryFields?: EntryExtension;
   /**
-   * The consumer's declared gates for this phase, already constructed. They
-   * follow the package's four; nothing can put one ahead.
+   * The gates that follow the package's four, already constructed, in the
+   * order they run — the consumer's declared gates for this phase, and
+   * whatever the calling factory judges after them. Nothing here can be put
+   * ahead of the four.
    */
   readonly declared?: readonly Gate[];
 }

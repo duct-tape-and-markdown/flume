@@ -660,3 +660,57 @@ it("each returned phase runs the handoff the declaration names for it, else the 
     });
   }
 });
+
+it("the package's judge runs after a consumer's declared gates at the same when", () => {
+  // Both points, so the claim is about ordering within a `when` rather than
+  // about which point a gate hangs on.
+  const declared = {
+    afterCommit: "pnpm tsc --noEmit",
+    afterMerge: "pnpm tsc --noEmit --project tsconfig.build.json",
+  } as const;
+  const chain = chainFor({
+    ...DECLARATION,
+    runner: recordingRunner([]),
+    gates: {
+      build: [
+        { kind: "shell", command: declared.afterCommit, when: "afterCommit" },
+        { kind: "shell", command: declared.afterMerge, when: "afterMerge" },
+      ],
+    },
+  });
+
+  const build = phaseNamed(chain, BUILD_PHASE);
+  const at = (when: string): string[] =>
+    build.gates.filter((gate) => gate.when === when).map((gate) => gate.name);
+
+  // Vacuity pin: an ordering claim over a set holding neither side is green
+  // over nothing.
+  expect({
+    judge: build.gates.some((gate) => gate.name === "named lines"),
+    declaredCommit: at("afterCommit").includes(declared.afterCommit),
+    declaredMerge: at("afterMerge").includes(declared.afterMerge),
+  }).toEqual({ judge: true, declaredCommit: true, declaredMerge: true });
+
+  // The judge runs the consumer's suite — twice for a red line — so a
+  // seconds-long typecheck declared at the same point reports its refusal
+  // ahead of it, not behind it.
+  const afterMerge = at("afterMerge");
+  expect(afterMerge.indexOf(declared.afterMerge)).toBeLessThan(
+    afterMerge.indexOf("named lines"),
+  );
+
+  // And the four discipline gates still lead every phase's set, the
+  // consumer's declaration notwithstanding.
+  const DISCIPLINE = ["records", "clean-tree", "pending-gate", "per cites resolve"];
+  expect(chain.phases.length).toBeGreaterThan(0);
+  for (const phase of chain.phases) {
+    expect([phase.name, phase.gates.slice(0, 4).map((gate) => gate.name)]).toEqual([
+      phase.name,
+      DISCIPLINE,
+    ]);
+  }
+  // Nothing of the package's trails into the consumer's own point either:
+  // build's afterCommit set is the four, then the declared typecheck, and
+  // the judge hangs on afterMerge alone.
+  expect(at("afterCommit")).toEqual([...DISCIPLINE, declared.afterCommit]);
+});

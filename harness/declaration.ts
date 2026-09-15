@@ -114,8 +114,9 @@ const When = z.enum(Object.keys(GATE_WHEN) as [GatePhase, ...GatePhase[]]);
 /**
  * One extra gate a consumer hangs on a phase: by the name of a gate the
  * package's registry ships, by an inline shell command, or by a script the
- * consumer commits. The package's own gates are not declarable — they are
- * always present and always first.
+ * consumer commits. The package's own gates are not declarable: its four
+ * discipline gates are always present and always first, and its judge runs
+ * after everything declared here at the same `when`.
  *
  * A registry `name` is any non-empty string here; whether the registry holds
  * it is the chain factory's refusal, at the same load.
@@ -293,8 +294,10 @@ export const DeclarationSchema = strict({
    */
   handoff: byPhase(HandoffValue).optional(),
   /**
-   * Extra gates per phase. The package's own gates are always present and
-   * always first, so nothing here can displace one.
+   * Extra gates per phase. The package's four discipline gates are always
+   * present and always first, so nothing here can displace one; the
+   * package's judge trails whatever is declared at the same `when`, so a
+   * seconds-long check reports before a minutes-long suite.
    */
   gates: byPhase(z.array(GateDeclaration)).optional(),
   /** Model per phase and extra agent arguments; absent means the package's default. */

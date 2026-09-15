@@ -214,9 +214,18 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     sharedPromptArgs({ declaration, extension, stateRoot: ctx.flumeDir });
 
   /**
-   * The package's own gates, then the consumer's — `harnessGates` places its
-   * four first, and anything the package adds for a phase leads the declared
-   * list so nothing a consumer declares can precede it.
+   * The package's discipline gates, then the consumer's, then whatever the
+   * package judges for this phase — `harnessGates` places its four first,
+   * and `own` trails the declared list (`spec/harness.md`, *What a consumer
+   * declares*).
+   *
+   * Trailing is the point: the dispatcher runs a `when`'s gates in list
+   * order and stops at the first refusal, and the package's judge is the
+   * expensive one — it runs the consumer's suite, twice for a red line. A
+   * consumer's seconds-long typecheck declared at the same `when` reports
+   * its refusal before that minutes-long run rather than behind it. The four
+   * stay ahead of both: they are claims about the commit itself, and each
+   * costs a handful of at-ref reads.
    */
   const gatesFor = (
     phase: Pick<Phase, "writablePaths">,
@@ -229,10 +238,10 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       engine,
       ...(options.entryFields ? { entryFields: options.entryFields } : {}),
       declared: [
-        ...own,
         ...(declaration.gates?.[name] ?? []).map((gate) =>
           constructGate(api, gate),
         ),
+        ...own,
       ],
     });
 
