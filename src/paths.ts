@@ -112,7 +112,13 @@ export function matchesAny(path: string, globs: string[]): boolean {
 }
 
 function globToRegex(glob: string): RegExp {
-  // Order matters: replace `**` before `*` to avoid overlap.
+  // One pass, longest wildcard first: each source character is read once and
+  // written straight to its compiled form. Nothing the compiler emits is read
+  // back, so no text a declared path may legitimately carry can be mistaken
+  // for a compiler marker. An earlier spelling staged `**` through a
+  // `::DOUBLESTAR::` literal and re-scanned for it, so a declared path
+  // containing that text compiled to `.*` and admitted every path
+  // (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
   //
   // `?` is escaped, not implemented: `*` and `**` are the only wildcards this
   // matcher has (spec/pending.md, "The entry-scoped write guard is opt-in,
@@ -120,11 +126,11 @@ function globToRegex(glob: string): RegExp {
   // declared path carrying one matches only itself. Left unescaped it made
   // its preceding character optional, so the fence both refused its own
   // declared path and admitted an undeclared neighbor.
-  const re = glob
-    .replace(/[.+^${}()|[\]\\?]/g, "\\$&") // escape regex specials
-    .replace(/\*\*/g, "::DOUBLESTAR::")
-    .replace(/\*/g, "[^/]*")
-    .replace(/::DOUBLESTAR::/g, ".*");
+  const re = glob.replace(/\*\*|\*|[^*]+/g, (token) => {
+    if (token === "**") return ".*";
+    if (token === "*") return "[^/]*";
+    return token.replace(/[.+^${}()|[\]\\?]/g, "\\$&"); // escape regex specials
+  });
   return new RegExp(`^${re}$`);
 }
 

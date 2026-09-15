@@ -377,6 +377,67 @@ describe("matchesAny — a declared literal path matches only itself", () => {
       }
     }
   });
+
+  // GLOBTOREGEX-NO-SENTINEL-ROUNDTRIP, per .claude/rules/engineering.md "The
+  // fix lands at the mechanism". The per-character pin above cannot see a
+  // multi-character hole: `globToRegex` used to stage `**` through a
+  // `::DOUBLESTAR::` literal and re-scan for it, so a declared path carrying
+  // that text compiled to `.*` — a wildcard the glob never spelled, admitting
+  // every path through the write guard, the queue fence and ship detection
+  // alike. The compiler is now one pass and reads nothing it emits; these
+  // cases pin the retired sentinel text as the literal it always should have
+  // been, and stand as the regression case for any successor marker.
+  it("a declared path containing the glob compiler's `**` placeholder text matches only itself", () => {
+    expect(matchesAny("::DOUBLESTAR::", ["::DOUBLESTAR::"])).toBe(true);
+    expect(matchesAny("src/secret.ts", ["::DOUBLESTAR::"])).toBe(false);
+    expect(matchesAny("docs/::DOUBLESTAR::.md", ["docs/::DOUBLESTAR::.md"])).toBe(
+      true,
+    );
+    expect(matchesAny("docs/anything-else.md", ["docs/::DOUBLESTAR::.md"])).toBe(
+      false,
+    );
+  });
+
+  // The reach: one matcher decides the queue pre-check, the write guard and
+  // ship detection, so a fence line carrying the placeholder text used to
+  // admit every path at all three.
+  it("a fence line carrying the compiler's placeholder text admits only the path it spells", () => {
+    function entryDeclaring(tag: string, path: string): PendingEntry {
+      return {
+        tag,
+        summary: "test entry",
+        per: { path: "spec/pending.md", section: "The pending queue" },
+        gate: { kind: "open" },
+        dependsOnForks: [],
+        files: { new: [], edit: [{ path, description: "edit" }], retire: [] },
+        acceptance: "green",
+      };
+    }
+
+    const fence = [{ writablePaths: ["docs/::DOUBLESTAR::.md"] }];
+    expect(
+      queueFenceViolations(
+        [entryDeclaring("SENTINEL", "docs/::DOUBLESTAR::.md")],
+        fence,
+      ),
+    ).toEqual([]);
+    expect(
+      queueFenceViolations(
+        [entryDeclaring("UNDECLARED", "docs/unrelated.md")],
+        fence,
+      ),
+    ).toEqual([{ tag: "UNDECLARED", offending: ["docs/unrelated.md"] }]);
+  });
+
+  // The wildcards the compiler does still spell, unchanged by the one-pass
+  // rewrite — the pass is only correct if `**` and `*` keep their meanings
+  // beside literal text that resembles a marker.
+  it("a glob mixing real wildcards with placeholder-shaped literal text keeps both readings", () => {
+    expect(matchesAny("docs/::DOUBLESTAR::/deep/a.md", ["docs/::DOUBLESTAR::/**.md"])).toBe(true);
+    expect(matchesAny("docs/elsewhere/deep/a.md", ["docs/::DOUBLESTAR::/**.md"])).toBe(false);
+    expect(matchesAny("docs/::DOUBLESTAR::/a.md", ["docs/::DOUBLESTAR::/*.md"])).toBe(true);
+    expect(matchesAny("docs/::DOUBLESTAR::/deep/a.md", ["docs/::DOUBLESTAR::/*.md"])).toBe(false);
+  });
 });
 
 // Mechanism pin (WORKTREE-BASE-RESOLVED-ONCE, per spec/worktrees.md
