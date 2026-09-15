@@ -34,3 +34,33 @@ secret, and whether release automation is wanted at all for a package whose
 cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
+
+## `spec/chain.md` names five supervisor knobs; the ruled grace is a sixth (NEEDS AMENDMENT)
+
+`spec/loop.md` *The loop lock and the tip claim* (51b3ae7) now has the signal
+handler "escalate to `SIGKILL` after a bounded grace the supervisor declares",
+and the closing ruling routed that grace to `supervisorPolicy` — chain-
+overridable like the other five, per `engine-boundary.md` *Routing rule*.
+`spec/chain.md` *Supervisor policy is a chain-overridable default* still spells
+the block as exactly five fields and splits their read scope as a principled
+pair. A sixth knob leaves that section stating a type the engine no longer has.
+
+**Not blocking.** A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE ships on
+loop.md's bullet plus the routing rule; this is the corpus catching up to a
+knob the ruling already decided. Three things the amendment settles, so build
+is not choosing them silently:
+
+- **Name and default.** `killGraceMs` reads beside `tickTimeoutMs`, and 5000 ms
+  is the recommendation — long enough for a `claude -p` to flush, short enough
+  that an operator's second Ctrl-C is not the real mechanism. 10 000 is the
+  defensible alternative if a tick's last write is worth more than the wait.
+- **Read scope.** The section's split says run-scoped is for run-scoped
+  accounting, and this knob accumulates nothing — but the supervisor builds its
+  tick runner once per run from the one chain resolve `flume loop` makes at
+  start, so on that path it is bound once per run whatever the principle says.
+  On the bare-tick path the same knob is read per tick, off that tick's own
+  chain. That asymmetry wants a sentence, or a ruling that the loop path
+  re-reads it per tick.
+- **Whether the bare tick reads the same knob at all.** The bullet says a bare
+  `flume tick` takes its agent down "the same way"; `supervisorPolicy` is named
+  for the supervisor, and a bare tick has none.

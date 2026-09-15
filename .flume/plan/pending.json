@@ -1,5 +1,122 @@
 [
   {
+    "tag": "A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "src/processTree.ts",
+          "description": "one home for the own-group spawn and the SIGTERM → grace → SIGKILL teardown both signal paths take"
+        }
+      ],
+      "edit": [
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "`defaultTickRunner` spawns the child in its own group and terminates through the shared teardown; its default-disposition paragraph goes with it"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "`supervisorPolicy.killGraceMs` — the grace the supervisor declares, sixth knob of the block"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "the loop branch forwards the declared grace beside `quarantineScope`/`abortThreshold`"
+        },
+        {
+          "path": "harness/declaration.ts",
+          "description": "the declared-supervisor shape gains the knob the engine now names"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the signalled-loop case gains the grandchild arm, the escalation arm and the declared-grace arm, host-declared"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "the runner's group teardown and the engine default for the grace"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the knob passes through a declaration"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the signalled release kills the tick child alone, so the agent that tick spawned outlives the claim that protected it, and the wait before the drop is bounded only by what the child installs",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The loop lock and the tip claim"
+    },
+    "acceptance": "a signalled `flume loop` leaves no process of the tick tree alive when the lock and claim drop, and the wait before they drop is bounded by the declared grace rather than by the child's disposition.",
+    "tests": [
+      "a signalled `flume loop` leaves nothing the tick child spawned alive against the state root it released",
+      "a tick tree that ignores SIGTERM is killed after the declared grace rather than waited on indefinitely",
+      "a chain-declared kill grace, not the engine default, bounds a signalled loop's wait on its tick tree"
+    ],
+    "pins": [],
+    "notes": "Landed at 54f8e4c: the abort reaches the tick child and the run settles on its exit. Missing: the group, the escalation, the knob. `detached` takes the child out of the terminal's foreground group, so Ctrl-C reaches the supervisor alone and the handler's signal is the only path down; `defaultTickRunner`'s default-disposition paragraph is narration the escalation retires. POSIX arms declare their host. `spec/chain.md` does not yet name the sixth knob — question filed."
+  },
+  {
+    "tag": "A-BARE-TICK-TAKES-ITS-AGENT-DOWN-THE-SAME-WAY",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Agent.ts",
+          "description": "the invocation runs in its own group and comes down through the shared teardown, settling on exit rather than on the abort"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "a stop signal reaches the invocation the same way `tickTimeoutMs` does"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "the bare-tick handlers abort that signal and await the tick before dropping the claim and exiting, as the loop branch already does"
+        },
+        {
+          "path": "src/processTree.ts",
+          "description": "whatever the agent side needs of the shared teardown"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the signalled bare tick's arms, host-declared"
+        },
+        {
+          "path": "tests/Agent.test.ts",
+          "description": "the invocation's own-group spawn and its teardown"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the stop signal reaching the invocation"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a signalled bare `flume tick` drops its claim and exits while the agent it started keeps writing into the worktree — the loop path's orphan, one level further down",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The loop lock and the tip claim"
+    },
+    "acceptance": "a signalled bare tick releases its claim only once the agent tree it started is gone, taken down the way the supervisor takes down a tick tree.",
+    "tests": [
+      "a signalled bare `flume tick` leaves nothing its agent spawned alive when the tip claim drops",
+      "a bare tick whose agent ignores SIGTERM kills it after the declared grace rather than exiting over a live writer"
+    ],
+    "pins": [
+      "a signalled bare `flume tick` exits 143"
+    ],
+    "notes": "Today the handler is `dropBareTipClaim(); process.exit(143)` — synchronous, and the agent is a child of this process with children of its own. Same knob, read off the bare tick's own chain. Blocked on the group/escalation entry: a second teardown beside it is the mechanism-depth defect (`engineering.md`, *The fix lands at the mechanism*). Once the agent leads its own group a supervisor's group signal no longer reaches it — the tick's own handler carries it, on both paths."
+  },
+  {
     "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
     "gate": {
       "kind": "open"
