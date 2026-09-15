@@ -1,5 +1,237 @@
 [
   {
+    "tag": "HARNESS-JUDGE-RUNS-AFTER-THE-DECLARED-GATES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/chain.ts",
+          "description": "gatesFor: the package's own gates trail the declared list, not lead it"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the order case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Run the package's judge after a consumer's declared gates at the same `when`, not ahead of them",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "A build declaration adding an afterMerge gate runs that gate before `named lines`; the four discipline gates still lead every phase's set.",
+    "tests": [
+      "the package's judge runs after a consumer's declared gates at the same when"
+    ],
+    "pins": [],
+    "notes": "`gatesFor` (harness/chain.ts) prepends `own` to the declared list, so `named lines` (afterMerge) precedes a declared afterMerge tsc — minutes before seconds. The discipline four are `harnessGates`' own and stay first (tests/harnessGates.test.ts pins that). `.flume/declaration.ts`'s gates comment already states the ruling."
+  },
+  {
+    "tag": "VERDICT-GATE-ROW-CARRIES-THE-GATES-FAILING-FILES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "ReportedGateResult gains failingFiles; one row builder from a GateResult"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the reported-row case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Persist a gate's `failingFiles` on the reported gate row, so the verdict and `handoff` carry what the gate named",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The tick verdict — one facts artifact"
+    },
+    "acceptance": "`ReportedGateResult` carries `failingFiles` verbatim and every row-construction site copies it through one shared builder.",
+    "tests": [
+      "a gate's failingFiles ride the reported gate result"
+    ],
+    "pins": [],
+    "notes": "The row copies details/verdict/skipped and drops failingFiles (src/Dispatcher.ts:219), which survives only inside the local failure record feeding the suspect-flake derivation — so a chain reading the verdict rebuilds it. Three sites spell the same copy (2508, 3152, 4202): one builder (`engineering.md`, *The fix lands at the mechanism*)."
+  },
+  {
+    "tag": "ERRORED-COUNTS-A-NOT-SHIPPED-THE-SHIP-HOOK-THREW-INTO",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "the errored allowlist gains the thrown not-shipped, and says why the returned one stays out"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "both legs, beside the existing errored-accounting cases"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Count a tick errored when a `not-shipped` outcome carries the `shipped` hook's throw; a returned `false` still counts clean",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The tick verdict — one facts artifact"
+    },
+    "acceptance": "A run whose only failure is a `shipped` predicate that threw reports a non-empty `erroredTicks`; one that returned `false` reports none.",
+    "tests": [
+      "a not-shipped outcome carrying the shipped hook's throw counts the tick errored"
+    ],
+    "pins": [
+      "a not-shipped outcome the chain returned counts no tick errored"
+    ],
+    "notes": "The verdict's merge outcome already carries `threw`, set only when a throw produced it (src/Dispatcher.ts). The supervisor's allowlist reads noCommit/tipMoved/provision/merge failures only, so a broken predicate reads as the chain correctly declining. The allowlist's own comment names each exclusion — the new one says which not-shipped it means."
+  },
+  {
+    "tag": "NOT-SHIPPED-RECORD-SAYS-THREW-OR-RETURNED-FALSE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "NotShippedAttempt and its rendered block"
+        },
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "buildNotShipped takes the throw fact"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the one writer passes the shipThrew it already holds"
+        },
+        {
+          "path": "tests/priorAttempts.test.ts",
+          "description": "the two-way case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The `not-shipped` prior-attempt record says whether the `shipped` hook threw or returned `false`",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Prior-outcome feedback to the retrying tick"
+    },
+    "acceptance": "A record written after a throwing `shipped` hook is distinguishable on `TickContext.priorAttempts` from one written after a returned `false`, and the rendered block says which.",
+    "tests": [
+      "a not-shipped record distinguishes a thrown shipped hook from a returned false"
+    ],
+    "pins": [],
+    "notes": "`buildNotShipped` (src/priorAttempts.ts) takes the sha and footprint only; its one writer (src/Dispatcher.ts, the ship decision) already holds `shipThrew` and puts it on the verdict's merge outcome. Still no reason vocabulary: which of the two happened is the engine's own fact, never the chain's why."
+  },
+  {
+    "tag": "AGENTS-DECLARATION-CARRIES-INHERIT-USER-MCP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "the agents shape gains inheritUserMcp"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "agentFactory passes it to claudeCode"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the pass-through case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Let a consumer declare `agents[phase].inheritUserMcp`, passed through to that phase's `claudeCode` options",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "A declaration setting `inheritUserMcp` loads and constructs that phase's agent with it; omitting it leaves the engine's default (off).",
+    "tests": [
+      "a declared agents inheritUserMcp reaches the phase's claudeCode options"
+    ],
+    "pins": [],
+    "notes": "The engine half shipped: `ClaudeCodeOptions.inheritUserMcp`, `--strict-mcp-config` on the argv by default (src/Agent.ts, `.claude/rules/platform-facts.md`). The harness's strict `agents` schema takes model and extraArgs only, so a consumer wanting its own MCP servers has no spelling and the strict schema refuses the field."
+  },
+  {
+    "tag": "INDEX-EXPORTS-THE-GLOB-MATCHER",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/index.ts",
+          "description": "matchesAny joins the path rules already exported beside it"
+        },
+        {
+          "path": "tests/paths.test.ts",
+          "description": "the entry-point case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Export `matchesAny` from `src/index.ts`, so the entry point and `FlumeApi` carry the same path rules",
+    "per": {
+      "path": "spec/pending.md",
+      "section": "What the package exports"
+    },
+    "acceptance": "`matchesAny` is importable from the package entry point, beside `gitPath`, `slugify` and `stopFlagPath`.",
+    "tests": [
+      "the package entry point exports the glob matcher matchesAny"
+    ],
+    "pins": [],
+    "notes": "`FlumeApi` carries it and `spec/chain.md` names it a path rule a chain composes with; `src/index.ts` exports the other three and not this one. The `git.*` values are api-only by a declaration at the site (src/index.ts) and stay so — the two lists agree on values, not on that namespace."
+  },
+  {
+    "tag": "RENDER-REFUSED-DOC-NAMES-BOTH-PRODUCERS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Prompt.ts",
+          "description": "RenderRefusedAttempt and its failures field: both writers, not spans alone"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`RenderRefusedAttempt`'s shipped doc names both producers — a failing inline-exec span and a pre-invocation hook that threw",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Prior-outcome feedback to the retrying tick"
+    },
+    "acceptance": "The exported type's comment and its `failures` field describe both writers; nothing on the shipped `.d.ts` reads as spans-only.",
+    "tests": [],
+    "pins": [],
+    "notes": "`persistHookRefusal` (src/Dispatcher.ts) writes the record for a `shouldRun`/`promptArgs` throw, and `buildRenderRefused`'s own comment names both; the exported type still reads 'one or more inline-exec spans ... did not resolve', with `failures` as 'every failing span's command text'. Doc comment on the shipped `.d.ts` — the ladder's one carve-out (`engineering.md`)."
+  },
+  {
     "tag": "CHECKOUT-AT-COMMENT-NAMES-THE-SHIPPED-ROUTE",
     "gate": {
       "kind": "open"
