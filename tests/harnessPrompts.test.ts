@@ -495,7 +495,7 @@ async function everySliceOverWrongKindAt(key: SharedPromptArg): Promise<void> {
   expect(refused).toBeGreaterThan(0);
 }
 
-it("every plan slice prompt refuses when its plan state artifact is a directory in place", async () => {
+it("each plan slice prompt's verdict on a plan state directory in place follows whether its spans read that artifact", async () => {
   await everySliceOverWrongKindAt("PLAN_STATE_PATH");
 });
 
