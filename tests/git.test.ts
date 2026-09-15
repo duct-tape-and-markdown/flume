@@ -47,6 +47,13 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 // the one place a call log, not just a passthrough, is needed.
 const execArgsLog: unknown[][] = [];
 
+// The argv of every call this mock actually answered with the localized
+// rejection. The injection is keyed on an argv position, so a caller-side
+// argv change would stop it firing while the case stayed green over the real
+// git's exit-1 English miss — the locale test reads this to pin that the
+// rejection it is about reached `deleteBranch` at all.
+const injectedRejections: string[][] = [];
+
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   const { promisify: nodePromisify } = await import("node:util");
@@ -70,6 +77,7 @@ vi.mock("node:child_process", async (importOriginal) => {
           gitArgs[1] === "-D" &&
           gitArgs[2] === "localized-stderr-missing-branch");
       if (targetsMissingBranch) {
+        injectedRejections.push(gitArgs ?? []);
         return Promise.reject(
           Object.assign(
             new Error("fatal : la référence demandée n'existe pas"),
@@ -262,7 +270,9 @@ describe("commitPaths", () => {
     expect(status).toContain("ignored.txt");
   });
 
-  it("throws synchronously when no paths are supplied", async () => {
+  // `commitPaths` is `async`, so its guard throw can only surface as a
+  // rejection — a synchronous throw is not a shape this subject can take.
+  it("rejects when no paths are supplied", async () => {
     await expect(
       commitPaths({ cwd: repo, message: "noop", paths: [] }),
     ).rejects.toThrow(/at least one path/);
@@ -953,13 +963,25 @@ describe("deleteBranch (GITDELETEBRANCH-BROAD-SWALLOW)", () => {
  * the check holds regardless of what — if anything — lands on stderr. The
  * `node:child_process` mock above fakes exactly that: a `show-ref --verify`
  * miss on this branch's ref, carrying non-English stderr.
+ *
+ * Deliberately top-level rather than in a describe: this title is the queue
+ * entry's own `pins[]` line, matched on the full name.
  */
-describe("deleteBranch — locale-independent (GIT-DELETEBRANCH-LOCALIZED-STDERR)", () => {
-  it("no-ops on a missing branch even when git's stderr is not English", async () => {
-    await expect(
-      deleteBranch(repo, "localized-stderr-missing-branch"),
-    ).resolves.toBeUndefined();
-  });
+it("deleteBranch no-ops on a missing branch whose git rejection carries non-English stderr", async () => {
+  const since = injectedRejections.length;
+
+  await expect(
+    deleteBranch(repo, "localized-stderr-missing-branch"),
+  ).resolves.toBeUndefined();
+
+  // Vacuity pin: the resolve above says nothing about locale independence
+  // unless the localized rejection actually reached `deleteBranch`. Should
+  // the probe's argv drift out from under the mock's match, the real git
+  // runs, misses the same ref, and exits 1 with *English* stderr — the
+  // resolve holds and this case would keep passing over a subject it no
+  // longer exercises.
+  const injected = injectedRejections.slice(since);
+  expect(injected.map((argv) => argv[0])).toContain("show-ref");
 });
 
 /**
