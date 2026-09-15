@@ -134,50 +134,6 @@ picking a wording would be plan authoring spec. Site 5 is parked for the
 adjacent reason: build can reach `docs/`, but the ruling it needs is whether
 `spec/` grows a home for the ignore set — and that is the same lane.
 
-## `spec/cli.md` re-instates `flume render`, which an operator ruling deleted (PARKED — the fork is what replaces the three defects)
-
-Derived from `spec/cli.md` *Subcommand surface* at `d5c05b9`: "`render` —
-renders what a named phase (and, under fanout, `--entry <tag>`) would be
-handed, and prints or writes it, invoking nothing: the other half of what
-`check` does for the queue. An unresolved span exits `EX_DATAERR` naming it."
-
-**Not derivable as filed**, because the verb was removed by name. `docs/
-MIGRATING-0.10.md` §8 and `tests/cliHelp.test.ts` (CLI-RENDER-REMOVAL,
-operator ruling 2026-08-03) record why: it "previewed with the wrong fence,
-the wrong prior-attempt state, and its own re-derivation of pickability that
-disagreed with the dispatcher's — three ways to show an operator a prompt the
-next tick would not send." Three cases pin its absence from the subcommand
-surface.
-
-The new framing answers two of the three: "what a named phase would be
-handed" means the dispatcher's own resolution, so the fence and pickability
-are read rather than re-derived. The third has no answer in the sentence — a
-render outside a tick has no attempt, so there is no prior-attempt block to
-show, and the old verb's failure was showing one anyway.
-
-Forks the bullet leaves open:
-
-- **Prior-attempt state.** Render with the block omitted and say so in the
-  output; render the block a retry *would* carry by reading the store; or
-  refuse when the entry has a recorded attempt. Omitting it silently is the
-  2026-08-03 defect returning under a new name.
-- **"Prints or writes".** stdout only; `--out <path>`; or into the job's
-  `rendered-prompts/` capture dir (`spec/jobs.md`). A CLI output destination
-  is not plan's to choose.
-- **Provisioning.** A real tick renders its fence after `createWorktree`/
-  `setupWorktree`. Rendering without a worktree is cheap and is what an
-  operator wants; whether the rendered fence is then the one the tick would
-  send is the question the old verb got wrong.
-
-Recommended: stdout only, no `--out`; the dispatcher's own resolution path
-short of the invocation; the prior-attempt block omitted with a named line
-saying it is, never reconstructed. `check` is the precedent for all three —
-it reads the real parse and refuses rather than previewing an approximation.
-
-Parked rather than filed because each fork is a CLI surface decision
-(`.claude/rules/collaboration.md`, *Push back on weak product/UX specs*), and
-because shipping the verb retires three tests that pin a standing ruling.
-
 ## Expired narration in three files no phase can write (PARKED — mechanical, human-only)
 
 Drained from `AGENT-LOADS-ONLY-THE-CHAINS-MCP-CONFIG`,
@@ -374,3 +330,54 @@ gate at all?
   on both legs, async-local, overlapping gate invocations — and which has no
   caller today; the recommended branch can be reversed later, this one cannot
   be un-shipped.
+
+## `afterMerge` runs the minutes-long judge before the seconds-long typecheck (NEEDS AMENDMENT — `spec/harness.md` rules the order and cannot be worked around)
+
+Drained from the `CHECKOUT-AT-PLANTS-UNDER-THE-JOB-NAMESPACE` note; every
+claim re-verified on disk this tick.
+
+**The order.** `gatesFor` (harness/chain.ts:221) hands `harnessGates` the
+package's own gates ahead of the consumer's declared list, and `harnessGates`
+(harness/gates.ts) puts its four discipline gates first. At `afterMerge` only
+two gates exist for build: `named lines` (harness/chain.ts:374, the whole
+suite twice — merged tree, then base) and this repo's declared `tsc`
+(`.flume/declaration.ts`). So the minutes-long judge runs first and the
+seconds-long typecheck runs only if it passes. `spec/harness.md` *What a
+consumer declares*, the `gates` row, states this outright: "the package's own
+gates are always present and always first." No chain-side arrangement changes
+it.
+
+**What it cost.** A cross-entry signature drift — one entry changed
+`withGateCheckouts`'s signature while its wave-mate landed a new caller —
+typechecks clean in each worktree's own `afterCommit` tsc, because neither
+worktree holds the other's commit. Only the merged tree sees it, and vitest
+never typechecks. The drift therefore surfaced as an assertion failure in an
+unrelated test file, the revert record named that file, and the merged tree's
+tsc — which would have named the file and line in seconds — never ran.
+
+**Forks:**
+
+- **Ratify as written.** The order stands; a consumer wanting an earlier
+  typecheck declares one at `afterCommit`. Does not help: the worktree cannot
+  see its wave-mate's commit, which is the whole class of defect at issue.
+- **Carve out ordering within a `when`.** The package's *discipline* gates
+  stay first — they are what the sentence exists to protect, and all four are
+  `afterCommit` anyway — while the package's *judge* trails the consumer's
+  declared gates for the same `when`. Smallest amendment; the guarantee
+  survives intact.
+- **A declared placement knob** (`before`/`after` the package's own, per
+  gate). More surface, and it asks a chain author to reason about an ordering
+  the package understands better than they do.
+
+Recommended: the second. One clause in the `gates` row distinguishing the
+discipline gates (always first) from the judge (after the consumer's declared
+gates at the same `when`), so cheapest-first is the shape rather than a
+coincidence.
+
+**Coupled to a queued entry.** `BUILTINGATES-NPM-EXEC-CASE-STOPS-TYPECHECKING-THE-REPO`
+removes the one default-lane case that incidentally typechecks the whole
+repo. That case is why the drift above produced *any* red inside the judge.
+Once it is hermetic, nothing in the suite typechecks the merged tree, and the
+declared `tsc` gate is the only reporter — which makes its position the only
+thing deciding whether a cross-entry revert is legible. Correct either way;
+the amendment decides how many minutes it costs to find out.

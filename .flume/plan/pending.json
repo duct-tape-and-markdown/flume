@@ -1,1 +1,68 @@
-[]
+[
+  {
+    "tag": "BUILTINGATES-NPM-EXEC-CASE-STOPS-TYPECHECKING-THE-REPO",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "scope the npm-exec case's tsc off the repo's own project, per §The default test lane must stay fast"
+        }
+      ]
+    },
+    "summary": "the npm-exec tscGate case asserts its composed invocation ran, not the whole repo's type health",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "the case is green on a tree carrying a deliberate type error in src/",
+    "pins": [
+      "tscGate({ cmd: 'npm', args: [...] }) composes a working npm invocation and actually runs tsc"
+    ],
+    "notes": "Verified: the case runs `npm exec -- tsc --noEmit` over `process.cwd()` (tests/builtinGates.test.ts:678), so its `ok` IS the repo's typecheck — a cross-entry drift reds it as `expected false to be true` and reverts an innocent entry. tsc must still resolve from the repo's node_modules (no network), so keep the gate's cwd at the repo and scope tsc to a fixture project. The 30_000 per-case budget already declared stays."
+  },
+  {
+    "tag": "CLI-RENDER-RUNS-THE-DISPATCHERS-OWN-RESOLUTION",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [
+        {
+          "path": "tests/cliRender.test.ts",
+          "description": "the verb's stdout, its omitted-block first line, and its EX_DATAERR refusal"
+        }
+      ],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "dispatch `render` per §Subcommand surface"
+        },
+        {
+          "path": "src/cliHelp.ts",
+          "description": "name render on the subcommand surface"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the resolution path short of the invocation, reached without a tick"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "retire the three CLI-RENDER-REMOVAL cases"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "the verb's section"
+        }
+      ]
+    },
+    "summary": "re-instate `flume render`: stdout only, the dispatcher's own resolution short of the invocation, no prior-attempt block",
+    "per": { "path": "spec/cli.md", "section": "Subcommand surface" },
+    "acceptance": "`flume render <phase>` prints the prompt a tick would be handed and invokes nothing; the three CLI-RENDER-REMOVAL cases are gone",
+    "tests": [
+      "flume render prints to stdout the prompt a tick would be handed and invokes no agent",
+      "flume render's first line says the prior-attempt block is omitted",
+      "flume render exits EX_DATAERR naming an unresolved span",
+      "flume --help names render on the subcommand surface"
+    ],
+    "notes": "spec/cli.md ruled all three forks at d9f0a90, closing the parked question. The removal those cliHelp cases pin (CLI-RENDER-REMOVAL, operator ruling 2026-08-03) is superseded by name, so they retire here. docs/MIGRATING-0.10.md §8 is a historical migration record and stays as written. Fanout takes `--entry <tag>`."
+  }
+]
