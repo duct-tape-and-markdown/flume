@@ -1,49 +1,5 @@
 [
   {
-    "tag": "STATE-ROOT-REL-IS-REPORTED-IN-GITS-ALPHABET",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "computeStateRootRel reports through the git-path rule"
-        },
-        {
-          "path": "harness/gates.ts",
-          "description": "the records gate stops re-folding the offset"
-        },
-        {
-          "path": "harness/prompts.ts",
-          "description": "noteRoot stops re-folding it"
-        },
-        {
-          "path": "harness/chain.ts",
-          "description": "repoRelativeStateRoot stops re-folding it"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the reporter's own spelling"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Report `stateRootRel` in git's alphabet at the one reporter, and retire the three harness restatements of the fold",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a gate receives"
-    },
-    "acceptance": "The reported offset is forward-slashed on any host, and no consumer re-folds it: harness/gates.ts, harness/prompts.ts and harness/chain.ts each read ctx.stateRootRel straight.",
-    "tests": [],
-    "pins": [
-      "computeStateRootRel reports a nested state root in git's alphabet"
-    ],
-    "notes": "spec/chain.md says git's alphabet; computeStateRootRel (src/Dispatcher.ts:884) returns relative()'s host dialect, so three consumers restate the fold (harness/gates.ts:270, harness/prompts.ts:379, harness/chain.ts:637 — engineering.md *A fact the engine holds is reported*). Prior attempt parked: readFileAtRef folds every pathspec through gitPath already (src/git.ts:478), so the gate half was green on base and is dropped; no posix run can turn the fold red, hence pins only."
-  },
-  {
     "tag": "GATE-THROW-CARRIES-ITS-STACK",
     "gate": {
       "kind": "open"
@@ -231,38 +187,5 @@
     ],
     "pins": [],
     "notes": "\"A differential gate never provisions its own\" is the ruling's second half; the named-lines judge is the differential gate and this runner is its only instance here. The `addWorktree`/`removeWorktree`/base-join block at harness/vitestRunner.ts:248-295 is what leaves."
-  },
-  {
-    "tag": "CLI-DOC-LOOP-EXIT-CODES-PINNED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CLI.md",
-          "description": "§§ `flume loop` and `flume job run`'s exit-code sentences"
-        },
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "both sections against the driven loop range"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Pin `docs/CLI.md` §§ `flume loop` and `flume job run`'s exit codes against a driven `loopExitCode` range, and correct both sections",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "acceptance": "Each section names exactly the codes the driven `loopExitCode` range plus a named process-level set produce; a one-sided change to either is red, and a backticked integer the prose uses for something other than a code is not read as one.",
-    "tests": [
-      "docs/CLI.md's flume loop section names every exit code the real loop range produces",
-      "docs/CLI.md's flume job run section names every exit code the real loop range produces"
-    ],
-    "pins": [],
-    "notes": "The loop section names 0/1/69 and neither 74 nor 78; job run misses 74. Drive `loopExitCode` (src/cliVerdict.ts) over a `SuperviseResult` space beside the process-level set, as tests/cliHelp.test.ts already does for tick — never against the `--help` block. Both sections backtick `50` for `--max`, which the tick pin's bare-integer reader would read as a code. The four `--help` blocks stay unheld."
   }
 ]
