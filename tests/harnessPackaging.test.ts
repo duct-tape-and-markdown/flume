@@ -84,17 +84,83 @@ async function prerequisiteClaim(): Promise<string> {
 const QUICKSTART_HEADING = "## Quickstart";
 
 /**
- * The Quickstart section, from its heading to the next `##` one — its own
- * `###` subsections included, since a verb demoted into one is still inside
- * the section a reader is in. An absent heading yields the empty string,
- * which the case below refuses before asserting anything over it.
+ * One `##` section of a markdown page, from its heading to the next `##`
+ * one — its own `###` subsections included, since a verb demoted into one is
+ * still inside the section a reader is in. An absent heading yields the
+ * empty string, which every case below refuses before asserting anything
+ * over it.
  */
-async function quickstartSection(): Promise<string> {
-  const lines = (await readFile(join(REPO_ROOT, "README.md"), "utf8")).split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trimEnd() === QUICKSTART_HEADING);
+function sectionOf(page: string, heading: string): string {
+  const lines = page.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trimEnd() === heading);
   if (start === -1) return "";
   const end = lines.findIndex((line, i) => i > start && /^## /.test(line));
   return lines.slice(start, end === -1 ? undefined : end).join("\n");
+}
+
+/** The README's Quickstart section. */
+async function quickstartSection(): Promise<string> {
+  return sectionOf(await readFile(join(REPO_ROOT, "README.md"), "utf8"), QUICKSTART_HEADING);
+}
+
+/** The heading `docs/CLI.md` gives one verb of the harness bin. */
+function harnessVerbHeading(verb: string): string {
+  return `## \`flume-harness ${verb}\``;
+}
+
+/**
+ * Every consumer-facing page a verb can be named on: the README and every
+ * markdown page under `docs/`, read off the tree rather than listed here so
+ * a page added to the set is scanned without this file being touched
+ * (`.claude/rules/engineering.md`, *Derived state is computed*).
+ */
+async function consumerDocPages(): Promise<{ page: string; body: string }[]> {
+  const pages = [
+    "README.md",
+    ...(await filesUnder(join(REPO_ROOT, "docs"), "docs")).filter((p) => p.endsWith(".md")),
+  ];
+  return Promise.all(
+    pages.map(async (page) => ({
+      page,
+      body: await readFile(join(REPO_ROOT, ...page.split("/")), "utf8"),
+    })),
+  );
+}
+
+/**
+ * A page's code voice: the body of every fenced block, plus every inline
+ * code span in what is left. Prose *about* the bin ("the `flume-harness`
+ * bin dispatches one verb") is not a command; a page names a command in code
+ * voice, and that is the only place the scan below reads one from.
+ */
+function codeVoice(body: string): string[] {
+  const chunks: string[] = [];
+  const prose = body.replace(/```[^\n]*\n([\s\S]*?)```/g, (_match, block: string) => {
+    chunks.push(block);
+    return "\n";
+  });
+  for (const match of prose.matchAll(/`([^`\n]+)`/g)) {
+    const span = match[1];
+    if (span !== undefined) chunks.push(span);
+  }
+  return chunks;
+}
+
+/**
+ * Every verb a page names on the harness bin, in page order. A token opening
+ * on `-` is an option rather than a verb; trailing punctuation is the
+ * sentence's or the sample output's, never the verb's.
+ */
+function harnessVerbTokens(body: string): string[] {
+  const named: string[] = [];
+  for (const chunk of codeVoice(body)) {
+    for (const match of chunk.matchAll(/\bflume-harness\s+(\S+)/g)) {
+      const verb = (match[1] ?? "").replace(/[.,;:!?)\]]+$/, "");
+      if (verb === "" || verb.startsWith("-")) continue;
+      named.push(verb);
+    }
+  }
+  return named;
 }
 
 /** The body of a markdown section's first shell block, or the empty string. */
@@ -607,4 +673,98 @@ it("the README quickstart names the adoption verb the flume-harness bin dispatch
   const opener = firstShellBlock(quickstart);
   expect(opener.trim().length).toBeGreaterThan(0);
   expect(verbs.some((verb) => opener.includes(`flume-harness ${verb}`))).toBe(true);
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The per-verb contract page, against the bin it describes. The README sends
+ * a reader to `docs/CLI.md` for "full per-verb contracts — steps, refusals,
+ * exit codes", and that page is written for `flume`'s verb set; the harness
+ * package ships a second bin (`spec/harness.md`, *Adoption and upgrade*)
+ * whose verbs are contract surface the same way.
+ *
+ * An agreement gate, and the reason no verb is spelled here: the real writer
+ * is the shipped `bin/flume-harness.js` over the build's own emit, the reader
+ * is the doc page, so a verb added in `harness/cli.ts` reds this rather than
+ * shipping undocumented. The exit codes are measured off the same bin —
+ * the success code of a run that mutates nothing and the code of the usage
+ * refusal every verb's argv passes through — so a section that names codes
+ * of the tester's own invention cannot pass for a contract.
+ */
+it("docs/CLI.md names every verb the flume-harness bin dispatches", async () => {
+  const bin = join(pkgDir, "bin", "flume-harness.js");
+  const help = await runNodeStreams(pkgDir, [bin, "--help"], hermeticEnv());
+  expect({ code: help.code, stderr: help.stderr }).toEqual({ code: 0, stderr: "" });
+
+  // Non-vacuity: a Commands block that parsed to nothing would leave the
+  // loop below iterating an empty set and the page unjudged.
+  const verbs = listedVerbs(help.stdout);
+  expect(verbs.length).toBeGreaterThan(0);
+
+  // The usage class, measured rather than spelled: this is the code any
+  // verb's argv refusal exits with, and what each section has to state.
+  const refused = await runNodeStreams(scratch, [bin, "adopt-everything"], hermeticEnv());
+  expect(refused.code).toBeGreaterThan(0);
+
+  const page = await readFile(join(REPO_ROOT, "docs", "CLI.md"), "utf8");
+  for (const verb of verbs) {
+    const section = sectionOf(page, harnessVerbHeading(verb));
+    expect({ verb, sectioned: section !== "" }).toEqual({ verb, sectioned: true });
+    expect({
+      verb,
+      names: {
+        success: section.includes(`\`${help.code}\``),
+        usageRefusal: section.includes(`\`${refused.code}\``),
+      },
+    }).toEqual({ verb, names: { success: true, usageRefusal: true } });
+  }
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The other direction, across every page a consumer reads: a command named
+ * in code voice is a command someone will run, and one the bin does not
+ * dispatch sends them to a usage refusal with the page still reading as
+ * current. Renaming a verb in `harness/cli.ts` reds here, naming the page.
+ *
+ * The scan's own detection is proven before the verdict: a no-hits pass over
+ * every page is what a matcher that silently stopped matching produces, and
+ * it is indistinguishable from agreement.
+ */
+it("no README or docs page names a flume-harness verb the bin does not dispatch", async () => {
+  const bin = join(pkgDir, "bin", "flume-harness.js");
+  const help = await runNodeStreams(pkgDir, [bin, "--help"], hermeticEnv());
+  expect({ code: help.code, stderr: help.stderr }).toEqual({ code: 0, stderr: "" });
+  const verbs = listedVerbs(help.stdout);
+  expect(verbs.length).toBeGreaterThan(0);
+
+  // The scanner, over a page that names a verb in both voices it reads.
+  const outside = "adopt-everything";
+  expect(verbs).not.toContain(outside);
+  expect(
+    harnessVerbTokens(
+      `\`\`\`sh\nnpx --package @dtmd/flume flume-harness ${outside}\n\`\`\`\n\n` +
+        `and \`flume-harness ${outside}\` inline, and \`flume-harness --help\` which is not a verb.\n`,
+    ),
+  ).toEqual([outside, outside]);
+
+  // And that the bin really refuses one, so the verdict below is about a
+  // command line that would fail rather than about a string.
+  const refused = await runNodeStreams(scratch, [bin, outside], hermeticEnv());
+  expect(refused.code).not.toBe(0);
+  expect(refused.stderr).toContain(`unknown command \`${outside}\``);
+
+  const pages = await consumerDocPages();
+  expect(pages.length).toBeGreaterThan(0);
+  const named = pages.flatMap(({ page, body }) =>
+    harnessVerbTokens(body).map((verb) => ({ page, verb })),
+  );
+  // Non-vacuity: with nothing named anywhere, agreement holds for free.
+  expect(named.length).toBeGreaterThan(0);
+
+  for (const { page, verb } of named) {
+    expect({ page, verb, dispatched: verbs.includes(verb) }).toEqual({
+      page,
+      verb,
+      dispatched: true,
+    });
+  }
 }, SPAWN_BUDGET_MS);

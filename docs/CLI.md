@@ -7,6 +7,8 @@
 
 Flume is exec-local: a bay declares `@dtmd/flume` as a dev dependency and invokes it through the package manager (`pnpm exec flume`, an npm script, `npx flume`). The binary that runs is the bay's own pinned copy, resolved the same way as every other dependency — global installs are unsupported, and the engine makes no attempt to detect or accommodate one.
 
+The package ships a second bin, `flume-harness`, carrying the harness package's own verbs — the ones the engine's deliberately closed verb set does not offer. Its contracts are at the foot of this page, in the same form as the engine's.
+
 ## Global `--job <name>` / `FLUME_JOB`
 
 `flume --job <name> <subcommand>` (the flag composes with every subcommand, at any argument position) resolves both `FLUME_DIR` and `FLUME_CONFIG_DIR` to `<repoRoot>/.flume/jobs/<name>` and sets `FLUME_JOB=<name>` — all three canonicalized and written back into the environment at CLI entry, so loop-spawned tick children inherit the resolution via env rather than flags. Setting `FLUME_JOB=<name>` directly (no flag) is honored identically.
@@ -292,4 +294,38 @@ flume friction
 
 flume friction revert-note-a54de89.md
 # (bytes of the note, written verbatim to stdout)
+```
+
+## `flume-harness init`
+
+A verb on the *other* bin. The harness package ships its own command line beside the engine's, so `flume`'s verb set stays closed and `src/` never imports the harness (`spec/harness.md`, *Adoption and upgrade*). It is the same npm package and the same version, so one install provides both — before the dependency is there, `npx --package @dtmd/flume flume-harness init`; once it is, `pnpm exec flume-harness init`. `flume-harness` with no verb, or with `-h` / `--help`, prints the verb list and exits `0`.
+
+`init` adopts the harness into the repository it is run in: the repository is the current working directory and the state root is `.flume`. The verb takes no arguments and no flags — no `--job`, no state-root selector; adopting into a different root is the exported `harnessInit({ repoRoot, stateRoot })`, a library call rather than a command line. Two steps, the first entirely a preflight:
+
+1. **Resolve every input before the first byte.** The state root's absence (a stat failure that is not absence refuses rather than reading as "not adopted yet"), this package's own manifest for the version range to declare, the shipped `PROTOCOL.md` template, and the repository's `package.json` if it has one. Nothing on disk is touched until all of them pass: an init that stopped half-way would leave ignore lines for a state root that does not exist, or a `PROTOCOL.md` beside no declaration — a tree nothing refuses and no re-run can tell from a finished one.
+2. **Write the adoption, then report it.** `.flume/declaration.ts` (the skeleton whose `specLocus`, `fence` and `slices` are yours to fill in), `.flume/chain.ts` (the hop the engine loads — the same three lines in every adopting repository, and nothing in it yours to tune), `.flume/PROTOCOL.md`, and `.flume/plan/pending.json` holding an empty queue: nothing else creates one, and a plan slice refuses over an absent queue. Then the runtime ignore lines are *merged* into `.gitignore` — created if absent, and everything already in it kept — and `@dtmd/flume` is declared at `^<version>` in the manifest's `dependencies`. A range already declared (in either `dependencies` or `devDependencies`) is left exactly as it was: a pinned range is a decision, and overwriting it would be init choosing a version on your behalf. No installer is spawned and no lockfile is touched — which package manager reconciles `node_modules` stays yours, and the closing line says what to run next.
+
+What init writes once it never rewrites. Upgrading is one version bump plus the release's migration note, never a re-run that reconciles a declaration someone has since edited — which is why the refusals below are refusals rather than merges.
+
+Refusals, every one of them taken before anything is written: **a state root already there** (`.flume/` exists) — the repository has already adopted the package, and the message names the path and says to remove it to start over; **a `package.json` present but not readable as a manifest** — it is not JSON, it parses to something that is not an object, or it hangs a non-object off `dependencies` / `devDependencies`, each named by field, because spreading one of those shapes would rewrite the manifest into something never declared and report it as a dependency added; and **a shipped `PROTOCOL.md` template still carrying an unsubstituted `{{…}}` placeholder**, a packaging failure that would otherwise ship brace tokens into every adopter's prose. A repository with *no* `package.json` at all is not a refusal — init proceeds, writes nothing of its own, and reports the fact, which is bounded downstream: the declaration it just wrote imports `@dtmd/flume/harness`, so a first tick run without the package installed fails at module resolution naming the specifier rather than running on a default nobody chose.
+
+Exit codes: `0` on a completed adoption, and on the help text; `64` (`EX_USAGE`) on a command line the bin cannot act on — an unknown verb, or `init` handed arguments it has none of — the caller's command line rather than the repository's state, which is the line `64` marks; `1` on a refusal over what is on disk (all three above) or any other error, with the message in flume's own voice on stderr.
+
+```sh
+npx --package @dtmd/flume flume-harness init
+# flume-harness init — /home/you/repo
+#
+#   wrote     .flume/declaration.ts
+#   wrote     .flume/chain.ts
+#   wrote     .flume/PROTOCOL.md
+#   wrote     .flume/plan/pending.json
+#   ignores   .gitignore +10 line(s) under .flume/
+#   depends   @dtmd/flume@^0.15.0 added to package.json
+#
+# Next: install the dependency, then edit .flume/declaration.ts — its
+# `specLocus`, `fence` and `slices` are placeholders.
+
+pnpm exec flume-harness init          # a repository that already adopted
+# flume-harness init: /home/you/repo/.flume already exists — refusing to
+# overwrite it. ...                                              (exit 1)
 ```
