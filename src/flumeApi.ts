@@ -205,17 +205,19 @@ export interface FlumeApi {
      */
     readWorktreeRegistry: typeof readWorktreeRegistry;
     /**
-     * A detached checkout of a sha, planted under the state root's worktree
-     * base and removed by the engine when the gate that asked for it returns
+     * A detached checkout of a sha, planted under the run's worktree base
+     * and removed by the engine when the gate that asked for it returns
      * (`spec/chain.md`, *What a gate receives*). What a **differential** gate
      * calls: one that needs the *tree* at `ctx.baseSha` — to run a suite
      * there, to typecheck it, to diff a build output — rather than one file
      * out of it, which `readFileAtRef` above already answers.
      *
-     * A gate provisions nothing itself. Placement is the engine's own
-     * `worktreesBase` resolution, so an operator's `FLUME_WORKTREES_DIR` is
-     * honored and a run killed mid-gate leaves a directory the next start's
-     * sweep reclaims — where a chain's own temp dir leaves residue in a
+     * A gate provisions nothing itself. Placement is the engine's own — the
+     * `worktreesBase` resolution and, under `--job`/`FLUME_JOB`, that job's
+     * namespace level beneath it — so an operator's `FLUME_WORKTREES_DIR` is
+     * honored and a run killed mid-gate leaves a directory at the level the
+     * next start's sweep reads and reclaims, whether or not the run was
+     * namespaced. A chain's own temp dir leaves residue in a
      * place nothing looks, and a chain's own path convention under the
      * worktree base is a name only the engine owns, restated
      * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,

@@ -115,15 +115,22 @@ const DECLARATION = {
  * the API refuses.
  *
  * `declaredBase` is the chain's own worktree base when a case states one —
- * the value the dispatcher hands the scope, never the gate.
+ * the value the dispatcher hands the scope, never the gate. No case here
+ * runs under a job namespace, so the scope carries none and the checkout
+ * lands at the base itself.
  */
 const inGateScope = <T>(
   body: () => Promise<T>,
   declaredBase?: string,
 ): Promise<T> =>
   withGateCheckouts(
-    { info: () => {}, warn: () => {}, error: () => {} },
-    declaredBase,
+    {
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+      namespace: undefined,
+      ...(declaredBase !== undefined
+        ? { declaredWorktreesBase: declaredBase }
+        : {}),
+    },
     body,
   );
 

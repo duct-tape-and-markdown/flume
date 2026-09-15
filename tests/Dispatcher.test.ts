@@ -16666,6 +16666,61 @@ describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, rec
     expect(bytesThere).toBe("base\n");
   }, 30_000);
 
+  it("a namespaced job's checkoutAt plants under the namespace directory the startup sweep reads", async () => {
+    // The level matters, not just the base. Under a namespace the startup
+    // sweep reads `<base>/<ns>` and steps over everything at the bare base
+    // as a sibling job's ("an unnamespaced instance's sweep does not remove
+    // a sibling namespaced job's live worktree directory…", above), so a
+    // checkout planted one level up is residue no start reclaims — which is
+    // the whole promise this API makes for a run killed mid-gate.
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let planted: string | undefined;
+    let flumeDirSeen: string | undefined;
+    let registeredDuringGate: boolean | undefined;
+
+    const gate = differentialGate(
+      async (path, ctx) => {
+        planted = path;
+        flumeDirSeen = ctx.flumeDir;
+        registeredDuringGate = await registered(path);
+      },
+      () => ({ ok: true, message: "differed" }),
+    );
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", gates: [gate] })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent((cwd) =>
+        writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive"),
+      ),
+      log: silent,
+      namespace: "alpha",
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the gate ran on a span that committed, and what it asked
+    // for was a tree git actually registered — so the path asserted below is
+    // one a real checkout stood at.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.gateResults.map((g) => g.gate)).toContain(
+      "differential",
+    );
+    expect(planted).toBeDefined();
+    expect(registeredDuringGate).toBe(true);
+
+    // The namespace level, mirroring the worktree path a namespaced job's
+    // own tick lands at — not the bare base.
+    const base = worktreesBase(flumeDirSeen!);
+    expect(dirname(planted!)).toBe(join(base, "alpha"));
+    expect(dirname(planted!)).not.toBe(base);
+  }, 30_000);
+
   it("the engine removes a gate's checkout when the gate returns", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 

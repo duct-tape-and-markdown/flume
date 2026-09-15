@@ -188,19 +188,37 @@ interface PlantedCheckout {
 }
 
 /**
- * One gate invocation's checkout scope: the ledger of what it planted, and
- * the chain-declared worktree base it plants under.
+ * What a gate's checkout scope takes from the dispatcher that opens it: the
+ * two placement facts that decide where {@link checkoutAt} plants — the
+ * chain's already-evaluated worktree base and this job's namespace — and the
+ * logger the reclamation's swallowed failures go to.
  *
- * The declared base rides the scope rather than the caller's `opts` because
- * `checkoutAt`'s caller is the *gate* — a chain hook, which cannot be asked
+ * Both placement facts ride the scope rather than `checkoutAt`'s own `opts`
+ * because that caller is the *gate* — a chain hook, which cannot be asked
  * for a value the engine evaluated for it without re-deriving it
  * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*: a hook
- * receives facts, never re-derives them). The dispatcher knows it, and the
- * gate boundary it already opens is where it hands it over.
+ * receives facts, never re-derives them). The dispatcher knows both, and the
+ * gate boundary it already opens is where it hands them over.
+ *
+ * A subset of {@link WorktreeContext} rather than a shape of its own, so the
+ * dispatcher passes the context it already composes instead of a second copy
+ * of three of its fields (`.claude/rules/engineering.md`, *Derived state is
+ * computed, never restated beside its source*). `repoRoot` and `flumeDir`
+ * are deliberately off it: those come from the *gate's* own context at each
+ * `checkoutAt` call, since a gate is free to ask for a tree of some repo
+ * other than the dispatcher's.
  */
-interface GateCheckoutScope {
+export type GateCheckoutContext = Pick<
+  WorktreeContext,
+  "log" | "namespace" | "declaredWorktreesBase"
+>;
+
+/**
+ * One gate invocation's checkout scope: where it plants, plus the ledger of
+ * what it planted.
+ */
+interface GateCheckoutScope extends GateCheckoutContext {
   planted: PlantedCheckout[];
-  declaredWorktreesBase: string | undefined;
 }
 
 /**
@@ -228,7 +246,11 @@ let checkoutSeq = 0;
  * and the reclamation leaves a directory git registers as a worktree at the
  * exact level {@link sweepStaleWorktrees} reads at the next start, so the
  * residue is reclaimed by machinery that already exists rather than
- * accumulating somewhere nothing looks.
+ * accumulating somewhere nothing looks. Under a job namespace that level is
+ * `<base>/<namespace>`, so the checkout carries the namespace exactly as
+ * {@link createWorktree}'s path does: planting at the bare base under a
+ * namespaced job lands the residue one level above the only sweep that would
+ * read it, on the level that sweep steps over as a sibling job's.
  *
  * **Detached, so there is no ref to clean up**: nothing commits here, and a
  * branch would be a second thing the reclamation could fail to remove.
@@ -260,11 +282,17 @@ export async function checkoutAt(opts: {
   // base included, taken from the gate scope the dispatcher opened rather
   // than from the gate that called in here.
   const base = worktreesBase(opts.flumeDir, scope.declaredWorktreesBase);
+  // Namespaced exactly as `createWorktree`'s path is, from the same value:
+  // `sweepStaleWorktrees` reads `<base>/<namespace>` when a namespace is
+  // set, and treats a directory at the bare base as a sibling job's to leave
+  // standing. Unconditional when set — the redundant level under a
+  // per-job default base is harmless, as it is there.
+  const dir = scope.namespace ? join(base, scope.namespace) : base;
   const path = join(
-    base,
+    dir,
     `checkout-${opts.sha.slice(0, 7)}-${process.pid}-${checkoutSeq++}`,
   );
-  await mkdir(toNamespacedPath(base), { recursive: true });
+  await mkdir(toNamespacedPath(dir), { recursive: true });
   // Same win32 MAX_PATH gap `createWorktree` pins for: this lands at the
   // same depth its siblings do.
   await git.pinLongPaths(opts.repoRoot);
@@ -294,19 +322,18 @@ export async function checkoutAt(opts: {
  * looks.
  */
 export async function withGateCheckouts<T>(
-  log: Logger,
-  declaredWorktreesBase: string | undefined,
+  ctx: GateCheckoutContext,
   body: () => Promise<T>,
 ): Promise<T> {
   const planted: PlantedCheckout[] = [];
   try {
-    return await gateCheckouts.run({ planted, declaredWorktreesBase }, body);
+    return await gateCheckouts.run({ ...ctx, planted }, body);
   } finally {
     for (const c of planted.reverse()) {
       try {
         await git.removeWorktree(c.repoRoot, c.path);
       } catch (err) {
-        log.warn(
+        ctx.log.warn(
           `[flume] could not reclaim the gate checkout at ${c.path}: ${(err as Error).message}`,
         );
       }

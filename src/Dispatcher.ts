@@ -3895,13 +3895,15 @@ export class Dispatcher {
    * detached tree the gate asked the API for (`api.git.checkoutAt`) is
    * removed when this call unwinds — returned verdict and throw alike, so a
    * differential gate that crashed mid-run cannot leak the tree it was
-   * reading (spec/chain.md "What a gate receives").
+   * reading (spec/chain.md "What a gate receives"). The scope takes the same
+   * `worktreeCtx` every other worktree call site here reads, so where a
+   * gate's checkout lands — declared base and job namespace both — is the
+   * placement the startup sweep goes on to read, never a second composition
+   * of it.
    */
   private async runGate(gate: Gate, ctx: GateContext): Promise<GateResult> {
     try {
-      return await withGateCheckouts(this.log, this.chainWorktreesBase, () =>
-        gate.run(ctx),
-      );
+      return await withGateCheckouts(this.worktreeCtx, () => gate.run(ctx));
     } catch (err) {
       const { message, stack } = throwFacts(err);
       this.log.warn(
