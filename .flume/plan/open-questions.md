@@ -98,39 +98,6 @@ not re-derive them:
   Named here only so the failure tally above stays honest — three
   `harnessPrompts` cases and one `harnessChain` case belong to this family.
 
-## `spec/harness.md` still reads as first-match-wins, but the resolver refuses a repeated heading (NEEDS AMENDMENT — directed spec edit)
-
-Drained from `.flume/plan/notes/CITE-AMBIGUOUS-HEADING-REFUSED.md` (build tick,
-`ce2ec59`). *The cite resolver* says only that "the section must be a heading in
-that file at that commit". As of `ce2ec59` the package refuses a section text
-the page heads more than once — sibling or nested — naming both lines. Behavior
-is now stricter than the sentence that describes it, and `spec/` is yours.
-
-Verified at this tip: no file under `spec/**` or `.claude/rules/**` heads any
-text twice, so the `per` gate is green today and nothing is blocked. This is a
-corpus/`src` divergence (`CLAUDE.md`, *Source of truth*), not an outage.
-
-**The fork:**
-
-1. **Ratify the refusal** — one clause in *The cite resolver*: the section must
-   head *exactly one* section in that file at that commit. One-line edit, makes
-   the sentence true, and forecloses a later derive tick reading the current
-   wording as licence to relax the resolver back to first-match. Recommended.
-2. **Reject it** — first-match-wins stands, and the refusal is a pending entry
-   to revert. Cheap to do, but a cite naming two sections names neither, and
-   build would be handed prose the entry may not have been derived against.
-
-**Second edit, same commit if you take (1).** `.claude/rules/spec-writing.md`,
-*A heading is an identifier*, currently tells the author that renaming or
-splitting a heading re-homes every citing surface — advisory prose for a
-property that is now mechanically refused. Under `engineering.md`, *Narration
-is the ladder's bottom rung*, it shrinks to a pointer at the gate. The note
-argues that shrink; worth your read, because the page's remaining claim (sweep
-the citing surfaces in the same commit) is still the author's and is *not* held
-by any gate — only the duplicate half is.
-
-Both files are outside build's fence, so neither can be an entry either way.
-
 ## A chain cannot root `writablePaths` at the state root, and the two spec sections disagree on how it would (PARKED — surface ruling needed)
 
 Surfaced draining `.flume/plan/notes/PROMPT-SPANS-QUOTE-SUBSTITUTED-PATHS.md`.
