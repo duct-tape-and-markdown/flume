@@ -5,15 +5,15 @@
 </sweep-window>
 
 <plan-state>
-!`cat {{PLAN_STATE_PATH}} 2>/dev/null || echo "(no plan state yet)"`
+!`cat "{{PLAN_STATE_PATH}}" 2>/dev/null || echo "(no plan state yet)"`
 </plan-state>
 
 <pending-now>
-!`cat {{PENDING_PATH}}`
+!`cat "{{PENDING_PATH}}"`
 </pending-now>
 
 <open-questions-index>
-!`grep -n '^## ' {{QUESTIONS_PATH}} || echo "(none open)"`
+!`grep -n '^## ' "{{QUESTIONS_PATH}}" || echo "(none open)"`
 </open-questions-index>
 
 <artifacts>

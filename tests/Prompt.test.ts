@@ -510,6 +510,36 @@ describe("renderPrompt — inline-exec reaches sh through stdin (RELEASE-v0.10 �
     expect(out).toContain("value=(no prior plan: commit - bootstrap tick)");
   });
 });
+describe("renderPrompt — a span's substituted value is shell text (spec/prompt.md 'The render pipeline')", () => {
+  it("a placeholder substituted into a span's command reaches sh as text the engine neither quotes nor escapes", async () => {
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(
+      promptFile,
+      "bare=!`printf '[%s]' {{VALUE}}`\nauthor=!`printf '[%s]' \"{{VALUE}}\"`\n",
+      "utf8",
+    );
+
+    const out = await renderPrompt({
+      phase: phase(),
+      flumeDir: "/state-root",
+      promptFile,
+      cwd: dir,
+      // A space and a backslash: the two bytes `sh` acts on when a word is
+      // unquoted, which is what a state root path routinely carries.
+      args: { VALUE: "a\\b c" },
+    });
+
+    // Unquoted, the value is two words with its backslash eaten — `printf`
+    // reused its format once per word. The engine substituted text and did
+    // nothing else to it.
+    expect(out).toContain("bare=[ab][c]");
+    // Quoted by the prompt's author, the same value arrives as one argument,
+    // byte for byte: the quoting is the author's job because the engine
+    // cannot know a placeholder was meant as one shell word.
+    expect(out).toContain("author=[a\\b c]");
+  });
+});
+
 describe("renderPrompt — an unresolved inline-exec span aborts the render (RELEASE-v0.10 §3)", () => {
   it("a non-zero exit throws InlineExecRenderError naming the command text and stderr — no <exec-failed> marker, no agent-bound output", async () => {
     let caught: unknown;

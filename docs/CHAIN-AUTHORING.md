@@ -1206,6 +1206,11 @@ Notes:
 - Consequence: **`sh` consumes stdin**, so a span whose own command reads
   stdin sees EOF instead of any inherited input. Don't write a span that
   depends on reading stdin.
+- **A `{{KEY}}` inside a span is shell text, not a shell word.** Placeholders
+  are substituted before the span runs, and the renderer neither quotes nor
+  escapes what it substitutes — the engine cannot know a value was meant as
+  one word. Quote it yourself (`` !`cat "{{PENDING_PATH}}"` ``), or a state
+  root carrying a space or a backslash word-splits before `sh` opens the file.
 - All inline-execs run in parallel; don't depend on ordering between them.
 - Output is capped at 4 MiB.
 - **A span that fails to resolve — non-zero exit, spawn failure, `sh` not

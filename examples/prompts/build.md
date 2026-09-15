@@ -11,7 +11,7 @@ may be a heading, a decision name, or a `→`-separated nested path) in the
 file below. The rest of the spec is context.
 
 <spec path="{{PER_PATH}}">
-!`cat {{PER_PATH}} 2>/dev/null || echo "(spec not found: {{PER_PATH}})"`
+!`cat "{{PER_PATH}}" 2>/dev/null || echo "(spec not found: {{PER_PATH}})"`
 </spec>
 
 # CONTEXT

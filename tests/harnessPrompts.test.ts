@@ -17,7 +17,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -25,12 +25,16 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
 import { PHASES, PLAN_SLICES } from "../harness/declaration.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
+import { planStatePath } from "../harness/planState.ts";
 import {
   PROMPT_NAMES,
   promptPath,
+  questionsPath,
   sharedPromptArgs,
   type PromptName,
+  type SharedPromptArg,
 } from "../harness/prompts.ts";
+import { resolvePendingPath } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
 import { NO_COMMIT_MODES, renderPrompt } from "../src/Prompt.ts";
 
@@ -40,6 +44,9 @@ const PROMPT_DIR = fileURLToPath(new URL("../harness/prompts/", import.meta.url)
 
 /** The engine's own placeholder grammar, as the renderer spells it. */
 const PLACEHOLDER = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
+
+/** Its inline-exec grammar, likewise — what stage 2 scans the file with. */
+const SPAN = /!\s*`([^`]+)`/g;
 
 /** A state root with the artifacts the slice prompts' inline-exec spans read. */
 let stateRoot: string;
@@ -62,15 +69,19 @@ beforeAll(async () => {
   });
 });
 
+/** Every scratch root a case seeded, torn down together. */
+const oddRoots: string[] = [];
+
 afterAll(async () => {
   if (stateRoot) await rm(stateRoot, { recursive: true, force: true });
+  for (const root of oddRoots) await rm(root, { recursive: true, force: true });
 });
 
-function args(): Record<string, string> {
+function args(root: string = stateRoot): Record<string, string> {
   return sharedPromptArgs({
     declaration,
     extension: entryExtension(),
-    stateRoot,
+    stateRoot: root,
   });
 }
 
@@ -94,10 +105,10 @@ function phase(name: string): Phase {
  * than from a list by hand: a list would be this test's copy of a vocabulary
  * the prompts own, and it would go stale the moment a prompt grew an arg.
  */
-async function render(name: PromptName): Promise<string> {
+async function render(name: PromptName, root: string = stateRoot): Promise<string> {
   const promptFile = promptPath(name);
   const raw = await readFile(promptFile, "utf8");
-  const shared = args();
+  const shared = args(root);
   const perTick = Object.fromEntries(
     [...raw.matchAll(PLACEHOLDER)]
       .map((match) => match[1]!)
@@ -110,7 +121,7 @@ async function render(name: PromptName): Promise<string> {
     // The repo itself, so build's `git log` span resolves against a real
     // history rather than an empty scratch directory.
     cwd: REPO_ROOT,
-    flumeDir: stateRoot,
+    flumeDir: root,
     args: { ...shared, ...perTick },
   });
 }
@@ -210,4 +221,112 @@ it("every plan slice the package declares points its reader at the discipline pa
       points: true,
     });
   }
+});
+
+// ---------------------------------------------------------------- odd roots
+
+/**
+ * The artifacts the slice prompts' spans read, each addressed through the
+ * module that owns its path rather than through a layout spelled here: the
+ * queue's is the engine's, the plan state's is `planState.ts`'s, the
+ * questions file's is `prompts.ts`'s. A sentinel rides each body so a case
+ * asserts the bytes *arrived*, not merely that the render did not throw —
+ * two of these three spans carry an `|| echo` fallback, which is a silent
+ * miss rather than a refusal (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ */
+const ARTIFACTS: ReadonlyArray<{
+  readonly key: SharedPromptArg;
+  readonly at: (root: string) => string;
+  readonly body: string;
+  readonly sentinel: string;
+}> = [
+  {
+    key: "PENDING_PATH",
+    at: (root) => resolvePendingPath(root),
+    body: '{ "entries": [], "note": "PENDING-SENTINEL" }\n',
+    sentinel: "PENDING-SENTINEL",
+  },
+  {
+    key: "PLAN_STATE_PATH",
+    at: planStatePath,
+    body: '{ "note": "PLAN-STATE-SENTINEL" }\n',
+    sentinel: "PLAN-STATE-SENTINEL",
+  },
+  {
+    key: "QUESTIONS_PATH",
+    // The span greps for `## ` headings, so the sentinel has to be one.
+    at: questionsPath,
+    body: "## QUESTIONS-SENTINEL\n",
+    sentinel: "QUESTIONS-SENTINEL",
+  },
+];
+
+/** A scratch state root carrying every artifact above, torn down at the end. */
+async function seed(root: string): Promise<string> {
+  oddRoots.push(root);
+  for (const artifact of ARTIFACTS) {
+    const at = artifact.at(root);
+    await mkdir(dirname(at), { recursive: true });
+    await writeFile(at, artifact.body, "utf8");
+  }
+  return root;
+}
+
+/** Whether any inline-exec span in `raw` substitutes `key` into its command. */
+function spanSubstitutes(raw: string, key: SharedPromptArg): boolean {
+  return [...raw.matchAll(SPAN)].some((m) => m[1]!.includes(`{{${key}}}`));
+}
+
+/**
+ * Every shipped prompt rendered against a state root whose path is awkward in
+ * a shell, asserting each span's artifact actually reached the text.
+ *
+ * The seam is the prompt author's quoting against the engine's substitution
+ * (`spec/prompt.md`, *The render pipeline*): the engine hands a value over as
+ * shell text and quotes nothing, so an unquoted `{{PATH}}` word-splits on a
+ * space and loses a backslash before `sh` ever opens the file.
+ */
+async function everyPromptReadsItsArtifactsUnder(root: string): Promise<void> {
+  await seed(root);
+
+  let asserted = 0;
+  for (const name of PHASES) {
+    const raw = await readFile(promptPath(name), "utf8");
+    const rendered = await render(name, root);
+    for (const artifact of ARTIFACTS) {
+      if (!spanSubstitutes(raw, artifact.key)) continue;
+      asserted++;
+      expect({
+        name,
+        key: artifact.key,
+        read: rendered.includes(artifact.sentinel),
+      }).toEqual({ name, key: artifact.key, read: true });
+    }
+  }
+
+  // Non-vacuity: a prompt set whose spans stopped substituting these paths
+  // would pass the loop over nothing (`.claude/rules/engineering.md`, *A
+  // green verdict is proven non-vacuous*).
+  expect(asserted).toBeGreaterThan(0);
+}
+
+it("every package prompt's spans read their artifacts under a state root path carrying a space", async () => {
+  const root = await mkdtemp(join(tmpdir(), "flume prompts space-"));
+  expect(root).toContain(" ");
+
+  await everyPromptReadsItsArtifactsUnder(root);
+});
+
+it("every package prompt's spans read their artifacts under a state root path carrying a backslash", async () => {
+  const base = await mkdtemp(join(tmpdir(), "flume-prompts-backslash-"));
+  // On win32 the separator *is* the backslash — every state root there is
+  // this case, which is where the defect was measured. Elsewhere a backslash
+  // is an ordinary filename byte, and the same byte reaches `sh`.
+  const root = process.platform === "win32" ? base : join(base, "back\\slash");
+  oddRoots.push(base);
+  await mkdir(root, { recursive: true });
+  expect(root).toContain("\\");
+
+  await everyPromptReadsItsArtifactsUnder(root);
 });

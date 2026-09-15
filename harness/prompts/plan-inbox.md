@@ -9,11 +9,11 @@
 </build-records>
 
 <pending-now>
-!`cat {{PENDING_PATH}}`
+!`cat "{{PENDING_PATH}}"`
 </pending-now>
 
 <open-questions-index>
-!`grep -n '^## ' {{QUESTIONS_PATH}} || echo "(none open)"`
+!`grep -n '^## ' "{{QUESTIONS_PATH}}" || echo "(none open)"`
 </open-questions-index>
 
 <artifacts>
