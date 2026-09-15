@@ -138,13 +138,22 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   const stateRoot = repoRelativeStateRoot(api);
 
   /**
-   * The consumer's runner, built here and once: the declaration carries a
-   * factory precisely so the value it returns can take the engine's
-   * installer and worktree base off the API this factory was handed, rather
-   * than off a second one a consumer resolved beside their declaration
+   * Provisioning one checkout, reduced from the declared `setup` — the same
+   * reduction the build worktree's hook runs, and the one the runner factory
+   * is handed below rather than a second one built for it
    * (`spec/harness.md`, *The runner interface*).
    */
-  const runner = declaration.runner(api);
+  const provision = provisioning(api, declaration);
+
+  /**
+   * The consumer's runner, built here and once: the declaration carries a
+   * factory precisely so the value it returns can take the worktree base off
+   * the API this factory was handed and provision a base checkout the way
+   * this consumer provisions a build worktree, rather than off a second
+   * engine surface and a second install rule resolved beside their
+   * declaration (`spec/harness.md`, *The runner interface*).
+   */
+  const runner = declaration.runner({ api, provision });
 
   /**
    * The engine values the package's gates run through, taken off `api` —
@@ -186,7 +195,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   ];
 
   const agentFor = agentFactory(api, declaration);
-  const setup = worktreeSetup(api, declaration);
+  const setup = worktreeSetup(declaration, provision);
 
   /** One phase's shared prompt args, per tick, at the root the tick reports. */
   const shared = (ctx: TickContext): Record<string, string> =>
@@ -518,31 +527,55 @@ function agentFactory(
 }
 
 /**
- * The hook every provisioned worktree runs, or none when the consumer
- * declared no setup.
+ * The declared `setup`, reduced to provisioning one checkout at its root.
  *
  * `directories` says where, `restore` says how: undeclared, each directory
  * gets the engine's own lockfile-aware install; declared, the command runs
  * in each directory instead — which is what a consumer whose stack has no
- * lockfile the engine reads (cargo, dotnet, a script) declares. A throw here
- * parks that one entry rather than the wave (`spec/worktrees.md`,
- * *Provisioning failure is isolated to the entry that hit it*).
+ * lockfile the engine reads (cargo, dotnet, a script) declares. With no
+ * setup declared at all the root itself gets the engine's installer, which
+ * is what a base checkout needs to run a suite and what a build worktree of
+ * such a consumer inherits from its own tree.
+ *
+ * One reduction, two callers: the worktree hook below and the runner factory
+ * above. A second one built beside either would be a chain restating what
+ * this one already decides (`.claude/rules/engineering.md`, *Derived state
+ * is computed, never restated beside its source*).
  */
-function worktreeSetup(
+function provisioning(
   api: FlumeApi,
   declaration: Declaration,
-): Phase["setupWorktree"] | undefined {
+): (root: string) => Promise<void> {
   const setup = declaration.setup;
-  if (setup === undefined) return undefined;
-  return async ({ worktreePath }) => {
+  if (setup === undefined) return (root) => api.setupWorktree(root);
+  return async (root) => {
     for (const directory of setup.directories) {
-      const cwd = resolve(worktreePath, directory);
+      const cwd = resolve(root, directory);
       if (setup.restore === undefined) {
         await api.setupWorktree(cwd);
         continue;
       }
       await execFileWithShimRetry("sh", ["-c", setup.restore], { cwd });
     }
+  };
+}
+
+/**
+ * The hook every provisioned worktree runs, or none when the consumer
+ * declared no setup — a tree a consumer said nothing about gets no hook, and
+ * the engine skips the step rather than installing on its own authority.
+ *
+ * A throw here parks that one entry rather than the wave
+ * (`spec/worktrees.md`, *Provisioning failure is isolated to the entry that
+ * hit it*).
+ */
+function worktreeSetup(
+  declaration: Declaration,
+  provision: (root: string) => Promise<void>,
+): Phase["setupWorktree"] | undefined {
+  if (declaration.setup === undefined) return undefined;
+  return async ({ worktreePath }) => {
+    await provision(worktreePath);
   };
 }
 

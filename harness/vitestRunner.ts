@@ -3,10 +3,10 @@
  * interface*).
  *
  * Declared as a factory (`runner.ts`, {@link RunnerFactory}): the two things
- * its base checkout needs — an installer for the checkout's dependencies and
- * a place to plant it — are the engine's to hand out, and both are read off
- * the API this factory is called with rather than re-derived beside a
- * consumer's declaration.
+ * its base checkout needs — a way to provision the checkout's dependencies
+ * and a place to plant it — are the chain load's to hand out, and both are
+ * read off the context this factory is called with rather than re-derived
+ * beside a consumer's declaration.
  *
  * Its reading half is pure over vitest's own `--reporter=json` output, so a
  * test drives the real reporter through the real reader rather than through
@@ -23,7 +23,6 @@ import { copyFile, mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 
-import type { FlumeApi } from "../src/flumeApi.js";
 import { existsLoud } from "../src/fsProbe.js";
 import { addWorktree, removeWorktree } from "../src/git.js";
 import { gitPath, worktreesBase } from "../src/paths.js";
@@ -34,6 +33,7 @@ import type {
   NamedResult,
   RunResult,
   Runner,
+  RunnerContext,
   RunnerFactory,
   TestFailure,
 } from "./runner.js";
@@ -228,7 +228,7 @@ async function capture(
  * splits states its own lanes rather than inheriting one implementation's.
  *
  * Returns the factory, not the runner: what the returned function does with
- * the API it is called with is the whole reason `runner` is declared as one
+ * the context it is called with is the whole reason `runner` is declared as one
  * (`runner.ts`, {@link RunnerFactory}). The lane refusal is raised here,
  * where a consumer's declaration module can red before a chain ever loads,
  * rather than deferred into the factory call.
@@ -245,7 +245,7 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
   }
   const invoke = options.invoke ?? resolveVitest;
 
-  return (api: FlumeApi): Runner => {
+  return ({ api, provision }: RunnerContext): Runner => {
     /**
      * Where a base checkout is planted: the engine's own resolution of the
      * state root's worktree base, honoring the operator's relocation of it.
@@ -285,11 +285,11 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
             await copyFile(from, join(worktree, f));
           }
           // A checkout of a git ref has no installed dependencies. The
-          // engine's own lockfile-aware installer provisions it, so the base
-          // tree is provisioned exactly the way a build worktree is — one
-          // implementation of that, on the API, rather than a second one
-          // here.
-          await api.setupWorktree(worktree);
+          // chain's own reduction of the declared `setup` provisions it, so
+          // the base tree is provisioned exactly the way a build worktree is
+          // — one implementation of that, handed over, rather than a second
+          // one here that installs at a root the consumer never installs at.
+          await provision(worktree);
           const output = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
           return readRun(output, names, worktree);
         } finally {

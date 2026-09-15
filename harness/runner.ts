@@ -106,20 +106,43 @@ export interface Runner {
 }
 
 /**
+ * What a base checkout needs and no static declaration can reach: the
+ * context the chain factory calls a {@link RunnerFactory} with.
+ */
+export interface RunnerContext {
+  /**
+   * The engine surface the chain factory was itself handed — the state
+   * root's worktree base a checkout is planted under, so a run that dies
+   * mid-flight leaves a directory the stale-worktree sweep reclaims, and
+   * whatever else a consumer's own runner reaches for.
+   */
+  readonly api: FlumeApi;
+  /**
+   * Provision a checkout at `root` the way a build worktree is provisioned:
+   * the consumer's declared `setup` reduced to a function — its directories
+   * installed or its restore command run — and the engine's own
+   * lockfile-aware installer at the root when no setup is declared.
+   *
+   * The reduction is the chain's, handed over rather than re-derived, so a
+   * consumer whose install is not at the repo root judges its base the same
+   * way it builds.
+   */
+  readonly provision: (root: string) => Promise<void>;
+}
+
+/**
  * How a `runner` is **declared** (`spec/harness.md`, *The runner
  * interface*): not a built value, but a factory the chain factory calls once
- * at load with the engine surface it was itself handed.
+ * at load with a {@link RunnerContext}.
  *
- * The factory exists because a base checkout needs two things only the
- * engine can hand out — its lockfile-aware installer for the checkout's
- * dependencies, and the state root's worktree base, so a run that dies
- * mid-flight leaves a directory the stale-worktree sweep reclaims. A runner
- * constructed before the API exists can have neither, and the alternative is
- * every consumer re-deriving both beside their declaration: the verbatim
- * copy that names a missing surface (`.claude/rules/engine-boundary.md`,
- * *Surface, not prescription*).
+ * The factory exists because a base checkout needs what only the chain load
+ * holds — a way to provision the checkout's dependencies and a place to
+ * plant it. A runner constructed before the chain loads can have neither,
+ * and the alternative is every consumer re-deriving both beside their
+ * declaration: the verbatim copy that names a missing surface
+ * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
  *
  * Called once per chain load, not once per run: the `Runner` it returns is
  * the value the judge drives for the life of the chain.
  */
-export type RunnerFactory = (api: FlumeApi) => Runner;
+export type RunnerFactory = (ctx: RunnerContext) => Runner;

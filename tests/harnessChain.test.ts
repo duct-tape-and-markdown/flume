@@ -38,7 +38,7 @@ import { defaultHandoff, type Handoff } from "../harness/handoff.ts";
 import { consumerIgnores } from "../harness/ignores.ts";
 import { promptPath, type PromptName } from "../harness/prompts.ts";
 import { notesDir } from "../harness/records.ts";
-import type { Runner, RunnerFactory } from "../harness/runner.ts";
+import type { Runner, RunnerContext, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
 import { computeStateRootRel } from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
@@ -88,12 +88,12 @@ const runner = {
 } as unknown as Runner;
 
 /**
- * The declared runner, as a factory recording the engine surface it was
- * called with. A fresh recorder per declaration, so a case reading it never
+ * The declared runner, as a factory recording the context it was called
+ * with. A fresh recorder per declaration, so a case reading it never
  * inherits another's call.
  */
 const recordingRunner = (
-  seen: FlumeApi[],
+  seen: RunnerContext[],
 ): RunnerFactory => (received) => {
   seen.push(received);
   return runner;
@@ -298,19 +298,38 @@ it("the package refuses a state root resolved outside the repository, naming bot
   });
 });
 
-it("the chain factory calls the declared runner factory with the same FlumeApi it received", () => {
-  const seen: FlumeApi[] = [];
+it("the chain calls the runner factory with the api and a provision function", async () => {
+  const seen: RunnerContext[] = [];
+  const tree = join(repo, "provisioned-by-the-runner-context");
+  await mkdir(tree, { recursive: true });
 
-  harnessChain({ api, declaration: { ...DECLARATION, runner: recordingRunner(seen) } });
+  harnessChain({
+    api,
+    declaration: {
+      ...DECLARATION,
+      runner: recordingRunner(seen),
+      // A consumer whose provisioning is its own: the reduction the runner
+      // is handed has to be this one, not the engine's installer at a root
+      // this consumer never installs at.
+      setup: { directories: ["."], restore: "touch provisioned" },
+    },
+  });
 
   // Once at load, not once per gate run: the judge drives one runner for the
   // life of the chain.
   expect(seen).toHaveLength(1);
   // The identity-same surface, not a copy of it — the runner's base checkout
-  // reads this API's installer and this API's state root, and a second one
-  // built beside the declaration would resolve neither
+  // reads this API's state root, and a second one built beside the
+  // declaration would resolve none of it
   // (`spec/harness.md`, *The runner interface*).
-  expect(seen[0]).toBe(api);
+  expect(seen[0]!.api).toBe(api);
+
+  // And the declared `setup`, already reduced: what the factory is handed
+  // provisions a checkout the way this consumer's build worktree is
+  // provisioned, so the runner never re-derives the rule from the
+  // declaration it cannot see.
+  await seen[0]!.provision(tree);
+  expect(existsSync(join(tree, "provisioned"))).toBe(true);
 });
 
 it("the factory returns the three plan slices and the build phase from a declaration", () => {

@@ -9,6 +9,7 @@ export type {
   NamedResult,
   RunResult,
   Runner,
+  RunnerContext,
   RunnerFactory,
   TestFailure,
 } from "./runner.js";

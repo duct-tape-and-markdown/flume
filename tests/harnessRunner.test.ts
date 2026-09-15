@@ -36,12 +36,14 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { harnessChain } from "../harness/chain.ts";
 import {
   judgeNamedLines,
   vitestRunner,
   type Lane,
   type RunResult,
   type Runner,
+  type RunnerContext,
 } from "../harness/index.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import { worktreesBase } from "../src/paths.ts";
@@ -86,12 +88,41 @@ describe("widget", () => {
 });
 `;
 
+/**
+ * A declaration a consumer could write, minus the `setup` each case states
+ * for itself. Real, because the context a runner factory is called with is
+ * reduced from one: a hand-composed context would re-author, by the tester's
+ * hand, exactly the reduction this seam exists to carry
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+const DECLARATION = {
+  specLocus: ["spec/**"],
+  fence: { build: ["src/**", "tests/**"] },
+  slices: {
+    enabled: ["plan-inbox", "plan-derive", "plan-sweep"],
+    sweep: { domain: ["src/**"], posturePages: ["docs/**"] },
+  },
+};
+
+/** A runner the capturing declaration returns; no case drives it. */
+const STUB = {
+  run: async () => {
+    throw new Error("the captured declaration's runner is never driven");
+  },
+  runAtBase: async () => {
+    throw new Error("the captured declaration's runner is never driven");
+  },
+  lanes: [],
+} as unknown as Runner;
+
 describe("the vitest runner", () => {
   let fixture: string;
   let flumeDir: string;
   let baseSha: string;
   /** The engine surface the factory is handed, and the runner it returns. */
   let api: FlumeApi;
+  let ctx: RunnerContext;
   let runner: Runner;
 
   /** `node_modules` for a tree that has none of its own. */
@@ -113,11 +144,39 @@ describe("the vitest runner", () => {
   });
 
   /**
-   * One base run through a freshly-declared factory, recording every
-   * checkout path the API's installer was handed. Both halves of the
-   * factory's contract are observable from here: where the checkout landed,
-   * and that the run reached a suite at all — which it could only do
-   * through what the installer laid down.
+   * The context a declared runner factory is called with, taken from the
+   * real chain factory over a real declaration — so the provisioning a base
+   * checkout gets here is the one this consumer's build worktrees get, never
+   * one composed beside it.
+   */
+  const contextFrom = (
+    over: FlumeApi,
+    setup?: { directories: string[]; restore?: string },
+  ): RunnerContext => {
+    let seen: RunnerContext | undefined;
+    harnessChain({
+      api: over,
+      declaration: {
+        ...DECLARATION,
+        runner: (received: RunnerContext) => {
+          seen = received;
+          return STUB;
+        },
+        ...(setup === undefined ? {} : { setup }),
+      },
+    });
+    if (seen === undefined) {
+      throw new Error("the chain factory never called the declared runner factory");
+    }
+    return seen;
+  };
+
+  /**
+   * One base run through a freshly-declared factory over a declaration with
+   * no `setup`, recording every checkout path the API's installer was
+   * handed. Both halves of the factory's contract are observable from here:
+   * where the checkout landed, and that the run reached a suite at all —
+   * which it could only do through what the installer laid down.
    */
   const recordedBaseRun = async (): Promise<{
     checkouts: string[];
@@ -128,7 +187,7 @@ describe("the vitest runner", () => {
       checkouts.push(tree);
       await link(tree);
     });
-    const result = await vitestRunner()(recording).runAtBase(
+    const result = await vitestRunner()(contextFrom(recording)).runAtBase(
       ["runs wherever it is laid down"],
       ["tests/widget.test.ts"],
       baseSha,
@@ -166,7 +225,8 @@ describe("the vitest runner", () => {
     await link(fixture);
 
     api = apiWithInstaller(link);
-    runner = vitestRunner()(api);
+    ctx = contextFrom(api);
+    runner = vitestRunner()(ctx);
   }, 60_000);
 
   afterAll(async () => {
@@ -305,11 +365,54 @@ describe("the vitest runner", () => {
     expect(existsSync(checkouts[0]!)).toBe(false);
   }, 180_000);
 
-  it("the vitest runner factory provisions its base checkout with the installer from the API it was given", async () => {
+  it("the vitest runner provisions a base checkout through the declared setup", async () => {
+    const installs: string[] = [];
+    const recording = apiWithInstaller(async (tree) => {
+      installs.push(tree);
+      await link(tree);
+    });
+    // A consumer that provisions with its own command rather than with the
+    // engine's installer — the shape of every stack whose install the engine
+    // reads no lockfile for, and of every install that is not at the repo
+    // root.
+    const declared = vitestRunner()(
+      contextFrom(recording, {
+        directories: ["."],
+        restore: `ln -s ${join(REPO_ROOT, "node_modules")} node_modules`,
+      }),
+    );
+
+    const result = await declared.runAtBase(
+      ["runs wherever it is laid down"],
+      ["tests/widget.test.ts"],
+      baseSha,
+      fixture,
+    );
+
+    // Vacuity: the base run reached a suite at all, which it could only do
+    // through the `node_modules` the declared command laid down — the
+    // checkout has none of its own.
+    expect(result.passed).toBeGreaterThan(0);
+    expect(result.names[0]).toEqual({
+      name: "runs wherever it is laid down",
+      carried: true,
+      files: ["tests/widget.test.ts"],
+    });
+
+    // And the engine's installer never ran: a runner reaching past what it
+    // was handed would provision the base one way while this consumer's
+    // build worktrees are provisioned another.
+    expect(installs).toEqual([]);
+  }, 180_000);
+
+  it("a consumer declaring no setup provisions a base checkout with the installer at the root", async () => {
     const { checkouts, result } = await recordedBaseRun();
 
-    // The API's own member ran, on the checkout the factory planted.
+    // The API's own member ran, once, on the checkout the factory planted —
+    // and on its root: the path it was handed sits directly under the
+    // worktree base, so nothing narrowed the install to a subdirectory.
     expect(checkouts).toHaveLength(1);
+    expect(dirname(checkouts[0]!)).toBe(worktreesBase(flumeDir));
 
     // And it ran before the tests: the base checkout has no `node_modules`
     // of its own, so a run that collected a suite and carried a name could
@@ -329,11 +432,11 @@ describe("the vitest runner", () => {
       { name: "fast", excludes: ["**/*.integration.test.ts"], runs: true },
       { name: "integration", excludes: ["**/*.unit.test.ts"], runs: false },
     ];
-    expect(vitestRunner({ lanes: declared })(api).lanes).toEqual(declared);
+    expect(vitestRunner({ lanes: declared })(ctx).lanes).toEqual(declared);
 
     // Unsplit by default: one lane, nothing excluded — no consumer inherits
     // another's split.
-    expect(vitestRunner()(api).lanes).toEqual([
+    expect(vitestRunner()(ctx).lanes).toEqual([
       { name: "default", excludes: [], runs: true },
     ]);
 
@@ -359,7 +462,7 @@ describe("the vitest runner", () => {
   it("refuses a run that produced no report rather than reading one as empty", async () => {
     const silent = vitestRunner({
       invoke: () => ({ command: process.execPath, args: ["-e", ""] }),
-    })(api);
+    })(ctx);
     await expect(silent.run(["anything"], fixture)).rejects.toThrow(/wrote no JSON report/);
   });
 });

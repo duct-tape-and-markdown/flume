@@ -211,8 +211,10 @@ export const declaration = {
 
   /**
    * The test runner the judge drives, as a factory the chain calls at load
-   * with the engine's own API — that is where the base checkout's installer
-   * and worktree base come from. The package ships vitest's; a project
+   * with \`{ api, provision }\` — the engine's own API for the base
+   * checkout's worktree base, and a declared \`setup\` reduced to the
+   * function that provisions it, or the engine's installer at the root when
+   * none is declared. The package ships vitest's; a project
    * running cargo, dotnet or a script declares its own factory over the same
    * three operations (spec/harness.md, *The runner interface*).
    */

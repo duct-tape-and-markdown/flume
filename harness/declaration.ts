@@ -128,23 +128,24 @@ const GateDeclaration = z.discriminatedUnion("kind", [
 
 /**
  * The runner the judge drives (`spec/harness.md`, *The runner interface*) —
- * a **factory** over the engine's API, not a built value: the installer its
- * base checkout is provisioned with and the worktree base that checkout is
- * planted under are both the engine's to hand out, and neither exists yet
- * when a consumer's declaration module is evaluated. A consumer running
- * cargo, dotnet or a shell script declares its own factory over the same
- * three operations; only the vitest one ships.
+ * a **factory** over `{ api, provision }`, not a built value: the worktree
+ * base its checkout is planted under is the engine's to hand out, and the
+ * way that checkout is provisioned is this declaration's own `setup`
+ * reduced by the chain factory. Neither exists yet when a consumer's
+ * declaration module is evaluated. A consumer running cargo, dotnet or a
+ * shell script declares its own factory over the same three operations;
+ * only the vitest one ships.
  *
  * Checked as a function and nothing more, for the resolver's reason below:
  * what the factory returns is the runner interface's contract, and the only
  * thing that could check it here is calling it — which the chain factory
- * does, once, with the API this schema has never seen.
+ * does, once, with a context this schema has never seen.
  */
 const RunnerFactoryValue = z.custom<RunnerFactory>(
   (value): boolean => typeof value === "function",
   {
     error:
-      "must be a factory over the engine's API returning a runner that " +
+      "must be a factory over { api, provision } returning a runner that " +
       "supplies run(), runAtBase() and lanes — a built runner value is not " +
       "one (spec/harness.md, The runner interface)",
   },
@@ -275,7 +276,8 @@ export const DeclarationSchema = strict({
   scopeWritesToEntry: z.boolean().default(false),
   /**
    * The test runner the judge drives, as a factory the chain calls at load
-   * with its own engine API.
+   * with its own engine API and this declaration's `setup` reduced to a
+   * provisioning function.
    */
   runner: RunnerFactoryValue,
   /**
@@ -309,7 +311,8 @@ export const DeclarationSchema = strict({
   supervisor: strict(supervisorShape).optional(),
   /**
    * Directories to install and a restore command, run in every provisioned
-   * worktree, singleton and fanout alike.
+   * worktree, singleton and fanout alike — and in the base checkout the
+   * runner judges at, which is provisioned through the same reduction.
    */
   setup: strict({
     directories: z.array(z.string().min(1)).min(1),
