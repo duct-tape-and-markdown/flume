@@ -1,5 +1,81 @@
 [
   {
+    "tag": "CLI-SPAWN-CASES-DECLARE-THEIR-BUDGET",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "the one home for the declared spawn budget, cited at the spec section"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/cliJobResolution.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/cliJobVerbs.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/cliRender.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/cliVerdict.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "declare the budget on its spawning cases; likely home for the scan"
+        },
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/harnessInit.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/build-changelog.test.ts",
+          "description": "declare the budget on its spawning cases"
+        },
+        {
+          "path": "tests/bin.test.ts",
+          "description": "declare the budget on its spawning cases"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Default-lane CLI-spawn cases declare a per-case budget from one home instead of inheriting vitest's 5s default",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "Every default-lane suite that spawns a CLI/node entry point declares the shared budget; the number lives once, in `tests/helpers/subprocess.ts`, cited at the spec section.",
+    "tests": [
+      "every default-lane suite that spawns the CLI declares the shared spawn budget rather than inheriting the runner's default"
+    ],
+    "pins": [],
+    "notes": "Note from WRITABLE-PATHS-GATE-NAMES-ITS-VIOLATING-PATHS: `cliHelp.test.ts` timed out at 5000ms under full-suite load, passed alone. Verified wider than reported — zero declared budgets anywhere in the tree, ~240 spawn sites across 12 default-lane suites, and no `testTimeout` in `vitest.config.ts`. A raised runner default is still inheriting one; the spec says declare per case. Twelve copies of the number would be the restatement defect, hence one home."
+  },
+  {
     "tag": "RENDER-REFUSED-DOC-NAMES-BOTH-PRODUCERS",
     "gate": {
       "kind": "open"
