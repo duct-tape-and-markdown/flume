@@ -12,17 +12,18 @@
  * reads or writes a file — fails the same call with the same non-ENOENT
  * disposition on every host and for every uid.
  *
- * **Deny the exact path the code reads, never one of its parents.** A parent
- * is the tempting target, because one seal covers every read beneath it; it
- * is also the one shape that silently un-arms the fixture. A lookup *through*
- * a plain file is not a refusal that reaches every host and every probe
+ * **Which path to deny is the platform page's rule, not this helper's**
  * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
- * non-directory as not found*), so an existence gate above the denial takes
- * its absent arm and the case reads green on the lane that never exercised
- * it — `tests/denial.test.ts` holds that shape as a case of its own. Denied
- * at the read path itself, the stat stays truthful (the entry really is
- * there) and the failure lands on the read, which is where the case is
- * looking.
+ * non-directory as not found*): deny the read path, never a parent — and its
+ * one converse, that a reader proving absence by descending is exercised by
+ * nothing *but* an obstructed ancestor, so a case pinning that reader denies
+ * the parent on purpose and says so at the site (`tests/Dispatcher.test.ts`
+ * seals the state root above the directory `readMergingMarkers` lists).
+ * Denied at the read path, the stat stays truthful (the entry really is
+ * there) and the failure lands on the read; sealed at a parent instead, an
+ * existence gate above the denial takes its absent arm and the case reads
+ * green over a read it never reached — `tests/denial.test.ts` holds that
+ * shape as a case of its own.
  *
  * What a denied path raises is therefore the **split**, not an errno: every
  * consumer here is a gate that folds `ENOENT` into absence and must refuse on
