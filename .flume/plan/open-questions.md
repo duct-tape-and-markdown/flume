@@ -35,36 +35,40 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## `spec/pending.md`'s export roster does not name `gitPath` (PARKED — the human's file)
+## Spec enumerations that read exhaustive and lag the shipped surface (PARKED — the human's file)
 
-Drained from `FLUMEAPI-GITPATH-REPORTED`'s note; verified on disk this tick.
-`gitPath` rides both canonical lists — `src/index.ts:72` and `FlumeApi`
-(`src/flumeApi.ts:135`) — and the sentence that enumerates them names it in
-neither: `spec/pending.md`, *What the package exports* reads "`src/index.ts`
-and `FlumeApi` are the canonical lists. Both carry the *values*
-`composePendingList` … `slugify`, and `priorAttemptPath`." It reads exhaustive
-and is not. The omission predates the entry that put `gitPath` on the API.
+Three sites, one shape; all verified on disk this tick.
 
-A second, narrower site: `spec/chain.md`, *The chain is a plugin, not a
-consumer* names "the path-glob matcher `matchesAny`" as the engine rule a
-chain reaches for path policy rather than hand-rolling. The host-path-to-git-
-path rule is now reachable the same way and beside it in the same sentence's
-scope, and goes unnamed. (`matchesAny` itself is correctly absent from the
-`spec/pending.md` roster — it rides `FlumeApi` only, never `src/index.ts`, so
-"both carry" excludes it.)
+1. **`spec/pending.md`, *What the package exports*** reads "`src/index.ts` and
+   `FlumeApi` are the canonical lists. Both carry the *values*
+   `composePendingList` … `slugify`, and `priorAttemptPath`." Both lists carry
+   two values that sentence names in neither: `gitPath` and `stopFlagPath`
+   (`src/index.ts:72`, `src/flumeApi.ts:151`). It reads exhaustive and is not.
+   (`matchesAny` is correctly absent — it rides `FlumeApi` only, never
+   `src/index.ts`, so "both carry" excludes it.)
+2. **`spec/chain.md`, *The chain is a plugin, not a consumer*** names "the
+   path-glob matcher `matchesAny`" as the engine rule a chain reaches for path
+   policy rather than hand-rolling. The host-path-to-git-path rule is now
+   reachable the same way, inside that sentence's scope, and goes unnamed.
+3. **`spec/chain.md`, *What a hook receives*** enumerates the fanout `entries`
+   record as `{ tag, committed, shipped, reverted, declined?, noCommit?,
+   mergeOutcome? }`. `FanoutEntryOutcome.extension` — the entry's
+   chain-declared payload, split by `CORE_ENTRY_FIELDS` (`src/Phase.ts:151`,
+   `src/Dispatcher.ts:3128`) — shipped at `993c516` and is not on it.
 
-Options:
+Options; one ruling covers all three:
 
-- **Transcribe.** Add `gitPath` to the roster and the separator rule to
-  `spec/chain.md`'s sentence. Cheapest, and leaves a hand-maintained list that
-  goes stale at the next export — which is how this one got here.
+- **Transcribe.** Name the missing values in each sentence. Cheapest, and
+  leaves three hand-maintained lists that go stale at the next export — which
+  is how all three of these got here.
 - **State the property, not the roster** (recommended). Say what makes a value
-  canonical — the two lists carry the same values, and the `.d.ts` doc-comment
-  scan the carve-out sanctions is what holds them — so a later export needs no
-  spec edit. `spec/cli.md`'s install-fixture sentence took exactly this shape
-  at `d5c05b9`; the same move, one file over.
-- **Accept.** The roster is the human's own surface and the ladder does not
-  administer it. Costs the next omission.
+  canonical — the two lists carry the same values, held by the `.d.ts`
+  doc-comment scan the carve-out sanctions — and say what a hook record
+  carries rather than which keys, so the next field needs no spec edit.
+  `spec/cli.md`'s install-fixture sentence took exactly this shape at
+  `d5c05b9`; the same move, two files over.
+- **Accept.** These are the human's own surface and the ladder does not
+  administer them. Costs the next omission.
 
 Parked because `spec/` is the human's alone; build cannot reach it and plan
 picking a wording would be plan authoring spec.
@@ -112,3 +116,60 @@ it reads the real parse and refuses rather than previewing an approximation.
 Parked rather than filed because each fork is a CLI surface decision
 (`.claude/rules/collaboration.md`, *Push back on weak product/UX specs*), and
 because shipping the verb retires three tests that pin a standing ruling.
+
+## Expired narration in two files no phase can write (PARKED — mechanical, human-only)
+
+Drained from `AGENT-LOADS-ONLY-THE-CHAINS-MCP-CONFIG` and
+`PLAN-DISCIPLINE-NAMES-THE-OVERLAP-RULE`; both verified on disk this tick. No
+fork here — it is parked only because neither plan's nor build's fence reaches
+either file.
+
+- **`.claude/rules/platform-facts.md:166-168`** closes *A headless `claude -p`
+  inherits the user's MCP servers* with "Whether the engine passes it by
+  default is an open engine question; until it does, a chain passes it in
+  `extraArgs`." Both clauses fired at `66781ef`: `src/Agent.ts:216` passes
+  `--strict-mcp-config` unless `ClaudeCodeOptions.inheritUserMcp` is set, and
+  no chain passes it in `extraArgs` any more. The fact itself stands; the two
+  closing sentences are what expired, and the sweep's expired-narration lens
+  re-finds them every rotation until they go.
+- **`.flume/PROTOCOL.md`** describes a plan layout that has since moved into
+  the package. Line 70 names a cursor file `state.md` (it is `state.json`,
+  three typed fields), a budget renderer `.flume/delta-window.mjs` (does not
+  exist), "the predicates and the ladder" in `.flume/chain.ts` (20 lines
+  applying the `harness/` factory), and "the shared writer discipline in
+  `.flume/prompts/plan-discipline.md`" — that directory does not exist, so a
+  slice following the pointer opens nothing and writes the queue without the
+  discipline. Line 95 repeats `.flume/prompts/{...}.md`; line 3 puts "baton,
+  gates, handoff, pending schema" in `.flume/chain.ts`.
+
+Cheapest shape for the PROTOCOL pointers is the one a test already blesses:
+name the page, not a path — `tests/harnessPrompts.test.ts:193` pins every plan
+slice pointing at the discipline by the address `promptPath()` resolves, so
+any spelled path beside it is a second copy that can drift.
+
+## Does the harness declaration expose `inheritUserMcp`? (PARKED — a surface decision)
+
+Drained from `AGENT-LOADS-ONLY-THE-CHAINS-MCP-CONFIG`'s note, which left the
+call to plan; it is a declaration-surface decision, so it comes here.
+
+`harness/declaration.ts:301` types `agents` per phase as `{ model?, extraArgs? }`
+and `agentFactory` (`harness/chain.ts:513`) hands exactly those two to
+`api.claudeCode`. The engine's opt-out has no declared spelling, and
+`extraArgs` cannot reach it: `inheritUserMcp` *removes* `--strict-mcp-config`
+from the argv, and nothing a consumer appends can unsay a flag. `agents` is the
+declaration's only agent surface, so a consumer that needs its own MCP servers
+inherited cannot ask — short of not using the package.
+
+The sentence that moves either way is `spec/harness.md`, *What a consumer
+declares*: the `agents` row reads "Model per phase and extra agent arguments."
+
+- **Expose it** (recommended). A third optional field; the strict default is
+  untouched, since it rests on a measured platform fact rather than taste. The
+  `supervisor` row two lines down already states the principle — "declared
+  here so one file holds the environment and no knob is lost behind the
+  factory." The knobs the package does withhold are shape its own machinery
+  depends on (`outputFormat: "stream-json"` for the terminal renderer, skipped
+  permissions for autonomy); nothing in the package reads MCP inheritance.
+- **Withhold.** The package ships flume's opinion by name, and inheriting
+  by-user runtime state into a stateless tick is outside what it recommends at
+  any setting. Costs such a consumer the package entirely, not just the knob.
