@@ -22,7 +22,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { existsLoud, statLoud } from "../src/fsProbe.ts";
+import { existsLoud, isDirectoryOrAbsent, statLoud } from "../src/fsProbe.ts";
 import { mkTempDir } from "./helpers/subprocess.ts";
 
 const roots: string[] = [];
@@ -84,8 +84,10 @@ describe("fsProbe — the ENOENT-vs-everything-else split, on the raw call", () 
    * with the errno (`.claude/rules/platform-facts.md`, *win32 reports a path
    * through a non-directory as not found*). The host is declared and the case
    * skips rather than asserting a refusal that host cannot make; the
-   * cross-host proof is a descent, which `PriorAttemptStore.readAll`
-   * (`src/priorAttempts.ts`) carries and `tests/priorAttempts.test.ts` covers.
+   * cross-host proof is a descent, which `isDirectoryOrAbsent` runs for the
+   * two readers that need it (`PriorAttemptStore.readAll`,
+   * `readMergingMarkers`) and which `tests/priorAttempts.test.ts` and
+   * `tests/Dispatcher.test.ts` cover at their obstructed-ancestor arms.
    */
   const posixOnly = it.runIf(process.platform !== "win32");
 
@@ -143,4 +145,63 @@ describe("fsProbe — the ENOENT-vs-everything-else split, on the raw call", () 
       expect(existsLoud(absent)).toBe(false);
     },
   );
+});
+
+/**
+ * The descent both directory readers take their absence from
+ * (`PriorAttemptStore.readAll`, `readMergingMarkers`), on the raw call. Its
+ * whole reason for existing is the arm the probes above declare they cannot
+ * make: an obstructed *ancestor*, which a single stat reads as absent on
+ * win32. So this cover runs on every host — the walk stats each ancestor
+ * itself, and a plain file is a plain file on both.
+ */
+describe("fsProbe — the descent, where absence is proven from the path", () => {
+  it("answers the leaf directory, folds an absence at any rung, and refuses a plain file at one", async () => {
+    const root = await scratch();
+    const store = join(root, "store");
+    const leaf = join(store, "entry");
+    mkdirSync(leaf, { recursive: true });
+
+    // Cleared end to end: the walk really reaches the leaf, so the two
+    // negative arms below are the fixture talking and not a walk that
+    // answers `false` from the first rung
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(isDirectoryOrAbsent("store", root, store, leaf)).toBe(true);
+
+    // Absent at the leaf, and absent at a rung above it: both are the silent
+    // arm, and neither is a refusal.
+    expect(isDirectoryOrAbsent("store", root, store, join(store, "gone"))).toBe(
+      false,
+    );
+    expect(
+      isDirectoryOrAbsent(
+        "store",
+        root,
+        join(root, "gone"),
+        join(root, "gone", "entry"),
+      ),
+    ).toBe(false);
+
+    // Obstruct the middle rung. The leaf is now unreachable, which on win32
+    // is spelled exactly like the absences above — so the refusal has to
+    // come from the rung's own type, and it names that rung rather than the
+    // leaf the caller asked about.
+    await rm(store, { recursive: true, force: true });
+    writeFileSync(store, "obstruction\n");
+    expect(readFileSync(store, "utf8")).toBe("obstruction\n");
+
+    let message: string | undefined;
+    try {
+      isDirectoryOrAbsent("prior-attempt store", root, store, leaf);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message, "the obstructed rung read as absent").toBeDefined();
+    expect(message).toContain(
+      `prior-attempt store is unreadable: ${store} is present but is not a directory`,
+    );
+    // And the silent arm is still silent from the same root.
+    expect(isDirectoryOrAbsent("store", join(root, "gone"))).toBe(false);
+  });
 });

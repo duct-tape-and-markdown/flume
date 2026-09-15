@@ -48,7 +48,7 @@ import {
   type FlumePaths,
 } from "./flumeApi.js";
 import { validateFrictionDeclaration } from "./friction.js";
-import { existsLoud } from "./fsProbe.js";
+import { existsLoud, isDirectoryOrAbsent } from "./fsProbe.js";
 import { partitionByFileOverlap } from "./partition.js";
 import {
   assertStateRootRelative,
@@ -720,18 +720,24 @@ function isMergingMarker(rec: unknown): rec is MergingMarker {
  * failure (permission denied, a file sitting at the path, a path too long
  * for the platform) escapes. An unreachable dir reported as empty would tell
  * the refusal "no interrupted merge" over markers it could not see.
+ *
+ * That absence is proven from the **path**, never from the errno the listing
+ * raised: a plain file at the state root makes `merging/` beneath it `ENOENT`
+ * on win32 while posix raises `ENOTDIR` (`.claude/rules/platform-facts.md`,
+ * *win32 reports a path through a non-directory as not found*), so an
+ * errno-keyed silent arm would start a loop over an obstructed state root on
+ * exactly one host. So the same descent `PriorAttemptStore.readAll` runs —
+ * the state root, then `merging/`, each asserted a directory before the next
+ * is probed ({@link isDirectoryOrAbsent}, src/fsProbe.ts) — and the listing
+ * below keeps no absent arm of its own, because every ancestor above it is
+ * proven by then.
  */
 export async function readMergingMarkers(
   flumeDir: string,
 ): Promise<Array<{ path: string; marker: MergingMarker | undefined }>> {
   const dir = mergingDir(flumeDir);
-  let names: string[];
-  try {
-    names = await readdir(namespacedJoin(dir));
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
+  if (!isDirectoryOrAbsent("merging-marker dir", flumeDir, dir)) return [];
+  const names = await readdir(namespacedJoin(dir));
   const out: Array<{ path: string; marker: MergingMarker | undefined }> = [];
   for (const name of names.filter((n) => n.endsWith(".json")).sort()) {
     const path = join(dir, name);

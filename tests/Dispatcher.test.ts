@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -4812,12 +4812,21 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
  * refuses — and not as ENOENT — on every host and under a root-run, where a
  * mode denies nothing.
  * Same fixture shape `countFrictionFiles` and `PriorAttempts.readAll` are
- * pinned with. The unreadable leg reads its fixture once *before* denying
+ * pinned with. Each unreadable leg reads its fixture once *before* denying
  * it, so the throw afterwards is judged against a dir that really held a
  * marker rather than a mistyped path (`.claude/rules/engineering.md`, "A
  * green verdict is proven non-vacuous").
+ *
+ * Two denials, because the split is proven from the path rather than from an
+ * errno: one at the dir the listing names, one at the *ancestor* above it —
+ * the shape a fixture normally must not use, since a lookup through a plain
+ * file answers `ENOENT` on win32 and takes an errno-keyed reader's absent arm
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*). Here that is precisely the subject: the
+ * descent is what makes the ancestor case refuse on both hosts, so the arm
+ * asserts the reader's own refusal and never the errno underneath it.
  */
-describe("readMergingMarkers — the merging dir's ENOENT/EACCES split", () => {
+describe("readMergingMarkers — the merging dir's absent-vs-unreachable split", () => {
   it("readMergingMarkers reads an absent merging dir as no interrupted merge", async () => {
     const flumeDir = await mkdtemp(join(tmpdir(), "flume-mm-absent-"));
     try {
@@ -4862,8 +4871,62 @@ describe("readMergingMarkers — the merging dir's ENOENT/EACCES split", () => {
         "the sealed merging dir read as no interrupted merge",
       ).toBeDefined();
       expect(caught?.code).not.toBe("ENOENT");
+      // The reader's own reading of the path, not the host's spelling of the
+      // failure: the errno a plain file raises here is `ENOTDIR` on posix and
+      // `ENOENT` on win32, and neither is the property.
+      expect(caught?.message).toContain(
+        `${dir} is present but is not a directory`,
+      );
     } finally {
       await rm(flumeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("readMergingMarkers refuses an obstructed merging dir with a reading of its own, naming the path that is not a directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "flume-mm-obstructed-"));
+    const flumeDir = join(root, ".flume");
+    const dir = mergingDir(flumeDir);
+    try {
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        join(dir, "obstructed.json"),
+        JSON.stringify({
+          tag: "OBSTRUCTED",
+          branch: "flume/obstructed",
+          baseSha: "0".repeat(40),
+        }),
+        "utf8",
+      );
+      // Vacuity: the marker really is reachable while the state root is a
+      // directory, so the refusal below is the obstruction talking.
+      expect(await readMergingMarkers(flumeDir)).toHaveLength(1);
+
+      // The obstruction sits one level *above* the dir the listing names, so
+      // nothing beneath it exists to stat: the listing raises ENOTDIR on
+      // posix and ENOENT on win32, and an errno-keyed absent arm would start
+      // a loop over a marker it could not see on exactly one of them.
+      denyDirectory(flumeDir);
+      expect(existsSync(flumeDir)).toBe(true);
+      expect(lstatSync(flumeDir).isDirectory()).toBe(false);
+      expect(existsSync(dir)).toBe(false);
+
+      const caught = await readMergingMarkers(flumeDir).then(
+        () => undefined,
+        (err: unknown) => err as Error,
+      );
+      expect(
+        caught,
+        "the obstructed state root read as no interrupted merge",
+      ).toBeInstanceOf(Error);
+      // The path that is not a directory is the obstructing *ancestor* — the
+      // one an operator has to go fix — named by the reader itself rather
+      // than by whichever errno this host happened to raise beneath it.
+      expect(caught?.message).toContain(
+        `${flumeDir} is present but is not a directory`,
+      );
+      expect((caught as NodeJS.ErrnoException).code).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

@@ -23,7 +23,7 @@ import { promisify } from "node:util";
 
 import { bound, headTailBound, tailBound } from "./bounds.js";
 import type { Logger } from "./Dispatcher.js";
-import { existsLoud, statLoud } from "./fsProbe.js";
+import { existsLoud, isDirectoryOrAbsent } from "./fsProbe.js";
 import * as git from "./git.js";
 import { priorAttemptsDir, slugify } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -85,6 +85,13 @@ const KEYSPACES: Record<PriorAttemptKeyspace, true> = {
   phase: true,
 };
 
+/**
+ * The subject {@link PriorAttemptStore.readAll}'s descent names when it
+ * refuses (`isDirectoryOrAbsent`, src/fsProbe.ts) — one spelling for every
+ * rung, so the state root and a keyspace dir refuse alike.
+ */
+const STORE_SUBJECT = "prior-attempt store";
+
 /** The same set as a list, for the enumeration `readAll` walks. */
 const KEYSPACE_NAMES = Object.keys(KEYSPACES) as PriorAttemptKeyspace[];
 
@@ -95,29 +102,6 @@ const KEYSPACE_NAMES = Object.keys(KEYSPACES) as PriorAttemptKeyspace[];
  */
 function isKeyspace(value: unknown): value is PriorAttemptKeyspace {
   return typeof value === "string" && Object.hasOwn(KEYSPACES, value);
-}
-
-/**
- * One step of {@link PriorAttemptStore.readAll}'s descent: `true` when a
- * directory is at `path`, `false` when the path is absent, and a throw for
- * everything else — a plain file at the path, a symlink loop, permission
- * denied (`statLoud`, src/fsProbe.ts).
- *
- * `false` is a *proven* absence only when every ancestor above `path` has
- * already answered `true` here, which is why `readAll` descends rather than
- * probing the leaf alone. An errno cannot make that proof: a plain file at an
- * ancestor raises `ENOTDIR` for the paths beneath it on posix and `ENOENT` on
- * win32, so an obstructed store refuses on one host and reports "nothing
- * written" on the other (`.claude/rules/engineering.md`, "Loud or nothing").
- * The path answers the same on both.
- */
-function isDirectoryOrAbsent(path: string): boolean {
-  const st = statLoud(toNamespacedPath(path));
-  if (st === undefined) return false;
-  if (st.isDirectory()) return true;
-  throw new Error(
-    `[flume] prior-attempt store is unreadable: ${path} is present but is not a directory`,
-  );
 }
 
 /**
@@ -370,7 +354,8 @@ export class PriorAttemptStore {
    *
    * Hence the descent: the state root, then `prior-attempts/`, then each
    * keyspace directory, each proven a directory before the next is probed
-   * ({@link isDirectoryOrAbsent}). `ENOENT` is not that proof — a plain file
+   * ({@link isDirectoryOrAbsent}, src/fsProbe.ts, which `readMergingMarkers`
+   * proves its own dir from too). `ENOENT` is not that proof — a plain file
    * at any of those paths makes the ones beneath it `ENOENT` on win32 while
    * posix raises `ENOTDIR`, so an errno-keyed silent arm reads one host's
    * obstructed store as an empty one. The state root is where the descent
@@ -380,11 +365,10 @@ export class PriorAttemptStore {
   async readAll(): Promise<ReadonlyMap<string, PriorAttempt>> {
     const out = new Map<string, PriorAttempt>();
     const root = priorAttemptsDir(this.flumeDir);
-    if (!isDirectoryOrAbsent(this.flumeDir)) return out;
-    if (!isDirectoryOrAbsent(root)) return out;
+    if (!isDirectoryOrAbsent(STORE_SUBJECT, this.flumeDir, root)) return out;
     for (const keyspace of KEYSPACE_NAMES) {
       const dir = join(root, keyspace);
-      if (!isDirectoryOrAbsent(dir)) continue;
+      if (!isDirectoryOrAbsent(STORE_SUBJECT, dir)) continue;
       // Every ancestor is proven above, so a listing failure here is real:
       // a keyspace dir that vanished mid-walk, or one that cannot be read.
       const entries = await readdir(toNamespacedPath(dir), {
