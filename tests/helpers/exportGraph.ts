@@ -144,6 +144,36 @@ const siteOf = (
   };
 };
 
+/**
+ * A `private` member or one named by a `#name`. TypeScript emits neither's
+ * type into the `.d.ts` — a private property declaration loses its
+ * annotation entirely — so neither walk below treats one as public surface.
+ */
+const isPrivateMember = (node: ts.Node): boolean => {
+  if (!ts.isClassElement(node) && !ts.isTypeElement(node)) return false;
+  if (node.name !== undefined && ts.isPrivateIdentifier(node.name)) return true;
+  return (
+    ts.canHaveModifiers(node) &&
+    (ts.getModifiers(node) ?? []).some(
+      (m) => m.kind === ts.SyntaxKind.PrivateKeyword,
+    )
+  );
+};
+
+/**
+ * Whether a declaration sits inside a `namespace` body. Such a type is named
+ * through its namespace (`StandardSchemaV1.Result`), never through an import
+ * specifier of its own, so the nameability verdict has nothing to say about
+ * it.
+ */
+const inNamespace = (decl: ts.Node): boolean => {
+  for (let n: ts.Node | undefined = decl.parent; n; n = n.parent) {
+    if (ts.isModuleDeclaration(n)) return true;
+    if (ts.isSourceFile(n)) return false;
+  }
+  return false;
+};
+
 /** `module:line name`, the form a failure message cites a finding in. */
 export const formatSite = (site: ExportSite): string =>
   `${site.module}:${site.line} ${site.name}`;
@@ -244,8 +274,9 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
         continue;
       }
       const visit = (node: ts.Node): void => {
-        // A body is not public surface — it never reaches a `.d.ts`.
-        if (ts.isBlock(node)) return;
+        // Neither a body nor a private member is public surface — neither
+        // reaches a `.d.ts` in a form a consumer can read.
+        if (ts.isBlock(node) || isPrivateMember(node)) return;
         if (ts.isTypeReferenceNode(node)) {
           reach(checker.getSymbolAtLocation(node.typeName));
         } else if (ts.isTypeQueryNode(node)) {
@@ -270,32 +301,109 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   // map reaches: every type a parameter or return position names, declared
   // in the shipped tree, must be exported by some entry module.
   //
-  // Scope is the reached *function* — a top-level declaration whose own
-  // symbol the map reaches. A member signature inside a reached type is not
-  // one: a private method carries no signature into the `.d.ts` at all, and
-  // a namespace member is named through its namespace rather than imported.
+  // Scope is every signature a reached symbol carries into the `.d.ts`: the
+  // reached function itself, and the member signatures of a reached type —
+  // `Chain.worktreesBase` names a parameter type a chain author must be able
+  // to annotate exactly as `renderPrompt` does. Two members are out, and
+  // both for the same reason the verdict exists: a `private` member carries
+  // no signature into the `.d.ts` at all, and a namespace member is named
+  // through its namespace rather than through an import specifier.
   const entryExported = new Set<ts.Symbol>();
   for (const entry of entryFiles) {
     for (const sym of moduleExports(entry)) entryExported.add(unalias(sym));
   }
   const shippedFiles = new Set(build.fileNames.map((f) => resolve(f)));
 
+  /** One signature the walk found, under the name a consumer reads it by. */
+  interface FoundSignature {
+    readonly node: ts.SignatureDeclaration;
+    /**
+     * Dotted from the reached symbol: `renderPrompt`, `Chain.worktreesBase`.
+     */
+    readonly name: string;
+  }
+
   /**
-   * The signature a declaration carries, if it is a function at all. A
-   * `function` statement is one; so is `const f = (…) => …` and the
-   * function-type annotation a `const` may carry instead of an initializer.
+   * How a consumer addresses one member of a container. A call, construct or
+   * index signature has no name of its own — it is written by writing the
+   * container — so it is reported by its kind.
    */
-  const signatureOf = (
-    decl: ts.Declaration,
-  ): ts.SignatureDeclaration | undefined => {
-    if (ts.isFunctionLike(decl)) return decl;
-    if (ts.isVariableDeclaration(decl)) {
-      if (decl.type && ts.isFunctionLike(decl.type)) return decl.type;
-      if (decl.initializer && ts.isFunctionLike(decl.initializer)) {
-        return decl.initializer;
+  const memberPath = (
+    member: ts.ClassElement | ts.TypeElement,
+    prefix: string,
+  ): string => {
+    if (member.name) return `${prefix}.${member.name.getText()}`;
+    if (ts.isConstructSignatureDeclaration(member)) return `${prefix}.<new>`;
+    if (ts.isIndexSignatureDeclaration(member)) return `${prefix}.<index>`;
+    return `${prefix}.<call>`;
+  };
+
+  /**
+   * The signatures a type position carries: itself when it is a function
+   * type, its members when it is an object type. A function type's own
+   * parameters are not descended into — the type walk below already reads
+   * every type reference nested inside one.
+   */
+  const fromTypeNode = (
+    type: ts.TypeNode,
+    name: string,
+    out: FoundSignature[],
+  ): void => {
+    if (ts.isFunctionLike(type)) {
+      out.push({ node: type, name });
+    } else if (ts.isTypeLiteralNode(type)) {
+      fromMembers(type.members, name, out);
+    }
+  };
+
+  function fromMembers(
+    members: readonly (ts.ClassElement | ts.TypeElement)[],
+    prefix: string,
+    out: FoundSignature[],
+  ): void {
+    for (const member of members) {
+      if (isPrivateMember(member)) continue;
+      const name = memberPath(member, prefix);
+      if (ts.isFunctionLike(member)) {
+        out.push({ node: member, name });
+      } else if (
+        (ts.isPropertySignature(member) || ts.isPropertyDeclaration(member)) &&
+        member.type
+      ) {
+        fromTypeNode(member.type, name, out);
       }
     }
-    return undefined;
+  }
+
+  /**
+   * Every signature one reached declaration carries. A `function` statement
+   * is one; so is `const f = (…) => …` and the function-type annotation a
+   * `const` may carry instead of an initializer. An interface, a class or a
+   * type alias carries the signatures of its members instead of one of its
+   * own. A namespace and an enum carry none the map hands out by name.
+   */
+  const signaturesOf = (
+    decl: ts.Declaration,
+    name: string,
+  ): readonly FoundSignature[] => {
+    const out: FoundSignature[] = [];
+    if (ts.isFunctionLike(decl)) {
+      out.push({ node: decl, name });
+    } else if (ts.isVariableDeclaration(decl)) {
+      if (decl.type) fromTypeNode(decl.type, name, out);
+      if (
+        out.length === 0 &&
+        decl.initializer &&
+        ts.isFunctionLike(decl.initializer)
+      ) {
+        out.push({ node: decl.initializer, name });
+      }
+    } else if (ts.isInterfaceDeclaration(decl) || ts.isClassDeclaration(decl)) {
+      fromMembers(decl.members, name, out);
+    } else if (ts.isTypeAliasDeclaration(decl)) {
+      fromTypeNode(decl.type, name, out);
+    }
+    return out;
   };
 
   const signatures: ExportSite[] = [];
@@ -307,48 +415,49 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
       if (ts.isSourceFile(decl)) continue;
       const file = decl.getSourceFile();
       if (!shippedFiles.has(resolve(file.fileName))) continue;
-      const fn = signatureOf(decl);
-      if (!fn) continue;
+      if (inNamespace(decl)) continue;
 
-      const signature: ExportSite = {
-        module: relPath(root, file.fileName),
-        name: owner.getName(),
-        line: file.getLineAndCharacterOfPosition(decl.getStart()).line + 1,
-      };
-      signatures.push(signature);
+      for (const fn of signaturesOf(decl, owner.getName())) {
+        const signature: ExportSite = {
+          module: relPath(root, file.fileName),
+          name: fn.name,
+          line: file.getLineAndCharacterOfPosition(fn.node.getStart()).line + 1,
+        };
+        signatures.push(signature);
 
-      const named = (node: ts.Node): void => {
-        if (ts.isTypeReferenceNode(node)) {
-          const sym = checker.getSymbolAtLocation(node.typeName);
-          const target = sym ? unalias(sym) : undefined;
-          // A type parameter is declared by this signature and named by
-          // writing the signature, never by importing it.
-          if (
-            target &&
-            !(target.flags & ts.SymbolFlags.TypeParameter) &&
-            !entryExported.has(target) &&
-            (target.declarations ?? []).some((d) =>
-              shippedFiles.has(resolve(d.getSourceFile().fileName)),
-            )
-          ) {
-            const found: SignatureType = {
-              signature,
-              type: siteOf(root, target, signature.module),
-            };
-            const key = formatSignatureType(found);
-            if (!reported.has(key)) {
-              reported.add(key);
-              unnamable.push(found);
+        const named = (node: ts.Node): void => {
+          if (ts.isTypeReferenceNode(node)) {
+            const sym = checker.getSymbolAtLocation(node.typeName);
+            const target = sym ? unalias(sym) : undefined;
+            // A type parameter is declared by this signature and named by
+            // writing the signature, never by importing it.
+            if (
+              target &&
+              !(target.flags & ts.SymbolFlags.TypeParameter) &&
+              !entryExported.has(target) &&
+              (target.declarations ?? []).some((d) =>
+                shippedFiles.has(resolve(d.getSourceFile().fileName)),
+              )
+            ) {
+              const found: SignatureType = {
+                signature,
+                type: siteOf(root, target, signature.module),
+              };
+              const key = formatSignatureType(found);
+              if (!reported.has(key)) {
+                reported.add(key);
+                unnamable.push(found);
+              }
             }
           }
-        }
-        ts.forEachChild(node, named);
-      };
+          ts.forEachChild(node, named);
+        };
 
-      for (const param of fn.parameters) {
-        if (param.type) named(param.type);
+        for (const param of fn.node.parameters) {
+          if (param.type) named(param.type);
+        }
+        if (fn.node.type) named(fn.node.type);
       }
-      if (fn.type) named(fn.type);
     }
   }
 

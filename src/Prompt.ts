@@ -556,7 +556,7 @@ function neutralizeInlineExec(value: string): string {
 }
 
 /** One inline-exec span that failed to resolve — its command text and stderr. */
-interface InlineExecFailure {
+export interface InlineExecFailure {
   cmd: string;
   stderr: string;
 }

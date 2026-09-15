@@ -1656,7 +1656,7 @@ const WAVE_NO_COMMIT_RANK: Record<NoCommitMode, number> = {
  * selection to {@link Dispatcher.render}'s own batch arithmetic, exactly as a
  * tick makes it.
  */
-interface RenderRequest {
+export interface RenderRequest {
   phase: string;
   entryTag?: string;
 }

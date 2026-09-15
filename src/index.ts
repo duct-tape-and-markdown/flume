@@ -85,6 +85,9 @@ export {
   renderPrompt,
   NO_COMMIT_MODES,
   PRIOR_ATTEMPT_MODES,
+  // The value rides `FlumeApi.InlineExecRenderError`; only the shape of its
+  // `.failures` is named here, for a chain that reads one span's cmd/stderr.
+  type InlineExecFailure,
   type NoCommitMode,
   type PriorAttempt,
   type PriorAttemptKeyspace,
@@ -92,7 +95,9 @@ export {
   type RenderOptions,
 } from "./Prompt.js";
 
-export { type FlumeApi } from "./flumeApi.js";
+// `FlumePaths` is `Chain.worktreesBase`'s parameter: a chain declaring that
+// callback anywhere but inline needs the name.
+export { type FlumeApi, type FlumePaths } from "./flumeApi.js";
 
 export {
   Dispatcher,
@@ -104,6 +109,8 @@ export {
   type DispatcherOptions,
   type Logger,
   type ProvisionFailure,
+  type RenderRequest,
+  type RenderResolution,
   type TerminalMisconfiguration,
   type TickOutcome,
   type TickVerdict,
