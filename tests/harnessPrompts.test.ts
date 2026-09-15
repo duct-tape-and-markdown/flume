@@ -15,7 +15,14 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,11 +43,17 @@ import {
 } from "../harness/prompts.ts";
 import { resolvePendingPath } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
-import { InlineExecRenderError, NO_COMMIT_MODES, renderPrompt } from "../src/Prompt.ts";
+import {
+  InlineExecRenderError,
+  NO_COMMIT_MODES,
+  renderPrompt,
+} from "../src/Prompt.ts";
 
 /** The repo root, and the directory the package's prompts ship in. */
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
-const PROMPT_DIR = fileURLToPath(new URL("../harness/prompts/", import.meta.url));
+const PROMPT_DIR = fileURLToPath(
+  new URL("../harness/prompts/", import.meta.url),
+);
 
 /** The engine's own placeholder grammar, as the renderer spells it. */
 const PLACEHOLDER = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
@@ -55,8 +68,14 @@ let declaration: Declaration;
 beforeAll(async () => {
   stateRoot = await mkdtemp(join(tmpdir(), "flume-prompts-"));
   await mkdir(join(stateRoot, "plan"), { recursive: true });
-  await writeFile(join(stateRoot, "plan", "pending.json"), '{ "entries": [] }\n');
-  await writeFile(join(stateRoot, "plan", "open-questions.md"), "# Open questions\n");
+  await writeFile(
+    join(stateRoot, "plan", "pending.json"),
+    '{ "entries": [] }\n',
+  );
+  await writeFile(
+    join(stateRoot, "plan", "open-questions.md"),
+    "# Open questions\n",
+  );
 
   // Parsed, not cast: the args under test read `specLocus` and `slots`, and a
   // shape the schema would refuse is not a declaration any consumer could
@@ -64,7 +83,11 @@ beforeAll(async () => {
   declaration = parseDeclaration({
     specLocus: ["spec/**", "rules/**"],
     fence: { build: ["src/**"] },
-    runner: () => ({ run: async () => [], runAtBase: async () => [], lanes: [] }),
+    runner: () => ({
+      run: async () => [],
+      runAtBase: async () => [],
+      lanes: [],
+    }),
     slices: { enabled: [] },
   });
 });
@@ -105,7 +128,10 @@ function phase(name: string): Phase {
  * than from a list by hand: a list would be this test's copy of a vocabulary
  * the prompts own, and it would go stale the moment a prompt grew an arg.
  */
-async function render(name: PromptName, root: string = stateRoot): Promise<string> {
+async function render(
+  name: PromptName,
+  root: string = stateRoot,
+): Promise<string> {
   const promptFile = promptPath(name);
   const raw = await readFile(promptFile, "utf8");
   const shared = args(root);
@@ -151,7 +177,11 @@ it("every prompt address the package names is a file it ships", async () => {
   for (const name of PROMPT_NAMES) {
     const address = promptPath(name);
     const body = existsSync(address) ? await readFile(address, "utf8") : "";
-    expect({ name, exists: existsSync(address), empty: body.trim() === "" }).toEqual({
+    expect({
+      name,
+      exists: existsSync(address),
+      empty: body.trim() === "",
+    }).toEqual({
       name,
       exists: true,
       empty: false,
@@ -161,7 +191,9 @@ it("every prompt address the package names is a file it ships", async () => {
   // And the other direction: a prompt file nothing addresses is an orphan
   // that no phase renders and no rename would ever catch.
   const shipped = (await readdir(PROMPT_DIR)).filter((f) => f.endsWith(".md"));
-  expect(shipped.sort()).toEqual(PROMPT_NAMES.map((name) => `${name}.md`).sort());
+  expect(shipped.sort()).toEqual(
+    PROMPT_NAMES.map((name) => `${name}.md`).sort(),
+  );
 });
 
 it("the package's prompt args name the no-commit modes from the engine's exported value", async () => {
@@ -193,7 +225,10 @@ it("every phase prompt the package ships resolves every placeholder it names", a
 
   for (const name of PHASES) {
     const rendered = await render(name);
-    expect({ name, unresolved: [...rendered.matchAll(PLACEHOLDER)].map((m) => m[0]) }).toEqual({
+    expect({
+      name,
+      unresolved: [...rendered.matchAll(PLACEHOLDER)].map((m) => m[0]),
+    }).toEqual({
       name,
       unresolved: [],
     });
@@ -216,7 +251,10 @@ it("every plan slice the package declares points its reader at the discipline pa
   // Each one sends its reader there by the address the package resolves,
   // rather than by a path spelled in the markdown.
   for (const name of PLAN_SLICES) {
-    expect({ name, points: (await render(name)).includes(promptPath("plan-discipline")) }).toEqual({
+    expect({
+      name,
+      points: (await render(name)).includes(promptPath("plan-discipline")),
+    }).toEqual({
       name,
       points: true,
     });
@@ -235,8 +273,8 @@ it("every plan slice the package declares points its reader at the discipline pa
  * artifact and look identical from the outside.
  *
  * `placeholder` is what the span renders when the artifact is legitimately
- * absent, on the two that have such a case; the queue's span has none, since
- * a plan slice with no queue to read is not a tick the package proceeds with.
+ * absent; an artifact carrying none refuses on absence instead, which the
+ * unguarded-span cases below pin.
  */
 const ARTIFACTS: ReadonlyArray<{
   readonly key: SharedPromptArg;
@@ -290,12 +328,17 @@ function spanSubstitutes(raw: string, key: SharedPromptArg): boolean {
  * it beside the other (`.claude/rules/engineering.md`, *The fix lands at the
  * mechanism*).
  */
-async function promptsReadingEachArtifact(): Promise<ReadonlyMap<SharedPromptArg, PromptName[]>> {
-  const readers = new Map<SharedPromptArg, PromptName[]>(ARTIFACTS.map((a) => [a.key, []]));
+async function promptsReadingEachArtifact(): Promise<
+  ReadonlyMap<SharedPromptArg, PromptName[]>
+> {
+  const readers = new Map<SharedPromptArg, PromptName[]>(
+    ARTIFACTS.map((a) => [a.key, []]),
+  );
   for (const name of PHASES) {
     const raw = await readFile(promptPath(name), "utf8");
     for (const artifact of ARTIFACTS) {
-      if (spanSubstitutes(raw, artifact.key)) readers.get(artifact.key)!.push(name);
+      if (spanSubstitutes(raw, artifact.key))
+        readers.get(artifact.key)!.push(name);
     }
   }
   return readers;
@@ -307,9 +350,13 @@ async function promptsReadingEachArtifact(): Promise<ReadonlyMap<SharedPromptArg
  * and a total count cannot tell that from a table that shrank
  * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
  */
-function expectEveryArtifactRead(readers: ReadonlyMap<SharedPromptArg, PromptName[]>): void {
+function expectEveryArtifactRead(
+  readers: ReadonlyMap<SharedPromptArg, PromptName[]>,
+): void {
   expect(ARTIFACTS.length).toBeGreaterThan(0);
-  expect(ARTIFACTS.filter((a) => readers.get(a.key)!.length === 0).map((a) => a.key)).toEqual([]);
+  expect(
+    ARTIFACTS.filter((a) => readers.get(a.key)!.length === 0).map((a) => a.key),
+  ).toEqual([]);
 }
 
 it("every artifact in the harness prompt odd-root table is read by at least one shipped prompt", async () => {
@@ -374,8 +421,18 @@ it("every package prompt's spans read their artifacts under a state root path ca
  * refusal cases and the pins below with it.
  */
 const GUARDED = ARTIFACTS.filter(
-  (a): a is (typeof ARTIFACTS)[number] & { placeholder: string } => a.placeholder !== undefined,
+  (a): a is (typeof ARTIFACTS)[number] & { placeholder: string } =>
+    a.placeholder !== undefined,
 );
+
+/**
+ * The rest of the table: the artifacts whose spans have no absent case, so
+ * absence is a failure the render is supposed to refuse on. Taken as the
+ * complement rather than named, so an artifact that gains a placeholder
+ * leaves this set — and reds the case keyed on it — instead of quietly
+ * keeping a refusal nothing asserts any more.
+ */
+const UNGUARDED = ARTIFACTS.filter((a) => a.placeholder === undefined);
 
 /** A scratch state root, torn down with the rest at the end of the file. */
 async function scratchRoot(prefix: string): Promise<string> {
@@ -386,10 +443,9 @@ async function scratchRoot(prefix: string): Promise<string> {
 
 /**
  * A state root as a first tick finds it: nothing a guarded span reads has
- * been written. The queue is seeded even so — its span carries no
- * placeholder, by the package's own choice that a slice with no queue to
- * read is not a tick to proceed with, so leaving it absent would refuse the
- * render before any guarded span rendered anything to assert.
+ * been written. The unguarded artifacts are seeded even so — absence refuses
+ * there (pinned below), and the refusal would pre-empt the render before any
+ * guarded span had put a placeholder in it to assert.
  */
 async function coldRoot(prefix: string): Promise<string> {
   const root = await scratchRoot(prefix);
@@ -418,27 +474,55 @@ async function outcomeOf(
  * asserted as a line directly under an opening tag, so a placeholder
  * appearing anywhere else in the render cannot stand in for it.
  */
-function placeholderIsBlockContent(rendered: string, placeholder: string, label: string): void {
+function placeholderIsBlockContent(
+  rendered: string,
+  placeholder: string,
+  label: string,
+): void {
   const lines = rendered.split("\n").map((l) => l.trimEnd());
   const at = lines.indexOf(placeholder);
   expect(at, `${label}: no line renders ${placeholder}`).toBeGreaterThan(0);
-  expect(lines[at - 1], `${label}: the placeholder is not the block's content`).toMatch(
-    /^<[a-z-]+>$/,
-  );
+  expect(
+    lines[at - 1],
+    `${label}: the placeholder is not the block's content`,
+  ).toMatch(/^<[a-z-]+>$/);
 }
 
 /**
- * `.claude/rules/engineering.md`, *Loud or nothing*, over one guarded span.
- *
- * Absence is legitimate on both of these artifacts, so the span cannot
- * simply refuse — it has to split the fork: absent takes the placeholder, a
- * *failed read* reaches the renderer. A trailing `|| echo` answered both
- * with the same bytes, and a plan slice re-derived the queue against prose
- * saying it could not see its own state.
- *
- * The unreadable case is the wrong kind in place — a directory where the
- * span opens a file. A permission-denied would read the same on posix and be
- * a no-op on win32, so it is not the case a portable suite can drive.
+ * What a case does to an artifact before the render opens it, named so the
+ * assertions below read the same for every way of breaking one.
+ */
+interface Damage {
+  /** The state, as the failure messages say it: "an absent PENDING_PATH". */
+  readonly says: string;
+  readonly apply: (at: string) => Promise<void>;
+}
+
+/**
+ * The wrong kind in place — a directory where the span opens a file. A
+ * permission-denied would read the same on posix and be a no-op on win32, so
+ * it is not the case a portable suite can drive.
+ */
+const WRONG_KIND: Damage = {
+  says: "an unreadable",
+  apply: async (at) => {
+    await rm(at, { recursive: true, force: true });
+    await mkdir(at, { recursive: true });
+  },
+};
+
+/** Nothing in place at all — the state a first tick leaves behind. */
+const NOTHING: Damage = {
+  says: "an absent",
+  apply: async (at) => {
+    await rm(at, { recursive: true, force: true });
+    expect(existsSync(at), `${at} is absent`).toBe(false);
+  },
+};
+
+/**
+ * `.claude/rules/engineering.md`, *Loud or nothing*, over one span whose
+ * artifact a case has broken.
  *
  * Driven through the real renderer over the shipped markdown
  * (`engineering.md`, *A seam gate reads what the real writer wrote*): the
@@ -449,22 +533,27 @@ function placeholderIsBlockContent(rendered: string, placeholder: string, label:
  * spans entail: a slice that opens the artifact refuses on it, and a slice
  * that does not open it renders — the second half is what keeps the roster
  * honest rather than silently narrowing to the slices that happen to read.
+ *
+ * Which states are supposed to refuse is the caller's, since that is what
+ * differs between a guarded span and an unguarded one; how a refusal is
+ * recognised is here, once (`engineering.md`, *The fix lands at the
+ * mechanism*).
  */
-async function everySliceOverWrongKindAt(key: SharedPromptArg): Promise<void> {
-  const artifact = GUARDED.find((a) => a.key === key);
-  expect(artifact, `${key} is a guarded artifact`).toBeDefined();
-
+async function everySliceRefusesOn(
+  artifact: (typeof ARTIFACTS)[number],
+  damage: Damage,
+): Promise<void> {
   // Non-vacuity: a roster that collapsed to zero would pass the loop below
   // over nothing (`engineering.md`, *A green verdict is proven non-vacuous*).
   expect(PLAN_SLICES.length).toBeGreaterThan(0);
 
+  const key = artifact.key;
   let refused = 0;
   for (const name of PLAN_SLICES) {
     const raw = await readFile(promptPath(name), "utf8");
-    const root = await seed(await scratchRoot(`flume-prompts-unreadable-${key}-`));
-    const path = artifact!.at(root);
-    await rm(path, { recursive: true, force: true });
-    await mkdir(path, { recursive: true });
+    const root = await seed(await scratchRoot(`flume-prompts-${key}-`));
+    const path = artifact.at(root);
+    await damage.apply(path);
 
     const outcome = await outcomeOf(name, root);
 
@@ -477,9 +566,10 @@ async function everySliceOverWrongKindAt(key: SharedPromptArg): Promise<void> {
     }
 
     refused++;
-    expect(outcome, `${name}: the render resolved over an unreadable ${key}`).not.toHaveProperty(
-      "rendered",
-    );
+    expect(
+      outcome,
+      `${name}: the render resolved over ${damage.says} ${key}`,
+    ).not.toHaveProperty("rendered");
     const error = (outcome as { error: unknown }).error;
     expect(error).toBeInstanceOf(InlineExecRenderError);
     const failures = (error as InlineExecRenderError).failures;
@@ -487,12 +577,28 @@ async function everySliceOverWrongKindAt(key: SharedPromptArg): Promise<void> {
     expect(failures.map((f) => f.cmd)).toEqual([expect.stringContaining(path)]);
     // Loud, not merely non-zero: the reader's own complaint survived to the
     // failure record rather than being sent to `/dev/null`.
-    expect(failures[0]!.stderr.trim(), `${name}: the refusal is silent`).not.toBe("");
+    expect(
+      failures[0]!.stderr.trim(),
+      `${name}: the refusal is silent`,
+    ).not.toBe("");
   }
 
   // Non-vacuity: a prompt set that stopped opening this artifact anywhere
   // would take the `opens: false` branch every time and assert no refusal.
   expect(refused).toBeGreaterThan(0);
+}
+
+/**
+ * Absence is legitimate on a guarded artifact, so its span cannot simply
+ * refuse — it has to split the fork: absent takes the placeholder, a *failed
+ * read* reaches the renderer. A trailing `|| echo` answered both with the
+ * same bytes, and a plan slice re-derived the queue against prose saying it
+ * could not see its own state.
+ */
+async function everySliceOverWrongKindAt(key: SharedPromptArg): Promise<void> {
+  const artifact = GUARDED.find((a) => a.key === key);
+  expect(artifact, `${key} is a guarded artifact`).toBeDefined();
+  await everySliceRefusesOn(artifact!, WRONG_KIND);
 }
 
 it("each plan slice prompt's verdict on a plan state directory in place follows whether its spans read that artifact", async () => {
@@ -501,6 +607,31 @@ it("each plan slice prompt's verdict on a plan state directory in place follows 
 
 it("every plan slice prompt refuses when its open-questions artifact is a directory in place", async () => {
   await everySliceOverWrongKindAt("QUESTIONS_PATH");
+});
+
+// --------------------------------------------- unguarded spans: no fork
+
+/**
+ * An unguarded span has no fork to split: the package's choice is that
+ * absence here is not a tick to proceed with — a plan slice re-deriving the
+ * queue without having read it would write over work it never saw.
+ *
+ * That choice is only real while a bare reader carries it. A guard, a
+ * placeholder or a `|| echo` fallback on the span would let the render
+ * resolve and hand the slice a prompt that reads as an empty queue — which
+ * is what the example chain legitimately chooses (`tests/examples.test.ts`)
+ * and the package does not.
+ */
+async function everySliceOverAbsentArtifactAt(
+  key: SharedPromptArg,
+): Promise<void> {
+  const artifact = UNGUARDED.find((a) => a.key === key);
+  expect(artifact, `${key} is an unguarded artifact`).toBeDefined();
+  await everySliceRefusesOn(artifact!, NOTHING);
+}
+
+it("every plan slice prompt refuses when its queue artifact is absent", async () => {
+  await everySliceOverAbsentArtifactAt("PENDING_PATH");
 });
 
 /**
@@ -520,7 +651,11 @@ it("a cold state root renders every plan slice prompt's placeholder as its block
     const rendered = await render(name, root);
     for (const artifact of GUARDED) {
       if (!spanSubstitutes(raw, artifact.key)) continue;
-      placeholderIsBlockContent(rendered, artifact.placeholder, `${name}/${artifact.key}`);
+      placeholderIsBlockContent(
+        rendered,
+        artifact.placeholder,
+        `${name}/${artifact.key}`,
+      );
       // Nothing was read, so nothing the artifact would have carried leaked.
       expect(rendered).not.toContain(artifact.sentinel);
       asserted++;
@@ -545,14 +680,22 @@ it("a questions file carrying no headings renders the plan slices' none-open pla
 
   const root = await seed(await scratchRoot("flume-prompts-no-headings-"));
   // A real file, readable, with no `## ` heading anywhere in it.
-  await writeFile(questions!.at(root), "# Open questions\n\nNothing is open.\n", "utf8");
+  await writeFile(
+    questions!.at(root),
+    "# Open questions\n\nNothing is open.\n",
+    "utf8",
+  );
 
   let asserted = 0;
   for (const name of PLAN_SLICES) {
     const raw = await readFile(promptPath(name), "utf8");
     if (!spanSubstitutes(raw, "QUESTIONS_PATH")) continue;
     const rendered = await render(name, root);
-    placeholderIsBlockContent(rendered, questions!.placeholder, `${name}/QUESTIONS_PATH`);
+    placeholderIsBlockContent(
+      rendered,
+      questions!.placeholder,
+      `${name}/QUESTIONS_PATH`,
+    );
     asserted++;
   }
 
