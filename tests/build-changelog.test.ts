@@ -139,11 +139,22 @@ describe("build-changelog", () => {
     expect(out).not.toContain("MID-RELEASE-WORK");
   }, SPAWN_BUDGET_MS);
 
-  it("resolves the boundary from the semver tag fallback when CHANGELOG.md is absent entirely", async () => {
+  it("when CHANGELOG.md is absent entirely, the semver tag fallback excludes a build: commit that predates the tag", async () => {
     // The other half of the narrowed catch: absence (`ENOENT`) is the one
     // read failure the tag fallback is scoped to — a repo that never
     // recorded a version. No CHANGELOG.md is ever written here.
+    //
+    // PRE-TAG-WORK is what makes the tag load-bearing: with no boundary the
+    // range is the whole of HEAD, so a draft that omits it can only have
+    // resolved v1.0.0. A fixture whose only pre-tag commit is a non-build:
+    // seed renders identically with the fallback deleted.
     await commit(repo, "src/seed.ts", "export const seed = 1;\n", "seed");
+    await commit(
+      repo,
+      "src/pre.ts",
+      "export const pre = 1;\n",
+      "build: ship pre-tag work (PRE-TAG-WORK)",
+    );
     await git(repo, ["tag", "v1.0.0"]);
     await commit(
       repo,
@@ -156,6 +167,7 @@ describe("build-changelog", () => {
 
     expect(code).toBe(0);
     expect(out).toContain("AFTER-TAG-FEATURE");
+    expect(out).not.toContain("PRE-TAG-WORK");
   }, SPAWN_BUDGET_MS);
 
   it("an unreadable CHANGELOG.md refuses instead of resolving the boundary from the tag fallback", async () => {
