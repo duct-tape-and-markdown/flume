@@ -10,7 +10,7 @@
       "edit": [
         {
           "path": "harness/prompts.ts",
-          "description": "the turn boundary as a shared arg — one home, every phase prompt"
+          "description": "the turn boundary as a shared arg \u2014 one home, every phase prompt"
         },
         {
           "path": "harness/prompts/build.md",
@@ -45,7 +45,7 @@
       "every phase prompt the package renders substitutes the shared turn-boundary arg"
     ],
     "pins": [],
-    "notes": "Field-traced: WINDOWS-LANE-TRIGGER-IS-PINNED's clean-exit at 7c93b2e armed a watcher on its own suite and ended the turn. One home, not four copies — a shared arg beside NO_COMMIT_MODES. No test reads the sentence: prose against prose is not this suite's (engineering.md, *Narration is the ladder's bottom rung*); the check is that the arg reaches every phase prompt, as the discipline-page pin already does."
+    "notes": "Field-traced: WINDOWS-LANE-TRIGGER-IS-PINNED's clean-exit at 7c93b2e armed a watcher on its own suite and ended the turn. One home, not four copies \u2014 a shared arg beside NO_COMMIT_MODES. No test reads the sentence: prose against prose is not this suite's (engineering.md, *Narration is the ladder's bottom rung*); the check is that the arg reaches every phase prompt, as the discipline-page pin already does."
   },
   {
     "tag": "SPAN-RENDERING-CASES-DECLARE-THE-LANE-BUDGET",
@@ -81,7 +81,7 @@
       "the spawn scan reports a case that renders inline-exec spans without a declared budget"
     ],
     "pins": [],
-    "notes": "Observed: tests/examples.test.ts's unreadable-artifact case timed out at vitest's 5s under full-suite contention, ~650ms alone. `sh` is no node launcher and the scan never follows an import, so NODE_COMMANDS cannot reach it — seed the render entry the spans go through, declared where NODE_COMMANDS is. The afterMerge gate runs this lane once per cherry-picked entry, so the flake reverts an innocent entry."
+    "notes": "Observed: tests/examples.test.ts's unreadable-artifact case timed out at vitest's 5s under full-suite contention, ~650ms alone. `sh` is no node launcher and the scan never follows an import, so NODE_COMMANDS cannot reach it \u2014 seed the render entry the spans go through, declared where NODE_COMMANDS is. The afterMerge gate runs this lane once per cherry-picked entry, so the flake reverts an innocent entry."
   },
   {
     "tag": "INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE",
@@ -97,7 +97,7 @@
         },
         {
           "path": "tests/harnessCi.test.ts",
-          "description": "the reader over a stub forge CLI on PATH — failing, green, absent CLI, no completed run"
+          "description": "the reader over a stub forge CLI on PATH \u2014 failing, green, absent CLI, no completed run"
         }
       ],
       "edit": [
@@ -125,7 +125,7 @@
       "path": "spec/harness.md",
       "section": "CI lanes as a findings source"
     },
-    "acceptance": "with a lane declared, the inbox slice's prompt carries that lane's latest completed run under its lane name — the failing job's log, or an explicit unread reason when the forge CLI is absent or no run has completed — and says which when the run is green.",
+    "acceptance": "with a lane declared, the inbox slice's prompt carries that lane's latest completed run under its lane name \u2014 the failing job's log, or an explicit unread reason when the forge CLI is absent or no run has completed \u2014 and says which when the run is green.",
     "tests": [
       "the inbox window renders the declared lane's failing run under its lane name",
       "the inbox window renders a lane as unread when the forge CLI is absent",
@@ -133,7 +133,92 @@
       "the inbox window renders a lane whose latest completed run passed as green"
     ],
     "pins": [],
-    "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content — the generic parse the boundary rule fences. The liveness fork is ruled and the spec holds it; derive files the leg and this entry ships under it unchanged. Name the reader's lane type distinctly: `lane` already means a Runner test lane in harness/. This repo's declaration carries no `ci:` line yet — a `chore(flume)` edit, outside every phase fence."
+    "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content \u2014 the generic parse the boundary rule fences. The liveness fork is ruled and the spec holds it; derive files the leg and this entry ships under it unchanged. Name the reader's lane type distinctly: `lane` already means a Runner test lane in harness/. This repo's declaration carries no `ci:` line yet \u2014 a `chore(flume)` edit, outside every phase fence."
+  },
+  {
+    "tag": "PLAN-STATE-CARRIES-THE-DRAINED-RUN-STAMP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/planState.ts",
+          "description": "the fourth field: the per-lane drained-run stamp, beside the two cursors and the rotation"
+        },
+        {
+          "path": "tests/harnessPlanState.test.ts",
+          "description": "the field's round-trip, its absence reading, and its refusal"
+        },
+        {
+          "path": "harness/prompts/plan-discipline.md",
+          "description": "the plan-state bullet names four fields, and what a lane with no stamp reads as"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the plan state carries three fields, so a slice that drained a lane's run has nowhere to stamp it and re-drains the same run every tick",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Plan state as declared state"
+    },
+    "acceptance": "the plan state's typed shape carries a per-lane drained-run stamp the accessor reads and writes, a lane with no stamp reads as never drained, and a malformed stamp is refused naming its field.",
+    "tests": [
+      "the plan state accessor round-trips a per-lane drained-run stamp",
+      "a plan state artifact carrying no lane stamp reads as no lane drained",
+      "a plan state artifact whose lane stamp is malformed is refused, naming the field"
+    ],
+    "pins": [],
+    "notes": "Absence is a lane never drained, not a refusal: every live state.json predates the field and the accessor runs on the selection path before any slice could write one, so a bare required field refuses the loop shut at the adopting commit. The field-by-field refusal loop in tests/harnessPlanState.test.ts walks `PlanStateSchema.shape`. `.flume/PROTOCOL.md` also says `three typed fields` and is outside every phase fence \u2014 the operator's edit, blocking nothing."
+  },
+  {
+    "tag": "INBOX-SLICE-IS-LIVE-ON-A-RED-UNDRAINED-LANE",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE",
+        "PLAN-STATE-CARRIES-THE-DRAINED-RUN-STAMP"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/windows.ts",
+          "description": "the inbox window's lane leg, beside the record and refusal legs"
+        },
+        {
+          "path": "harness/ci.ts",
+          "description": "the reader reports the run's identity and whether it failed, for the leg to compare against the stamp"
+        },
+        {
+          "path": "harness/prompts/plan-inbox.md",
+          "description": "the slice stamps the run it drained, as it stamps a cursor"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the lane leg over the stub forge CLI: red past the stamp, red already stamped, green, unreadable"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a declared lane never wakes the inbox slice, so a quiet tree hibernates over a red lane \u2014 and with no closing condition a woken lane would re-drain the same run every tick",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "CI lanes as a findings source"
+    },
+    "acceptance": "the inbox slice is live for a declared lane exactly when that lane's latest completed run for the tip's branch failed and is past the lane's stamp; a green run, an already-stamped run, and a lane it cannot read each make it live for nothing.",
+    "tests": [
+      "the inbox slice is live when a declared lane's latest completed run failed past the lane's stamp",
+      "the inbox slice is not live when the lane's failing run is the one already stamped",
+      "the inbox slice is not live when the lane's latest completed run passed",
+      "the inbox slice is not live when the forge CLI cannot read the lane"
+    ],
+    "pins": [],
+    "notes": "`PlanSliceWindow.live` is sync and runs on the selection path (planState.ts), so the lane read has a sync half \u2014 once per tick per lane, beside the render's. The agent writes the stamp as it writes a cursor, so the rendered lane block must name the run it would stamp. `harness/ci.ts` is INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE's new file; this widens its report with the run's identity and verdict."
   },
   {
     "tag": "WINDOWS-LANE-TRIGGER-IS-PINNED",
