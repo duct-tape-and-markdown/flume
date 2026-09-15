@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "tag": "CITE-AMBIGUOUS-HEADING-REFUSED",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "harness/citeResolver.ts",
+          "description": "headingSection keeps scanning past the first match; a second match becomes a refusal"
+        },
+        {
+          "path": "tests/harnessCiteResolver.test.ts",
+          "description": "the ambiguous-cite case, beside the existing refusal cases"
+        }
+      ]
+    },
+    "summary": "Refuse a per cite whose section text heads more than one section, instead of silently resolving the first",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "A cite whose section text heads two sections in one file comes back ok:false naming the section; a unique cite resolves unchanged.",
+    "tests": [
+      "a per cite whose section text heads more than one section is refused, naming the section"
+    ],
+    "notes": "Verified this tick at harness/citeResolver.ts:178-184: the scan stops looking once `start` is set, so the second section is uncitable and both the per gate and the build prompt take the first silently. spec-writing.md, *A heading is an identifier*, is the prose this promotes to a rung."
+  }
+]

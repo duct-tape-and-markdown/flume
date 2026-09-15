@@ -83,7 +83,8 @@
       "tests/worktrees.test.ts",
       "tests/PendingSchema.test.ts",
       "src/standardSchema.ts",
-      "tests/paths.test.ts"
+      "tests/paths.test.ts",
+      "tests/harnessCiteResolver.test.ts"
     ]
   }
 }
