@@ -675,7 +675,10 @@ into it.
 - **The engine hands the chain its roots.** `FlumeApi.paths` carries
   `{ repoRoot, configDir, flumeDir }`, absolute, the identity-same values the
   dispatcher was constructed with (`buildFlumeApi` takes them
-  as its argument). A chain that places a per-run artifact resolves against
+  as its argument), and `stateRootRel`, the state root's repo-relative offset in
+  git's alphabet — the same value the tick and gate contexts carry — so a chain
+  roots a fence or a pathspec at the state root without deriving the offset
+  itself; absent when the root is relocated outside the repository. A chain that places a per-run artifact resolves against
   `api.paths.flumeDir`. It never reads `process.env.FLUME_DIR`, and it never
   falls back to its own directory: a chain with a `?? CHAIN_DIR` leg is
   re-deriving a fact the engine already resolved

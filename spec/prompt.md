@@ -76,8 +76,8 @@ root. The same value reaches gates as `GateContext.flumeDir` and phases as
 `TickContext.flumeDir` — one root, four agreeing sites: the dispatcher-resolved root,
 `GateContext.flumeDir`, `TickContext.flumeDir`, and the `{{FLUME_DIR}}` token (see
 spec/chain.md for
-`writablePaths`, which stays derived from `process.env.FLUME_DIR` at chain-load because
-it is static config evaluated before any per-tick context exists).
+`writablePaths`, which a chain roots at the state root through the offset the engine
+reports on `FlumeApi.paths.stateRootRel`, never through an env read).
 
 The point of the reserved token is to make state-root awareness a blessed affordance
 rather than a reach into global `process.env`, and to remove the footgun where a chain
