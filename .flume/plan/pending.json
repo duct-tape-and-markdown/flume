@@ -1,1 +1,33 @@
-[]
+[
+  {
+    "tag": "RENDER-CORE-FIELD-AGREEMENT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "renderSchemaForPrompt: make the rejection claim agree with what the composed validator actually accepts"
+        },
+        {
+          "path": "tests/PendingSchema.test.ts",
+          "description": "core-field agreement gate driven off the real render and the real parse; bare-core snapshot refresh"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "renderSchemaForPrompt claims unlisted fields are rejected, but parsePending accepts the unrendered core field observedFiles",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "acceptance": "The render's stated rejection claim holds against parsePending for every engine-core field, proven by a gate that derives the field set from the composed validator rather than from a hand-written list.",
+    "tests": [
+      "every engine-core field the composed validator accepts is named in the rendered schema"
+    ],
+    "pins": [
+      "parsePending accepts an entry carrying every field the rendered schema names"
+    ],
+    "notes": "observedFiles (src/PendingSchema.ts:159) is core and accepted; the render (src/PendingSchema.ts:534) omits it while claiming unlisted fields are rejected. Producer-authored it is not (spec/pending.md, observedFiles - the dispatcher's collision record), so naming it as engine-maintained beats listing it as authorable. The standing agreement check (tests/PendingSchema.test.ts:1070) covers extension names only; the bare-core case is an inline snapshot of the writer's own output."
+  }
+]

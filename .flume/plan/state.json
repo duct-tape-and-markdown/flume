@@ -35,7 +35,10 @@
       "src/job.ts",
       "src/Baton.ts",
       "src/cliJobVerbs.ts",
-      "src/cliChainLoad.ts"
+      "src/cliChainLoad.ts",
+      "src/Prompt.ts",
+      "src/Phase.ts",
+      "src/PendingSchema.ts"
     ]
   }
 }
