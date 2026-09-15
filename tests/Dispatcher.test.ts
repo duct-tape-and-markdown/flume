@@ -9301,7 +9301,8 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
     expect(outcome.result?.committed).toBe(true);
     expect(outcome.verdict!.invocations).toHaveLength(1);
 
-    const { promptPath, ...row } = outcome.verdict!.invocations[0]!;
+    const { promptPath, uncommittedTracked: _u, ...row } =
+      outcome.verdict!.invocations[0]!;
     expect(promptPath).toMatch(/^rendered-prompts\/.+-plan\.md$/);
     expect(row).toEqual({
       model: "claude-fable-5-1",
@@ -9420,7 +9421,10 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
       expect(i.promptPath).toMatch(/^rendered-prompts\/.+\.md$/);
     }
     const byTag = Object.fromEntries(
-      invocations.map(({ promptPath: _p, ...i }) => [i.entryTag, i]),
+      invocations.map(({ promptPath: _p, uncommittedTracked: _u, ...i }) => [
+        i.entryTag,
+        i,
+      ]),
     );
     expect(byTag["TEST-A"]).toEqual({
       entryTag: "TEST-A",
@@ -9436,6 +9440,128 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
     });
   }, 20_000);
 });
+
+describe("Uncommitted tracked edits ride the tick verdict (spec/loop.md 'Tip verify — one writer per branch, absorption at the merge')", () => {
+  it("a tick that commits nothing reports the tracked paths it modified before teardown", async () => {
+    // A tracked path the default porcelain form would double-quote. The
+    // report has to name the path as it sits on disk, not git's escaped
+    // spelling of it — the same `-z` requirement every other listing reader
+    // in `src/git.ts` carries.
+    await writeAndCommit(
+      fx.repo,
+      "src/needs quoting.ts",
+      "// seed\n",
+      "seed: a path the default porcelain form quotes",
+    );
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    // Real work, never committed: exactly the shape teardown destroys.
+    const agent = singleAgent(async (cwd) => {
+      await writeFile(join(cwd, "src", "seed.ts"), "// edited, never committed\n");
+      await writeFile(join(cwd, "src", "needs quoting.ts"), "// also uncommitted\n");
+      await writeFile(join(cwd, "scratch.txt"), "untracked scratch\n");
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.verdict!.noCommit).toBe("clean-exit");
+    // Vacuity pin: an agent ran, so there is a row for the assertion below
+    // to be about.
+    const rows = outcome.verdict!.invocations;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.uncommittedTracked).toEqual([
+      "src/needs quoting.ts",
+      "src/seed.ts",
+    ]);
+    // Untracked output is not a loss the tick can be said to have modified
+    // away from — and a real worktree's untracked set is build noise.
+    expect(rows[0]!.uncommittedTracked).not.toContain("scratch.txt");
+    // Before teardown, and provably so: the worktree those paths lived in
+    // no longer exists by the time the verdict is readable.
+    expect(existsSync(join(fx.repo, ".flume", "worktrees", "plan"))).toBe(false);
+  });
+
+  it("a tick that left no tracked modification reports an empty set", async () => {
+    await writePending(fx.repo, [makeEntry("TEST-CLEAN", ["src/clean.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      "test-clean": async (cwd) => {
+        await writeAndCommit(cwd, "src/clean.ts", "shipped\n", "build(TEST-CLEAN): ship");
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["TEST-CLEAN"]);
+    const rows = outcome.verdict!.invocations;
+    expect(rows).toHaveLength(1);
+    // Present and empty, not absent: "nothing was lost" is a fact the tick
+    // states, and an absent key would read the same as a read that never ran.
+    expect(rows[0]!.uncommittedTracked).toEqual([]);
+    expect("uncommittedTracked" in rows[0]!).toBe(true);
+  }, 20_000);
+
+  it("under fanout each entry's leftovers ride that entry's own invocation row", async () => {
+    await writePending(fx.repo, [
+      makeEntry("TEST-A", ["src/a.ts"]),
+      makeEntry("TEST-B", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      "test-a": async (cwd) => {
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(TEST-A): ship");
+        // Half-finished follow-on work the agent never committed.
+        await writeFile(join(cwd, "src", "seed.ts"), "// A's leftovers\n");
+      },
+      "test-b": async (cwd) => {
+        await writeAndCommit(cwd, "src/b.ts", "from-B\n", "build(TEST-B): ship");
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["TEST-A", "TEST-B"]);
+    const byTag = new Map(
+      outcome.verdict!.invocations.map((i) => [i.entryTag, i.uncommittedTracked]),
+    );
+    expect(byTag.size).toBe(2);
+    // Each worktree is read on its own — a sibling's clean tree never
+    // launders the entry that actually lost work, and vice versa.
+    expect(byTag.get("TEST-A")).toEqual(["src/seed.ts"]);
+    expect(byTag.get("TEST-B")).toEqual([]);
+  }, 20_000);
+});
+
 
 describe("The rendered prompt is persisted before the agent runs (spec/prompt.md)", () => {
   /** Files under `<flumeDir>/rendered-prompts/`, or [] when the dir is absent. */

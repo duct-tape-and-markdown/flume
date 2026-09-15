@@ -761,3 +761,42 @@ export async function acquireTipClaim(
     },
   };
 }
+
+/**
+ * Tracked paths dirty in `cwd` right now — staged, unstaged, or both — as
+ * `git status --porcelain` reports them.
+ *
+ * spec/loop.md "Tip verify": an agent's worktree is removed at teardown along
+ * with everything uncommitted in it, and a soft-reset span's content lands
+ * back here as exactly this kind of residue. The engine reads the set while
+ * the worktree still exists so the tick verdict can name what was lost —
+ * the fact alone; what it means is the chain's.
+ *
+ * **Tracked only.** An untracked file has no committed counterpart to have
+ * been modified away from, and a worktree's untracked set is dominated by
+ * build output nobody lost (`node_modules`, caches). `??` records are
+ * therefore dropped; the porcelain default already omits `!!`.
+ *
+ * `-z`, for {@link nameOnlyPaths}' reasons applied to a status listing: the
+ * default form double-quotes any path carrying a space, a control character,
+ * or a non-ASCII byte, and a quoted spelling names a different path than the
+ * one on disk. A rename or copy record spends a second NUL field on the path
+ * it came from; that field carries no status code, so it is consumed here
+ * rather than read as a record of its own — the surviving path is the one
+ * reported.
+ */
+export async function trackedModifications(cwd: string): Promise<string[]> {
+  const { stdout } = await run(cwd, ["status", "--porcelain", "-z"]);
+  const records = stdout.split("\0");
+  const paths: string[] = [];
+  for (let i = 0; i < records.length; i += 1) {
+    const record = records[i];
+    if (!record) continue;
+    const code = record.slice(0, 2);
+    const path = record.slice(3);
+    if (code.includes("R") || code.includes("C")) i += 1;
+    if (code === "??") continue;
+    paths.push(path);
+  }
+  return paths;
+}

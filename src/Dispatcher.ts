@@ -353,6 +353,24 @@ export interface TickVerdictInvocation extends AgentUsage {
    * is answerable without re-rendering.
    */
   promptPath: string;
+  /**
+   * spec/loop.md "Tip verify": the tracked paths this run left dirty in its
+   * worktree — modified and not committed — read while the worktree still
+   * existed, immediately before teardown removes it and them. Covers the
+   * agent's own leftovers and the content a soft-reset span (a tip-verify
+   * refusal, an `afterCommit` gate revert) put back into the tree, whichever
+   * the tick produced.
+   *
+   * Always present on a row, `[]` when the tick left nothing behind: "the
+   * loss is seen even though it is not preserved" is only readable if the
+   * no-loss case is stated too, and an absent key would make a clean
+   * teardown indistinguishable from a read that never happened. Untracked
+   * files are out of scope ({@link git.trackedModifications}).
+   *
+   * A fact, never a verdict: the engine says what went away with the
+   * worktree; whether that matters is the chain's (`engine-boundary.md`).
+   */
+  uncommittedTracked: string[];
 }
 
 /**
@@ -1944,8 +1962,12 @@ export class Dispatcher {
     // spec/loop.md "Every agent invocation leaves a usage row": set once the
     // agent actually runs, regardless of what the tick goes on to do with
     // the commit — absent when `shouldRun`/render-refusal skipped the
-    // invocation entirely.
-    let invocation: TickVerdictInvocation | undefined;
+    // invocation entirely. The row's `uncommittedTracked` is the one field
+    // this tick cannot know yet, so it is completed at the teardown site
+    // below rather than here.
+    let invocationRow:
+      | Omit<TickVerdictInvocation, "uncommittedTracked">
+      | undefined;
     // spec/chain.md "What a hook receives": the tip this tick's span
     // branched from — the gates' base, reported on the result as `baseSha`.
     // Unset on a render-refused tick: no span was ever started. (A decline
@@ -2001,7 +2023,7 @@ export class Dispatcher {
         tickTimeoutMs,
         extraEnv,
       );
-      invocation = {
+      invocationRow = {
         promptPath: termination.promptPath,
         ...(termination.usage ?? {}),
       };
@@ -2254,6 +2276,17 @@ export class Dispatcher {
         this.log.warn(`[flume] ${phase.name}: ${noCommit} (no commit)`);
       }
     }
+
+    // spec/loop.md "Tip verify": last read of this worktree before it stops
+    // existing. Everything that could still dirty it — the agent, the
+    // tip-verify soft reset, an afterCommit revert — is behind us; the
+    // cherry-pick and afterMerge stages above ran against trunk, not here.
+    const invocation: TickVerdictInvocation | undefined = invocationRow
+      ? {
+          ...invocationRow,
+          uncommittedTracked: await git.trackedModifications(wt.path),
+        }
+      : undefined;
 
     await teardownWorktreeInstance(
           phase,
@@ -2598,6 +2631,12 @@ export class Dispatcher {
           entryTag: r.entry.tag,
           promptPath: r.termination.promptPath,
           ...(r.termination.usage ?? {}),
+          // spec/loop.md "Tip verify": this entry's worktree is done being
+          // written — its agent, its tip-verify soft reset and its
+          // afterCommit revert all ran inside `runFanoutEntry`, and the
+          // pick below touches trunk alone — but teardown is still a whole
+          // wave away, so the set is readable here.
+          uncommittedTracked: await git.trackedModifications(r.worktreePath),
         });
       }
       if (r.tipMoved) {

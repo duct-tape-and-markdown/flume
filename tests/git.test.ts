@@ -115,6 +115,7 @@ import {
   showNameOnly,
   softResetTo,
   tipClaimPath,
+  trackedModifications,
   TipClaimHeldError,
 } from "../src/git.ts";
 
@@ -1300,3 +1301,42 @@ describe.runIf(process.platform === "win32")(
     });
   },
 );
+
+describe("trackedModifications", () => {
+  it("names a staged rename by the path on disk and consumes the origin field", async () => {
+    await writeFile(join(repo, "old name.ts"), "content\n");
+    await exec("git", ["add", "--", "old name.ts"], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "seed rename source"], {
+      cwd: repo,
+    });
+    await exec("git", ["mv", "old name.ts", "new name.ts"], { cwd: repo });
+
+    // One path, not two: `-z` spends a second NUL field on the origin, which
+    // carries no status code — read as a record of its own it would arrive
+    // as a path with its first three bytes eaten.
+    expect(await trackedModifications(repo)).toEqual(["new name.ts"]);
+  });
+
+  it("reports staged and unstaged tracked edits and drops untracked files", async () => {
+    await writeFile(join(repo, "tracked.ts"), "one\n");
+    await writeFile(join(repo, "staged.ts"), "two\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "seed two tracked files"], {
+      cwd: repo,
+    });
+
+    await writeFile(join(repo, "tracked.ts"), "edited unstaged\n");
+    await writeFile(join(repo, "staged.ts"), "edited staged\n");
+    await exec("git", ["add", "--", "staged.ts"], { cwd: repo });
+    await writeFile(join(repo, "scratch.log"), "untracked\n");
+
+    expect(await trackedModifications(repo)).toEqual([
+      "staged.ts",
+      "tracked.ts",
+    ]);
+  });
+
+  it("returns an empty list on a clean tree", async () => {
+    expect(await trackedModifications(repo)).toEqual([]);
+  });
+});
