@@ -2011,12 +2011,9 @@ describe.runIf(process.platform === "win32")(
  * ~260-char total-path limit, within `NAME_MAX` (`src/PendingSchema.ts`).
  *
  * The length rides the *name* because it cannot ride the repo root: every git
- * the job verbs run spawns with `cwd: repoRoot`, and win32 refuses to create a
- * process whose working directory exceeds `MAX_PATH` — surfacing as
- * `spawn git ENOENT`. `toNamespacedPath` cannot reach that refusal: the OS
- * resolves the cwd, so no path flume built is involved. The engine's own
- * `core.longpaths` pin (`jobNew`) covers the over-length *worktree file paths*
- * the resulting job dir hands to `git add`/`rm`, which is a different limit.
+ * the job verbs run spawns with `cwd: repoRoot`, which is the one directory
+ * no fixture may lengthen (`.claude/rules/platform-facts.md`, *win32 refuses
+ * to spawn a process whose working directory exceeds MAX_PATH*).
  */
 function longJobName(repoRoot: string): string {
   const stem = "w32job-";
