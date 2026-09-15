@@ -20,6 +20,7 @@ import { loadChainModule } from "./Dispatcher.js";
 import * as git from "./git.js";
 import {
   chainModulePath,
+  gitPath,
   matchesAny,
   queueFenceViolations,
 } from "./paths.js";
@@ -228,13 +229,14 @@ export const chainLoadGate: Gate = {
     const touched = ctx.touchedPaths;
     // The touched-path key is the file `loadChainModule` will resolve from
     // this same `configDir`, made repo-relative and posix-slashed to match
-    // the commit's own path list. Shared derivation (`chainModulePath`,
-    // src/paths.ts): a key spelled here could diverge from what the loader
-    // reads, and this gate's divergence is the silent one — it would report
-    // `skipped` over the very commit that broke the chain.
-    const chainRelPath = relative(ctx.repoRoot, chainModulePath(ctx.configDir))
-      .split(/[\\/]/)
-      .join("/");
+    // the commit's own path list. Both derivations are shared
+    // (`chainModulePath` and `gitPath`, src/paths.ts): a key spelled here
+    // could diverge from what the loader reads, and this gate's divergence is
+    // the silent one — it would report `skipped` over the very commit that
+    // broke the chain.
+    const chainRelPath = gitPath(
+      relative(ctx.repoRoot, chainModulePath(ctx.configDir)),
+    );
     if (!touched.includes(chainRelPath)) {
       // Vacuous by design, and spelled as such: nothing loaded, so the green
       // is declared on `skipped` rather than left for a reader to pattern-

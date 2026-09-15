@@ -17,8 +17,10 @@ import {
   chainModulePath,
   entryWriteScope,
   entryWriteScopeUnion,
+  gitPath,
   matchesAny,
   queueFenceViolations,
+  resolvePendingPath,
   STATE_ROOT_NAMES,
   tickVerdictPath,
   tickVerdictsLogPath,
@@ -586,5 +588,69 @@ describe("the chain module's path has one derivation", () => {
         "paths.ts — a fourth spelling is how the loader, the precondition " +
         "and the gate come to name different files",
     ).toEqual(["paths.ts"]);
+  });
+});
+
+// Mechanism pin (HARNESS-STATE-ROOT-IS-A-GIT-PATH, per
+// .claude/rules/engineering.md "A fact the engine holds is reported, never
+// rediscovered"): git names every path with `/`, and a value that has been
+// through `join`/`relative` on win32 does not. The engine applied that
+// conversion at four sites and kept the rule to itself, so the harness
+// package — which composes a commit's paths from the state-root offset the
+// engine reports — carried its own copy, and applied it to one of the five
+// paths it builds.
+describe("gitPath — the one host-path-to-git-path rule", () => {
+  it("the engine's path surface renders a backslash-separated relative path as a git path", () => {
+    // The shape `computeStateRootRel` reports for a nested state root on
+    // win32: `relative()` in the host's own dialect.
+    expect(gitPath(String.raw`jobs\alpha\.flume`)).toBe("jobs/alpha/.flume");
+
+    // A path already in git's alphabet is itself, so a posix host pays
+    // nothing for the conversion.
+    expect(gitPath("jobs/alpha/.flume")).toBe("jobs/alpha/.flume");
+    expect(gitPath("pending.json")).toBe("pending.json");
+
+    // Mixed, which is exactly what a slash-joined tail on a `relative()` head
+    // produces — converted whole, never half.
+    expect(gitPath(String.raw`jobs\alpha\.flume/plan/notes/TAG.md`)).toBe(
+      "jobs/alpha/.flume/plan/notes/TAG.md",
+    );
+
+    // And it is the rule the engine keys its own committed paths by: the
+    // offset a nested state root reports, joined to the queue's default
+    // relative path, is the git path a commit names.
+    expect(gitPath(resolvePendingPath(String.raw`jobs\alpha\.flume`))).toBe(
+      "jobs/alpha/.flume/plan/pending.json",
+    );
+  });
+
+  it("the separator fold is spelled once, in paths.ts", () => {
+    // The two forms the tree spelled it in before this rule had a home.
+    const FOLDS = [String.raw`split("\\")`, String.raw`split(/[\\/]/)`];
+    const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+    const modules = ["src", "harness", "examples"].flatMap((dir) =>
+      readdirSync(join(ROOT, dir))
+        .filter((name) => name.endsWith(".ts"))
+        .map((name) => `${dir}/${name}`),
+    );
+    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
+    // scan over no modules would report one speller for every form.
+    expect(modules.length).toBeGreaterThan(20);
+    // And the form under test is one the tree still contains — in its home.
+    expect(readFileSync(join(ROOT, "src", "paths.ts"), "utf8")).toContain(
+      FOLDS[1],
+    );
+
+    const spellers = modules.filter((module) => {
+      const text = readFileSync(join(ROOT, module), "utf8");
+      return FOLDS.some((fold) => text.includes(fold));
+    });
+    expect(
+      spellers,
+      "the host-path-to-git-path fold is spelled outside src/paths.ts — a " +
+        "second copy is how one surface comes to key a committed path by a " +
+        "separator another one does not",
+    ).toEqual(["src/paths.ts"]);
   });
 });

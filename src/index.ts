@@ -69,7 +69,7 @@ export {
 
 export { partitionByFileOverlap } from "./partition.js";
 
-export { slugify } from "./paths.js";
+export { gitPath, slugify } from "./paths.js";
 
 export { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
 

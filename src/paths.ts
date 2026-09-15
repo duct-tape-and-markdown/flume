@@ -35,6 +35,29 @@ export function namespacedJoin(...paths: string[]): string {
 }
 
 /**
+ * A path the host composed, as the forward-slash form git speaks.
+ *
+ * git names every path with `/` on every platform, so a value that has been
+ * through `join` or `relative` on win32 is in the wrong alphabet the moment
+ * it is compared against a commit's touched path, handed to git as a
+ * pathspec, matched by a fence glob, or written into `.gitignore`. This is
+ * the rule that converts one — the engine's own, exported because a chain
+ * composing a committed path from a root the engine reported would otherwise
+ * spell it again (`.claude/rules/engineering.md`, *A fact the engine holds is
+ * reported, never rediscovered*).
+ *
+ * Both separators fold, not just the host's: a value routinely carries `/`
+ * from a declaration and `\` from `relative` in the same string, and a rule
+ * keyed on `sep` would leave that case half-converted. The cost is that a
+ * posix filename containing a literal backslash is split like a separator —
+ * accepted, because every path this rule is applied to is one git will name,
+ * and git's own quoting makes such a name unaddressable here anyway.
+ */
+export function gitPath(path: string): string {
+  return path.split(/[\\/]/).join("/");
+}
+
+/**
  * Shared escape-check for a declared state-root-relative path
  * (`Chain.friction` — `validateFrictionDeclaration`, `src/friction.ts`;
  * `Chain.pendingPath` — `validatePendingPathDeclaration`,

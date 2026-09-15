@@ -24,6 +24,7 @@ import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { z } from "zod";
+import { gitPath } from "../src/index.ts";
 import type {
   Chain,
   ChainFactory,
@@ -115,7 +116,12 @@ function parseTestReport(details: string | undefined): TestReport | undefined {
 
 /** Does the reporter's absolute file path name the repo-relative path the entry declared? */
 function isDeclaredFile(reported: string, declared: string): boolean {
-  const norm = reported.split("\\").join("/");
+  // The engine's own host-path-to-git-path rule rather than a chain-local
+  // respelling of it: an entry declares its files the way a commit names
+  // them, and turning what a reporter printed into that form is a fact the
+  // engine hands out (`.claude/rules/engineering.md`, *A fact the engine
+  // holds is reported, never rediscovered*).
+  const norm = gitPath(reported);
   return norm === declared || norm.endsWith(`/${declared}`);
 }
 

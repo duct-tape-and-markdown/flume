@@ -11,6 +11,7 @@ import { dirname, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { existsLoud } from "./fsProbe.js";
+import { gitPath } from "./paths.js";
 
 const exec = promisify(execFile);
 
@@ -400,7 +401,7 @@ export async function readFileAtRef(
   ref: string,
   relPath: string,
 ): Promise<string | null> {
-  const pathspec = relPath.split(/[\\/]/).join("/");
+  const pathspec = gitPath(relPath);
   const { stdout: listing } = await run(repoRoot, [
     "ls-tree",
     "--name-only",
@@ -423,7 +424,10 @@ export async function readFileAtRef(
  * `CHERRY_PICK_HEAD`/`sequencer/` live under `.git/worktrees/<name>/`, not
  * under the shared common dir `gitCommonDir` resolves).
  */
-async function gitPath(repoRoot: string, relPath: string): Promise<string> {
+async function revParseGitPath(
+  repoRoot: string,
+  relPath: string,
+): Promise<string> {
   const { stdout } = await run(repoRoot, ["rev-parse", "--git-path", relPath]);
   return resolve(repoRoot, stdout);
 }
@@ -437,8 +441,8 @@ async function gitPath(repoRoot: string, relPath: string): Promise<string> {
  */
 async function hasCherryPickSequencerState(repoRoot: string): Promise<boolean> {
   const [headPath, sequencerPath] = await Promise.all([
-    gitPath(repoRoot, "CHERRY_PICK_HEAD"),
-    gitPath(repoRoot, "sequencer"),
+    revParseGitPath(repoRoot, "CHERRY_PICK_HEAD"),
+    revParseGitPath(repoRoot, "sequencer"),
   ]);
   // Absent is the only silent reading (`existsLoud`, src/fsProbe.ts): an
   // unstattable `CHERRY_PICK_HEAD`/`sequencer/` would otherwise read as "no

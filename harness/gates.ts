@@ -39,7 +39,7 @@ import { promisify } from "node:util";
 
 import type { PendingGateOptions } from "../src/builtinGates.js";
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
-import { matchesAny } from "../src/paths.js";
+import { gitPath, matchesAny } from "../src/paths.js";
 import type { EntryExtension } from "../src/PendingSchema.js";
 import type { Phase } from "../src/Phase.js";
 
@@ -256,9 +256,15 @@ function recordsGate(engine: GateEngine): Gate {
           skipped: "no path in a commit can be a record under a relocated state root",
         };
       }
+      // The engine reports the offset in the host's dialect, and the paths
+      // this gate matches are git's — converted once here, through the
+      // engine's own rule, so the directory globs and the note path below
+      // are in the same alphabet as `ctx.touchedPaths`
+      // (`gitPath`, `src/paths.ts`).
+      const stateRoot = gitPath(ctx.stateRootRel);
       // Trailing separator per directory, so `inbox` cannot prefix-match
       // `inbox-archive`.
-      const dirs = recordDirs(ctx.stateRootRel).map((dir) => `${dir}/`);
+      const dirs = recordDirs(stateRoot).map((dir) => `${dir}/`);
       const touched = ctx.touchedPaths.filter((path) =>
         dirs.some((dir) => path.startsWith(dir)),
       );
@@ -272,9 +278,7 @@ function recordsGate(engine: GateEngine): Gate {
 
       const isBuild = ctx.phaseName === BUILD_PHASE;
       const own =
-        isBuild && ctx.entry
-          ? notePath(ctx.stateRootRel, ctx.entry.tag)
-          : undefined;
+        isBuild && ctx.entry ? notePath(stateRoot, ctx.entry.tag) : undefined;
       const problems: string[] = [];
       let written = 0;
       for (const path of touched) {

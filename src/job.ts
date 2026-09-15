@@ -26,6 +26,7 @@ import { pinLongPaths } from "./git.js";
 import {
   awakeDir,
   chainModulePath,
+  gitPath,
   loopLockPath,
   namespacedJoin,
   resolvePendingPath,
@@ -170,7 +171,7 @@ export async function ensureRuntimeIgnores(
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */
 export function frictionIgnoreEntry(friction: string): string {
-  return `${friction.replace(/\\/g, "/").replace(/\/+$/, "")}/`;
+  return `${gitPath(friction).replace(/\/+$/, "")}/`;
 }
 
 export interface JobNewOptions {

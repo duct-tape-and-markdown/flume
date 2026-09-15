@@ -42,7 +42,7 @@ import type { Agent } from "../src/Agent.js";
 import { computeStateRootRel } from "../src/Dispatcher.js";
 import type { FlumeApi } from "../src/flumeApi.js";
 import type { Gate, GateContext, GatePhase, GateResult } from "../src/Gate.js";
-import { resolvePendingPath } from "../src/paths.js";
+import { gitPath, resolvePendingPath } from "../src/paths.js";
 import type { EntryExtension, PendingEntry } from "../src/PendingSchema.js";
 import type { Chain, Phase, TickContext } from "../src/Phase.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
@@ -172,6 +172,11 @@ export function harnessChain(options: HarnessChainOptions): Chain {
    * The record queues ride it because a slice drains a record by deleting
    * its file; the records gate is what refuses a slice that writes one
    * instead.
+   *
+   * The queue alone is re-converted: `resolvePendingPath` composes with
+   * `node:path`, so it re-dialects the root this factory already normalized.
+   * Every other path here is slash-joined by the module that owns it and
+   * arrives in git's alphabet from {@link repoRelativeStateRoot}.
    */
   const planArtifacts = [
     gitPath(resolvePendingPath(stateRoot)),
@@ -562,8 +567,17 @@ function supervisorPolicy(
 }
 
 /**
- * The state root as the repository addresses it, or a refusal naming both
- * roots.
+ * The state root as the repository addresses it — a **git path**, forward-
+ * slashed — or a refusal naming both roots.
+ *
+ * The engine reports the offset in the host's own dialect (`relative`, so a
+ * nested root under win32 arrives backslash-separated). Converted once, here,
+ * through the engine's own rule (`gitPath`, `src/paths.ts`): every path this
+ * factory composes from this value — the queue, the plan state, the questions
+ * file, the record globs, build's note — is one a fence glob matches and a
+ * commit's touched path is compared against, and all of those are git's
+ * alphabet. One conversion rather than one per composition, so no path the
+ * factory builds can be in a dialect its sibling is not.
  */
 function repoRelativeStateRoot(api: FlumeApi): string {
   const rel = computeStateRootRel(api.paths.repoRoot, api.paths.flumeDir);
@@ -575,15 +589,7 @@ function repoRelativeStateRoot(api: FlumeApi): string {
         `(spec/harness.md, Committed-path discipline)`,
     );
   }
-  return rel;
-}
-
-/**
- * A path the engine composed in the host's dialect, as the forward-slash
- * form a fence glob and a commit's touched path are both in.
- */
-function gitPath(path: string): string {
-  return path.split(/[\\/]/).join("/");
+  return gitPath(rel);
 }
 
 /** The globs, in declared order, each appearing once. */

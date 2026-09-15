@@ -260,6 +260,35 @@ it("build's per-tick args name the entry's note path from the tick context alone
   expect(args.NOTE_PATH!.startsWith(cwd)).toBe(false);
 });
 
+it("buildPromptArgs renders NOTE_PATH slash-joined from a backslash-separated state root", () => {
+  const assigned = entry();
+
+  // A nested state root, as a job namespace produces one. The engine reports
+  // the offset `relative()` computed, which is the **host's** dialect — so on
+  // win32 a root more than one segment deep arrives backslash-separated.
+  // Spelled rather than computed: a posix run cannot produce that shape, and
+  // it is the shape the note path still has to be composed from.
+  const nested = String.raw`jobs\alpha\.flume`;
+  const asGit = "jobs/alpha/.flume";
+  // The two spellings are one root.
+  expect(nested.split("\\").join("/")).toBe(asGit);
+
+  const args = buildPromptArgs({
+    declaration: declare(),
+    ctx: { ...tick(assigned), flumeDir: join(repoRoot, ...asGit.split("/")), stateRootRel: nested },
+  });
+
+  // The path the agent writes, the records gate keys and the park predicate
+  // reads back — git's alphabet, never the host's.
+  expect(args.NOTE_PATH).toBe(notePath(asGit, assigned.tag));
+  expect(args.NOTE_PATH).not.toContain("\\");
+
+  // Vacuity guard: the same call over a single-segment root — the shape every
+  // host spells alike — renders the path it always did, so the assertion
+  // above is the dialect's doing and not a rewritten note layout.
+  expect(argsFor(assigned).NOTE_PATH).toBe(notePath(".flume", assigned.tag));
+});
+
 it("build's per-tick args refuse a state root outside the repo rather than naming a note path no commit holds", () => {
   const assigned = entry();
 

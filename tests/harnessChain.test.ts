@@ -42,7 +42,13 @@ import type { Runner, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
 import { computeStateRootRel } from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
-import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
+import type {
+  Chain,
+  Phase,
+  ShipContext,
+  TickContext,
+  TickResult,
+} from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";
 
@@ -216,6 +222,22 @@ function tickContext(phase: Phase): TickContext {
     ...(phase.concurrency === "fanout"
       ? { assignedEntry: entry("SOME-ENTRY") }
       : {}),
+  };
+}
+
+/** The facts the dispatcher hands `shipped` for one merged entry. */
+function shipContext(
+  assigned: PendingEntry,
+  touchedPaths: readonly string[],
+): ShipContext {
+  return {
+    entry: assigned,
+    mergedSha: "0".repeat(40),
+    baseSha: "1".repeat(40),
+    touchedPaths,
+    gateResults: [],
+    worktreePath: join(repo, STATE_ROOT, "worktrees", assigned.tag),
+    repoRoot: repo,
   };
 }
 
@@ -411,6 +433,48 @@ it("the returned build phase is fanout and carries the declaration's fence", () 
   }
   expect(derive.writablePaths).toContain(`${STATE_ROOT}/plan/pending.json`);
   expect(derive.writablePaths).toContain(DECLARATION.fence["plan-derive"][0]);
+});
+
+it("the build fence and the park predicate name one note path under a nested state root", () => {
+  // A nested state root, as a job namespace produces one: every path the
+  // factory composes carries the offset to it, and on win32 the engine
+  // reports that offset in the host's own separator. One derivation
+  // normalizes it, so the fence glob and the predicate below cannot end up in
+  // different alphabets.
+  const nested = join(repo, "jobs", "alpha", STATE_ROOT);
+  const rel = relative(repo, nested).split(sep).join("/");
+  // Non-vacuity: the root is genuinely more than one segment deep, which is
+  // the only shape whose dialect can differ at all.
+  expect(rel.split("/").length).toBeGreaterThan(1);
+
+  const build = phaseNamed(
+    harnessChain({
+      api: buildFlumeApi({ repoRoot: repo, configDir: nested, flumeDir: nested }),
+      declaration: DECLARATION,
+    }),
+    BUILD_PHASE,
+  );
+  const parked = entry("SOME-ENTRY");
+  const note = `${notesDir(rel)}/${parked.tag}.md`;
+
+  // The glob that admits the note a tick parks into...
+  expect(build.writablePaths).toContain(`${notesDir(rel)}/*.md`);
+  // ...and the predicate that reads one back, on the path git would name.
+  expect(build.shipped?.(shipContext(parked, [note]))).toBe(false);
+  // A tests-only commit is a ship; only the note alone is a park.
+  expect(build.shipped?.(shipContext(parked, [note, "src/index.ts"]))).toBe(true);
+
+  // And the queue the plan slices fence is under the same root, in the same
+  // alphabet — composed with `node:path`, so it is the one path here that
+  // would otherwise arrive re-dialected.
+  const derive = phaseNamed(
+    harnessChain({
+      api: buildFlumeApi({ repoRoot: repo, configDir: nested, flumeDir: nested }),
+      declaration: DECLARATION,
+    }),
+    "plan-derive",
+  );
+  expect(derive.writablePaths).toContain(`${rel}/plan/pending.json`);
 });
 
 it("each returned phase names its prompt by an absolute path the package ships", () => {

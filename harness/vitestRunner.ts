@@ -26,7 +26,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import type { FlumeApi } from "../src/flumeApi.js";
 import { existsLoud } from "../src/fsProbe.js";
 import { addWorktree, removeWorktree } from "../src/git.js";
-import { worktreesBase } from "../src/paths.js";
+import { gitPath, worktreesBase } from "../src/paths.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
 
 import type {
@@ -150,7 +150,7 @@ function readRun(output: string, names: readonly string[], root: string): RunRes
     );
   }
 
-  const rel = (p: string): string => relative(root, p).split("\\").join("/");
+  const rel = (p: string): string => gitPath(relative(root, p));
 
   const passing = report.testResults.flatMap((f) =>
     f.assertionResults

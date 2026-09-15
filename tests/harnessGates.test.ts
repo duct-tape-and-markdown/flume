@@ -52,6 +52,21 @@ const engine: GateEngine = { pendingGate, git: { readFileAtRef } };
 /** The state root every case addresses, repo-relative. */
 const STATE_ROOT = ".flume";
 
+/**
+ * A nested state root, as a job namespace produces one: its segments under
+ * the repo, and the offset the engine reports for it.
+ *
+ * The reported form is `relative()`'s, which is the **host's** dialect — so
+ * on win32 a root more than one segment deep arrives backslash-separated.
+ * Spelled here rather than computed because a posix run cannot produce that
+ * shape, and it is the shape every record path the gate matches still has to
+ * be composed from.
+ */
+const NESTED = {
+  segments: ["jobs", "alpha", ".flume"],
+  rel: String.raw`jobs\alpha\.flume`,
+};
+
 /** The runner a declared factory returns here; no case runs a test. */
 const runner = {
   run: async () => ({ ok: true, passed: [], failures: [], failingFiles: [] }),
@@ -138,17 +153,27 @@ const queueEntry = (
 const writeQueue = (entries: readonly unknown[]): Promise<void> =>
   write(`${STATE_ROOT}/plan/pending.json`, `${JSON.stringify(entries, null, 2)}\n`);
 
-/** The context a dispatcher builds for a gate on this repo. */
+/**
+ * The context a dispatcher builds for a gate on this repo — `.flume` at the
+ * repo root by default, or the nested root a case names, whose host path and
+ * reported offset travel together.
+ */
 function ctxFor(
   span: Span,
-  over: { phaseName: string; entry?: PendingEntry },
+  over: {
+    phaseName: string;
+    entry?: PendingEntry;
+    stateRoot?: { segments: string[]; rel: string };
+  },
 ): GateContext {
-  const flumeDir = join(repo, STATE_ROOT);
+  const flumeDir = over.stateRoot
+    ? join(repo, ...over.stateRoot.segments)
+    : join(repo, STATE_ROOT);
   return {
     cwd: repo,
     repoRoot: repo,
     flumeDir,
-    stateRootRel: computeStateRootRel(repo, flumeDir),
+    stateRootRel: over.stateRoot?.rel ?? computeStateRootRel(repo, flumeDir),
     pendingPath: join(flumeDir, "plan", "pending.json"),
     configDir: flumeDir,
     phaseName: over.phaseName,
@@ -175,8 +200,10 @@ function named(name: string, declared: readonly Gate[] = []): Gate {
   return gate;
 }
 
-const records = (span: Span, over: { phaseName: string; entry?: PendingEntry }) =>
-  named("records").run(ctxFor(span, over));
+const records = (
+  span: Span,
+  over: Parameters<typeof ctxFor>[1],
+): Promise<GateResult> => named("records").run(ctxFor(span, over));
 
 beforeEach(async () => {
   repo = await mkdtemp(join(tmpdir(), "flume-harness-gates-"));
@@ -261,6 +288,44 @@ it("the records gate refuses a record written outside the tick's own tag", async
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain(notePath(STATE_ROOT, "OTHER"));
   expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
+});
+
+it("the records gate matches a touched record under a backslash-separated state root", async () => {
+  // The two spellings are one root: what the case writes on disk, and what
+  // the engine reports as the offset to it.
+  expect(NESTED.rel.split("\\").join("/")).toBe(NESTED.segments.join("/"));
+
+  const entry = assigned("MINE");
+  const own = notePath(NESTED.segments.join("/"), "MINE");
+
+  await write(own, "# what I saw\n\nIn `src/`.\n");
+  const span = commitAll("build: a note under a nested state root");
+  // Non-vacuity: git named the note the gate is about to be asked to match,
+  // in git's own alphabet — so a skip below is the gate's reading of the
+  // offset and not an empty span.
+  expect(span.touchedPaths).toContain(own);
+
+  const judged = await records(span, {
+    phaseName: "build",
+    entry,
+    stateRoot: NESTED,
+  });
+
+  // Judged, not skipped past: the record directories the gate composes from
+  // the reported offset are the ones git just named.
+  expect(judged).toMatchObject({ ok: true });
+  expect(judged.skipped).toBeUndefined();
+  expect(judged.message).toContain("1 record(s) touched, 1 written");
+
+  // And the note path it keys the tick's own record by is in the same
+  // alphabet, so another tag's note under that root is still refused.
+  await write(notePath(NESTED.segments.join("/"), "OTHER"), "# not mine\n\nT.\n");
+  const refused = await records(
+    commitAll("build: another tag's note under the nested root"),
+    { phaseName: "build", entry, stateRoot: NESTED },
+  );
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain(own);
 });
 
 it("the records gate refuses a record whose first line is not a title", async () => {
