@@ -13,7 +13,16 @@
       "src/builtinGates.ts",
       "harness/windows.ts",
       "harness/planState.ts",
-      "harness/records.ts"
+      "harness/records.ts",
+      "harness/chain.ts",
+      "harness/gates.ts",
+      "harness/prompts.ts",
+      "harness/handoff.ts",
+      "harness/declaration.ts",
+      "harness/entryExtension.ts",
+      "harness/judge.ts",
+      "harness/runner.ts",
+      "harness/ignores.ts"
     ]
   }
 }

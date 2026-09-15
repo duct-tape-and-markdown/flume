@@ -1,1 +1,48 @@
-[]
+[
+  {
+    "tag": "HARNESS-STATE-ROOT-IS-A-GIT-PATH",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "src/paths.ts", "description": "export the host-path-to-git-path rule the engine already applies at four sites" },
+        { "path": "harness/chain.ts", "description": "normalize once at repoRelativeStateRoot; drop the local gitPath and its single call site" },
+        { "path": "harness/gates.ts", "description": "records gate composes recordDirs/notePath from a normalized ctx.stateRootRel" },
+        { "path": "harness/prompts.ts", "description": "noteRoot returns a git path" },
+        { "path": "tests/paths.test.ts", "description": "the new engine export" },
+        { "path": "tests/harnessGates.test.ts", "description": "records gate under a backslash state root" },
+        { "path": "tests/harnessBuildArgs.test.ts", "description": "NOTE_PATH under a backslash state root" },
+        { "path": "tests/harnessChain.test.ts", "description": "fence and park predicate ride the one derivation" }
+      ]
+    },
+    "summary": "Give the engine the host-path-to-git-path rule and compose every harness path from a normalized state root",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "Every git path the package composes from a state root is slash-joined whatever dialect the engine reported it in, and the rule has one home the chain reads.",
+    "tests": [
+      "the engine's path surface renders a backslash-separated relative path as a git path",
+      "the records gate matches a touched record under a backslash-separated state root",
+      "buildPromptArgs renders NOTE_PATH slash-joined from a backslash-separated state root"
+    ],
+    "notes": "computeStateRootRel returns relative(), so a nested root (a job dir) is host-dialect. chain.ts normalizes only the pending path (:177); noteGlob (:165), planStatePath/questionsPath/recordDirs (:176-181), isPark (:271), gates recordDirs (:261)/notePath (:276) and prompts noteRoot do not. Measured: fence rejects the note, isPark never true, records gate green over every record. Hand-rolls to fold in: builtinGates:236, git:403, job:173, vitestRunner:153, cascade:118."
+  },
+  {
+    "tag": "CLEAN-TREE-GATE-READS-QUOTED-PORCELAIN",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "harness/gates.ts", "description": "read git status NUL-separated instead of slicing quoted porcelain lines" },
+        { "path": "tests/harnessGates.test.ts", "description": "the quoted-path cases" }
+      ]
+    },
+    "summary": "Read the clean-tree gate's status output NUL-separated so a quoted path is not a silent pass",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "An untracked file inside the fence is refused whatever characters its name carries, and a refusal names the path as git spells it.",
+    "tests": [
+      "the clean-tree gate refuses an untracked file inside the fence whose name git quotes",
+      "the clean-tree gate names a quoted tracked path without its quotes"
+    ],
+    "notes": "gates.ts:341-351 slices line.slice(3) off porcelain v1, which quotes any path needing it. Measured: `?? \"sub/a b.md\"` — matchesAny fails on the leading quote, the line is filtered out, and the leftover is discarded at teardown while the verdict reads merged. core.quotePath=false does not help (spaces still quote); -z is unquoted."
+  }
+]
