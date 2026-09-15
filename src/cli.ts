@@ -939,10 +939,38 @@ async function main(): Promise<number> {
     // itself. A bare tick has no supervisor to trust, so it acquires and
     // releases its own claim around this single tick, refusing (exit 1) when
     // another live process already holds it.
+    //
+    // Release rides the same `exit`/`SIGINT`/`SIGTERM` handlers the loop
+    // branch drops its locks through: a `finally` alone runs on neither
+    // signal, so a signalled bare tick left its claim standing and the next
+    // tick refused over it until a liveness probe happened to catch the pid
+    // dead. `claimHeld` gates the drop, so a bare tick refused over another
+    // live holder's claim never unlinks the file it lost to, and the handler
+    // and the `finally` may both run without the second one deleting a claim
+    // a later process has since taken. Handlers precede the acquisition — a
+    // signal landing during it must find a handler, not node's default
+    // disposition. Only the bare branch installs them: a loop-spawned child
+    // holds no claim of its own and keeps its default signal disposition.
     let bareTipClaim: Awaited<ReturnType<typeof acquireTipClaim>> | undefined;
+    let claimHeld = false;
+    const dropBareTipClaim = () => {
+      if (!claimHeld) return;
+      claimHeld = false;
+      bareTipClaim?.release();
+    };
     if (process.env.FLUME_TIP_CLAIM_HELD === undefined) {
+      process.on("exit", dropBareTipClaim);
+      process.on("SIGINT", () => {
+        dropBareTipClaim();
+        process.exit(130);
+      });
+      process.on("SIGTERM", () => {
+        dropBareTipClaim();
+        process.exit(143);
+      });
       try {
         bareTipClaim = await acquireTipClaim(repoRoot, tickHeadRef.path);
+        claimHeld = true;
       } catch (err) {
         if (err instanceof TipClaimHeldError) {
           console.error(`[flume] tick refuses: ${err.message}`);
@@ -964,7 +992,7 @@ async function main(): Promise<number> {
       // stale against it.
       return tickExitCode(outcome);
     } finally {
-      bareTipClaim?.release();
+      dropBareTipClaim();
     }
   }
 

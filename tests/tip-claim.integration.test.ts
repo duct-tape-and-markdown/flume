@@ -252,6 +252,60 @@ describe("flume loop/tick — tip claim wiring", () => {
   );
 
   it(
+    "a signalled bare flume tick releases its tip claim on POSIX; on win32 (TerminateProcess, no handler runs) it survives and is stale-reclaimable",
+    async () => {
+      const repo = await makeJobRepo("main");
+      try {
+        await writeRepoConfig(repo.dir, slowAgentChainSrc("probe"));
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const child = spawn(process.execPath, [TSX_CLI, CLI, "tick"], {
+          cwd: repo.dir,
+          env: hermeticEnv(),
+        });
+
+        // tsx re-execs itself into a second node process to run the ESM
+        // loader, so `child.pid` is the bootstrapper's, not the process that
+        // acquired the claim and wrote its own pid into it — read the real
+        // holder back off disk and signal it directly, matching what an
+        // operator's SIGTERM targets in production. Waiting on the file also
+        // proves the handler this case tests is installed: it precedes the
+        // acquisition that wrote the file.
+        const claimPath = await headClaimPath(repo.dir);
+        const recordedPid = await waitFor(
+          `the bare tick's tip claim at ${claimPath}`,
+          () => fileWithContent(claimPath),
+        );
+
+        const exited = new Promise<void>((resolveExit) => {
+          child.on("exit", () => resolveExit());
+        });
+        process.kill(Number(recordedPid), "SIGTERM");
+        await exited;
+
+        if (process.platform === "win32") {
+          // Release-on-signal is a POSIX guarantee only (spec/loop.md); the
+          // cross-platform guarantee is stale-reclaim, so the claim survives
+          // naming a now-dead holder.
+          expect(existsSync(claimPath)).toBe(true);
+          expect(await readFile(claimPath, "utf8")).toBe(recordedPid);
+
+          const status = await runCli(repo.dir, ["status"]);
+          expect(status.code).toBe(0);
+          expect(status.out).toContain(
+            "tip claim present, process dead — stale",
+          );
+        } else {
+          expect(existsSync(claimPath)).toBe(false);
+        }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it(
     "a bare flume tick refuses exit 1 when a live process already holds the claim",
     async () => {
       const repo = await makeJobRepo("main");
