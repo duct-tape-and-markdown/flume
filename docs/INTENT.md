@@ -19,7 +19,7 @@ This split is load-bearing. Anything a prompt can drift on, the harness owns:
 - **Capability scoping.** Each phase declares `writablePaths`. Post-commit, the harness diffs the commit against the declaration and reverts on violation.
 - **Validation gates.** `tsc`, tests, lint, custom — composable gate functions, declared per phase, run by the harness.
 - **Baton.** Filesystem flags at `.flume/awake/<phase>` signal what wakes next. Presence wakes; absence hibernates.
-- **Provenance.** The extension point, not the citation. A chain declares its own pending-entry fields (`Chain.entryExtension`, one declaration driving both the validator and the prompt hint); the engine runs the validator it was handed and never reads what the field means. This repo's chain spends that point on `per` — a `{ path, section }` cite into `spec/` or `.claude/rules/` — and enforces it with its own `per cites resolve` gate (`.flume/chain.ts`), which checks the path is in the gated commit and the section is a heading in it. Inter-layer citation discipline is a chain's to define and gate; the harness ships the seam that lets it.
+- **Provenance.** The extension point, not the citation. A chain declares its own pending-entry fields (`Chain.entryExtension`, one declaration driving both the validator and the prompt hint); the engine runs the validator it was handed and never reads what the field means. The harness package spends that point on `per` — a `{ path, section }` cite — and enforces it with the `per cites resolve` gate, which checks the path matches the consumer's declared `specLocus` (this repo: `spec/`, `.claude/rules/`), is present in the gated commit, and heads exactly one section there. Inter-layer citation discipline is a chain's to define and gate; the harness ships the seam that lets it.
 
 ### Committed state is the loop's memory
 
@@ -50,70 +50,78 @@ Built-in from v0 via git worktree fanout for phases declared `concurrency: "fano
 
 Docker is a v1 layer for AFK / env reproducibility / capability isolation, behind the same `SandboxProvider` seam.
 
-## Decided, not yet executed — the consumable chain
+## Shipped — the consumable chain
 
 Ruled 2026-09-14 on the consumer chain survey
-(`docs/surveys/consumer-chains/`, five consumers read against 0.15.0). The
-engine ships as a package; the harness that runs it does not, so every
-consumer re-authors it and every breaking engine change is one hand
-migration per consumer. The survey found the same blocks written by hand in
-two or more chains — a per-job declaration record, the entry extension, a
-`per` gate, a plan cursor and a continuation marker regexed out of prose,
-the no-commit taxonomy restated in prompts, hand-rolled pickability, an
-ignore list against engine-owned paths — and five chains that declare
-`tests[]` while none runs it. The goal is one interface a consumer adopts,
-so that drift and scatter between consumers stop being the normal state.
+(`docs/surveys/consumer-chains/`, five consumers read against 0.15.0), and
+shipped: the harness package is `harness/` in this repository, published as
+the `./harness` subpath of `@dtmd/flume`, adopted with `flume-harness init`,
+and contracted by `spec/harness.md`. This repo's own `.flume/` is its first
+consumer — `chain.ts` is the package's factory applied to
+`.flume/declaration.ts`, and nothing else.
+
+What the survey found, and what the package answers: the engine shipped as a
+package while the harness that ran it did not, so every consumer re-authored
+it and every breaking engine change cost one hand migration per consumer. The
+same blocks were written by hand in two or more chains — a per-job declaration
+record, the entry extension, a `per` gate, a plan cursor and a continuation
+marker regexed out of prose, the no-commit taxonomy restated in prompts,
+hand-rolled pickability, an ignore list against engine-owned paths — and five
+chains declared `tests[]` while none ran it. One interface a consumer adopts
+is how drift and scatter between consumers stop being the normal state.
 
 ### Three layers, one dependency direction
 
 - **Kernel** (`src/`) — mechanism only: ticks, worktrees, gates, verdicts,
   pickability, reported facts. Imports nothing. `engine-boundary.md` governs
   it and this section does not loosen that.
-- **Chain package** — flume's opinion as a consumable, versioned package
-  with typed environment config. Imports the kernel. A consumer declares its
-  environment and pins one version; a breaking kernel change is one bump
-  plus the package's migration note, not a hand migration.
-- **Temper** (a separate project) — types every document in the arena:
-  spec, rules, records, prompts, state. Sits beside flume, governs the
-  harness's own prose, imports nothing of flume. Only the chain package
-  knows both exist, and it knows temper's outputs as files on disk.
+- **Chain package** (`harness/`, shipped as `@dtmd/flume/harness`) — flume's
+  opinion as a consumable, versioned with the kernel it imports. A consumer
+  declares its environment in one module and pins one version; a breaking
+  kernel change is one bump plus the package's migration note, not a hand
+  migration.
+- **Temper** (a separate project, outside this repository) — types every
+  document in the arena: spec, rules, records, prompts, state. Sits beside
+  flume, governs the harness's own prose, imports nothing of flume. Only the
+  chain package knows both exist, and it knows temper's outputs as files on
+  disk.
 
 Disk is the contract between layers. No tick-time library call into temper
 is planned; the persisted rendered prompt is a projection temper can check.
 
 ### The chain package's surface
 
-| The package owns | The consumer declares |
-| --- | --- |
-| The plan slices (inbox, derive, sweep) and build, with their prompts and discipline | Which slices run; the spec locus and how a cite resolves |
-| The entry extension — `summary`, `per`, `acceptance`, `tests[]`, `pins[]`, `notes` — and its hints | Extra fields and caps |
-| The `tests[]` / `pins[]` judge, behind a runner interface | The test runner: vitest, cargo, dotnet, a script |
-| The `per` gate (path **and** section resolve), the records gate, the clean-tree gate, the pending-gate wiring | The gate set per phase and its `when`; extra gates by registry name, inline shell, or script |
-| Records as one file each; the plan cursor and continuation marker as declared, typed state, never regexed prose | Writable paths per phase; channel paths; whether writes scope to the entry (the survey argues it both ways, so the package defaults off and documents the tradeoff) |
-| A default `handoff` off `pickableAfter` and the reported no-commit facts | Models per phase, extra agent args, tick timeout, parallelism |
-| Prompt text that names the engine's no-commit vocabulary once, sourced from the engine | Prompt slots: an autonomy dial, domain context |
-| The runtime ignore list, derived from the engine's path record | Nothing |
+The split the ruling drew — the package owns the slices, prompts, entry
+extension, judge, discipline gates, records, plan state, default `handoff`
+and runtime ignore set; the consumer declares its spec locus and cite
+resolution, its fence and channel paths, its test runner, its extra gates and
+agents, and its prompt slots — is now the package's contract rather than an
+intent. `spec/harness.md`, *What the package owns* and *What a consumer
+declares*, states it; this page does not keep a second copy.
 
-The per-job declaration record two consumers share — fence, plan fence,
-gates, setup dirs, agents per phase, timeout — is the seed of the config
-schema.
+The one place the ruling deliberately took no side survives as a default:
+`scopeWritesToEntry` is off, because the survey argues it both ways, and the
+package documents the tradeoff instead of choosing.
 
-### Kernel work that precedes it
+### Kernel work that preceded it
 
-The package should not carry a workaround the kernel can retire first. Each
-is filed as an inbox record: a cost field on agent usage; the entry tag on
-the agent invocation; a worktree base that is not an import-time env read;
-a base-tree checkout for differential gates; a live-worktree inventory on
-the API; the MCP-inheritance question on the agent seam. Already shipped and
-awaiting adoption downstream: `pickableAfter`, `readFileAtRef`, and the
-latest verdict per phase.
+The package was not to carry a workaround the kernel could retire first, so
+each was filed as an inbox record and shipped before adoption: a cost field on
+agent usage, the entry tag on the agent invocation, a worktree base that is
+not an import-time env read (`Chain.worktreesBase`), a base-tree checkout for
+differential gates and a live-worktree inventory on the API (`checkoutAt`,
+`readWorktreeRegistry`), and the MCP-inheritance knob on the agent seam
+(`inheritUserMcp`, off by default). `pickableAfter`, `readFileAtRef` and the
+latest verdict per phase were already shipped and are now adopted. Nothing on
+that list is outstanding.
 
 ### Adoption
 
-A consumer adds the package, writes one declaration file, and seeds prompts,
-protocol, and the state root from it. Upgrading is a version bump plus the
-package's migration note. The survey's 0.15.0 column is the last migration
-done by hand.
+`flume-harness init` writes the declaration skeleton, the `chain.ts` that
+applies the factory to it, the state root with an empty queue, the ignore
+lines and `PROTOCOL.md`, and declares the dependency. Upgrading is a version
+bump plus the release's migration note. The survey's 0.15.0 column is the last
+migration done by hand.
 
 ## Decided, not yet executed — quality lenses in the loop
 

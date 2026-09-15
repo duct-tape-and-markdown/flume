@@ -4,27 +4,33 @@
 > names a live `spec/*.md` section.
 
 The long-form walkthrough for writing your own `.flume/chain.ts`; assumes
-you've read the README. The running example,
+you've read the README. Most repositories should adopt the harness package
+instead of writing one — see *First: do you need to write one?* below before
+you start. The running example,
 [`examples/cascade-chain.ts`](../examples/cascade-chain.ts), is a
-plan → build derivation pipeline distilled from the one this repo runs on
+plan → build derivation pipeline modelled on the one this repo runs on
 itself — every section quotes a slice, so open it in a second pane. For the
 bare-minimum shape (no fanout, no plan/build split), see
 [`minimal-chain.ts`](../examples/minimal-chain.ts).
 
-**`examples/` is the shipped floor; `.flume/chain.ts` is the living
-reference.** The examples arrive in the package and the suite pins their
-shape, so every shape quoted below is one you can copy and run today. The
-chain flume develops flume with is a different artifact —
-[`.flume/chain.ts`][living] in the flume repository, not part of an
-install — and it is the one that moves first: it imports the runtime from
-`src/` rather than from a published `flume`, so a breaking engine change
-lands in it in the same commit, while an example adopts the new shape later
-as its own change. Expect it to be ahead of both the examples and this
-page; read it when you want the current shape rather than the settled one.
-Neither is an engine default — a recommended shape ships by name, opted
-into (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+**`examples/` is the shipped floor.** The examples arrive in the package and
+the suite pins their shape, so every shape quoted below is one you can copy
+and run today. The chain flume develops flume with is no longer one of them:
+[`.flume/chain.ts`][living] in the flume repository is the harness package's
+factory applied to [`.flume/declaration.ts`][living-declaration] and nothing
+else — an import and one call, declaring no phase, no gate and no fence of
+its own (see the next section). What moves first is [`harness/`][living-harness], the package
+itself: it imports the runtime from `src/` rather than from a published
+`@dtmd/flume`, so a breaking engine change lands together with the harness
+change that absorbs it in the same commit, while an example adopts the new
+shape later as its own change. Expect the package to be ahead of both the
+examples and this page. Neither the examples nor the package is an engine
+default — a recommended shape ships by name, opted into (`.claude/rules/engine-boundary.md`, *Surface, not
+prescription*).
 
 [living]: https://github.com/duct-tape-and-markdown/flume/blob/main/.flume/chain.ts
+[living-declaration]: https://github.com/duct-tape-and-markdown/flume/blob/main/.flume/declaration.ts
+[living-harness]: https://github.com/duct-tape-and-markdown/flume/tree/main/harness
 
 **Two example chains, one engine.** Cascade is the flagship: multi-phase,
 fanout, `pending.json`, the full derivation pipeline — but it is *an*
@@ -39,6 +45,131 @@ entry-schema, tag-refinement, and capability-gating machinery cascade uses
 convention. Where a section below quotes cascade, skim the groomer file
 too; the two disagree on shape everywhere the engine lets them, and agree
 on nothing the engine doesn't enforce.
+
+## First: do you need to write one?
+
+**Probably not.** Flume publishes two things in one npm package, and only
+the first of them is what this page documents:
+
+- **The engine** — `@dtmd/flume`, the package root. Mechanism: ticks,
+  worktrees, gates, verdicts, pickability, reported facts. It has no opinion
+  about phases, prompts, or what a queue entry means.
+- **The harness package** — `@dtmd/flume/harness`, the `./harness` subpath of
+  the same package, the same version, the same `exports` map. Flume's opinion
+  about how to run the engine, shipped beside it: three plan slices
+  (`plan-inbox`, `plan-derive`, `plan-sweep`), a fanout `build` phase, their
+  prompts and discipline, the entry extension (`summary`, `per`,
+  `acceptance`, `tests[]`, `pins[]`, `notes`), the judge that proves a
+  `tests[]` line green on the merged tree and red on the base, the `per` /
+  records / clean-tree gates, the records conventions, and the plan state as
+  typed state rather than prose a cursor is regexed out of.
+
+One package, one version: an engine minor that breaks the chain surface ships
+with the harness change that absorbs it, so a consumer's upgrade is one bump.
+`spec/harness.md` is the package's contract; the rest of `spec/` is the
+engine's, and this page walks the engine's.
+
+### Adopting: `flume-harness init`
+
+The package ships its own bin beside the engine's `flume`, so the engine's
+verb set stays closed and `src/` never imports the harness:
+
+```sh
+# adopt, then install what the adoption declared
+npx --package @dtmd/flume flume-harness init
+pnpm install            # or npm / yarn — init adds the dependency, it does not run your installer
+
+# already installed? the local shim is the same verb
+pnpm exec flume-harness init
+```
+
+`init` writes, into the repository it is run in: `<stateRoot>/declaration.ts`
+(the skeleton you edit), `<stateRoot>/chain.ts` (the hop the engine loads),
+`<stateRoot>/plan/pending.json` holding an empty queue — nothing else creates
+one, and a plan slice refuses over an absent queue — `<stateRoot>/PROTOCOL.md`
+for your own conventions, and the runtime's ignore lines merged into
+`.gitignore` without disturbing what was already there. It adds
+`@dtmd/flume` to your `package.json` if you have one, leaves a range you
+already pinned alone, and reports what it found if there is no manifest at
+all — a fact, never a verdict: which package manager runs the install stays
+yours. `<stateRoot>` is `.flume`; the verb takes no arguments, and adopting
+into a different root is the exported `harnessInit({ repoRoot, stateRoot })`.
+
+Every refusal is taken before the first byte is written, and a state root
+that already exists is a refusal rather than a merge: a repository that has
+one has a declaration someone has edited, and **upgrading is a version bump
+plus the release's migration note, never a re-run of `init`**. A breaking
+change to the declaration schema is refused at chain load with the field
+named — never read as a silent default.
+
+The `chain.ts` it writes is the whole hop, identical in every repository that
+adopts the package, and nothing in it is yours to tune:
+
+```ts
+import type { ChainFactory } from "@dtmd/flume";
+import { harnessChain } from "@dtmd/flume/harness";
+
+import { declaration } from "./declaration.js";
+
+const factory: ChainFactory = (api) => ({
+  chain: harnessChain({ api, declaration }),
+});
+
+export default factory;
+```
+
+The declaration rides in unparsed on purpose: the schema's refusal is a fact
+of chain load, not of every consumer remembering to call `parseDeclaration`.
+
+### "Declaration" names two different things
+
+Everywhere else on this page, **declaring** is what the `Chain` object you
+write does — `writablePaths`, `gates`, `concurrency`, `entryExtension`,
+`supervisorPolicy`. Those are engine fields, set by your factory. Under the
+harness package the word also names a file, and the two are different layers:
+
+| | The harness declaration | The engine-level `Chain` fields |
+| --- | --- | --- |
+| Where | `<stateRoot>/declaration.ts`, one module exporting one object | the object your `ChainFactory` returns |
+| Who writes it | the consumer — it is their *entire* authored surface | the consumer, when hand-authoring; `harnessChain` otherwise |
+| Validated by | the package's strict schema at chain load | the engine's chain resolver |
+| Documented in | `spec/harness.md`, *What a consumer declares* | §§1–11 below |
+
+The harness declaration's four required fields are `specLocus` (the path
+globs a `per` cite may point into), `fence` (build's `writablePaths`, and per
+plan slice what that slice may write beyond the package's own plan
+artifacts), `runner` (a factory for the test runner the judge drives —
+`vitestRunner()` ships in the package; cargo, dotnet or a script is your own
+factory over the same three operations), and `slices` (which plan slices run,
+and the sweep's domain). Optional: `channelPaths`, `scopeWritesToEntry` (off
+by default, and the package takes no side), `resolver`, `handoff` per phase,
+`gates` per phase and `when`, `agents`, `supervisor` (the engine's policy
+passed through whole), `setup`, and `slots` (prompt text — an autonomy dial,
+domain context; never a directive).
+
+It is a TypeScript module rather than JSON because three of those fields are
+values with behavior. An unknown field, or a required one missing, refuses
+the chain load naming the field and the valid set. Nothing in it names an
+engine artifact path, a verdict field, or a prior-attempt mode: those are the
+engine's to report and the package's to read.
+
+### What adoption costs
+
+A consumer enables or disables slices; it does not re-author them, and there
+is no seam for a phase, prompt or judge of its own — what it wants to change,
+it declares. It never copies a prompt, a slice, or a judge from another
+consumer. The package also narrows exactly one engine configuration: it
+requires the state root to resolve inside the repository and refuses a
+relocated root at chain load, because every mechanic it wires addresses a path
+some commit holds.
+
+So the shape is fixed: a plan → build derivation pipeline over a
+`pending.json` queue, with citation discipline and a named-lines judge.
+
+**Read the rest of this page when that shape isn't yours** — a different
+workflow, a single phase, a different queue, a chain embedded in something
+larger. `examples/backlog-groomer-chain.ts` is exactly that case, and the
+engine underneath is the same engine either way.
 
 ## Where the chain lives
 
@@ -1766,9 +1897,13 @@ its phases derive from disk, so either is safe to wake autonomously.
   above for the framing.
 - [`examples/minimal-chain.ts`](../examples/minimal-chain.ts) — the
   single-phase starter.
-- [`.flume/chain.ts`][living] in the flume repository — the living
-  reference: the chain this engine is developed against, ahead of the
-  examples by construction. See the intro above.
+- [`harness/`][living-harness] in the flume repository — the harness
+  package's source: the chain a consumer adopts instead of writing one, and
+  the tree that moves first when the engine changes. Its contract is
+  `spec/harness.md`.
+- [`.flume/declaration.ts`][living-declaration] in the flume repository —
+  the living reference for the *harness declaration*: flume's own
+  environment, declared against the package it ships.
 - [`docs/INTENT.md`](INTENT.md) — design rationale.
 - [`docs/CLI.md`](CLI.md) — every `flume <subcommand>` with exit semantics.
 - `src/Phase.ts`, `src/Gate.ts`, `src/Agent.ts`, `src/Prompt.ts`,
