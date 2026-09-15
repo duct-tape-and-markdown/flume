@@ -1,1 +1,34 @@
-[]
+[
+  {
+    "tag": "CITATION-BARE-ENGINEERING-MD-CITES-SPELL-THEIR-PATH",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/git.ts",
+          "description": "the one bare `engineering.md` cite spells its repo-relative path"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the three bare `engineering.md` cites spell their repo-relative path"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "retire REPO_FILE_VOCABULARY and the on-disk check that rode it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Spell the four bare `engineering.md` comment cites as `.claude/rules/engineering.md` and delete the hand-maintained name-to-path exclusion map",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "acceptance": "REPO_FILE_VOCABULARY and its existsSync loop are gone from tests/commentCitations.test.ts, every citation exclusion left carries a reason rather than a path, and the suite is green.",
+    "tests": [
+      "every backticked identifier in a src/ or harness/ comment names a declaration those trees hold"
+    ],
+    "notes": "Sites: src/git.ts:446, src/Dispatcher.ts:132, :148, :711 — the path arm cannot reach them because they drop the directory the other 150 cites already write. EXTERNAL_VOCABULARY stays: those names are owned outside the working tree."
+  }
+]
