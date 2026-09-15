@@ -3,10 +3,11 @@
  * interface*).
  *
  * Declared as a factory (`runner.ts`, {@link RunnerFactory}): the two things
- * its base checkout needs — a way to provision the checkout's dependencies
- * and a place to plant it — are the chain load's to hand out, and both are
- * read off the context this factory is called with rather than re-derived
- * beside a consumer's declaration.
+ * its base checkout needs — the tree at a sha, and a way to provision that
+ * tree's dependencies — are the chain load's to hand out, and both are read
+ * off the context this factory is called with rather than re-derived beside
+ * a consumer's declaration. The checkout itself is the engine's
+ * (`api.git.checkoutAt`), so nothing here adds or removes a worktree.
  *
  * Its reading half is pure over vitest's own `--reporter=json` output, so a
  * test drives the real reporter through the real reader rather than through
@@ -24,8 +25,7 @@ import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 
 import { existsLoud } from "../src/fsProbe.js";
-import { addWorktree, removeWorktree } from "../src/git.js";
-import { gitPath, worktreesBase } from "../src/paths.js";
+import { gitPath } from "../src/paths.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
 
 import type {
@@ -248,15 +248,6 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
   const invoke = options.invoke ?? resolveVitest;
 
   return ({ api, provision }: RunnerContext): Runner => {
-    /**
-     * Where a base checkout is planted: the engine's own resolution of the
-     * state root's worktree base, honoring the operator's relocation of it.
-     * Not a temp directory — a run killed mid-flight leaves this checkout
-     * registered under the base the engine's startup sweep reads, so it is
-     * reclaimed rather than accumulating somewhere nothing looks.
-     */
-    const base = worktreesBase(api.paths.flumeDir);
-
     return {
       lanes,
 
@@ -273,30 +264,43 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
               "wrong thing and costs a suite.",
           );
         }
-        const worktree = join(base, `base-${baseSha.slice(0, 7)}`);
-        try {
-          await removeWorktree(cwd, worktree);
-          await mkdir(base, { recursive: true });
-          await addWorktree({ repoRoot: cwd, path: worktree, fromRef: baseSha });
-          for (const f of files) {
-            const from = resolve(cwd, f);
-            if (!existsLoud(from)) {
-              throw new Error(`vitestRunner.runAtBase: ${f} is not in the tree at ${cwd}`);
-            }
-            await mkdir(dirname(join(worktree, f)), { recursive: true });
-            await copyFile(from, join(worktree, f));
+        // Read the selection out of the caller's tree before asking for
+        // anything: a file that is not there makes the run unjudgeable, and
+        // refusing after a checkout was planted spends a `git worktree add`
+        // to reach the same error.
+        const sources = files.map((f) => {
+          const from = resolve(cwd, f);
+          if (!existsLoud(from)) {
+            throw new Error(`vitestRunner.runAtBase: ${f} is not in the tree at ${cwd}`);
           }
-          // A checkout of a git ref has no installed dependencies. The
-          // chain's own reduction of the declared `setup` provisions it, so
-          // the base tree is provisioned exactly the way a build worktree is
-          // — one implementation of that, handed over, rather than a second
-          // one here that installs at a root the consumer never installs at.
-          await provision(worktree);
-          const output = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
-          return readRun(output, names, worktree);
-        } finally {
-          await removeWorktree(cwd, worktree);
+          return { rel: f, from };
+        });
+        // The tree at `baseSha` is the engine's to hand out
+        // (`spec/chain.md`, *What a gate receives*): it decides where the
+        // checkout is planted — the state root's worktree base, an
+        // operator's relocation and the chain's declared base alike — and
+        // reclaims it when the gate this run is driven inside returns,
+        // whether that gate ruled or threw. A runner that added its own
+        // worktree would be restating a placement rule the engine owns and
+        // carrying a second lifetime for it (`.claude/rules/engineering.md`,
+        // *A fact the engine holds is reported, never rediscovered*).
+        const worktree = await api.git.checkoutAt({
+          repoRoot: cwd,
+          flumeDir: api.paths.flumeDir,
+          sha: baseSha,
+        });
+        for (const { rel, from } of sources) {
+          await mkdir(dirname(join(worktree, rel)), { recursive: true });
+          await copyFile(from, join(worktree, rel));
         }
+        // A checkout of a git ref has no installed dependencies. The chain's
+        // own reduction of the declared `setup` provisions it, so the base
+        // tree is provisioned exactly the way a build worktree is — one
+        // implementation of that, handed over, rather than a second one here
+        // that installs at a root the consumer never installs at.
+        await provision(worktree);
+        const output = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
+        return readRun(output, names, worktree);
       },
     };
   };

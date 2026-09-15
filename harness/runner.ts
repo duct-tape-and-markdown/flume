@@ -117,10 +117,10 @@ export interface Runner {
  */
 export interface RunnerContext {
   /**
-   * The engine surface the chain factory was itself handed — the state
-   * root's worktree base a checkout is planted under, so a run that dies
-   * mid-flight leaves a directory the stale-worktree sweep reclaims, and
-   * whatever else a consumer's own runner reaches for.
+   * The engine surface the chain factory was itself handed — `git.checkoutAt`
+   * for the tree at a base sha, planted and reclaimed by the engine at the
+   * gate boundary the run is driven inside, and whatever else a consumer's
+   * own runner reaches for.
    */
   readonly api: FlumeApi;
   /**

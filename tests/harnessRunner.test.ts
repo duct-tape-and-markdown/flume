@@ -47,6 +47,7 @@ import {
 } from "../harness/index.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import { worktreesBase } from "../src/paths.ts";
+import { withGateCheckouts } from "../src/worktrees.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -104,6 +105,35 @@ const DECLARATION = {
     sweep: { domain: ["src/**"], posturePages: ["docs/**"] },
   },
 };
+
+/**
+ * A base run happens inside a gate invocation — `namedLinesGate`
+ * (`harness/chain.ts`) reaches the runner through `Dispatcher.runGate`, which
+ * opens the checkout scope `api.git.checkoutAt` plants into and reclaims at.
+ * Driving the runner from inside the same scope is what the runtime does, not
+ * a seam invented here: outside one there is no boundary to reclaim at and
+ * the API refuses.
+ *
+ * `declaredBase` is the chain's own worktree base when a case states one —
+ * the value the dispatcher hands the scope, never the gate.
+ */
+const inGateScope = <T>(
+  body: () => Promise<T>,
+  declaredBase?: string,
+): Promise<T> =>
+  withGateCheckouts(
+    { info: () => {}, warn: () => {}, error: () => {} },
+    declaredBase,
+    body,
+  );
+
+/** Every path git registers as a worktree of `repo`, the primary aside. */
+const checkoutsOf = (repo: string): string[] =>
+  git(repo, ["worktree", "list", "--porcelain"])
+    .split("\n")
+    .filter((l) => l.startsWith("worktree "))
+    .map((l) => resolve(l.slice("worktree ".length)))
+    .filter((p) => p !== resolve(repo));
 
 /** A runner the capturing declaration returns; no case drives it. */
 const STUB = {
@@ -187,11 +217,13 @@ describe("the vitest runner", () => {
       checkouts.push(tree);
       await link(tree);
     });
-    const result = await vitestRunner()(contextFrom(recording)).runAtBase(
-      ["runs wherever it is laid down"],
-      ["tests/widget.test.ts"],
-      baseSha,
-      fixture,
+    const result = await inGateScope(() =>
+      vitestRunner()(contextFrom(recording)).runAtBase(
+        ["runs wherever it is laid down"],
+        ["tests/widget.test.ts"],
+        baseSha,
+        fixture,
+      ),
     );
     return { checkouts, result };
   };
@@ -255,11 +287,13 @@ describe("the vitest runner", () => {
   }, 120_000);
 
   it("lays the merged bytes over a detached base checkout and runs the same names there", async () => {
-    const r = await runner.runAtBase(
-      ["carries the merged widget", "runs wherever it is laid down"],
-      ["tests/widget.test.ts"],
-      baseSha,
-      fixture,
+    const r = await inGateScope(() =>
+      runner.runAtBase(
+        ["carries the merged widget", "runs wherever it is laid down"],
+        ["tests/widget.test.ts"],
+        baseSha,
+        fixture,
+      ),
     );
 
     // Vacuity: the base run collected and executed the file it was given.
@@ -286,21 +320,24 @@ describe("the vitest runner", () => {
     expect(r.failures[0]!.name).toBe("widget carries the merged widget");
     expect(r.failures[0]!.message).toContain("base");
 
-    // The checkout is gone with the run: the base tree is removed whether it
-    // was judged or threw, so the worktree base holds no residue of it.
-    expect(git(fixture, ["worktree", "list"]).split("\n")).toHaveLength(1);
+    // The checkout is gone with the gate scope: the engine reclaims it
+    // whether the gate ruled or threw, so the worktree base holds no
+    // residue of it.
+    expect(checkoutsOf(fixture)).toEqual([]);
   }, 180_000);
 
   it("the judge proves a named line over the real vitest runner's merged-tree and base reports", async () => {
     const test = "carries the merged widget";
     const pin = "runs wherever it is laid down";
 
-    const verdict = await judgeNamedLines(runner, {
-      tests: [test],
-      pins: [pin],
-      baseSha,
-      cwd: fixture,
-    });
+    const verdict = await inGateScope(() =>
+      judgeNamedLines(runner, {
+        tests: [test],
+        pins: [pin],
+        baseSha,
+        cwd: fixture,
+      }),
+    );
 
     // Vacuity: the merged-tree suite the ruling is read off ran tests and was
     // green, so "proven" is a verdict over evidence rather than over nothing.
@@ -317,8 +354,9 @@ describe("the vitest runner", () => {
       { line: pin, lane: "pins", state: "proven", files: ["tests/widget.test.ts"] },
     ]);
 
-    // The base checkout is gone with the ruling, as it is with a bare run.
-    expect(git(fixture, ["worktree", "list"]).split("\n")).toHaveLength(1);
+    // The base checkout is gone with the gate that drove the ruling, as it
+    // is with a bare run.
+    expect(checkoutsOf(fixture)).toEqual([]);
   }, 240_000);
 
   it("the judge reports green-on-base for a line the real vitest runner already carries at the base", async () => {
@@ -327,12 +365,14 @@ describe("the vitest runner", () => {
     // the change introduced.
     const line = "runs wherever it is laid down";
 
-    const verdict = await judgeNamedLines(runner, {
-      tests: [line],
-      pins: [],
-      baseSha,
-      cwd: fixture,
-    });
+    const verdict = await inGateScope(() =>
+      judgeNamedLines(runner, {
+        tests: [line],
+        pins: [],
+        baseSha,
+        cwd: fixture,
+      }),
+    );
 
     // Vacuity: the merged tree was green and carried the line, so the base
     // report is what separated this verdict from `proven`.
@@ -365,6 +405,42 @@ describe("the vitest runner", () => {
     expect(existsSync(checkouts[0]!)).toBe(false);
   }, 180_000);
 
+  it("runAtBase takes its base checkout from the engine's api rather than adding a worktree", async () => {
+    // A base the runner has no way to compute: not the state root's default,
+    // and reachable only through the scope the dispatcher opens. A runner
+    // planting its own worktree lands under `worktreesBase(flumeDir)` and
+    // never sees this.
+    const declaredBase = join(fixture, "engine-placed", "worktrees");
+
+    let standing: string[] = [];
+    const result = await inGateScope(async () => {
+      const r = await runner.runAtBase(
+        ["runs wherever it is laid down"],
+        ["tests/widget.test.ts"],
+        baseSha,
+        fixture,
+      );
+      // Read while the scope is still open: the run has returned and the
+      // checkout is still registered, so the runner removed nothing of its
+      // own.
+      standing = checkoutsOf(fixture);
+      return r;
+    }, declaredBase);
+
+    // Vacuity: the base run reached a suite in that checkout at all, so the
+    // path below is one a real run was driven in.
+    expect(result.passed).toBeGreaterThan(0);
+
+    expect(standing).toHaveLength(1);
+    // Planted where the gate scope said — the chain's declared base, which
+    // only `api.git.checkoutAt` resolves.
+    expect(dirname(standing[0]!)).toBe(declaredBase);
+
+    // And reclaimed by the engine when the scope closed, not by the runner.
+    expect(existsSync(standing[0]!)).toBe(false);
+    expect(checkoutsOf(fixture)).toEqual([]);
+  }, 180_000);
+
   it("the vitest runner provisions a base checkout through the declared setup", async () => {
     const installs: string[] = [];
     const recording = apiWithInstaller(async (tree) => {
@@ -382,11 +458,13 @@ describe("the vitest runner", () => {
       }),
     );
 
-    const result = await declared.runAtBase(
-      ["runs wherever it is laid down"],
-      ["tests/widget.test.ts"],
-      baseSha,
-      fixture,
+    const result = await inGateScope(() =>
+      declared.runAtBase(
+        ["runs wherever it is laid down"],
+        ["tests/widget.test.ts"],
+        baseSha,
+        fixture,
+      ),
     );
 
     // Vacuity: the base run reached a suite at all, which it could only do
@@ -451,6 +529,10 @@ describe("the vitest runner", () => {
   });
 
   it("refuses a base run it cannot judge: no files to lay down, or a file absent from the tree", async () => {
+    // Both refusals are raised outside any gate scope, which is only
+    // reachable because they precede the checkout: a selection that cannot
+    // be laid down is refused before a `git worktree add` is spent to reach
+    // the same error.
     await expect(runner.runAtBase(["x"], [], baseSha, fixture)).rejects.toThrow(
       /no files to lay over the base/,
     );
