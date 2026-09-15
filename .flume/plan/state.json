@@ -31,7 +31,11 @@
       "src/flumeApi.ts",
       "src/setupWorktree.ts",
       "harness/init.ts",
-      "src/selfPackage.ts"
+      "src/selfPackage.ts",
+      "src/job.ts",
+      "src/Baton.ts",
+      "src/cliJobVerbs.ts",
+      "src/cliChainLoad.ts"
     ]
   }
 }
