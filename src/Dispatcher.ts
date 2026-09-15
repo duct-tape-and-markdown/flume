@@ -3722,21 +3722,34 @@ export class Dispatcher {
    *
    * **A gate that throws is a gate that failed** (spec/chain.md "What a gate
    * returns"): the throw is recorded as `{ ok: false, message: <the error's
-   * message> }` and the tick continues into exactly the bookkeeping a
-   * returned refusal gets — verdict written, merge reverted or refused. A
-   * gate's exception is a fact about the gate, never a reason to lose the
-   * tick's facts or to strand a merge behind the crash marker (spec/loop.md
-   * "Crash equals stop").
+   * message>, details: <its stack> }` and the tick continues into exactly the
+   * bookkeeping a returned refusal gets — verdict written, merge reverted or
+   * refused. A gate's exception is a fact about the gate, never a reason to
+   * lose the tick's facts or to strand a merge behind the crash marker
+   * (spec/loop.md "Crash equals stop").
+   *
+   * The stack rides as `details` because that is the field a returned refusal
+   * carries its full output in — so the retry prompt and the prior-attempt
+   * record show the frame that raised, not one line of message. A throw with
+   * no stack — a non-`Error` value, or an `Error` whose `stack` was stripped —
+   * records **no** `details` rather than a second copy of `message`: a
+   * duplicated line reads as evidence while carrying none
+   * (`.claude/rules/engineering.md` "Derived state is computed, never restated
+   * beside its source").
    */
   private async runGate(gate: Gate, ctx: GateContext): Promise<GateResult> {
     try {
       return await gate.run(ctx);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const stack =
+        err instanceof Error && typeof err.stack === "string" && err.stack
+          ? err.stack
+          : undefined;
       this.log.warn(
         `[flume] gate '${gate.name}' threw: ${message}; recorded as that gate's failure`,
       );
-      return { ok: false, message };
+      return { ok: false, message, ...(stack ? { details: stack } : {}) };
     }
   }
 

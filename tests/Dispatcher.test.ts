@@ -4432,6 +4432,14 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
 describe("Dispatcher — a gate that throws is a gate that failed", () => {
   /** An `Error` a gate raises instead of returning its refusal. */
   const BOOM = "gate runner died: ENOENT spawning vitest";
+  /**
+   * The `details` a throw records: the raised error's own stack — its message
+   * line followed by at least one frame. Matched rather than compared, since
+   * the frames are the running file's real ones.
+   */
+  const STACK = expect.stringMatching(
+    new RegExp(`^Error: ${BOOM.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]*\\n\\s+at `),
+  );
 
   function throwingGate(name: string, when: Gate["when"]): Gate {
     return {
@@ -4471,7 +4479,12 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     expect(reported, "the gate loop produced no rows").not.toHaveLength(0);
     // The throw is the gate's refusal, verbatim — no wrapper prose, no
     // synthesized message the chain never authored.
-    expect(reported[0]).toEqual({ gate: "explodes", ok: false, message: BOOM });
+    expect(reported[0]).toEqual({
+      gate: "explodes",
+      ok: false,
+      message: BOOM,
+      details: STACK,
+    });
     // …and the tick took the returned-refusal path from there: commit
     // reverted, verdict written, failure signature derived the same way.
     expect(outcome.result?.committed).toBe(false);
@@ -4479,13 +4492,96 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     expect(existsSync(join(fx.repo, "src", "output.ts"))).toBe(false);
     expect(outcome.verdict?.noCommit).toBe("gate-revert");
     expect(outcome.verdict?.gateResults).toEqual([
-      { gate: "explodes", ok: false, message: BOOM },
+      { gate: "explodes", ok: false, message: BOOM, details: STACK },
     ]);
     expect(outcome.verdict?.gateFailures).toEqual([
       { signature: `explodes: ${BOOM}`, message: BOOM },
     ]);
     // Short-circuit is unchanged: writable-paths never ran.
     expect(reported.some((g) => g.gate === "writable-paths")).toBe(false);
+  }, 20_000);
+
+  it("a gate that throws records its stack as that gate's details", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [throwingGate("explodes", "afterCommit")],
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/output.ts", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity (engineering.md "A green verdict is proven non-vacuous"): the
+    // throwing gate really produced a row on the verdict — the surface that
+    // keeps `details` at all.
+    const rows = outcome.verdict?.gateResults ?? [];
+    expect(rows, "the gate loop produced no rows").not.toHaveLength(0);
+    const row = rows.find((g) => g.gate === "explodes");
+    expect(row, "no row for the throwing gate").toBeDefined();
+
+    // The stack, not a second copy of the message: the message is one line,
+    // the details open with it and continue into the frames that raised it.
+    const details = row?.details;
+    expect(details, "the throw recorded no details").toBeTypeOf("string");
+    expect(details).not.toBe(row?.message);
+    expect(details).toMatch(/\n\s+at /);
+    expect(details!.split("\n").length).toBeGreaterThan(1);
+    expect(details).toContain(BOOM);
+    // The raising frame is this file's gate body, not a dispatcher frame
+    // synthesized where the throw was caught.
+    expect(details).toContain("Dispatcher.test.ts");
+  }, 20_000);
+
+  it("a gate that throws a non-Error records the value as its message and no details", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    // No stack exists to record, so nothing is recorded — a `details` echoing
+    // `message` would read as evidence while carrying none.
+    const throwsAString: Gate = {
+      name: "explodes",
+      when: "afterCommit",
+      async run() {
+        throw "gate runner died, stackless";
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [throwsAString],
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/output.ts", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    const rows = outcome.verdict?.gateResults ?? [];
+    expect(rows, "the gate loop produced no rows").not.toHaveLength(0);
+    expect(rows).toContainEqual({
+      gate: "explodes",
+      ok: false,
+      message: "gate runner died, stackless",
+    });
+    expect(outcome.verdict?.noCommit).toBe("gate-revert");
   }, 20_000);
 
   it("a tick whose gate throws writes its verdict instead of dying at the crash marker", async () => {
@@ -4541,6 +4637,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
       gate: "merge-explodes",
       ok: false,
       message: BOOM,
+      details: STACK,
     });
     // Nothing is left behind for the next start to refuse over: the wave
     // reached its bookkeeping and retired the marker it staked.
@@ -4616,6 +4713,10 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     expect(prompts[1]).toContain("Failing gate: merge-explodes");
     expect(prompts[1]).toContain("Reverted at: afterMerge");
     expect(prompts[1]).toContain(BOOM);
+    // …including the details a returned refusal's would carry: the stack,
+    // not the one message line.
+    expect(prompts[1]).toContain("Gate details:");
+    expect(prompts[1]).toMatch(/\n\s+at /);
   }, 30_000);
 
   it("a singleton phase's afterMerge gate that throws reverts the merged commit off trunk", async () => {
@@ -4646,6 +4747,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
       gate: "merge-explodes",
       ok: false,
       message: BOOM,
+      details: STACK,
     });
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.verdict?.noCommit).toBe("gate-revert");
