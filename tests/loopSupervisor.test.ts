@@ -70,7 +70,7 @@ describe("src/loopSupervisor.ts — the supervisor's own module", () => {
   });
 });
 
-describe("superviseLoop — tip-moved counts as errored (RELEASE-v0.11 §5)", () => {
+describe("superviseLoop — tip-moved counts as errored", () => {
   it("a tip-moved tick is distinguishable in the run's errored-tick classification, even though it is never a NoCommitMode", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
@@ -190,7 +190,7 @@ describe('superviseLoop — an unstattable stop flag is loud (engineering.md "Lo
   });
 });
 
-describe("superviseLoop — process-per-tick supervisor (§2)", () => {
+describe("superviseLoop — process-per-tick supervisor", () => {
   it("spawns exactly one child per iteration and stops at hibernation", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
@@ -238,7 +238,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.hibernated).toBe(false);
   });
 
-  it("mount-dead: child exits EX_MOUNT_DEAD → supervisor aborts on first occurrence, never burns to --max (v0.7 §4)", async () => {
+  it("mount-dead: child exits EX_MOUNT_DEAD → supervisor aborts on first occurrence, never burns to --max", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan"); // an aborted tick does no baton work
 
     const errors: string[] = [];
@@ -271,7 +271,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
   });
 
   /**
-   * v0.8 §5 — shipped/errored cross the child→supervisor boundary by disk
+   * Shipped/errored cross the child→supervisor boundary by disk
    * (`<flumeDir>/tick-verdict.json`), not stdio: child stdio stays
    * `inherit`, so the exit code alone can't carry a run-wide total. Two
    * ticks in one run: the first ships an entry and writes a clean verdict,
@@ -332,7 +332,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     expect(res.erroredTicks[0]).toContain("gate-revert");
   });
 
-  it("render-refused (RELEASE-v0.10 §3) counts as errored — a broken prompt is a genuine failure, not a clean-exit no-op", async () => {
+  it("render-refused counts as errored — a broken prompt is a genuine failure, not a clean-exit no-op", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
     const verdictPath = tickVerdictPath(join(fx.repo, ".flume"));
@@ -404,7 +404,7 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
     }
   });
 
-  it("fail-fasts on a child's 78: stops after one tick, names the orphaned phases, leaves the flags (§3)", async () => {
+  it("fail-fasts on a child's 78: stops after one tick, names the orphaned phases, leaves the flags", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     // The orphaned flag keeps hibernating() false — the stop must come from
     // the exit signal alone, never from re-reading the broken baton state.
@@ -447,10 +447,10 @@ describe("superviseLoop — process-per-tick supervisor (§2)", () => {
 
 /**
  * spec/loop.md "Exit codes — the run never lies to CI": fa03a39 generalized
- * the §16 backstop to the merge stage (`mergeFailures` on the verdict) but
- * left this accounting provision-only — a wave that ships nothing because
- * every entry hit a cherry-pick conflict recorded `mergeFailures` with no
- * `gate-revert`/`platform-preempt`/`render-refused`/`tipMoved` and no
+ * the repeated-failure backstop to the merge stage (`mergeFailures` on the
+ * verdict) but left this accounting provision-only — a wave that ships nothing
+ * because every entry hit a cherry-pick conflict recorded `mergeFailures` with
+ * no `gate-revert`/`platform-preempt`/`render-refused`/`tipMoved` and no
  * `provisionFailures`, so it fell through every leg of the `errored` formula
  * and the run could burn every `--max` tick wedged on merge conflicts while
  * `loopExitCode` still read 0. Sibling coverage to the provisioning-only
@@ -505,7 +505,7 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
     new Baton(join(fx.repo, ".flume")).wake("build"); // never slept → never hibernates
 
     // A distinct signature every tick, so this isolates the errored-tick
-    // accounting fix from the separate §16 consecutive-identical-signature
+    // accounting fix from the separate consecutive-identical-signature
     // backstop (which would independently force a non-zero exit at 3).
     let calls = 0;
     const runTick = async (): Promise<{ exitCode: number | null }> => {
@@ -666,19 +666,19 @@ describe("superviseLoop — a thrown shipped predicate counts as errored (not-sh
 });
 
 /**
- * v0.7 §16 — the supervisor-level legs `superviseLoop` owns: a tagged
+ * The supervisor-level legs `superviseLoop` owns: a tagged
  * provisioning failure quarantines its slug for the rest of the run (and
  * that quarantine crosses to the next child tick via `runTick`'s
  * `quarantinedSlugs` argument, mirroring how the real CLI carries it over
  * `FLUME_QUARANTINED_SLUGS`); the same failure signature repeating on three
  * consecutive ticks with no successful tick between them aborts the run; a
  * signature that stops repeating resets the streak. `runTick` here plays the
- * real child `flume tick` process exactly as the §5 suite above does — it
+ * real child `flume tick` process exactly as the suite above does — it
  * writes `tick-verdict.json` directly rather than exercising a real fanout
  * wave (that mechanism is proved in the `Dispatcher fanout — pre-tick
- * worktree provisioning failure isolates one entry (§16)` suite).
+ * worktree provisioning failure isolates one entry` suite).
  */
-describe("superviseLoop — provisioning-failure quarantine & consecutive-failure abort backstop (§16)", () => {
+describe("superviseLoop — provisioning-failure quarantine & consecutive-failure abort backstop", () => {
   const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
 
   it("quarantines a tagged failure after its first tick and carries it to the next child tick", async () => {
@@ -910,13 +910,13 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 
 /**
  * spec/loop.md "Repeated identical failures — quarantine, then abort"
- * generalizes both §16 legs past provisioning to the merge and gate stages —
- * sibling coverage to the provision-only suite above, same `runTick` fixture
- * idiom (a stub writing `tick-verdict.json` directly, standing in for a real
- * fanout wave/singleton tick whose own mechanism the Dispatcher-level suites
- * above prove).
+ * generalizes both backstop legs past provisioning to the merge and gate
+ * stages — sibling coverage to the provision-only suite above, same `runTick`
+ * fixture idiom (a stub writing `tick-verdict.json` directly, standing in for
+ * a real fanout wave/singleton tick whose own mechanism the Dispatcher-level
+ * suites above prove).
  */
-describe("superviseLoop — the §16 backstop generalizes to merge- and gate-stage failures", () => {
+describe("superviseLoop — the repeated-failure backstop generalizes to merge- and gate-stage failures", () => {
   const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
 
   it("quarantines a tagged merge-stage failure exactly like a tagged provisioning failure", async () => {
@@ -1260,15 +1260,15 @@ describe("superviseLoop — the §16 backstop generalizes to merge- and gate-sta
 });
 
 /**
- * v0.8 §8 — `SuperviseLoopOptions.quarantineScope` /
+ * `SuperviseLoopOptions.quarantineScope` /
  * `abortThreshold` open the two constants the suite above exercises at
- * their v0.7 §16 defaults (run-scoped quarantine; three-failure abort) as
+ * their shipped defaults (run-scoped quarantine; three-failure abort) as
  * chain-overridable config. The CLI forwards a resolved chain's
  * `supervisorPolicy` block into these same options (`src/cli.ts`); this
  * suite proves `superviseLoop` itself, the same seam the prior suite
  * already proves defaults through when neither option is passed.
  */
-describe("superviseLoop — supervisor policy knobs override the §16 defaults (v0.8 §8)", () => {
+describe("superviseLoop — supervisor policy knobs override the shipped defaults", () => {
   const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
 
   it("abortThreshold: 2 aborts on the second consecutive identical signature, not the third", async () => {
@@ -1427,7 +1427,7 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
       [HELD.quarantineKey],
     ]);
     // Undeclared abortThreshold still aborts on the 3rd consecutive tick —
-    // the v0.7 §16 default, not the 2 the suite above overrides to.
+    // the shipped default, not the 2 the suite above overrides to.
     expect(calls).toBe(3);
     expect(res.ticks).toBe(3);
     expect(res.repeatedFailure).toEqual({
@@ -1439,7 +1439,7 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
 });
 
 /**
- * §6 (v0.6.2) — `superviseLoop`'s loop-end friction summary
+ * `superviseLoop`'s loop-end friction summary
  * (`logFrictionSummary`, `src/loopSupervisor.ts`), and the fix it rode
  * in on: the chain it loads comes from `opts.configDir`, not always
  * `<repoRoot>/.flume` (the old always-used default). `fx.configDir` is a
@@ -1448,7 +1448,7 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
  * proves the plumbing: a summary that still finds the chain must have used
  * `opts.configDir`.
  */
-describe("superviseLoop — loop-end friction summary (§6) & configDir plumbing", () => {
+describe("superviseLoop — loop-end friction summary & configDir plumbing", () => {
   it("logs the friction count line at the hibernation stop when declared and non-empty, loading the chain from opts.configDir", async () => {
     // The repo default has no chain.ts at all — only opts.configDir does.
     expect(existsSync(join(fx.repo, ".flume", "chain.ts"))).toBe(false);

@@ -153,10 +153,10 @@ async function makeJobRepo(branch: string): Promise<{
 }
 
 /**
- * Materialize the repo-resident config (v0.6 §2): `chain.ts` at
+ * Materialize the repo-resident config: `chain.ts` at
  * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
  * fixture in this suite loads from, job resolution or not. `promptPath`
- * stays a plain configDir-relative join (§3: the shared-prompts case).
+ * stays a plain configDir-relative join (the shared-prompts case).
  */
 async function writeRepoConfig(
   root: string,
@@ -191,13 +191,13 @@ function minimalChainSrc(friction?: string): string {
 }
 
 /**
- * §6 (v0.6.2) — `flume job status`'s per-job friction count
+ * `flume job status`'s per-job friction count
  * (`runJobVerb`'s `status` branch, `src/cli.ts`): the repo chain's
  * declared friction dir, resolved job-dir-relative per job. Jobs are built
  * as plain directories under `.flume/jobs/` — `job status` is purely
- * observational (v0.5 §5d), so no real `jobNew`/branch is needed to exercise it.
+ * observational, so no real `jobNew`/branch is needed to exercise it.
  */
-describe("flume job status — friction line (§6)", () => {
+describe("flume job status — friction line", () => {
   it("appends a friction count for a job whose declared friction dir holds files", async () => {
     const repo = await makeJobRepo("main");
     try {
@@ -366,13 +366,13 @@ describe("flume job status — an unreadable baton is its own reading (JOB-EXIST
 });
 
 /**
- * §3 — `flume job status` and `flume status` share one pending-count probe
+ * `flume job status` and `flume status` share one pending-count probe
  * (`readPendingLoose`, `src/job.ts`): a job's corrupt pending.json reads
  * "pending: unparsable" through the real `job status` CLI path exactly as
  * `flume status` does for the top-level file, and a valid job pending.json
  * is byte-unchanged from its pre-shared-probe count line.
  */
-describe("flume job status — pending entry count via the shared probe (§3)", () => {
+describe("flume job status — pending entry count via the shared probe", () => {
   it('reports "pending: unparsable" for a job whose pending.json is corrupt', async () => {
     const repo = await makeJobRepo("main");
     try {
@@ -418,13 +418,13 @@ describe("flume job status — pending entry count via the shared probe (§3)", 
 });
 
 /**
- * v0.7 §9, real CLI — the acceptance-level claim: `cd .flume && flume job
+ * Real CLI — the acceptance-level claim: `cd .flume && flume job
  * status` resolves the same bay as running from the repo root (no false
  * "no jobs" lie), and so does invocation from any subdirectory below the
  * bay. A tree with no `.flume` anywhere above cwd keeps today's
  * cwd-as-root default, so bootstrapping a fresh bay is unaffected.
  */
-describe("flume job status — §9 bay discovery walk-up (real CLI)", () => {
+describe("flume job status — bay discovery walk-up (real CLI)", () => {
   it("invocation from inside .flume resolves the same bay as the repo root", async () => {
     const repo = await makeJobRepo("main");
     try {
@@ -509,7 +509,7 @@ describe("flume job status — a chain that fails to load (CHAIN-LOAD-FAILURE-RE
   }, SPAWN_BUDGET_MS);
 });
 
-describe("flume job extract — removed (v0.11 §3)", () => {
+describe("flume job extract — removed", () => {
   it("exits as an unrecognized verb rather than running", async () => {
     const repo = await makeJobRepo("main");
     try {

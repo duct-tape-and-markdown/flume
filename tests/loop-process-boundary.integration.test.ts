@@ -1,5 +1,5 @@
 /**
- * §2 acceptance bullet 1 — the process-boundary chain-reload guarantee.
+ * The process-boundary chain-reload guarantee.
  *
  * This is deliberately NOT a `Dispatcher` unit test with an injected loader:
  * a fake/closure loader cannot exercise the real guarantee (Node's ESM module
@@ -61,7 +61,7 @@ function chainSrc(phaseName: string): string {
  * `FLUME_DIR`/`FLUME_CONFIG_DIR` it observes *inside the child tick process* to
  * `<FLUME_DIR>/observed-env.json`. The supervisor (`flume loop`) spawns this
  * tick with no `env:` override, so the values written here are whatever the
- * child inherited across the process boundary — the §11/§14 inheritance claim
+ * child inherited across the process boundary — the env-inheritance claim
  * made observable end-to-end.
  */
 function envProbeChainSrc(phaseName: string): string {
@@ -228,7 +228,7 @@ afterEach(async () => {
   await repo.cleanup();
 });
 
-describe("§2 process-boundary chain reload — real `flume tick` ×2", () => {
+describe("process-boundary chain reload — real `flume tick` ×2", () => {
   it(
     "a chain.ts rewritten on disk between two real tick processes governs the second",
     async () => {
@@ -236,7 +236,7 @@ describe("§2 process-boundary chain reload — real `flume tick` ×2", () => {
 
       // v1 declares only phase "alpha". The baton wakes "beta" — a phase v1
       // does not have — so tick #1 classifies an Axis-C terminal
-      // misconfiguration (§3): exit 78, and the orphaned "beta" flag is left
+      // misconfiguration: exit 78, and the orphaned "beta" flag is left
       // on disk, which is exactly what lets tick #2 pick it up after the
       // chain rewrite below.
       await writeFile(chainPath, chainSrc("alpha"), "utf8");
@@ -254,7 +254,7 @@ describe("§2 process-boundary chain reload — real `flume tick` ×2", () => {
 
       const t2 = await runTick(repo.dir);
       // The SECOND process resolved the rewritten on-disk chain and
-      // scheduled "beta", a phase v1 never had. This is the §2 guarantee
+      // scheduled "beta", a phase v1 never had. This is the reload guarantee
       // that an injected/fake loader cannot exercise.
       expect(t2.code).toBe(0);
       expect(t2.out).toMatch(/tick → beta \(singleton\)/);
@@ -264,16 +264,16 @@ describe("§2 process-boundary chain reload — real `flume tick` ×2", () => {
   );
 });
 
-describe("§14 FLUME_JOB leak — hermeticEnv keeps a job resolution from leaking into a real tick", () => {
+describe("FLUME_JOB leak — hermeticEnv keeps a job resolution from leaking into a real tick", () => {
   it(
     "with FLUME_JOB stubbed on the vitest process, a real `flume tick` still resolves the temp repo's own .flume",
     async () => {
-      // Same alpha/beta misconfiguration fixture as §2 above: chain declares
-      // only "alpha", the awake flag names "beta". Read alone this always
-      // exits 78 (Axis-C, unknown phase). But if `runTick`'s env leaked
-      // FLUME_JOB from this vitest process, `resolveStateDirs` would treat
-      // that leaked value as a job resolution (src/cli.ts's `job` var), and
-      // the wrong-branch guard fires *before* dispatch ever reaches phase
+      // Same alpha/beta misconfiguration fixture as the reload suite above:
+      // chain declares only "alpha", the awake flag names "beta". Read alone
+      // this always exits 78 (Axis-C, unknown phase). But if `runTick`'s env
+      // leaked FLUME_JOB from this vitest process, `resolveStateDirs` would
+      // treat that leaked value as a job resolution (src/cli.ts's `job` var),
+      // and the wrong-branch guard fires *before* dispatch ever reaches phase
       // resolution — the temp repo's HEAD is "main", never "job/<leaked>" —
       // exiting 1 instead of 78. `hermeticEnv()` stripping FLUME_JOB is what
       // keeps this test on the real, intended failure mode.
@@ -296,12 +296,12 @@ describe("§14 FLUME_JOB leak — hermeticEnv keeps a job resolution from leakin
   );
 });
 
-describe("§14 process-boundary env inheritance — supervisor → child tick", () => {
+describe("process-boundary env inheritance — supervisor → child tick", () => {
   it(
     "a child `flume tick` spawned by `flume loop` observes the supervisor's canonical FLUME_DIR/FLUME_CONFIG_DIR",
     async () => {
       // Relocate state and config OUTSIDE `<repoRoot>/.flume` (the default), in
-      // separate dirs (the attach-work-detach posture, §10/§13). If the child
+      // separate dirs (the attach-work-detach posture). If the child
       // did NOT inherit the supervisor's env it would fall back to the default
       // and never see these paths — so observing them end-to-end *is* the
       // inheritance proof, distinct from a child re-deriving the default.
@@ -347,13 +347,13 @@ describe("§14 process-boundary env inheritance — supervisor → child tick", 
   );
 });
 
-describe("§3 Axis-C fail-fast — real `flume loop` over an orphaned awake flag", () => {
+describe("Axis-C fail-fast — real `flume loop` over an orphaned awake flag", () => {
   it(
     "supervisor stops on the child's 78 after one tick, names the orphaned phase, leaves the flag; loop exits 78",
     async () => {
       // The chain declares only "alpha"; the awake flag names "beta". Every
-      // child tick would exit 78 forever — before §3 this hot-spun to --max
-      // as a parade of "clean" hibernation reports.
+      // child tick would exit 78 forever — before the fail-fast this hot-spun
+      // to --max as a parade of "clean" hibernation reports.
       await writeFile(join(repo.dir, ".flume", "chain.ts"), chainSrc("alpha"), "utf8");
       const baton = new Baton(join(repo.dir, ".flume"));
       baton.wake("beta");
@@ -376,14 +376,14 @@ describe("§3 Axis-C fail-fast — real `flume loop` over an orphaned awake flag
   );
 });
 
-describe("§4 mount-dead fail-fast — real `flume loop` over an unloadable chain.ts", () => {
+describe("mount-dead fail-fast — real `flume loop` over an unloadable chain.ts", () => {
   it(
     "supervisor aborts on the first mount-dead tick instead of burning to --max; loop exits 69 (EX_MOUNT_DEAD)",
     async () => {
       // chain.ts throws at module-evaluation time — every child tick's
-      // chainLoader would reject identically forever. Before v0.7 §4 this
-      // hot-spun to --max as a parade of exit-1 "failed" ticks that never
-      // surfaced non-zero to CI.
+      // chainLoader would reject identically forever. Before the fail-fast
+      // this hot-spun to --max as a parade of exit-1 "failed" ticks that
+      // never surfaced non-zero to CI.
       await writeFile(
         join(repo.dir, ".flume", "chain.ts"),
         `throw new Error("simulated broken chain.ts");\n` +

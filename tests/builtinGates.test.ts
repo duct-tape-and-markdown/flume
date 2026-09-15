@@ -1,12 +1,11 @@
 /**
- * pendingGate lazy-fence coverage (RELEASE-v0.8 §6, inbox: pendingGate eager
- * capture). `Gate.test.ts` covers pendingGate's composed validation and
- * fence pre-check against a static targetFence; this file is scoped to the
- * one behavior those tests don't exercise: a targetFence whose
- * writablePaths/entryChannelPaths are populated (or change) *after*
- * `pendingGate(...)` is called — the declaration-driven-fence case
- * (v0.8 §7's second-implementation shape) that a plain object literal can't
- * surface.
+ * pendingGate lazy-fence coverage (inbox: pendingGate eager capture).
+ * `Gate.test.ts` covers pendingGate's composed validation and fence pre-check
+ * against a static targetFence; this file is scoped to the one behavior those
+ * tests don't exercise: a targetFence whose writablePaths/entryChannelPaths
+ * are populated (or change) *after* `pendingGate(...)` is called — the
+ * declaration-driven-fence case (the second-implementation shape) that a plain
+ * object literal can't surface.
  *
  * Also covers the tscGate/vitestGate/eslintGate pnpm cmd override
  * (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE, engine-boundary.md "Capability

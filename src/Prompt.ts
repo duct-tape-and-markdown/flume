@@ -475,7 +475,7 @@ export interface RenderOptions {
    * `phase.writablePaths` separately as the outer ceiling. Absent (singleton
    * ticks, or a fanout tick with no assignment) renders the unscoped block —
    * exact byte shape pinned by tests/Prompt.test.ts's "byte-identical to the
-   * pre-§2 collapsed rendering" case.
+   * collapsed rendering that predates the effective fence" case.
    */
   assignedEntry?: PendingEntry;
 }
@@ -728,7 +728,8 @@ function prependHarnessBlock(
 
 /**
  * Unscoped rendering. Byte shape pinned by tests/Prompt.test.ts's
- * "byte-identical to the pre-§2 collapsed rendering" case.
+ * "byte-identical to the collapsed rendering that predates the effective
+ * fence" case.
  */
 function unscopedFenceLines(phase: Phase): string[] {
   const pathLines = phase.writablePaths.map((p) => `  - ${p}`).join("\n");

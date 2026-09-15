@@ -250,7 +250,7 @@ export function queueFenceViolations(
  * construction. A component that composes the slug (or the raw tag) with a
  * second variable-length part is not, and takes {@link boundedName}.
  * Agreement between the two sides is pinned by tests/Dispatcher.test.ts,
- * "revert note to the friction channel (§5)", not asserted here.
+ * "revert note to the friction channel", not asserted here.
  */
 export function slugify(tag: string): string {
   return tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-");

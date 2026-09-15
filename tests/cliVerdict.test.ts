@@ -35,7 +35,7 @@ import { SPAWN_BUDGET_MS, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
-describe("tickExitCode — §3 axis classification", () => {
+describe("tickExitCode — axis classification", () => {
   it("terminal misconfiguration → 78 (EX_CONFIG)", () => {
     const outcome: TickOutcome = {
       hibernated: false,
@@ -56,7 +56,7 @@ describe("tickExitCode — §3 axis classification", () => {
     expect(tickExitCode(outcome)).toBe(0);
   });
 
-  it("mount-dead: chain resolution failure (v0.7 §4) → 69 (EX_UNAVAILABLE)", () => {
+  it("mount-dead: chain resolution failure → 69 (EX_UNAVAILABLE)", () => {
     const outcome: TickOutcome = {
       hibernated: false,
       failed: true,
@@ -77,7 +77,7 @@ describe("tickExitCode — §3 axis classification", () => {
     expect(tickExitCode(outcome)).toBe(0);
   });
 
-  it("CJS-context usage error (v0.7 §5) → 2, checked ahead of the mount-dead fallback", () => {
+  it("CJS-context usage error → 2, checked ahead of the mount-dead fallback", () => {
     const outcome: TickOutcome = {
       hibernated: false,
       usageError: true,
@@ -87,14 +87,14 @@ describe("tickExitCode — §3 axis classification", () => {
     expect(tickExitCode(outcome)).toBe(2);
 
     // usageError and failed are documented as mutually exclusive, but the
-    // mapping itself must still prefer 2 if both were ever set — the §5
-    // usage refusal is never allowed to collapse back into EX_MOUNT_DEAD.
+    // mapping itself must still prefer 2 if both were ever set — a usage
+    // refusal is never allowed to collapse back into EX_MOUNT_DEAD.
     const both: TickOutcome = { ...outcome, failed: true };
     expect(tickExitCode(both)).toBe(2);
   });
 });
 
-describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contract", () => {
+describe("loopExitCode / loopCompletionSummary — amended exit-code contract", () => {
   it("a run with one errored tick and one shipped entry: exits 0, summary names the error", () => {
     const result: SuperviseResult = {
       ticks: 2,
@@ -173,7 +173,7 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     expect(loopExitCode(result)).toBe(EX_MOUNT_DEAD);
   });
 
-  // v0.7 §16 — the consecutive-provisioning-failure abort backstop: non-zero
+  // The consecutive-provisioning-failure abort backstop: non-zero
   // and named in the summary regardless of how much the run shipped before
   // hitting the wall (unlike the plain errored/nothing-shipped rule above).
   it("repeatedFailure aborts non-zero and names the signature, even with entries shipped", () => {
@@ -194,8 +194,8 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     );
   });
 
-  // v0.8 §8 — the abort threshold is chain-overridable, so the completion
-  // summary must name the real streak count, not the v0.7 §16 literal 3.
+  // The abort threshold is chain-overridable, so the completion
+  // summary must name the real streak count, not the literal default 3.
   it("names the real repeatedFailure.count, not a hardcoded 3", () => {
     const result: SuperviseResult = {
       ticks: 2,
@@ -277,11 +277,11 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
   });
 });
 
-// ---------- v0.6 §2/§3 — job resolution through the real CLI ----------
+// ---------- job resolution through the real CLI ----------
 
 /**
  * Scratch git repo on a chosen branch. The engine has no opinion on branch
- * names (v0.11 §2) — some fixtures below pin `job/foo` merely as a
+ * names — some fixtures below pin `job/foo` merely as a
  * distinctive label, proven inert by running job resolution on `main`
  * instead.
  */

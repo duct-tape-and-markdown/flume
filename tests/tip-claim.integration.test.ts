@@ -1,5 +1,5 @@
 /**
- * v0.11 §4 — the advisory per-ref tip claim reaching `flume loop`/`flume
+ * The advisory per-ref tip claim reaching `flume loop`/`flume
  * tick` end-to-end through the real CLI. `tests/git.test.ts` already proves
  * `acquireTipClaim`'s own acquire/refuse/reclaim mechanics in isolation;
  * this suite proves the CLI wiring: the claim is taken alongside `loop.pid`,
@@ -28,7 +28,7 @@ const exec = promisify(execFile);
 
 /**
  * Scratch git repo on a chosen branch. The engine has no opinion on branch
- * names (v0.11 §2) — some fixtures below pin `job/foo` merely as a
+ * names — some fixtures below pin `job/foo` merely as a
  * distinctive label, proven inert by running job resolution on `main`
  * instead.
  */
@@ -74,10 +74,10 @@ async function headClaimPath(dir: string): Promise<string> {
 }
 
 /**
- * Materialize the repo-resident config (v0.6 §2): `chain.ts` at
+ * Materialize the repo-resident config: `chain.ts` at
  * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
  * fixture in this suite loads from, job resolution or not. `promptPath`
- * stays a plain configDir-relative join (§3: the shared-prompts case).
+ * stays a plain configDir-relative join (the shared-prompts case).
  */
 async function writeRepoConfig(
   root: string,
@@ -145,7 +145,7 @@ function slowAgentChainSrc(phaseName: string): string {
   );
 }
 
-describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
+describe("flume loop/tick — tip claim wiring", () => {
   it(
     "two loops against different state roots on one branch: the second refuses, naming the claim's holder pid",
     async () => {
@@ -276,7 +276,7 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
   );
 
   it(
-    "claim file (and loop.pid) are gone after SIGTERM on POSIX; on win32 (TerminateProcess, no handler runs) both survive and the claim is stale-reclaimable — the amended v0.11 §4 outcome",
+    "claim file (and loop.pid) are gone after SIGTERM on POSIX; on win32 (TerminateProcess, no handler runs) both survive and the claim is stale-reclaimable — the amended tip-claim outcome",
     async () => {
       const repo = await makeJobRepo("main");
       try {
@@ -313,7 +313,7 @@ describe("flume loop/tick — tip claim wiring (v0.11 §4)", () => {
         await exited;
 
         if (process.platform === "win32") {
-          // v0.11 §4 (amended): SIGTERM maps to TerminateProcess on win32,
+          // Tip claim, amended: SIGTERM maps to TerminateProcess on win32,
           // which runs no handler — dropLock (src/cli.ts) never fires, so
           // both the tip claim and loop.pid survive the kill exactly as a
           // `kill -9` would. Release-on-signal is a POSIX guarantee only;

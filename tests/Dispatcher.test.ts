@@ -10,7 +10,7 @@ import { z } from "zod";
 
 // Partial mock: everything passes through to the real tsImport except in the
 // one test below that simulates tsx 4.23's ERR_MODULE_NOT_FOUND/namespace-
-// query signature (v0.7 §5) — a shape this installed tsx (4.21) never
+// query signature — a shape this installed tsx (4.21) never
 // produces on its own, so it can only be exercised by injection.
 vi.mock("tsx/esm/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("tsx/esm/api")>();
@@ -52,7 +52,7 @@ import { Baton } from "../src/Baton.ts";
 import { superviseLoop } from "../src/loopSupervisor.ts";
 import {
   chainLoadGate,
-  // §6 identity pin: the engine's own gate object, compared by reference
+  // Identity pin: the engine's own gate object, compared by reference
   // against what a chain factory receives.
   tscGate as realTscGate,
 } from "../src/builtinGates.ts";
@@ -296,7 +296,7 @@ function singleAgent(action: (cwd: string) => Promise<void>): Agent {
  * Fanout agent that dispatches to a per-worktree action by the cwd basename
  * (which equals `worktreeDirName(tag)` — the dispatcher's slug,
  * `tag.toLowerCase().replace(/[^a-z0-9-]+/g, "-")`, unchanged for a tag
- * short enough not to need §9's length bound).
+ * short enough not to need its length bound).
  */
 function fanoutAgent(
   bySlug: Record<string, (cwd: string) => Promise<void>>,
@@ -368,7 +368,7 @@ describe("Dispatcher singleton — commit detected", () => {
       outcome.result?.gateResults.some((g) => g.gate === "writable-paths"),
     ).toBe(true);
 
-    // v0.8 §5: a committed tick's verdict carries the same facts — no
+    // A committed tick's verdict carries the same facts — no
     // interpretation, and `tags` is empty (a singleton phase has no entries).
     expect(outcome.verdict).toBeDefined();
     expect(outcome.verdict?.phaseName).toBe("plan");
@@ -846,7 +846,7 @@ describe("Dispatcher singleton — afterCommit gate failure reverts the commit",
     // Loop short-circuits on first failure — writable-paths never ran.
     expect(reported.some((g) => g.gate === "writable-paths")).toBe(false);
 
-    // v0.8 §5: the verdict carries the same gate-revert facts, `details`
+    // The verdict carries the same gate-revert facts, `details`
     // included verbatim — a chain reading history sees exactly what the
     // gate reported, not a re-derived summary.
     expect(outcome.verdict?.committed).toBe(false);
@@ -855,7 +855,7 @@ describe("Dispatcher singleton — afterCommit gate failure reverts the commit",
       { gate: "intentional-fail", ok: false, message: "boom", details: "stderr-context" },
     ]);
 
-    // §16 (generalized past provisioning, spec/loop.md "Repeated identical
+    // Generalized past provisioning (spec/loop.md "Repeated identical
     // failures"): a gate-stage failure is recorded with a signature derived
     // from the gate's own name plus its failure output. A singleton phase has
     // no entry to blame, so `tag` is absent — this failure falls to the
@@ -1531,9 +1531,9 @@ describe("Dispatcher singleton — handoff wakes the successor", () => {
   });
 });
 
-// ---------- Axis-C terminal misconfiguration (§3) ----------
+// ---------- Axis-C terminal misconfiguration ----------
 
-describe("Dispatcher — orphaned awake flags → Axis-C terminal (§3)", () => {
+describe("Dispatcher — orphaned awake flags → Axis-C terminal", () => {
   it("returns terminal.kind='orphaned-awake' naming the phases, leaves the flags on disk, runs no agent", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("ghost");
@@ -2616,9 +2616,9 @@ describe("Dispatcher fanout — two consecutive ship waves leave an untouched en
   }, 20_000);
 });
 
-// ---------- trunk contract (v0.5 §2) ----------
+// ---------- trunk contract ----------
 
-describe("Trunk contract — HEAD-is-truth, trunkBranch purged (v0.5 §2)", () => {
+describe("Trunk contract — HEAD-is-truth, trunkBranch purged", () => {
   it("DispatcherOptions no longer carries trunkBranch (type-level)", () => {
     // Resolves to `never` (unassignable) if the key ever returns.
     type TrunkBranchPurged = "trunkBranch" extends keyof DispatcherOptions
@@ -2680,14 +2680,14 @@ describe("Trunk contract — HEAD-is-truth, trunkBranch purged (v0.5 §2)", () =
 });
 
 /**
- * v0.4 §2a — worktree base resolution:
+ * Worktree base resolution:
  * `FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")`. The override exists
  * so ephemeral worktrees can relocate outside every repo-path prefix (the
  * observed stray-write vector); the default tracks the state root, which is
  * itself relocatable via `flumeDir`. `createWorktree` reads the env var at
  * call time, so these tests stash/restore it around each case.
  */
-describe("Dispatcher fanout — worktree base resolution (v0.4 §2a)", () => {
+describe("Dispatcher fanout — worktree base resolution", () => {
   const savedOverride = process.env.FLUME_WORKTREES_DIR;
 
   afterEach(() => {
@@ -2927,7 +2927,7 @@ describe("Dispatcher fanout — worktree base resolution (v0.4 §2a)", () => {
 });
 
 /**
- * v0.3 §13 posture — an out-of-tree dock is invisible to git by construction.
+ * An out-of-tree dock is invisible to git by construction.
  * Ship bookkeeping must not `git add` a pendingPath outside repoRoot (the add
  * fatals *after* entries already merged); the disk write alone carries the
  * auto-unblock and observedFiles forward.
@@ -3204,7 +3204,7 @@ describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capa
   }, 20_000);
 
   it("omitting commitMessage reproduces today's exact merge-failure-footprint text", async () => {
-    // Same FOOT-STRAY shape as the §13 footprint regression test above: an
+    // Same FOOT-STRAY shape as the trunk-footprint regression test above: an
     // entry-fence overreach reverts the whole in-worktree commit, but the
     // footprint still rides commitPendingUpdate's shippedTags=[] branch.
     await writePending(fx.repo, [makeEntry("FOOT-DEFAULT", ["src/a.ts"])]);
@@ -3253,7 +3253,7 @@ describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capa
   }, 20_000);
 });
 
-describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree create/teardown (§4)", () => {
+describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree create/teardown", () => {
   it("creates every worktree + ships every entry despite seeded stale slugs; a fanout wave's teardown leaves the repo's worktree registry holding only the primary checkout", async () => {
     const entries = [
       makeEntry("RACE-A", ["src/race-a.ts"]),
@@ -3318,7 +3318,7 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
 
     // Every worktree was created over its stale slug and every entry
     // shipped — no `git worktree add` failed on a sibling's concurrent
-    // remove (§4 acceptance: stale-slug N≥2 wave completes).
+    // remove (the stale-slug N≥2 wave completes).
     expect(outcome.result?.committed).toBe(true);
     expect(outcome.result?.shippedTags).toEqual(["RACE-A", "RACE-B"]);
     expect(await readFile(join(fx.repo, "src/race-a.ts"), "utf8")).toBe("A\n");
@@ -3565,7 +3565,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     );
 
     // Stands in for the win32 EBUSY/locked-handle class the real
-    // removal-fallback exhausts on (§7's `removeWorktree`) — the sweep
+    // removal-fallback exhausts on (`removeWorktree`) — the sweep
     // never distinguishes *why* removal failed, only that it did.
     vi.spyOn(git, "removeWorktree").mockRejectedValue(
       new Error("worktree directory survived removal fallback: " + wtPath),
@@ -3602,7 +3602,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
 });
 
 /**
- * v0.7 §16 — replays the incident shape (`.flume/loop-20260729.log`, batch
+ * Replays the incident shape (`.flume/loop-20260729.log`, batch
  * 3): a deterministic pre-tick worktree provisioning failure on ONE entry's
  * slug must not crash the whole fanout wave when its siblings are perfectly
  * pickable. `git.addWorktree` is spied to fail for exactly one slug — the
@@ -3610,7 +3610,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
  * threw, so this stands in for the incident's `git worktree remove`/`rm`
  * EBUSY wall without depending on genuine OS-level file locking.
  */
-describe("Dispatcher fanout — pre-tick worktree provisioning failure isolates one entry (§16)", () => {
+describe("Dispatcher fanout — pre-tick worktree provisioning failure isolates one entry", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -4112,7 +4112,7 @@ describe("Dispatcher singleton — a worktree-prune throw is recorded, not just 
 
 /**
  * GITDELETEBRANCH-BROAD-SWALLOW — the teardown loop wraps `git.deleteBranch`
- * per §16's own removeWorktree/teardownWorktree pattern: a non-benign
+ * in the same removeWorktree/teardownWorktree pattern: a non-benign
  * failure (branch.ts now rethrows past the "not found" case) is logged by
  * branch name rather than lost, and the wave still ships.
  */
@@ -4172,14 +4172,14 @@ describe("Dispatcher fanout — teardown loop warns on deleteBranch failure (GIT
 });
 
 /**
- * v0.5 §4 — job-scoped fanout branches. The namespace arrives as a
+ * Job-scoped fanout branches. The namespace arrives as a
  * `DispatcherOptions.namespace` field (the CLI resolves it from `FLUME_JOB`);
  * with it set, worktree branches are `flume/<namespace>/<slug>`, so two jobs
  * whose pending entries share a tag slug fan out onto disjoint branches.
  * Without it the legacy repo-global `flume/<slug>` stands — bare `.flume`
  * harnesses see no change.
  */
-describe("Dispatcher fanout — job-scoped branch namespace (v0.5 §4)", () => {
+describe("Dispatcher fanout — job-scoped branch namespace", () => {
   async function branchIn(cwd: string): Promise<string> {
     const { stdout } = await exec(
       "git",
@@ -4270,7 +4270,7 @@ describe("Dispatcher fanout — job-scoped branch namespace (v0.5 §4)", () => {
 
       expect(a.result?.shippedTags).toEqual(["DUP-TAG"]);
       expect(b.result?.shippedTags).toEqual(["DUP-TAG"]);
-      // Identical tag slugs, disjoint branches — no cross-job clobber (§4).
+      // Identical tag slugs, disjoint branches — no cross-job clobber.
       expect(observed).toEqual(["flume/alpha/dup-tag", "flume/beta/dup-tag"]);
     } finally {
       await rm(dockA, { recursive: true, force: true });
@@ -4314,14 +4314,14 @@ describe("Dispatcher fanout — job-scoped branch namespace (v0.5 §4)", () => {
 });
 
 /**
- * v0.5 §4 residual — job-scoped worktree PATHS. The branch namespace alone
- * left paths slug-keyed: two jobs sharing a tag slug under one
+ * Residual of the job-scoped branch namespace — job-scoped worktree PATHS. The
+ * namespace alone left paths slug-keyed: two jobs sharing a tag slug under one
  * FLUME_WORKTREES_DIR collide on `<base>/<slug>`, and createWorktree's
  * stale-slug cleanup rm's the OTHER job's live worktree. With a namespace the
- * path mirrors the branch: `<base>/<namespace>/<slug>`; without one the
- * legacy `<base>/<slug>` stands.
+ * path mirrors the branch: `<base>/<namespace>/<slug>`; without one the legacy
+ * `<base>/<slug>` stands.
  */
-describe("Dispatcher fanout — job-scoped worktree paths (v0.5 §4)", () => {
+describe("Dispatcher fanout — job-scoped worktree paths", () => {
   const savedOverride = process.env.FLUME_WORKTREES_DIR;
 
   afterEach(() => {
@@ -4525,11 +4525,10 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
   it("ships the first entry; second cherry-pick aborts; entry persists in pending", async () => {
     // Both fake agents write their declared file plus a shared baseline file
     // with different content. Declared paths are disjoint so partition packs
-    // them together;
-    // the shared file is an entryChannelPaths allowance — the §5-era conflict
-    // vector, since disjoint declared files can no longer collide directly.
-    // The first cherry-pick succeeds; the second conflicts because trunk now
-    // has 'from-A' where B's diff expects 'baseline'.
+    // them together; the shared file is an entryChannelPaths allowance — the
+    // surviving conflict vector, since disjoint declared files can no longer
+    // collide directly. The first cherry-pick succeeds; the second conflicts
+    // because trunk now has 'from-A' where B's diff expects 'baseline'.
     await mkdir(join(fx.repo, "src"), { recursive: true });
     await writeFile(join(fx.repo, "src", "shared.ts"), "baseline\n");
     const repoOpts = { cwd: fx.repo };
@@ -4593,7 +4592,7 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
       "CONFLICT-B",
     ]);
 
-    // v0.8 §5: the verdict's per-entry merge outcomes distinguish the two
+    // The verdict's per-entry merge outcomes distinguish the two
     // fates — A merged cleanly, B's cherry-pick itself failed.
     expect(outcome.verdict?.tags.sort()).toEqual(["CONFLICT-A", "CONFLICT-B"]);
     expect(
@@ -4616,7 +4615,7 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
       },
     ]);
 
-    // §16 (generalized past provisioning, spec/loop.md "Repeated identical
+    // Generalized past provisioning (spec/loop.md "Repeated identical
     // failures"): a merge-stage cherry-pick conflict is recorded on the
     // verdict with a stage-tagged signature — always entry-scoped, unlike a
     // provisioning failure, so superviseLoop's quarantine leg can isolate it.
@@ -4866,8 +4865,8 @@ describe("readMergingMarkers — the merging dir's ENOENT/EACCES split", () => {
   });
 });
 
-describe("Dispatcher fanout — afterMerge gate failure reverts only the offending entry (§7b)", () => {
-  it("ships the N−1 clean siblings, reverts only the offending entry, keeps it pending with the §5 block; per-entry agent fanout stays parallel", async () => {
+describe("Dispatcher fanout — afterMerge gate failure reverts only the offending entry", () => {
+  it("ships the N−1 clean siblings, reverts only the offending entry, keeps it pending with the prior-attempt block; per-entry agent fanout stays parallel", async () => {
     // ISO-PASS and ISO-FAIL fan out concurrently (disjoint declared files →
     // same batch). The afterMerge gate vetoes any merged trunk carrying
     // ISO-FAIL's file, so it fails for ISO-FAIL's commit and passes for
@@ -4982,7 +4981,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     expect(gr.some((g) => g.gate === "iso-veto" && !g.ok)).toBe(true);
     expect(gr.some((g) => g.gate === "iso-veto" && g.ok)).toBe(true);
 
-    // v0.8 §5: the verdict's merge outcomes distinguish "merged" from
+    // The verdict's merge outcomes distinguish "merged" from
     // "afterMerge-reverted" per entry, and the failing gate's own detail
     // (the fact behind the revert) rides along verbatim.
     expect(
@@ -5009,7 +5008,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     );
     expect(verdictVeto?.details).toBe("ISO-FAIL-DETAIL-QQQ");
 
-    // §16 (generalized past provisioning): a gate revert is recorded with a
+    // Generalized past provisioning: a gate revert is recorded with a
     // signature derived from the gate's own name plus its failure output —
     // the `details` above is a separate, richer channel; the signature is
     // the bounded comparison key superviseLoop's backstop keys off.
@@ -5023,7 +5022,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     ]);
 
     // Retry wave: only ISO-FAIL is still pickable. Its prompt carries the
-    // §5 gate-revert block (afterMerge); ISO-PASS never runs again.
+    // gate-revert block (afterMerge); ISO-PASS never runs again.
     baton.wake("build");
     await dispatcher.tick();
 
@@ -5034,7 +5033,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     expect(failPrompts.length).toBe(2); // reverted — retried
     // First attempt: no false signal.
     expect(failPrompts[0]).not.toContain("<prior-attempt>");
-    // Retry: the §5 gate-revert block, afterMerge, with the gate detail.
+    // Retry: the gate-revert block, afterMerge, with the gate detail.
     expect(failPrompts[1]).toContain("<prior-attempt>");
     expect(failPrompts[1]).toContain("Failing gate: iso-veto");
     expect(failPrompts[1]).toContain("Reverted at: afterMerge");
@@ -5319,7 +5318,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
       },
     ]);
 
-    // The retry carries the same §5 gate-revert block a returned refusal
+    // The retry carries the same gate-revert block a returned refusal
     // would have written — the throw reached the agent as a gate failure.
     baton.wake("build");
     await dispatcher.tick();
@@ -5900,9 +5899,9 @@ describe("Dispatcher — afterMerge revert refuses over a foreign commit landed 
   }, 20_000);
 });
 
-// ---------- entry-scoped write guard (v0.4 §5) ----------
+// ---------- entry-scoped write guard ----------
 
-describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
+describe("Dispatcher fanout — entry-scoped write guard", () => {
   it("ships a scoped commit that stays inside entry.files ∪ entryChannelPaths", async () => {
     await writePending(fx.repo, [makeEntry("SCOPE-OK", ["src/ok.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -6056,7 +6055,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     const gr = first.result?.gateResults ?? [];
     expect(gr.some((g) => g.gate === "writable-paths" && !g.ok)).toBe(true);
 
-    // v0.8 §5: the wave's verdict carries this entry's tag and the
+    // The wave's verdict carries this entry's tag and the
     // writable-paths gate's own violating-path detail — a chain reading
     // last-N verdicts sees `src/stray.ts` named, verbatim, no re-derivation.
     expect(first.verdict?.tags).toEqual(["SCOPE-STRAY"]);
@@ -6070,7 +6069,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       "src/stray.ts (inside phase writablePaths but outside",
     );
 
-    // Retry: the §5 prior-attempt block names the out-of-scope path.
+    // Retry: the prior-attempt block names the out-of-scope path.
     baton.wake("build");
     const second = await dispatcher.tick();
 
@@ -6083,8 +6082,8 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     expect(prompts[1]).toContain(
       "src/stray.ts (inside phase writablePaths but outside",
     );
-    // entry.files legitimately appearing in the harness block (RELEASE-v0.7
-    // §2 effective fence) is correct post-§2 behavior, not a leak — only pin
+    // entry.files legitimately appearing in the harness block (the effective
+    // fence) is correct behavior, not a leak — only pin
     // that a.ts (in-scope) is never named as the out-of-scope offender.
     expect(prompts[1]).not.toContain(
       "src/a.ts (inside phase writablePaths but outside",
@@ -6137,7 +6136,8 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       "SCOPE-CEIL",
     ]);
 
-    // The persisted §5 record names the ceiling violation, path included.
+    // The persisted prior-attempt record names the ceiling violation, path
+    // included.
     const record = JSON.parse(
       await readFile(
         join(fx.repo, ".flume", "prior-attempts", "entry", "scope-ceil.json"),
@@ -6150,10 +6150,10 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
     expect(record.details).toContain("outside phase writablePaths");
   }, 20_000);
 
-  it("an in-worktree afterCommit gate revert leaves the same trunk footprint an afterMerge revert does (§13, RELEASE-v0.7)", async () => {
+  it("an in-worktree afterCommit gate revert leaves the same trunk footprint an afterMerge revert does", async () => {
     // Same shape as "reverts a path outside entry scope but inside phase
     // globs" above — a writable-paths gate revert that never reaches
-    // cherry-pick — but this asserts the §13 footprint, not just the revert
+    // cherry-pick — but this asserts the trunk footprint, not just the revert
     // itself.
     await writePending(fx.repo, [makeEntry("FOOT-STRAY", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -6212,7 +6212,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
     );
 
-    // v0.8 §5: the footprint commit's file list is not a second, independent
+    // The footprint commit's file list is not a second, independent
     // capture — it traces straight back to this tick's own TickVerdict
     // record (mergeOutcomes), the same one `commitPendingUpdate` read to
     // build the footprint commit above.
@@ -6229,7 +6229,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
       [...outcome.verdict!.mergeOutcomes[0]!.footprint!].sort(),
     );
 
-    // §16 (generalized past provisioning): unlike the singleton afterCommit
+    // Generalized past provisioning: unlike the singleton afterCommit
     // revert, a fanout entry's own afterCommit gate revert carries the
     // entry's tag — the tagged failure superviseLoop's quarantine leg can
     // isolate for the rest of the run.
@@ -6296,7 +6296,7 @@ describe("Dispatcher fanout — entry-scoped write guard (§5)", () => {
 
     // The reverted commit's touched paths are computed exactly once — inside
     // runAfterCommitGates' own gate-loop capture — and reused by the fanout
-    // caller's §13 footprint grab, not re-derived via a second git call.
+    // caller's trunk-footprint grab, not re-derived via a second git call.
     expect(diffNameOnlySpy).toHaveBeenCalledTimes(1);
   }, 20_000);
 
@@ -7177,10 +7177,10 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
 
     // Same corruption mechanism as the single-entry sibling above, but the
-    // wave now carries a second, declined entry (RELEASE-v0.11 §8's
-    // shouldRun seam) alongside the shipping one — the shape §"The tick
-    // verdict" drift (b) actually describes: `waveDeclined`, computed from
-    // the per-entry loop before `commitPendingUpdate` runs, must survive
+    // wave now carries a second, declined entry (the shouldRun seam)
+    // alongside the shipping one — the shape spec/loop.md "The tick verdict"
+    // drift (b) actually describes: `waveDeclined`, computed from the
+    // per-entry loop before `commitPendingUpdate` runs, must survive
     // onto `WaveLedgerParseFailure`'s carried verdict exactly like
     // `shippedTags` does, not just the trivial single-entry case.
     const corrupt = "{ corrupted mid-wave, not json";
@@ -7342,7 +7342,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
   }, 20_000);
 });
 
-// ---------- foundations governor (§v0.3) ----------
+// ---------- foundations governor ----------
 
 describe("Dispatcher fanout — foundations governor skips fork-blocked entries", () => {
   it("builds the foundation-settled sibling and skips the one whose fork is open", async () => {
@@ -7430,7 +7430,7 @@ describe("Dispatcher fanout — all entries fork-blocked", () => {
   });
 });
 
-describe("Dispatcher fanout — gate=requiresCapability (v0.8 §4)", () => {
+describe("Dispatcher fanout — gate=requiresCapability", () => {
   it("builds an entry gated on a capability the chain asserts", async () => {
     const entries: PendingEntry[] = [
       {
@@ -7547,7 +7547,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
 
   it("loadChainModule surfaces a chain.ts forkResolver export → governs selection, overrides the constructor default", async () => {
     // The closure-loader test above proves a ChainModule.forkResolver gates
-    // selection, but bypasses loadChainModule — the §3 stock-CLI bridge.
+    // selection, but bypasses loadChainModule — the stock-CLI bridge.
     // This exercises the real extraction: a chain.ts that *exports*
     // forkResolver must have it picked up on disk, exactly as `agent` is.
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-forkresolver-"));
@@ -7610,7 +7610,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
   }, 20_000);
 });
 
-describe("Dispatcher — per-phase agent resolution (§4)", () => {
+describe("Dispatcher — per-phase agent resolution", () => {
   function recordingAgent(name: string, ran: string[]): Agent {
     return {
       name,
@@ -7650,7 +7650,7 @@ describe("Dispatcher — per-phase agent resolution (§4)", () => {
     await dispatcher.tick();
     expect(ran).toEqual(["phase-agent"]);
 
-    // Silent phase: the pre-§4 chain > constructor order is unchanged.
+    // Silent phase: the chain > constructor precedence is unchanged.
     baton.wake("review");
     await dispatcher.tick();
     expect(ran).toEqual(["phase-agent", "chain-agent"]);
@@ -7817,9 +7817,9 @@ describe("Dispatcher fanout — forkResolver invoked once per tick with the repo
   }, 20_000);
 });
 
-// ---------- gate-failure feedback to the retrying tick (§5) ----------
+// ---------- gate-failure feedback to the retrying tick ----------
 
-describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () => {
+describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
   it("afterCommit gate-revert → next singleton tick's prompt carries gate name + full details + marker; first attempt absent", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
@@ -8041,7 +8041,8 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
     for (const slug of ["wave-a", "wave-b"]) {
       const ps = promptsBySlug[slug] ?? [];
       expect(ps.length).toBe(2);
-      // First attempt: silent (this path surfaced nothing pre-§5).
+      // First attempt: silent (this path surfaced nothing before
+      // prior-attempt feedback).
       expect(ps[0]).not.toContain("<prior-attempt>");
       expect(ps[0]).not.toContain("merge-details-QQQ");
       // Retry: afterMerge failure forwarded symmetrically.
@@ -8295,14 +8296,14 @@ describe("Dispatcher — gate-failure feedback to the retrying tick (§5)", () =
   }, 20_000);
 });
 
-// ---------- no-commit outcome taxonomy (§6) ----------
+// ---------- no-commit outcome taxonomy ----------
 
 // One test per causally-distinct no-commit mode. Each asserts (a) the
 // distinct classification on `TickOutcome.noCommit` for the producing tick,
-// and (b) that the next tick's rendered prompt carries the matching §5
-// variant and *only* that variant (the three are mutually distinguishable,
-// not one block with a label). Singleton path: a tick is one agent
-// invocation, so "exactly one mode per no-commit tick" is exact and
+// and (b) that the next tick's rendered prompt carries the matching
+// prior-attempt variant and *only* that variant (the three are mutually
+// distinguishable, not one block with a label). Singleton path: a tick is one
+// agent invocation, so "exactly one mode per no-commit tick" is exact and
 // directly observable on the outcome. First attempt carries no
 // <prior-attempt> — no false signal.
 
@@ -8312,7 +8313,7 @@ const PREEMPT_INTRO = "cut short by a PLATFORM failure";
 const RENDER_REFUSED_INTRO = "refused BEFORE the agent was invoked";
 const TIP_MOVED_INTRO = "was DISCARDED because the base its";
 
-describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
+describe("Dispatcher — no-commit outcome taxonomy", () => {
   it("gate-revert: TickOutcome.noCommit==='gate-revert'; retry prompt carries only the gate-revert variant; first attempt empty", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
@@ -8417,7 +8418,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     const first = await dispatcher.tick();
     expect(first.result?.committed).toBe(false);
     expect(first.noCommit).toBe("clean-exit");
-    // v0.8 §5: the verdict carries the same no-commit fact — no shipped
+    // The verdict carries the same no-commit fact — no shipped
     // tags, no gates ran (the agent never committed), nothing to
     // cherry-pick/merge.
     expect(first.verdict?.committed).toBe(false);
@@ -8444,7 +8445,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[1]).not.toContain(PREEMPT_INTRO);
   }, 20_000);
 
-  it("clean-exit under a stream-json agent: §5 block quotes the final message legibly, free of NDJSON/cost noise; plain-text path is the test above", async () => {
+  it("clean-exit under a stream-json agent: the prior-attempt block quotes the final message legibly, free of NDJSON/cost noise; plain-text path is the test above", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
@@ -8452,8 +8453,8 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     // withTerminalRenderer(withSessionCapture(claudeCode({stream-json}))):
     // the decorators pass stdout through raw, so AgentResult.stdout is the
     // stream-json NDJSON transcript. Tailing it raw would forward
-    // escaped-JSON assistant/result events + cost/usage metadata — the §6
-    // noise this entry replaces with the agent's own final message.
+    // escaped-JSON assistant/result events + cost/usage metadata — the noise
+    // this entry replaces with the agent's own final message.
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -8716,7 +8717,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
     expect(prompts[1]).not.toContain(CLEAN_EXIT_INTRO);
   }, 20_000);
 
-  it("render-refused (RELEASE-v0.10 §3): an unresolved inline-exec span aborts the render — the agent is never invoked, and the mode is distinguishable from clean-exit", async () => {
+  it("render-refused: an unresolved inline-exec span aborts the render — the agent is never invoked, and the mode is distinguishable from clean-exit", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
@@ -8780,7 +8781,7 @@ describe("Dispatcher — no-commit outcome taxonomy (§6)", () => {
   }, 20_000);
 });
 
-// ---------- fanout wave-level noCommit precedence (§6, mixed causes) ----------
+// ---------- fanout wave-level noCommit precedence (mixed causes) ----------
 
 // `Dispatcher.waveNoCommitCause`: when a fanout wave ships nothing, the
 // single wave-level `noCommit` label is picked from the set of per-entry causes by
@@ -8960,7 +8961,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
   }, 20_000);
 });
 
-describe("Dispatcher — tip verify: commit only onto the tick's starting tip (RELEASE-v0.11 §5)", () => {
+describe("Dispatcher — tip verify: commit only onto the tick's starting tip", () => {
   it("singleton: an agent invocation that makes two commits ships the whole span as one completion — ancestry holds, no full-span soft-reset (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", async () => {
     // spec/worktrees.md "Singleton runs in a worktree": the agent now commits
     // on this tick's own private worktree branch, exactly like a fanout
@@ -9548,7 +9549,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip (R
 });
 
 describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, same ancestry check both concurrencies (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", () => {
-  it("both legs run the identical ancestry check and persist byte-identical §5 records through the same log template", async () => {
+  it("both legs run the identical ancestry check and persist byte-identical prior-attempt records through the same log template", async () => {
     // spec/worktrees.md "Singleton runs in a worktree" retired the singleton
     // leg's own parent-equality check: a singleton tick now commits on a
     // private worktree branch exactly like a fanout entry, so both legs run
@@ -9643,7 +9644,7 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
       );
       expect(JSON.parse(fanoutRecord).observedTip).toBe(fanoutObservedHead);
 
-      // §5 record shape (mode + field names + JSON formatting) is
+      // Prior-attempt record shape (mode + field names + JSON formatting) is
       // byte-identical for equivalent input — a one-sided edit to either
       // callsite's persisted record breaks this pin once the two sides'
       // real, necessarily-distinct SHAs are normalized out. `at` is wall-
@@ -9700,7 +9701,7 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
 });
 
 /**
- * v0.8 §5 — `writeTickVerdict`/`clearTickVerdict`/`readTickVerdicts` are the
+ * `writeTickVerdict`/`clearTickVerdict`/`readTickVerdicts` are the
  * primitives the CLI's `tick` command calls around `dispatcher.tick()`
  * (never `Dispatcher.tick()` itself — a plain unit test constructing a
  * `Dispatcher` directly, as every test above does, must not gain an
@@ -9710,14 +9711,14 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
  * directly, the way a real `flume tick` child process would). This suite
  * proves the primitives' own round-trip, clear behavior, and bounded
  * history — and that the shape carries no interpretation field (no
- * `errored`; §5 derives that at the read site instead). That last claim is
+ * `errored`; the read site derives that instead). That last claim is
  * an agreement claim, so it alone drives real dispatcher ticks and persists
  * what they built through `writeTickVerdict`, standing in for the CLI
  * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
  * wrote"); the round-trip and history tests keep `verdictFixture`, whose
  * shape they are not the judge of.
  */
-describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-verdict artifact (v0.8 §5)", () => {
+describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-verdict artifact", () => {
   const latestPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
   const historyPath = (): string =>
     tickVerdictsLogPath(join(fx.repo, ".flume"));
@@ -11564,24 +11565,26 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
   }, 20_000);
 });
 
-// ---------- plan-tick prose durability (§8) ----------
+// ---------- plan-tick prose durability ----------
 
 // Plan is a singleton phase. When its pending.json fails the chain-local
 // pendingParseGate, the whole commit is `git reset --hard`-ed away — the
 // state.md / open-questions.md prose in that same commit dies with it,
-// recoverable pre-§8 only by a human reading session logs. §8 mandates the
-// findings stay recoverable without session logs. This asserts the chosen
-// mechanism: a verbatim, durable, reset-surviving on-disk snapshot.
+// recoverable, before the durable snapshot, only by a human reading session
+// logs. The contract mandates the findings stay recoverable without session
+// logs. This asserts the chosen mechanism: a verbatim, durable,
+// reset-surviving on-disk snapshot.
 
-describe("Dispatcher — plan-tick prose durability (§8)", () => {
+describe("Dispatcher — plan-tick prose durability", () => {
   it("gate-reverted plan tick: state.md/open-questions.md findings recoverable on disk w/o session logs; cleared on a later clean ship", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
     // Stands in for the chain-local pendingParseGate: an afterCommit gate
     // that vetoes a schema-invalid pending.json on the first attempt only.
-    // The §8 property is gate-agnostic — the dispatcher snapshots whatever
-    // the reverted commit touched, with no "which file is prose" knowledge.
+    // The durability property is gate-agnostic — the dispatcher snapshots
+    // whatever the reverted commit touched, with no "which file is prose"
+    // knowledge.
     let calls = 0;
     const pendingParses: Gate = {
       name: "pending.json parses",
@@ -11608,7 +11611,7 @@ describe("Dispatcher — plan-tick prose durability (§8)", () => {
       "OPEN QUESTION: CLI-SEARCH-WALK — should `flume render` walk skill " +
       "paths? Needs a human call before plan can derive an entry.";
     const FINDING_STATE =
-      "Plan continues: yes\nAudited bd5e6f4 §7b; filed the skill-path finding.";
+      "Plan continues: yes\nAudited bd5e6f4; filed the skill-path finding.";
 
     let attempt = 0;
     const agent: Agent = {
@@ -11650,13 +11653,14 @@ describe("Dispatcher — plan-tick prose durability (§8)", () => {
     expect(first.noCommit).toBe("gate-revert");
     expect(await head(fx.repo)).toBe(preHead);
     // The prose is GONE from the worktree (git reset --hard) — proving the
-    // loss §8 closes is real, and recovery cannot come from the worktree.
+    // loss the snapshot closes is real, and recovery cannot come from the
+    // worktree.
     expect(
       existsSync(join(fx.repo, ".flume", "plan", "open-questions.md")),
     ).toBe(false);
 
-    // §8 acceptance: findings recoverable WITHOUT session logs — verbatim
-    // on disk in the durable, reset-surviving snapshot mirror.
+    // Durability acceptance: findings recoverable WITHOUT session logs —
+    // verbatim on disk in the durable, reset-surviving snapshot mirror.
     const snapDir = join(fx.repo, ".flume", "prior-attempts", "phase", "plan.reverted");
     const recoveredOQ = await readFile(
       join(snapDir, ".flume", "plan", "open-questions.md"),
@@ -11670,7 +11674,8 @@ describe("Dispatcher — plan-tick prose durability (§8)", () => {
     expect(recoveredState).toContain(FINDING_STATE);
 
     // A later clean ship clears the recovery artifact — no stale prose
-    // outliving the entry it belonged to (mirrors the §5 slot invariant).
+    // outliving the entry it belonged to (mirrors the prior-attempt slot
+    // invariant).
     baton.wake("plan");
     const second = await dispatcher.tick(); // attempt 1 → ships clean
     expect(second.result?.committed).toBe(true);
@@ -11678,7 +11683,7 @@ describe("Dispatcher — plan-tick prose durability (§8)", () => {
   }, 20_000);
 });
 
-describe("Dispatcher fanout — render-refused: an unresolved inline-exec span aborts one entry's render (RELEASE-v0.10 §3)", () => {
+describe("Dispatcher fanout — render-refused: an unresolved inline-exec span aborts one entry's render", () => {
   it("no agent invocation for the affected entry; the wave's TickOutcome.noCommit is 'render-refused', the entry stays pending", async () => {
     await writePending(fx.repo, [makeEntry("RENDER-BOOM", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -11722,7 +11727,7 @@ describe("Dispatcher fanout — render-refused: an unresolved inline-exec span a
 });
 
 describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED)", () => {
-  it("both callsites persist byte-identical §5 record content and emit a same-shaped log line for equivalent input, driven through the one shared persist+log method", async () => {
+  it("both callsites persist byte-identical prior-attempt record content and emit a same-shaped log line for equivalent input, driven through the one shared persist+log method", async () => {
     await writeFile(
       join(fx.configDir, "prompt.md"),
       "digest: !`echo boom-detail 1>&2; exit 3`\n",
@@ -11763,8 +11768,8 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
       "utf8",
     );
 
-    // ---- fanout — same repo, own tag so its §5 slot never shares a path
-    // with the singleton's above.
+    // ---- fanout — same repo, own tag so its prior-attempt slot never shares
+    // a path with the singleton's above.
     await writePending(fx.repo, [makeEntry("FANOUT-TWIN", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
     const fanoutPhase = makePhase({
@@ -11801,12 +11806,13 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
       "utf8",
     );
 
-    // §5 record content (mode + failures) is byte-identical for equivalent
-    // input — a one-sided edit to either callsite's persisted record breaks
-    // this pin, once `headSha`/`at` are normalized out: the fanout tick
-    // runs after a real trunk commit (writePending, below) and at a later
-    // wall-clock instant, so both anchor fields are legitimately distinct
-    // between the two records (spec/loop.md "Every record is anchored").
+    // Prior-attempt record content (mode + failures) is byte-identical for
+    // equivalent input — a one-sided edit to either callsite's persisted
+    // record breaks this pin, once `headSha`/`at` are normalized out: the
+    // fanout tick runs after a real trunk commit (writePending, below) and at
+    // a later wall-clock instant, so both anchor fields are legitimately
+    // distinct between the two records (spec/loop.md "Every record is
+    // anchored").
     const normalizeAnchor = (raw: string) =>
       raw
         .replace(/"headSha": "[^"]*"/, '"headSha": "<HEAD>"')
@@ -11840,7 +11846,7 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
   }, 20_000);
 });
 
-describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE-v0.11 §8)", () => {
+describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => {
   it("singleton: shouldRun=false skips the agent entirely, produces no commit, and still hands off", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
@@ -12212,16 +12218,16 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation (RELEASE
   }, 20_000);
 });
 
-// ---------- TickResult carries the no-commit classification (§15) ----------
+// ---------- TickResult carries the no-commit classification ----------
 
-// SETUP-WORKTREE-HELPER bailed twice against the build fence and no plan
-// tick woke: `Dispatcher.tick` computed the §6 classification but discarded
-// it before calling `phase.handoff(result)`, so no chain's handoff could
-// ever distinguish a clean-exit from a genuine nothing-pickable no-op.
-// These assert the fix at the one seam that matters: what `handoff` itself
+// SETUP-WORKTREE-HELPER bailed twice against the build fence and no plan tick
+// woke: `Dispatcher.tick` computed the no-commit classification but discarded
+// it before calling `phase.handoff(result)`, so no chain's handoff could ever
+// distinguish a clean-exit from a genuine nothing-pickable no-op. These
+// assert the fix at the one seam that matters: what `handoff` itself
 // receives.
 
-describe("Dispatcher — TickResult.noCommit reaches phase.handoff (§15)", () => {
+describe("Dispatcher — TickResult.noCommit reaches phase.handoff", () => {
   it("clean-exit: the TickResult handed to handoff carries noCommit: 'clean-exit'", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
@@ -12240,7 +12246,7 @@ describe("Dispatcher — TickResult.noCommit reaches phase.handoff (§15)", () =
     const agent: Agent = {
       name: "bailing-singleton",
       async invoke() {
-        // Clean exit, no commit — a clean-exit per §6.
+        // Clean exit, no commit — a clean-exit in the no-commit taxonomy.
         return { exitCode: 0, stdout: "BAILED: no path forward\n", stderr: "" };
       },
     };
@@ -12298,18 +12304,18 @@ describe("Dispatcher — TickResult.noCommit reaches phase.handoff (§15)", () =
   });
 });
 
-// ---------- per-tick chain re-resolution (§2) ----------
+// ---------- per-tick chain re-resolution ----------
 
-describe("Dispatcher — per-tick chain re-resolution (§2)", () => {
+describe("Dispatcher — per-tick chain re-resolution", () => {
   // The cross-tick rewrite guarantee is a *process boundary*, not an
   // in-process re-eval (Node's ESM registry is non-evictable; see
   // loadChainModule). A fake/closure loader cannot exercise it and is
-  // explicitly insufficient per §2 — that bullet is covered by the real
-  // integration test in tests/loop-process-boundary.test.ts (two real
-  // `flume tick` subprocesses vs a chain.ts mutated on disk between them).
-  // The unit-level guarantee here is narrower: a `Dispatcher` constructed
-  // with only `configDir` resolves the on-disk chain.ts itself, in-process,
-  // with no subprocess.
+  // explicitly insufficient for the re-resolution claim — that leg is covered
+  // by the real integration test in tests/loop-process-boundary.test.ts (two
+  // real `flume tick` subprocesses vs a chain.ts mutated on disk between
+  // them). The unit-level guarantee here is narrower: a `Dispatcher`
+  // constructed with only `configDir` resolves the on-disk chain.ts itself,
+  // in-process, with no subprocess.
 
   it("constructs with only configDir → resolves the on-disk chain.ts", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-ondisk-"));
@@ -12485,9 +12491,9 @@ describe(
   },
 );
 
-// ---------- chain-load gate + engine fallback (§3) ----------
+// ---------- chain-load gate + engine fallback ----------
 
-describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)", () => {
+describe("Dispatcher — chainLoadGate reverts a broken self-edited chain", () => {
   it("broken chain.ts with chainLoadGate declared → tick reverted, chain restored, loop continues", async () => {
     // Last-good chain.ts on trunk; the broken rewrite must revert to this.
     const goodChain =
@@ -12554,13 +12560,14 @@ describe("Dispatcher — chainLoadGate reverts a broken self-edited chain (§3)"
   }, 20_000);
 });
 
-// §3 acceptance bullet 1's per-§5 clause: a chainLoadGate revert is only
+// The chain-load gate's recovery clause: a chainLoadGate revert is only
 // *recovery* (not just containment) because the next tick's prompt carries
-// the chain-load failure (§3/§12: chainLoadGate without feedback = a blind
-// chain.ts revert loop). The §3 test above stops at the recorded-failure
-// check (it predates §5); this asserts the composite end-to-end. §5
-// forwarding is gate-uniform — no src/ change, only the asserting test.
-describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to the next tick (§3 bullet 1, per-§5)", () => {
+// the chain-load failure (chainLoadGate without feedback = a blind chain.ts
+// revert loop). The chain-load test above stops at the recorded-failure
+// check, which predates prior-attempt feedback; this asserts the composite
+// end-to-end. That forwarding is gate-uniform — no src/ change, only the
+// asserting test.
+describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to the next tick", () => {
   it("broken chain.ts reverted by chainLoadGate → next tick's prompt carries <prior-attempt> naming chain-load + its detail; chain.ts restored to last-good", async () => {
     // Last-good chain.ts on trunk; the broken rewrite must revert to this.
     const goodChain =
@@ -12636,7 +12643,7 @@ describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to
     // First attempt: no false prior-attempt signal.
     expect(prompts[0]).not.toContain("<prior-attempt>");
 
-    // Retry: the §5 block names the *chain-load* gate, reverted at
+    // Retry: the prior-attempt block names the *chain-load* gate, reverted at
     // afterCommit, and forwards its full loader failure — not just the
     // one-line verdict — so the next tick does not blindly re-author the
     // same broken chain.ts.
@@ -12658,7 +12665,7 @@ describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to
   }, 20_000);
 });
 
-describe("Dispatcher — ungated chain resolution failure → loud no-work outcome (§3)", () => {
+describe("Dispatcher — ungated chain resolution failure → loud no-work outcome", () => {
   it("tick() with a rejecting chainLoader returns a failed no-work outcome, logs loudly, does not throw", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
@@ -12693,7 +12700,7 @@ describe("Dispatcher — ungated chain resolution failure → loud no-work outco
   });
 });
 
-describe("Dispatcher — flumeDir exposed to gates & promptArgs (§16)", () => {
+describe("Dispatcher — flumeDir exposed to gates & promptArgs", () => {
   it("threads the resolved flumeDir into GateContext and TickContext (default location)", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
@@ -12780,7 +12787,7 @@ describe("Dispatcher — flumeDir exposed to gates & promptArgs (§16)", () => {
   });
 });
 
-describe("Dispatcher — GateContext.repoRoot (RELEASE-v0.7 §6)", () => {
+describe("Dispatcher — GateContext.repoRoot", () => {
   it("singleton tick: afterCommit gate's repoRoot is the worktree root; afterMerge gate's repoRoot is the trunk (spec/worktrees.md 'Singleton runs in a worktree')", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
@@ -13684,7 +13691,7 @@ describe("Dispatcher — GateContext.touchedPaths (GATECONTEXT-TOUCHED-PATHS-DED
   }, 20_000);
 });
 
-describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
+describe("Dispatcher — Chain.friction load-time validation", () => {
   it("rejects an absolute-path friction declaration with a usage-shaped error", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-abs-"));
     try {
@@ -13699,7 +13706,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     }
   });
 
-  // RELEASE-v0.11 §6 — the chain is a plugin, not a consumer.
+  // The chain is a plugin, not a consumer.
   //
   // The assertion is **identity** (`toBe`), and that is the whole point: a
   // chain that resolved its own second copy of the engine would hand back
@@ -13707,7 +13714,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
   // pass under exactly the condition this section exists to prevent. Only
   // reference equality distinguishes "the engine handed me its gate" from
   // "I resolved a gate that looks like it".
-  it("hands the chain factory the identity-same engine objects the dispatcher holds (§6)", async () => {
+  it("hands the chain factory the identity-same engine objects the dispatcher holds", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-api-identity-"));
     try {
       await mkdir(cfg, { recursive: true });
@@ -13733,13 +13740,13 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     }
   });
 
-  // RELEASE-v0.11 §6 — the error classes a chain branches on with
+  // The error classes a chain branches on with
   // `instanceof` must ride the api parameter too, or a chain catching one
   // has no way to identify it without a value import of its own. The
   // factory stashes each into the phase's gates[] (a real ChainModule
   // field that survives `loadChainModule`'s return, unlike an ad hoc key)
   // so the test can compare against the engine's own exports by reference.
-  it("hands the chain factory the identity-same error classes the engine throws (§6)", async () => {
+  it("hands the chain factory the identity-same error classes the engine throws", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-api-errors-"));
     try {
       await mkdir(cfg, { recursive: true });
@@ -13766,10 +13773,10 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     }
   });
 
-  // RELEASE-v0.11 §6 — every engine value a chain composes with rides the
-  // api param; `readTickVerdicts` is the one §6 doesn't name explicitly but
-  // the same rule covers (FLUMEAPI-READTICKVERDICTS-MISSING).
-  it("hands the chain factory the identity-same readTickVerdicts the engine exports (§6)", async () => {
+  // Every engine value a chain composes with rides the api param;
+  // `readTickVerdicts` is the one that claim doesn't name explicitly but the
+  // same rule covers (FLUMEAPI-READTICKVERDICTS-MISSING).
+  it("hands the chain factory the identity-same readTickVerdicts the engine exports", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-api-readtickverdicts-"));
     try {
       await mkdir(cfg, { recursive: true });
@@ -13792,7 +13799,7 @@ describe("Dispatcher — Chain.friction load-time validation (§2)", () => {
     }
   });
 
-  it("refuses a default export that is not a function, naming the migration (§6)", async () => {
+  it("refuses a default export that is not a function, naming the migration", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-nonfactory-"));
     try {
       await mkdir(cfg, { recursive: true });
@@ -13897,7 +13904,7 @@ describe("Dispatcher — Chain.pendingPath load-time validation (spec/pending.md
   });
 });
 
-describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL, §2)", () => {
+describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL)", () => {
   it("refuses entryChannelPaths declared without scopeWritesToEntry: true, naming the field", async () => {
     const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-deaddecl-channel-"));
     try {
@@ -13973,7 +13980,7 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
 });
 
 /**
- * v0.7 §5 — a CJS-context host (package.json lacking `"type": "module"`)
+ * A CJS-context host (package.json lacking `"type": "module"`)
  * must refuse chain load with a usage-shaped `CjsContextLoadError`, not
  * relay tsx's raw loader stack. Two empirical signatures (build's own
  * `isCjsContextLoadFailure`, `Dispatcher.ts`): tsx 4.21's CJS-fallback parse
@@ -13986,7 +13993,7 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
  * genuinely missing dependency (plain `ERR_MODULE_NOT_FOUND`, no namespace
  * artifact) must surface unshadowed.
  */
-describe("Dispatcher — CJS-context host chain-load refusal (v0.7 §5)", () => {
+describe("Dispatcher — CJS-context host chain-load refusal", () => {
   async function writeCfg(cfg: string, chainSrc: string): Promise<void> {
     await writeFile(join(cfg, "chain.ts"), chainSrc, "utf8");
   }
@@ -14064,12 +14071,12 @@ describe("Dispatcher — CJS-context host chain-load refusal (v0.7 §5)", () => 
 });
 
 /**
- * v0.6.2 §4 — teardown harvest. Only the engine is present when a fanout
+ * Teardown harvest. Only the engine is present when a fanout
  * worktree dies, so wave-end teardown must move a worktree-local friction
  * note into the primary friction dir, tag-prefixed, before the worktree is
  * removed. Content-opaque: files only, no read of contents.
  */
-describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
+describe("Dispatcher fanout — teardown friction harvest", () => {
   it("moves worktree-local friction files into the primary dir, tag-prefixed, before worktree removal", async () => {
     await writePending(fx.repo, [makeEntry("FRICTION-A", ["src/friction-a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -14135,9 +14142,9 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
     const destName = "FRICTION-B--2024-01-01T00-00-00-000Z--note.md";
-    // Pre-seed a directory at the exact destination the harvest would
-    // rename into — rename(file, existing-dir) fails deterministically,
-    // standing in for the locked-file / unreadable-dir class §4 calls out.
+    // Pre-seed a directory at the exact destination the harvest would rename
+    // into — rename(file, existing-dir) fails deterministically, standing in
+    // for the locked-file / unreadable-dir class the harvest calls out.
     await mkdir(join(primaryFrictionDir, destName), {
       recursive: true,
     });
@@ -14202,9 +14209,9 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
 
     const agent = fanoutAgent({
       "friction-c": async (cwd) => {
-        // Stand in for an unreadable dir (permissions, mid-write race,
-        // etc.): a plain *file* at the mirror path means `readdir` on it
-        // rejects with ENOTDIR rather than the absent-dir ENOENT §4 treats
+        // Stand in for an unreadable dir (permissions, mid-write race, etc.):
+        // a plain *file* at the mirror path means `readdir` on it rejects
+        // with ENOTDIR rather than the absent-dir ENOENT the harvest treats
         // as a silent no-op.
         await mkdir(join(cwd, ".flume"), { recursive: true });
         await writeFile(join(cwd, ".flume", "friction"), "not a directory\n");
@@ -14241,7 +14248,7 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({ name: "build", concurrency: "fanout" });
-    // No `friction` field on the chain — §4's harvest is entirely off.
+    // No `friction` field on the chain — the harvest is entirely off.
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     const agent = fanoutAgent({
@@ -14630,14 +14637,14 @@ describe("Dispatcher fanout — teardown friction harvest (§4)", () => {
 });
 
 /**
- * v0.6.2 §5 — revert note. Only the engine is present when an afterCommit
+ * Revert note. Only the engine is present when an afterCommit
  * gate discards a fanout entry's commit, so it must write the operator's
  * copy of the verdict — the gate's own name/message/details plus the
  * reverted commit's subject+body — to the primary friction dir before
  * `dropLastCommit` erases the evidence. Undeclared `chain.friction` keeps
- * §5 off per §2; a note-write failure must never block the revert itself.
+ * the note off; a note-write failure must never block the revert itself.
  */
-describe("Dispatcher fanout — revert note to the friction channel (§5)", () => {
+describe("Dispatcher fanout — revert note to the friction channel", () => {
   it("an afterCommit gate revert with Chain.friction declared writes a dated note carrying the gate's verdict and the reverted commit's subject+body", async () => {
     await writePending(fx.repo, [makeEntry("REVERT-NOTE-A", ["src/rna.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -14706,7 +14713,7 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
     expect(note).toContain("This is the body of the commit.");
   }, 20_000);
 
-  it("a write-gate revert (entry-scope stray path) carries the offending path list in the note's details, per §5", async () => {
+  it("a write-gate revert (entry-scope stray path) carries the offending path list in the note's details", async () => {
     await writePending(fx.repo, [makeEntry("REVERT-NOTE-B", ["src/rnb.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -14726,7 +14733,7 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
       "revert-note-b": async (cwd) => {
         // A stray sibling inside the phase's writablePaths but outside the
         // entry's declared files — the built-in writable-paths gate reverts
-        // this, and §5 calls out the write-gate's offending path list.
+        // this, and the note calls out the write-gate's offending path list.
         await writeFile(join(cwd, "src", "rnb.ts"), "ok\n");
         await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
         await exec("git", ["add", "."], { cwd });
@@ -14780,7 +14787,7 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
       concurrency: "fanout",
       gates: [failing],
     });
-    // No `friction` field on the chain — §5 is entirely off, per §2.
+    // No `friction` field on the chain — the revert note is entirely off.
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     const agent = fanoutAgent({
@@ -14813,8 +14820,8 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     // Pre-seed a plain file at the exact primary friction dir path so the
-    // note write's `mkdir(primaryDir, { recursive: true })` fails —
-    // standing in for the locked-dir/permission class §5 calls out.
+    // note write's `mkdir(primaryDir, { recursive: true })` fails — standing
+    // in for the locked-dir/permission class the note write calls out.
     await mkdir(join(fx.repo, ".flume"), { recursive: true });
     await writeFile(join(fx.repo, ".flume", "friction"), "not a directory\n");
 
@@ -14878,7 +14885,7 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
     ).toBe(true);
   }, 20_000);
 
-  // Runs on every platform (§9, v0.11): createWorktree derives the fanout
+  // Runs on every platform: createWorktree derives the fanout
   // worktree directory from a length-bounded name, not the raw tag slug, so
   // a TAG_MAX_LENGTH tag no longer hits git's own ~200-char win32 worktree-
   // path refusal ("fatal: '$GIT_DIR' too big"). The fanoutAgent key below
@@ -15000,10 +15007,10 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
   }, 20_000);
 });
 
-// win32 lane (v0.4 §6): fanout worktree paths nest as deep as job dirs and
+// win32 lane: fanout worktree paths nest as deep as job dirs and
 // hit the identical MAX_PATH gap job.ts's own baseline pin exists to spare
 // (mirrored coverage in tests/git.test.ts for the shared helper itself).
-// TAG-LENGTH-BOUND-AGREEMENT-PIN above now runs on win32 too (§9, v0.11):
+// TAG-LENGTH-BOUND-AGREEMENT-PIN above now runs on win32 too:
 // createWorktree's fanout worktree directory is length-bounded, so a
 // long-tag fanout path stays clear of the ~200-char wall `git worktree add`
 // itself refuses at — below MAX_PATH and unaffected by core.longpaths. The
@@ -15011,7 +15018,7 @@ describe("Dispatcher fanout — revert note to the friction channel (§5)", () =
 // chain.friction/namespace nesting that fs operations (not `git worktree
 // add` itself) walk, which core.longpaths does cover.
 describe.runIf(process.platform === "win32")(
-  "Dispatcher fanout — createWorktree pins core.longpaths (v0.4 §6)",
+  "Dispatcher fanout — createWorktree pins core.longpaths",
   () => {
     it("pins core.longpaths on repoRoot before git worktree add", async () => {
       const entries = [makeEntry("W32-WT", ["src/w32.ts"])];
@@ -15197,7 +15204,7 @@ describe.runIf(process.platform === "win32")(
 
     it("PriorAttemptStore.snapshotReverted lands the snapshot when the reverted commit's own diff path pushes prior-attempts/<key>.reverted/<rel> past win32's ~260-char limit (SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT)", async () => {
       // snapshotReverted runs on the singleton afterCommit-revert path
-      // (§8, e.g. a plan tick's schema-invalid pending.json) — unlike
+      // (e.g. a plan tick's schema-invalid pending.json) — unlike
       // WRITEREVERTNOTE-A/HARVESTFRICTION-B above (fanout, depth from
       // chain.friction), the depth driver here is the reverted commit's own
       // diff path: snapshotReverted joins prior-attempts/<key>.reverted
@@ -15425,20 +15432,20 @@ describe.runIf(process.platform === "win32")(
     }, 20_000);
 
     // createWorktree's fanout worktree path is now bounded by
-    // worktreeDirName (§9, v0.11), so a TAG_MAX_LENGTH tag no longer hits
-    // git's own ~200-char win32 worktree-path refusal — this test reaches
-    // the §5 round-trip it exists to pin instead of failing on git's
+    // worktreeDirName, so a TAG_MAX_LENGTH tag no longer hits git's own
+    // ~200-char win32 worktree-path refusal — this test reaches the
+    // prior-attempt round-trip it exists to pin instead of failing on git's
     // refusal first.
-    it("PriorAttemptStore read/write/clear round-trip a §5 record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
+    it("PriorAttemptStore read/write/clear round-trip a prior-attempt record when priorAttemptPath itself nests past win32's ~260-char limit (PRIORATTEMPT-WIN32-PATH-TOTAL-LIMIT)", async () => {
       // Unlike SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT above (depth
       // from the reverted commit's own diff path), the depth driver here is
-      // the §5 record's own filename: priorAttemptPath is
+      // the record's own filename: priorAttemptPath is
       // `<flumeDir>/prior-attempts/<keyspace>/<key>.json`, one fixed segment
       // of nesting and no more, so
       // only the fanout key (slugify(entry.tag), bounded by the real
       // TAG_PATTERN/TAG_MAX_LENGTH schema gate) can push it past 260 — the
       // longest tag the schema accepts, driven through the real writer.
-      // priorAttemptKey keeps the untruncated slug (§9) even though
+      // priorAttemptKey keeps the untruncated slug even though
       // createWorktree's own directory name is now bounded, so this path is
       // still as deep as before.
       const tag = "A".repeat(TAG_MAX_LENGTH);
@@ -16659,8 +16666,8 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     // the real hook-refusal writer and read back through the real renderer,
     // because the two writers share one `failures` string and the rendered
     // prose is the only place the reader can be told the wrong thing. The
-    // span writer's own side is pinned by the §6 taxonomy test above, which
-    // still asserts its failing span and stderr reach the retry.
+    // span writer's own side is pinned by the no-commit taxonomy test above,
+    // which still asserts its failing span and stderr reach the retry.
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 

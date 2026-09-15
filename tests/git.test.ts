@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // `rm` and `unlink`. `rm` is overridden once by a single test below to
 // simulate a removal fallback that resolves without actually clearing the
 // directory — the deterministic, cross-platform stand-in for a
-// locked-handle survivor that even the bounded-retry fallback (§7) cannot
+// locked-handle survivor that even the bounded-retry fallback cannot
 // clear. `unlink` is overridden once by the tip-claim reclaim test to pin a
 // non-ENOENT failure rethrowing instead of being swallowed.
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -422,7 +422,7 @@ it.runIf(process.platform !== "win32")(
   },
 );
 
-describe("dropLastCommit (§17, RELEASE-v0.7)", () => {
+describe("dropLastCommit", () => {
   it("refuses, naming both shas, when the current tip does not match the expected sha", async () => {
     const seedSha = await revParse(repo);
     await writeFile(join(repo, "extra.txt"), "unrelated work");
@@ -985,7 +985,7 @@ it("deleteBranch no-ops on a missing branch whose git rejection carries non-Engl
 });
 
 /**
- * v0.6.2 §7 — win32 worktree removal fallback. A bare `git worktree remove
+ * Win32 worktree removal fallback. A bare `git worktree remove
  * --force` can fail and leave the directory (and its content) behind, most
  * commonly a pnpm-installed `node_modules` still held open. OS-level file
  * locks aren't reproducible portably in CI, so the failure trigger here is a
@@ -994,7 +994,7 @@ it("deleteBranch no-ops on a missing branch whose git rejection carries non-Engl
  * remove throws, real content survives, and the fallback must still clear
  * it.
  */
-describe("removeWorktree (§7)", () => {
+describe("removeWorktree", () => {
   afterEach(() => {
     vi.mocked(rm).mockClear();
   });
@@ -1039,7 +1039,7 @@ describe("removeWorktree (§7)", () => {
     expect(existsSync(path)).toBe(false);
     // Clearing only happened because the fallback's recursive `rm` ran on
     // this exact path — proof the bare-remove failure actually fell
-    // through to §7's fallback rather than clearing on its own. The
+    // through to the removal fallback rather than clearing on its own. The
     // fallback has namespaced the path since REMOVEWORKTREE-WIN32-PATH-
     // TOTAL-LIMIT; asserting the raw `path` only stayed green because
     // `toNamespacedPath` is identity on POSIX.
@@ -1056,7 +1056,8 @@ describe("removeWorktree (§7)", () => {
 
     // Simulate a recursive removal that "succeeds" (no throw, e.g. the
     // process gave up retrying without surfacing an error) yet leaves the
-    // directory behind — the locked-handle survivor §7 must still report.
+    // directory behind — the locked-handle survivor the fallback must still
+    // report.
     vi.mocked(rm).mockImplementationOnce(async () => {});
 
     await expect(removeWorktree(repo, path)).rejects.toThrow(
@@ -1084,7 +1085,7 @@ describe("removeWorktree (§7)", () => {
   });
 });
 
-// win32 total-path limit (v0.4 §6): removeWorktree's fallback rm/existsSync
+// win32 total-path limit: removeWorktree's fallback rm/existsSync
 // join `path` unwrapped — same shape as the tip-claim/createWorktree family
 // (GITTIPCLAIM-WIN32-PATH-TOTAL-LIMIT et al.), on the same worktree-dir
 // depth (Dispatcher.ts's fanout worktree base already needed
@@ -1105,7 +1106,7 @@ describe.runIf(process.platform === "win32")(
       );
       expect(path.length).toBeGreaterThan(260);
       // Stand in for a populated node_modules survivor, same fixture shape
-      // as the shallow-path §7 fallback test above.
+      // as the shallow-path fallback test above.
       await mkdir(join(path, "node_modules", "some-pkg"), { recursive: true });
       await writeFile(
         join(path, "node_modules", "some-pkg", "index.js"),
@@ -1124,12 +1125,12 @@ describe.runIf(process.platform === "win32")(
 );
 
 /**
- * v0.11 §4 — the advisory per-ref tip claim. Keyed under
+ * The advisory per-ref tip claim. Keyed under
  * `<git-common-dir>/flume/tip-claims/<ref path>`, mirroring `liveLoopPid`'s
  * (src/job.ts) exclusive-create/pid-liveness/reclaim shape but as a sibling
  * primitive — the tip claim guards a ref, not a state root.
  */
-describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.11 §4)", () => {
+describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () => {
   it("creates the claim file under <git-common-dir>/flume/tip-claims/<ref path>, holding this process's pid", async () => {
     const refPath = await resolveRefPath(repo);
     const commonDir = await gitCommonDir(repo);
@@ -1250,11 +1251,11 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
   });
 });
 
-// win32 lane (v0.4 §6): the core.longpaths pin only exists on Windows
+// win32 lane: the core.longpaths pin only exists on Windows
 // hosts — assert it where it can actually run. Mirrors tests/job.test.ts's
-// §5a coverage of job.ts's baseline pin; this is the shared helper both
+// coverage of job.ts's baseline pin; this is the shared helper both
 // job.ts and Dispatcher's createWorktree now call.
-describe.runIf(process.platform === "win32")("pinLongPaths (v0.4 §6)", () => {
+describe.runIf(process.platform === "win32")("pinLongPaths", () => {
   it("pins core.longpaths repo-locally, idempotently", async () => {
     await pinLongPaths(repo);
     const { stdout } = await exec(
@@ -1300,7 +1301,7 @@ describe.runIf(process.platform === "win32")("pinLongPaths (v0.4 §6)", () => {
   });
 });
 
-// win32 total-path limit (v0.4 §6): tipClaimPath mirrors refPath as nested
+// win32 total-path limit: tipClaimPath mirrors refPath as nested
 // directories under commonDir/flume/tip-claims — the same shape
 // createWorktree's own branch naming (flume/<namespace>/slugify(entry.tag))
 // already needed toNamespacedPath for (WORKTREE-WIN32-PATH-TOTAL-LIMIT). A

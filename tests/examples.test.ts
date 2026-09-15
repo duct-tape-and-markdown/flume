@@ -867,13 +867,13 @@ describe("example chains — the engine arrives on the api, never through a valu
 });
 
 /**
- * `flume job run` wakes `phases[0]` unconditionally on a cold job (v0.5
- * decision 6, `src/job.ts` `jobRun`) — it has no notion of `humanOnly` at
+ * `flume job run` wakes `phases[0]` unconditionally on a cold job
+ * (`src/job.ts` `jobRun`) — it has no notion of `humanOnly` at
  * that call site. A chain whose entry phase is also in its own `humanOnly`
  * list declares a job that can never cold-start on its own machinery; a
  * human has to intervene on tick one, every time. Every chain under
- * `examples/` is a "read this to learn the shape" artifact (v0.1 §7 /
- * v0.8 §7), so this pins the entry-phase/humanOnly relationship across all
+ * `examples/` is a "read this to learn the shape" artifact, so this pins
+ * the entry-phase/humanOnly relationship across all
  * of them, not just cascade.
  */
 describe("example chains — entry phase is machine-wakeable", () => {
@@ -894,7 +894,7 @@ describe("example chains — entry phase is machine-wakeable", () => {
 });
 
 /**
- * v0.8 §6 / engineering.md "The fix lands at the mechanism" — the flagship
+ * engineering.md "The fix lands at the mechanism" — the flagship
  * example hand-rolled a "does pending.json parse" gate that
  * `docs/CHAIN-AUTHORING.md` itself documents as predating the `pendingGate`
  * builtin. Pins the swap: plan's gate list carries `pendingGate`'s identity

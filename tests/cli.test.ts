@@ -1,5 +1,5 @@
 /**
- * §12 / §14 — CLI env canonicalization.
+ * CLI env canonicalization.
  *
  * After resolution, `process.env.FLUME_DIR` / `process.env.FLUME_CONFIG_DIR`
  * must hold the **absolute resolved** state root, so a chain loaded later in
@@ -50,13 +50,13 @@ const CLI_SRC_PATH = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 
 
 /**
- * §3 — `isInvokedDirectly` (`src/cli.ts`), the seam gating `main()`.
+ * `isInvokedDirectly` (`src/cli.ts`), the seam gating `main()`.
  * Unit-level rather than a subprocess: the seam takes `argv1` and answers
  * against this module's own `import.meta.url`, so calling it directly with
  * `CLI` (this file's own import of cli.ts) exercises the exact comparison
  * `main()` gates on, without the overhead of spawning `tsx` per case.
  */
-describe("isInvokedDirectly — §3 CLI entry survives junctions", () => {
+describe("isInvokedDirectly — CLI entry survives junctions", () => {
   it("argv[1] undefined is never direct (unchanged guard)", () => {
     expect(isInvokedDirectly(undefined)).toBe(false);
   });
@@ -88,7 +88,7 @@ describe("isInvokedDirectly — §3 CLI entry survives junctions", () => {
 
       // The DEV-9191 shape: the raw invoked path differs from the file's
       // realpath — exactly what a junction- or symlink-based install
-      // (pnpm's linked store, v0.5 §4) produces.
+      // (pnpm's linked store) produces.
       expect(junctioned).not.toBe(CLI);
       expect(realpathSync(junctioned)).toBe(realpathSync(CLI));
 
@@ -229,7 +229,7 @@ async function writeStuckEntryPending(root: string): Promise<void> {
 }
 
 /**
- * v0.4 §2a — cross-process loop lock at `<flumeDir>/loop.pid`. One supervisor
+ * Cross-process loop lock at `<flumeDir>/loop.pid`. One supervisor
  * per state root: a second `flume loop` is refused while the recorded pid is
  * alive; a stale pidfile (dead pid) is reclaimed.
  *
@@ -239,7 +239,7 @@ async function writeStuckEntryPending(root: string): Promise<void> {
  * safe despite spawning the real `flume loop` (the lock lives inline in the
  * CLI's `main()`; only a real process can exercise it).
  */
-describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/loop.pid", () => {
+describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.pid", () => {
   // LOOP-MAX-NONNUMERIC-ACCEPTED: the --max bound below resolves before the
   // lock branch above it, so — like the lock cases in this suite — these
   // exercise the real CLI with no chain.ts, no git repo, no child tick.
@@ -294,7 +294,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
   it(
     "refuses a second loop while the recorded pid is alive, leaving the pidfile untouched",
     async () => {
-      // A real git repo on a named branch (v0.11 §4: loop refuses outright
+      // A real git repo on a named branch (loop refuses outright
       // on detached HEAD, before ever reaching the lock check below).
       const repo = await makeJobRepo("main");
       try {
@@ -312,7 +312,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
           `another loop (pid ${process.pid}) already runs`,
         );
         // The refusal names the state root — the lock's scope is flumeDir,
-        // not the repo (§2a: a relocated dock carries its lock with it).
+        // not the repo (a relocated dock carries its lock with it).
         expect(r.out).toContain(flumeDir);
         expect(r.out).toContain("refusing");
         // The holder's pidfile survives the refused contender untouched.
@@ -358,7 +358,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
   );
 
   // LOOP-LOCK-SHARES-LIVELOOPPID: the lock's liveness read and `flume
-  // status`'s supervisor-liveness read (v0.7 §17) both go through
+  // status`'s supervisor-liveness read both go through
   // `liveLoopPid` (src/job.ts) — one probe, not two hand-rolled ones. This
   // pins agreement so a future one-sided change to either call site fails
   // here instead of silently diverging.
@@ -430,7 +430,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
  * commits its declared file — so `commitPendingUpdate`'s rewrite read hits
  * an unparseable ledger after the cherry-pick and (gate-less) afterMerge
  * pass have already landed. The `DECLINE-B` entry never reaches the agent:
- * `shouldRun` declines it before invocation (RELEASE-v0.11 §8), so the wave
+ * `shouldRun` declines it before invocation, so the wave
  * carries one shipped and one declined entry through the same refusal.
  */
 function ledgerRewriteFailureChainSrc(phaseName: string): string {
@@ -602,7 +602,7 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
 });
 
 /**
- * v0.8 §8, real CLI seam — `Chain.supervisorPolicy` reaching `flume loop`'s
+ * Real CLI seam — `Chain.supervisorPolicy` reaching `flume loop`'s
  * supervisor end-to-end (`src/cli.ts`'s best-effort chain resolve →
  * `superviseLoop` forwarding). `tests/loopSupervisor.test.ts`'s "supervisor
  * policy knobs" suite already proves the quarantine/abort-backstop
@@ -617,9 +617,9 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
  * plain FILE, `createWorktree`'s `mkdir(dirname(path), { recursive: true
  * })` throws the identical Node `EEXIST` every attempt.
  */
-describe("flume loop — supervisorPolicy reaching the real CLI (v0.8 §8)", () => {
+describe("flume loop — supervisorPolicy reaching the real CLI", () => {
   it(
-    "a chain declaring no supervisorPolicy: a tagged provisioning failure quarantines once, then the run is unchanged through --max (v0.8 §8 default)",
+    "a chain declaring no supervisorPolicy: a tagged provisioning failure quarantines once, then the run is unchanged through --max (the shipped default)",
     async () => {
       const repo = await makeJobRepo("main");
       const wtDir = await mkdtemp(join(tmpdir(), "flume-wt-collision-"));
@@ -637,7 +637,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI (v0.8 §8)", () 
         });
 
         // One tick errored (the provisioning failure) and nothing ever
-        // shipped — the v0.7 §4 exit-code contract.
+        // shipped — the exit-code contract.
         expect(r.code).toBe(1);
         expect(r.out).toContain("reached --max 5");
         expect(r.out).not.toContain("aborting after");
@@ -657,7 +657,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI (v0.8 §8)", () 
   );
 
   it(
-    'a chain declaring supervisorPolicy: { quarantineScope: "none", abortThreshold: 2 } aborts on the 2nd consecutive identical failure — the override reaches the real supervisor (v0.8 §8)',
+    'a chain declaring supervisorPolicy: { quarantineScope: "none", abortThreshold: 2 } aborts on the 2nd consecutive identical failure — the override reaches the real supervisor',
     async () => {
       const repo = await makeJobRepo("main");
       const wtDir = await mkdtemp(join(tmpdir(), "flume-wt-collision-"));
@@ -683,7 +683,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI (v0.8 §8)", () 
         // "none" keeps STUCK-ENTRY pickable every tick (never quarantined),
         // so the identical signature repeats and the backstop trips at the
         // declared threshold of 2 — never burning to --max 10, and never
-        // falling through to the untouched v0.7 §16 default of 3.
+        // falling through to the untouched shipped default of 3.
         expect(r.code).toBe(1);
         expect(r.out).toContain("aborting after 2 tick(s)");
         expect(r.out).toContain("2 consecutive ticks");
@@ -699,14 +699,14 @@ describe("flume loop — supervisorPolicy reaching the real CLI (v0.8 §8)", () 
 });
 
 /**
- * v0.7 §17 — `flume status` surfaces supervisor liveness beside the awake
+ * `flume status` surfaces supervisor liveness beside the awake
  * markers. Incident (2026-07-29): `status` read baton markers only and
  * printed "hibernating" while a prior supervisor was still alive, so the
  * operator deleted `loop.pid` on a stale assumption. Same pid-liveness
  * shape as the loop-lock tests above (`liveLoopPid`, `src/job.ts`), applied
  * to a bare `.flume/loop.pid` rather than a job dir's.
  */
-describe("flume status — supervisor liveness (v0.7 §17)", () => {
+describe("flume status — supervisor liveness", () => {
   it("names the pid of a live supervisor", async () => {
     const dir = await mkFixtureRoot("flume-status-live-");
     try {
@@ -787,11 +787,11 @@ describe("flume status — supervisor liveness (v0.7 §17)", () => {
   }, SPAWN_BUDGET_MS);
 });
 
-// ---------- v0.6 §2/§3 — job resolution through the real CLI ----------
+// ---------- job resolution through the real CLI ----------
 
 /**
  * Scratch git repo on a chosen branch. The engine has no opinion on branch
- * names (v0.11 §2) — some fixtures below pin `job/foo` merely as a
+ * names — some fixtures below pin `job/foo` merely as a
  * distinctive label, proven inert by running job resolution on `main`
  * instead.
  */
@@ -812,10 +812,10 @@ async function makeJobRepo(branch: string): Promise<{
 }
 
 /**
- * Materialize the repo-resident config (v0.6 §2): `chain.ts` at
+ * Materialize the repo-resident config: `chain.ts` at
  * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
  * fixture in this suite loads from, job resolution or not. `promptPath`
- * stays a plain configDir-relative join (§3: the shared-prompts case).
+ * stays a plain configDir-relative join (the shared-prompts case).
  */
 async function writeRepoConfig(
   root: string,
@@ -830,9 +830,9 @@ async function writeRepoConfig(
 }
 
 /**
- * A minimal, otherwise-valid chain — never ticked in the §6 friction tests
+ * A minimal, otherwise-valid chain — never ticked in the friction tests
  * below, just loaded for its declared fields. `friction` omitted leaves the
- * field undeclared entirely (§2: undeclared turns every §6 behavior off).
+ * field undeclared entirely (undeclared turns every friction behavior off).
  */
 function minimalChainSrc(friction?: string, pendingPath?: string): string {
   return (
@@ -888,13 +888,13 @@ function minimalStubbedAgentChainSrc(): string {
 }
 
 /**
- * §6 (v0.6.2) — `flume status`'s friction line (`frictionCountLine`,
+ * `flume status`'s friction line (`frictionCountLine`,
  * `src/Dispatcher.ts`): a count of files in the declared friction dir,
  * appended only when declared and non-empty. Best-effort: a missing/broken
  * chain never fails `status` (covered elsewhere); these tests hold the
  * chain fixed and vary only the friction declaration/dir contents.
  */
-describe("flume status — friction line (§6)", () => {
+describe("flume status — friction line", () => {
   it("appends a friction count line when Chain.friction is declared and its dir holds files", async () => {
     const repo = await makeJobRepo("main");
     try {
@@ -972,13 +972,13 @@ describe("flume status — friction line (§6)", () => {
 });
 
 /**
- * §3 — `flume status` names the pending entry count alongside awake phases:
+ * `flume status` names the pending entry count alongside awake phases:
  * a valid pending.json by entry count, a corrupt one as "unparsable" rather
  * than silently dropped, and an absent one as 0. No chain/git repo needed —
  * the count comes from `readPendingLoose` (`src/job.ts`), the same
  * chain-less probe `flume job status` uses per job.
  */
-describe("flume status — pending entry count (§3)", () => {
+describe("flume status — pending entry count", () => {
   it("names the entry count for a valid pending.json", async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
     try {
@@ -1076,7 +1076,7 @@ describe("flume status — pending entry count (§3)", () => {
 
 /**
  * A minimal chain declaring `capabilities` (or omitting it) — same shape as
- * `minimalChainSrc`, varied for the v0.8 §4 capability-skip status tests
+ * `minimalChainSrc`, varied for the capability-skip status tests
  * below.
  */
 function capabilityChainSrc(capabilities?: string[]): string {
@@ -1124,12 +1124,12 @@ async function writeCapabilityGatedPending(
 }
 
 /**
- * v0.8 §4 — `requiresDockerHost` generalized to `requiresCapability`: an
+ * `requiresDockerHost` generalized to `requiresCapability`: an
  * entry skipped because the chain hasn't asserted its capability must never
  * be a silent skip. `flume status` names the missing capability alongside
  * the tag so the operator sees why the queue is stuck, without reading logs.
  */
-describe("flume status — names the missing capability on a requiresCapability skip (v0.8 §4)", () => {
+describe("flume status — names the missing capability on a requiresCapability skip", () => {
   it("names the tag and the missing capability when the chain asserts nothing", async () => {
     const repo = await makeJobRepo("main");
     try {
@@ -2642,7 +2642,7 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
 
 /**
  * `flume friction [name]` (spec/cli.md §Subcommand surface) — the read verb
- * over `Chain.friction`. Reuses `minimalChainSrc` from the §6 friction-line
+ * over `Chain.friction`. Reuses `minimalChainSrc` from the friction-line
  * fixtures above: declaring `friction` and leaving it undeclared are both
  * already exercised there for `flume status`; these tests hold the CLI
  * surface itself, not the count-line helper it shares nothing with.

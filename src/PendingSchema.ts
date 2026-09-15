@@ -84,7 +84,7 @@ export const NAME_MAX = 255;
  * composes a name from a raw tag and *nothing else variable* — so the bound
  * can hold it by construction. That arithmetic lives at the writer
  * (Dispatcher.ts), not restated here. Pinned against the real writer by
- * tests/Dispatcher.test.ts, "revert note to the friction channel (§5)": a
+ * tests/Dispatcher.test.ts, "revert note to the friction channel": a
  * gate-revert on the longest tag this module accepts asserts the real
  * filename lands on disk within NAME_MAX.
  *

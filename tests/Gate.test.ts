@@ -580,7 +580,7 @@ describe("writablePathsGate — the refusal reports the paths it refused on", ()
   });
 });
 
-// ---------- chainLoadGate (RELEASE-v0.2 §3) ----------
+// ---------- chainLoadGate ----------
 
 const VALID_CHAIN =
   `export default () => ({ chain: { phases: [{ name: "a", description: "", ` +
@@ -851,7 +851,7 @@ describe("GateContext — the fields every gate context states", () => {
   }, 60_000);
 });
 
-// ---------- pendingGate (RELEASE-v0.8 §6) ----------
+// ---------- pendingGate ----------
 
 describe("pendingGate — composed validation + fence pre-check", () => {
   let dir: string;

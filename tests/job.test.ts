@@ -1,10 +1,10 @@
 /**
- * v0.5 §5a / v0.6 §4 — `flume job new <name>`: a job is a branch plus a
+ * `flume job new <name>`: a job is a branch plus a
  * state root, both named by convention, seeded from the repo chain's
  * declared `Chain.seedDir` (no more `--template`). The suite runs against
  * scratch git repos: seeding, ignore-ensure idempotence, baseline-commit
  * hygiene, and name validation. Job-dir `@dtmd/flume` link provisioning is
- * removed (v0.9 §3): a bay-resolution fixture proves a job chain's
+ * removed: a bay-resolution fixture proves a job chain's
  * `import "@dtmd/flume"` resolves through the bay's own `node_modules`, with
  * no per-job link involved.
  */
@@ -70,7 +70,7 @@ async function makeRepo(): Promise<{
   return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 
-/** Minimal valid chain, no `seedDir` declared — the chain-load precondition `jobNew` enforces (v0.6 §4/§9-7): a chainless repo cannot create a job. */
+/** Minimal valid chain, no `seedDir` declared — the chain-load precondition `jobNew` enforces: a chainless repo cannot create a job. */
 const MINIMAL_CHAIN_SRC =
   `export default () => ({ chain: {\n` +
   `  phases: [{\n` +
@@ -87,8 +87,8 @@ const MINIMAL_CHAIN_SRC =
 
 /**
  * Commit the repo chain at `<repoDir>/.flume/chain.ts` — repo-resident
- * (v0.6 §2), so it rides every branch. Every `jobNew` call now requires this
- * to exist; pass `seedDir` to exercise the v0.6 §4 seed path (any seed
+ *, so it rides every branch. Every `jobNew` call now requires this
+ * to exist; pass `seedDir` to exercise the chain-declared seed path (any seed
  * content under `.flume/` written before this call rides the same commit).
  */
 async function writeRepoChain(
@@ -136,7 +136,7 @@ describe("validateJobName — single-segment shape, checked before dir+branch co
   });
 });
 
-describe("ensureRuntimeIgnores — §5a-3 create-or-merge", () => {
+describe("ensureRuntimeIgnores — create-or-merge", () => {
   it("creates .gitignore with exactly the runtime entries when absent", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
     try {
@@ -180,7 +180,7 @@ describe("ensureRuntimeIgnores — §5a-3 create-or-merge", () => {
     }
   });
 
-  it("folds caller-supplied extra entries (a declared friction dir, §3) alongside RUNTIME_IGNORES into a fresh .gitignore", async () => {
+  it("folds caller-supplied extra entries (a declared friction dir) alongside RUNTIME_IGNORES into a fresh .gitignore", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
     try {
       await ensureRuntimeIgnores(dir, ["friction/"]);
@@ -331,7 +331,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         expect(r.out).toContain("flume job run t1");
 
         // 1. No branch created — HEAD stays on whatever the operator started
-        // on (v0.11 §2/§3).
+        // on.
         expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
           "main",
         );
@@ -350,7 +350,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
           expect(ignores).toContain(entry);
         }
 
-        // 4. No node_modules planted under the job dir (v0.9 §3): a job
+        // 4. No node_modules planted under the job dir: a job
         // chain's `@dtmd/flume` import resolves via the bay's own install,
         // not a provisioned link.
         expect(existsSync(join(jobDir, "node_modules"))).toBe(false);
@@ -569,7 +569,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         expect(noName.code).toBe(2);
         expect(noName.out).toContain("usage: flume job new");
 
-        // --template is gone (v0.6 §4): the CLI no longer parses it as a
+        // --template is gone: the CLI no longer parses it as a
         // flag, so it falls through to the two-positional-args usage error.
         const oldFlag = await runCli(repo.dir, [
           "job",
@@ -741,7 +741,7 @@ describe('jobNew/jobRm — commitMessage override (engine-boundary.md "Capabilit
   }, 60_000);
 });
 
-describe("flume job new — Chain.friction pass-through (§3)", () => {
+describe("flume job new — Chain.friction pass-through", () => {
   it(
     "a declared friction dir lands in a fresh job's .gitignore, forward-slashed and single-trailing-slashed",
     async () => {
@@ -854,7 +854,7 @@ describe("flume job new — Chain.friction pass-through (§3)", () => {
   );
 });
 
-describe("§3 job-dir link provisioning removed — bay resolution", () => {
+describe("job-dir link provisioning removed — bay resolution", () => {
   it("plants no node_modules under the job dir", async () => {
     const repo = await makeRepo();
     try {
@@ -870,7 +870,7 @@ describe("§3 job-dir link provisioning removed — bay resolution", () => {
   it('a job chain\'s `import "@dtmd/flume"` resolves through the bay\'s own node_modules, with no per-job link involved', async () => {
     const repo = await makeRepo();
     try {
-      // The bay's own install (v0.9 §3) — the only place resolution can
+      // The bay's own install — the only place resolution can
       // reach, since `job new` provisions no per-job node_modules.
       const pkgDir = join(repo.dir, "node_modules", "@dtmd", "flume");
       await mkdir(pkgDir, { recursive: true });
@@ -937,7 +937,7 @@ describe("§3 job-dir link provisioning removed — bay resolution", () => {
   });
 });
 
-// ---------- v0.5 §5b — `flume job run` preflight units ----------
+// ---------- `flume job run` preflight units ----------
 
 /**
  * Minimal two-phase chain: `alpha` is `phases[0]` — the entry phase by
@@ -954,10 +954,10 @@ function twoPhaseChainSrc(): string {
 
 /**
  * `job new` + a two-phase chain.ts at the repo `.flume` — the repo-resident
- * location (v0.6 §2) the CLI resolves `configDir` to; returns the job dir.
+ * location the CLI resolves `configDir` to; returns the job dir.
  */
 async function makeRunnableJob(repoDir: string, name: string): Promise<string> {
-  // The chain must exist before `jobNew` loads it (v0.6 §4/§9-7) — write it
+  // The chain must exist before `jobNew` loads it — write it
   // first, then let `job new` seed against it (undeclared seedDir → bare).
   await mkdir(join(repoDir, ".flume"), { recursive: true });
   await writeFile(join(repoDir, ".flume", "chain.ts"), twoPhaseChainSrc(), "utf8");
@@ -965,7 +965,7 @@ async function makeRunnableJob(repoDir: string, name: string): Promise<string> {
   return join(repoDir, ".flume", "jobs", name);
 }
 
-describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §2/§3)", () => {
+describe("jobRun preflight — wake units (branch grammar retired)", () => {
   it("from hibernation, wakes exactly phases[0]; a re-run is idempotent", async () => {
     const repo = await makeRepo();
     try {
@@ -1093,9 +1093,9 @@ describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §
   }, SPAWN_BUDGET_MS);
 });
 
-// ---------- v0.5 §5c — `flume job rm` refusal + removal units ----------
+// ---------- `flume job rm` refusal + removal units ----------
 
-describe("jobRm — §5c refusal + removal units", () => {
+describe("jobRm — refusal + removal units", () => {
   it("refuses on a live loop.pid, touching neither dir nor history", async () => {
     const repo = await makeRepo();
     try {
@@ -1366,7 +1366,7 @@ it("jobNew's seed commit names its job dir in git's forward-slash alphabet", asy
   }
 }, 60_000);
 
-// ---------- v0.5 §5d — `flume job status` enumeration units ----------
+// ---------- `flume job status` enumeration units ----------
 
 /** Minimal valid pending entry (schema defaults fill the rest). */
 function pendingEntry(tag: string): object {
@@ -1380,7 +1380,7 @@ function pendingEntry(tag: string): object {
   };
 }
 
-describe("jobStatus — §5d enumeration units", () => {
+describe("jobStatus — enumeration units", () => {
   it("returns [] when .flume/jobs (or .flume itself) is absent, materializing nothing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
     try {
@@ -1425,7 +1425,7 @@ describe("jobStatus — §5d enumeration units", () => {
     }
   });
 
-  it("§6 (v0.6.2): a supplied frictionDir counts files under <jobdir>/<frictionDir>, per job", async () => {
+  it("a supplied frictionDir counts files under <jobdir>/<frictionDir>, per job", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
     try {
       const jobs = join(dir, ".flume", "jobs");
@@ -1876,10 +1876,10 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
   });
 });
 
-// win32 lane (v0.4 §6): the core.longpaths pin only exists on Windows
+// win32 lane: the core.longpaths pin only exists on Windows
 // hosts — assert it where it can actually run.
 describe.runIf(process.platform === "win32")(
-  "§5a win32 lane — core.longpaths",
+  "win32 lane — core.longpaths",
   () => {
     it("pins core.longpaths repo-locally, idempotently", async () => {
       const repo = await makeRepo();

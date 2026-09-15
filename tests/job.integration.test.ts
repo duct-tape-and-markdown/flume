@@ -1,14 +1,14 @@
 /**
- * v0.5 §5b + v0.11 §2/§3 — `flume job new` → `flume job run` end-to-end on a
+ * `flume job new` → `flume job run` end-to-end on a
  * scratch repo. Branch grammar is retired: `job new` builds the state root
  * on whatever branch is current and touches no branch; `job run` wakes the
  * entry phase and loops there, asserting nothing about HEAD. The run path is
  * the standard loop under the job resolution: same `loop.pid` lock, same
  * one-child-per-tick supervisor, same exit codes as `flume loop`. Running
  * jobs hot simultaneously is now the operator's `git worktree add` on a
- * branch they create by hand (§2) — out of scope here.
+ * branch they create by hand — out of scope here.
  *
- * Chain residency (v0.6 §2): the chain + prompts are committed at the repo
+ * Chain residency: the chain + prompts are committed at the repo
  * `.flume/` — one chain per `.flume`, tracked — and job dirs stay thin
  * (state only, no chain shims).
  */
@@ -47,9 +47,9 @@ async function makeRepo(): Promise<{
 
 /**
  * Commit a chain + prompt at `<repo>/.flume/` — the repo-resident config
- * (v0.6 §2), tracked so every branch (and every linked worktree's checkout)
+ *, tracked so every branch (and every linked worktree's checkout)
  * carries it. `promptPath` is a configDir-relative join into the sibling
- * `prompts/` dir — the §3 shared-prompt shape.
+ * `prompts/` dir — the shared-prompt shape.
  */
 async function commitRepoConfig(
   dir: string,
@@ -103,7 +103,7 @@ const PROBE_CHAIN_SRC =
   `  },\n` +
   `} });\n`;
 
-describe("§5b integration — job new → job run", () => {
+describe("integration — job new → job run", () => {
   it(
     "new creates a thin job on the current branch, run loads the repo chain, wakes the entry phase, ticks it, and releases the lock — no branch touched",
     async () => {
@@ -113,7 +113,7 @@ describe("§5b integration — job new → job run", () => {
 
         const created = await runCli(repo.dir, ["job", "new", "itest"]);
         expect(created.code).toBe(0);
-        // v0.11 §2/§3: no branch created — HEAD stays where it started.
+        // No branch created — HEAD stays where it started.
         expect(await gitOut(repo.dir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(
           "main",
         );
@@ -122,17 +122,17 @@ describe("§5b integration — job new → job run", () => {
         const run = await runCli(repo.dir, ["job", "run", "itest", "--max", "5"]);
         expect(run.code).toBe(0);
 
-        // §5b-2: hibernating baton → phases[0] woken. No branch assertion or
-        // checkout (v0.11 §2/§3).
+        // Hibernating baton → phases[0] woken. No branch assertion or
+        // checkout.
         expect(run.out).toContain("woke probe (entry phase)");
         expect(run.out).not.toContain("checked out");
 
-        // §5b-3: the standard supervisor ran the tick and stopped on
+        // The standard supervisor ran the tick and stopped on
         // hibernation (handoff → []), well under --max.
         expect(run.out).toMatch(/tick → probe \(singleton\)/);
         expect(run.out).toContain("hibernating after 1 tick(s)");
 
-        // The child tick observed the full §3 job resolution via env: state
+        // The child tick observed the full job resolution via env: state
         // in the job dir, config at the repo's own .flume.
         const observed = JSON.parse(
           await readFile(join(jobDir, "observed-env.json"), "utf8"),
@@ -191,7 +191,7 @@ describe("§5b integration — job new → job run", () => {
   );
 
   it(
-    "two state roots under one checkout each tick sequentially — no branch switch (§2 acceptance fixture)",
+    "two state roots under one checkout each tick sequentially — no branch switch (a job is a state root)",
     async () => {
       const repo = await makeRepo();
       try {
@@ -224,7 +224,7 @@ describe("§5b integration — job new → job run", () => {
   );
 });
 
-describe("§5c integration — job new → job run (tick) → job rm", () => {
+describe("integration — job new → job run (tick) → job rm", () => {
   it(
     "rm after a ticked run sweeps the dir and runtime remnants, commits cleanup on the current HEAD; second rm on the now-gone dir is a usage error",
     async () => {
@@ -235,7 +235,7 @@ describe("§5c integration — job new → job run (tick) → job rm", () => {
         expect(created.code).toBe(0);
 
         // One tick, then hibernation — leaving runtime remnants in the
-        // state root. No branch is ever touched (v0.11 §2/§3).
+        // state root. No branch is ever touched.
         const run = await runCli(repo.dir, ["job", "run", "rme", "--max", "5"]);
         expect(run.code).toBe(0);
         const jobDir = join(repo.dir, ".flume", "jobs", "rme");
@@ -264,13 +264,13 @@ describe("§5c integration — job new → job run (tick) → job rm", () => {
         });
         expect(status.trim()).toBe("");
 
-        // A job is exactly its state root (§2) — once the dir is gone,
+        // A job is exactly its state root — once the dir is gone,
         // there is no job left to remove, and a second rm says so.
         const again = await runCli(repo.dir, ["job", "rm", "rme"]);
         expect(again.code).toBe(2);
         expect(again.out).toContain("no job 'rme'");
 
-        // The repo chain survives the removed job (§2) — rm sweeps only the
+        // The repo chain survives the removed job — rm sweeps only the
         // job's state root.
         expect(existsSync(join(repo.dir, ".flume", "chain.ts"))).toBe(true);
       } finally {

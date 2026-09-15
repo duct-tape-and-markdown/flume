@@ -108,16 +108,16 @@ describe("resolveStateDirs", () => {
 });
 
 /**
- * v0.6 §3 — job resolution at the seam. `--job <name>` (or `FLUME_JOB`)
+ * Job resolution at the seam. `--job <name>` (or `FLUME_JOB`)
  * retargets only the state root (`flumeDir` → `<repoRoot>/.flume/jobs/<name>`);
- * `configDir` never retargets — the chain is repo-resident (§2), so it stays
+ * `configDir` never retargets — the chain is repo-resident, so it stays
  * `<repoRoot>/.flume` or explicit `FLUME_CONFIG_DIR`. All three env vars are
  * written back, so loop-spawned children inherit the whole resolution. The
  * flag is a strict authority over state: an explicit `FLUME_DIR` beside it
  * is a conflict (exit 2 at the CLI boundary); an explicit `FLUME_CONFIG_DIR`
  * composes — env owns config, job owns state.
  */
-describe("resolveStateDirs — §3 job resolution", () => {
+describe("resolveStateDirs — job resolution", () => {
   const jobDir = join(repoRoot, ".flume", "jobs", "alpha");
   const repoConfig = join(repoRoot, ".flume");
 
@@ -172,7 +172,7 @@ describe("resolveStateDirs — §3 job resolution", () => {
     // The parent's write-back sets all three; the child must not classify its
     // own inheritance as a conflict. The dir vars ARE the canonical job
     // resolution, so they win, and the job name survives for the fanout
-    // namespace (v0.5 §4).
+    // namespace.
     // resolve() drive-qualifies on win32 — the untouched assertion needs a
     // true absolute input. The parent's write-back stamps
     // FLUME_DIR_RESOLVED_FOR alongside the dirs, and it agrees with this
@@ -369,14 +369,14 @@ describe("resolveStateDirs — cross-repo FLUME_DIR provenance-stamp refusal", (
 });
 
 /**
- * v0.7 §9 — bay discovery walk-up. `repoRoot` used to be a literal
+ * Bay discovery walk-up. `repoRoot` used to be a literal
  * `process.cwd()`; it now walks up looking for the nearest `.flume`,
  * mirroring git's `.git` resolution. `cwd` itself counts as inside the bay
  * (the `.flume`-resident-cwd special case skips the walk entirely); no
  * `.flume` anywhere up to the filesystem root falls back to `cwd` unchanged
  * so bootstrapping a fresh, undocked repo is unaffected.
  */
-describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
+describe("resolveRepoRoot — bay discovery walk-up", () => {
   it("cwd itself holds .flume: returns cwd", async () => {
     const dir = await mkFixtureRoot("flume-walkup-");
     try {
@@ -495,7 +495,7 @@ describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
 });
 
 /**
- * §3 / v0.7 §4 — `flume tick` exit-code classification at the process
+ * `flume tick` exit-code classification at the process
  * boundary: 78 (`EX_CONFIG`) terminal misconfiguration, 69 (`EX_UNAVAILABLE`,
  * `EX_MOUNT_DEAD`) the mount-dead failure class (chain never resolved),
  * 0 clean hibernate or ordinary work. Exercised at the mapping seam
@@ -520,10 +520,10 @@ async function makeJobRepo(branch: string): Promise<{
 }
 
 /**
- * Materialize the repo-resident config (v0.6 §2): `chain.ts` at
+ * Materialize the repo-resident config: `chain.ts` at
  * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
  * fixture in this suite loads from, job resolution or not. `promptPath`
- * stays a plain configDir-relative join (§3: the shared-prompts case).
+ * stays a plain configDir-relative join (the shared-prompts case).
  */
 async function writeRepoConfig(
   root: string,
@@ -538,12 +538,12 @@ async function writeRepoConfig(
 }
 
 /**
- * A job-dir `chain.ts` that detonates on load. Inert by construction (§2):
+ * A job-dir `chain.ts` that detonates on load. Inert by construction:
  * the runtime never looks in the job dir for a chain, so any test that ticks
  * or loops past this file proves the repo chain is what loaded.
  */
 const INERT_TRAP_CHAIN_SRC =
-  `throw new Error("job-local chain.ts was loaded — chains are repo-resident (v0.6 §2)");\n`;
+  `throw new Error("job-local chain.ts was loaded — chains are repo-resident");\n`;
 
 function minimalChainSrc(friction?: string): string {
   return (
@@ -570,8 +570,8 @@ function minimalChainSrc(friction?: string): string {
  * FLUME_JOB it observes *inside the child tick process* to
  * `<FLUME_DIR>/observed-env.json`. The supervisor spawns the tick with no
  * `env:` override, so what lands in that file is exactly what the child
- * inherited across the loop → tick boundary — the §3 inheritance claim made
- * observable end-to-end.
+ * inherited across the loop → tick boundary — the job-resolution inheritance
+ * claim made observable end-to-end.
  */
 function jobEnvProbeChainSrc(phaseName: string): string {
   return (
@@ -640,7 +640,7 @@ function jobNewEnvProbeChainSrc(): string {
 }
 
 /**
- * v0.5 §4 — a fanout chain whose agent records the branch of the worktree it
+ * A fanout chain whose agent records the branch of the worktree it
  * was invoked in to `<FLUME_DIR>/observed-branch.txt`. The agent commits
  * nothing (the tick falls through clean), so what lands in the file is purely
  * the branch `createWorktree` named — the namespace claim made observable
@@ -681,7 +681,7 @@ function jobFanoutProbeChainSrc(phaseName: string): string {
   );
 }
 
-describe("§3 job resolution — real CLI", () => {
+describe("job resolution — real CLI", () => {
   it(
     "--job alongside explicit FLUME_DIR is a usage error (exit 2); a valueless --job likewise; FLUME_CONFIG_DIR beside --job is no conflict",
     async () => {
@@ -696,7 +696,7 @@ describe("§3 job resolution — real CLI", () => {
         expect(conflict.out).toContain("FLUME_DIR");
         expect(conflict.out).toContain("one resolution authority");
 
-        // The conflict narrowed to FLUME_DIR (§3): config beside --job
+        // The conflict narrowed to FLUME_DIR: config beside --job
         // composes instead of erroring. Pre-existing per
         // CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT: --job now refuses a
         // name with no state root, so this composition probe needs one.
@@ -737,7 +737,7 @@ describe("§3 job resolution — real CLI", () => {
         expect(tick.out).toContain(jobDir);
         expect(existsSync(jobDir)).toBe(false);
 
-        // FLUME_JOB alone (no flag) refuses identically (§3 parity).
+        // FLUME_JOB alone (no flag) refuses identically (resolution parity).
         const envOnly = await runCli(repo.dir, ["status"], {
           ...hermeticEnv(),
           FLUME_JOB: "ghost",
@@ -828,7 +828,7 @@ describe("§3 job resolution — real CLI", () => {
   );
 
   it(
-    "tick/loop under --job succeed regardless of current branch (wrong-branch guard retired, v0.11 §2)",
+    "tick/loop under --job succeed regardless of current branch (wrong-branch guard retired)",
     async () => {
       const repo = await makeJobRepo("main"); // deliberately not job/foo
       try {
@@ -843,7 +843,7 @@ describe("§3 job resolution — real CLI", () => {
           "main",
         );
 
-        // The env var is honored identically to the flag (§3).
+        // The env var is honored identically to the flag.
         new Baton(jobDir).wake("probe");
         const envOnly = await runCli(repo.dir, ["loop", "--max", "1"], {
           ...hermeticEnv(),
@@ -859,7 +859,7 @@ describe("§3 job resolution — real CLI", () => {
   );
 
   it(
-    "two state roots under one checkout each run a tick sequentially, no branch switch (§2 acceptance fixture)",
+    "two state roots under one checkout each run a tick sequentially, no branch switch (a job is a state root)",
     async () => {
       const repo = await makeJobRepo("main");
       try {
@@ -894,7 +894,7 @@ describe("§3 job resolution — real CLI", () => {
         await writeRepoConfig(repo.dir, jobEnvProbeChainSrc("probe"));
         const jobDir = join(repo.dir, ".flume", "jobs", "foo");
         await mkdir(jobDir, { recursive: true });
-        // §2 inertness: configDir never follows --job, so status's and
+        // Chain inertness: configDir never follows --job, so status's and
         // wake/sleep's best-effort chain loads all reach the repo chain
         // (which declares "probe"), never this job-dir trap.
         await writeFile(join(jobDir, "chain.ts"), INERT_TRAP_CHAIN_SRC, "utf8");
@@ -943,7 +943,7 @@ describe("§3 job resolution — real CLI", () => {
         await writeRepoConfig(repo.dir, jobEnvProbeChainSrc("probe"));
         const jobDir = join(repo.dir, ".flume", "jobs", "foo");
         await mkdir(jobDir, { recursive: true });
-        // §2 inertness under tick: the trap would fail the loop if loaded.
+        // Chain inertness under tick: the trap would fail the loop if loaded.
         await writeFile(join(jobDir, "chain.ts"), INERT_TRAP_CHAIN_SRC, "utf8");
         new Baton(jobDir).wake("probe");
 
@@ -1008,7 +1008,7 @@ describe("§3 job resolution — real CLI", () => {
   );
 
   it(
-    "fanout under FLUME_JOB names the worktree branch flume/<job>/<slug> — namespace flows CLI → dispatcher (v0.5 §4)",
+    "fanout under FLUME_JOB names the worktree branch flume/<job>/<slug> — namespace flows CLI → dispatcher",
     async () => {
       const repo = await makeJobRepo("job/foo");
       try {
@@ -1053,7 +1053,7 @@ describe("§3 job resolution — real CLI", () => {
         new Baton(jobDir).wake("probe");
 
         // FLUME_JOB alone, no --job flag: the env-var resolution path must
-        // carry the namespace to the dispatcher identically (§3 parity).
+        // carry the namespace to the dispatcher identically (same parity).
         const tick = await runCli(repo.dir, ["tick"], {
           ...hermeticEnv(),
           FLUME_JOB: "foo",

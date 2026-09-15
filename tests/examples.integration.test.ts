@@ -1,5 +1,5 @@
 /**
- * v0.8 §7 — second reference chain smoke test.
+ * Second reference chain smoke test.
  *
  * Drives `examples/backlog-groomer-chain.ts` through one full tick cycle on
  * the unpatched engine: fixture repo, real chain + real prompt file (loaded
@@ -43,7 +43,7 @@ const exec = promisify(execFile);
 const EXAMPLES_DIR = fileURLToPath(new URL("../examples", import.meta.url));
 
 /**
- * The chain as a tick at `repoRoot` builds it (v0.11 §6: examples
+ * The chain as a tick at `repoRoot` builds it (examples
  * default-export a factory, so the chain under test is built the way a real
  * tick builds it — through the real API object, not a hand-assembled
  * stand-in). One `FlumePaths` object, handed to `buildFlumeApi` and spread
@@ -97,7 +97,7 @@ const neverAgent: Agent = {
   },
 };
 
-describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () => {
+describe("second reference chain (backlog-groomer-chain.ts)", () => {
   it(
     "completes one tick cycle: skips a capability-gated item, ships the top open one, commits, hibernates",
     async () => {
@@ -177,7 +177,7 @@ describe("v0.8 §7 — second reference chain (backlog-groomer-chain.ts)", () =>
         });
         expect(log.stdout.trim()).toBe("groom: ship trim-notes-intro");
 
-        // §7 acceptance: zero src/ changes attributable to this example.
+        // Acceptance: zero src/ changes attributable to this example.
         const diff = await exec(
           "git",
           ["diff", "--name-only", preHead, "HEAD"],

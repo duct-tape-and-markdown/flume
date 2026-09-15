@@ -73,7 +73,7 @@ export function requireEntryPoint(path: string, remedy: string): string {
 // Run the source CLI through the project's own `tsx` (no build step in this
 // repo) — via `node <tsx cli.mjs>`, not the `.bin/tsx` shim: the shim is a
 // shell script (`.cmd` on win32) that `execFile` cannot spawn without a
-// shell (§6 spawn discipline). Absolute paths so cwd can be any caller's
+// shell (spawn discipline). Absolute paths so cwd can be any caller's
 // temp repo; tsx resolves cli.ts's own imports relative to cli.ts,
 // independent of cwd.
 export const CLI = requireEntryPoint(

@@ -53,7 +53,7 @@ function extractFunctionBody(src: string, fnName: string): string {
   throw new Error(`unbalanced braces scanning function ${fnName}`);
 }
 
-/** Engine-core entry (v0.8 §2): tag, gate, dependsOnForks, files — nothing else. */
+/** Engine-core entry: tag, gate, dependsOnForks, files — nothing else. */
 const baseEntry = {
   tag: "EXAMPLE-TAG",
   files: {
@@ -158,7 +158,7 @@ describe("parsePending — rejects malformed entries", () => {
     expect(result.errors[0]!.message).toMatch(/invalid JSON/);
   });
 
-  it("rejects a tag containing whitespace (v0.8 §3: mechanical safety only)", () => {
+  it("rejects a tag containing whitespace (mechanical safety only)", () => {
     const result = parsePending(
       JSON.stringify([
         { ...baseEntry, gate: { kind: "open" }, tag: "DAL REWIRE" },
@@ -224,7 +224,7 @@ describe("parsePending — rejects malformed entries", () => {
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
   });
 
-  it("rejects the retired gate=requiresDockerHost variant (v0.8 §4)", () => {
+  it("rejects the retired gate=requiresDockerHost variant", () => {
     const result = parsePending(
       JSON.stringify([{ ...baseEntry, gate: { kind: "requiresDockerHost" } }]),
     );
@@ -251,7 +251,7 @@ describe("parsePending — rejects malformed entries", () => {
   });
 });
 
-describe("chain-declared extension (v0.8 §2)", () => {
+describe("chain-declared extension", () => {
   const extended = {
     ...baseEntry,
     gate: { kind: "open" },
@@ -327,7 +327,7 @@ describe("chain-declared extension (v0.8 §2)", () => {
   });
 });
 
-describe("tag grammar reduces to mechanical safety (v0.8 §3)", () => {
+describe("tag grammar reduces to mechanical safety", () => {
   it("DAL-REWIRE(usp_Filter_Get) validates against the bare core", () => {
     const result = parsePending(
       JSON.stringify([
@@ -395,7 +395,7 @@ describe("tag grammar reduces to mechanical safety (v0.8 §3)", () => {
   });
 });
 
-describe("tag uniqueness within the queue (v0.8 §3)", () => {
+describe("tag uniqueness within the queue", () => {
   it("rejects two entries sharing a tag, naming both offending indices (bare core)", () => {
     const result = parsePending(
       JSON.stringify([
@@ -470,7 +470,7 @@ describe("tag uniqueness within the queue (v0.8 §3)", () => {
   });
 });
 
-describe("entryExtension validators are adapted, not merged (v0.11 §11 — ENTRYEXTENSION-STANDARD-SCHEMA)", () => {
+describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STANDARD-SCHEMA)", () => {
   /**
    * No zod anywhere in this describe block: a hand-rolled object
    * implementing the Standard Schema protocol directly, so these tests
@@ -904,7 +904,7 @@ describe("gate=blockedBy — pickability against a tag list (spec/pending.md § 
   });
 });
 
-describe("gate=requiresCapability — pickability (v0.8 §4)", () => {
+describe("gate=requiresCapability — pickability", () => {
   const noForks = new Set<string>();
 
   it("is pickable when the capability is asserted", () => {

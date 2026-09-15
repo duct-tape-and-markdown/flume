@@ -188,10 +188,10 @@ try {
     "npm install tarball",
     "npm",
     // --no-save: without it npm records a file: pin in the consumer's
-    // package.json, and the v0.7 §10 handshake (arm 2) then refuses every
-    // command against the unprovisioned pin — same class as ci.yml's
-    // Consumer-install smoke fix (7ee70ed). A consumer-install smoke tests
-    // "works when installed", not "works when pinned".
+    // package.json, pinning the consumer to a tarball this script deletes on
+    // cleanup — same class as ci.yml's Consumer-install smoke fix (7ee70ed).
+    // A consumer-install smoke tests "works when installed", not "works when
+    // pinned".
     ["install", "--no-audit", "--no-fund", "--no-save", tarballPath],
     { cwd: consumerDir },
   );
