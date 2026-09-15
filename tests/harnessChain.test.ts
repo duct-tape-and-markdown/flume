@@ -20,7 +20,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
@@ -43,6 +43,7 @@ import { planSliceWindows } from "../harness/windows.ts";
 import type { ClaudeCodeOptions } from "../src/Agent.ts";
 import { computeStateRootRel } from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
+import type { Gate, GateContext } from "../src/Gate.ts";
 import type {
   Chain,
   Phase,
@@ -767,5 +768,208 @@ it("a declared agents inheritUserMcp reaches the phase's claudeCode options", ()
   expect(optionsFor(BUILD_PHASE).inheritUserMcp).toBe(true);
   for (const phase of PLAN_SLICES) {
     expect([phase, "inheritUserMcp" in optionsFor(phase)]).toEqual([phase, false]);
+  }
+});
+
+/** The context a gate is handed, as the dispatcher builds one, over `cwd`. */
+function gateContext(cwd: string): GateContext {
+  return {
+    cwd,
+    repoRoot: repo,
+    flumeDir,
+    stateRootRel: computeStateRootRel(repo, flumeDir),
+    pendingPath: join(flumeDir, "plan", "pending.json"),
+    configDir: flumeDir,
+    phaseName: BUILD_PHASE,
+    commitSha: "0".repeat(40),
+    baseSha: "1".repeat(40),
+    touchedPaths: [],
+    log: () => {},
+  };
+}
+
+it("a declaration with no setup leaves every returned phase without a setupWorktree hook", () => {
+  // Non-vacuity: the base declaration genuinely says nothing about setup, so
+  // the absence below is the factory's answer to silence rather than to a
+  // fixture that happened to declare an empty one.
+  expect("setup" in DECLARATION).toBe(false);
+
+  const chain = chainFor();
+  expect(chain.phases.length).toBeGreaterThan(0);
+
+  // No hook at all, rather than one that installs on the engine's own
+  // authority: a tree the consumer said nothing about is one the engine
+  // skips the step for.
+  expect(
+    chain.phases.filter((phase) => phase.setupWorktree !== undefined).map((p) => p.name),
+  ).toEqual([]);
+});
+
+it("a declared setup gives every returned phase a setupWorktree hook that provisions its worktree", async () => {
+  // A restore command rather than the engine's installer, so the case reads
+  // provisioning off a marker the declaration itself named — a consumer
+  // whose stack has no lockfile the engine reads declares exactly this.
+  const marker = "provisioned-by-the-worktree-hook";
+  const chain = chainFor({
+    ...DECLARATION,
+    runner: recordingRunner([]),
+    setup: { directories: ["."], restore: `touch ${marker}` },
+  });
+  expect(chain.phases.length).toBeGreaterThan(0);
+
+  // Singleton and fanout alike: a plan slice runs in a worktree too, so a
+  // hook hung on build alone would leave three phases judging an uninstalled
+  // tree.
+  for (const phase of chain.phases) {
+    const worktreePath = join(repo, "setup-hook", phase.name);
+    await mkdir(worktreePath, { recursive: true });
+
+    const hook = phase.setupWorktree;
+    expect([phase.name, hook !== undefined]).toEqual([phase.name, true]);
+    await hook!({ worktreePath, repoRoot: repo, worktreeKey: phase.name });
+
+    expect([phase.name, existsSync(join(worktreePath, marker))]).toEqual([
+      phase.name,
+      true,
+    ]);
+  }
+
+  // At the worktree's root, not the repo's: the hook provisions the tree the
+  // tick was handed, and a reduction anchored to the checkout it was built
+  // from would install where no gate runs.
+  expect(existsSync(join(repo, marker))).toBe(false);
+});
+
+it("each registry gate name the package ships constructs that builtin at the declared when", () => {
+  // The keys are spelled as a consumer spells them, and each is paired with
+  // the builtin it has to construct. The registry keys by each gate's own
+  // `Function.name` (`src/builtinGates.ts`), so the name a declaration
+  // carries and the name the package ships are two sides of a seam no type
+  // joins — this reads the declaration side through the real factory.
+  const shipped: Record<string, Gate> = {
+    tsc: api.tscGate,
+    vitest: api.vitestGate,
+    eslint: api.eslintGate,
+    "chain-load": api.chainLoadGate,
+  };
+  expect(
+    Object.entries(shipped).map(([declared, gate]) => [declared, gate.name]),
+  ).toEqual(Object.keys(shipped).map((declared) => [declared, declared]));
+
+  // And every builtin defaults to `afterCommit`, so the declared `when`
+  // below is read off a gate that actually moved.
+  expect(Object.values(shipped).map((gate) => gate.when)).toEqual(
+    Object.values(shipped).map(() => "afterCommit"),
+  );
+
+  const build = phaseNamed(
+    chainFor({
+      ...DECLARATION,
+      runner: recordingRunner([]),
+      gates: {
+        build: Object.keys(shipped).map((name) => ({
+          kind: "registry" as const,
+          name,
+          when: "afterMerge" as const,
+        })),
+      },
+    }),
+    BUILD_PHASE,
+  );
+
+  for (const [declared, builtin] of Object.entries(shipped)) {
+    const gate = build.gates.find((candidate) => candidate.name === declared);
+    // The builtin's own spawn line, not `sh -c <name>`: a registry name that
+    // fell through to the shell arm would carry the name and run nothing.
+    expect({ declared, when: gate?.when, command: gate?.command }).toEqual({
+      declared,
+      when: "afterMerge",
+      command: builtin.command,
+    });
+  }
+
+  // `chain-load` carries no command to compare, being a plain `Gate` the
+  // factory spreads — so what it runs is read by identity instead.
+  expect(build.gates.find((gate) => gate.name === "chain-load")?.run).toBe(
+    api.chainLoadGate.run,
+  );
+});
+
+it("a registry gate name the package does not ship refuses the load naming the set it could have been", () => {
+  // Read off the builtins rather than respelled: the previous case owns the
+  // claim that these are the names a declaration writes.
+  const shipped = [api.tscGate, api.vitestGate, api.eslintGate, api.chainLoadGate].map(
+    (gate) => gate.name,
+  );
+  expect(shipped.length).toBeGreaterThan(0);
+
+  const loadWith = (name: string) => (): Chain =>
+    chainFor({
+      ...DECLARATION,
+      runner: recordingRunner([]),
+      gates: { build: [{ kind: "registry", name, when: "afterCommit" }] },
+    });
+
+  // Control: a name the registry does hold loads, so the refusal below is
+  // the name's doing and not the gate declaration's.
+  expect(loadWith(shipped[0]!)).not.toThrow();
+
+  // Refused at load, not dropped into a phase whose gate set silently lost a
+  // check the consumer declared.
+  expect(loadWith("typecheck")).toThrow(/typecheck/);
+
+  let message = "";
+  try {
+    loadWith("typecheck")();
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  // Every name it could have been, by name: "not one the registry ships"
+  // alone leaves a consumer guessing at the spelling.
+  expect(shipped.filter((name) => !message.includes(`\`${name}\``))).toEqual([]);
+  // And the two kinds that need no registry at all, so a consumer whose
+  // check is a command is not left thinking the registry is the only door.
+  expect({
+    shell: message.includes("shell"),
+    script: message.includes("script"),
+  }).toEqual({ shell: true, script: true });
+});
+
+it("a declared script gate hangs the committed path at the declared when, named by the path", async () => {
+  const script = "scripts/check-the-tree.sh";
+  const build = phaseNamed(
+    chainFor({
+      ...DECLARATION,
+      runner: recordingRunner([]),
+      gates: { build: [{ kind: "script", path: script, when: "afterMerge" }] },
+    }),
+    BUILD_PHASE,
+  );
+
+  const gate = build.gates.find((candidate) => candidate.name === script);
+  // Named by the path itself: the gate's name is what a failing tick reports
+  // and what the next tick's prompt carries, so a second spelling would be a
+  // name the consumer never wrote.
+  expect({ name: gate?.name, when: gate?.when, command: gate?.command }).toEqual({
+    name: script,
+    when: "afterMerge",
+    command: `sh -c ${script}`,
+  });
+
+  // And the path is the gate's own tree's, resolved there and run under its
+  // own shebang — which is what makes a committed script declarable at all.
+  const tree = await mkdtemp(join(tmpdir(), "flume-harness-chain-script-"));
+  try {
+    await mkdir(join(tree, "scripts"), { recursive: true });
+    await writeFile(join(tree, script), "#!/bin/sh\ntouch ran-the-committed-script\n");
+    await chmod(join(tree, script), 0o755);
+
+    const result = await gate!.run(gateContext(tree));
+    expect({
+      ok: result.ok,
+      ran: existsSync(join(tree, "ran-the-committed-script")),
+    }).toEqual({ ok: true, ran: true });
+  } finally {
+    await rm(tree, { recursive: true, force: true });
   }
 });
