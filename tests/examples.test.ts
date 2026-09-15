@@ -255,13 +255,25 @@ describe("examples/prompts — the spans read the injected state root", () => {
     }));
 
   /**
+   * Every shipped template's bytes as they ship — one read, from which the
+   * span sweep below is derived rather than read a second time
+   * (`engineering.md`, *The fix lands at the mechanism*). What a consumer
+   * copies is the whole file, so a pin whose subject is the template rather
+   * than its spans reads this.
+   */
+  const sources = shipped.map(({ file }) => ({
+    file,
+    text: readFileSync(join(PROMPT_DIR, file), "utf8"),
+  }));
+
+  /**
    * Every inline-exec span across the shipped set, paired with the template
    * that carries it — one sweep, read by every absence pin below
    * (`engineering.md`, *The fix lands at the mechanism*: detection a sibling
    * surface already performs is shared, never re-derived beside it).
    */
-  const allSpans = shipped.flatMap(({ file }) =>
-    [...readFileSync(join(PROMPT_DIR, file), "utf8").matchAll(SPAN)].map((m) => ({
+  const allSpans = sources.flatMap(({ file, text }) =>
+    [...text.matchAll(SPAN)].map((m) => ({
       file,
       cmd: m[1]!,
     })),
@@ -516,11 +528,32 @@ describe("examples/prompts — the spans read the injected state root", () => {
     await everyPromptReadsItsArtifactsUnder(root);
   });
 
-  it("no span in a shipped example prompt names a literal .flume/ path", () => {
-    // Non-vacuity: a prompt set with no spans at all satisfies the absence.
-    expect(allSpans.length).toBeGreaterThan(0);
+  /**
+   * The same claim over the whole file, because a template's prose is an
+   * instruction too: a span rooted at `{{FLUME_DIR}}` beside an OUTPUT block
+   * naming `.flume/plan/...` sends the agent to write outside the fence its
+   * slice is judged by the moment the root moves (`--job`, a relocated
+   * state root). A sweep of the spans alone cannot see that half.
+   */
+  it("no shipped example prompt names a literal .flume/ path outside a span", () => {
+    // Non-vacuity: an empty prompt set, or templates read as empty bytes,
+    // satisfies the absence over nothing.
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.filter(({ text }) => text.trim() === "")).toEqual([]);
 
-    expect(allSpans.filter((s) => s.cmd.includes(".flume/"))).toEqual([]);
+    // Non-vacuity for *outside a span*: strip every span and prose has to
+    // remain, or the widened claim is asserted over the same bytes the span
+    // sweep already covered.
+    const prose = sources.map(({ file, text }) => ({ file, text: text.replace(SPAN, "") }));
+    expect(prose.filter(({ text }) => text.trim() === "")).toEqual([]);
+
+    expect(prose.filter(({ text }) => text.includes(".flume/")).map(({ file }) => file)).toEqual(
+      [],
+    );
+    // And the spans, so the whole of what a consumer copies is one sweep.
+    expect(sources.filter(({ text }) => text.includes(".flume/")).map(({ file }) => file)).toEqual(
+      [],
+    );
   });
 
   /**

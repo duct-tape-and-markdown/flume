@@ -51,9 +51,9 @@ artifacts are re-derived from disk every tick.
 
 Commit all changes in one commit prefixed `plan:`. Write:
 
-- `.flume/plan/pending.json` — JSON array conforming to the schema below.
-- `.flume/plan/state.md` — ~5 line markdown.
-- `.flume/plan/open-questions.md` — markdown.
+- `{{FLUME_DIR}}/plan/pending.json` — JSON array conforming to the schema below.
+- `{{FLUME_DIR}}/plan/state.md` — ~5 line markdown.
+- `{{FLUME_DIR}}/plan/open-questions.md` — markdown.
 
 The harness will reject your commit if `pending.json` doesn't parse, if an entry's declared `files` can't survive build's fence, or if you modify anything outside this slice's writable paths.
 
