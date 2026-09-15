@@ -44,8 +44,10 @@ import {
   awakeDir,
   loopLockPath,
   mergingMarkerPath,
+  namespacedJoin,
   STATE_ROOT_NAMES,
 } from "../src/paths.ts";
+import { NAME_MAX } from "../src/PendingSchema.ts";
 import { loadChainModule } from "../src/Dispatcher.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { SPAWN_BUDGET_MS, gitOut, runCli } from "./helpers/subprocess.ts";
@@ -87,17 +89,19 @@ const MINIMAL_CHAIN_SRC =
   `  humanOnly: [],\n` +
   `} });\n`;
 
+/** The chain declarations these fixtures vary — spelled once, for both writers. */
+interface ChainOpts {
+  seedDir?: string;
+  friction?: string;
+  pendingPath?: string;
+}
+
 /**
- * Commit the repo chain at `<repoDir>/.flume/chain.ts` — repo-resident
- *, so it rides every branch. Every `jobNew` call now requires this
- * to exist; pass `seedDir` to exercise the chain-declared seed path (any seed
- * content under `.flume/` written before this call rides the same commit).
+ * {@link MINIMAL_CHAIN_SRC} with the requested declarations folded in.
+ * Separated from {@link writeRepoChain} so a fixture that must place the
+ * chain somewhere git never reaches still writes the same source.
  */
-async function writeRepoChain(
-  repoDir: string,
-  opts: { seedDir?: string; friction?: string; pendingPath?: string } = {},
-): Promise<void> {
-  await mkdir(join(repoDir, ".flume"), { recursive: true });
+function chainSrc(opts: ChainOpts = {}): string {
   let src = MINIMAL_CHAIN_SRC;
   if (opts.seedDir !== undefined) {
     src = src.replace(
@@ -117,7 +121,21 @@ async function writeRepoChain(
       `humanOnly: [],\n  pendingPath: ${JSON.stringify(opts.pendingPath)},`,
     );
   }
-  await writeFile(join(repoDir, ".flume", "chain.ts"), src, "utf8");
+  return src;
+}
+
+/**
+ * Commit the repo chain at `<repoDir>/.flume/chain.ts` — repo-resident
+ *, so it rides every branch. Every `jobNew` call now requires this
+ * to exist; pass `seedDir` to exercise the chain-declared seed path (any seed
+ * content under `.flume/` written before this call rides the same commit).
+ */
+async function writeRepoChain(
+  repoDir: string,
+  opts: ChainOpts = {},
+): Promise<void> {
+  await mkdir(join(repoDir, ".flume"), { recursive: true });
+  await writeFile(join(repoDir, ".flume", "chain.ts"), chainSrc(opts), "utf8");
   await exec("git", ["add", ".flume"], { cwd: repoDir });
   await exec("git", ["commit", "-q", "-m", "chore: repo chain fixture"], {
     cwd: repoDir,
@@ -1988,6 +2006,24 @@ describe.runIf(process.platform === "win32")(
   },
 );
 
+/**
+ * A job name long enough to push `<repoRoot>/.flume/jobs/<name>` past win32's
+ * ~260-char total-path limit, within `NAME_MAX` (`src/PendingSchema.ts`).
+ *
+ * The length rides the *name* because it cannot ride the repo root: every git
+ * the job verbs run spawns with `cwd: repoRoot`, and win32 refuses to create a
+ * process whose working directory exceeds `MAX_PATH` — surfacing as
+ * `spawn git ENOENT`. `toNamespacedPath` cannot reach that refusal: the OS
+ * resolves the cwd, so no path flume built is involved. The engine's own
+ * `core.longpaths` pin (`jobNew`) covers the over-length *worktree file paths*
+ * the resulting job dir hands to `git add`/`rm`, which is a different limit.
+ */
+function longJobName(repoRoot: string): string {
+  const stem = "w32job-";
+  const fill = 270 - join(repoRoot, ".flume", "jobs", stem).length;
+  return stem + "x".repeat(Math.max(fill, 1));
+}
+
 // Same deep-nesting shape as FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT above,
 // applied to the other existsSync-gated reads job.ts performs: a bare join()
 // there reads a too-long path as absent (not as a real error), so each of
@@ -2015,32 +2051,27 @@ describe.runIf(process.platform === "win32")(
     });
 
     it("jobRm finds and removes a job whose dir nests past win32's ~260-char limit", async () => {
-      const base = await mkdtemp(join(tmpdir(), "flume-job-w32-"));
+      const repo = await makeRepo();
       try {
-        const repoRoot = join(
-          base,
-          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
-        );
-        await mkdir(repoRoot, { recursive: true });
-        const opts = { cwd: repoRoot };
-        await exec("git", ["init", "-q", "-b", "main"], opts);
-        await exec("git", ["config", "user.email", "test@example.com"], opts);
-        await exec("git", ["config", "user.name", "Test User"], opts);
-        await exec("git", ["config", "commit.gpgsign", "false"], opts);
-        await writeFile(join(repoRoot, "README.md"), "seed\n");
-        await exec("git", ["add", "."], opts);
-        await exec("git", ["commit", "-q", "-m", "seed"], opts);
-        await writeRepoChain(repoRoot);
-        await jobNew({ repoRoot, name: "w32job", log: () => {} });
-        const jobDir = join(repoRoot, ".flume", "jobs", "w32job");
+        // Ordinary repo root, all the length in the job name — see
+        // `longJobName`. `jobRm` spawns git with `cwd: repoRoot` five times.
+        await writeRepoChain(repo.dir);
+        const name = longJobName(repo.dir);
+        await jobNew({ repoRoot: repo.dir, name, log: () => {} });
+        const dir = join(repo.dir, ".flume", "jobs", name);
 
-        expect(jobDir.length).toBeGreaterThan(260);
+        expect(name.length).toBeLessThanOrEqual(NAME_MAX);
+        expect(dir.length).toBeGreaterThan(260);
+        // Non-vacuity: the namespaced probe reads the seeded job dir as
+        // present, so the `false` below is a removal rather than the same
+        // over-length read the fix exists to rule out.
+        expect(existsSync(namespacedJoin(dir))).toBe(true);
         // Pre-fix, the bare-join existsSync check silently read this jobDir
         // as absent and threw JobUsageError("no job ...") instead of removing it.
-        await jobRm({ repoRoot, name: "w32job", log: () => {} });
-        expect(existsSync(jobDir)).toBe(false);
+        await jobRm({ repoRoot: repo.dir, name, log: () => {} });
+        expect(existsSync(namespacedJoin(dir))).toBe(false);
       } finally {
-        await rm(base, { recursive: true, force: true });
+        await repo.cleanup();
       }
     }, 60_000);
 
@@ -2065,44 +2096,51 @@ describe.runIf(process.platform === "win32")(
     });
 
     it("jobNew doesn't misread an existing chain.ts or seedDir as absent when configDir/seedDir nests past win32's ~260-char limit", async () => {
-      const base = await mkdtemp(join(tmpdir(), "flume-job-w32-"));
+      const repo = await makeRepo();
+      // The depth rides `configDir`, which `jobNew` takes as a parameter and
+      // the CLI takes from `FLUME_CONFIG_DIR` — so it can nest without the
+      // repo root nesting with it. Nesting the root instead is what git
+      // cannot survive here (see `longJobName`), and this dir is the one the
+      // two probes under test resolve their paths from. Placed outside the
+      // repo so no git this verb runs ever has it in a pathspec's reach.
+      const cfgBase = await mkdtemp(join(tmpdir(), "flume-job-w32-cfg-"));
       try {
-        const repoRoot = join(
-          base,
+        const configDir = join(
+          cfgBase,
           ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
         );
-        await mkdir(repoRoot, { recursive: true });
-        const opts = { cwd: repoRoot };
-        await exec("git", ["init", "-q", "-b", "main"], opts);
-        await exec("git", ["config", "user.email", "test@example.com"], opts);
-        await exec("git", ["config", "user.name", "Test User"], opts);
-        await exec("git", ["config", "commit.gpgsign", "false"], opts);
-        await writeFile(join(repoRoot, "README.md"), "seed\n");
-        await exec("git", ["add", "."], opts);
-        await exec("git", ["commit", "-q", "-m", "seed"], opts);
-
-        await mkdir(join(repoRoot, ".flume", "job-seed"), { recursive: true });
+        await mkdir(join(configDir, "job-seed"), { recursive: true });
         await writeFile(
-          join(repoRoot, ".flume", "job-seed", "notes.md"),
+          join(configDir, "job-seed", "notes.md"),
           "seed notes\n",
         );
-        await writeRepoChain(repoRoot, { seedDir: "job-seed" });
+        await writeFile(
+          join(configDir, "chain.ts"),
+          chainSrc({ seedDir: "job-seed" }),
+          "utf8",
+        );
 
-        const chainPath = join(repoRoot, ".flume", "chain.ts");
-        const seedPath = join(repoRoot, ".flume", "job-seed");
+        const chainPath = join(configDir, "chain.ts");
+        const seedPath = join(configDir, "job-seed");
         expect(chainPath.length).toBeGreaterThan(260);
         expect(seedPath.length).toBeGreaterThan(260);
 
         // Pre-fix, the bare-join existsSync checks at chainPath/seedPath
         // silently read both as absent and threw JobUsageError("no chain"
         // / "seedDir does not exist") even though both genuinely exist.
-        await jobNew({ repoRoot, name: "w32job", log: () => {} });
-        const jobDir = join(repoRoot, ".flume", "jobs", "w32job");
+        await jobNew({
+          repoRoot: repo.dir,
+          configDir,
+          name: "w32job",
+          log: () => {},
+        });
+        const jobDir = join(repo.dir, ".flume", "jobs", "w32job");
         expect(await readFile(join(jobDir, "notes.md"), "utf8")).toBe(
           "seed notes\n",
         );
       } finally {
-        await rm(base, { recursive: true, force: true });
+        await rm(cfgBase, { recursive: true, force: true });
+        await repo.cleanup();
       }
     }, 60_000);
   },

@@ -15582,6 +15582,11 @@ describe.runIf(process.platform === "win32")(
 
     it("readPending/readPendingTolerant/commitPendingUpdate don't misread an existing or writable pending.json as absent when pendingPath exceeds win32's ~260-char limit", async () => {
       const dock = await mkdtemp(join(tmpdir(), "flume-dock-w32-"));
+      // An operator override outranks the chain's declared base
+      // (`worktreesBase`, src/paths.ts), and the base below is load-bearing
+      // here — clear it for the duration so the declaration governs.
+      const savedOverride = process.env.FLUME_WORKTREES_DIR;
+      delete process.env.FLUME_WORKTREES_DIR;
       try {
         const deepDock = join(
           dock,
@@ -15601,17 +15606,35 @@ describe.runIf(process.platform === "win32")(
         expect(pendingPath.length).toBeGreaterThan(260);
         new Baton(deepDock).wake("build");
 
+        // The deep path is `pendingPath`'s alone. The worktree base is
+        // declared back onto the shallow dock: left at its default,
+        // `<flumeDir>/worktrees/<slug>` under `deepDock`, `git worktree add`
+        // refuses with `fatal: '$GIT_DIR' too big` around 200 chars — a limit
+        // below MAX_PATH that `core.longpaths` does not lift and
+        // `toNamespacedPath` cannot reach, because git builds that path
+        // itself (`.claude/rules/platform-facts.md`, *`git worktree add`
+        // refuses long paths on win32, below MAX_PATH*). The wave would ship
+        // nothing and the case would red on its fixture rather than on the
+        // `readPending`/`commitPendingUpdate` calls it names.
+        const wtBase = join(dock, "wt");
         const phase = makePhase({ name: "build", concurrency: "fanout" });
-        const chain: Chain = { phases: [phase], humanOnly: [] };
+        const chain: Chain = {
+          phases: [phase],
+          humanOnly: [],
+          worktreesBase: () => wtBase,
+        };
 
+        let observedCwd: string | undefined;
         const agent = fanoutAgent({
-          "reloc-w32": (cwd) =>
-            writeAndCommit(
+          "reloc-w32": (cwd) => {
+            observedCwd = cwd;
+            return writeAndCommit(
               cwd,
               "src/reloc-w32.ts",
               "reloc\n",
               "build(RELOC-W32): ship",
-            ),
+            );
+          },
         });
 
         const dispatcher = new Dispatcher({
@@ -15636,7 +15659,13 @@ describe.runIf(process.platform === "win32")(
         if (parsed.ok) expect(parsed.entries).toEqual([]);
         // readPendingTolerant hits the same deep path for pendingAfter.
         expect(outcome.result?.pendingAfter).toEqual([]);
+        // The wave really did run off the shallow base — the default one
+        // under the deep dock never materialized.
+        expect(observedCwd).toBe(join(wtBase, "reloc-w32"));
+        expect(existsSync(join(deepDock, "worktrees"))).toBe(false);
       } finally {
+        if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+        else process.env.FLUME_WORKTREES_DIR = savedOverride;
         await rm(dock, { recursive: true, force: true });
       }
     }, 20_000);
