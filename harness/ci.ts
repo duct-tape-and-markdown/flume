@@ -13,6 +13,14 @@
  * material the package did not author is the slice's agent's job, exactly as
  * it is for a record's prose.
  *
+ * **What the forge wrote around the log is the forge's, and comes off.** The
+ * per-line job/step/timestamp frame, the ANSI a test runner coloured its
+ * output with, the workflow-command markers: the package is reading back
+ * decoration it knows the shape of because it chose this forge — the same
+ * opinion as {@link FORGE_CLI} and the lane's workflow-and-job vocabulary —
+ * not reconstructing a statement out of prose the log's author wrote. What
+ * the author wrote survives byte for byte.
+ *
  * **A lane is failing, green, or unread — never green by default.** Every way
  * the read can come up short — no forge CLI on the host, no completed run
  * yet, a run the declared job is not in, a conclusion that is neither a pass
@@ -64,6 +72,29 @@ type CiLane = NonNullable<Declaration["ci"]>[number];
  * all rather than a lane this cannot locate.
  */
 const FORGE_CLI = "gh";
+
+/**
+ * The frame the forge puts on every line of a job log: the job name and the
+ * step name, tab-separated, then the timestamp the runner stamped the line
+ * with. The third field is anchored to that timestamp so a log line whose own
+ * content holds tabs cannot be mistaken for a framed one.
+ */
+const FORGE_FRAMING = /^[^\t]*\t[^\t]*\t\d{4}-\d{2}-\d{2}T[\d:.]+Z ?/;
+
+/**
+ * ANSI control sequences a test runner colours its output with — CSI
+ * (`ESC [ … `), and the OSC window-title sequences some runners emit around
+ * their progress lines.
+ */
+const ANSI = /\u001B(?:\[[0-?]*[ -\/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\))/g;
+
+/**
+ * The forge's workflow-command marker at the head of a line — `##[group]`,
+ * `##[endgroup]`, `##[error]` and their siblings. The marker comes off and
+ * whatever the command carried stays, so an `##[error]` keeps its message and
+ * a bare `##[endgroup]` is left holding nothing.
+ */
+const WORKFLOW_COMMAND = /^##\[[a-z]+\]/;
 
 /** Enough headroom for a failing job's whole log on stdout. */
 const MAX_BUFFER = 64 << 20;
@@ -139,7 +170,10 @@ export type CiLaneReading =
       readonly lane: CiLane;
       readonly branch: string;
       readonly run: CiRun;
-      /** The forge's log for the failing job, tail-trimmed to the budget. */
+      /**
+       * The forge's log for the failing job: the forge's own decoration shed
+       * off it, then tail-trimmed to the budget.
+       */
       readonly log: string;
     }
   | {
@@ -165,6 +199,10 @@ interface CiReadOptions {
    * How many lines of a failing job's log one lane carries. The tail is
    * kept: a suite reports its failing titles at the end of its output, and
    * the head of a long log is the install steps that passed.
+   *
+   * Counted over the shed log, never the forge's: the budget exists to bound
+   * what a tick reads, and a line the forge framed and left empty is not
+   * something to read.
    */
   readonly logLines: number;
 }
@@ -282,13 +320,15 @@ function readLane(
     }
 
     const log = tail(
-      forge(options.repoRoot, [
-        "run",
-        "view",
-        "--job",
-        String(job.databaseId),
-        "--log-failed",
-      ]),
+      shed(
+        forge(options.repoRoot, [
+          "run",
+          "view",
+          "--job",
+          String(job.databaseId),
+          "--log-failed",
+        ]),
+      ),
       options.logLines,
     );
     return { kind: "failing", lane, branch, run, log };
@@ -355,13 +395,35 @@ function detailOf(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).trim();
 }
 
-/** The last `lines` lines of `text`, with the trimming said out loud. */
-function tail(text: string, lines: number): string {
-  const all = text.replace(/\n+$/, "").split("\n");
-  if (all.length <= lines) return all.join("\n");
+/**
+ * A job log's own lines, with the forge's decoration off each and the lines
+ * that carried nothing else dropped.
+ *
+ * Run *before* {@link tail}, and that order is the point: shedding a prefix
+ * buys no room in a budget counted in lines, but the frame the forge writes
+ * around a blank line and around each of its own group markers is a line, and
+ * a budget spent on those is a budget not spent on the failing titles the
+ * slice is here to read.
+ */
+function shed(log: string): string[] {
+  const kept: string[] = [];
+  for (const line of log.split("\n")) {
+    const bare = line
+      .replace(FORGE_FRAMING, "")
+      .replace(ANSI, "")
+      .replace(WORKFLOW_COMMAND, "")
+      .trimEnd();
+    if (bare !== "") kept.push(bare);
+  }
+  return kept;
+}
+
+/** The last `budget` of `lines`, with the trimming said out loud. */
+function tail(lines: readonly string[], budget: number): string {
+  if (lines.length <= budget) return lines.join("\n");
   return [
-    `=== the first ${all.length - lines} line(s) of this log are above this ` +
-      `tick's budget and are not shown ===`,
-    ...all.slice(-lines),
+    `=== the first ${lines.length - budget} line(s) of this log are above ` +
+      `this tick's budget and are not shown ===`,
+    ...lines.slice(-budget),
   ].join("\n");
 }

@@ -83,8 +83,14 @@ const runner = () => ({
   lanes: [],
 });
 
-/** The inbox window over a declaration naming {@link LANE}. */
-function inboxWindow(): PlanSliceWindow {
+/**
+ * The inbox window over a declaration naming {@link LANE}.
+ *
+ * `budget` is the package's own line budget unless a case names one — the
+ * knob the window already carries, so a case can provoke the trim without
+ * minting a thousand-line fixture to reach the default.
+ */
+function inboxWindow(budget?: number): PlanSliceWindow {
   const declaration = parseDeclaration({
     specLocus: ["spec/**"],
     fence: { build: ["src/**"] },
@@ -92,15 +98,19 @@ function inboxWindow(): PlanSliceWindow {
     slices: { enabled: [INBOX_PHASE] },
     ci: [LANE],
   });
-  const built = planSliceWindows({ declaration, repoRoot: repo });
+  const built = planSliceWindows({
+    declaration,
+    repoRoot: repo,
+    ...(budget === undefined ? {} : { budget }),
+  });
   const window = built.find((candidate) => candidate.name === INBOX_PHASE);
   if (window === undefined) throw new Error("the inbox slice built no window");
   return window;
 }
 
 /** The inbox window's rendered arguments for this tick. */
-function inboxArgs(): Record<string, string> {
-  return inboxWindow().args({ cwd: repo, flumeDir: join(repo, ".flume") });
+function inboxArgs(budget?: number): Record<string, string> {
+  return inboxWindow(budget).args({ cwd: repo, flumeDir: join(repo, ".flume") });
 }
 
 /** Where the stub appends one JSON line per invocation. */
@@ -182,6 +192,29 @@ const job = (conclusion: string) => ({
   name: LANE.job,
   conclusion,
 });
+
+/** The ESC every ANSI sequence opens with, spelled once. */
+const ESC = "\u001B";
+
+/**
+ * One log line as the forge itself frames it: the job name and the step name
+ * tab-separated, then the runner's timestamp, then what the log's author
+ * actually wrote. The fixtures below are written in this shape rather than in
+ * bare content because the framing is exactly what is under test — a bare
+ * fixture would be the tester re-authoring the forge's vocabulary
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+const framed = (content: string): string =>
+  `${LANE.job}\tRun tests\t2026-09-15T09:12:33.1234567Z ${content}`;
+
+/** Everything the rendered block says from the log header down. */
+function loggedLines(rendered: string): string[] {
+  const header = "--- the failing job's log ---";
+  const at = rendered.indexOf(header);
+  if (at < 0) throw new Error(`the block carries no log:\n${rendered}`);
+  return rendered.slice(at + header.length + 1).split("\n");
+}
 
 it("the inbox window renders the declared lane's failing run under its lane name", () => {
   const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
@@ -325,4 +358,92 @@ it("the inbox window renders a lane as unread when the forge CLI refuses", () =>
   expect(rendered).toContain("could not authenticate");
   expect(rendered).not.toContain("GREEN");
   expect(rendered).not.toContain("FAILING");
+}, SPAWN_BUDGET_MS);
+
+it("a failing lane's log arrives without the forge's per-line job and step framing", () => {
+  const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: [
+      framed("##[group]Run pnpm test"),
+      framed(""),
+      framed(failure),
+      framed("##[endgroup]"),
+      framed("##[error]Process completed with exit code 1."),
+      "",
+    ].join("\n"),
+  });
+
+  const rendered = inboxArgs()["CI_LANES"] ?? "";
+
+  // Vacuity: the forge answered all three questions and the log reached the
+  // block — the assertions below are over material, not over an empty string.
+  expect(calls().length).toBe(3);
+  expect(rendered).toContain("FAILING");
+  expect(rendered).toContain(failure);
+
+  // What the forge wrote around each line is gone — no job/step tabs, no
+  // runner timestamp, no workflow-command marker — and the lines that carried
+  // nothing but that frame have dropped, while every word the log's own
+  // author wrote survives.
+  expect(loggedLines(rendered)).toEqual([
+    "Run pnpm test",
+    failure,
+    "Process completed with exit code 1.",
+  ]);
+}, SPAWN_BUDGET_MS);
+
+it("a failing lane's log arrives without ANSI escape sequences", () => {
+  const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: [
+      framed(`${ESC}[31m${ESC}[1m${failure}${ESC}[22m${ESC}[39m`),
+      framed(`${ESC}]0;vitest\u0007  Tests  2 failed | 40 passed`),
+      "",
+    ].join("\n"),
+  });
+
+  const rendered = inboxArgs()["CI_LANES"] ?? "";
+
+  // Vacuity: the coloured lines reached the block, so the ESC assertion below
+  // is over a log that really carried them.
+  expect(calls().length).toBe(3);
+  expect(rendered).toContain("FAILING");
+  expect(loggedLines(rendered)).toEqual([
+    failure,
+    "  Tests  2 failed | 40 passed",
+  ]);
+  expect(rendered).not.toContain(ESC);
+}, SPAWN_BUDGET_MS);
+
+it("the inbox window spends a failing lane's line budget on log lines, not the forge's framing", () => {
+  const titles = Array.from(
+    { length: 4 },
+    (_, index) => `FAIL tests/case${index}.test.ts > case ${index} is refused`,
+  );
+  const log = titles
+    .flatMap((title) => [
+      framed("##[group]one failing case"),
+      framed(""),
+      framed(title),
+      framed("##[endgroup]"),
+    ])
+    .join("\n");
+  plantForge({ runs: [RUN], jobs: [job("failure")], log });
+
+  // Vacuity: the budget really bites on what the forge printed — twice over —
+  // so a block carrying every title is the shed's doing and not slack.
+  const budget = 8;
+  expect(log.split("\n").length).toBeGreaterThan(budget);
+
+  const rendered = inboxArgs(budget)["CI_LANES"] ?? "";
+
+  expect(rendered).toContain("FAILING");
+  expect(loggedLines(rendered)).toEqual(
+    titles.flatMap((title) => ["one failing case", title]),
+  );
+  expect(rendered).not.toContain("above this tick's budget");
 }, SPAWN_BUDGET_MS);
