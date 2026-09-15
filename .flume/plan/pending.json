@@ -1,1 +1,33 @@
-[]
+[
+  {
+    "tag": "INIT-REFUSES-NON-OBJECT-DEPENDENCIES",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "harness/init.ts",
+          "description": "readConsumerManifest refuses a non-object dependencies/devDependencies in the pre-write phase; addDependency stops reading one"
+        },
+        {
+          "path": "tests/harnessInit.test.ts",
+          "description": "refusal cases beside the existing non-object-manifest one; dependency-outcome pins"
+        }
+      ]
+    },
+    "summary": "init silently mangles a consumer manifest whose dependencies field is not an object — refuse it before the first byte, per Loud or nothing",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "harnessInit throws in flume's voice naming the manifest and the offending field, before any write, when dependencies or devDependencies is present and not a JSON object; no arm of addDependency reads a non-object off pkg.",
+    "tests": [
+      "flume-harness init refuses a consumer package.json whose dependencies field is not an object before writing anything",
+      "flume-harness init refuses a consumer package.json whose devDependencies field is not an object before writing anything"
+    ],
+    "pins": [
+      "flume-harness init reports the dependency line it added to the consumer's manifest",
+      "flume-harness init reports a dependency the consumer's manifest already declares without rewriting its range"
+    ],
+    "notes": "Measured this tick at harness/init.ts:508-516: dependencies \"oops\" rewrites the consumer manifest to {\"0\":\"o\",\"1\":\"o\",\"2\":\"p\",\"3\":\"s\",\"@dtmd/flume\":\"^0.15.0\"} and reports kind \"added\"; dependencies 42 drops the field. Same defect readConsumerManifest's own doc names one level up, unrefused one level down."
+  }
+]

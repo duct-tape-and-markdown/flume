@@ -93,7 +93,8 @@
       "tests/loopSupervisor.test.ts",
       "tests/git.test.ts",
       "tests/builtinGates.test.ts",
-      "tests/job.test.ts"
+      "tests/job.test.ts",
+      "tests/harnessInit.test.ts"
     ]
   }
 }
