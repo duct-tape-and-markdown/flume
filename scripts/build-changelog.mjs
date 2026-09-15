@@ -17,7 +17,9 @@
  * package.json) without a corresponding tag ever being pushed, and treating
  * a stale tag as the boundary would re-mine already-released commits as
  * unreleased. A semver-shaped tag (`vX.Y.Z`) is the fallback for a project
- * that has never recorded a version in CHANGELOG.md at all.
+ * that has never recorded a version in CHANGELOG.md at all — absence is the
+ * whole of that trigger, so any other CHANGELOG.md read failure refuses
+ * rather than falling through to a tag that may lag the last cut.
  *
  * Entry source: `build:` commits only (`build: <desc> (TAG)`,
  * `build: <desc> [TAG]`, or `build(TAG): <desc>`) — the per-pending-entry
@@ -59,13 +61,26 @@ function git(cwd, args) {
 
 /** Resolve the commit boundary for "since the last release", or `null` when no prior release is recorded. */
 export function resolveLastRelease(root) {
+  const changelogPath = join(root, "CHANGELOG.md");
   let changelogVersion = null;
   try {
-    const text = readFileSync(join(root, "CHANGELOG.md"), "utf8");
+    const text = readFileSync(changelogPath, "utf8");
     const m = text.match(/^## \[(\d+\.\d+\.\d+)\]/m);
     if (m) changelogVersion = m[1];
-  } catch {
-    changelogVersion = null;
+  } catch (err) {
+    // Absent (`ENOENT`) is the only reading the tag fallback is scoped to:
+    // a repo that never recorded a version (doc block above). Any other
+    // read failure leaves the boundary unresolved, and falling through
+    // would answer it from a tag that may lag the last cut — silently
+    // re-mining already-released `build:` commits under `## [Unreleased]`
+    // for a human to curate (`.claude/rules/engineering.md`, "Loud or
+    // nothing").
+    if (err.code !== "ENOENT") {
+      throw new Error(
+        `${changelogPath} could not be read (${err.code}): ${err.message}`,
+        { cause: err },
+      );
+    }
   }
 
   if (changelogVersion) {
@@ -224,7 +239,14 @@ function main() {
     return;
   }
 
-  const sinceSha = resolveLastRelease(root);
+  let sinceSha;
+  try {
+    sinceSha = resolveLastRelease(root);
+  } catch (err) {
+    fail(`could not resolve the last release boundary: ${err.message}`);
+    return;
+  }
+
   const { range, entries, warnings } = deriveEntries(root, sinceSha);
 
   for (const warning of warnings) {

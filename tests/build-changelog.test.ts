@@ -139,6 +139,50 @@ describe("build-changelog", () => {
     expect(out).not.toContain("MID-RELEASE-WORK");
   }, SPAWN_BUDGET_MS);
 
+  it("resolves the boundary from the semver tag fallback when CHANGELOG.md is absent entirely", async () => {
+    // The other half of the narrowed catch: absence (`ENOENT`) is the one
+    // read failure the tag fallback is scoped to — a repo that never
+    // recorded a version. No CHANGELOG.md is ever written here.
+    await commit(repo, "src/seed.ts", "export const seed = 1;\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+    await commit(
+      repo,
+      "src/after.ts",
+      "export const after = 1;\n",
+      "build: add after-tag feature (AFTER-TAG-FEATURE)",
+    );
+
+    const { out, code } = await runChangelog(repo);
+
+    expect(code).toBe(0);
+    expect(out).toContain("AFTER-TAG-FEATURE");
+  }, SPAWN_BUDGET_MS);
+
+  it("an unreadable CHANGELOG.md refuses instead of resolving the boundary from the tag fallback", async () => {
+    await commit(repo, "src/seed.ts", "export const seed = 1;\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+    await commit(
+      repo,
+      "src/released.ts",
+      "export const released = 1;\n",
+      "build: ship released work (RELEASED-WORK)",
+    );
+    // A directory in place of CHANGELOG.md reproduces a non-ENOENT read
+    // failure (EISDIR) without relying on permission bits a root-run test
+    // could bypass. The tag fallback is scoped to a repo that never recorded
+    // a version, so reading this as absence resolves the boundary to v1.0.0
+    // and re-mines RELEASED-WORK as unreleased.
+    await mkdir(join(repo, "CHANGELOG.md"));
+
+    const { out, err, code } = await runChangelog(repo);
+
+    expect(code).not.toBe(0);
+    expect(out).not.toContain("[Unreleased]");
+    expect(out).not.toContain("RELEASED-WORK");
+    expect(err).toContain("CHANGELOG.md");
+    expect(err).toContain("EISDIR");
+  }, SPAWN_BUDGET_MS);
+
   it("refuses loudly on a zero-commit range instead of emitting an empty [Unreleased] section", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
     await git(repo, ["tag", "v1.0.0"]);
