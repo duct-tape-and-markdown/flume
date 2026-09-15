@@ -1791,6 +1791,87 @@ describe("cascade-chain.ts — build's prompt quotes the declaration it is judge
 });
 
 /**
+ * Agreement pin (engineering.md, *Derived state is computed, never restated
+ * beside its source*): `docs/CHAIN-AUTHORING.md` walks the reader through a
+ * fence introduced as the `slicePhase` declaration from
+ * `examples/cascade-chain.ts`. That quote is a second copy of code the
+ * example owns — and both files ship in the tarball — so it is read back
+ * against the real declaration rather than kept in step by discipline.
+ *
+ * Normalized away on both sides: indentation (the quote sits at column 0, the
+ * source inside a factory) and whole-line comments, which diverge
+ * deliberately — the doc annotates for a reader who has no surrounding file.
+ * Everything else must match. A trailing `//` comment added to one side alone
+ * reds this pin rather than being carved out: it fails toward loud.
+ */
+describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names", () => {
+  /**
+   * The `slicePhase` arrow, from its `const` line through the `});` closing it
+   * at the same indentation — the shape prettier holds both files in.
+   */
+  const declarationBlock = (text: string): string[] => {
+    const lines = text.split("\n");
+    const start = lines.findIndex((l) => /^\s*const slicePhase\s*=/.test(l));
+    expect(start, "a `slicePhase` declaration is present").toBeGreaterThanOrEqual(
+      0,
+    );
+    const indent = /^\s*/.exec(lines[start]!)![0];
+    const end = lines.indexOf(`${indent}});`, start);
+    expect(
+      end,
+      "the `slicePhase` declaration closes at its own indentation",
+    ).toBeGreaterThan(start);
+    return lines.slice(start, end + 1);
+  };
+
+  /** Indentation and comments away; the code lines that remain, in order. */
+  const normalize = (lines: string[]): string[] =>
+    lines
+      .join("\n")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("//"));
+
+  it("the CHAIN-AUTHORING slicePhase quote matches examples/cascade-chain.ts modulo indentation and comments", () => {
+    const doc = readFileSync(
+      fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
+      "utf8",
+    );
+    const quoted = [...doc.matchAll(/```ts\n([\s\S]*?)```/g)]
+      .map((m) => m[1]!)
+      .filter((fence) => /^const slicePhase\b/.test(fence.trim()));
+    // Exactly one, so the comparison below cannot pass by picking a twin.
+    expect(
+      quoted,
+      "CHAIN-AUTHORING.md quotes `slicePhase` exactly once",
+    ).toHaveLength(1);
+
+    const fromDoc = normalize(declarationBlock(quoted[0]!));
+    const fromSource = normalize(
+      declarationBlock(
+        readFileSync(
+          fileURLToPath(
+            new URL("../examples/cascade-chain.ts", import.meta.url),
+          ),
+          "utf8",
+        ),
+      ),
+    );
+
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // a truncated extraction on either side would leave the equality below
+    // comparing nothing against nothing. The fence's substance is the
+    // `writablePaths` list, so that is what is asserted present.
+    expect(fromSource.length).toBeGreaterThan(10);
+    expect(fromSource).toContain("writablePaths: [");
+    expect(fromSource).toContain("`${stateRoot}/plan/pending.json`,");
+
+    expect(fromDoc).toEqual(fromSource);
+  });
+});
+
+/**
  * spec/chain.md, *Per-run artifacts belong under `FLUME_DIR`* — "`examples/`
  * shows it". The backlog groomer is the example that does, so the placement
  * is driven rather than read: a real `groom` tick runs, and the transcript
