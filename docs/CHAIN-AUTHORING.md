@@ -1211,9 +1211,18 @@ without round-tripping through `promptArgs`:
 </recent-commits>
 
 <pending-json>
-!`cat "{{FLUME_DIR}}/plan/pending.json" 2>/dev/null || echo "[]"`
+!`p="{{FLUME_DIR}}/plan/pending.json"; test -e "$p" || { echo "[]"; exit 0; }; cat "$p"`
 </pending-json>
 ```
+
+That second span is the idiom for an artifact whose **absence is
+legitimate** and whose unreadability is not. The guard tests for the
+artifact and selects the placeholder explicitly, exiting zero; everything
+past the guard is a real read, so a path that exists and still fails to
+open — a directory where a file belongs, a permission denial — reaches the
+renderer as a refusal instead of rendering the same placeholder. A trailing
+`|| echo` cannot draw that line: it answers both cases identically, and the
+tick proceeds over an artifact it never read.
 
 Notes:
 

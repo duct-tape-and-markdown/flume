@@ -280,33 +280,59 @@ describe("examples/prompts — the spans read the injected state root", () => {
     readonly at: (root: string) => string;
     readonly body: string;
     readonly sentinel: string;
+    /**
+     * What the span renders when the artifact is legitimately absent — tick
+     * one, before anything has written it.
+     */
+    readonly placeholder: string;
+    /**
+     * The path the span hands its reader, when that is not `at`: a listing
+     * span opens the *directory*, so that is what has to exist and be
+     * readable, and a `.md` under it is incidental.
+     */
+    readonly opensDir?: (root: string) => string;
   }> = [
     {
       span: "plan/pending.json",
       at: (root) => resolvePendingPath(root),
       body: '{ "entries": [], "note": "PENDING-SENTINEL" }\n',
       sentinel: "PENDING-SENTINEL",
+      placeholder: "[]",
     },
     {
       span: "plan/state.md",
       at: (root) => join(root, "plan", "state.md"),
       body: "phase: PLAN-STATE-SENTINEL\n",
       sentinel: "PLAN-STATE-SENTINEL",
+      placeholder: "(no prior state)",
     },
     {
       span: "plan/open-questions.md",
       at: (root) => join(root, "plan", "open-questions.md"),
       body: "## QUESTIONS-SENTINEL\n",
       sentinel: "QUESTIONS-SENTINEL",
+      placeholder: "(none)",
     },
     {
       // The inbox span lists rather than reads, so its sentinel is a filename.
-      span: "inbox/",
+      span: "inbox",
       at: (root) => join(root, "inbox", "INBOX-SENTINEL.md"),
       body: "# a finding\n",
       sentinel: "INBOX-SENTINEL",
+      placeholder: "(drained)",
+      opensDir: (root) => join(root, "inbox"),
     },
   ];
+
+  /** The path one span opens, and the kind it must find there. */
+  function opened(
+    artifact: (typeof ARTIFACTS)[number],
+    root: string,
+  ): { path: string; kind: "file" | "dir" } {
+    return artifact.opensDir
+      ? { path: artifact.opensDir(root), kind: "dir" }
+      : { path: artifact.at(root), kind: "file" };
+  }
 
   /** Every scratch dir a case made, torn down together. */
   const scratch: string[] = [];
@@ -360,16 +386,29 @@ describe("examples/prompts — the spans read the injected state root", () => {
     for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
   });
 
-  /** One shipped template through the engine's real renderer. */
-  async function render(file: string, phase: Phase, root: string, at = cwd): Promise<string> {
+  /**
+   * One shipped template through the engine's real renderer. `overrides`
+   * supplies a per-tick arg a case needs to *mean* something — a `per` path
+   * that resolves, or one that does not — rather than the filler below.
+   */
+  async function render(
+    file: string,
+    phase: Phase,
+    root: string,
+    at = cwd,
+    overrides: Readonly<Record<string, string>> = {},
+  ): Promise<string> {
     const promptFile = join(PROMPT_DIR, file);
     const raw = readFileSync(promptFile, "utf8");
-    const args = Object.fromEntries(
-      [...raw.matchAll(PLACEHOLDER)]
-        .map((m) => m[1]!)
-        .filter((key) => key !== "FLUME_DIR")
-        .map((key) => [key, `<per-tick ${key}>`]),
-    );
+    const args = {
+      ...Object.fromEntries(
+        [...raw.matchAll(PLACEHOLDER)]
+          .map((m) => m[1]!)
+          .filter((key) => key !== "FLUME_DIR")
+          .map((key) => [key, `<per-tick ${key}>`]),
+      ),
+      ...overrides,
+    };
     return renderPrompt({ phase, promptFile, cwd: at, flumeDir: root, args });
   }
 
@@ -385,11 +424,16 @@ describe("examples/prompts — the spans read the injected state root", () => {
     return root;
   }
 
+  /** The phase that names a shipped template, as the sweep above found it. */
+  function templateNamed(file: string): { file: string; phase: Phase } {
+    const found = shipped.find((s) => s.file === file);
+    expect(found?.phase, `${file} is named by an example phase`).toBeDefined();
+    return { file: found!.file, phase: found!.phase! };
+  }
+
   /** The phase that names `plan.md`, as the shipped sweep found it. */
   function planTemplate(): { file: string; phase: Phase } {
-    const found = shipped.find((s) => s.file === "plan.md");
-    expect(found?.phase, "plan.md is named by an example phase").toBeDefined();
-    return { file: found!.file, phase: found!.phase! };
+    return templateNamed("plan.md");
   }
 
   async function everyPromptReadsItsArtifactsUnder(root: string): Promise<void> {
@@ -508,6 +552,144 @@ describe("examples/prompts — the spans read the injected state root", () => {
     expect(failures.map((f) => f.cmd)).toEqual([expect.stringContaining("find specs -name")]);
     // Loud, not merely non-zero: the refusal names what was missing.
     expect(failures[0]!.stderr).toContain("spec corpus root");
+  });
+
+  /**
+   * `engineering.md`, *Loud or nothing* — an entry's `per` cite is the build
+   * tick's whole subject, and the span read it under `2>/dev/null || echo
+   * "(spec not found: ...)"`. A cite that did not resolve therefore reached
+   * the agent as a sentence *saying* so, inside a `<spec>` block whose
+   * `path=` attribute still claimed the file, and nothing downstream refused:
+   * the tick built against prose about the absence. Absence is never
+   * legitimate here — the queue's own bar is that an entry carries a cite
+   * that resolves — so the span needs no guard at all, only its fallback
+   * removed and its stderr left alone, and `cat` refuses on its own.
+   *
+   * Driven through the real renderer over the shipped markdown
+   * (`engineering.md`, *A seam gate reads what the real writer wrote*): the
+   * claim is what `sh` does with the bytes the template ships once the
+   * renderer has substituted a path into them, which only the real reader
+   * and the real substituter can settle together.
+   */
+  it("the example build template's per span fails the render when the cited spec path is absent", async () => {
+    const { file, phase } = templateNamed("build.md");
+    // Non-vacuity: a template that stopped spanning its cite at all would
+    // satisfy every claim below by rendering nothing.
+    expect(
+      allSpans.filter((s) => s.file === file && s.cmd.includes("{{PER_PATH}}")),
+    ).toHaveLength(1);
+    const root = seedStateRoot("flume-example-prompts-percite-root-");
+    const missing = join(cwd, "specs", "retired-section.md");
+    expect(existsSync(missing)).toBe(false);
+
+    const outcome = await render(file, phase, root, cwd, { PER_PATH: missing }).then(
+      (rendered) => ({ rendered }),
+      (error: unknown) => ({ error }),
+    );
+
+    expect(outcome, "the render resolved every span over an absent per cite").not.toHaveProperty(
+      "rendered",
+    );
+    const error = (outcome as { error: unknown }).error;
+    expect(error).toBeInstanceOf(InlineExecRenderError);
+    const failures = (error as InlineExecRenderError).failures;
+    // The cite span is the one failure: every sibling resolves here.
+    expect(failures.map((f) => f.cmd)).toEqual([expect.stringContaining(missing)]);
+    // Loud, not merely non-zero: the reader's own complaint survived, which
+    // the deleted `2>/dev/null` used to discard.
+    expect(failures[0]!.stderr.trim()).not.toBe("");
+  });
+
+  /**
+   * `engineering.md`, *Loud or nothing*, on the four state-root spans. These
+   * carry a real fork the corpus span does not: on tick one nothing has
+   * written any of them, so absence is the legitimate case and the
+   * placeholder is the right answer to it. A trailing `|| echo` answered a
+   * *failed read* with that same placeholder — a queue the reader could not
+   * open rendered as an empty queue, and plan re-derived against it.
+   *
+   * The guard splits the fork: `test -e` selects the placeholder for absence
+   * and exits zero; everything past it is a real read whose failure reaches
+   * the renderer. `-e` rather than `-f`/`-d`, because the wrong *kind* in
+   * place is a failed read, not an absence.
+   *
+   * The unreadable case is the wrong kind in place — a directory where a
+   * `cat` span opens a file, a file where the listing span opens a
+   * directory. A permission-denied would read the same on posix and be a
+   * no-op on win32 (`.flume/plan/open-questions.md`, the windows lane), so
+   * it is not the case a portable suite can drive.
+   */
+  it("the example plan template's artifact spans fail the render when an artifact is present but unreadable", async () => {
+    const { file, phase } = planTemplate();
+
+    let asserted = 0;
+    for (const artifact of ARTIFACTS) {
+      const root = seedStateRoot("flume-example-prompts-unreadable-root-");
+      const { path, kind } = opened(artifact, root);
+      rmSync(path, { recursive: true, force: true });
+      if (kind === "file") mkdirSync(path, { recursive: true });
+      else writeFileSync(path, "a file where the listing opens a directory\n", "utf8");
+
+      const outcome = await render(file, phase, root).then(
+        (rendered) => ({ rendered }),
+        (error: unknown) => ({ error }),
+      );
+
+      expect(
+        outcome,
+        `${artifact.span}: the render resolved every span over an unreadable artifact`,
+      ).not.toHaveProperty("rendered");
+      const error = (outcome as { error: unknown }).error;
+      expect(error).toBeInstanceOf(InlineExecRenderError);
+      const failures = (error as InlineExecRenderError).failures;
+      // This artifact's span is the one failure — its siblings all resolve.
+      expect(failures.map((f) => f.cmd)).toEqual([expect.stringContaining(artifact.span)]);
+      // Loud: the reader's complaint reached the failure record rather than
+      // `/dev/null`.
+      expect(failures[0]!.stderr.trim(), `${artifact.span}: the refusal is silent`).not.toBe("");
+      asserted++;
+    }
+
+    // Non-vacuity (`engineering.md`, *A green verdict is proven
+    // non-vacuous*): an ARTIFACTS list that lost its entries would pass the
+    // loop over nothing.
+    expect(asserted).toBe(ARTIFACTS.length);
+    expect(asserted).toBeGreaterThan(0);
+  });
+
+  /**
+   * The other side of the same fork, and the reason the guard is not a bare
+   * refusal: a cold state root is tick one, not a defect. Each span renders
+   * its placeholder as the block's whole content — asserted as a line, under
+   * the block's open tag, so a placeholder appearing anywhere else in the
+   * render cannot stand in for it.
+   */
+  it("the example plan template's artifact spans render their empty placeholders when the artifacts are absent", async () => {
+    const { file, phase } = planTemplate();
+    const root = mkdtempSync(join(tmpdir(), "flume-example-prompts-cold-root-"));
+    scratch.push(root);
+    for (const artifact of ARTIFACTS) {
+      expect(existsSync(opened(artifact, root).path)).toBe(false);
+    }
+
+    const rendered = await render(file, phase, root);
+    const lines = rendered.split("\n").map((l) => l.trimEnd());
+
+    let asserted = 0;
+    for (const artifact of ARTIFACTS) {
+      const at = lines.indexOf(artifact.placeholder);
+      expect(at, `${artifact.span}: no line renders ${artifact.placeholder}`).toBeGreaterThan(0);
+      expect(lines[at - 1], `${artifact.span}: the placeholder is the block's content`).toMatch(
+        /^<[a-z-]+>$/,
+      );
+      // Nothing was read, so nothing the artifact would have carried leaked.
+      expect(rendered).not.toContain(artifact.sentinel);
+      asserted++;
+    }
+
+    // Non-vacuity: an emptied ARTIFACTS list would pass the loop over nothing.
+    expect(asserted).toBe(ARTIFACTS.length);
+    expect(asserted).toBeGreaterThan(0);
   });
 
   /**

@@ -1,19 +1,19 @@
 # CURRENT STATE
 
 <pending-json>
-!`cat "{{FLUME_DIR}}/plan/pending.json" 2>/dev/null || echo "[]"`
+!`p="{{FLUME_DIR}}/plan/pending.json"; test -e "$p" || { echo "[]"; exit 0; }; cat "$p"`
 </pending-json>
 
 <state>
-!`cat "{{FLUME_DIR}}/plan/state.md" 2>/dev/null || echo "(no prior state)"`
+!`p="{{FLUME_DIR}}/plan/state.md"; test -e "$p" || { echo "(no prior state)"; exit 0; }; cat "$p"`
 </state>
 
 <open-questions>
-!`cat "{{FLUME_DIR}}/plan/open-questions.md" 2>/dev/null || echo "(none)"`
+!`p="{{FLUME_DIR}}/plan/open-questions.md"; test -e "$p" || { echo "(none)"; exit 0; }; cat "$p"`
 </open-questions>
 
 <inbox>
-!`ls "{{FLUME_DIR}}"/inbox/*.md 2>/dev/null || echo "(drained)"`
+!`d="{{FLUME_DIR}}/inbox"; test -e "$d" || { echo "(drained)"; exit 0; }; find "$d"/ -name '*.md'`
 </inbox>
 
 <spec-corpus>
