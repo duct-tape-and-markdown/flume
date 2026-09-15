@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "PRIOR-ATTEMPT-FIXTURE-COVERAGE-READS-THE-SIX-MODE-ROSTER",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Prompt.test.ts",
+          "description": "the <prior-attempt> coverage assertion enumerates the roster the renderer's domain is"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the <prior-attempt> fixture-coverage check iterates NO_COMMIT_MODES where the block it guards renders every PRIOR_ATTEMPT_MODES member",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "the coverage case enumerates PRIOR_ATTEMPT_MODES; a roster member with no fixture in `variants` fails it",
+    "tests": [],
+    "pins": [
+      "every PRIOR_ATTEMPT_MODES member has a <prior-attempt> fixture the block renders"
+    ],
+    "notes": "tests/Prompt.test.ts:616 titles the block 'on every variant'; :701 ties coverage to NO_COMMIT_MODES (4 of the 6 the renderer switches on). src/Prompt.ts:107 is the roster, exported at src/index.ts:83; tests/priorAttempts.test.ts:102 already reads it. The switch's exhaustiveness is type-held, so a seventh sibling mode compiles with no fixture and ships its anchor rendering unpinned."
+  }
+]
