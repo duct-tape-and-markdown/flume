@@ -1,117 +1,10 @@
 [
   {
-    "tag": "TEMP-REPO-FIXTURES-RUN-WITH-AUTO-GC-OFF",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/subprocess.ts",
-          "description": "pin auto gc off for every git child the suite spawns, at the one home the fixtures already share"
-        },
-        {
-          "path": "tests/helpers/vitestSetup.ts",
-          "description": "arm the pin for in-worker spawns too, beside the state-root leak guard"
-        },
-        {
-          "path": "tests/subprocessHelper.test.ts",
-          "description": "the fixture-repo case reading the pin back"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "temp repo fixtures leave git's auto gc on, so a detached gc outlives its test and reds the posix lane at rmdir .git/objects",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "The default test lane must stay fast"
-    },
-    "acceptance": "no git process outlives the test that spawned it: every temp repository the suite creates runs with auto gc off, pinned at one home rather than at each of the 25 creation sites.",
-    "tests": [
-      "a temp git repository the suite creates has git's auto gc disabled"
-    ],
-    "pins": [],
-    "notes": "Inbox 2026-09-15: posix ci red on 2 of 12 main runs, always ENOTEMPTY rmdir .git/objects at fixture teardown, never an assertion. gc.autoDetach is on by default, so the gc git starts outlives the test and races the recursive remove. A retry around the remove hides the same race behind a wait."
-  },
-  {
-    "tag": "EXPORT-NAMEABILITY-READS-THE-DECLARATION-EMIT",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/exportGraph.ts",
-          "description": "positions come from the build config's declaration emit, walked on the emitted .d.ts; drop the source-node approximation"
-        },
-        {
-          "path": "tests/exportConsumers.test.ts",
-          "description": "the inferred-type fixture arm, and the vacuity guards restated over the emitted set"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the export-nameability scan walks source type nodes as a proxy for the emit, dropping every declaration it reads no position from",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A seam gate reads what the real writer wrote"
-    },
-    "acceptance": "the scan's positions are read from the emitted declarations, so no reached declaration is dropped for want of a source annotation, and the three real-tree nameability verdicts stay green.",
-    "tests": [
-      "the export scan flags an unnamable type an export infers without a type annotation",
-      "the export scan carries a property position for a reached export that carries no source annotation"
-    ],
-    "pins": [
-      "every type a reached property position names is exported from an entry module"
-    ],
-    "notes": "Inbox 2026-09-15 rules option 1 of the closed question. State the emit's measured cost in the commit body; if it is past what the default lane carries, scope the emit \u2014 never fall back to the node walk. Live half today: the reached constants in cliHelp, job, cli, PendingSchema, Prompt and harness/prompts, each contributing no position."
-  },
-  {
-    "tag": "CI-LANES-ARE-A-DECLARED-FIELD",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "`ci`, optional: the lanes, each a workflow file, a job name, and the lane name its findings carry"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the accept and refuse arms for the new field"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the optional-field list names `ci` beside `slots`"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the declaration carries no `ci` field, so a consumer with a CI lane cannot declare one \u2014 the strict schema refuses the key",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "What a consumer declares"
-    },
-    "acceptance": "a declaration naming a lane's workflow, job and lane name parses; one missing a component refuses at load naming the field; the authoring doc's optional-field list carries it.",
-    "tests": [
-      "a declaration carrying a ci lane with its workflow, job and lane name parses",
-      "a declaration whose ci lane omits its job refuses the load naming the field"
-    ],
-    "pins": [],
-    "notes": "The field is shape alone here \u2014 nothing reads it until INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE, which is why that entry is the blocked one and this is not. This repo's own `ci:` line is a chore(flume) edit outside build's fence, never part of this entry."
-  },
-  {
     "tag": "INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "CI-LANES-ARE-A-DECLARED-FIELD"
-      ]
+      "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [
         {
@@ -120,7 +13,7 @@
         },
         {
           "path": "tests/harnessCi.test.ts",
-          "description": "the reader over a stub forge CLI on PATH \u2014 failing, green, absent CLI, no completed run"
+          "description": "the reader over a stub forge CLI on PATH — failing, green, absent CLI, no completed run"
         }
       ],
       "edit": [
@@ -148,7 +41,7 @@
       "path": "spec/harness.md",
       "section": "CI lanes as a findings source"
     },
-    "acceptance": "with a lane declared, the inbox slice's prompt carries that lane's latest completed run under its lane name \u2014 the failing job's log, or an explicit unread reason when the forge CLI is absent or no run has completed \u2014 and says which when the run is green.",
+    "acceptance": "with a lane declared, the inbox slice's prompt carries that lane's latest completed run under its lane name — the failing job's log, or an explicit unread reason when the forge CLI is absent or no run has completed — and says which when the run is green.",
     "tests": [
       "the inbox window renders the declared lane's failing run under its lane name",
       "the inbox window renders a lane as unread when the forge CLI is absent",
@@ -156,13 +49,14 @@
       "the inbox window renders a lane whose latest completed run passed as green"
     ],
     "pins": [],
-    "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content \u2014 a generic parse of a consumer's runner output is the inference the boundary rule fences. Liveness is deliberately not a leg here; the fork is the open question, and this entry ships under every branch of it."
+    "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content — a generic parse of a consumer's runner output is the inference the boundary rule fences. Liveness is deliberately not a leg here; the fork is the open question, and this entry ships under every branch of it."
   },
   {
     "tag": "WINDOWS-LANE-TRIGGER-IS-PINNED",
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
