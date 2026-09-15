@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "CI-POSIX-CHAIN-LOAD-STEP-REFUSES",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "description": "\"Consumer-install smoke\"'s closing chain-load step, and the comment naming that verb's load mode"
+        },
+        {
+          "path": "tests/bin.test.ts",
+          "description": "agreement case, beside the existing CHAIN_LOAD_VERB reader"
+        }
+      ]
+    },
+    "summary": "Drive the CI POSIX lane's consumer-install smoke chain-load step through the refusing verb scripts/smoke-install.mjs declares, not `status`",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "The CI step exits non-zero when the scaffolded chain.ts is not where the installed CLI resolves it, and the verb is pinned against the script's declared one rather than a third copy.",
+    "tests": [
+      "the CI consumer-install smoke drives its chain-load fixture through the verb scripts/smoke-install.mjs declares"
+    ],
+    "notes": "Same defect 5012083 fixed in scripts/smoke-install.mjs: `status` takes the best-effort observational load, so the step answers 0 whether or not the installed CLI reached the fixture. `check` refuses with EX_MOUNT_DEAD and exits 0 over an absent queue and a non-git dir, so the success path stays one step. The CI lane cannot import the script's constant, so the second copy is bounded by the agreement case rather than deleted."
+  }
+]
