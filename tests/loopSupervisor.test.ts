@@ -1365,21 +1365,43 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
     expect(receivedSlugs).toEqual([[], [], []]);
   });
 
-  it("a chain declaring neither knob gets the supervisor-policy defaults, byte-identical", async () => {
+  it("a chain declaring neither supervisor knob gets both defaults: a run-scoped quarantine and a three-tick abort", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
 
+    // Two failures, one per default. The blamed one exercises the
+    // quarantine default: it appears on tick 1 only, exactly as a real run
+    // behaves once the slug is withheld from later ticks. The repo-level one
+    // (nothing to blame, nothing to quarantine) repeats every tick and
+    // exercises the abort default.
+    const HELD = blamedOnFixture("HELD-ENTRY");
+    const BLAMED_SIGNATURE = "EBUSY: resource busy or locked";
     const SIGNATURE = "git worktree prune: fatal: not a git repository";
+    const receivedSlugs: Array<string[]> = [];
     let calls = 0;
-    const runTick = async (): Promise<{ exitCode: number | null }> => {
+    const runTick = async (
+      quarantinedSlugs: ReadonlySet<string>,
+    ): Promise<{ exitCode: number | null }> => {
       calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
       await writeFile(
         verdictPath(),
         JSON.stringify(
           verdictFixture({
             committed: false,
             summary: "build: no commit — worktree provisioning failed",
-            provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
+            provisionFailures: [
+              ...(calls === 1
+                ? [
+                    {
+                      ...HELD,
+                      signature: BLAMED_SIGNATURE,
+                      message: `${BLAMED_SIGNATURE}, rmdir '...'`,
+                    },
+                  ]
+                : []),
+              { signature: SIGNATURE, message: SIGNATURE },
+            ],
           }),
         ),
         "utf8",
@@ -1394,6 +1416,14 @@ describe("superviseLoop — supervisor policy knobs override the §16 defaults (
       log: silent,
     });
 
+    // Undeclared quarantineScope still holds the blamed slug for the rest of
+    // the run — the "run" default, not the "none" the suite above overrides
+    // to, and the hold outlives the tick whose failure raised it.
+    expect(receivedSlugs).toEqual([
+      [],
+      [HELD.quarantineKey],
+      [HELD.quarantineKey],
+    ]);
     // Undeclared abortThreshold still aborts on the 3rd consecutive tick —
     // the v0.7 §16 default, not the 2 the suite above overrides to.
     expect(calls).toBe(3);

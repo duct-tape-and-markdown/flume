@@ -73,9 +73,10 @@ export interface SuperviseLoopOptions {
    * stages alike). `"none"` disables per-entry quarantine outright — a tagged
    * provision/merge/gate failure is never withheld from later ticks this run —
    * while the consecutive-identical-failure backstop (`abortThreshold` below)
-   * still applies. Defaults to {@link DEFAULT_QUARANTINE_SCOPE}, whose exact
-   * byte shape is pinned by tests/loopSupervisor.test.ts's "a chain declaring
-   * neither knob gets the supervisor-policy defaults, byte-identical" case.
+   * still applies. Defaults to {@link DEFAULT_QUARANTINE_SCOPE}, whose hold
+   * is pinned by tests/loopSupervisor.test.ts's "a chain declaring neither
+   * supervisor knob gets both defaults: a run-scoped quarantine and a
+   * three-tick abort" case.
    * The CLI forwards this from the resolved chain's
    * `supervisorPolicy.quarantineScope` (`src/Phase.ts`); undeclared falls
    * through to the default here.
@@ -86,8 +87,9 @@ export interface SuperviseLoopOptions {
    * threshold — the number of consecutive ticks the same *stage-tagged* signature
    * (provision, merge, or gate) must repeat, with no successful tick between
    * them, before the run aborts. Defaults to {@link DEFAULT_ABORT_THRESHOLD},
-   * pinned by the same
-   * tests/loopSupervisor.test.ts case cited on `quarantineScope` above. The CLI
+   * pinned by tests/loopSupervisor.test.ts's "a chain declaring neither
+   * supervisor knob gets both defaults: a run-scoped quarantine and a
+   * three-tick abort" case, which drives both defaults at once. The CLI
    * forwards this from the resolved chain's `supervisorPolicy.abortThreshold`;
    * undeclared falls through to the default here.
    */
