@@ -49,6 +49,7 @@ import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import { worktreesBase } from "../src/paths.ts";
 import { withGateCheckouts } from "../src/worktrees.ts";
 
+import { stubRunner } from "./helpers/stubRunner.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -144,17 +145,6 @@ const checkoutsOf = (repo: string): string[] =>
     .map((l) => resolve(l.slice("worktree ".length)))
     .filter((p) => p !== resolve(repo));
 
-/** A runner the capturing declaration returns; no case drives it. */
-const STUB = {
-  run: async () => {
-    throw new Error("the captured declaration's runner is never driven");
-  },
-  runAtBase: async () => {
-    throw new Error("the captured declaration's runner is never driven");
-  },
-  lanes: [],
-} as unknown as Runner;
-
 describe("the vitest runner", () => {
   let fixture: string;
   let flumeDir: string;
@@ -199,7 +189,9 @@ describe("the vitest runner", () => {
         ...DECLARATION,
         runner: (received: RunnerContext) => {
           seen = received;
-          return STUB;
+          // The captured declaration's runner is never driven; the
+          // capture is the whole point of this factory.
+          return stubRunner;
         },
         ...(setup === undefined ? {} : { setup }),
       },

@@ -41,7 +41,8 @@ import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import { readFileAtRef, statusRecords } from "../src/git.ts";
 import { matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
-import type { Runner, RunnerFactory } from "../harness/runner.ts";
+import type { RunnerFactory } from "../harness/runner.ts";
+import { stubRunner } from "./helpers/stubRunner.ts";
 
 /**
  * The engine, as a chain hands it in: the real builtin, the real at-ref
@@ -73,15 +74,11 @@ const STATE_ROOT = ".flume";
  */
 const NESTED = { segments: ["jobs", "alpha", ".flume"] };
 
-/** The runner a declared factory returns here; no case runs a test. */
-const runner = {
-  run: async () => ({ ok: true, passed: [], failures: [] }),
-  runAtBase: async () => ({ ok: true, passed: [], failures: [] }),
-  lanes: [],
-} as unknown as Runner;
-
-/** The runner as it is declared: a factory over the engine's API. */
-const runnerFactory: RunnerFactory = () => runner;
+/**
+ * The runner as it is declared: a factory over the engine's API. No case in
+ * this file runs a test, so the shared stand-in is what it returns.
+ */
+const runnerFactory: RunnerFactory = () => stubRunner;
 
 /** Build's fence, and so the queue's target fence. `docs/**` is outside it. */
 const BUILD_FENCE = ["src/**", "tests/**", `${notesDir(STATE_ROOT)}/*.md`];

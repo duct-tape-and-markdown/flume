@@ -38,7 +38,7 @@ import { defaultHandoff, type Handoff } from "../harness/handoff.ts";
 import { consumerIgnores } from "../harness/ignores.ts";
 import { promptPath, type PromptName } from "../harness/prompts.ts";
 import { notesDir } from "../harness/records.ts";
-import type { Runner, RunnerContext, RunnerFactory } from "../harness/runner.ts";
+import type { RunnerContext, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
 import type { ClaudeCodeOptions } from "../src/Agent.ts";
 import { computeStateRootRel } from "../src/Dispatcher.ts";
@@ -52,6 +52,7 @@ import type {
 } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";
+import { stubRunner } from "./helpers/stubRunner.ts";
 
 /** The engine's own placeholder grammar, as the renderer spells it. */
 const PLACEHOLDER = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
@@ -75,29 +76,18 @@ const STATE_ROOT = ".flume";
 const CITE = { path: "spec/harness.md", section: "The phases" };
 
 /**
- * A runner the declared factory returns. No case here rules on a named line
- * — that is `tests/harnessJudge.test.ts`'s subject — so this never runs.
- */
-const runner = {
-  run: async () => {
-    throw new Error("no case in this file judges a named line");
-  },
-  runAtBase: async () => {
-    throw new Error("no case in this file judges a named line");
-  },
-  lanes: [],
-} as unknown as Runner;
-
-/**
  * The declared runner, as a factory recording the context it was called
  * with. A fresh recorder per declaration, so a case reading it never
  * inherits another's call.
+ *
+ * What it returns is the shared stand-in: no case here rules on a named line
+ * — that is `tests/harnessJudge.test.ts`'s subject — so nothing drives it.
  */
 const recordingRunner = (
   seen: RunnerContext[],
 ): RunnerFactory => (received) => {
   seen.push(received);
-  return runner;
+  return stubRunner;
 };
 
 /** The declaration every case starts from — a shape a consumer could write. */

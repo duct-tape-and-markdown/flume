@@ -23,27 +23,10 @@ import {
 } from "../harness/index.ts";
 import type {
   Handoff,
-  RunResult,
-  Runner,
   RunnerFactory,
   SectionResolver,
 } from "../harness/index.ts";
-
-/** The empty result a stub runner reports; no test here runs a suite. */
-const EMPTY_RUN: RunResult = {
-  ok: true,
-  passed: 0,
-  failed: 0,
-  names: [],
-  failures: [],
-};
-
-/** A runner satisfying the three operations — what a factory returns. */
-const stubRunner: Runner = {
-  run: () => Promise.resolve(EMPTY_RUN),
-  runAtBase: () => Promise.resolve(EMPTY_RUN),
-  lanes: [{ name: "default", excludes: [], runs: true }],
-};
+import { stubRunner } from "./helpers/stubRunner.ts";
 
 /**
  * The runner as it is declared: a factory over the engine's API. The schema
