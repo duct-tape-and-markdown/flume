@@ -95,11 +95,15 @@ export const declaration: Declaration = {
   // at its root, singleton and fanout alike.
   setup: { directories: ["."] },
 
-  // The CI lane the inbox slice reads as a findings source: the Windows job
-  // on the push-to-main workflow, whose failing titles are how win32 support
-  // stays real (spec/harness.md, *CI lanes as a findings source*;
-  // spec/cli.md, *win32 is a supported host*).
-  ci: [{ name: "windows", workflow: "ci.yml", job: "windows" }],
+  // The CI lanes the inbox slice reads as findings sources (spec/harness.md,
+  // *CI lanes as a findings source*). The Windows job's failing titles are
+  // how win32 support stays real (spec/cli.md, *win32 is a supported host*);
+  // the POSIX job carries the integration lane and the publish-acceptance
+  // steps, which no tick runs and nothing else reads.
+  ci: [
+    { name: "windows", workflow: "ci.yml", job: "windows" },
+    { name: "posix", workflow: "ci.yml", job: "ci" },
+  ],
 
   slices: {
     enabled: ["plan-inbox", "plan-derive", "plan-sweep"],
