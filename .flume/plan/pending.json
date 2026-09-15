@@ -1,5 +1,41 @@
 [
   {
+    "tag": "A-SIGNALLED-LOOP-TAKES-ITS-TICK-CHILD-WITH-IT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the signal path drops the lock and claim only once the tick tree it held them for is gone"
+        },
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "the in-flight tick child is reachable from the run's teardown, and the exit awaits it"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the signalled-loop case, in the lane the judge runs"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a signalled `flume loop` releases its lock and tip claim and exits while its in-flight tick child keeps writing to the state root that claim protected",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The loop lock and the tip claim"
+    },
+    "acceptance": "a SIGTERM'd `flume loop` leaves no flume process writing to the state root \u2014 the in-flight tick is terminated and awaited before the claim and the lock drop, so the release the section promises is the whole tree's.",
+    "tests": [
+      "a signalled `flume loop` leaves no tick child alive against the state root whose claim it released"
+    ],
+    "pins": [],
+    "notes": "Verified on disk: `dropLock` (src/cli.ts) unlinks loop.pid, releases the claim and exits 143; `superviseLoop` keeps no handle on the child `defaultTickRunner` spawned \u2014 no kill, no wait. The posix lane's red (tests/tip-claim.integration.test.ts, the SIGTERM case) is that orphan's last write racing teardown; the case needs no edit once the tree is gone at exit. The integration lane is outside the judge's, so the named line lands in the default lane."
+  },
+  {
     "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
     "gate": {
       "kind": "open"
@@ -64,7 +100,7 @@
       "tests/priorAttempts.test.ts",
       "tests/worktrees.test.ts"
     ],
-    "summary": "the cases with no structural substitute — a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one — red the lane on their fixture, not a defect",
+    "summary": "the cases with no structural substitute \u2014 a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one \u2014 red the lane on their fixture, not a defect",
     "per": {
       "path": "spec/cli.md",
       "section": "win32 is a supported host"
@@ -109,7 +145,7 @@
       ],
       "retire": []
     },
-    "summary": "`readMergingMarkers` reads its listing's ENOENT as no interrupted merge, and win32 reports a path through a non-directory as ENOENT — the startup refusal passes over markers it cannot see",
+    "summary": "`readMergingMarkers` reads its listing's ENOENT as no interrupted merge, and win32 reports a path through a non-directory as ENOENT \u2014 the startup refusal passes over markers it cannot see",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Loud or nothing"
@@ -121,7 +157,7 @@
     "pins": [
       "readAll refuses when a plain file sits above the prior-attempts root"
     ],
-    "notes": "From PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED's note: the same errno-keyed absent arm stands at every `ENOENT → empty` in src/job.ts and src/friction.ts too. Only this one feeds a refusal — an unseen marker lets a loop start over an interrupted merge — so only this one is filed; the rest are debt until a red or a consumer names them. `Baton.sleep`'s fold is a write no-op and the constructor's mkdir already refuses."
+    "notes": "From PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED's note: the same errno-keyed absent arm stands at every `ENOENT \u2192 empty` in src/job.ts and src/friction.ts too. Only this one feeds a refusal \u2014 an unseen marker lets a loop start over an interrupted merge \u2014 so only this one is filed; the rest are debt until a red or a consumer names them. `Baton.sleep`'s fold is a write no-op and the constructor's mkdir already refuses."
   },
   {
     "tag": "TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES",
@@ -170,7 +206,7 @@
       "tests/subprocessHelper.test.ts",
       "tests/worktrees.test.ts"
     ],
-    "summary": "the comment-citation scan judges `src/` and `harness/` only, so the nine `tests/` citations of a rule page — three by section name — stand silently through a rename",
+    "summary": "the comment-citation scan judges `src/` and `harness/` only, so the nine `tests/` citations of a rule page \u2014 three by section name \u2014 stand silently through a rename",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
@@ -182,7 +218,7 @@
       "the repo citation pin judges the repo-relative path citations src/, harness/ and tests/ comments carry",
       "the repo citation pin judges the unbackticked page names src/, harness/ and tests/ comments carry"
     ],
-    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges — one names `src/` alone — so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix."
+    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges \u2014 one names `src/` alone \u2014 so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix."
   },
   {
     "tag": "A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK",
@@ -205,12 +241,12 @@
       "path": ".claude/rules/engineering.md",
       "section": "A green verdict is proven non-vacuous"
     },
-    "acceptance": "each negative names the subject its title names — the prior-attempt block's own render-refused prose — so the case's verdict no longer turns on what the tick's worktree is called.",
+    "acceptance": "each negative names the subject its title names \u2014 the prior-attempt block's own render-refused prose \u2014 so the case's verdict no longer turns on what the tick's worktree is called.",
     "tests": [],
     "pins": [
       "the render-refused prior-attempt block does not send a hook-refused retry to fix an inline-exec span"
     ],
-    "notes": "Build-observed: tests/Dispatcher.test.ts:16722-16725 `not.toMatch` over `retry`, the whole prompt. The `<prior-attempt>` block quotes the hook's stack, whose absolute frames are the worktree path, and a worktree is named after the entry tag — so the tag INLINE-EXEC-CAP-ABORT-AWAITS-ITS-KILLED-CHILD red it for that entry's whole fork, green in the trunk checkout. Scope the negatives; never constrain tags."
+    "notes": "Build-observed: tests/Dispatcher.test.ts:16722-16725 `not.toMatch` over `retry`, the whole prompt. The `<prior-attempt>` block quotes the hook's stack, whose absolute frames are the worktree path, and a worktree is named after the entry tag \u2014 so the tag INLINE-EXEC-CAP-ABORT-AWAITS-ITS-KILLED-CHILD red it for that entry's whole fork, green in the trunk checkout. Scope the negatives; never constrain tags."
   },
   {
     "tag": "EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER",
@@ -384,12 +420,12 @@
       ],
       "retire": []
     },
-    "summary": "163 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), …))`, each correct-by-accident until a comparison against git's output grows beside it",
+    "summary": "163 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), \u2026))`, each correct-by-accident until a comparison against git's output grows beside it",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
     },
-    "acceptance": "every temp fixture root in tests/ is made by the one helper that folds the spelling at creation, and a scan holds the suite to it — so a new bare root reds where it is written rather than on a Windows lane months later.",
+    "acceptance": "every temp fixture root in tests/ is made by the one helper that folds the spelling at creation, and a scan holds the suite to it \u2014 so a new bare root reds where it is written rather than on a Windows lane months later.",
     "tests": [
       "every temp fixture root in tests/ is created through the helper that folds it to git's spelling"
     ],

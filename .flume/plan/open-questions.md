@@ -35,50 +35,66 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## The POSIX lane is undeclared, so its reds reach no tick (PARKED — needs an operator edit to `.flume/declaration.ts`)
+## A lane woken over a run whose log the forge never surrenders holds the inbox slice live with no way out (PARKED — needs a spec amendment)
 
-Drained from `.flume/plan/notes/FORGE-STUB-ANSWERS-BEFORE-THE-HOSTS-OWN-CLI.md`
-(2026-09-15, build tick). `plantForge` now drops every PATH directory holding a
-`gh` of its own, which on `ubuntu-latest` takes `/usr/bin` and git with it, so
-the fixture links the host's git back in. The first real exercise of that link
-is a POSIX lane run — and the build tick had no way to ask for one, so it wrote
-a record asking a human to read it.
+Drained from `.flume/plan/notes/RENDER-NAMES-THE-LANE-THAT-WOKE-THE-TICK.md`
+(2026-09-15, build tick). Verified on disk: `wokenLanes`
+(`harness/windows.ts`) reads the status half alone — a lane whose latest
+completed run failed past its `drainedRuns` stamp wakes the inbox slice
+whether or not the job's log then comes back. ac059c2 made the case *visible*
+(the rendered block names the lane and the run it woke over) but nothing
+closes it: a forge that holds the run and refuses its log — auth scope,
+expired retention, a deleted artifact — wakes the slice every tick forever,
+drains nothing, and never hibernates.
 
-**Not derivable as filed.** `.flume/**` sits outside build's fence
-(`fence.build` in `.flume/declaration.ts`) and outside every plan slice's, so
-no autonomous tick can declare a lane. The declaration names one:
-`ci: [{ name: "windows", workflow: "ci.yml", job: "windows" }]`.
+**Not derivable as filed.** `spec/harness.md`, *CI lanes as a findings
+source*, says the slice "stamps the run it drained", and an unfetchable run
+was not drained. It also says liveness is exactly "latest completed run
+failed and is past the stamp" — status-only, which is what the code does —
+while its unread sentence ("a lane the slice cannot read makes it live for
+nothing") covers only a lane with no status at all. The terminal case falls
+between the two sentences, so closing it is a spec edit, not a derivation.
 
-**The gap is not hypothetical.** The `ci` job failed on runs 35014206480 and
-35015953021 and nothing in the loop saw either. Both failed the same step,
-`pnpm test:integration`, on one title:
+Options, one line each, all costing something:
 
-> claim file (and loop.pid) are gone after SIGTERM on POSIX; on win32
-> (TerminateProcess, no handler runs) both survive and the claim is
-> stale-reclaimable — the amended tip-claim outcome
+1. **Stamp an unreadable run as drained-empty.** Ends the loop immediately;
+   contradicts "stamps the run it drained", and a forge that recovers an hour
+   later has its finding silently skipped.
+2. **A failing status whose log will not fetch does not wake.** Keeps the
+   stamp honest; the red then reaches no tick at all until a newer run, which
+   is the outcome the lane exists to prevent.
+3. **Bound the re-wakes** (a per-lane attempt count in the plan state). Keeps
+   both the finding and the escape; adds a counter field nobody has, and a
+   bound is a number with no principled value.
 
-`tests/tip-claim.integration.test.ts` is in the lane `vitest.config.ts`
-excludes, so no local `pnpm test` and no build judge reaches it either. The
-POSIX lane is the only reader this repo has for the integration suite.
+A fourth shape worth ruling in or out first: whether an unreadable log is a
+*lane* fact at all, or an operator fact the slice should report and step past
+the way it reports an unread lane today.
 
-**Shape, carried so the answering session need not re-derive it.** One line
-beside the windows entry: `{ name: "posix", workflow: "ci.yml", job: "ci" }`.
-`spec/harness.md`, *CI lanes as a findings source*, already makes `ci` a list
-and `drainedRuns` a per-lane map, and `spec/cli.md`, *win32 is a supported
-host*, describes the POSIX lane as running beside the windows one — so the
-mechanism is there and only the declaration is missing.
+## A third win32 long-path ceiling has no section in `platform-facts.md` (NEEDS AMENDMENT — a human edit to `.claude/rules/platform-facts.md`)
 
-**The fork is cost, not shape.** The `ci` job carries the publish-acceptance
-steps and the integration lane, so its log is the larger of the two, and two
-red lanes drain in one tick against one line budget. A second wrinkle: an entry
-fixing an integration-lane red can carry no `tests[]` line, because the judge's
-running lane never reaches that file — such an entry ships on `acceptance` and
-the lane's next run alone.
+Drained from `.flume/plan/notes/LONG-PATH-FIXTURES-KEEP-GIT-OFF-THE-DEEP-PATH.md`
+(2026-09-15, build tick). The page names two win32 ceilings: *Windows
+MAX_PATH (~260 chars) breaks fs calls with no long component*, which
+`toNamespacedPath` fixes, and *`git worktree add` refuses long paths on
+win32, below MAX_PATH*, which it cannot. Run 35016231910 showed a third:
+**win32 refuses to create a process whose working directory exceeds
+MAX_PATH**, surfacing as `spawn git ENOENT`. `toNamespacedPath` cannot reach
+this one either — the OS resolves the cwd, so no path flume built is
+involved. It is why two `runIf(win32)` job fixtures died before reaching
+their subject.
 
-Options:
+**Not derivable as filed.** `.claude/rules/**` is the human's maintenance
+surface; no autonomous tick writes it. The fact currently lives only in a
+doc comment on `longJobName` (`tests/job.test.ts`), which is exactly the
+copy CLAUDE.md says the harness should own — "a code comment carrying one is
+a copy the harness should own instead, seen only by an agent that already
+opened that file".
 
-1. Declare it, and accept two lanes' logs in a drain tick.
-2. Declare it, and retire the windows lane once win32 settles — one lane at a
-   time, whichever host is currently fragile.
-3. Leave it undeclared, and keep POSIX regressions the interactive session's to
-   notice. The integration suite then has no automated reader at all.
+The consequence is a standing rule for every future win32 fixture, which is
+why the comment is the wrong home for it: **depth goes on the subject path**
+— a long job name, a deep `configDir`, a deep `pendingPath` — and never on a
+directory git is spawned in or asked to add a worktree under.
+
+The edit is one section beside the other two; the comment then shrinks to a
+pointer at it, in the same commit or a build entry filed after.
