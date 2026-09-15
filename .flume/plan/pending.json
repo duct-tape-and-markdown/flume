@@ -31,5 +31,61 @@
       "every artifact in the example prompt odd-root table is read by at least one shipped template"
     ],
     "notes": "Sites: tests/harnessPrompts.test.ts:294-309 (`if (!spanSubstitutes(...)) continue`, then `asserted > 0`); tests/examples.test.ts:452-469 (`if (reads.length === 0) continue`). The stronger pin already sits in the same file at examples.test.ts:656,691 and was not shared with its siblings (`engineering.md`, *The fix lands at the mechanism*). Equality with table length is wrong here — an artifact several prompts read counts several times; the property is per-artifact coverage."
+  },
+  {
+    "tag": "PLAN-STATE-DIRECTORY-TITLE-CLAIMS-A-REFUSAL-ONE-SLICE-NEVER-MAKES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "retitle the PLAN_STATE_PATH wrong-kind case to the claim its body asserts"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the plan-state-directory title names a refusal by every plan slice, but plan-inbox opens no such span and the body asserts it resolves",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "the title names the two-branch claim the helper actually asserts, so a slice gaining or losing the span cannot leave the title stale",
+    "tests": [],
+    "pins": [
+      "each plan slice prompt's verdict on a plan state directory in place follows whether its spans read that artifact"
+    ],
+    "notes": "Site: tests/harnessPrompts.test.ts:470 over everySliceOverWrongKindAt. Only plan-derive.md and plan-sweep.md substitute PLAN_STATE_PATH into a span; plan-inbox.md names it in its artifacts block only, so its branch is `opens: false` and the render resolves. The sibling QUESTIONS_PATH title at :474 is true today by accident of all three reading it."
+  },
+  {
+    "tag": "PACKAGE-QUEUE-SPAN-ABSENCE-REFUSAL-LIVES-ONLY-IN-TEST-PROSE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "pin the queue span's absence refusal; shrink the prose that hand-holds it to a pointer"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the package's choice that an absent queue refuses a plan slice render is stated only in test doc comments and by the absence of a guard",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "giving the queue span a guard, a placeholder or a fallback reds the default lane instead of quietly matching the example chain",
+    "tests": [],
+    "pins": [
+      "every plan slice prompt refuses when its queue artifact is absent"
+    ],
+    "notes": "All three plan prompts open the queue as a bare `cat` on the substituted queue path, so absence refuses; the two guarded spans take placeholders instead. Prose carrying the claim: tests/harnessPrompts.test.ts:237-239 (ARTIFACTS preamble) and :357-360 (coldRoot). The example templates make the opposite choice (an `[]` placeholder, tests/examples.test.ts:300), and nothing states the package diverges."
   }
 ]
