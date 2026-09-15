@@ -613,12 +613,12 @@ describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, e
 
 describe("tscGate / vitestGate / eslintGate — pnpm cmd override (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE)", () => {
   it.each([
-    ["tscGate", tscGate, "tsc"],
-    ["vitestGate", vitestGate, "vitest"],
-    ["eslintGate", eslintGate, "eslint"],
+    ["tscGate", "tsc", tscGate],
+    ["vitestGate", "vitest", vitestGate],
+    ["eslintGate", "eslint", eslintGate],
   ] as const)(
     "%s stays a bare Gate (name=%s, when=afterCommit) whether used directly or called with no override",
-    (_label, gate, name) => {
+    (_label, name, gate) => {
       expect(gate.name).toBe(name);
       expect(gate.when).toBe("afterCommit");
       const called = gate();
