@@ -65,25 +65,27 @@ describe("denyDirectory — a plain file where a directory is read", () => {
     expect(code).not.toBe("ENOENT");
   });
 
-  it("a structurally denied directory fails a mkdir and a read of a child, neither as ENOENT", async () => {
+  it("a structurally denied directory fails a mkdir of itself with a non-ENOENT error", async () => {
     const root = await scratch();
     const dir = join(root, "awake");
     mkdirSync(dir);
-    writeFileSync(join(dir, "plan"), "");
-    expect(readdirSync(dir)).toEqual(["plan"]);
+    // Non-vacuity: the recursive mkdir resolves over the real directory, so
+    // the refusal below is the denial talking (`.claude/rules/engineering.md`,
+    // *A green verdict is proven non-vacuous*).
+    expect(errno(() => mkdirSync(dir, { recursive: true }))).toBeUndefined();
 
     denyDirectory(dir);
 
-    // The two other ways the engine reaches a directory it was handed: the
-    // Baton constructor mkdirs its own dir before listing it, and a probe
-    // that skips the listing reads a child by name.
-    for (const code of [
-      errno(() => mkdirSync(dir, { recursive: true })),
-      errno(() => readFileSync(join(dir, "plan"), "utf8")),
-    ]) {
-      expect(code).toBeDefined();
-      expect(code).not.toBe("ENOENT");
-    }
+    // The other way the engine reaches a directory it was handed: the Baton
+    // constructor mkdirs its own dir before listing it.
+    const code = errno(() => mkdirSync(dir, { recursive: true }));
+    expect(code).toBeDefined();
+    expect(code).not.toBe("ENOENT");
+    // Reading a *child* of this denial is not pinned here. That is a lookup
+    // through a denied parent, which win32 answers as plain absence — the
+    // shape the case below owns, and the reason the primitive targets the
+    // read path itself. A child read by name keeps its cross-host home in
+    // the `denyFile` block, which denies that child.
   });
 
   it("a structurally denied directory is still present to a stat, so an existence gate above the read does not take its absent arm", async () => {
