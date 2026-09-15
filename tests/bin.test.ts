@@ -23,12 +23,13 @@
 import { execFile, spawnSync } from "node:child_process";
 import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { declaration } from "../.flume/declaration.ts";
 import {
   SPAWN_BUDGET_MS,
   mkFixtureRoot,
@@ -452,4 +453,161 @@ it("the CI consumer-install smoke runs scripts/smoke-install.mjs rather than re-
 
   const gate = stepBody("Consumer type-resolution gate");
   expect(gate.some((l) => l.includes(scratch![1]!))).toBe(true);
+});
+
+/**
+ * `spec/cli.md`, *win32 is a supported host*, makes the support commitment
+ * conditional on the Windows lane being read — and the condition is a fact
+ * about a committed file that nothing above prose held. A workflow that
+ * stopped firing on push to `main`, or a lane that quietly lost a step, would
+ * source no findings while the section still read as current.
+ *
+ * Which job *is* the lane is `.flume/declaration.ts`'s to say, not this
+ * file's: that entry is what the inbox slice polls (`spec/harness.md`, *CI
+ * lanes as a findings source*), so a job renamed on one side only reds here
+ * rather than sourcing silence. The step set resolves through `package.json`'s
+ * scripts for the same reason — the manifest owns each command's spelling.
+ */
+
+const CI_WORKFLOW = fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url));
+
+/** ci.yml with comments and blank lines dropped — every reader below is indentation-structural. */
+async function ciWorkflowLines(): Promise<string[]> {
+  return (await readFile(CI_WORKFLOW, "utf8"))
+    .split(/\r?\n/)
+    .filter((l) => l.trim() !== "" && !/^\s*#/.test(l));
+}
+
+const indentOf = (line: string): number => line.search(/\S/);
+
+/** The lines strictly inside the block `key:` opens at `indent`; undefined when there is no such key. */
+function yamlBlock(lines: string[], key: string, indent: number): string[] | undefined {
+  const start = lines.findIndex(
+    (l) => indentOf(l) === indent && l.trimStart().startsWith(`${key}:`),
+  );
+  if (start === -1) return undefined;
+  const out: string[] = [];
+  for (let i = start + 1; i < lines.length && indentOf(lines[i]!) > indent; i++) out.push(lines[i]!);
+  return out;
+}
+
+/** The scalar `key:` carries at `indent`; undefined when there is no such key. */
+function yamlScalar(lines: string[], key: string, indent: number): string | undefined {
+  const line = lines.find((l) => indentOf(l) === indent && l.trimStart().startsWith(`${key}:`));
+  return line === undefined ? undefined : line.trimStart().slice(key.length + 1).trim();
+}
+
+const unquote = (s: string): string => s.trim().replace(/^["']|["']$/g, "");
+
+/** The sequence `key:` carries at `indent`, in flow (`[a, b]`) or block (`- a`) form. */
+function yamlSeq(lines: string[], key: string, indent: number): string[] | undefined {
+  const inline = yamlScalar(lines, key, indent);
+  if (inline === undefined) return undefined;
+  const flow = /^\[(.*)\]$/.exec(inline);
+  if (flow) return flow[1]!.split(",").map(unquote).filter((s) => s !== "");
+  if (inline !== "") return undefined; // a scalar, not a sequence
+  return (yamlBlock(lines, key, indent) ?? [])
+    .filter((l) => l.trimStart().startsWith("- "))
+    .map((l) => unquote(l.trimStart().slice(2)));
+}
+
+/** Every shell command a job's steps run, block scalars expanded line-wise. */
+function runCommands(job: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < job.length; i++) {
+    const run = /^\s*(?:- )?run:\s*(.*)$/.exec(job[i]!);
+    if (!run) continue;
+    const value = run[1]!.trim();
+    if (!/^[|>][-+]?$/.test(value)) {
+      out.push(value);
+      continue;
+    }
+    const indent = indentOf(job[i]!);
+    for (let j = i + 1; j < job.length && indentOf(job[j]!) > indent; j++) out.push(job[j]!.trim());
+  }
+  return out;
+}
+
+it("the CI workflow runs on every push to main", async () => {
+  const lines = await ciWorkflowLines();
+
+  const triggers = yamlBlock(lines, "on", 0);
+  expect(triggers, `${CI_WORKFLOW} must declare its triggers under \`on:\``).toBeDefined();
+
+  const push = yamlBlock(triggers!, "push", 2);
+  expect(
+    push,
+    `${CI_WORKFLOW} must carry a \`push:\` trigger — a loop committing straight ` +
+      `to \`main\` has no merge gate to hang the lane off, so the push run is ` +
+      `the only thing that sources findings`,
+  ).toBeDefined();
+
+  const branches = yamlSeq(push!, "branches", 4);
+  expect(
+    branches,
+    `the \`push:\` trigger must name the branches it fires on as a sequence`,
+  ).toBeDefined();
+
+  // Non-vacuity: a branch filter that named nothing would fire on nothing,
+  // and an empty list satisfies no membership claim worth making.
+  expect(branches!.length).toBeGreaterThan(0);
+  expect(branches).toContain("main");
+});
+
+it("the windows-latest lane runs typecheck, the default test lane, build and the install smoke", async () => {
+  const lines = await ciWorkflowLines();
+
+  const lane = declaration.ci?.find((l) => l.workflow === basename(CI_WORKFLOW));
+  expect(
+    lane,
+    `.flume/declaration.ts must declare the CI lane it reads findings from on ` +
+      `${basename(CI_WORKFLOW)} — this case reads what that lane runs`,
+  ).toBeDefined();
+
+  const jobs = yamlBlock(lines, "jobs", 0);
+  expect(jobs, `${CI_WORKFLOW} must declare \`jobs:\``).toBeDefined();
+
+  const job = yamlBlock(jobs!, lane!.job, 2);
+  expect(
+    job,
+    `the declared lane names job \`${lane!.job}\`, which ${CI_WORKFLOW} does not ` +
+      `define — the inbox slice would poll a job that never runs`,
+  ).toBeDefined();
+
+  expect(yamlScalar(job!, "runs-on", 4)).toBe("windows-latest");
+
+  const commands = runCommands(job!);
+
+  // Non-vacuity: the lane runs something at all, so the membership checks
+  // below are judging a step set rather than an empty job.
+  expect(commands.length).toBeGreaterThan(0);
+
+  const manifest = fileURLToPath(new URL("../package.json", import.meta.url));
+  const scripts: Record<string, string> =
+    JSON.parse(await readFile(manifest, "utf8")).scripts ?? {};
+
+  /** Each step `spec/cli.md` names, keyed by the package script that owns its spelling. */
+  const steps = [
+    { step: "typecheck", script: "typecheck" },
+    { step: "the default test lane", script: "test" },
+    { step: "build", script: "build" },
+    { step: "the install smoke", script: "smoke:install" },
+  ];
+
+  for (const { step, script } of steps) {
+    const body = scripts[script];
+    expect(body, `package.json must carry a \`${script}\` script`).toBeTypeOf("string");
+
+    // Either spelling of the script invocation, or the script's own body run
+    // inline — resolved against the manifest rather than a second copy of the
+    // command text here.
+    const runs = commands.some(
+      (c) => c === `pnpm ${script}` || c === `pnpm run ${script}` || c === `pnpm ${body}`,
+    );
+    expect(
+      runs,
+      `the \`${lane!.job}\` lane must run ${step} (\`pnpm ${script}\`) — found: ` +
+        commands.join(" / "),
+    ).toBe(true);
+  }
 });
