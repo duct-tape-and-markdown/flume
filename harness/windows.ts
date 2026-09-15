@@ -616,25 +616,37 @@ const budgetOf = (options: PlanSliceWindowsOptions): number =>
 
 /**
  * The window a state root with no artifact yet opens over: everything the
- * globs name, read in full, with the cursor stamped at HEAD afterwards.
+ * globs name, read in full, ending on the tip the cursor is stamped at.
  *
  * Absence is the first tick's real state, not a degradation — a consumer
  * whose state root was just written has no cursor, and the only honest
  * window over "nothing has been derived" is the whole corpus
  * (`planState.ts`).
+ *
+ * **The tip is named here, not rediscovered by the tick.** A window that
+ * said "stamp HEAD" would have the stamping tick resolve its own sha, so a
+ * commit landing mid-tick would be stamped over unread
+ * (`.claude/rules/posture-sweep.md`, *The stamp*). The tip is resolved
+ * before the listing rather than after, so anything that lands while this
+ * reads is at worst listed and not yet stamped — re-opened next tick, never
+ * skipped.
  */
 function bootstrap(
   field: keyof PlanState,
   ctx: WindowContext,
   globs: string[],
 ): string {
+  const tip = git(ctx.cwd, ["rev-parse", "HEAD"]).trim();
   const files = git(ctx.cwd, ["ls-files"])
     .split("\n")
     .filter((path) => path.length > 0 && matchesAny(path, globs));
   return [
     `(bootstrap: no \`${field}\` yet — the whole of the declared paths is ` +
-      `the window; read every file below and stamp HEAD)`,
+      `the window; read every file below)`,
     ...files,
+    "",
+    `=== this window was drawn from tip ${tip}; the tick that closes it ` +
+      `stamps \`${field}\` at exactly that sha ===`,
   ].join("\n");
 }
 

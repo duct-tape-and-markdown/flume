@@ -503,6 +503,47 @@ it("a state root with no plan state opens every window over the whole declared c
   ).toBe(true);
 });
 
+it("the bootstrap window names the tip it was drawn from rather than telling the tick to stamp HEAD", () => {
+  commit(
+    { "spec/loop.md": "# Loop\n", "src/a.ts": "export const a = 1;\n" },
+    "chore: seed",
+  );
+  // The tip is the tree's, not the last commit inside either window's globs:
+  // a bootstrap reads the whole corpus, so every commit is behind it.
+  const tip = commit({ "elsewhere/x.md": "outside\n" }, "chore: elsewhere");
+
+  const built = windows();
+  const ctx = { cwd: repo, flumeDir: stateRoot() };
+  // No plan state is written, so both slices take the bootstrap leg — one
+  // render, two cursors.
+  const cases = [
+    {
+      field: "derivedThrough",
+      corpus: "spec/loop.md",
+      rendered: built["plan-derive"].args(ctx).SPEC_WINDOW,
+    },
+    {
+      field: "sweptThrough",
+      corpus: "src/a.ts",
+      rendered: built["plan-sweep"].args(ctx).SWEEP_WINDOW,
+    },
+  ];
+
+  for (const { field, corpus, rendered } of cases) {
+    // Vacuity guard: it is the bootstrap leg, with its corpus listed in it,
+    // that ends on the tip below.
+    expect(rendered).toContain("bootstrap");
+    expect(rendered).toContain(corpus);
+    expect(rendered).not.toContain("stamp HEAD");
+    expect(rendered).toMatch(
+      new RegExp(
+        `=== this window was drawn from tip ${tip}; the tick that closes it ` +
+          `stamps \`${field}\` at exactly that sha ===\\s*$`,
+      ),
+    );
+  }
+});
+
 it("the windows a declaration builds are the slices it enabled, in the ladder's order", () => {
   const all = planSliceWindows({
     declaration: declaration(),
