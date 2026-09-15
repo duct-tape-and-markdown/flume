@@ -7,16 +7,23 @@
  * it cites still exists is mechanical, and a deleted symbol may not leave its
  * citations standing.
  *
- * Both halves go through the TypeScript program. The comments are read off
- * real trivia ranges rather than matched out of the file text, so a `//`
- * inside a string literal is never mistaken for a comment and a comment
- * holding a `/` is never swallowed by one. The tokens they are judged against
- * are what the checker resolves — a namespace import's property access, an
- * inherited member, a lib global — so nothing resolves on a substring match.
+ * A comment cites the repo in two alphabets, so the scan reads both: a name
+ * resolves against the declarations, and a repo-relative path against the
+ * working tree. One mechanism either way — the citation names something the
+ * repo holds, or it names nothing and the tree renamed out from under it.
+ *
+ * Both the comments and the identifier half of the verdict go through the
+ * TypeScript program. The comments are read off real trivia ranges rather
+ * than matched out of the file text, so a `//` inside a string literal is
+ * never mistaken for a comment and a comment holding a `/` is never swallowed
+ * by one. The tokens they are judged against are what the checker resolves —
+ * a namespace import's property access, an inherited member, a lib global —
+ * so nothing resolves on a substring match.
  *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
+import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 
 import ts from "typescript";
@@ -108,12 +115,47 @@ const LEADING_CAPITAL = /^[A-Z]/;
 const ALL_CAPS = /^[A-Z][A-Z0-9]*$/;
 
 /**
+ * One segment of a path citation. The charset is what a filename spells with,
+ * so every placeholder spelling a comment reaches for when it means *a* file
+ * rather than *this* file — `<name>`, `*`, `**`, `[<ns>/]`, `{{DIR}}` — falls
+ * out of the subject rule on its own, never on a list of placeholder forms.
+ * `.` and `..` are refused with them: a citation the working tree can answer
+ * names its file from the repo root, and `./Gate.js` is a module specifier
+ * read from wherever the importer sits.
+ */
+const PATH_SEGMENT = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
+
+/**
+ * A named file rather than a directory or a git ref: `engineering.md`,
+ * `cli.ts`, `MIGRATING-0.10.md`. The extension is the whole discriminator —
+ * `refs/heads/main` and `flume/<slug>` are paths in git's alphabet, not the
+ * working tree's, and `src/` names a directory every checkout has.
+ */
+const NAMED_EXTENSION = /[A-Za-z0-9_-]\.[A-Za-z0-9]+$/;
+
+/**
+ * Whether a span is spelled as a repo-relative path to a file.
+ *
+ * A slash is the claim, the same way a dot carries a member access: prose
+ * that wanted a sentence would not have punctuated it this way. A span
+ * without one is left to the identifier spellings above, which reach a
+ * root-level file (`tsconfig.build.json`) by their own dot.
+ */
+const isPathSubject = (text: string): boolean => {
+  const segments = text.split("/");
+  return (
+    segments.every((segment) => PATH_SEGMENT.test(segment)) &&
+    NAMED_EXTENSION.test(segments[segments.length - 1] ?? "")
+  );
+};
+
+/**
  * Whether a backticked span is judged at all.
  *
  * Prose backticks plenty that is not a symbol — a flag, an English word under
  * emphasis, a sentence fragment — so the subject rule admits only spans whose
- * *spelling* says identifier without reading the surrounding sentence. Three
- * such spellings, each a shape prose does not reach for:
+ * *spelling* says name without reading the surrounding sentence. Four such
+ * spellings, each a shape prose does not reach for:
  *
  * - **A dot between identifier segments.** `Phase.handoff`, `fs.rm`,
  *   `chain.ts` — a member access, a qualified name, a filename. Prose that
@@ -123,6 +165,9 @@ const ALL_CAPS = /^[A-Z][A-Z0-9]*$/;
  * - **A leading capital** on a word that is not capitals alone: `Dispatcher`,
  *   `Runner`. A type name reads as prose only at the start of a sentence,
  *   which a backtick is not.
+ * - **A slash between path segments**, ending in a named extension:
+ *   `spec/loop.md`, `src/Dispatcher.ts`. The repo holds names in two
+ *   alphabets and a comment cites in both; `isPathSubject` carries this one.
  *
  * Two spellings stay out of scope by construction, never by exception: a
  * single lowercase word, which is how prose emphasises an ordinary noun, and
@@ -130,6 +175,7 @@ const ALL_CAPS = /^[A-Z][A-Z0-9]*$/;
  * did not spell out — `EX_OK` fails `SEGMENT` besides, but `JSON` would not.
  */
 const isSubject = (text: string): boolean => {
+  if (text.includes("/")) return isPathSubject(text);
   const segments = text.split(".");
   if (!segments.every((segment) => SEGMENT.test(segment))) return false;
   if (segments.length > 1) return true;
@@ -180,8 +226,9 @@ const commentRanges = (sf: ts.SourceFile): readonly ts.CommentRange[] => {
  * (a declaration, an imported binding, a member, a lib global in scope), a
  * string literal they carry (a discriminant like `"blockedBy"` is declared by
  * the literal, not by a `const`), or — for the whole subject at once — a
- * module of theirs by basename. What a segment *means* is never read: the
- * scan proves the name exists and stops there.
+ * module of theirs by basename, or a file the working tree holds at that
+ * repo-relative path. What a segment *means* is never read: the scan proves
+ * the name exists and stops there.
  */
 export const scanCommentCitations = (
   request: CitationScanRequest,
@@ -256,8 +303,15 @@ export const scanCommentCitations = (
     }
   }
 
+  // The working tree is the other thing the repo holds a citation's name in.
+  // A file is looked up whole — `resolve` folds the posix separators the
+  // citation is written with into the host's, and the result never leaves
+  // this predicate, so nothing downstream sees a path in two alphabets.
+  const onDisk = (text: string): boolean => existsSync(resolve(root, text));
+
   const resolves = (text: string): boolean =>
     tokens.has(text) ||
+    onDisk(text) ||
     text
       .split(".")
       .every((segment) => KEYWORDS.has(segment) || tokens.has(segment));
