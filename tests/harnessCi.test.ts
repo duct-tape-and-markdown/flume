@@ -728,9 +728,11 @@ it("the inbox window names the lane whose undrained failing run made the slice l
   expect(rendered).not.toContain("Not what woke this slice");
 }, SPAWN_BUDGET_MS);
 
+/** The refusal a forge that holds the run but not its log answers with. */
+const LOG_REFUSAL = "gh: the forge would not hand over this job's log";
+
 it("a lane woken by a run whose log the forge refuses renders unread over that run, not over nothing", () => {
-  const refusal = "gh: the forge would not hand over this job's log";
-  plantForge({ runs: [RUN], jobs: [job("failure")], logRefusal: refusal });
+  plantForge({ runs: [RUN], jobs: [job("failure")], logRefusal: LOG_REFUSAL });
   stampLanes({});
 
   // Vacuity: this lane really is what makes the slice live — nothing else on
@@ -743,7 +745,7 @@ it("a lane woken by a run whose log the forge refuses renders unread over that r
   // Vacuity again: the log really was asked for, and really was refused.
   expect(calls().some((call) => call.includes("--log-failed"))).toBe(true);
   expect(rendered).toContain("UNREAD");
-  expect(rendered).toContain(refusal);
+  expect(rendered).toContain(LOG_REFUSAL);
 
   // The wake, and the run it was woken over — named, not dropped with the
   // status the read degraded from.
@@ -752,6 +754,39 @@ it("a lane woken by a run whose log the forge refuses renders unread over that r
   expect(rendered).toContain(RUN.url);
   expect(rendered).toContain(RUN.displayTitle);
   expect(rendered).not.toContain("GREEN");
+}, SPAWN_BUDGET_MS);
+
+it("the unread block over the run a lane woke on names the stamp that closes that lane", () => {
+  plantForge({ runs: [RUN], jobs: [job("failure")], logRefusal: LOG_REFUSAL });
+  stampLanes({});
+
+  // Vacuity: this lane is what makes the slice live, so what is asserted below
+  // is the directive on a wake and not on an unread nobody was woken by.
+  expect(inboxLive()).toBe(true);
+
+  const rendered = inboxArgs()["CI_LANES"] ?? "";
+  expect(rendered).toContain("UNREAD");
+  expect(rendered).toContain(LOG_REFUSAL);
+
+  // The stamp named with the run it closes — not the bare field name the wake
+  // marker already carries with no run beside it.
+  expect(rendered).toContain(`drainedRuns.${LANE.name}\` at \`${RUN.databaseId}\``);
+}, SPAWN_BUDGET_MS);
+
+it("a lane stamped at the run whose log the forge refused no longer makes the inbox slice live", () => {
+  plantForge({ runs: [RUN], jobs: [job("failure")], logRefusal: LOG_REFUSAL });
+
+  // Vacuity: unstamped, this is a live lane whose log the forge really did
+  // refuse — so the verdict below is the stamp's doing, not an unread the
+  // liveness leg was never going to open for.
+  stampLanes({});
+  expect(inboxLive()).toBe(true);
+  const unstamped = inboxArgs()["CI_LANES"] ?? "";
+  expect(unstamped).toContain("UNREAD");
+  expect(unstamped).toContain(LOG_REFUSAL);
+
+  stampLanes({ [LANE.name]: String(RUN.databaseId) });
+  expect(inboxLive()).toBe(false);
 }, SPAWN_BUDGET_MS);
 
 it("a failing lane already stamped at its latest run renders without the wake marker its unstamped self carries", () => {

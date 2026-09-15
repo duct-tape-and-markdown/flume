@@ -432,6 +432,25 @@ function renderRun(run: CiRun, branch: string): string {
 }
 
 /**
+ * The stamp that closes a lane, named rather than left for the agent to
+ * compose out of the run line beside it — a lane the slice woke on and did
+ * not stamp is a lane this window re-opens on next tick over the same run
+ * (`.claude/rules/posture-sweep.md`, *The stamp*, for the cursor this is the
+ * sibling of).
+ *
+ * One sentence for both arms that own a run, because both close the same way:
+ * the slice stamps the run it woke on, drained or unread (`spec/harness.md`,
+ * *CI lanes as a findings source*). `lead` is the only difference — what the
+ * arm has this tick do with the run before stamping it.
+ */
+function renderStamp(laneName: string, run: CiRun, lead: string): string {
+  return (
+    `${lead} stamp \`drainedRuns.${laneName}\` at \`${run.id}\`: this lane ` +
+    `holds the inbox slice live until it is the run stamped there.`
+  );
+}
+
+/**
  * One lane's reading, under the lane name its findings are keyed by, saying
  * whether this lane is what made the slice live.
  *
@@ -469,6 +488,22 @@ function renderLane(reading: CiLaneReading, woke: boolean): string {
       `${reading.reason}.`,
       `Unread is not green: this tick knows nothing about the lane's state, ` +
         `so file nothing and close nothing against it.`,
+      // And the stamp that closes it anyway, on the one unread that names a
+      // run: this lane woke the slice over that run, so leaving it unstamped
+      // costs a wake every tick for as long as the forge withholds the log.
+      ...(reading.over === undefined
+        ? []
+        : [
+            renderStamp(
+              lane.name,
+              reading.over.run,
+              `There is nothing to drain out of this run and nothing to file ` +
+                `against it — even so,`,
+            ),
+            `Its findings arrive from the next run that fails: the lane runs ` +
+              `on every push, and a failure that persists reports again. Say ` +
+              `in the commit body that this lane's run went unread.`,
+          ]),
     ].join("\n");
   }
   const { run, branch } = reading;
@@ -485,14 +520,7 @@ function renderLane(reading: CiLaneReading, woke: boolean): string {
     `=== ${head}: FAILING ===`,
     wake,
     renderRun(run, branch),
-    // The stamp the slice writes for this lane, named rather than composed
-    // by the agent out of the run line above — a lane drained without it is
-    // a lane this window re-opens on next tick over the same run
-    // (`.claude/rules/posture-sweep.md`, *The stamp*, for the cursor this is
-    // the sibling of).
-    `Once you have drained this run, stamp \`drainedRuns.${lane.name}\` at ` +
-      `\`${run.id}\`: this lane holds the inbox slice live until it is the ` +
-      `run stamped there.`,
+    renderStamp(lane.name, run, `Once you have drained this run,`),
     `--- the failing job's log ---`,
     reading.log,
   ].join("\n");
