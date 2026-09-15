@@ -257,7 +257,10 @@ takes its absent arm over an obstructed ancestor. An absent-or-present verdict
 keyed on an errno is therefore wrong on one host or the other; prove absence
 by descending the path and asserting each ancestor is a directory before the
 next segment is probed, and never deny a fixture's *parent* to stand in for
-denying the read — that un-arms the case on both hosts.
+denying the read — that un-arms the case on both hosts. The one exception is
+its converse: a reader that carries the descent is exercised *only* by an
+obstructed ancestor, so a case pinning that reader denies the parent on
+purpose and says so at the site.
 
 ## win32 refuses to spawn a process whose working directory exceeds MAX_PATH
 

@@ -126,11 +126,16 @@ other.
     (`tip refs/heads/X claimed by pid N (<path>)`), exit 1; dead → reclaim (unlink,
     retry the create, re-probing rather than assuming this call won the race).
   - *Contents:* the holder's pid, nothing else — consistent with `loop.pid`.
-  - *Release:* the same `exit`/`SIGINT`/`SIGTERM` handlers that drop the loop lock.
-    Release-on-signal is a POSIX guarantee only; on win32 `SIGTERM` maps to
-    `TerminateProcess`, which runs no handler, so the claim survives the kill and the
-    next acquirer's liveness probe reclaims it. Stale-reclaim is the cross-platform
-    guarantee.
+  - *Release:* the same `exit`/`SIGINT`/`SIGTERM` handlers that drop the loop lock,
+    and before they drop it they take down the in-flight tick and everything it
+    spawned: on POSIX the tick child runs in its own process group, the handler
+    signals that group with `SIGTERM`, escalates to `SIGKILL` after a bounded grace
+    the supervisor declares, and waits for it — so the release is the whole tree's,
+    and the state root the claim protected has no writer left when the claim goes.
+    A bare `flume tick` takes its agent down the same way. Release-on-signal is a
+    POSIX guarantee only; on win32 `SIGTERM` maps to `TerminateProcess`, which runs
+    no handler, so the claim survives the kill and the next acquirer's liveness
+    probe reclaims it. Stale-reclaim is the cross-platform guarantee.
   - *Scope:* per run. `flume loop` acquires once for the whole run and releases at
     exit; its tick children run under the supervisor's claim — the runner tells the
     child (`FLUME_TIP_CLAIM_HELD=<pid>` in the child env) rather than the child
