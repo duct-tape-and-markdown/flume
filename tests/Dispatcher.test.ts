@@ -16766,6 +16766,15 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
+    // Spelled in the span writer's vocabulary on purpose. The quoted record
+    // is the one place in the block where these words legitimately appear,
+    // so a negative that reads the whole rendered prompt reds here on every
+    // host — instead of only when the tick's own worktree path happens to
+    // spell one of them, which is what a worktree named after an entry tag
+    // eventually does.
+    const THROWN =
+      "promptArgs hit a half-written inline-exec span; fix or remove the failing command in the failing span";
+
     // Throws on the first tick only, so the retry's render succeeds and its
     // prompt — the artifact under test — can be inspected.
     let calls = 0;
@@ -16773,7 +16782,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
       name: "plan",
       concurrency: "singleton",
       promptArgs: () => {
-        if (calls++ === 0) throw new Error(BOOM);
+        if (calls++ === 0) throw new Error(THROWN);
         return {};
       },
     });
@@ -16797,6 +16806,11 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(first.noCommit).toBe("render-refused");
     expect(prompts).toHaveLength(0);
 
+    // The record as the refusing writer left it, read before the retry
+    // consumes it: the exact text the renderer quotes back below.
+    const quoted = (await renderRefusedRecords(fx.repo)).get("plan")!.failures;
+    expect(quoted).toContain(THROWN);
+
     baton.wake("plan");
     await dispatcher.tick();
 
@@ -16807,14 +16821,40 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(retry).toContain("<prior-attempt>");
     expect(retry).toContain(RENDER_REFUSED_INTRO);
     expect(retry).toContain("promptArgs hook threw");
-    expect(retry).toContain(BOOM);
+    expect(retry).toContain(THROWN);
+
+    // The subject the negatives below name: the arm's own prose — the
+    // `<prior-attempt>` block with the verbatim record it quotes excised,
+    // line by line. That quote is the writer's text and its stack, whose
+    // absolute frames are this tick's worktree path, so anything asserted
+    // over it judges what the tick is called rather than what the arm says.
+    const open = retry.indexOf("<prior-attempt>");
+    const close = retry.indexOf("</prior-attempt>");
+    expect(close).toBeGreaterThan(open);
+    const quotedLines = new Set(
+      quoted
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0),
+    );
+    const arm = retry
+      .slice(open, close)
+      .split("\n")
+      .filter((l) => !quotedLines.has(l.trim()))
+      .join("\n");
+
+    // Non-vacuity, both directions: the arm's prose survived the excision and
+    // the quote did not, so the negatives run over a populated subject that
+    // no longer contains the record.
+    expect(arm).toContain(RENDER_REFUSED_INTRO);
+    expect(arm).not.toContain(THROWN);
 
     // What the arm must not tell this retry: that a span it never had failed,
     // and that removing a command it never ran is the fix.
-    expect(retry).not.toMatch(/inline-exec/i);
-    expect(retry).not.toMatch(/failing span/i);
-    expect(retry).not.toMatch(/failing command/i);
-    expect(retry).not.toMatch(/fix or remove/i);
+    expect(arm).not.toMatch(/inline-exec/i);
+    expect(arm).not.toMatch(/failing span/i);
+    expect(arm).not.toMatch(/failing command/i);
+    expect(arm).not.toMatch(/fix or remove/i);
   }, 20_000);
 
   it("a throwing handoff is logged and the tick's facts stand", async () => {
