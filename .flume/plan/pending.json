@@ -1,71 +1,15 @@
 [
   {
-    "tag": "RECORD-CAP-IS-THE-DRAINS-TO-REPORT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/gates.ts",
-          "description": "the records gate drops its byte-cap arm; its green message stops counting bytes"
-        },
-        {
-          "path": "harness/records.ts",
-          "description": "`RECORD_MAX_BYTES`'s doc names the drain as the reporter, not the gate"
-        },
-        {
-          "path": "harness/windows.ts",
-          "description": "the rendered records block names an over-cap record's byte count; the render's comment stops resting on the gate"
-        },
-        {
-          "path": "harness/prompts/build.md",
-          "description": "drops the cap-revert claim; states the measure per `.flume/PROTOCOL.md`, *A record is short*"
-        },
-        {
-          "path": "harness/prompts/plan-inbox.md",
-          "description": "the drain names an overrun in the plan commit body"
-        },
-        {
-          "path": "tests/harnessGates.test.ts",
-          "description": "the cap arm's refusal case becomes its admission case"
-        },
-        {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "the render's overrun mark"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "a nine-byte note overrun reverted 742 lines of engine change and then quarantined it \u2014 the cap is a shape rule on a prose channel, not a revert",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The gates the discipline needs"
-    },
-    "acceptance": "a build commit whose note is over the cap lands with its entry, and the rendered records block names the overrun for the drain to report.",
-    "tests": [
-      "the records gate passes a commit whose record is over the byte cap",
-      "the rendered records block names the byte count of a record over the cap"
-    ],
-    "pins": [],
-    "notes": "Ruled at dc1a2fb. The gate's collision arms stay reverts \u2014 they protect the queue. The arm is `harness/gates.ts:315`; `harness/windows.ts:534` rests 'bounded by the gate that admitted it' on it; `build.md`'s 'or one over the cap' goes, and the measure PROTOCOL now states (`wc -c`, an em-dash is three) replaces it \u2014 the retry overshot with the byte count in front of it. Blocks A-SIGNALLED so a third attempt misses the same arm."
-  },
-  {
     "tag": "A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "RECORD-CAP-IS-THE-DRAINS-TO-REPORT"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
       "new": [
         {
           "path": "src/processTree.ts",
-          "description": "one home for the own-group spawn and the SIGTERM \u2192 grace \u2192 SIGKILL teardown both signal paths take"
+          "description": "one home for the own-group spawn and the SIGTERM → grace → SIGKILL teardown both signal paths take"
         }
       ],
       "edit": [
@@ -75,7 +19,7 @@
         },
         {
           "path": "src/Phase.ts",
-          "description": "`supervisorPolicy.killGraceMs` \u2014 the grace the supervisor declares, sixth knob of the block"
+          "description": "`supervisorPolicy.killGraceMs` — the grace the supervisor declares, sixth knob of the block"
         },
         {
           "path": "src/cli.ts",
@@ -100,19 +44,6 @@
       ],
       "retire": []
     },
-    "summary": "the signalled release kills the tick child alone, so the agent that tick spawned outlives the claim that protected it, and the wait before the drop is bounded only by what the child installs",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The loop lock and the tip claim"
-    },
-    "acceptance": "a signalled `flume loop` leaves no process of the tick tree alive when the lock and claim drop, and the wait before they drop is bounded by the declared grace rather than by the child's disposition.",
-    "tests": [
-      "a signalled `flume loop` leaves nothing the tick child spawned alive against the state root it released",
-      "a tick tree that ignores SIGTERM is killed after the declared grace rather than waited on indefinitely",
-      "a chain-declared kill grace, not the engine default, bounds a signalled loop's wait on its tick tree"
-    ],
-    "pins": [],
-    "notes": "Landed at 54f8e4c: the abort reaches the tick child and the run settles on its exit. Missing: the group, the escalation, the knob. `detached` takes the child out of the terminal's foreground group, so Ctrl-C reaches the supervisor alone and the handler's signal is the only path down; `defaultTickRunner`'s default-disposition paragraph is narration the escalation retires. POSIX arms declare their host. Knob ruled: `killGraceMs`, default 5000, read where the signal is sent (`spec/chain.md`).",
     "observedFiles": [
       ".flume/plan/notes/A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE.md",
       "harness/declaration.ts",
@@ -125,7 +56,20 @@
       "tests/harnessDeclaration.test.ts",
       "tests/helpers/subprocess.ts",
       "tests/processTree.test.ts"
-    ]
+    ],
+    "summary": "the signalled release kills the tick child alone, so the agent that tick spawned outlives the claim that protected it, and the wait before the drop is bounded only by what the child installs",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The loop lock and the tip claim"
+    },
+    "acceptance": "a signalled `flume loop` leaves no process of the tick tree alive when the lock and claim drop, and the wait before they drop is bounded by the declared grace rather than by the child's disposition.",
+    "tests": [
+      "a signalled `flume loop` leaves nothing the tick child spawned alive against the state root it released",
+      "a tick tree that ignores SIGTERM is killed after the declared grace rather than waited on indefinitely",
+      "a chain-declared kill grace, not the engine default, bounds a signalled loop's wait on its tick tree"
+    ],
+    "pins": [],
+    "notes": "Landed at 54f8e4c: the abort reaches the tick child and the run settles on its exit. Missing: the group, the escalation, the knob. `detached` takes the child out of the terminal's foreground group, so Ctrl-C reaches the supervisor alone and the handler's signal is the only path down; `defaultTickRunner`'s default-disposition paragraph is narration the escalation retires. POSIX arms declare their host. Knob ruled: `killGraceMs`, default 5000, read where the signal is sent (`spec/chain.md`)."
   },
   {
     "tag": "A-BARE-TICK-TAKES-ITS-AGENT-DOWN-THE-SAME-WAY",
@@ -170,7 +114,7 @@
       ],
       "retire": []
     },
-    "summary": "a signalled bare `flume tick` drops its claim and exits while the agent it started keeps writing into the worktree \u2014 the loop path's orphan, one level further down",
+    "summary": "a signalled bare `flume tick` drops its claim and exits while the agent it started keeps writing into the worktree — the loop path's orphan, one level further down",
     "per": {
       "path": "spec/loop.md",
       "section": "The loop lock and the tip claim"
@@ -183,7 +127,7 @@
     "pins": [
       "a signalled bare `flume tick` exits 143"
     ],
-    "notes": "Today the handler is `dropBareTipClaim(); process.exit(143)` \u2014 synchronous, and the agent is a child of this process with children of its own. Same knob, read off the bare tick's own chain. Blocked on the group/escalation entry: a second teardown beside it is the mechanism-depth defect (`engineering.md`, *The fix lands at the mechanism*). Once the agent leads its own group a supervisor's group signal no longer reaches it \u2014 the tick's own handler carries it, on both paths."
+    "notes": "Today the handler is `dropBareTipClaim(); process.exit(143)` — synchronous, and the agent is a child of this process with children of its own. Same knob, read off the bare tick's own chain. Blocked on the group/escalation entry: a second teardown beside it is the mechanism-depth defect (`engineering.md`, *The fix lands at the mechanism*). Once the agent leads its own group a supervisor's group signal no longer reaches it — the tick's own handler carries it, on both paths."
   },
   {
     "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
@@ -250,7 +194,7 @@
       "tests/priorAttempts.test.ts",
       "tests/worktrees.test.ts"
     ],
-    "summary": "the cases with no structural substitute \u2014 a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one \u2014 red the lane on their fixture, not a defect",
+    "summary": "the cases with no structural substitute — a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one — red the lane on their fixture, not a defect",
     "per": {
       "path": "spec/cli.md",
       "section": "win32 is a supported host"
@@ -262,67 +206,6 @@
       "every declared-host case carries the reason it cannot run on the other host"
     ],
     "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do. `bin/flume` is the sh shim; the published win32 bin is `bin/flume.js`, so the walk's subject is POSIX-only by construction."
-  },
-  {
-    "tag": "TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/commentCitations.test.ts",
-          "description": "the repo scan's tree list gains `tests/`; the standing pins retitle to the three trees the carve-out now names"
-        },
-        {
-          "path": "tests/helpers/commentCitations.ts",
-          "description": "the head comment names the carve-out's three trees"
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      ".flume/plan/notes/TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES.md",
-      "tests/Dispatcher.test.ts",
-      "tests/Gate.test.ts",
-      "tests/PendingSchema.test.ts",
-      "tests/Prompt.test.ts",
-      "tests/builtinGates.test.ts",
-      "tests/chain.test.ts",
-      "tests/cli.test.ts",
-      "tests/cliHelp.test.ts",
-      "tests/cliJobResolution.test.ts",
-      "tests/commentCitations.test.ts",
-      "tests/docComments.test.ts",
-      "tests/examples.integration.test.ts",
-      "tests/examples.test.ts",
-      "tests/exportConsumers.test.ts",
-      "tests/git.test.ts",
-      "tests/harnessPrompts.test.ts",
-      "tests/helpers/chainVocabulary.ts",
-      "tests/helpers/commentCitations.ts",
-      "tests/helpers/exportGraph.ts",
-      "tests/job.test.ts",
-      "tests/paths.test.ts",
-      "tests/stubRunner.test.ts",
-      "tests/subprocessHelper.test.ts",
-      "tests/worktrees.test.ts"
-    ],
-    "summary": "the comment-citation scan judges `src/` and `harness/` only, so the nine `tests/` citations of a rule page \u2014 three by section name \u2014 stand silently through a rename",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "a citation in a `tests/` comment resolves against the declarations the three trees hold and the working tree, so a deleted symbol or a renamed page reds the suite rather than leaving its citations standing.",
-    "tests": [],
-    "pins": [
-      "every backticked identifier in a src/, harness/ or tests/ comment names a declaration those trees hold",
-      "the repo citation pin judges the repo-relative path citations src/, harness/ and tests/ comments carry",
-      "the repo citation pin judges the unbackticked page names src/, harness/ and tests/ comments carry"
-    ],
-    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges \u2014 one names `src/` alone \u2014 so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix."
   },
   {
     "tag": "DISPATCHER-HOMES-ITS-FIVE-FRONT-JOBS",
@@ -346,7 +229,7 @@
         },
         {
           "path": "src/log.ts",
-          "description": "`Logger` and `consoleLogger` \u2014 the file whose absence is the cycle"
+          "description": "`Logger` and `consoleLogger` — the file whose absence is the cycle"
         },
         {
           "path": "src/exitCodes.ts",
@@ -360,7 +243,7 @@
         },
         {
           "path": "src/index.ts",
-          "description": "re-exports the same names from their new homes \u2014 the surface does not move"
+          "description": "re-exports the same names from their new homes — the surface does not move"
         },
         {
           "path": "src/cliVerdict.ts",
@@ -396,15 +279,15 @@
         },
         {
           "path": "src/worktrees.ts",
-          "description": "takes `Logger` from its own file \u2014 one leg of the cycle"
+          "description": "takes `Logger` from its own file — one leg of the cycle"
         },
         {
           "path": "src/priorAttempts.ts",
-          "description": "takes `Logger` from its own file \u2014 one leg of the cycle"
+          "description": "takes `Logger` from its own file — one leg of the cycle"
         },
         {
           "path": "src/friction.ts",
-          "description": "takes `Logger` from its own file \u2014 one leg of the cycle"
+          "description": "takes `Logger` from its own file — one leg of the cycle"
         },
         {
           "path": "harness/handoff.ts",
@@ -457,7 +340,7 @@
       ],
       "retire": []
     },
-    "summary": "src/Dispatcher.ts fronts its class with five jobs that have no file \u2014 tick-verdict I/O, merging markers, chain loading, the exit codes, and `Logger`, whose homelessness is a type cycle",
+    "summary": "src/Dispatcher.ts fronts its class with five jobs that have no file — tick-verdict I/O, merging markers, chain loading, the exit codes, and `Logger`, whose homelessness is a type cycle",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
@@ -465,7 +348,7 @@
     "acceptance": "each of the five jobs sits in the file its name is, src/Dispatcher.ts holds the dispatch class and its own helpers alone, and no module Dispatcher imports imports a type back out of it.",
     "tests": [],
     "pins": [],
-    "notes": "Filed at 57bd960, unchanged since. About 1,300 lines out, behavior-free: the module is 4,894 lines, the class 3,070. `worktrees.ts`, `priorAttempts.ts` and `friction.ts` take `Logger` as a type from the module that imports them \u2014 a cycle that exists only because `Logger` has no file. `src/index.ts` keeps the same exported names, so the export pin and the citation pins hold the surface."
+    "notes": "Filed at 57bd960, unchanged since. About 1,300 lines out, behavior-free: the module is 4,894 lines, the class 3,070. `worktrees.ts`, `priorAttempts.ts` and `friction.ts` take `Logger` as a type from the module that imports them — a cycle that exists only because `Logger` has no file. `src/index.ts` keeps the same exported names, so the export pin and the citation pins hold the surface."
   },
   {
     "tag": "ONE-ATTEMPT-LEG-AND-ONE-BATCH-SELECTION",
@@ -495,7 +378,7 @@
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
     },
-    "acceptance": "one attempt function carries render \u2192 tip read \u2192 invoke \u2192 tip verify \u2192 afterCommit gates \u2192 revert for both concurrencies, one batch selection serves `runFanout` and `render`, and the suite is unchanged.",
+    "acceptance": "one attempt function carries render → tip read → invoke → tip verify → afterCommit gates → revert for both concurrencies, one batch selection serves `runFanout` and `render`, and the suite is unchanged.",
     "tests": [],
     "pins": [],
     "notes": "Target: `runAttempt(phase, wt, ref, label, entry?)` returning `{ termination, committed, tipMoved, verdict }`, called by both legs; `selectBatch(chain, pending)` called by `runFanout` and `render`. The `renderPrompt` try/catch is copied at both legs, and `render` repeats `pickableEntries` + `partitionByFileOverlap` with the same two `supervisorPolicy` reads. Blocked on the split so the sequence is unified once, at its final home."
@@ -553,7 +436,7 @@
       ],
       "retire": []
     },
-    "summary": "harness/windows.ts is four jobs under one name \u2014 slice assembly, the inbox window's CI lane, the derive/sweep windows, and a git range-scan library that knows nothing about slices",
+    "summary": "harness/windows.ts is four jobs under one name — slice assembly, the inbox window's CI lane, the derive/sweep windows, and a git range-scan library that knows nothing about slices",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
@@ -561,7 +444,7 @@
     "acceptance": "windows.ts holds slice assembly alone, the range scan and each slice's window sit in the file its name is, and tests/harnessCi.test.ts drives the lane module rather than strings rendered in windows.ts.",
     "tests": [],
     "pins": [],
-    "notes": "758 \u2192 1161 lines in one day. `ci.ts` declares itself 'the reader alone', so the lane's liveness rule sits between two render functions in windows.ts and its 920-line test drives `planSliceWindows` instead. Also here: `specWindow` and `sweepWindowOf` are the same six lines (one `cursorWindow(field, globs, ctx, render)`), and `{ pending?, priorAttempts? }` is spelled by `SliceInputs`, `WindowContext` and `standingRefusals` (one `TickFacts`)."
+    "notes": "758 → 1161 lines in one day. `ci.ts` declares itself 'the reader alone', so the lane's liveness rule sits between two render functions in windows.ts and its 920-line test drives `planSliceWindows` instead. Also here: `specWindow` and `sweepWindowOf` are the same six lines (one `cursorWindow(field, globs, ctx, render)`), and `{ pending?, priorAttempts? }` is spelled by `SliceInputs`, `WindowContext` and `standingRefusals` (one `TickFacts`)."
   },
   {
     "tag": "CHAIN-IS-THE-ASSEMBLY-ITS-HEADER-PROMISES",
@@ -612,7 +495,7 @@
     "acceptance": "chain.ts holds only the wiring its header names, the judge-as-gate and the consumer-gate construction each have their own module, and every header naming where they live agrees.",
     "tests": [],
     "pins": [],
-    "notes": "The record proposed `gates.ts` for the construction; that header disclaims it twice \u2014 'this module spawns no process', and construction belongs to 'the chain factory that calls this' \u2014 so a third module is what makes the two headers agree rather than leaving one wrong. `shellCommand` spawns, which is exactly what gates.ts says it does not do."
+    "notes": "The record proposed `gates.ts` for the construction; that header disclaims it twice — 'this module spawns no process', and construction belongs to 'the chain factory that calls this' — so a third module is what makes the two headers agree rather than leaving one wrong. `shellCommand` spawns, which is exactly what gates.ts says it does not do."
   },
   {
     "tag": "ONE-SYNC-SPAWN-WRAPPER-IN-THE-PACKAGE",
@@ -655,7 +538,7 @@
       ],
       "retire": []
     },
-    "summary": "three sync spawn wrappers in the package spell one job \u2014 the shim retry, the 64 MiB buffer and the error-detail fold are copied across windows.ts, ci.ts and vitestRunner.ts",
+    "summary": "three sync spawn wrappers in the package spell one job — the shim retry, the 64 MiB buffer and the error-detail fold are copied across windows.ts, ci.ts and vitestRunner.ts",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
@@ -663,7 +546,7 @@
     "acceptance": "one module carries the package's sync spawn, and `git()`, `branchAt()` and `forge()` are each a call into it rather than a third copy of the retry, the buffer and the fold.",
     "tests": [],
     "pins": [],
-    "notes": "`64 << 20` at ci.ts, windows.ts and vitestRunner.ts; `err instanceof Error ? err.message : String(err)` at ci.ts, windows.ts and cli.ts. `branchAt`'s sync-ness is declared and cited at the site \u2014 what files is the triplicated wrapper, not that divergence. Only `forge()` carries the shim retry today. Lands wherever `git()` sits once HARNESS-WINDOWS-IS-FIVE-MODULES has moved it. The sync surfaces upstream are an engine question, not proposed here."
+    "notes": "`64 << 20` at ci.ts, windows.ts and vitestRunner.ts; `err instanceof Error ? err.message : String(err)` at ci.ts, windows.ts and cli.ts. `branchAt`'s sync-ness is declared and cited at the site — what files is the triplicated wrapper, not that divergence. Only `forge()` carries the shim retry today. Lands wherever `git()` sits once HARNESS-WINDOWS-IS-FIVE-MODULES has moved it. The sync surfaces upstream are an engine question, not proposed here."
   },
   {
     "tag": "THE-PLAN-ARTIFACT-LAYOUT-HAS-ONE-HOME",
@@ -734,7 +617,7 @@
     "acceptance": "one module states where every plan artifact sits under a state root, chain.ts, init.ts and gates.ts each take theirs from it, and the queue's path is spelled once.",
     "tests": [],
     "pins": [],
-    "notes": "`pending.json` is the engine's, `state.json` is planState.ts's, `inbox/` and `notes/` are records.ts's, `open-questions.md` is prompts.ts's \u2014 'Spelled here because nothing else owns it' is the smell in prose. gates.ts reaches the queue through `join(ctx.stateRootRel, \u2026)` while chain.ts and init.ts use `gitPath(resolvePendingPath(...))`; `readFileAtRef` folds a native separator today, so that leg is vocabulary rather than a live red."
+    "notes": "`pending.json` is the engine's, `state.json` is planState.ts's, `inbox/` and `notes/` are records.ts's, `open-questions.md` is prompts.ts's — 'Spelled here because nothing else owns it' is the smell in prose. gates.ts reaches the queue through `join(ctx.stateRootRel, …)` while chain.ts and init.ts use `gitPath(resolvePendingPath(...))`; `readFileAtRef` folds a native separator today, so that leg is vocabulary rather than a live red."
   },
   {
     "tag": "SUBPROCESS-HELPER-IS-THREE-MODULES",
@@ -841,7 +724,7 @@
       ],
       "retire": []
     },
-    "summary": "tests/helpers/subprocess.ts is four jobs under one name \u2014 spawn wrappers, env hygiene, fixture rooting and the state-root leak guard \u2014 and its own header lists them as 'also home to'",
+    "summary": "tests/helpers/subprocess.ts is four jobs under one name — spawn wrappers, env hygiene, fixture rooting and the state-root leak guard — and its own header lists them as 'also home to'",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
@@ -908,7 +791,7 @@
     "acceptance": "one module carries the scanners' shared base, the three scanners are visitors over it, each takes a request object and returns `{ scanned, findings }`, and 'every .ts under a directory' is spelled once.",
     "tests": [],
     "pins": [],
-    "notes": "`parseConfig` is byte-identical across exportGraph and commentCitations; `relPath` is spelled four times; the domain-program block and the identifier walk twice each. Four spellings of the directory walk, two of them regex corpus scans inside test files. The compiler-API tier split \u2014 declaration emit, checker-backed program, scopeless `createSourceFile` \u2014 is deliberate and declared, and stays; only the base and the vocabulary are shared."
+    "notes": "`parseConfig` is byte-identical across exportGraph and commentCitations; `relPath` is spelled four times; the domain-program block and the identifier walk twice each. Four spellings of the directory walk, two of them regex corpus scans inside test files. The compiler-API tier split — declaration emit, checker-backed program, scopeless `createSourceFile` — is deliberate and declared, and stays; only the base and the vocabulary are shared."
   },
   {
     "tag": "EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER",
@@ -1085,12 +968,12 @@
       ],
       "retire": []
     },
-    "summary": "163 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), \u2026))`, each correct-by-accident until a comparison against git's output grows beside it",
+    "summary": "163 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), …))`, each correct-by-accident until a comparison against git's output grows beside it",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
     },
-    "acceptance": "every temp fixture root in tests/ is made by the one helper that folds the spelling at creation, and a scan holds the suite to it \u2014 so a new bare root reds where it is written rather than on a Windows lane months later.",
+    "acceptance": "every temp fixture root in tests/ is made by the one helper that folds the spelling at creation, and a scan holds the suite to it — so a new bare root reds where it is written rather than on a Windows lane months later.",
     "tests": [
       "every temp fixture root in tests/ is created through the helper that folds it to git's spelling"
     ],
