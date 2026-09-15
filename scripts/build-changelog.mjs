@@ -18,8 +18,9 @@
  * a stale tag as the boundary would re-mine already-released commits as
  * unreleased. A semver-shaped tag (`vX.Y.Z`) is the fallback for a project
  * that has never recorded a version in CHANGELOG.md at all — absence is the
- * whole of that trigger, so any other CHANGELOG.md read failure refuses
- * rather than falling through to a tag that may lag the last cut.
+ * whole of that trigger, so every other outcome refuses rather than falling
+ * through to a tag that may lag the last cut: a non-ENOENT read failure, and
+ * a recorded version whose introducing commit `git log -S` cannot find.
  *
  * Entry source: `build:` commits only (`build: <desc> (TAG)`,
  * `build: <desc> [TAG]`, or `build(TAG): <desc>`) — the per-pending-entry
@@ -59,7 +60,11 @@ function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
 }
 
-/** Resolve the commit boundary for "since the last release", or `null` when no prior release is recorded. */
+/**
+ * Resolve the commit boundary for "since the last release", or `null` when no
+ * prior release is recorded. Throws when CHANGELOG.md records a version the
+ * boundary cannot be resolved from, rather than answering it from a tag.
+ */
 export function resolveLastRelease(root) {
   const changelogPath = join(root, "CHANGELOG.md");
   let changelogVersion = null;
@@ -95,7 +100,19 @@ export function resolveLastRelease(root) {
       "CHANGELOG.md",
     ]);
     const sha = out.split("\n").find((line) => line.trim() !== "");
-    if (sha) return sha.trim();
+    // A recorded version is the boundary, resolvable or not. Reaching the tag
+    // fallback from here would answer a *failed* resolution with a tag that
+    // may lag the last cut — the same wrong draft the non-ENOENT refusal
+    // above blocks, by the other door (`.claude/rules/engineering.md`, "Loud
+    // or nothing"). The shape that gets here: a cut in progress, where
+    // CHANGELOG.md carries the new heading in the working tree but no commit
+    // has introduced it yet.
+    if (!sha) {
+      throw new Error(
+        `CHANGELOG.md records version ${changelogVersion}, but no commit introducing '${needle}' to CHANGELOG.md was found — the release boundary is unresolved`,
+      );
+    }
+    return sha.trim();
   }
 
   const tags = git(root, ["tag", "--list"])

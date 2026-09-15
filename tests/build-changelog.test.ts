@@ -183,6 +183,33 @@ describe("build-changelog", () => {
     expect(err).toContain("EISDIR");
   }, SPAWN_BUDGET_MS);
 
+  it("a recorded CHANGELOG version whose boundary commit does not resolve refuses instead of falling through to the tag", async () => {
+    await commit(repo, "src/seed.ts", "export const seed = 1;\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+    await commit(
+      repo,
+      "src/released.ts",
+      "export const released = 1;\n",
+      "build: ship released work (RELEASED-WORK)",
+    );
+    // A cut in progress: CHANGELOG.md records 0.9.0 in the working tree, but
+    // no commit has introduced that heading yet, so `git log -S` over the
+    // path finds nothing. Falling through would resolve the boundary to
+    // v1.0.0 and re-mine the already-released RELEASED-WORK as unreleased.
+    await writeFile(
+      join(repo, "CHANGELOG.md"),
+      "# Changelog\n\n## [Unreleased]\n\n## [0.9.0]\n",
+    );
+
+    const { out, err, code } = await runChangelog(repo);
+
+    expect(code).not.toBe(0);
+    expect(out).not.toContain("[Unreleased]");
+    expect(out).not.toContain("RELEASED-WORK");
+    expect(err).toContain("0.9.0");
+    expect(err).toContain("CHANGELOG.md");
+  }, SPAWN_BUDGET_MS);
+
   it("refuses loudly on a zero-commit range instead of emitting an empty [Unreleased] section", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
     await git(repo, ["tag", "v1.0.0"]);
