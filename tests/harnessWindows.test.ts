@@ -30,6 +30,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
 import {
+  defaultHandoff,
   parseDeclaration,
   planSliceWindows,
   writePlanState,
@@ -37,11 +38,18 @@ import {
   type PlanSliceWindow,
   type PlanState,
 } from "../harness/index.ts";
-import { INBOX_PHASE, type PlanSlice } from "../harness/declaration.ts";
+import {
+  BUILD_PHASE,
+  INBOX_PHASE,
+  type PlanSlice,
+} from "../harness/declaration.ts";
+import type { FanoutEntryOutcome, TickResult } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
-import type {
-  PriorAttempt,
-  PriorAttemptKeyspace,
+import {
+  PRIOR_ATTEMPT_MODES,
+  type PriorAttempt,
+  type PriorAttemptKeyspace,
+  type PriorAttemptMode,
 } from "../src/Prompt.ts";
 import { slugify } from "../src/paths.ts";
 
@@ -361,6 +369,142 @@ it("the inbox window ignores a phase-keyed prior-attempt record whose key matche
     sameStem: true,
     entryKeyed: true,
     phaseKeyed: false,
+  });
+});
+
+/**
+ * The same question — "is this refusal only a plan slice's to resolve" —
+ * asked of the two evidences that carry it: the `TickResult` a build tick
+ * reports, read by the handoff's refusal leg, and a record still standing on
+ * disk from an earlier run, read by this window. Both real readers run here;
+ * neither side's table is restated by the test.
+ *
+ * Which `TickResult` field carries a mode is the engine's own split, so the
+ * switch below follows it: the four `NoCommitMode` members arrive as the
+ * tick's `noCommit`, and the two merge fates as an entry's `mergeOutcome`. A
+ * prior-attempt mode the engine adds that is neither is a typecheck failure
+ * in that switch rather than an unexercised arm.
+ */
+it("the inbox window and the build handoff agree on every prior-attempt mode", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const inbox = windows()[INBOX_PHASE];
+
+  const tag = "HARNESS-STANDING-REFUSAL";
+  const pending = [entry(tag)];
+
+  /** Whether the inbox window opens over one standing record of this mode. */
+  const windowSays = (mode: PriorAttemptMode): boolean => {
+    const rec = record(tag, mode);
+    return inbox.live({
+      flumeDir: stateRoot(),
+      pickable: true,
+      pending,
+      priorAttempts: new Map([[`${rec.key}:${rec.keyedAs}`, rec]]),
+    });
+  };
+
+  // Every slice is dead, so a tick the handoff routes to the inbox got there
+  // through its refusal leg and not through an open window.
+  const handoff = defaultHandoff(
+    ([INBOX_PHASE, "plan-derive", "plan-sweep"] satisfies PlanSlice[]).map(
+      (name) => ({ name, live: () => false }),
+    ),
+  );
+
+  /** One build tick reporting this mode where the engine reports it. */
+  const reported = (mode: PriorAttemptMode): TickResult => {
+    const base: TickResult = {
+      phaseName: BUILD_PHASE,
+      committed: true,
+      gateResults: [],
+      pendingAfter: pending,
+      // Build is a live alternative throughout, so "inbox" is a routing
+      // decision rather than the only phase left to name.
+      pickableAfter: pending,
+      flumeDir: stateRoot(),
+      configDir: stateRoot(),
+      shippedTags: [],
+      revertedTags: [],
+    };
+    const entryOutcome = (
+      mergeOutcome: NonNullable<FanoutEntryOutcome["mergeOutcome"]>,
+    ): FanoutEntryOutcome => ({
+      tag,
+      extension: {},
+      committed: true,
+      shipped: false,
+      reverted: false,
+      mergeOutcome,
+    });
+    switch (mode) {
+      case "not-shipped":
+      case "tip-moved":
+        return { ...base, entries: [entryOutcome(mode)] };
+      default:
+        return { ...base, committed: false, noCommit: mode };
+    }
+  };
+
+  const verdicts = PRIOR_ATTEMPT_MODES.map((mode) => ({
+    mode,
+    window: windowSays(mode),
+    handoff: handoff(reported(mode))[0] === INBOX_PHASE,
+  }));
+
+  // Vacuity: every mode the engine mints is judged, and both verdicts occur
+  // on both sides — an agreement over one constant answer proves nothing.
+  expect(verdicts.length).toBe(PRIOR_ATTEMPT_MODES.length);
+  expect(verdicts.length).toBeGreaterThan(0);
+  expect(verdicts.some((v) => v.window)).toBe(true);
+  expect(verdicts.some((v) => !v.window)).toBe(true);
+  expect(verdicts.some((v) => v.handoff)).toBe(true);
+  expect(verdicts.some((v) => !v.handoff)).toBe(true);
+
+  expect(verdicts.map((v) => [v.mode, v.window])).toEqual(
+    verdicts.map((v) => [v.mode, v.handoff]),
+  );
+  expect(
+    verdicts
+      .filter((v) => v.window)
+      .map((v) => v.mode)
+      .sort(),
+  ).toEqual(["clean-exit", "not-shipped", "render-refused"]);
+});
+
+it("a standing tip-moved prior-attempt record leaves the inbox window shut", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const inbox = windows()[INBOX_PHASE];
+
+  const tag = "HARNESS-TIP-MOVED";
+  const pending = [entry(tag)];
+  const moved = record(tag, "tip-moved");
+
+  const live = (rec: PriorAttempt): boolean =>
+    inbox.live({
+      flumeDir: stateRoot(),
+      pickable: true,
+      pending,
+      priorAttempts: new Map([[`${rec.key}:${rec.keyedAs}`, rec]]),
+    });
+
+  expect({
+    // Vacuity: nothing waits in the record queue, so the refusal leg is the
+    // window's only possible opener here.
+    noRecords: inbox.live({ flumeDir: stateRoot(), pickable: true }),
+    // ... and the record reaches that leg: it is entry-keyed to a tag the
+    // queue still carries, so `false` below is the fate's doing.
+    keyedToLiveEntry:
+      moved.key === "entry" && slugify(pending[0]!.tag) === moved.keyedAs,
+    tipMoved: live(moved),
+    // Control: the same fixture with the one fate changed opens the window.
+    parked: live(record(tag, "not-shipped")),
+  }).toEqual({
+    noRecords: false,
+    keyedToLiveEntry: true,
+    tipMoved: false,
+    parked: true,
   });
 });
 

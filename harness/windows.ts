@@ -59,6 +59,7 @@ import {
   type PlanSlice,
 } from "./declaration.js";
 import {
+  PLAN_RESOLVES_MERGE,
   PLAN_RESOLVES_NO_COMMIT,
   type HandoffSlice,
   type SliceWindow,
@@ -227,29 +228,26 @@ function window(
  * Which prior-attempt modes are standing refusals only a plan slice can
  * resolve.
  *
- * The four no-commit modes are classified once, by the handoff's own table:
- * "can only plan resolve this" is one question, and a record on disk is the
- * same fate the tick reported, read a run later
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). The
- * two siblings that are not `NoCommitMode` members are classified here
- * because no `TickResult` field carries them as a mode at all:
- *
- * - `not-shipped` is a park — the commit landed, every gate passed, and the
- *   consumer's own `shipped` predicate declined it. The entry stays
- *   pickable, so a build wave re-picks it into the same wall forever; the
- *   reason is in the note the tick wrote, which is the inbox slice's to
- *   drain.
- * - `tip-moved` is a span discarded because its base stopped being an
- *   ancestor. The agent's work was not at fault and the next wave starts
- *   from a live base, so it is the wave's to retry.
+ * States no verdict of its own. "Can only plan resolve this" is one
+ * question, and a record on disk is the same fate the tick reported, read a
+ * run later — so every mode resolves through the table the build handoff
+ * routes that same fate by: the four no-commit modes through
+ * {@link PLAN_RESOLVES_NO_COMMIT}, and the two siblings that are merge fates
+ * rather than `NoCommitMode` members through {@link PLAN_RESOLVES_MERGE},
+ * which is where `TickResult` carries them (`entries[].mergeOutcome`). Both
+ * rationales live at those tables (`.claude/rules/engineering.md`, *The fix
+ * lands at the mechanism*).
  *
  * Exhaustive over `PriorAttempt["mode"]` by type, so a variant the engine
- * adds must be classified here rather than defaulting to "not a refusal".
+ * adds must be classified here rather than defaulting to "not a refusal" —
+ * and each merge-fate key is indexed out of the engine's own `MergeOutcome`
+ * table, so a fate that union drops is a type error rather than a verdict
+ * this side goes on holding alone.
  */
 const PLAN_RESOLVES_STANDING: Record<PriorAttempt["mode"], boolean> = {
   ...PLAN_RESOLVES_NO_COMMIT,
-  "not-shipped": true,
-  "tip-moved": false,
+  "not-shipped": PLAN_RESOLVES_MERGE["not-shipped"],
+  "tip-moved": PLAN_RESOLVES_MERGE["tip-moved"],
 };
 
 /**

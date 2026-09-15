@@ -126,11 +126,22 @@ export const PLAN_RESOLVES_NO_COMMIT: Record<NoCommitMode, boolean> = {
  * consumer's own `shipped` predicate declined — a park, whose reason is in
  * the note the tick wrote. Every other fate is the wave's to retry from the
  * next base; a cherry-pick conflict in particular is nobody's refusal.
+ * `tip-moved` is a span discarded because its base stopped being an ancestor:
+ * the agent's work was not at fault and the next wave starts from a live
+ * base, so it too is the wave's.
  *
  * Exhaustive over {@link MergeOutcome} for the same reason the table above
  * is exhaustive over its union.
+ *
+ * Exported for the same reason, and for the same second evidence: the two
+ * fates a `PriorAttempt` can carry — `not-shipped` and `tip-moved` — are the
+ * ones the inbox slice's window reads off a record still standing on disk
+ * from an earlier run (`windows.ts`). It composes its classification from
+ * this table rather than restating either verdict, so the fate a build tick
+ * routes on and the fate a record routes on cannot come apart
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */
-const PLAN_RESOLVES_MERGE: Record<MergeOutcome, boolean> = {
+export const PLAN_RESOLVES_MERGE: Record<MergeOutcome, boolean> = {
   "not-shipped": true,
   merged: false,
   "cherry-pick-conflict": false,
