@@ -91,6 +91,42 @@ export const NO_COMMIT_MODES = [
 export type NoCommitMode = (typeof NO_COMMIT_MODES)[number];
 
 /**
+ * Every mode a {@link PriorAttempt} record can carry: the four
+ * {@link NO_COMMIT_MODES}, spread in rather than respelled, plus the two
+ * siblings that classify no cause at all — `tip-moved`, whose span was
+ * discarded before any gate ran, and `not-shipped`, whose commit landed and
+ * was then declined by the chain. The roster's one home: whatever decodes a
+ * record off disk, enumerates the modes for a prompt, or asserts a builder
+ * minted one reads this rather than keeping a list of its own.
+ *
+ * Tied to the union in both directions, so neither side can grow alone: the
+ * `satisfies` here refuses a mode no variant carries, and {@link modeLines}
+ * — the switch the renderer is exhaustive over — refuses a variant this
+ * roster does not name.
+ */
+export const PRIOR_ATTEMPT_MODES = [
+  ...NO_COMMIT_MODES,
+  "tip-moved",
+  "not-shipped",
+] as const satisfies readonly PriorAttempt["mode"][];
+
+/**
+ * One member of {@link PRIOR_ATTEMPT_MODES}, derived from it so the two
+ * cannot disagree — the discriminant of {@link PriorAttempt}.
+ */
+export type PriorAttemptMode = (typeof PRIOR_ATTEMPT_MODES)[number];
+
+/**
+ * Whether an untrusted value names a mode on {@link PRIOR_ATTEMPT_MODES} —
+ * the acceptance a persisted record is decoded by (`src/priorAttempts.ts`),
+ * so the modes the engine mints and the modes it will read back again are
+ * one set rather than two that drift.
+ */
+export function isPriorAttemptMode(value: unknown): value is PriorAttemptMode {
+  return (PRIOR_ATTEMPT_MODES as readonly unknown[]).includes(value);
+}
+
+/**
  * Which keyspace a persisted record's key belongs to: `"entry"` for a fanout
  * entry's tag slug, `"phase"` for a singleton phase's name. The key's own
  * text cannot say — a stem the queue no longer carries is a retired tag in
@@ -770,8 +806,17 @@ function priorAttemptLines(prior: PriorAttempt): string[] {
   ];
 }
 
-/** The mode-specific body of the `<prior-attempt>` block. Exhaustive over the union. */
+/**
+ * The mode-specific body of the `<prior-attempt>` block. Exhaustive over the
+ * union, and over {@link PRIOR_ATTEMPT_MODES} with it.
+ */
 function modeLines(prior: PriorAttempt): string[] {
+  // The roster's other half of the tie (see {@link PRIOR_ATTEMPT_MODES}): the
+  // switch below is exhaustive over the union, and this statement is what
+  // makes that exhaustiveness the roster's too — a seventh variant whose mode
+  // PRIOR_ATTEMPT_MODES does not name fails here, rather than reading back off
+  // disk as no-prior with its write/read seam unjudged.
+  prior.mode satisfies PriorAttemptMode;
   switch (prior.mode) {
     case "gate-revert":
       return [

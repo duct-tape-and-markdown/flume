@@ -80,9 +80,11 @@ export { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
 export {
   renderPrompt,
   NO_COMMIT_MODES,
+  PRIOR_ATTEMPT_MODES,
   type NoCommitMode,
   type PriorAttempt,
   type PriorAttemptKeyspace,
+  type PriorAttemptMode,
 } from "./Prompt.js";
 
 export { type FlumeApi } from "./flumeApi.js";

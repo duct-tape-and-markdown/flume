@@ -30,6 +30,7 @@ import { priorAttemptsDir, slugify } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
 import type { Phase } from "./Phase.js";
 import type { InlineExecRenderError } from "./Prompt.js";
+import { isPriorAttemptMode } from "./Prompt.js";
 import type {
   PriorAttempt,
   PriorAttemptKeyspace,
@@ -260,8 +261,10 @@ export class PriorAttemptStore {
   ) {}
 
   /**
-   * Read a persisted prior-attempt record, if any. Corrupt, carrying an
-   * unrecognized `mode` discriminant, missing the `headSha`/`at` anchor
+   * Read a persisted prior-attempt record, if any. Corrupt, carrying a
+   * `mode` the engine's roster does not name (`PRIOR_ATTEMPT_MODES`,
+   * src/Prompt.ts — the one list, never respelled here), missing the
+   * `headSha`/`at` anchor
    * every record carries (spec/loop.md "Every record is anchored"), or
    * missing the `key` keyspace / `keyedAs` written identity every record
    * states (spec/loop.md "No false signal") → treated as absent. `mode` alone does not make a
@@ -297,12 +300,7 @@ export class PriorAttemptStore {
       };
       if (
         rec &&
-        (rec.mode === "gate-revert" ||
-          rec.mode === "clean-exit" ||
-          rec.mode === "platform-preempt" ||
-          rec.mode === "render-refused" ||
-          rec.mode === "tip-moved" ||
-          rec.mode === "not-shipped") &&
+        isPriorAttemptMode(rec.mode) &&
         typeof rec.headSha === "string" &&
         typeof rec.at === "string" &&
         isKeyspace(rec.key) &&

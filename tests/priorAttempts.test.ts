@@ -29,6 +29,9 @@ import {
   renderPrompt,
   type PriorAttempt,
 } from "../src/Prompt.ts";
+// The roster comes from the package root rather than src/Prompt.ts: a chain
+// reads it there, which is the whole reason it is a runtime value.
+import { PRIOR_ATTEMPT_MODES } from "../src/index.ts";
 import {
   buildCleanExit,
   buildGateRevert,
@@ -50,15 +53,33 @@ import {
 } from "./helpers/dispatcherFixture.ts";
 import { gitOut } from "./helpers/subprocess.ts";
 
-/** Every `PriorAttempt` mode the renderer is exhaustive over. */
-const ALL_MODES = [
-  "gate-revert",
-  "clean-exit",
-  "platform-preempt",
-  "render-refused",
-  "tip-moved",
-  "not-shipped",
-] as const;
+/**
+ * One draft per mode, minted by the real builders in the shape
+ * {@link PriorAttemptStore.write} receives them — the input both tests below
+ * judge the roster and the reader against.
+ */
+async function everyDraft(
+  repo: string,
+  head: string,
+): Promise<PriorAttemptDraft[]> {
+  return [
+    await buildGateRevert(
+      "afterCommit",
+      { gate: "tsc", message: "type error", details: "src/seed.ts(1,1)" },
+      repo,
+      head,
+      ["src/seed.ts"],
+    ),
+    buildCleanExit("refused: the fence excludes spec/"),
+    buildPlatformPreempt("process-failure"),
+    buildRenderRefused(
+      new InlineExecRenderError([{ cmd: "git log", stderr: "not a repo" }])
+        .message,
+    ),
+    buildTipMoved(head, `${"0".repeat(39)}1`),
+    buildNotShipped(head, ["src/seed.ts"]),
+  ];
+}
 
 describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome feedback to the retrying tick')", () => {
   let fx: Fixture;
@@ -70,49 +91,53 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     await fx.cleanup();
   });
 
-  it("the prior-attempt record builders are exported from src/priorAttempts.ts — one per mode, each round-tripping through the store that writes and reads them", async () => {
+  it("the engine's prior-attempt mode roster names every mode a record builder mints", async () => {
+    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+    expect(head).toMatch(/^[0-9a-f]{40}$/);
+    const drafts = await everyDraft(fx.repo, head);
+
+    // Vacuity, both sides: an empty roster or a builder list that quietly
+    // shrank would otherwise agree with anything.
+    expect(PRIOR_ATTEMPT_MODES.length).toBeGreaterThan(0);
+    expect(drafts.length).toBe(PRIOR_ATTEMPT_MODES.length);
+
+    // Set equality, so neither side can grow alone: a builder minting a mode
+    // the roster does not name fails here, and a roster mode no builder
+    // mints — a record shape nothing on the write side produces — fails here
+    // too. The union's own tie to the roster is tsc's (src/Prompt.ts).
+    expect(drafts.map((d) => d.mode).sort()).toEqual(
+      [...PRIOR_ATTEMPT_MODES].sort(),
+    );
+  });
+
+  it("PriorAttemptStore.read accepts a record for every mode the engine's prior-attempt mode roster names", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
     const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
     expect(head).toMatch(/^[0-9a-f]{40}$/);
 
-    const drafts: PriorAttemptDraft[] = [
-      await buildGateRevert(
-        "afterCommit",
-        { gate: "tsc", message: "type error", details: "src/seed.ts(1,1)" },
-        fx.repo,
-        head,
-        ["src/seed.ts"],
-      ),
-      buildCleanExit("refused: the fence excludes spec/"),
-      buildPlatformPreempt("process-failure"),
-      buildRenderRefused(
-        new InlineExecRenderError([{ cmd: "git log", stderr: "not a repo" }])
-          .message,
-      ),
-      buildTipMoved(head, `${"0".repeat(39)}1`),
-      buildNotShipped(head, ["src/seed.ts"]),
-    ];
+    const byMode = new Map<string, PriorAttemptDraft>(
+      (await everyDraft(fx.repo, head)).map((d) => [d.mode, d]),
+    );
 
-    // Non-vacuity, both directions: the builders cover every mode the reader
-    // accepts, and no two of them mint the same one. A builder that stopped
-    // being exported would take its mode out of this set rather than
-    // silently shrinking a loop the assertions below still pass over.
-    expect(drafts.map((d) => d.mode).sort()).toEqual([...ALL_MODES].sort());
+    for (const mode of PRIOR_ATTEMPT_MODES) {
+      // Roster-driven: the loop runs over what the engine names, so a mode
+      // the builders stopped minting reads as a missing draft here rather
+      // than as a loop that silently got shorter.
+      const draft = byMode.get(mode);
+      expect(draft, `${mode} has no builder`).toBeDefined();
 
-    for (const draft of drafts) {
-      // One key per mode, so the six records coexist rather than overwriting
+      // One key per mode, so the records coexist rather than overwriting
       // each other — `priorAttemptRef` derives key and keyspace together.
-      const ref = priorAttemptRef({ name: draft.mode } as Phase);
-      expect(ref).toEqual({ key: draft.mode, keyspace: "phase" });
+      const ref = priorAttemptRef({ name: mode } as Phase);
+      expect(ref).toEqual({ key: mode, keyspace: "phase" });
 
-      await store.write(ref, draft);
-      expect(existsSync(priorAttemptPath(flumeDir, ref)), draft.mode).toBe(
-        true,
-      );
+      await store.write(ref, draft!);
+      expect(existsSync(priorAttemptPath(flumeDir, ref)), mode).toBe(true);
 
       const back = await store.read(ref);
-      expect(back, `${draft.mode} read back as absent`).toBeDefined();
+      expect(back, `${mode} read back as absent`).toBeDefined();
+      expect(back!.mode).toBe(mode);
       // The anchor `read` refuses a record without (spec/loop.md "Every
       // record is anchored" / "No false signal") — stamped by `write`, so no
       // builder carries it.
@@ -125,10 +150,10 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
 
     // `readAll` is keyed by the keyspace and the identity `write` stamped —
     // here one mode name per record, all of them phase-keyed — so a tick's
-    // `TickContext.priorAttempts` carries all six.
+    // `TickContext.priorAttempts` carries one per roster mode.
     const all = await store.readAll();
     expect([...all.keys()].sort()).toEqual(
-      ALL_MODES.map((m) => `phase:${m}`).sort(),
+      PRIOR_ATTEMPT_MODES.map((m) => `phase:${m}`).sort(),
     );
 
     expect(dirname(priorAttemptPath(flumeDir, { key: "any-key", keyspace: "phase" }))).toBe(
