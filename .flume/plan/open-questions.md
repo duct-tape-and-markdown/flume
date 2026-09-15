@@ -35,32 +35,39 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## `spec/chain.md` names five supervisor knobs; the ruled grace is a sixth (NEEDS AMENDMENT)
+## Two verification lenses no page names (NEEDS AMENDMENT)
 
-`spec/loop.md` *The loop lock and the tip claim* (51b3ae7) now has the signal
-handler "escalate to `SIGKILL` after a bounded grace the supervisor declares",
-and the closing ruling routed that grace to `supervisorPolicy` — chain-
-overridable like the other five, per `engine-boundary.md` *Routing rule*.
-`spec/chain.md` *Supervisor policy is a chain-overridable default* still spells
-the block as exactly five fields and splits their read scope as a principled
-pair. A sixth knob leaves that section stating a type the engine no longer has.
+Drained from two build notes. Each is a failure shape a shipped fix found the
+hard way; neither has a home, and the pages that would hold them —
+`.claude/rules/posture-sweep.md` *A violation counts only when verified on disk
+this tick* for a standing lens, `.claude/rules/engineering.md` *Narration is the
+ladder's bottom rung* for what a promoting commit owes — are the human's.
 
-**Not blocking.** A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE ships on
-loop.md's bullet plus the routing rule; this is the corpus catching up to a
-knob the ruling already decided. Three things the amendment settles, so build
-is not choosing them silently:
+**Lens 1 — a negative assertion over a whole rendered prompt.** The
+`<prior-attempt>` block quotes stacks carrying the tick's worktree path, and
+that path is the entry tag, so `not.toContain` over a whole prompt turns on
+where the tick happened to run. A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK
+rescoped four such subjects; the audit found three more in the same file that
+are green by accident (underscored stream keys, long authored prose, unique
+markers).
 
-- **Name and default.** `killGraceMs` reads beside `tickTimeoutMs`, and 5000 ms
-  is the recommendation — long enough for a `claude -p` to flush, short enough
-  that an operator's second Ctrl-C is not the real mechanism. 10 000 is the
-  defensible alternative if a tick's last write is worth more than the wait.
-- **Read scope.** The section's split says run-scoped is for run-scoped
-  accounting, and this knob accumulates nothing — but the supervisor builds its
-  tick runner once per run from the one chain resolve `flume loop` makes at
-  start, so on that path it is bound once per run whatever the principle says.
-  On the bare-tick path the same knob is read per tick, off that tick's own
-  chain. That asymmetry wants a sentence, or a ruling that the loop path
-  re-reads it per tick.
-- **Whether the bare tick reads the same knob at all.** The bullet says a bare
-  `flume tick` takes its agent down "the same way"; `supervisorPolicy` is named
-  for the supervisor, and a bare tick has none.
+**Lens 2 — a shrink that orphans a sibling's cite.** Shrinking a doc comment to
+a pointer can remove the only citation of a fact a *different* site in the file
+was leaning on. PRIOR-ATTEMPT-PROSE-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS hit it:
+retargeting `refusalOf`'s doc would have left a case restating *chmod denies
+nothing on win32* uncited, so the cite moved down to the case that decides on
+it. The lens is "a shrink is not complete until the facts the removed prose was
+covering for are re-homed."
+
+Options:
+
+- **(a)** Lens 1 as a standing sweep lens, lens 2 as a bullet on the ladder
+  section — it is about what a promoting commit owes, not about existing code.
+- **(b)** Lens 1 only. It is the one with a measured red behind it.
+- **(c)** Neither. Both are judgment a build tick already exercises, and a page
+  that lists every remembered shape stops being read.
+- **(d)** Lens 1 a rung up, as a scan rather than prose.
+
+Recommended: **(a)**. Against **(d)**: "the subject is a whole rendered prompt"
+is not decidable from syntax — the scan would have to guess which variable
+holds a whole prompt, and a guessing scan files findings nobody can close.
