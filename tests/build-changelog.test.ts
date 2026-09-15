@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { runNodeStreams } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, runNodeStreams } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -96,7 +96,7 @@ describe("build-changelog", () => {
     expect(out).toContain("## [Unreleased]");
     expect(out).toContain("- add foo helper (ADD-FOO-HELPER)");
     expect(out).toContain("foo was missing, so callers hand-rolled it inline.");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("resolves a tag history that stops short of CHANGELOG.md's latest recorded version via a defined fallback, not an assumption", async () => {
     // Tags stop at v0.6.2, but releases kept cutting past it (real-world
@@ -137,7 +137,7 @@ describe("build-changelog", () => {
     expect(code).toBe(0);
     expect(out).toContain("AFTER-RELEASE-FEATURE");
     expect(out).not.toContain("MID-RELEASE-WORK");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("refuses loudly on a zero-commit range instead of emitting an empty [Unreleased] section", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -149,7 +149,7 @@ describe("build-changelog", () => {
     expect(code).not.toBe(0);
     expect(out).not.toContain("[Unreleased]");
     expect(err.toLowerCase()).toContain("no build:");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("preserves the ### Breaking subheading convention for commits whose body marks a break", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -175,7 +175,7 @@ describe("build-changelog", () => {
     expect(breakingIdx).toBeGreaterThan(-1);
     expect(breakingSubsection(out)).toContain("LEGACY-EXPORT-DROP");
     expect(out.indexOf("### Breaking", breakingIdx + 1)).toBe(-1);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a non-breaking entry renders outside the ### Breaking subsection when a breaking entry is present", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -203,7 +203,7 @@ describe("build-changelog", () => {
     expect(out).toContain("- add a normal feature (NORMAL-FEATURE)");
     expect(breaking).not.toContain("NORMAL-FEATURE");
     expect(breaking).not.toContain("Just an ordinary addition.");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("the mined draft renders every non-breaking entry under an ### Uncategorized subheading", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -242,7 +242,7 @@ describe("build-changelog", () => {
       expect(uncategorized).toContain(tag);
     }
     expect(uncategorized).not.toContain("LEGACY-EXPORT-DROP");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("the mined draft renders ### Breaking ahead of ### Uncategorized", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -272,7 +272,7 @@ describe("build-changelog", () => {
     expect(uncategorizedIdx).toBeGreaterThan(-1);
     expect(breakingIdx).toBeLessThan(uncategorizedIdx);
     expect(out.indexOf("## [Unreleased]")).toBeLessThan(breakingIdx);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a draft with no breaking entry renders ### Uncategorized and no ### Breaking heading", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -290,7 +290,7 @@ describe("build-changelog", () => {
     expect(code).toBe(0);
     expect(uncategorizedSubsection(out)).toContain("NORMAL-FEATURE");
     expect(out).not.toContain("### Breaking");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("a draft whose entries are all breaking still renders the ### Breaking subheading", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -319,7 +319,7 @@ describe("build-changelog", () => {
     // The empty bucket is spelled, not inherited: no entry is uncategorized,
     // so the second subheading does not render.
     expect(out).not.toContain("### Uncategorized");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("strips Co-Authored-By trailers from the mined body", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -337,7 +337,7 @@ describe("build-changelog", () => {
     expect(code).toBe(0);
     expect(out).toContain("The why.");
     expect(out).not.toContain("Co-Authored-By");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("surfaces a build: subject matching none of the 3 declared tag shapes loudly instead of dropping it silently", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -366,7 +366,7 @@ describe("build-changelog", () => {
     expect(out).not.toContain("do something");
     expect(err).toContain(malformedSha.slice(0, 12));
     expect(err).toContain("build(lowercase-tag): do something");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("rejects a mismatched bracket pair such as (TAG] instead of accepting it as tag TAG", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -387,7 +387,7 @@ describe("build-changelog", () => {
     // parsed out as a clean tag.
     expect(out).toContain("fix the widget (MISMATCHED-TAG]");
     expect(out).not.toContain("- fix the widget (MISMATCHED-TAG)");
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("ignores non-build: commits (plan:, chore:) when mining entries", async () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
@@ -408,5 +408,5 @@ describe("build-changelog", () => {
     expect(out).toContain("SHIPPED-FEATURE");
     expect(out).not.toContain("derive queue");
     expect(out).not.toContain("drain inbox");
-  });
+  }, SPAWN_BUDGET_MS);
 });

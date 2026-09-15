@@ -49,6 +49,8 @@ import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import { worktreesBase } from "../src/paths.ts";
 import { withGateCheckouts } from "../src/worktrees.ts";
 
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 const git = (repo: string, args: string[]): string =>
@@ -553,7 +555,7 @@ describe("the vitest runner", () => {
       invoke: () => ({ command: process.execPath, args: ["-e", ""] }),
     })(ctx);
     await expect(silent.run(["anything"], fixture)).rejects.toThrow(/wrote no JSON report/);
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 /**

@@ -8,7 +8,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   CLI,
+  SPAWN_BUDGET_MS,
   TSX_CLI,
   exitStatusOf,
   mkFixtureRoot,
@@ -27,6 +28,11 @@ import {
   runCli,
   watchStateRoots,
 } from "./helpers/subprocess.ts";
+import {
+  harnessBudgets,
+  harnessSpawnExports,
+  scanDefaultLaneSpawnSites,
+} from "./helpers/spawnBudget.ts";
 
 const exec = promisify(execFile);
 
@@ -55,7 +61,7 @@ describe("requireEntryPoint — an unresolvable CLI entry point refuses (SUBPROC
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("passes the real entry points through, so the refusal is not armed on a provisioned tree", () => {
     for (const path of [CLI, TSX_CLI]) {
@@ -128,7 +134,7 @@ describe("runCli — reports the CLI's own status, not a default", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -193,7 +199,7 @@ describe("the suite refuses a flume state root above its fixtures", () => {
     } finally {
       await rm(attic, { recursive: true, force: true });
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("refuses before its first test when the litter is already on disk", async () => {
     const attic = await mkdtemp(join(tmpdir(), "flume-leak-preexisting-"));
@@ -390,6 +396,133 @@ describe("tests/ reads a child's exit status through one mechanism (TESTS-EXIT-S
         needle.pattern.test(clean),
         `needle over-fires on: ${clean}`,
       ).toBe(false);
+    }
+  });
+});
+
+// ---------- the lane's declared spawn budget
+// (spec/worktrees.md, "The default test lane must stay fast") ----------
+
+/**
+ * The lane's spawning sites against the budget they are supposed to declare.
+ *
+ * The flake this pins is asymmetric: a spawning case that inherits vitest's
+ * 5s default passes alone and reds under the afterMerge gate's full-suite
+ * contention, where the cost is an innocent entry reverted. So the property
+ * is checked where it is decidable — on what each site *declares* — rather
+ * than by timing a run that would have to go bad to report anything.
+ *
+ * Both halves of the acceptance ride here: every spawning site names a
+ * budget, and every one of them names the *same* constant, so the lane's
+ * number has one home to move (`.claude/rules/engineering.md`, *Derived
+ * state is computed, never restated beside its source*).
+ */
+it("every default-lane suite that spawns the CLI declares the shared spawn budget rather than inheriting the runner's default", () => {
+  // One home. `harnessBudgets` reads the harness module's exported numbers
+  // off the module itself, so this is the parse and the import agreeing on
+  // the same constant rather than the test restating either.
+  const budgets = harnessBudgets();
+  expect(budgets.size).toBe(1);
+  expect([...budgets.values()]).toEqual([SPAWN_BUDGET_MS]);
+
+  // Vacuity: the wrappers were discovered and the lane was read. A scan that
+  // found no spawn wrapper, or no suite, would clear every assertion below
+  // without judging anything.
+  expect(harnessSpawnExports().length).toBeGreaterThan(0);
+  const sites = scanDefaultLaneSpawnSites();
+  expect(sites.length).toBeGreaterThan(0);
+  expect(new Set(sites.map((s) => s.file)).size).toBeGreaterThan(1);
+
+  const inheriting = sites
+    .filter((s) => s.budget === null)
+    .map((s) => `${s.file}:${s.line} ${s.kind} — ${s.title}`);
+  expect(
+    inheriting,
+    `these sites start a node process on vitest's 5s default: declare ` +
+      `SPAWN_BUDGET_MS (tests/helpers/subprocess.ts) on each, rather than a ` +
+      `number of its own`,
+  ).toEqual([]);
+});
+
+/**
+ * The scan's own sensitivity, driven over a fixture written to be caught:
+ * the assertion above is green over an empty set by design, so a detector
+ * that stopped firing would be indistinguishable from a lane in order
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ */
+describe("the default-lane spawn-budget scan", () => {
+  const FIXTURE = [
+    `import { runCli, SPAWN_BUDGET_MS } from "../helpers/subprocess.ts";`,
+    ``,
+    `const viaWrapper = (dir: string) => runCli(dir, ["status"]);`,
+    ``,
+    `beforeAll(async () => { await runCli("/tmp", ["status"]); });`,
+    ``,
+    `it("declares the budget", async () => {`,
+    `  await runCli("/tmp", ["status"]);`,
+    `}, SPAWN_BUDGET_MS);`,
+    ``,
+    `it("inherits the runner's default", async () => {`,
+    `  await runCli("/tmp", ["status"]);`,
+    `});`,
+    ``,
+    `it("restates a number of its own", async () => {`,
+    `  await runCli("/tmp", ["status"]);`,
+    `}, 30_000);`,
+    ``,
+    `it("reaches the spawn through a local wrapper", async () => {`,
+    `  await viaWrapper("/tmp");`,
+    `});`,
+    ``,
+    `it("spawns node without the harness", async () => {`,
+    `  await new Promise((r) => r(process.execPath));`,
+    `});`,
+    ``,
+    `it("spawns nothing at all", () => {`,
+    `  expect(1).toBe(1);`,
+    `});`,
+    ``,
+  ].join("\n");
+
+  it("flags every shape that inherits the default, and clears only the site that names the budget", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-budget-scan-"));
+    try {
+      await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+      const sites = scanDefaultLaneSpawnSites(dir);
+
+      // A spawning hook inherits `hookTimeout`, which is lower still than
+      // the case default — the same defect one registrar over.
+      const hooks = sites.filter((s) => s.kind === "hook");
+      expect(hooks.map((s) => s.budget)).toEqual([null]);
+      expect(hooks[0]?.title).toMatch(/^beforeAll at .*fixture\.test\.ts:5$/);
+
+      expect(
+        sites.filter((s) => s.kind === "case").map((s) => [s.title, s.budget]),
+      ).toEqual([
+        ["declares the budget", "SPAWN_BUDGET_MS"],
+        ["inherits the runner's default", null],
+        // A literal is the number restated per case, not a declared budget.
+        ["restates a number of its own", null],
+        ["reaches the spawn through a local wrapper", null],
+        ["spawns node without the harness", null],
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads only the default lane, so an integration suite's spawns are none of its business", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flume-budget-lane-"));
+    try {
+      await writeFile(join(dir, "fixture.integration.test.ts"), FIXTURE, "utf8");
+      expect(scanDefaultLaneSpawnSites(dir)).toEqual([]);
+
+      // Sensitivity: the same bytes under the default lane's suffix are the
+      // findings the assertion above must not be collecting.
+      await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+      expect(scanDefaultLaneSpawnSites(dir).length).toBeGreaterThan(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });

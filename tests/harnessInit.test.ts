@@ -37,7 +37,11 @@ import {
   type HarnessInitResult,
 } from "../harness/index.ts";
 import { HELP_JOB, HELP_TOP, isSubcommand } from "../src/cliHelp.ts";
-import { TSX_CLI, runNodeStreams } from "./helpers/subprocess.ts";
+import {
+  SPAWN_BUDGET_MS,
+  TSX_CLI,
+  runNodeStreams,
+} from "./helpers/subprocess.ts";
 
 /** This checkout's harness entry point — what the install shim re-exports. */
 const HARNESS_INDEX = fileURLToPath(new URL("../harness/index.ts", import.meta.url));
@@ -139,7 +143,7 @@ it("flume-harness init writes a declaration.ts skeleton the package's schema par
   // The runner arrived as the factory the chain calls at load, not as a
   // built value the skeleton resolved without an API.
   expect(declaration.runner).toBe("function");
-}, 60_000);
+}, SPAWN_BUDGET_MS);
 
 it("flume-harness init writes the state root and its derived ignore lines", async () => {
   // A `.gitignore` the consumer already maintains: the merge preserves it,
@@ -485,7 +489,7 @@ it("the declaration skeleton init writes typechecks against the package's export
   expect(broken.code).not.toBe(0);
   expect(broken.stdout).toContain("plan-inbx");
   expect(broken.stdout).toContain("plan-inbox");
-}, 180_000);
+}, SPAWN_BUDGET_MS);
 
 /**
  * The hop that makes an adopted repository tickable (`spec/harness.md`,
@@ -523,7 +527,7 @@ it("init writes a chain.ts applying the package factory to the declaration besid
     `${result.stateRoot}/chain.ts`,
   ]);
   expect({ code: clean.code, out: clean.stdout }).toEqual({ code: 0, out: "" });
-}, 180_000);
+}, SPAWN_BUDGET_MS);
 
 it("the chain.ts init writes loads through the engine's chain loader as a valid Chain", async () => {
   // A repository as the loader meets one: a manifest for init's dependency
@@ -581,4 +585,4 @@ it("the chain.ts init writes loads through the engine's chain loader as a valid 
   };
   expect(enabled.length).toBeGreaterThan(0);
   expect([...phases].sort()).toEqual([...enabled, "build"].sort());
-}, 60_000);
+}, SPAWN_BUDGET_MS);

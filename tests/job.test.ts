@@ -46,7 +46,7 @@ import {
   STATE_ROOT_NAMES,
 } from "../src/paths.ts";
 import { loadChainModule } from "../src/Dispatcher.ts";
-import { gitOut, runCli } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, gitOut, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -408,7 +408,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         await repo.cleanup();
       }
     },
-    120_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -437,7 +437,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -466,7 +466,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -500,7 +500,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -522,7 +522,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -544,7 +544,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -589,7 +589,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
         await repo.cleanup();
       }
     },
-    120_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -765,7 +765,7 @@ describe("flume job new — Chain.friction pass-through (§3)", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -800,7 +800,7 @@ describe("flume job new — Chain.friction pass-through (§3)", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -830,7 +830,7 @@ describe("flume job new — Chain.friction pass-through (§3)", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -850,7 +850,7 @@ describe("flume job new — Chain.friction pass-through (§3)", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -1063,7 +1063,7 @@ describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("real CLI: non-numeric/negative --max exits 2 with the job-run usage line and wakes nothing", async () => {
     const repo = await makeRepo();
@@ -1090,7 +1090,7 @@ describe("jobRun preflight — §5b wake units (branch grammar retired, v0.11 §
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 // ---------- v0.5 §5c — `flume job rm` refusal + removal units ----------
@@ -1237,7 +1237,7 @@ describe("jobRm — §5c refusal + removal units", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 120_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 // ---------- job names git must not read as patterns ----------
@@ -1657,7 +1657,7 @@ describe("jobStatus — §5d enumeration units", () => {
         await repo.cleanup();
       }
     },
-    120_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1687,7 +1687,7 @@ describe("jobStatus — §5d enumeration units", () => {
         await repo.cleanup();
       }
     },
-    120_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1715,7 +1715,7 @@ describe("jobStatus — §5d enumeration units", () => {
         await repo.cleanup();
       }
     },
-    120_000,
+    SPAWN_BUDGET_MS,
   );
 });
 

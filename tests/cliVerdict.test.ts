@@ -30,7 +30,7 @@ import {
   loopCompletionSummary,
 } from "../src/cliVerdict.ts";
 import { awakeDir } from "../src/paths.ts";
-import { runCli } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -377,7 +377,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("-n N overrides the count", async () => {
     const repo = await makeJobRepo("main");
@@ -396,7 +396,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   // Absence alone is not a verdict here: `flume log -n 0` over a log the CLI
   // never opened prints the same nothing as one it read and suppressed. The
@@ -421,7 +421,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("--json emits the TickVerdict records verbatim as JSONL, one per line", async () => {
     const repo = await makeJobRepo("main");
@@ -451,7 +451,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("no tick-verdicts.jsonl prints nothing and exits 0", async () => {
     const repo = await makeJobRepo("main");
@@ -462,7 +462,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   // Same shape: a `flume log` that read nothing also touches no flag. The
   // rendered verdict is asserted first, so the untouched baton is the
@@ -484,7 +484,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   // LOG-TAGLESS-SPAN-ROW — `TickVerdictMergeOutcome.tag` is absent on a
   // singleton phase's own span, and the human line used to interpolate it
@@ -513,7 +513,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("flume log renders a tagged merge outcome as tag:outcome", async () => {
     const repo = await makeJobRepo("main");
@@ -538,7 +538,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("--help short-circuits before any side effect", async () => {
     const repo = await makeJobRepo("main");
@@ -550,5 +550,5 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });

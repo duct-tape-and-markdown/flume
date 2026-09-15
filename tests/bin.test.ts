@@ -29,7 +29,11 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { mkFixtureRoot, runCli } from "./helpers/subprocess.ts";
+import {
+  SPAWN_BUDGET_MS,
+  mkFixtureRoot,
+  runCli,
+} from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -195,7 +199,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ entry: "dist/src/cli.js", argv });
-  });
+  }, SPAWN_BUDGET_MS);
 
   /**
    * Distinct markers per fd, and a non-zero exit — the path where a chatty
@@ -217,7 +221,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
     expect(result.status).toBe(3);
     expect(result.stdout).toBe("OUT:dist/src/cli.js");
     expect(result.stderr).toBe("ERR:dist/src/cli.js");
-  });
+  }, SPAWN_BUDGET_MS);
 
   /**
    * `stdio: "inherit"` gives fd 0 to the child too: the shim never reads it,
@@ -235,7 +239,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
 
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ stdin: input });
-  });
+  }, SPAWN_BUDGET_MS);
 
   /**
    * The shim passes no `env` to spawnSync, so the child's environment is the
@@ -256,7 +260,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
     const childEnv = JSON.parse(result.stdout) as NodeJS.ProcessEnv;
     expect(childEnv["FLUME_BIN_SENTINEL"]).toBe("sentinel-value");
     expect(childEnv).toEqual(env);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("bin/flume.js propagates the child's non-zero exit status", async () => {
     const shim = await makePackage(`process.exit(42);\n`);
@@ -265,7 +269,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
 
     expect(result.status).toBe(42);
     expect(result.signal).toBeNull();
-  });
+  }, SPAWN_BUDGET_MS);
 
   /**
    * win32 has no signal delivery: a child that self-kills with SIGTERM there
@@ -287,6 +291,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
       expect(result.signal).toBe("SIGTERM");
       expect(result.status).toBeNull();
     },
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -376,7 +381,7 @@ it("the install smoke's chain-load fixture is verified by a CLI verb that exits 
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
-}, 30_000);
+}, SPAWN_BUDGET_MS);
 
 /**
  * ci.yml's "Consumer-install smoke" used to re-spell the script's steps

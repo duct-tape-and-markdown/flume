@@ -62,6 +62,8 @@ import type {
   PkgManagerGate,
 } from "../src/index.ts";
 
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+
 const exec = promisify(execFile);
 
 function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
@@ -685,6 +687,7 @@ describe("tscGate / vitestGate / eslintGate — args override (BUILTINGATES-CMD-
       }).run(ctx(process.cwd()));
       expect(result.ok).toBe(true);
     },
+    SPAWN_BUDGET_MS,
   );
 
   it("tscGate({ cmd: 'npm' }) (cmd-only) fails with npm's own \"Unknown command\" — npm has no bare-bin tsc verb", async () => {
@@ -871,7 +874,7 @@ describe("src/index.ts — ShellGateOptions/PkgManagerOverride/PkgManagerGate ba
     expect(shellOpts.name).toBe("custom");
     expect(override.cmd).toBe("npm");
     expect(gate.name).toBe("tsc");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 // ---------- GateResult.skipped on the one builtin that skips

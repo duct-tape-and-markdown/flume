@@ -26,7 +26,12 @@ import { Dispatcher } from "../src/Dispatcher.ts";
 import { priorAttemptPath, priorAttemptsDir } from "../src/priorAttempts.ts";
 import type { Agent, AgentInvocation } from "../src/Agent.ts";
 import { silent } from "./helpers/dispatcherFixture.ts";
-import { mkFixtureRoot, runCli, runCliStreams } from "./helpers/subprocess.ts";
+import {
+  SPAWN_BUDGET_MS,
+  mkFixtureRoot,
+  runCli,
+  runCliStreams,
+} from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -171,7 +176,7 @@ it("flume render prints to stdout the prompt a tick would be handed and invokes 
   } finally {
     await repo.cleanup();
   }
-}, 120_000);
+}, SPAWN_BUDGET_MS);
 
 it("flume render's first line says the prior-attempt block is omitted", async () => {
   const repo = await makeRenderRepo([entry("ONLY", "src/only.ts")]);
@@ -202,7 +207,7 @@ it("flume render's first line says the prior-attempt block is omitted", async ()
   } finally {
     await repo.cleanup();
   }
-}, 60_000);
+}, SPAWN_BUDGET_MS);
 
 it("flume render --entry selects the queue entry a scoped tick would carry", async () => {
   const repo = await makeRenderRepo([
@@ -233,7 +238,7 @@ it("flume render --entry selects the queue entry a scoped tick would carry", asy
   } finally {
     await repo.cleanup();
   }
-}, 60_000);
+}, SPAWN_BUDGET_MS);
 
 it("flume render --entry naming no queue entry refuses usage-shaped and names the tag", async () => {
   const repo = await makeRenderRepo([entry("ONLY", "src/only.ts")]);
@@ -248,7 +253,7 @@ it("flume render --entry naming no queue entry refuses usage-shaped and names th
   } finally {
     await repo.cleanup();
   }
-}, 60_000);
+}, SPAWN_BUDGET_MS);
 
 it("flume render exits EX_DATAERR naming an unresolved span", async () => {
   const repo = await makeRenderRepo(
@@ -264,7 +269,7 @@ it("flume render exits EX_DATAERR naming an unresolved span", async () => {
   } finally {
     await repo.cleanup();
   }
-}, 60_000);
+}, SPAWN_BUDGET_MS);
 
 it("flume --help names render on the subcommand surface", async () => {
   const dir = await mkFixtureRoot("flume-render-help-");
@@ -277,7 +282,7 @@ it("flume --help names render on the subcommand surface", async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
-}, 30_000);
+}, SPAWN_BUDGET_MS);
 
 it("flume render <phase> --help short-circuits before any chain load", async () => {
   const dir = await mkFixtureRoot("flume-render-help-sub-");
@@ -289,7 +294,7 @@ it("flume render <phase> --help short-circuits before any chain load", async () 
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
-}, 30_000);
+}, SPAWN_BUDGET_MS);
 
 it("flume render refuses a phase the chain does not declare, and an --entry on one that picks nothing", async () => {
   const repo = await makeRenderRepo([entry("ONLY", "src/only.ts")]);
@@ -308,7 +313,7 @@ it("flume render refuses a phase the chain does not declare, and an --entry on o
   } finally {
     await repo.cleanup();
   }
-}, 60_000);
+}, SPAWN_BUDGET_MS);
 
 it("flume render names a hand-picked entry no tick would carry rather than previewing it as next", async () => {
   const repo = await makeRenderRepo([
@@ -333,4 +338,4 @@ it("flume render names a hand-picked entry no tick would carry rather than previ
   } finally {
     await repo.cleanup();
   }
-}, 60_000);
+}, SPAWN_BUDGET_MS);

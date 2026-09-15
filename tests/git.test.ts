@@ -121,6 +121,8 @@ import {
 } from "../src/git.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+
 const exec = promisify(execFile);
 
 // Test-only unwrap: these tests set up a real repo on a real branch, so
@@ -1157,7 +1159,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
     expect(await readFile(claimPath, "utf8")).toBe(String(process.pid));
 
     claim.release();
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("rethrows a non-ENOENT unlink failure during dead-pid reclaim instead of retrying forever (GIT-TIPCLAIM-RECLAIM-UNLINK-NARROW-ENOENT)", async () => {
     const refPath = await resolveRefPath(repo);
@@ -1182,7 +1184,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim (v0.1
     // The stale claim file was never cleared — the rejection came from the
     // unlink itself, not a retried create failing on some other path.
     expect(await readFile(claimPath, "utf8")).toBe(String(deadPid));
-  });
+  }, SPAWN_BUDGET_MS);
 
   // The claim file's own stat: `existsSync` read an unstattable claim as no
   // claim at all, and `acquireTipClaim`'s EEXIST branch then took the

@@ -33,7 +33,16 @@ import type { GateContext } from "../src/Gate.ts";
 import { RUNTIME_IGNORES } from "../src/job.ts";
 import { DEFAULT_PENDING_REL, resolvePendingPath } from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
-import { CLI, HERMETIC_ENV_STRIP_KEYS, TSX_CLI, hermeticEnv, mkFixtureRoot, runCli, runCliStreams } from "./helpers/subprocess.ts";
+import {
+  CLI,
+  HERMETIC_ENV_STRIP_KEYS,
+  SPAWN_BUDGET_MS,
+  TSX_CLI,
+  hermeticEnv,
+  mkFixtureRoot,
+  runCli,
+  runCliStreams,
+} from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -247,7 +256,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -263,7 +272,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -279,7 +288,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -312,7 +321,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -345,7 +354,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   // LOOP-LOCK-SHARES-LIVELOOPPID: the lock's liveness read and `flume
@@ -377,7 +386,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -410,7 +419,7 @@ describe("§2a cross-process loop lock — real `flume loop` against <flumeDir>/
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -588,7 +597,7 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -644,7 +653,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI (v0.8 §8)", () 
         await rm(wtDir, { recursive: true, force: true });
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -685,7 +694,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI (v0.8 §8)", () 
         await rm(wtDir, { recursive: true, force: true });
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -714,7 +723,7 @@ describe("flume status — supervisor liveness (v0.7 §17)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("reports a stale pidfile when the recorded pid is dead", async () => {
     const dir = await mkFixtureRoot("flume-status-stale-");
@@ -737,7 +746,7 @@ describe("flume status — supervisor liveness (v0.7 §17)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("flume status exits non-zero when loop.pid exists but cannot be stat'd", async () => {
     const dir = await mkFixtureRoot("flume-status-unstattable-pid-");
@@ -761,7 +770,7 @@ describe("flume status — supervisor liveness (v0.7 §17)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("is unchanged from today when no pidfile exists", async () => {
     const dir = await mkFixtureRoot("flume-status-nopid-");
@@ -775,7 +784,7 @@ describe("flume status — supervisor liveness (v0.7 §17)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 // ---------- v0.6 §2/§3 — job resolution through the real CLI ----------
@@ -902,7 +911,7 @@ describe("flume status — friction line (§6)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("omits the friction line when the declared dir exists but holds no files", async () => {
     const repo = await makeJobRepo("main");
@@ -917,7 +926,7 @@ describe("flume status — friction line (§6)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("omits the friction line when Chain.friction is undeclared, even with a stray same-named dir present", async () => {
     const repo = await makeJobRepo("main");
@@ -934,7 +943,7 @@ describe("flume status — friction line (§6)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("renders 'friction: unreadable' when the declared dir exists but readdir fails for a non-ENOENT reason (dispatcher-frictioncountline-loud-or-nothing)", async () => {
     const repo = await makeJobRepo("main");
@@ -959,7 +968,7 @@ describe("flume status — friction line (§6)", () => {
       await chmod(join(repo.dir, ".flume", "friction"), 0o755).catch(() => {});
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -1000,7 +1009,7 @@ describe("flume status — pending entry count (§3)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it('prints "pending: unparsable" for a corrupt pending.json instead of dropping it silently', async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
@@ -1015,7 +1024,7 @@ describe("flume status — pending entry count (§3)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it('prints "pending: 0" when plan/pending.json is absent', async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
@@ -1026,7 +1035,7 @@ describe("flume status — pending entry count (§3)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("honors a chain-declared pendingPath (CHAIN-PENDINGPATH) — counts entries at the custom location, not plan/pending.json", async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
@@ -1062,7 +1071,7 @@ describe("flume status — pending entry count (§3)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -1135,7 +1144,7 @@ describe("flume status — names the missing capability on a requiresCapability 
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("omits the line once the chain asserts the capability", async () => {
     const repo = await makeJobRepo("main");
@@ -1151,7 +1160,7 @@ describe("flume status — names the missing capability on a requiresCapability 
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -1206,7 +1215,7 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("both observational surfaces still exit 0 when the chain fails to load", async () => {
     const repo = await makeJobRepo("main");
@@ -1231,7 +1240,7 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 
@@ -1274,7 +1283,7 @@ describe("flume wake/sleep — a chain that fails to load (WAKE-SLEEP-CHAIN-LOAD
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1301,7 +1310,7 @@ describe("flume wake/sleep — a chain that fails to load (WAKE-SLEEP-CHAIN-LOAD
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -1328,7 +1337,7 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1344,7 +1353,7 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1368,7 +1377,7 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1385,7 +1394,7 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -1412,7 +1421,7 @@ describe("flume stop — writes <flumeDir>/stop and prints the consequence", () 
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1430,7 +1439,7 @@ describe("flume stop — writes <flumeDir>/stop and prints the consequence", () 
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   /**
@@ -1468,7 +1477,7 @@ describe("flume stop — writes <flumeDir>/stop and prints the consequence", () 
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("flume stop --help short-circuits before writing the flag", async () => {
     const dir = await mkFixtureRoot("flume-stop-help-");
@@ -1480,7 +1489,7 @@ describe("flume stop — writes <flumeDir>/stop and prints the consequence", () 
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("flume status — stop flag line (spec/cli.md \"flume status owes exactly this\", line 3)", () => {
@@ -1493,7 +1502,7 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it(
     "names the path and that the running supervisor will finish and end the run, ordered after supervisor liveness and before the tip claim",
@@ -1520,7 +1529,7 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it("`flume status` exits EX_IOERR on a non-ENOENT stop-flag stat, instead of printing no stop line", async () => {
@@ -1545,7 +1554,7 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it(
     "names the path and that the next loop/job run refuses, when no supervisor is live",
@@ -1566,7 +1575,7 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -1594,7 +1603,7 @@ describe("flume status — tip claim line (spec/cli.md \"flume status owes exact
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("a git-side failure stays silent, as declared: a detached HEAD prints no claim line and exits 0", async () => {
     const repo = await makeJobRepo("main");
@@ -1612,7 +1621,7 @@ describe("flume status — tip claim line (spec/cli.md \"flume status owes exact
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -1661,7 +1670,7 @@ describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -1690,7 +1699,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it("`flume loop` refuses naming the error when the stop flag is present but unstattable, instead of starting a run over it", async () => {
@@ -1719,7 +1728,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it(
     "flume tick ignores the flag and runs normally",
@@ -1739,7 +1748,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1769,7 +1778,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -1856,7 +1865,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1889,7 +1898,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1917,7 +1926,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1962,7 +1971,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -2069,7 +2078,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("exits EX_DATAERR naming entry + offending paths on a fence violation", async () => {
     const repo = await makeJobRepo("main");
@@ -2098,7 +2107,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("exits 0 on a clean pending.json", async () => {
     const repo = await makeJobRepo("main");
@@ -2132,7 +2141,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("honors a chain-declared pendingPath (CHAIN-PENDINGPATH) — reads and reports the custom location, not plan/pending.json", async () => {
     const repo = await makeJobRepo("main");
@@ -2171,7 +2180,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("exits 0 when plan/pending.json is absent — nothing to check", async () => {
     const repo = await makeJobRepo("main");
@@ -2183,7 +2192,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("exits EX_IOERR naming the error on a non-ENOENT pending.json read failure, instead of reading it as absent", async () => {
     const repo = await makeJobRepo("main");
@@ -2203,7 +2212,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("mutates no baton flag and invokes no agent", async () => {
     const repo = await makeJobRepo("main");
@@ -2237,7 +2246,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("exits mount-dead (69) when no chain resolves to check the consumer fence against", async () => {
     const repo = await makeJobRepo("main"); // no .flume/chain.ts written
@@ -2247,7 +2256,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   /**
    * Vacuous-by-design, spelled in its own test
@@ -2282,7 +2291,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("flume check names the absent fanout consumer rather than the declared paths", async () => {
     const repo = await makeJobRepo("main");
@@ -2309,7 +2318,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("--help short-circuits before any chain load or side effect", async () => {
     const repo = await makeJobRepo("main");
@@ -2324,7 +2333,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -2451,7 +2460,7 @@ describe("consumer-phase fence pre-check — `flume check` against `pendingGate`
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -2484,7 +2493,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -2500,7 +2509,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -2516,7 +2525,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -2535,7 +2544,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -2557,7 +2566,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -2572,7 +2581,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -2591,7 +2600,7 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -2608,7 +2617,7 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -2627,7 +2636,7 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -2657,7 +2666,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("friction <name> prints that note's bytes verbatim", async () => {
     const repo = await makeJobRepo("main");
@@ -2674,7 +2683,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("friction <name> with a nested path segment is refused the same as a missing note", async () => {
     const repo = await makeJobRepo("main");
@@ -2701,7 +2710,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("refuses usage-shaped (exit 2) naming Chain.friction when the chain declares no channel", async () => {
     const repo = await makeJobRepo("main");
@@ -2714,7 +2723,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("a declared-but-absent friction dir lists empty and exits 0", async () => {
     const repo = await makeJobRepo("main");
@@ -2728,7 +2737,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("exits EX_IOERR naming the error on a non-ENOENT note read failure, instead of reporting 'no such note'", async () => {
     const repo = await makeJobRepo("main");
@@ -2748,7 +2757,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("exits EX_IOERR naming the error on a non-ENOENT bare-list readdir failure, instead of listing empty", async () => {
     const repo = await makeJobRepo("main");
@@ -2767,7 +2776,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("flume friction refuses with EX_IOERR when a listed note cannot be stat'd", async () => {
     const repo = await makeJobRepo("main");
@@ -2795,7 +2804,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
       await chmod(join(repo.dir, ".flume", "friction"), 0o755).catch(() => {});
       await repo.cleanup();
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("cli.ts — loop.pid win32 MAX_PATH fix (platform-facts.md)", () => {
@@ -2908,7 +2917,7 @@ describe("state root layout — `flume stop` writes the flag every reader honors
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -2939,7 +2948,7 @@ describe("state root layout — `flume stop` writes the flag every reader honors
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -3019,7 +3028,7 @@ describe("state root layout — `flume loop` writes the lock `liveLoopPid` reads
         await rm(outDir, { recursive: true, force: true });
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -3065,7 +3074,7 @@ describe("state root layout — an undeclared Chain.pendingPath is one file for 
         await rm(wtDir, { recursive: true, force: true });
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -3104,7 +3113,7 @@ describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCE
     } finally {
       await rm(attic, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -3146,7 +3155,7 @@ describe("flume loop — runtime ignores at the default state root", () => {
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -3176,7 +3185,7 @@ describe("flume loop — runtime ignores at the default state root", () => {
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -3203,6 +3212,6 @@ describe("flume loop — runtime ignores at the default state root", () => {
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });

@@ -14,6 +14,7 @@ import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
+  SPAWN_BUDGET_MS,
   hermeticEnv,
   runCli,
   runNodeStreams,
@@ -45,7 +46,7 @@ describe("CJS-context host refusal across the chain-loading CLI surfaces (JOBRUN
     await exec(process.execPath, [TSC_BIN, "-p", "tsconfig.build.json"], {
       cwd: REPO_ROOT,
     });
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   /**
    * A host repo whose own package.json declares `type: commonjs`, carrying a
@@ -130,7 +131,7 @@ describe("CJS-context host refusal across the chain-loading CLI surfaces (JOBRUN
           expect(code).toBe(2);
         });
       },
-      30_000,
+      SPAWN_BUDGET_MS,
     );
   }
 });
@@ -212,7 +213,7 @@ describe("flume job status — friction line (§6)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("omits the friction segment for a job whose declared friction dir is empty", async () => {
     const repo = await makeJobRepo("main");
@@ -228,7 +229,7 @@ describe("flume job status — friction line (§6)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("omits the friction segment for every job when Chain.friction is undeclared", async () => {
     const repo = await makeJobRepo("main");
@@ -245,7 +246,7 @@ describe("flume job status — friction line (§6)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -314,7 +315,7 @@ describe("flume status / flume job status — one friction renderer (FRICTION-LI
       await chmod(jobFriction, 0o755).catch(() => {});
       await repo.cleanup();
     }
-  }, 120_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -361,7 +362,7 @@ describe("flume job status — an unreadable baton is its own reading (JOB-EXIST
       await chmod(sealedAwake, 0o755).catch(() => {});
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -386,7 +387,7 @@ describe("flume job status — pending entry count via the shared probe (§3)", 
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("counts a valid job pending.json unchanged", async () => {
     const repo = await makeJobRepo("main");
@@ -413,7 +414,7 @@ describe("flume job status — pending entry count via the shared probe (§3)", 
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -440,7 +441,7 @@ describe("flume job status — §9 bay discovery walk-up (real CLI)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("invocation from a subdirectory below the bay resolves the same bay as the repo root", async () => {
     const repo = await makeJobRepo("main");
@@ -459,7 +460,7 @@ describe("flume job status — §9 bay discovery walk-up (real CLI)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 
   it("no .flume anywhere above cwd: keeps cwd-as-root, a fresh undocked repo prints 'no jobs' rather than erroring", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-walkup-undocked-"));
@@ -470,7 +471,7 @@ describe("flume job status — §9 bay discovery walk-up (real CLI)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -505,7 +506,7 @@ describe("flume job status — a chain that fails to load (CHAIN-LOAD-FAILURE-RE
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 describe("flume job extract — removed (v0.11 §3)", () => {
@@ -524,5 +525,5 @@ describe("flume job extract — removed (v0.11 §3)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  }, SPAWN_BUDGET_MS);
 });

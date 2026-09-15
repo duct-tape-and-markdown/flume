@@ -33,6 +33,7 @@ import { Baton } from "../src/Baton.ts";
 import { EX_IOERR } from "../src/cli.ts";
 import { jobNew } from "../src/job.ts";
 import {
+  SPAWN_BUDGET_MS,
   gitOut,
   hermeticEnv,
   mkFixtureRoot,
@@ -489,7 +490,7 @@ describe("resolveRepoRoot — §9 bay discovery walk-up", () => {
         await rm(outer, { recursive: true, force: true });
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -714,7 +715,7 @@ describe("§3 job resolution — real CLI", () => {
         await rm(dir, { recursive: true, force: true });
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -756,7 +757,7 @@ describe("§3 job resolution — real CLI", () => {
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   // `existsSync` collapsed every stat failure to `false`, so a job state root
@@ -795,7 +796,7 @@ describe("§3 job resolution — real CLI", () => {
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -823,7 +824,7 @@ describe("§3 job resolution — real CLI", () => {
         await repo.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -854,7 +855,7 @@ describe("§3 job resolution — real CLI", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -882,7 +883,7 @@ describe("§3 job resolution — real CLI", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -931,7 +932,7 @@ describe("§3 job resolution — real CLI", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -965,7 +966,7 @@ describe("§3 job resolution — real CLI", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1003,7 +1004,7 @@ describe("§3 job resolution — real CLI", () => {
         await rm(cfg, { recursive: true, force: true });
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1068,7 +1069,7 @@ describe("§3 job resolution — real CLI", () => {
         await repo.cleanup();
       }
     },
-    60_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -1113,7 +1114,7 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
         await inner.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 
   it(
@@ -1137,7 +1138,7 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
         await inner.cleanup();
       }
     },
-    30_000,
+    SPAWN_BUDGET_MS,
   );
 });
 
@@ -1174,7 +1175,7 @@ describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCE
     } finally {
       await rm(attic, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
 
 /**

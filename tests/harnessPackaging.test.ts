@@ -32,7 +32,12 @@ import { consumerIgnores } from "../harness/ignores.ts";
 import { protocolTemplatePath } from "../harness/init.ts";
 import { PROMPT_NAMES, promptPath } from "../harness/prompts.ts";
 import { resolvePackageJson } from "../src/selfPackage.ts";
-import { hermeticEnv, runCli, runNodeStreams } from "./helpers/subprocess.ts";
+import {
+  SPAWN_BUDGET_MS,
+  hermeticEnv,
+  runCli,
+  runNodeStreams,
+} from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -159,7 +164,7 @@ beforeAll(async () => {
     JSON.stringify({ name: "packaging-consumer", type: "module" }),
   );
   await symlink(pkgDir, join(consumerDir, "node_modules", "@dtmd", "flume"), "junction");
-}, 180_000);
+}, SPAWN_BUDGET_MS);
 
 afterAll(async () => {
   if (scratch) await rm(scratch, { recursive: true, force: true });
@@ -202,7 +207,7 @@ it("the package exports map resolves ./harness to the built harness entry point"
   const reached = await runNodeStreams(consumerDir, [deep]);
   expect(reached.code).not.toBe(0);
   expect(reached.stderr).toContain("ERR_PACKAGE_PATH_NOT_EXPORTED");
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * `flume --version` reads flume's own manifest, and the hop to it differs
@@ -243,7 +248,7 @@ it("the cli resolves its own package.json under both the checkout and the publis
   const barren = join(layouts, "barren", "a", "b");
   await mkdir(barren, { recursive: true });
   expect(() => resolvePackageJson(barren)).toThrow(/no package.json at any of/);
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * The layout is one decision with five dependents — the manifest's `main`,
@@ -282,7 +287,7 @@ it("every shipped entry path resolves inside the layout the build tsconfig emits
     });
     expect(stdout.trim()).toBe(manifest.version);
   }
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * The emitted half of `spec/harness.md`'s *Where it lives*: `harness/prompts.ts`
@@ -352,7 +357,7 @@ it("the build emits every prompt the package addresses beside dist/harness", asy
   // step would otherwise leave every assertion above green over an emit no
   // release ever produces.
   expect(manifest.scripts?.build ?? "").toContain(PACK_ASSETS_REL);
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * The other half of the same emit hop: `flume-harness init` addresses the
@@ -392,7 +397,7 @@ it("the build emits the PROTOCOL template flume-harness init writes from", async
     besideTheEmit: addressed.address.startsWith(join(pkgDir, "dist", "harness") + sep),
     body: addressed.body,
   }).toEqual({ besideTheEmit: true, body: source });
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * `bin.flume-harness` end to end over the published layout: the shim spawns
@@ -430,7 +435,7 @@ it("the flume-harness bin adopts an empty repository against the published emit"
   );
   const ignores = (await readFile(join(adopt, ".gitignore"), "utf8")).split(/\r?\n/);
   expect(ignores).toEqual(expect.arrayContaining(consumerIgnores(".flume")));
-});
+}, SPAWN_BUDGET_MS);
 
 /**
  * `files` decides what leaves the tarball, and the harness assets — the

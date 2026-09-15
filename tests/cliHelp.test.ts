@@ -20,7 +20,11 @@ import { DEFAULT_ABORT_THRESHOLD } from "../src/loopSupervisor.ts";
 import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import type { TickOutcome, TickVerdict } from "../src/Dispatcher.ts";
 import type { TickResult } from "../src/Phase.ts";
-import { mkFixtureRoot, runCli } from "./helpers/subprocess.ts";
+import {
+  SPAWN_BUDGET_MS,
+  mkFixtureRoot,
+  runCli,
+} from "./helpers/subprocess.ts";
 
 /**
  * The codes a `--help` text's own "Exit codes:" block lists — read off the
@@ -290,7 +294,7 @@ describe("flume tick --help — the exit-code list against tickExitCode's derive
     expect(ascending(documentedExitCodes(out))).toEqual(
       wholeRange(returned, TICK_PROCESS_LEVEL_EXIT_CODES),
     );
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -473,11 +477,11 @@ describe("the --help blocks that restate the loop range, against loopExitCode's 
 
   it("flume loop --help names every exit code the loop range produces, beside its named start-up set", async () => {
     await expectHelpNamesTheLoopRange(["loop", "--help"]);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("flume job --help names every exit code the loop range produces, since job run relays it", async () => {
     await expectHelpNamesTheLoopRange(["job", "--help"]);
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -574,7 +578,7 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
   let clause: string;
   beforeAll(async () => {
     clause = await skipClause();
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 
   it("flume check --help names the no-fanout skip among the ways check exits 0", async () => {
     const { out, code } = await runCli(process.cwd(), ["check", "--help"]);
@@ -583,7 +587,7 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
     expect(zero.length).toBeGreaterThan(0);
     // Wrapped across help-text lines, so collapse whitespace before matching.
     expect(zero.replace(/\s+/g, " ")).toContain(clause);
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("docs/CLI.md's flume check section names the no-fanout skip", async () => {
     const doc = await readFile(
@@ -632,7 +636,7 @@ describe("flume loop --help — the abort backstop's stage vocabulary against lo
       expect(prose).toContain(`${stage}-stage`);
     }
     expect(prose).not.toContain("worktree provisioning");
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -676,13 +680,13 @@ describe("flume loop/job --help — the backstop threshold names its knob (HELP-
     const { out, code } = await runCli(process.cwd(), ["loop", "--help"]);
     expect(code).toBe(0);
     expectsOverridableThreshold(exitOneClause(out, "\n  74 "));
-  });
+  }, SPAWN_BUDGET_MS);
 
   it("flume job --help names supervisorPolicy.abortThreshold rather than a fixed consecutive-tick count", async () => {
     const { out, code } = await runCli(process.cwd(), ["job", "--help"]);
     expect(code).toBe(0);
     expectsOverridableThreshold(exitOneClause(out, "\n  2 "));
-  });
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
@@ -741,5 +745,5 @@ describe("flume friction --help — the exit-code list against the verb's own I/
       await chmod(frictionDir, 0o755).catch(() => {});
       await rm(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, SPAWN_BUDGET_MS);
 });
