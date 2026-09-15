@@ -89,13 +89,16 @@ green.
 
 A lane makes the inbox slice live exactly when its latest completed run for
 the tip's branch failed and that run is past the stamp the slice last wrote
-for the lane; the slice stamps the run it drained as it stamps a cursor. So a
-red lane is drained once per run and never re-read every tick, a green run
-needs no drain, and a lane the slice cannot read makes it live for nothing —
-unread renders only when the slice is live for another reason. The render
-names the lane that made the slice live, so a tick woken by a run it then
-cannot fetch says which lane woke it and why the drain was empty, never a
-bare unread over a wake with no visible cause.
+for the lane; the slice stamps the run it woke on, drained or unread, as it
+stamps a cursor. So a red lane wakes the slice once per run and never every
+tick, a green run needs no drain, and a lane whose status the slice cannot
+read makes it live for nothing — unread renders only when the slice is live
+for another reason. The render names the lane that made the slice live, so
+a tick woken by a run whose log it then cannot fetch says which lane woke it
+and that the run went unread; that run is stamped like a drained one, and
+its findings arrive from the next run that fails, because the lane runs on
+every push and a failure that persists reports again. A stamp is never an
+operator's to clear.
 
 
 ### Plan state as declared state

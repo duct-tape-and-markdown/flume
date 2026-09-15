@@ -258,3 +258,15 @@ keyed on an errno is therefore wrong on one host or the other; prove absence
 by descending the path and asserting each ancestor is a directory before the
 next segment is probed, and never deny a fixture's *parent* to stand in for
 denying the read — that un-arms the case on both hosts.
+
+## win32 refuses to spawn a process whose working directory exceeds MAX_PATH
+
+Beside the ~260-character limit `toNamespacedPath` clears and the `git
+worktree add` ceiling it cannot, a third: `CreateProcess` refuses a `cwd`
+longer than MAX_PATH, and Node reports it as `spawn <bin> ENOENT` — the
+binary looks missing when the directory is what was refused. No flume-built
+path is involved, so the `\\?\` prefix cannot reach it; the OS resolves the
+working directory itself. A fixture proving a long-path behavior therefore
+puts its depth on the *subject* path — a long job name, a deep config dir, a
+deep queue path — and never on a directory git or any process is spawned in,
+or asked to create a worktree under.
