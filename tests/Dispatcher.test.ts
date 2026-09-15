@@ -157,6 +157,35 @@ async function head(cwd: string): Promise<string> {
   return stdout.trim();
 }
 
+/**
+ * Every path git registers as a worktree of the fixture repo, the primary
+ * checkout aside, sorted — asked of the engine's own registry probe rather
+ * than re-spelled here. Every worktree verdict in this file is exact
+ * membership over this array: a second decoder beside
+ * `readWorktreeRegistry` would judge the paths by a different reading of
+ * git's output than the code it is ruling on
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*), and a
+ * substring verdict over raw `worktree list` output is worse still — git
+ * prints its paths with forward slashes on every platform, so a
+ * `not.toContain(join(...))` needle is a string git never emits on win32
+ * and the absence goes green over nothing
+ * (`.claude/rules/engineering.md`, *A green verdict is proven
+ * non-vacuous*). `resolve` folds git's spelling back to the host's, so
+ * these paths compare against `join`-built ones on either platform.
+ *
+ * `read: false` throws rather than reading as an empty set: "the registry
+ * could not be read" is not "git registers no worktree", and an absence
+ * assertion handed the former would pass on a spawn that failed
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+async function registeredWorktrees(): Promise<string[]> {
+  const registry = await readWorktreeRegistry(fx.repo);
+  if (!registry.read) {
+    throw new Error(`worktree registry unreadable: ${registry.reason}`);
+  }
+  return [...registry.paths].filter((p) => p !== resolve(fx.repo)).sort();
+}
+
 async function writeAndCommit(
   cwd: string,
   rel: string,
@@ -403,17 +432,21 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
     return stdout.trim();
   }
 
-  it("agent runs on branch flume/<phase>, not the primary checkout; the worktree and branch are gone once the tick returns", async () => {
+  it("agent runs on branch flume/<phase>, not the primary checkout; the branch is deleted and a tick's teardown leaves the repo's worktree registry holding only the primary checkout", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
     let observedCwd: string | undefined;
     let observedBranch: string | undefined;
+    let registeredMidTick: string[] | undefined;
     const agent = singleAgent(async (cwd) => {
       observedCwd = cwd;
       observedBranch = await branchIn(cwd);
-      // The worktree exists, mid-tick, alongside the primary checkout.
+      // The worktree exists, mid-tick, alongside the primary checkout —
+      // registered with git, not merely a directory on disk, so the
+      // teardown verdict below is the absence of something really there.
+      registeredMidTick = await registeredWorktrees();
       expect(existsSync(join(fx.repo, ".flume", "worktrees", "plan"))).toBe(
         true,
       );
@@ -435,14 +468,14 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
     expect(observedCwd).toContain(join(".flume", "worktrees", "plan"));
     expect(observedBranch).toBe("flume/plan");
 
-    // Teardown left `git worktree list` and the branch list clean — same
-    // one-`rm` promise a fanout wave's worktree gives.
-    const { stdout: worktrees } = await exec(
-      "git",
-      ["worktree", "list", "--porcelain"],
-      { cwd: fx.repo },
-    );
-    expect(worktrees).not.toContain(join(".flume", "worktrees"));
+    // Teardown left git's worktree registry and the branch list clean —
+    // same one-`rm` promise a fanout wave's worktree gives. The registry
+    // named exactly the tick's worktree mid-run, and names only the
+    // primary checkout now.
+    expect(registeredMidTick).toEqual([
+      resolve(join(fx.repo, ".flume", "worktrees", "plan")),
+    ]);
+    expect(await registeredWorktrees()).toEqual([]);
     expect(existsSync(join(fx.repo, ".flume", "worktrees", "plan"))).toBe(
       false,
     );
@@ -3217,7 +3250,7 @@ describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capa
 });
 
 describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree create/teardown (§4)", () => {
-  it("creates every worktree + ships every entry despite seeded stale slugs; teardown leaves git worktree list clean", async () => {
+  it("creates every worktree + ships every entry despite seeded stale slugs; a fanout wave's teardown leaves the repo's worktree registry holding only the primary checkout", async () => {
     const entries = [
       makeEntry("RACE-A", ["src/race-a.ts"]),
       makeEntry("RACE-B", ["src/race-b.ts"]),
@@ -3245,15 +3278,14 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
     }
     // Precondition: the stale worktrees are genuinely registered with git
     // (not just bare dirs) — proving the wave exercises the
-    // `git worktree remove --force` path, not the rm-fallback.
-    const { stdout: before } = await exec(
-      "git",
-      ["worktree", "list", "--porcelain"],
-      repoOpts,
+    // `git worktree remove --force` path, not the rm-fallback. Exact
+    // membership, so this is the pair of registered paths rather than two
+    // fragments that happen to occur somewhere in a blob.
+    expect(await registeredWorktrees()).toEqual(
+      ["race-a", "race-b"]
+        .map((slug) => resolve(join(fx.repo, ".flume", "worktrees", slug)))
+        .sort(),
     );
-    // git porcelain output prints forward slashes on every platform.
-    expect(before).toContain(".flume/worktrees/race-a");
-    expect(before).toContain(".flume/worktrees/race-b");
 
     const phase = makePhase({
       name: "build",
@@ -3289,14 +3321,9 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
     expect(await readFile(join(fx.repo, "src/race-b.ts"), "utf8")).toBe("B\n");
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
 
-    // Teardown left `git worktree list` clean: no `.flume/worktrees/`
+    // Teardown left git's worktree registry clean: no `.flume/worktrees/`
     // entry survives, neither registered with git nor on disk.
-    const { stdout: after } = await exec(
-      "git",
-      ["worktree", "list", "--porcelain"],
-      repoOpts,
-    );
-    expect(after).not.toContain(join(".flume", "worktrees"));
+    expect(await registeredWorktrees()).toEqual([]);
     expect(existsSync(join(fx.repo, ".flume", "worktrees", "race-a"))).toBe(
       false,
     );
@@ -3322,7 +3349,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     vi.restoreAllMocks();
   });
 
-  it("a worktree/branch abandoned by a killed tick, whose entry is no longer pending, is removed at the next loop start", async () => {
+  it("a worktree/branch abandoned by a killed tick, whose entry is no longer pending, is removed at the next loop start: the startup sweep leaves the orphan's path out of the repo's worktree registry", async () => {
     const repoOpts = { cwd: fx.repo };
     const wtPath = join(fx.repo, ".flume", "worktrees", "orphan");
     await mkdir(dirname(wtPath), { recursive: true });
@@ -3334,6 +3361,10 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
       ["worktree", "add", "-B", "flume/orphan", wtPath, "HEAD"],
       repoOpts,
     );
+    // Vacuity pin: the orphan is really in the registry going in, so the
+    // absence asserted after the sweep is a removal and not a path git
+    // never named.
+    expect(await registeredWorktrees()).toEqual([resolve(wtPath)]);
 
     const dispatcher = new Dispatcher({
       repoRoot: fx.repo,
@@ -3345,12 +3376,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     await dispatcher.sweepStaleWorktrees();
 
     expect(existsSync(wtPath)).toBe(false);
-    const { stdout: worktreeList } = await exec(
-      "git",
-      ["worktree", "list", "--porcelain"],
-      repoOpts,
-    );
-    expect(worktreeList).not.toContain(join(".flume", "worktrees", "orphan"));
+    expect(await registeredWorktrees()).toEqual([]);
     const { stdout: branches } = await exec(
       "git",
       ["branch", "--list", "flume/orphan"],
@@ -3387,10 +3413,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
       // asserted below are removals rather than three things that were
       // never created.
       expect(existsSync(orphan)).toBe(true);
-      expect(
-        (await exec("git", ["worktree", "list", "--porcelain"], repoOpts))
-          .stdout,
-      ).toContain(orphan);
+      expect(await registeredWorktrees()).toEqual([resolve(orphan)]);
       expect(existsSync(join(fx.repo, ".flume", "worktrees"))).toBe(false);
 
       const chain: Chain = {
@@ -3409,12 +3432,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
       await dispatcher.sweepStaleWorktrees();
 
       expect(existsSync(orphan)).toBe(false);
-      const { stdout: worktreeList } = await exec(
-        "git",
-        ["worktree", "list", "--porcelain"],
-        repoOpts,
-      );
-      expect(worktreeList).not.toContain(orphan);
+      expect(await registeredWorktrees()).toEqual([]);
       const { stdout: branches } = await exec(
         "git",
         ["branch", "--list", "flume/orphan"],
@@ -3461,6 +3479,12 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
         ["worktree", "add", "-B", "flume/own-orphan", ownPath, "HEAD"],
         repoOpts,
       );
+      // Vacuity pin: both trees are really registered going in, so the
+      // survives/removed split asserted below is a split rather than two
+      // paths the registry never held.
+      expect(await registeredWorktrees()).toEqual(
+        [resolve(siblingPath), resolve(ownPath)].sort(),
+      );
 
       const dispatcher = new Dispatcher({
         repoRoot: fx.repo,
@@ -3479,12 +3503,9 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
         repoOpts,
       );
       expect(siblingBranches.trim()).not.toBe("");
-      const { stdout: worktreeList } = await exec(
-        "git",
-        ["worktree", "list", "--porcelain"],
-        repoOpts,
-      );
-      expect(worktreeList).toContain(siblingPath);
+      // Exact membership: the sibling is the only path left registered, so
+      // this pins the removal of this job's own residue too.
+      expect(await registeredWorktrees()).toEqual([resolve(siblingPath)]);
 
       // This job's own residue is still removed.
       expect(existsSync(ownPath)).toBe(false);
@@ -16869,11 +16890,14 @@ describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, rec
     };
   }
 
-  /** Is `path` a tree git currently registers as a worktree of the fixture repo? */
+  /**
+   * Is `path` a tree git currently registers as a worktree of the fixture
+   * repo? One reading of the registry serves the whole file
+   * (`registeredWorktrees`); a second probe beside it is the duplication
+   * this suite exists to avoid.
+   */
   async function registered(path: string): Promise<boolean> {
-    const registry = await readWorktreeRegistry(fx.repo);
-    if (!registry.read) throw new Error(`registry unreadable: ${registry.reason}`);
-    return registry.paths.has(resolve(path));
+    return (await registeredWorktrees()).includes(resolve(path));
   }
 
   it("api.git.checkoutAt plants a detached checkout under the state root's worktree base", async () => {
