@@ -86,6 +86,14 @@ function collectingLogger(): Logger & { warnings: string[] } {
  * `--porcelain` alone neither escapes nor quotes a path: a newline-bearing
  * one arrives split across records there, so the reader a vacuity pin leans
  * on would mangle exactly the paths these suites exist to carry.
+ *
+ * Resolved absolute as it leaves, the same fold the probe under test applies
+ * (`src/worktrees.ts`, `readWorktreeRegistry`) and the same one the sibling
+ * reader in `tests/Dispatcher.test.ts` gets from it. Git prints its own
+ * absolute spelling — forward-slashed on win32 too — and every caller below
+ * judges membership against a path `join`-composed on the host, so an
+ * unfolded read compares two spellings of one directory and reds on the
+ * comparison rather than on the behaviour.
  */
 async function registeredWorktrees(repo: string): Promise<string[]> {
   const { stdout } = await exec(
@@ -96,7 +104,7 @@ async function registeredWorktrees(repo: string): Promise<string[]> {
   return stdout
     .split("\0")
     .filter((f) => f.startsWith("worktree "))
-    .map((f) => f.slice("worktree ".length));
+    .map((f) => resolve(f.slice("worktree ".length)));
 }
 
 describe("worktrees — one lifecycle over one directory tree", () => {
@@ -564,9 +572,7 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
 
       // Exactly what git named, path for path: nothing dropped, nothing
       // invented.
-      expect([...registry.paths].sort()).toEqual(
-        registered.map((p) => resolve(p)).sort(),
-      );
+      expect([...registry.paths].sort()).toEqual([...registered].sort());
       expect(registry.paths.has(resolve(odd))).toBe(true);
       // The spelling a newline-separated read leaves behind. Every caller
       // judges membership by exact match, so this prefix standing in for the
@@ -593,9 +599,7 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
       expect(registry.read).toBe(true);
       if (!registry.read) throw new Error("unreachable: asserted above");
 
-      expect([...registry.paths].sort()).toEqual(
-        registered.map((p) => resolve(p)).sort(),
-      );
+      expect([...registry.paths].sort()).toEqual([...registered].sort());
       expect(registry.paths.has(resolve(odd))).toBe(true);
       // The trimmed spelling names a directory that does not exist, and no
       // caller's path ever matches it.

@@ -118,6 +118,7 @@ import {
   writeMinimalChain,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
+import { mkTempDir } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
 
@@ -3400,7 +3401,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
   it("the startup sweep reads the chain-declared base", async () => {
     const savedOverride = process.env.FLUME_WORKTREES_DIR;
     delete process.env.FLUME_WORKTREES_DIR;
-    const container = await mkdtemp(join(tmpdir(), "flume-sweep-declared-"));
+    const container = await mkTempDir("flume-sweep-declared-");
     const repoOpts = { cwd: fx.repo };
     const base = join(container, "declared-base");
     const orphan = join(base, "orphan");
@@ -3458,7 +3459,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
 
   it("an unnamespaced instance's sweep does not remove a sibling namespaced job's live worktree directory or branches under a shared FLUME_WORKTREES_DIR", async () => {
     const savedOverride = process.env.FLUME_WORKTREES_DIR;
-    const container = await mkdtemp(join(tmpdir(), "flume-sweep-nsscope-"));
+    const container = await mkTempDir("flume-sweep-nsscope-");
     const repoOpts = { cwd: fx.repo };
     const base = join(container, "wt-base");
     const siblingPath = join(base, "beta", "sib-tag");

@@ -22,6 +22,7 @@ import {
   TSX_CLI,
   exitStatusOf,
   mkFixtureRoot,
+  mkTempDir,
   pinGitAutoGcOff,
   refuseLeakedStateRoots,
   refusePreexistingStateRoots,
@@ -159,7 +160,10 @@ describe("runCli — reports the CLI's own status, not a default", () => {
  */
 describe("the suite refuses a flume state root above its fixtures", () => {
   it("a run that creates a state root above its own fixture fails the suite and names the offender", async () => {
-    const attic = await mkdtemp(join(tmpdir(), "flume-leak-attic-"));
+    // Canonical, because the watch below is opened on the fixture's parent —
+    // `mkFixtureRoot` folds the spelling, so a raw `mkdtemp` attic and the
+    // scope derived from it would name one directory two ways.
+    const attic = await mkTempDir("flume-leak-attic-");
     try {
       const fixture = await mkFixtureRoot("flume-leak-fixture-", attic);
       const watch = watchStateRoots(dirname(fixture));
