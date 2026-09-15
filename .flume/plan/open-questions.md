@@ -35,48 +35,37 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## Does a signalled loop's outer grace nest over the tick child's own? (PARKED — a design call plus a spec amendment)
+## `spec/chain.md` still calls `killGraceMs` the supervisor's, which `spec/loop.md` no longer is (NEEDS AMENDMENT — spec edit, two passages)
 
-Drained from `A-BARE-TICK-TAKES-ITS-AGENT-DOWN-THE-SAME-WAY`'s note
-(db16e6c). Verified on disk this tick: `defaultTickRunner`
-(`src/loopSupervisor.ts`) terminates the tick child's group with
-`terminateProcessTree(child, { graceMs })`, `graceMs` being the chain's
-`supervisorPolicy.killGraceMs`; the tick child's own handler
-(`src/cli.ts`, `releaseAndExit`) aborts its tick and awaits an agent
-teardown bounded by that same value. Two timers, one number, and the
-supervisor's starts first — so at T+grace the supervisor SIGKILLs the tick
-child while the child's own escalation is still milliseconds away.
+Surfaced draining the ruling at d9e80fe. `spec/loop.md` *The loop lock and the
+tip claim* now has the supervisor signal the tick child's group and wait
+unbounded, the one timer being the child's over its agent. `spec/chain.md`
+*Supervisor policy is a chain-overridable default* still reads from before
+that, in two places:
 
-**The common case is strictly better than before**: the supervisor's release
-now waits on the agent's real exit, which it never did. The pathological one
-is new — an agent that swallows SIGTERM for the whole grace is orphaned under
-a loop, where the old shared process group killed it.
+- The section preamble calls the knob "the grace a signalled release gives the
+  in-flight **tick tree** before `SIGKILL`". Post-ruling no release gives the
+  tick tree a grace; the grace is what a tick gives its **agent** tree.
+- The read-scope bullet classifies it run-scoped: "On the loop path that is
+  the supervisor, which binds it once per run … a mid-run change is not seen
+  until `flume loop` restarts." The supervisor binds nothing once the
+  delegation lands, and the tick child reloads `chain.ts` every tick — so the
+  bullet's conclusion inverts to the per-tick one beside it.
 
-`spec/loop.md` *The loop lock and the tip claim* reads one group short either
-way: "the tick child runs in its own process group, the handler signals that
-group … so the release is the whole tree's" describes one group where the
-agent now leads a second.
+The fork is the second bullet, and it is a classification the engine then
+owes: **does `killGraceMs` move to the per-tick group?** Mechanically it
+already would — the only reader left is the tick child, which resolves its own
+chain per tick, so a committed change governs from the next tick with no
+restart. Saying so is a one-line move of the bullet. Saying anything else
+means the engine keeps a run-scoped binding with no reader, which is the dead
+plumbing the delegation removes.
 
-Options:
+Recommended: move it, and re-word the preamble to name the agent tree. Both
+are edits to a page plan may not write.
 
-- **The supervisor delegates.** Signal the child's group and wait on the
-  child unbounded; the one timer in the tree lives at the level that owns the
-  agent. This is already the argued position one level down — `src/cli.ts`
-  says of the bare tick's wait, "exiting anyway is the release-over-a-live-
-  writer this whole path exists to stop". Removes a timer rather than adding
-  a constant. Cost: a child wedged *after* installing its handler holds the
-  run open, which is the intended outcome by that same argument.
-- **The outer grace nests.** The supervisor's bound becomes the child's plus
-  a margin for the child's own escalation and reap. Keeps a backstop at every
-  level; costs a margin constant in the engine, which is a policy number
-  (`engine-boundary.md`, *Routing rule*) and wants to be chain-overridable if
-  it exists at all.
-- **Two declared knobs.** Per-level grace on `supervisorPolicy`. Most
-  explicit, and the most surface for a distinction almost no chain author
-  wants to reason about.
-
-Recommended: the first. Established practice nests an outer timeout over an
-inner one, but here the inner level is the only one that can see the agent at
-all, and the outer one's job is to not release a guard over a live writer —
-which a timer at that level is precisely how it fails to do.
-
+Blast radius for the queue: `docs/CHAIN-AUTHORING.md` carries both passages
+downstream and cites that section by name (the `killGraceMs` bullet and the
+"fields split by when they are read" paragraph). Left out of
+THE-SUPERVISOR-DELEGATES-THE-RELEASE-GRACE deliberately — correcting the page
+out of `spec/loop.md` alone would put `docs/` against a standing
+`spec/chain.md` sentence. The doc edit ships the moment the spec line moves.

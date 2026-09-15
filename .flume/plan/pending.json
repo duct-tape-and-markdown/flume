@@ -145,6 +145,59 @@
     "notes": "From RECORDS-READ-DISK-IN-THE-HOSTS-ALPHABET's note. 7 fs calls in harness/; records.ts, inboxWindow.ts and handoff.ts are already namespaced, planState.ts x3 and prompts.ts x1 are not. planState's is the loud one: absent is a declared state there, so the ENOENT reads as no cursor and re-derives the whole corpus. The scan is tests/Baton.test.ts's per-module detection widened to the tree — share it rather than spell a third. Vacuity pin rides it: modules scanned > 0."
   },
   {
+    "tag": "THE-SUPERVISOR-DELEGATES-THE-RELEASE-GRACE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "the default runner signals the tick child's group and waits on its exit unbounded; the run's own grace option goes with the timer"
+        },
+        {
+          "path": "src/processTree.ts",
+          "description": "the group signal the runner takes, beside the escalation src/Agent.ts keeps"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "the loop branch stops forwarding the grace to superviseLoop"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "the knob's doc comment stops naming the supervisor as a binder"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the loop driver gains the real spawned agent; the two arms pinning the outer grace retire"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "whatever the dropped option moves"
+        },
+        {
+          "path": "tests/processTree.test.ts",
+          "description": "the signal half, apart from the escalation over it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the supervisor still bounds its tick child by the chain's grace and fires first; spec/loop.md now has it signal the child's group and wait unbounded",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The loop lock and the tip claim"
+    },
+    "acceptance": "a signalled loop signals the tick child's group and waits on the child's exit with no bound of its own, so the one timer in the tree is the child's over the agent it can see.",
+    "tests": [
+      "an agent that swallows SIGTERM for the whole grace is dead when a signalled loop's run ends",
+      "a signalled loop still holds its lock and tip claim past the declared grace while its wedged tick child lives"
+    ],
+    "pins": [],
+    "notes": "Spec at d9e80fe. Live at HEAD: defaultTickRunner calls terminateProcessTree(child, { graceMs }); that timer starts strictly before the child’s own, so the agent’s group is orphaned at the grace. SuperviseLoopOptions.killGraceMs has no other consumer once it goes. Test 1 wants bareTickAgentChainSrc’s spawned agent under the loop driver; test 2 a driver arm that does not await the run’s exit. docs/CHAIN-AUTHORING.md is out of scope — see the open question on spec/chain.md."
+  },
+  {
     "tag": "A-SIGNALLED-RELEASE-ANNOUNCES-ITS-WAIT",
     "gate": {
       "kind": "open"
@@ -164,18 +217,18 @@
       ],
       "retire": []
     },
-    "summary": "a signalled loop and a signalled bare tick say nothing until the tree is down; spec/loop.md now has the handler announce the wait at receipt with the bound",
+    "summary": "a signalled loop and a signalled bare tick say nothing until the tree is down; spec/loop.md now has each handler announce its wait at receipt",
     "per": {
       "path": "spec/loop.md",
       "section": "The loop lock and the tip claim"
     },
-    "acceptance": "both handlers write the line before they wait, naming the grace the wait runs under, so a Ctrl-C that takes the grace explains itself while it happens rather than after.",
+    "acceptance": "both handlers write the line before they wait, naming the grace the child escalates under, so a Ctrl-C that takes the grace explains itself while it happens rather than after.",
     "tests": [
       "a signalled loop logs the wait it is entering before its tick tree is down, naming the grace",
       "a signalled bare tick logs the wait it is entering before its agent tree is down, naming the grace"
     ],
     "pins": [],
-    "notes": "Ruled 2026-09-15, spec landed at 4895aed: --help names no supervisor knob; what the operator at Ctrl-C is owed is a line then, not a lookup. Both handlers sit in src/cli.ts — the loop branch's and the bare tick's. The supervisor's own `signalled; stopping` line stays where it is: it reports the run's end, not the wait's start. The real signalled-tree cases already in tests/cli.test.ts are the fixtures, and both declare win32 as a skip."
+    "notes": "Spec at 4895aed, amended by d9e80fe. --help names no supervisor knob; the operator at Ctrl-C is owed a line then, not a lookup. The loop handler’s wait has no bound of its own under d9e80fe — its line names the grace the tick child escalates under. Both handlers sit in src/cli.ts. The supervisor’s `signalled; stopping` line stays: it reports the run’s end, not the wait’s start. The real signalled-tree cases in tests/cli.test.ts are the fixtures; both declare win32 as a skip."
   },
   {
     "tag": "A-TEST-TITLE-CITES-A-PAGE-THE-TREE-HOLDS",
