@@ -78,7 +78,7 @@
     ]
   },
   {
-    "tag": "LONG-PATH-FIXTURES-COMPOSE-THROUGH-THE-NAMESPACED-JOIN",
+    "tag": "LONG-PATH-FIXTURES-KEEP-GIT-OFF-THE-DEEP-PATH",
     "gate": {
       "kind": "open"
     },
@@ -88,28 +88,24 @@
       "edit": [
         {
           "path": "tests/job.test.ts",
-          "description": "the two deep-nest fixtures build and run git through the namespaced join the cases themselves pin"
+          "description": "the jobRm and jobNew deep-nest cases carry their length in the job name, leaving the repo git inits at ordinary depth"
         },
         {
           "path": "tests/Dispatcher.test.ts",
-          "description": "the long pendingPath fixture, same"
+          "description": "the deep pendingPath case points the worktree base off its deep state root"
         }
       ],
       "retire": []
     },
-    "summary": "the three win32 total-path cases nest their tree with a bare `join` and then run git in it, so the fixture hits the very limit the case exists to prove the engine clears",
+    "summary": "the three win32 total-path cases run git at or into their own deep tree, so each reds on a limit toNamespacedPath cannot reach rather than on the engine call it names",
     "per": {
       "path": "spec/cli.md",
       "section": "win32 is a supported host"
     },
-    "acceptance": "each long-path case builds its fixture through `namespacedJoin` and reaches the engine call it names on win32, so the lane's verdict on these three is the engine's and not the fixture's.",
+    "acceptance": "each of the three cases keeps its deep path on the subject it names and lets git work at ordinary depth, so the lane's verdict on them is the engine's and not the fixture's.",
     "tests": [],
-    "pins": [
-      "jobRm finds and removes a job whose dir nests past win32's ~260-char limit",
-      "jobNew doesn't misread an existing chain.ts or seedDir as absent when configDir/seedDir nests past win32's ~260-char limit",
-      "readPending/readPendingTolerant/commitPendingUpdate don't misread an existing or writable pending.json as absent when pendingPath exceeds win32's ~260-char limit"
-    ],
-    "notes": "Lane-observed: all three failed `spawn git ENOENT`, which is win32 refusing a cwd past the limit rather than a missing git. The idiom is the one the section names and the cases already exercise on the engine side. `job new` pins `core.longpaths` repo-locally on win32; a fixture that inits its own repo wants the same."
+    "pins": [],
+    "notes": "Lane-observed (35016231910): the two job cases fail `spawn git ENOENT` — win32 refuses a spawn cwd past MAX_PATH, which `\\\\?\\` cannot reach. The Dispatcher case ships nothing: its worktree lands under the deep flumeDir, and git refuses a worktree path near 200 chars whatever core.longpaths says (`platform-facts.md`). Depth belongs on the jobDir/pendingPath alone — a long job name, a shallow worktree base. Nothing is judgeable off-win32: all three are `runIf(win32)`, so the lane is the verdict."
   },
   {
     "tag": "MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH",
