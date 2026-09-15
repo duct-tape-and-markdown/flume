@@ -34,28 +34,3 @@ secret, and whether release automation is wanted at all for a package whose
 cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
-
-## A TypeScript module-resolution fact lives in a code comment; `platform-facts.md` is its home (NEEDS AMENDMENT — a rule-page edit no phase can make)
-
-Drained from the build note on `EXPORT-NAMEABILITY-READS-THE-DECLARATION-EMIT`.
-Making the export scan's in-memory declaration program resolve took one
-non-obvious fact, verified at `tests/helpers/exportGraph.ts`:
-
-> TypeScript's module resolution abandons a lookup whose containing directory
-> it believes is absent, so a host serving a virtual `outDir` must answer
-> `directoryExists`, not only `fileExists` and `readFile`. Without it every
-> cross-module import resolves to `unknown` and the scan reports an empty
-> reach graph as a clean surface.
-
-External toolchain behavior: no test pins it and no type holds it, which is
-`.claude/rules/platform-facts.md`'s charter (CLAUDE.md, *Tech Stack*). It sits
-today as a comment at the site — a copy the harness should own instead, seen
-only by an agent who already opened that file.
-
-`.claude/rules/**` is inside the spec locus and inside no phase's fence, so
-neither build nor plan can move it; the operator's edit is the only route.
-
-**Recommended:** add the fact to `platform-facts.md`, and the follow-on ships
-as an ordinary entry — the site comment shrinks to a pointer
-(`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*), the
-one half of this that is inside build's fence. Nothing else is blocked.
