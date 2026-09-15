@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -66,6 +66,50 @@ describe("buildFlumeApi().gitPath (engineering.md 'A fact the engine holds is re
     // rule it is: both separators fold, which a chain-local respelling keyed
     // on the host `sep` would get half-right.
     expect(api.gitPath(String.raw`a\b/c`)).toBe("a/b/c");
+  });
+});
+
+/**
+ * The offset a chain roots a committed path at — a fence glob, a
+ * `pendingGate` target, a pathspec at a sha — reported at chain load rather
+ * than re-derived by every chain that needs one (`engineering.md`, *A fact
+ * the engine holds is reported, never rediscovered*). Driven through the
+ * real `buildFlumeApi`, the seam a chain factory is handed.
+ */
+describe("buildFlumeApi().paths.stateRootRel (engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
+  it("buildFlumeApi reports the state root's repo-relative offset on api.paths.stateRootRel", () => {
+    // The default root, and a `--job` root two levels down: an offset that
+    // is not the `.flume` literal is what says the value is computed from
+    // the roots rather than spelled.
+    expect(buildFlumeApi(REPO_PATHS).paths.stateRootRel).toBe(".flume");
+
+    const jobDir = join(REPO_PATHS.repoRoot, ".flume", "jobs", "alpha");
+    const job = buildFlumeApi({ ...REPO_PATHS, flumeDir: jobDir });
+    // Git's alphabet, whatever the host's separator — the dialect every
+    // fence glob and pathspec composed from it is matched in.
+    expect(job.paths.stateRootRel).toBe(".flume/jobs/alpha");
+    expect(job.paths.stateRootRel).toBe(
+      gitPath(relative(REPO_PATHS.repoRoot, jobDir)),
+    );
+
+    // The three roots still arrive by reference; only the offset is added.
+    expect(job.paths.repoRoot).toBe(REPO_PATHS.repoRoot);
+    expect(job.paths.configDir).toBe(REPO_PATHS.configDir);
+    expect(job.paths.flumeDir).toBe(jobDir);
+  });
+
+  it("api.paths.stateRootRel is absent when the state root resolves outside the repository", () => {
+    const outside = join(REPO_PATHS.repoRoot, "..", "flume-state-elsewhere");
+    const relocated = buildFlumeApi({ ...REPO_PATHS, flumeDir: outside });
+
+    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
+    // an api that carries no such field at all answers `undefined` to every
+    // reading below, so the key's presence is asserted before its absence
+    // means anything — and the in-repo sibling proves the same builder does
+    // report an offset when there is one.
+    expect("stateRootRel" in relocated.paths).toBe(true);
+    expect(relocated.paths.stateRootRel).toBeUndefined();
+    expect(buildFlumeApi(REPO_PATHS).paths.stateRootRel).toBeDefined();
   });
 });
 

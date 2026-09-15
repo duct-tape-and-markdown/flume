@@ -137,6 +137,53 @@ describe("cascade-chain.ts — the shipped phase list", () => {
 });
 
 /**
+ * The flagship's fence is read as doctrine, so the doctrine it teaches has to
+ * survive the state root moving: `--job` and `FLUME_DIR` both relocate it,
+ * and a fence spelled `.flume/` would then guard a directory no tick writes
+ * — every plan commit reverted for paths outside a glob that matches nothing.
+ * Driven through the real factory over the real `buildFlumeApi`, the seam a
+ * chain-load actually uses (engineering.md, *A seam gate reads what the real
+ * writer wrote*).
+ */
+describe("cascade-chain.ts — the plan fence roots at the reported state root", () => {
+  /** Every plan slice's fence, for a cascade built from these roots. */
+  function planFence(flumeDir: string): string[] {
+    const { chain } = cascadeFactory(
+      buildFlumeApi({ ...EXAMPLE_PATHS, flumeDir }),
+    );
+    return chain.phases
+      .filter((p) => p.name !== "build")
+      .flatMap((p) => p.writablePaths);
+  }
+
+  it("the cascade chain's plan fence follows a relocated state root", () => {
+    // The default root first: the offset the fence is built from is a real
+    // value, not an empty string that would make every claim below vacuous.
+    const at = planFence(join(EXAMPLE_PATHS.repoRoot, ".flume"));
+    expect(at.length).toBeGreaterThan(0);
+    expect(at).toContain(".flume/plan/pending.json");
+    expect(at).toContain(".flume/inbox/**");
+
+    // The same chain under `--job alpha`: the whole fence moves with the
+    // root, in git's alphabet, with nothing left behind at the literal.
+    const job = planFence(
+      join(EXAMPLE_PATHS.repoRoot, ".flume", "jobs", "alpha"),
+    );
+    expect(job).toEqual(
+      at.map((g) => g.replace(/^\.flume\//, ".flume/jobs/alpha/")),
+    );
+    expect(job.filter((g) => g.startsWith(".flume/plan/"))).toEqual([]);
+    expect(job).toContain(".flume/jobs/alpha/plan/pending.json");
+  });
+
+  it("cascade refuses at chain load when its state root resolves outside the repository", () => {
+    expect(() =>
+      planFence(join(EXAMPLE_PATHS.repoRoot, "..", "flume-state-elsewhere")),
+    ).toThrow(/resolves outside the repository/);
+  });
+});
+
+/**
  * Agreement pin (engineering.md, "A seam gate reads what the real writer
  * wrote"): `examples/prompts/` ships the prompt files the example chains
  * name, and `Phase.promptPath` is the only thing that names one. A file left
@@ -927,9 +974,16 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
     const l = await ladderDrive();
     try {
       // The chain's half: the api cascade composed against carries the
-      // dispatcher's own roots, by identity — one object, not two that agree
-      // today.
-      expect(l.api.paths).toBe(l.paths);
+      // dispatcher's own roots, by identity — the same three strings, not
+      // two resolutions that agree today. Pinned per root, because
+      // `api.paths` also carries the offset the engine computed from them
+      // (`stateRootRel`), so it is the roots that are identity-same and not
+      // the object around them (spec/chain.md, *Per-run artifacts belong
+      // under `FLUME_DIR`*).
+      expect(l.api.paths.repoRoot).toBe(l.paths.repoRoot);
+      expect(l.api.paths.configDir).toBe(l.paths.configDir);
+      expect(l.api.paths.flumeDir).toBe(l.paths.flumeDir);
+      expect(l.api.paths.stateRootRel).toBe(".flume");
       expect(l.paths).toEqual({
         repoRoot: l.fx.repo,
         configDir: l.fx.configDir,

@@ -357,6 +357,35 @@ const factory: ChainFactory = (api) => {
     tscGate,
     eslintGate,
   } = api;
+
+  // ---------- the state root, as the repository addresses it ----------
+
+  /**
+   * The offset every path this chain commits is rooted at — forward-slashed,
+   * the alphabet a fence glob is matched in — reported by the engine at
+   * chain load (`api.paths.stateRootRel`) rather than spelled `.flume/`
+   * here. `--job` and a relocated `FLUME_DIR` both move the state root, and
+   * a literal fence would then guard a directory the dispatcher no longer
+   * writes: every plan commit reverts, and the artifacts the slice actually
+   * wrote land outside the glob.
+   *
+   * Absent means the root resolves outside the repository, where the plan
+   * artifacts this chain commits are paths no commit can hold. Refused at
+   * load, rather than shipping a fence that matches nothing
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  const stateRoot = ((): string => {
+    const rel = api.paths.stateRootRel;
+    if (rel === undefined) {
+      throw new Error(
+        `the cascade chain's state root ${api.paths.flumeDir} resolves outside ` +
+          `the repository at ${api.paths.repoRoot}, so the plan artifacts its ` +
+          `slices commit are paths no commit can hold`,
+      );
+    }
+    return rel;
+  })();
+
   // ---------- project-specific gates ----------
 
   /**
@@ -586,11 +615,13 @@ const factory: ChainFactory = (api) => {
     promptPath: "prompts/plan.md",
     concurrency: "singleton",
     writablePaths: [
-      ".flume/plan/pending.json",
-      ".flume/plan/state.md",
-      ".flume/plan/open-questions.md",
+      // Rooted at the offset the engine reported, so a run under `--job` or
+      // a relocated `FLUME_DIR` fences the directory that run actually writes.
+      `${stateRoot}/plan/pending.json`,
+      `${stateRoot}/plan/state.md`,
+      `${stateRoot}/plan/open-questions.md`,
       // The inbox is drained by deletion, so the fence has to reach it.
-      ".flume/inbox/**",
+      `${stateRoot}/inbox/**`,
     ],
     gates: [pendingGate({ targetFence: build, extension: entryExtension })],
     shouldRun(ctx) {

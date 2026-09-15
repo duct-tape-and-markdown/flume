@@ -56,7 +56,11 @@ import {
   // against what a chain factory receives.
   tscGate as realTscGate,
 } from "../src/builtinGates.ts";
-import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
+import {
+  buildFlumeApi,
+  type FlumeApiPaths,
+  type FlumePaths,
+} from "../src/flumeApi.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import type {
   Chain,
@@ -12462,11 +12466,16 @@ describe(
 
         const recorded = JSON.parse(
           await readFile(recordPath, "utf8"),
-        ) as FlumePaths;
+        ) as FlumeApiPaths;
+        // The defaulted root, and the offset the engine computed from it —
+        // the fence-and-pathspec spelling of the same answer, reported
+        // beside the roots so the chain never folds a `relative()` of its
+        // own (spec/chain.md, *Per-run artifacts belong under `FLUME_DIR`*).
         expect(recorded).toEqual({
           repoRoot: fx.repo,
           configDir: cfg,
           flumeDir: join(fx.repo, ".flume"),
+          stateRootRel: ".flume",
         });
       } finally {
         await rm(cfg, { recursive: true, force: true });

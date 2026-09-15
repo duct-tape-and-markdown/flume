@@ -32,6 +32,7 @@ import {
 } from "./builtinGates.js";
 import {
   CjsContextLoadError,
+  computeStateRootRel,
   PendingParseFailure,
   readTickVerdicts,
   readLatestVerdictsSync,
@@ -87,6 +88,37 @@ export interface FlumePaths {
 }
 
 /**
+ * What `FlumeApi.paths` carries: the three resolved roots, plus the one fact
+ * about them the engine has already decided — whether the state root lives
+ * inside the repository, and at what offset.
+ */
+export interface FlumeApiPaths extends FlumePaths {
+  /**
+   * The state root's path relative to `repoRoot` **in git's own alphabet**
+   * ({@link gitPath} — forward slashes, whatever the host's separator), or
+   * `undefined` when the root is relocated outside the repository.
+   *
+   * The same value `GateContext.stateRootRel` and `TickContext.stateRootRel`
+   * carry, from the same `computeStateRootRel` (`src/Dispatcher.ts`) — here
+   * at chain load, which is where a fence glob is decided and where no
+   * context exists yet to read it off. A chain rooting `writablePaths`, an
+   * `entryChannelPaths` glob, or a `git show <sha>:<path>` pathspec at the
+   * state root reads this rather than spelling `.flume/` — which `--job` and
+   * a relocated `FLUME_DIR` both move — or folding its own `relative()`,
+   * which answers in the host's dialect and so matches nothing on win32.
+   *
+   * Absent is a **fact, not a verdict**: it says no commit can hold a
+   * state-root path, and what follows is the chain's
+   * (`.claude/rules/engine-boundary.md`). A chain whose committed artifacts
+   * live under the root refuses at load (`spec/harness.md`,
+   * *Committed-path discipline*); a chain that commits nothing there ignores
+   * it. Required in the type — `buildFlumeApi` always sets it — so the
+   * absence is a key carrying `undefined`, never a field a chain forgot.
+   */
+  stateRootRel: string | undefined;
+}
+
+/**
  * The runtime surface a chain composes with. Declared with `typeof` against
  * the real implementations so the API cannot drift from what the engine
  * actually exports — a signature change breaks the interface at compile
@@ -102,8 +134,14 @@ export interface FlumeApi {
    * values the dispatcher was constructed with, never resolved a second
    * time. Required at construction: a caller that has not resolved its
    * roots cannot build an API to hand a chain.
+   *
+   * Beside them rides `stateRootRel`, the state root's repo-relative offset
+   * as the engine computed it, so a chain composing a committed path out of
+   * these roots reads the offset rather than deriving it
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
    */
-  paths: FlumePaths;
+  paths: FlumeApiPaths;
   claudeCode: typeof claudeCode;
   withSessionCapture: typeof withSessionCapture;
   withTerminalRenderer: typeof withTerminalRenderer;
@@ -251,7 +289,15 @@ export interface FlumeApi {
  */
 export function buildFlumeApi(paths: FlumePaths): FlumeApi {
   return {
-    paths,
+    // The three roots by reference, and the offset off the engine's one
+    // owner of that computation (`computeStateRootRel`, `src/Dispatcher.ts`)
+    // — the same call the dispatcher makes for its gate and tick contexts,
+    // never a second spelling of the escape check or of the fold into git's
+    // alphabet.
+    paths: {
+      ...paths,
+      stateRootRel: computeStateRootRel(paths.repoRoot, paths.flumeDir),
+    },
     claudeCode,
     withSessionCapture,
     withTerminalRenderer,

@@ -54,7 +54,11 @@ by the tick's own agent invocation.
 **Default-export a factory** — `(api) => ({ chain })`, where `api` carries
 every engine value your chain composes with (gates, agent constructors,
 schema helpers) plus `api.paths` — the runtime's own resolved
-`{ repoRoot, configDir, flumeDir }`, absolute, by reference. The resolver
+`{ repoRoot, configDir, flumeDir }`, absolute, by reference, and beside them
+`stateRootRel`, the state root's offset from the repo root in git's alphabet
+(`undefined` when the root is relocated outside the repo). That last one is
+what a fence glob or a pathspec under the state root is built from, so a
+`writablePaths` entry never has to spell `.flume/`. The resolver
 refuses a default export that is not a
 function, and refuses a factory that returns no `chain` with a `phases[]`
 array. Take engine values from the parameter; your only engine `import` is
@@ -193,11 +197,14 @@ const slicePhase = (slice: PlanSlice): Phase => ({
   promptPath: "prompts/plan.md",
   concurrency: "singleton",
   writablePaths: [
-    ".flume/plan/pending.json",
-    ".flume/plan/state.md",
-    ".flume/plan/open-questions.md",
+    // `stateRoot` is `api.paths.stateRootRel`, read once at chain load —
+    // so a run under `--job` or a relocated `FLUME_DIR` fences the
+    // directory that run actually writes.
+    `${stateRoot}/plan/pending.json`,
+    `${stateRoot}/plan/state.md`,
+    `${stateRoot}/plan/open-questions.md`,
     // The inbox is drained by deletion, so the fence has to reach it.
-    ".flume/inbox/**",
+    `${stateRoot}/inbox/**`,
   ],
   gates: [pendingGate({ targetFence: build, extension: entryExtension })],
   shouldRun(ctx) {
@@ -1097,14 +1104,26 @@ scratch logs, anything mutable that a run produces), root its path at
 `flume.paths.flumeDir` — not the chain dir, not `process.env`, not a
 hardcoded `.flume/`.
 
+**For a committed path under that root, use `api.paths.stateRootRel`.**
+`flumeDir` is absolute; a fence glob, a `pendingGate` target, an
+`entryChannelPaths` entry and a `git show <sha>:<path>` pathspec are all
+repo-relative and forward-slashed, which is exactly what `stateRootRel`
+reports — the same value `ctx.stateRootRel` carries at tick time, handed over
+at chain load because that is when a fence is declared. Do not rebuild it:
+`relative(repoRoot, flumeDir)` answers in the host's separator, so the glob
+you compose from it matches nothing on win32. It is `undefined` when the
+state root is relocated outside the repository; a chain whose artifacts are
+committed refuses at load (`examples/cascade-chain.ts` is the worked case),
+and a chain that commits nothing under the root ignores it.
+
 #### Gates and prompts get `flumeDir` injected too
 
 A chain never reaches into the global env for its roots. Which surface hands
 them over depends on where you are, and there is one for every position:
 
 - **The factory** receives `api.paths` at chain-load — the seam for anything
-  decided before a tick exists: artifact placement (the sessions case above)
-  and `writablePaths`.
+  decided before a tick exists: artifact placement (the sessions case above,
+  off `flumeDir`) and `writablePaths` (off `stateRootRel`).
 - **Gates** receive the resolved roots on `GateContext` — `ctx.flumeDir`
   (state root), `ctx.configDir` (chain/prompts dir), and `ctx.pendingPath`
   (the queue, already resolved from `Chain.pendingPath`). A gate that reads
@@ -1129,8 +1148,9 @@ reader there really is a child process. The chain itself is handed the same
 values by reference and has no reason to go looking.
 
 **The boundary:** chain-load (placement, `writablePaths`) →
-`flume.paths.flumeDir`; tick time (gates, prompts) → `ctx.flumeDir` /
-`{{FLUME_DIR}}`; a spawned child → the inherited env. Hardcoding `.flume/` in
+`flume.paths.flumeDir` / `flume.paths.stateRootRel`; tick time (gates,
+prompts) → `ctx.flumeDir` / `ctx.stateRootRel` / `{{FLUME_DIR}}`; a spawned
+child → the inherited env. Hardcoding `.flume/` in
 a gate, prompt, or `writablePaths` breaks under a relocated `flumeDir` — the
 dispatcher reads `<flumeDir>/plan/` while your hardcoded site points at
 `.flume/plan/`, and the tick's writes land where the harness isn't looking.

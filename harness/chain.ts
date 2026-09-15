@@ -21,10 +21,10 @@
  * than of a consumer's discipline (`spec/harness.md`, *What a consumer
  * declares*).
  *
- * **Nothing here re-derives a fact the engine reported.** The roots come off
- * `FlumeApi.paths`, the state root's repo-relative offset off the engine's
- * own `computeStateRootRel`, the engine values the gates run through arrive
- * as `api` members rather than as imports. What a tick reads per-tick — the
+ * **Nothing here re-derives a fact the engine reported.** The roots and the
+ * state root's repo-relative offset come off `FlumeApi.paths`, the engine
+ * values the gates run through arrive as `api` members rather than as
+ * imports. What a tick reads per-tick — the
  * queue, the pickable set, the prior attempts, the assigned entry — is read
  * off the `TickContext` the dispatcher hands the hook
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
@@ -39,7 +39,6 @@
 import { resolve } from "node:path";
 
 import type { Agent } from "../src/Agent.js";
-import { computeStateRootRel } from "../src/Dispatcher.js";
 import type { FlumeApi } from "../src/flumeApi.js";
 import type { Gate, GateContext, GatePhase, GateResult } from "../src/Gate.js";
 import { gitPath, resolvePendingPath } from "../src/paths.js";
@@ -631,15 +630,15 @@ function supervisorPolicy(
  * The state root as the repository addresses it — a **git path**, forward-
  * slashed — or a refusal naming both roots.
  *
- * The engine reports the offset already forward-slashed (`computeStateRootRel`,
- * `src/Dispatcher.ts`), which is the alphabet every path this factory composes
- * from it needs — the queue, the plan state, the questions file, the record
+ * The engine reports the offset already forward-slashed
+ * (`api.paths.stateRootRel`), which is the alphabet every path this factory
+ * composes from it needs — the queue, the plan state, the questions file, the record
  * globs, build's note are each one a fence glob matches and a commit's touched
  * path is compared against. Read straight, so no path the factory builds can
  * be in a dialect its sibling is not.
  */
 function repoRelativeStateRoot(api: FlumeApi): string {
-  const rel = computeStateRootRel(api.paths.repoRoot, api.paths.flumeDir);
+  const rel = api.paths.stateRootRel;
   if (rel === undefined) {
     throw new Error(
       `the harness package's state root ${api.paths.flumeDir} resolves ` +
