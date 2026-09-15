@@ -900,3 +900,69 @@ fixed. B moves the dialect to the one site that knows it; C is what still finds
 the composer B cannot reach. Both files are the human's — `spec/chain.md` for
 the ruling, `.claude/rules/posture-sweep.md` for the lens — so neither is
 fileable from here.
+
+## A measured git fact rides a doc comment, and the floor it implies is undeclared (PARKED — two human files)
+
+Drained from `WORKTREE-REGISTRY-READS-NUL-SEPARATED-PORCELAIN`'s note.
+Re-measured here on git 2.43 rather than taken from the note, and the floor
+confirmed against git's own 2.36 release note.
+
+**Part 1 — the fact, ready to transcribe.** Porcelain quoting is
+per-subcommand, not a git-wide property. Measured, same repo, same tick:
+`status --porcelain` quotes and octal-escapes (`"file with trailing space "`,
+`"w\303\251ird name"`), while `worktree list --porcelain` prints both paths
+raw — a trailing space and a UTF-8 `é` arrive verbatim, unescaped. Upstream
+frames it the same way: git 2.36's note says `worktree list --porcelain` "did
+not c-quote pathnames … correctly, which was worked around by introducing NUL
+terminated output with `-z`."
+
+So the two sibling fixes (`CLEAN-TREE-GATE-READS-QUOTED-PORCELAIN`,
+`WORKTREE-REGISTRY-READS-NUL-SEPARATED-PORCELAIN`) share a remedy and not a
+cause: a reader assuming v1 quoting is wrong at one subcommand, a reader
+assuming raw bytes is wrong at the other, and `-z` is the only spelling that
+is right at both. Whoever writes the next git reader needs that before they
+pick a parse — it currently lives at `src/worktrees.ts:130`–`140` and
+`tests/worktrees.test.ts:86`, which `CLAUDE.md` names as the wrong home ("a
+code comment carrying one is a copy the harness should own instead, seen only
+by an agent that already opened that file").
+`.claude/rules/platform-facts.md` is the page, and it is the human's.
+
+**Part 2 — the floor.** `-z` on `worktree list` is git >= 2.36 (Apr 2022);
+`status -z` is ancient, so the harness gate carries no floor.
+`package.json` declares `engines.node >= 22` and nothing else, and no git
+version appears anywhere in the tree but that one doc comment. The engine now
+requires a git newer than it says.
+
+Exposure on an older git, read off the current consumers rather than guessed:
+`readWorktreeRegistry` returns `{ read: false }`, so provisioning throws with
+git's own message — but only where the target path is already occupied
+(`src/worktrees.ts:223`) — and the startup sweep warns and removes nothing
+(`src/worktrees.ts:379`). Net: worktree reclamation stops working, one warn
+line per run, and nothing in that line names the git version as the cause.
+
+**Options.**
+
+- **A — a README prerequisite line.** In build's fence, one line, read by a
+  human before install. Documentation only; no run enforces it.
+- **B — `engines.git` in `package.json`.** npm validates the `node` and `npm`
+  keys alone, so a `git` key is inert — it reads enforced while checking
+  nothing. Worse than A, not better; listed to be ruled out.
+- **C — a startup preflight.** Parse `git --version` once, refuse below the
+  floor with `EX_CONFIG` (`platform-facts.md`, *Exit codes come from
+  `sysexits.h`*). The only option a run enforces, and it passes the
+  second-implementation test — every consumer spawns git. Costs a spawn per
+  run, a floor constant that must move each time a newer flag is adopted, and
+  it converts a partial degrade into a total refusal on a host where
+  everything except worktree reclamation works.
+- **D — accept.** The declared node floor (22, Apr 2024) postdates git 2.36 by
+  two years, so a host new enough to run flume at all almost certainly carries
+  it; the failure is already loud per *Loud or nothing*, just unattributed.
+
+**Recommend A over C, with D's reasoning as the justification for not
+building C** — a preflight is a standing tax on every run against a class
+whose only casualty is worktree reclamation on a host that predates the
+node floor. Not fileable from here either way: `spec/chain.md`, *The package a
+chain loads through* states the node floor and says nothing about git, so an
+entry that edits the README would be inventing the ruling it cites. Add the
+git floor to that section's durable packaging policy and the README edit
+derives from it.
