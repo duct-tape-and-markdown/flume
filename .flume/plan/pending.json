@@ -1,1 +1,21 @@
-[]
+[
+  {
+    "tag": "GLOBTOREGEX-NO-SENTINEL-ROUNDTRIP",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/paths.ts", "description": "globToRegex: compile `**`/`*` without substituting a placeholder literal" },
+        { "path": "tests/paths.test.ts", "description": "extend the literal-path pin past single characters to multi-character sentinel text" }
+      ],
+      "retire": []
+    },
+    "summary": "globToRegex round-trips `**` through a `::DOUBLESTAR::` literal, so a glob carrying that text compiles to `.*` and admits every path",
+    "per": { "path": ".claude/rules/engineering.md", "section": "The fix lands at the mechanism" },
+    "acceptance": "matchesAny admits only the declared path for a glob containing the compiler's placeholder text; the write guard, the queue fence and ship detection see no wildcard the glob never spelled.",
+    "tests": [
+      "a declared path containing the glob compiler's `**` placeholder text matches only itself"
+    ],
+    "notes": "Verified on disk: matchesAny('src/secret.ts', ['::DOUBLESTAR::']) -> true; matchesAny('docs/anything-else.md', ['docs/::DOUBLESTAR::.md']) -> true (src/paths.ts:124-127). Same class as the fixed `?` hole, which was pitched at the hand-kept escape class — a per-character pin cannot see a multi-character hole. Splitting on `**` then `*` removes the placeholder rather than escaping around it."
+  }
+]

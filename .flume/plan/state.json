@@ -82,7 +82,8 @@
       "tests/chain.test.ts",
       "tests/worktrees.test.ts",
       "tests/PendingSchema.test.ts",
-      "src/standardSchema.ts"
+      "src/standardSchema.ts",
+      "tests/paths.test.ts"
     ]
   }
 }
