@@ -18,8 +18,10 @@
  * stopped half-way would leave a repository carrying an ignore set for a
  * state root that does not exist, or a `PROTOCOL.md` beside no declaration —
  * a tree nothing refuses and no re-run can distinguish from a finished one.
- * The state root's absence is checked first and nothing on disk is touched
- * until it passes (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * Every input the adoption reads — the state root's absence, this package's
+ * own manifest, the consumer's — is resolved before the first `mkdir`, and
+ * nothing on disk is touched until all of them pass
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * **What init writes once, it never rewrites.** Everything here is the
  * consumer's from the moment it lands: an upgrade is a version bump and a
@@ -316,12 +318,15 @@ export async function harnessInit(
     );
   }
 
-  // Read before writing, for the same reason: a package whose own manifest
-  // cannot be read has no version to write into the consumer's dependency
-  // line, and that should leave the repository untouched.
+  // Read before writing, for the same reason: an input this adoption cannot
+  // resolve — a package whose own manifest has no version to write into the
+  // consumer's dependency line, a template still carrying a placeholder, a
+  // consumer manifest that is not JSON — should leave the repository
+  // untouched rather than refuse over a half-written tree.
   const self = readSelfPackage(HERE);
   const template = await readFile(protocolTemplatePath(), "utf8");
   const protocol = renderProtocol(template, stateRoot);
+  const manifest = await readConsumerManifest(repoRoot);
 
   await mkdir(namespacedJoin(stateRootAbs), { recursive: true });
   const written: string[] = [];
@@ -348,7 +353,7 @@ export async function harnessInit(
     written,
     ignoreLines,
     packageName: self.name,
-    dependency: await addDependency(repoRoot, self.name, `^${self.version}`),
+    dependency: await addDependency(manifest, self.name, `^${self.version}`),
   };
 }
 
@@ -373,9 +378,67 @@ function renderProtocol(template: string, stateRoot: string): string {
   return rendered;
 }
 
+/** The consumer's `package.json` as init read it, before anything was written. */
+interface ConsumerManifest {
+  /** Where it sits, absolute — the plain spelling, which is what gets reported. */
+  readonly path: string;
+  /** What it declared, parsed. */
+  readonly pkg: Record<string, unknown>;
+}
+
 /**
- * Declare `name` at `range` in the repository's `package.json`, and report
- * what that took.
+ * The repository's `package.json`, parsed — or `undefined` when it has none,
+ * which is the degraded-but-proceeding case {@link DependencyOutcome}'s
+ * `absent` variant reports and bounds.
+ *
+ * A manifest that is present but unreadable is a different thing entirely: an
+ * unresolved input the whole adoption is downstream of, so it throws in
+ * flume's own voice naming the file. The read happens **here**, in init's
+ * pre-write phase beside `readSelfPackage`, rather than at the dependency
+ * write it feeds — deferred, its `JSON.parse` escapes as a bare `SyntaxError`
+ * only after the state root, three skeleton files and the `.gitignore` merge
+ * have landed, and the re-run that would surface it refuses on the state root
+ * it just created instead (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * A manifest that parses to something that is not a JSON object fails the
+ * same way for the same reason: `dependencies` cannot be read off it, and
+ * reaching the write to discover that is the defect above wearing a
+ * `TypeError`.
+ */
+async function readConsumerManifest(
+  repoRoot: string,
+): Promise<ConsumerManifest | undefined> {
+  const path = join(repoRoot, "package.json");
+  if (!existsLoud(namespacedJoin(path))) return undefined;
+
+  const source = await readFile(namespacedJoin(path), "utf8");
+  const refuse = (why: string): never => {
+    throw new Error(
+      `flume-harness init: ${path} could not be read as a package manifest ` +
+        `(${why}) — refusing to adopt into a repository whose manifest ` +
+        `init cannot add its dependency line to. Nothing has been written; ` +
+        `fix the manifest and run init again.`,
+    );
+  };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch (error) {
+    return refuse(error instanceof Error ? error.message : String(error));
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    const shape = Array.isArray(parsed)
+      ? "an array"
+      : `a JSON ${parsed === null ? "null" : typeof parsed}`;
+    return refuse(`it parsed as ${shape}, not an object`);
+  }
+  return { path, pkg: parsed as Record<string, unknown> };
+}
+
+/**
+ * Declare `name` at `range` in the consumer's already-parsed manifest, and
+ * report what that took.
  *
  * Edits the manifest's `dependencies` and nothing else — no lockfile, no
  * install, no package-manager choice. Which manager reconciles
@@ -388,22 +451,17 @@ function renderProtocol(template: string, stateRoot: string): string {
  * one it did not is reformatted once, visibly, in the adoption commit.
  */
 async function addDependency(
-  repoRoot: string,
+  manifest: ConsumerManifest | undefined,
   name: string,
   range: string,
 ): Promise<DependencyOutcome> {
-  const manifest = join(repoRoot, "package.json");
-  const onDisk = namespacedJoin(manifest);
-  if (!existsLoud(onDisk)) return { kind: "absent", range };
+  if (manifest === undefined) return { kind: "absent", range };
+  const { path, pkg } = manifest;
 
-  const pkg = JSON.parse(await readFile(onDisk, "utf8")) as Record<
-    string,
-    unknown
-  >;
   for (const field of ["dependencies", "devDependencies"] as const) {
     const declared = (pkg[field] as Record<string, unknown> | undefined)?.[name];
     if (typeof declared === "string") {
-      return { kind: "declared", manifest, range: declared };
+      return { kind: "declared", manifest: path, range: declared };
     }
   }
 
@@ -416,6 +474,10 @@ async function addDependency(
       .sort()
       .map((key) => [key, dependencies[key]]),
   );
-  await writeFile(onDisk, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
-  return { kind: "added", manifest, range };
+  await writeFile(
+    namespacedJoin(path),
+    `${JSON.stringify(pkg, null, 2)}\n`,
+    "utf8",
+  );
+  return { kind: "added", manifest: path, range };
 }

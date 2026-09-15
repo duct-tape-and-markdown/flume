@@ -32,6 +32,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import {
   consumerIgnores,
   harnessInit,
+  DEFAULT_STATE_ROOT,
   protocolTemplatePath,
   type HarnessInitResult,
 } from "../harness/index.ts";
@@ -233,6 +234,61 @@ it("flume-harness init refuses a state root that already exists rather than over
   expect(await readFile(join(repoRoot, ".gitignore"), "utf8")).toBe(gitignore);
   expect(await readFile(join(repoRoot, "package.json"), "utf8")).toBe(manifest);
   expect(existsSync(join(stateRoot, "PROTOCOL.md"))).toBe(false);
+});
+
+/**
+ * The consumer's manifest is an input the whole adoption is downstream of, so
+ * it is resolved in init's pre-write phase (`.claude/rules/engineering.md`,
+ * *Loud or nothing*). Read at the dependency write instead, its `JSON.parse`
+ * escapes as a bare `SyntaxError` only after the state root, the three
+ * skeleton files and the `.gitignore` merge have landed — and the re-run that
+ * would report it refuses on the state root it just created.
+ *
+ * The input here is hand-authored, which is the sanctioned shape for a
+ * refusal case (*A seam gate reads what the real writer wrote*, last bullet):
+ * no real writer produces a malformed manifest.
+ */
+const MALFORMED_MANIFEST = '{\n  "name": "consumer",\n';
+
+it("flume-harness init refuses an unparseable consumer package.json naming the manifest", async () => {
+  // Non-vacuity, both ways: the fixture really is unparseable by the parser
+  // init reads it with, and the manifest really is the only thing wrong with
+  // this repository — a fresh root, so nothing else could refuse first.
+  expect(() => JSON.parse(MALFORMED_MANIFEST)).toThrow();
+  const manifestPath = join(repoRoot, "package.json");
+  await writeFile(manifestPath, MALFORMED_MANIFEST, "utf8");
+
+  const thrown = await harnessInit({ repoRoot }).then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+
+  // Flume's own voice, naming the file an operator has to go fix — not the
+  // parser's bare "Unexpected end of JSON input", which names nothing.
+  expect(thrown).toBeInstanceOf(Error);
+  const message = (thrown as Error).message;
+  expect(message).toContain("flume-harness init");
+  expect(message).toContain(manifestPath);
+});
+
+it("flume-harness init leaves the repository untouched when the consumer manifest cannot be parsed", async () => {
+  // A repository as an adopter's is: a `.gitignore` init would merge into,
+  // and the manifest its dependency line would land in.
+  const gitignore = "node_modules/\ndist/\n";
+  await writeFile(join(repoRoot, ".gitignore"), gitignore, "utf8");
+  await writeFile(join(repoRoot, "package.json"), MALFORMED_MANIFEST, "utf8");
+
+  await expect(harnessInit({ repoRoot })).rejects.toThrow(/flume-harness init/);
+
+  // The refusal came before the first byte. The state root init would have
+  // made — named by the package's own default, not spelled here — is absent,
+  // so every skeleton file beneath it is too, and the consumer's two files
+  // are byte-identical to what they were.
+  expect(existsSync(join(repoRoot, DEFAULT_STATE_ROOT))).toBe(false);
+  expect(await readFile(join(repoRoot, ".gitignore"), "utf8")).toBe(gitignore);
+  expect(await readFile(join(repoRoot, "package.json"), "utf8")).toBe(
+    MALFORMED_MANIFEST,
+  );
 });
 
 /**
