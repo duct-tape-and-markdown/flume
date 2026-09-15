@@ -17,7 +17,10 @@ import {
   tickExitCode,
 } from "../src/cliVerdict.ts";
 import { RUNTIME_IGNORES } from "../src/job.ts";
-import { DEFAULT_ABORT_THRESHOLD } from "../src/loopSupervisor.ts";
+import {
+  DEFAULT_ABORT_THRESHOLD,
+  FAILURE_STAGES,
+} from "../src/loopSupervisor.ts";
 import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import type { TickOutcome, TickVerdict } from "../src/Dispatcher.ts";
 import type { TickResult } from "../src/Phase.ts";
@@ -605,25 +608,26 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
 
 /**
  * ABORT-SIGNATURE-NAMES-ITS-STAGE — `flume loop --help`'s exit-1 prose
- * describes the consecutive-failure backstop, which fires on a provision,
- * merge or gate wall alike. The stage vocabulary is not hand-copied here:
- * it is read off `loopCompletionSummary` (`src/cliVerdict.ts`), the real
- * writer of the line an operator sees when the backstop trips, and the help
- * text must name every phrase that writer can emit (`.claude/rules/
- * engineering.md`, "A seam gate reads what the real writer wrote").
+ * describes the consecutive-failure backstop, which fires on a wall at any
+ * stage the engine's roster names. Neither half of the vocabulary is
+ * hand-copied here: the stages come from `FAILURE_STAGES`
+ * (`src/loopSupervisor.ts`), the roster the supervisor itself folds by, and
+ * each stage's *phrase* is read off `loopCompletionSummary`
+ * (`src/cliVerdict.ts`), the real writer of the line an operator sees when
+ * the backstop trips. The help text must name every phrase that writer can
+ * emit (`.claude/rules/engineering.md`, "A seam gate reads what the real
+ * writer wrote").
  */
 describe("flume loop --help — the abort backstop's stage vocabulary against loopCompletionSummary's (ABORT-SIGNATURE-NAMES-ITS-STAGE)", () => {
-  const STAGES = ["provision", "merge", "gate"] as const;
-
-  it("flume loop --help names all three abort stages, not provisioning alone", async () => {
+  it("flume loop --help names every FAILURE_STAGES member as an abort stage", async () => {
     const { out, code } = await runCli(process.cwd(), ["loop", "--help"]);
     expect(code).toBe(0);
     const clause = out.slice(out.indexOf("\n  1 "), out.indexOf("\n  74 "));
     expect(clause.length).toBeGreaterThan(0);
     // Wrapped across help-text lines, so collapse whitespace before matching.
     const prose = clause.replace(/\s+/g, " ");
-    expect(STAGES.length).toBe(3);
-    for (const stage of STAGES) {
+    expect(FAILURE_STAGES.length).toBeGreaterThan(0);
+    for (const stage of FAILURE_STAGES) {
       const summary = loopCompletionSummary({
         ticks: 3,
         hibernated: false,

@@ -23,6 +23,7 @@ import {
   type TickOutcome,
   type TickVerdict,
 } from "../src/Dispatcher.ts";
+import { FAILURE_STAGES } from "../src/loopSupervisor.ts";
 import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import {
   tickExitCode,
@@ -211,14 +212,15 @@ describe("loopExitCode / loopCompletionSummary — §4 amended exit-code contrac
     expect(loopCompletionSummary(result)).not.toContain("3 consecutive ticks");
   });
 
-  // ABORT-SIGNATURE-NAMES-ITS-STAGE — the backstop fires on a provision,
-  // merge or gate wall alike, and `superviseLoop` reports which. The summary
+  // ABORT-SIGNATURE-NAMES-ITS-STAGE — the backstop fires on a wall at any
+  // stage the roster names, and `superviseLoop` reports which. The summary
   // renders the reported stage; calling every abort a worktree-provisioning
   // failure sent an operator to the wrong stage entirely.
-  it("loopCompletionSummary names the aborting stage rather than worktree provisioning", () => {
-    const stages = ["provision", "merge", "gate"] as const;
-    expect(stages.length).toBe(3);
-    for (const stage of stages) {
+  it("loopCompletionSummary renders every FAILURE_STAGES member as its own stage phrase", () => {
+    // The roster the engine exports, never a copy respelled here: a stage
+    // added to `FAILURE_STAGES` arrives in this loop with no edit.
+    expect(FAILURE_STAGES.length).toBeGreaterThan(0);
+    for (const stage of FAILURE_STAGES) {
       const summary = loopCompletionSummary({
         ticks: 3,
         hibernated: false,

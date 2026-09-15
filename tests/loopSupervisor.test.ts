@@ -14,12 +14,14 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { superviseLoop } from "../src/loopSupervisor.ts";
+import { FAILURE_STAGES, superviseLoop } from "../src/loopSupervisor.ts";
+import type { FailureStage } from "../src/loopSupervisor.ts";
 import {
   tickVerdictPath,
   EX_MOUNT_DEAD,
   EX_TERMINAL_MISCONFIG,
   type Logger,
+  type TickVerdict,
 } from "../src/Dispatcher.ts";
 import { slugify } from "../src/paths.ts";
 import { Baton } from "../src/Baton.ts";
@@ -1636,12 +1638,32 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
   const verdictPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
 
   /**
+   * How a verdict carries a failure of each stage the roster names — keyed
+   * by {@link FailureStage}, so a stage added to {@link FAILURE_STAGES} is a
+   * compile error here until this fixture says which list carries it, never
+   * a member silently driven as some other stage.
+   */
+  const verdictCarrying: Record<
+    FailureStage,
+    (record: { signature: string; message: string }) => Partial<TickVerdict>
+  > = {
+    provision: (record) => ({ provisionFailures: [record] }),
+    merge: (record) => ({
+      mergeFailures: [{ ...blamedOnFixture("STAGED"), ...record }],
+    }),
+    gate: (record) => ({
+      noCommit: "gate-revert" as const,
+      gateFailures: [record],
+    }),
+  };
+
+  /**
    * Drive `abortThreshold` consecutive ticks whose verdict carries exactly
    * one failure, in `stage`'s list, with `signature`. Returns the run's
    * result plus the error lines the supervisor logged.
    */
   async function abortOn(
-    stage: "provision" | "merge" | "gate",
+    stage: FailureStage,
     signature: string,
   ): Promise<{
     res: Awaited<ReturnType<typeof superviseLoop>>;
@@ -1660,15 +1682,7 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
         JSON.stringify(
           verdictFixture({
             committed: false,
-            ...(stage === "provision"
-              ? { provisionFailures: [record] }
-              : stage === "merge"
-                ? {
-                    mergeFailures: [
-                      { ...blamedOnFixture("STAGED"), ...record },
-                    ],
-                  }
-                : { noCommit: "gate-revert" as const, gateFailures: [record] }),
+            ...verdictCarrying[stage](record),
           }),
         ),
         "utf8",
@@ -1686,12 +1700,12 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
     return { res, errors, calls };
   }
 
-  it("superviseLoop reports the aborting streak's stage on repeatedFailure", async () => {
+  it("superviseLoop reports the aborting streak's stage for every FAILURE_STAGES member", async () => {
     // Every stage the supervisor folds into a streak, each driven through
-    // the real abort path — not one of the three standing in for the rest.
-    const stages = ["provision", "merge", "gate"] as const;
-    expect(stages.length).toBe(3);
-    for (const stage of stages) {
+    // the real abort path — read off the engine's roster, so no member can
+    // be left standing in for the rest.
+    expect(FAILURE_STAGES.length).toBeGreaterThan(0);
+    for (const stage of FAILURE_STAGES) {
       const { res, calls, errors } = await abortOn(
         stage,
         `${stage} wall: EBUSY`,

@@ -110,13 +110,27 @@ export interface SuperviseLoopOptions {
 }
 
 /**
- * The stage a per-entry failure record came from — the three the tick
+ * Every stage a per-entry failure record can come from — the three the tick
  * verdict carries in separate lists (`provisionFailures`, `mergeFailures`,
- * `gateFailures`). Rides {@link SuperviseResult.repeatedFailure} so a
- * consumer reads the aborting streak's stage instead of re-deriving it from
- * the signature's wording.
+ * `gateFailures`), declared once as a runtime value so whatever enumerates
+ * the stages — the fold below, a prompt, a test driving every stage through
+ * the abort path — names them from the engine rather than from a copy an
+ * engine rename would strand (`.claude/rules/engineering.md`, *Derived state
+ * is computed, never restated beside its source*).
+ *
+ * Load-bearing rather than decorative: `superviseLoop`'s per-stage failure
+ * fold is keyed by this roster, so a member added here is a compile error
+ * until the verdict list it reads is named.
  */
-export type FailureStage = "provision" | "merge" | "gate";
+export const FAILURE_STAGES = ["provision", "merge", "gate"] as const;
+
+/**
+ * One member of {@link FAILURE_STAGES}, derived from it so the two cannot
+ * disagree. Rides {@link SuperviseResult.repeatedFailure} so a consumer reads
+ * the aborting streak's stage instead of re-deriving it from the signature's
+ * wording.
+ */
+export type FailureStage = (typeof FAILURE_STAGES)[number];
 
 /** Outcome of a supervised loop: how many child ticks ran and why it stopped. */
 export interface SuperviseResult {
@@ -333,26 +347,22 @@ export async function superviseLoop(
     // verdict records, tagged with the stage it came from — a clean exit
     // never joins this list, since it writes no provision/merge/gate failure
     // record at all.
-    const failures: Array<
-      StageFailureEntry & {
-        stage: FailureStage;
-        signature: string;
-        message: string;
-      }
-    > = [
-      ...(verdict?.provisionFailures ?? []).map((f) => ({
-        stage: "provision" as const,
-        ...f,
-      })),
-      ...(verdict?.mergeFailures ?? []).map((f) => ({
-        stage: "merge" as const,
-        ...f,
-      })),
-      ...(verdict?.gateFailures ?? []).map((f) => ({
-        stage: "gate" as const,
-        ...f,
-      })),
-    ];
+    // The one place a roster member meets the verdict list that carries it.
+    // Keyed by `FailureStage`, so the mapping is exhaustive over
+    // `FAILURE_STAGES` by type: a stage added to the roster is a compile
+    // error here until its list is named, never a member the fold below
+    // silently drops.
+    const stageLists: Record<
+      FailureStage,
+      readonly (StageFailureEntry & { signature: string; message: string })[]
+    > = {
+      provision: verdict?.provisionFailures ?? [],
+      merge: verdict?.mergeFailures ?? [],
+      gate: verdict?.gateFailures ?? [],
+    };
+    const failures = FAILURE_STAGES.flatMap((stage) =>
+      stageLists[stage].map((f) => ({ stage, ...f })),
+    );
 
     // Quarantine every *blamed* failure this tick named, whichever stage it
     // came from — isolating the entry so the rest of the run stops
