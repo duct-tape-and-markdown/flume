@@ -21,10 +21,10 @@ import { describe, expect, it } from "vitest";
 
 import { isInvokedDirectly, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
-// Barrel-export pin (engineering.md "An export earns its consumer"):
-// stopFlagPath is the chain-facing rule for `<flumeDir>/stop`, reachable
-// from the package entry point as well as off the FlumeApi object. This
-// import fails tsc if it drops from src/index.ts.
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): stopFlagPath is the chain-facing rule for `<flumeDir>/stop`,
+// reachable from the package entry point as well as off the FlumeApi object.
+// This import fails tsc if it drops from src/index.ts.
 import { stopFlagPath as indexStopFlagPath } from "../src/index.ts";
 import { Baton } from "../src/Baton.ts";
 import { computeStateRootRel, EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG, loadChainModule } from "../src/Dispatcher.ts";
@@ -102,20 +102,20 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
 });
 
 /**
- * The shared subprocess harness's `hermeticEnv()` (`tests/helpers/subprocess.ts`)
- * strips every identity/provenance FLUME_* var it knows of — a job
- * resolution or a tip-claim PID leaked from the vitest process's own env is
- * exactly as capable of retargeting a spawned CLI as a relocated state root
- * is. The assertion below checks the invariant directly — no key matching
- * `/^FLUME_/` survives in its output — rather than restating a copy of its
- * delete set (`.claude/rules/engineering.md`, "Derived state is computed,
- * never restated beside its source"; CLI-HERMETICENV-COVERS-ALL-VARS had
- * hardcoded a name list here that fell behind hermeticEnv()'s own deletes
+ * The shared subprocess harness's `hermeticEnv()`
+ * (`tests/helpers/subprocess.ts`) strips every identity/provenance FLUME_* var
+ * it knows of — a job resolution or a tip-claim PID leaked from the vitest
+ * process's own env is exactly as capable of retargeting a spawned CLI as a
+ * relocated state root is. The assertion below checks the invariant directly —
+ * no key matching `/^FLUME_/` survives in its output — rather than restating a
+ * copy of its delete set (`.claude/rules/engineering.md`, "Derived state is
+ * computed, never restated beside its source"; CLI-HERMETICENV-COVERS-ALL-VARS
+ * had hardcoded a name list here that fell behind hermeticEnv()'s own deletes
  * twice). `HERMETIC_ENV_STRIP_KEYS` below (imported from the harness, not
  * restated) only seeds realistic input (and keeps the test non-vacuous); it
- * plays no role in what gets checked, so a var added to `hermeticEnv()`'s
- * strip set — or one that leaks ambiently from an outer flume-on-flume
- * invocation — is caught without touching this file.
+ * plays no role in what gets checked, so a var added to `hermeticEnv()`'s strip
+ * set — or one that leaks ambiently from an outer flume-on-flume invocation —
+ * is caught without touching this file.
  *
  * The strip is by prefix, never by list: `flume loop` sets
  * `FLUME_QUARANTINED_SLUGS` in every tick child after the first quarantine,
@@ -1399,7 +1399,8 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
   );
 });
 
-// ---------- flume stop (spec/loop.md "Graceful stop — the stop flag") ----------
+// ---------- flume stop (spec/loop.md "Graceful stop — the stop flag")
+// ----------
 
 describe("flume stop — writes <flumeDir>/stop and prints the consequence", () => {
   it(
@@ -2088,9 +2089,10 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
   it(
     "a marker too corrupt to parse still refuses, naming the file",
     async () => {
-      // engineering.md "Loud or nothing": the presence of the file is the
-      // fact. Degrading an unreadable marker to "no interrupted merge" would
-      // proceed over exactly the state this refusal exists to stop.
+      // .claude/rules/engineering.md "Loud or nothing": the presence of the
+      // file is the fact. Degrading an unreadable marker to "no interrupted
+      // merge" would proceed over exactly the state this refusal exists to
+      // stop.
       const repo = await makeJobRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
@@ -2160,7 +2162,8 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
   );
 });
 
-// ---------- flume check (spec/cli.md §Subcommand surface, cli-check-verb) ----------
+// ---------- flume check (spec/cli.md §Subcommand surface, cli-check-verb)
+// ----------
 
 /**
  * A two-phase chain — singleton "plan" plus fanout "build" — carrying

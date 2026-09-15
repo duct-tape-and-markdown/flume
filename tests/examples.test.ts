@@ -92,9 +92,9 @@ describe("cascade-chain.ts — build gates split by cost", () => {
     const buildPhase = cascadeChain.phases.find((p) => p.name === "build");
     expect(buildPhase).toBeDefined();
     const gates = buildPhase!.gates;
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // the lookups below would every() over nothing if the list were empty,
-    // and would silently miss a gate if two shared a name.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): the lookups below would every() over nothing if the list
+    // were empty, and would silently miss a gate if two shared a name.
     const placement = new Map(gates.map((g) => [g.name, g.when]));
     expect(gates.length).toBeGreaterThan(0);
     expect(placement.size).toBe(gates.length);
@@ -122,8 +122,9 @@ describe("cascade-chain.ts — build gates split by cost", () => {
  */
 describe("cascade-chain.ts — the shipped phase list", () => {
   it("the cascade example declares plan and build and no spec phase", () => {
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // an empty phase list would satisfy every absence assertion below.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an empty phase list would satisfy every absence assertion
+    // below.
     expect(cascadeChain.phases.length).toBeGreaterThan(0);
     expect(cascadeChain.phases.map((p) => p.name)).toEqual([
       "plan-inbox",
@@ -146,11 +147,11 @@ describe("cascade-chain.ts — the shipped phase list", () => {
 
 /**
  * The flagship's fence is read as doctrine, so the doctrine it teaches has to
- * survive the state root moving: `--job` and `FLUME_DIR` both relocate it,
- * and a fence spelled `.flume/` would then guard a directory no tick writes
- * — every plan commit reverted for paths outside a glob that matches nothing.
- * Driven through the real factory over the real `buildFlumeApi`, the seam a
- * chain-load actually uses (engineering.md, *A seam gate reads what the real
+ * survive the state root moving: `--job` and `FLUME_DIR` both relocate it, and
+ * a fence spelled `.flume/` would then guard a directory no tick writes — every
+ * plan commit reverted for paths outside a glob that matches nothing. Driven
+ * through the real factory over the real `buildFlumeApi`, the seam a chain-load
+ * actually uses (.claude/rules/engineering.md, *A seam gate reads what the real
  * writer wrote*).
  */
 describe("cascade-chain.ts — the plan fence roots at the reported state root", () => {
@@ -192,11 +193,11 @@ describe("cascade-chain.ts — the plan fence roots at the reported state root",
 });
 
 /**
- * Agreement pin (engineering.md, "A seam gate reads what the real writer
- * wrote"): `examples/prompts/` ships the prompt files the example chains
+ * Agreement pin (.claude/rules/engineering.md, "A seam gate reads what the real
+ * writer wrote"): `examples/prompts/` ships the prompt files the example chains
  * name, and `Phase.promptPath` is the only thing that names one. A file left
  * behind after its phase is cut is dead weight a reader takes for a live
- * template — the shape no test caught when `prompts/spec.md` outlived
+ * template — the shape no test caught when a cut phase's prompt outlived
  * nothing.
  *
  * One direction only. The reverse — every `promptPath` resolves to a shipped
@@ -235,14 +236,14 @@ describe("examples/prompts — every shipped prompt has a phase that names it", 
  * miss renders as "(none)" and the tick plans blind instead of refusing
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
- * Agreement gate (`engineering.md`, *A seam gate reads what the real writer
- * wrote*): the real reader is the engine's `renderPrompt` over the shipped
- * markdown, handed the root the way a dispatcher hands it — reserved, merged
- * past `args`. The seam under test is the template's rooting and quoting
+ * Agreement gate (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*): the real reader is the engine's `renderPrompt` over the
+ * shipped markdown, handed the root the way a dispatcher hands it — reserved,
+ * merged past `args`. The seam under test is the template's rooting and quoting
  * against that substitution, so the state root is awkward in a shell: the
- * engine quotes nothing, and an unquoted `{{FLUME_DIR}}` word-splits on a
- * space and loses a backslash before `sh` ever opens the file. The prompts'
- * per-tick arg vocabulary is a separate claim, pinned below against the real
+ * engine quotes nothing, and an unquoted `{{FLUME_DIR}}` word-splits on a space
+ * and loses a backslash before `sh` ever opens the file. The prompts' per-tick
+ * arg vocabulary is a separate claim, pinned below against the real
  * `promptArgs`; here those keys are filled from the file's own placeholders.
  */
 describe("examples/prompts — the spans read the injected state root", () => {
@@ -263,11 +264,11 @@ describe("examples/prompts — the spans read the injected state root", () => {
     }));
 
   /**
-   * Every shipped template's bytes as they ship — one read, from which the
-   * span sweep below is derived rather than read a second time
-   * (`engineering.md`, *The fix lands at the mechanism*). What a consumer
-   * copies is the whole file, so a pin whose subject is the template rather
-   * than its spans reads this.
+   * Every shipped template's bytes as they ship — one read, from which the span
+   * sweep below is derived rather than read a second time
+   * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). What a
+   * consumer copies is the whole file, so a pin whose subject is the template
+   * rather than its spans reads this.
    */
   const sources = shipped.map(({ file }) => ({
     file,
@@ -277,8 +278,9 @@ describe("examples/prompts — the spans read the injected state root", () => {
   /**
    * Every inline-exec span across the shipped set, paired with the template
    * that carries it — one sweep, read by every absence pin below
-   * (`engineering.md`, *The fix lands at the mechanism*: detection a sibling
-   * surface already performs is shared, never re-derived beside it).
+   * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*:
+   * detection a sibling surface already performs is shared, never re-derived
+   * beside it).
    */
   const allSpans = sources.flatMap(({ file, text }) =>
     [...text.matchAll(SPAN)].map((m) => ({
@@ -459,9 +461,9 @@ describe("examples/prompts — the spans read the injected state root", () => {
   /**
    * Which shipped templates name each artifact in a span — the detector the
    * coverage pin and the odd-root loop both read, rather than one re-deriving
-   * it beside the other (`engineering.md`, *The fix lands at the mechanism*).
-   * The sweep is `allSpans`, so a template that stops carrying spans at all
-   * moves this with it.
+   * it beside the other (`.claude/rules/engineering.md`, *The fix lands at the
+   * mechanism*). The sweep is `allSpans`, so a template that stops carrying
+   * spans at all moves this with it.
    */
   function templatesReadingEachArtifact(): ReadonlyMap<string, string[]> {
     return new Map(
@@ -476,7 +478,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
    * The table's own coverage, per artifact rather than in aggregate: an entry
    * whose detector stops naming any span leaves the loop below silently, and
    * a total count cannot tell that from a table that shrank
-   * (`engineering.md`, *A green verdict is proven non-vacuous*).
+   * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
    */
   function expectEveryArtifactRead(readers: ReadonlyMap<string, string[]>): void {
     expect(ARTIFACTS.length).toBeGreaterThan(0);
@@ -594,11 +596,11 @@ describe("examples/prompts — the spans read the injected state root", () => {
    * carries no pipefail.
    *
    * Driven through the real renderer over the shipped markdown
-   * (`engineering.md`, *A seam gate reads what the real writer wrote*): the
-   * claim is about what `sh` does with the bytes the template ships, which
-   * only the real reader can settle. Every sibling span resolves here — the
-   * scratch repo has a commit and the state root has its artifacts — so the
-   * one failure the error carries is the corpus span itself.
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*): the claim is about what `sh` does with the bytes the template
+   * ships, which only the real reader can settle. Every sibling span resolves
+   * here — the scratch repo has a commit and the state root has its artifacts —
+   * so the one failure the error carries is the corpus span itself.
    */
   it("the example plan template's corpus span fails the render when the corpus root is absent", async () => {
     const bare = await seedTickCwd("flume-example-prompts-nocorpus-", false);
@@ -623,20 +625,20 @@ describe("examples/prompts — the spans read the injected state root", () => {
   }, SPAWN_BUDGET_MS);
 
   /**
-   * `engineering.md`, *Loud or nothing* — an entry's `per` cite is the build
-   * tick's whole subject, and the span read it under `2>/dev/null || echo
-   * "(spec not found: ...)"`. A cite that did not resolve therefore reached
-   * the agent as a sentence *saying* so, inside a `<spec>` block whose
+   * `.claude/rules/engineering.md`, *Loud or nothing* — an entry's `per` cite
+   * is the build tick's whole subject, and the span read it under `2>/dev/null
+   * || echo "(spec not found: ...)"`. A cite that did not resolve therefore
+   * reached the agent as a sentence *saying* so, inside a `<spec>` block whose
    * `path=` attribute still claimed the file, and nothing downstream refused:
-   * the tick built against prose about the absence. Absence is never
-   * legitimate here — the queue's own bar is that an entry carries a cite
-   * that resolves — so the span needs no guard at all, only its fallback
-   * removed and its stderr left alone, and `cat` refuses on its own.
+   * the tick built against prose about the absence. Absence is never legitimate
+   * here — the queue's own bar is that an entry carries a cite that resolves —
+   * so the span needs no guard at all, only its fallback removed and its stderr
+   * left alone, and `cat` refuses on its own.
    *
    * Driven through the real renderer over the shipped markdown
-   * (`engineering.md`, *A seam gate reads what the real writer wrote*): the
-   * claim is what `sh` does with the bytes the template ships once the
-   * renderer has substituted a path into them, which only the real reader
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*): the claim is what `sh` does with the bytes the template ships once
+   * the renderer has substituted a path into them, which only the real reader
    * and the real substituter can settle together.
    */
   it("the example build template's per span fails the render when the cited spec path is absent", async () => {
@@ -669,9 +671,9 @@ describe("examples/prompts — the spans read the injected state root", () => {
   }, SPAWN_BUDGET_MS);
 
   /**
-   * `engineering.md`, *Loud or nothing*, on the four state-root spans. These
-   * carry a real fork the corpus span does not: on tick one nothing has
-   * written any of them, so absence is the legitimate case and the
+   * `.claude/rules/engineering.md`, *Loud or nothing*, on the four state-root
+   * spans. These carry a real fork the corpus span does not: on tick one
+   * nothing has written any of them, so absence is the legitimate case and the
    * placeholder is the right answer to it. A trailing `|| echo` answered a
    * *failed read* with that same placeholder — a queue the reader could not
    * open rendered as an empty queue, and plan re-derived against it.
@@ -718,7 +720,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
       asserted++;
     }
 
-    // Non-vacuity (`engineering.md`, *A green verdict is proven
+    // Non-vacuity (`.claude/rules/engineering.md`, *A green verdict is proven
     // non-vacuous*): an ARTIFACTS list that lost its entries would pass the
     // loop over nothing.
     expect(asserted).toBe(ARTIFACTS.length);
@@ -766,7 +768,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
    * the pipeline reports its *last* stage's status and the last stage is the
    * digester (`head`, `tail`), which succeeds over an empty stream. A fallback
    * that cannot fire reads as a defence and is none — residue against
-   * `engineering.md`, *Loud or nothing*.
+   * `.claude/rules/engineering.md`, *Loud or nothing*.
    */
   it("no shipped example prompt span carries a || fallback behind a pipe that swallows its status", () => {
     // Non-vacuity: a prompt set with no spans at all satisfies the absence,
@@ -787,18 +789,19 @@ describe("examples/prompts — the spans read the injected state root", () => {
   });
 
   /**
-   * Agreement pin (`engineering.md`, *A seam gate reads what the real writer
-   * wrote*): one corpus root, declared twice. The chain spells it to the
-   * planning agent through `entryExtension.per`'s hint; the template spells
-   * it again in the span that indexes the corpus that agent cites into. Both
-   * sides are read from what ships — the hint off the real factory's chain,
-   * the span off the real markdown — so a root moved on one side is red
+   * Agreement pin (`.claude/rules/engineering.md`, *A seam gate reads what the
+   * real writer wrote*): one corpus root, declared twice. The chain spells it
+   * to the planning agent through `entryExtension.per`'s hint; the template
+   * spells it again in the span that indexes the corpus that agent cites into.
+   * Both sides are read from what ships — the hint off the real factory's
+   * chain, the span off the real markdown — so a root moved on one side is red
    * rather than a listing the agent quietly plans without.
    */
   it("the plan template's corpus span reads the root the cascade per hint names", () => {
     const hint = cascadeChain.entryExtension?.per?.hint;
     expect(hint, "cascade declares a `per` field carrying a hint").toBeDefined();
-    // The hint spells a path under the corpus root: `specs/.../foo.md`.
+    // The hint spells a page under the corpus root, root first, with an
+    // ellipsis between them.
     const root = /([A-Za-z0-9_.-]+)\/\.\.\./.exec(hint!)?.[1];
     expect(root, `a corpus root is readable from the per hint: ${hint}`).toBeDefined();
 
@@ -902,7 +905,7 @@ describe("example chains — entry phase is machine-wakeable", () => {
 });
 
 /**
- * engineering.md "The fix lands at the mechanism" — the flagship
+ * .claude/rules/engineering.md "The fix lands at the mechanism" — the flagship
  * example hand-rolled a "does pending.json parse" gate that
  * `docs/CHAIN-AUTHORING.md` itself documents as predating the `pendingGate`
  * builtin. Pins the swap: plan's gate list carries `pendingGate`'s identity
@@ -965,9 +968,9 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
   });
 
   it("the cascade example's plan phase declines a tick when nothing on disk gives it work", () => {
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // an undeclared hook, or an empty `pickable`, would make the decline
-    // below assert nothing about a predicate that read the queue.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an undeclared hook, or an empty `pickable`, would make the
+    // decline below assert nothing about a predicate that read the queue.
     expect(planPhase, "cascade declares a plan-derive slice").toBeDefined();
     expect(
       planPhase!.shouldRun,
@@ -1074,9 +1077,9 @@ describe("cascade-chain.ts — the plan ladder", () => {
     phase.handoff(after({ phaseName: phase.name, ...over }));
 
   it("a shipped build wave hands the baton to the ladder's live rung", () => {
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // a single-slice plan, or a chain that lost `build`, would satisfy every
-    // routing claim below over a ladder with nothing to order.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a single-slice plan, or a chain that lost `build`, would
+    // satisfy every routing claim below over a ladder with nothing to order.
     expect(
       planSlices.length,
       "cascade's plan is a ladder — one slice orders nothing",
@@ -1235,13 +1238,13 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
    * `Dispatcher` here, so the api the chain composed against is the api a
    * tick at that repo resolves.
    *
-   * The module-scope `EXAMPLE_PATHS` build is this checkout's roots, which
-   * the pure shape reads above may hold because they tick nothing. Handing
-   * it to a dispatcher driving a temp fixture puts the two halves of one
-   * seam on two different repos (`engineering.md`, *A seam gate reads what
-   * the real writer wrote*): the first chain to resolve state from
-   * `api.paths` would reach into the working tree the suite runs from, and
-   * every leg below would still be green.
+   * The module-scope `EXAMPLE_PATHS` build is this checkout's roots, which the
+   * pure shape reads above may hold because they tick nothing. Handing it to a
+   * dispatcher driving a temp fixture puts the two halves of one seam on two
+   * different repos (`.claude/rules/engineering.md`, *A seam gate reads what
+   * the real writer wrote*): the first chain to resolve state from `api.paths`
+   * would reach into the working tree the suite runs from, and every leg below
+   * would still be green.
    */
   async function ladderDrive(): Promise<Ladder> {
     const fx = await makeFixture();
@@ -1361,9 +1364,9 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
       const { flumeDir } = l.paths;
       const planSlices = l.chain.phases.filter((p) => p.name !== "build");
       const buildPhase = l.chain.phases.find((p) => p.name === "build");
-      // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-      // a one-slice plan, or a chain that lost `build`, would satisfy the
-      // routing below over a ladder with nothing to order.
+      // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+      // non-vacuous"): a one-slice plan, or a chain that lost `build`, would
+      // satisfy the routing below over a ladder with nothing to order.
       expect(
         planSlices.length,
         "cascade's plan is a ladder — one slice orders nothing",
@@ -1459,12 +1462,12 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
  * load-bearing — a `tests[]` line a shipped entry never had to earn.
  *
  * The refusal drives the gate object the factory returns, not a wrapper the
- * test re-composes (`engineering.md`, *A seam gate reads what the real writer
- * wrote*): the stub suite enters through a doctored `api.shellGate`, so the
- * composition under test — wrapper, options, placement — is the one cascade
- * hands `build`. The reporter payload stays hand-authored, which the same
- * section's carve-out allows: a real vitest run cannot be made to emit "a
- * named behavior with no passing test" on demand.
+ * test re-composes (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*): the stub suite enters through a doctored
+ * `api.shellGate`, so the composition under test — wrapper, options, placement
+ * — is the one cascade hands `build`. The reporter payload stays hand-authored,
+ * which the same section's carve-out allows: a real vitest run cannot be made
+ * to emit "a named behavior with no passing test" on demand.
  */
 describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () => {
   /** vitest's `--reporter=json` shape, trimmed to the keys the judge reads. */
@@ -1532,11 +1535,11 @@ describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () =
       report(FILE, `thing > ${PINNED}`, "passed"),
     );
 
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // the same gate over the same report passes the entry that names the
-    // behavior the report carries. Without this the refusals below would hold
-    // just as well for a gate that refuses everything, or one whose judged set
-    // is empty because `tests[]` never reached it.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): the same gate over the same report passes the entry that
+    // names the behavior the report carries. Without this the refusals below
+    // would hold just as well for a gate that refuses everything, or one whose
+    // judged set is empty because `tests[]` never reached it.
     const earned = await gate.run(
       ctxNaming([{ path: FILE, asserts: PINNED }]),
     );
@@ -1603,11 +1606,11 @@ describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () =
  *
  * Driven over a stub at-sha reader: every refusal here is a tree state a real
  * repo cannot be made to produce on demand, and refusal tests keep their
- * hand-authored input (`engineering.md`, *A seam gate reads what the real
- * writer wrote*). The stub records the refs it was asked for, which is how
- * the "reads the span's base sha off the context" half is pinned rather than
- * assumed — the fixture's `repoRoot` names a directory that does not exist,
- * so a gate that shelled git itself would throw instead.
+ * hand-authored input (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*). The stub records the refs it was asked for, which is
+ * how the "reads the span's base sha off the context" half is pinned rather
+ * than assumed — the fixture's `repoRoot` names a directory that does not
+ * exist, so a gate that shelled git itself would throw instead.
  */
 describe("cascade-chain.ts — the entry's file classes are judged against the span", () => {
   const BASE = "b".repeat(40);
@@ -1669,11 +1672,11 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     const touched = ["src/born.ts", "src/kept.ts", "src/gone.ts"];
     const green = await gate.run(ctxFor(honest, touched));
 
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // a gate handed no entry, or one whose declared paths never reached the
-    // judge, would return the same `ok: true` over nothing. The verdict names
-    // the entry it gated and the count it judged, and the reader was asked
-    // about every declared path at both ends of the span.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a gate handed no entry, or one whose declared paths never
+    // reached the judge, would return the same `ok: true` over nothing. The
+    // verdict names the entry it gated and the count it judged, and the reader
+    // was asked about every declared path at both ends of the span.
     expect(green.ok, green.message).toBe(true);
     expect(green.message).toContain(TAG);
     expect(green.message).toContain("3 declared path(s)");
@@ -1790,11 +1793,11 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
  * now renders the field's own `hint`, so the surface that states the contract
  * and the surface that enforces it read the same string.
  *
- * Agreement pin (engineering.md, *A seam gate reads what the real writer
- * wrote*): the shipped prompt template is read off disk and both phases' real
- * `promptArgs` run, so a second sentence hand-written into either surface
- * fails here rather than drifting quietly. The fixture's roots name a
- * directory that does not exist — neither builder may reach disk for this.
+ * Agreement pin (.claude/rules/engineering.md, *A seam gate reads what the real
+ * writer wrote*): the shipped prompt template is read off disk and both phases'
+ * real `promptArgs` run, so a second sentence hand-written into either surface
+ * fails here rather than drifting quietly. The fixture's roots name a directory
+ * that does not exist — neither builder may reach disk for this.
  */
 describe("cascade-chain.ts — build's prompt quotes the declaration it is judged by", () => {
   const buildPhase = cascadeChain.phases.find((p) => p.name === "build");
@@ -1807,9 +1810,9 @@ describe("cascade-chain.ts — build's prompt quotes the declaration it is judge
   });
 
   it("cascade's build prompt states the tests[] title contract from the entry extension's own hint", () => {
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // an undeclared builder on either phase would leave every claim below
-    // asserted over nothing.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an undeclared builder on either phase would leave every
+    // claim below asserted over nothing.
     expect(buildPhase?.promptArgs, "cascade's build declares promptArgs")
       .toBeTypeOf("function");
     expect(planPhase?.promptArgs, "cascade's plan slices declare promptArgs")
@@ -1859,12 +1862,12 @@ describe("cascade-chain.ts — build's prompt quotes the declaration it is judge
 });
 
 /**
- * Agreement pin (engineering.md, *Derived state is computed, never restated
- * beside its source*): `docs/CHAIN-AUTHORING.md` walks the reader through a
- * fence introduced as the `slicePhase` declaration from
- * `examples/cascade-chain.ts`. That quote is a second copy of code the
- * example owns — and both files ship in the tarball — so it is read back
- * against the real declaration rather than kept in step by discipline.
+ * Agreement pin (.claude/rules/engineering.md, *Derived state is computed,
+ * never restated beside its source*): `docs/CHAIN-AUTHORING.md` walks the
+ * reader through a fence introduced as the `slicePhase` declaration from
+ * `examples/cascade-chain.ts`. That quote is a second copy of code the example
+ * owns — and both files ship in the tarball — so it is read back against the
+ * real declaration rather than kept in step by discipline.
  *
  * Normalized away on both sides: indentation (the quote sits at column 0, the
  * source inside a factory) and whole-line comments, which diverge
@@ -1927,10 +1930,10 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
       ),
     );
 
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // a truncated extraction on either side would leave the equality below
-    // comparing nothing against nothing. The fence's substance is the
-    // `writablePaths` list, so that is what is asserted present.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a truncated extraction on either side would leave the
+    // equality below comparing nothing against nothing. The fence's substance
+    // is the `writablePaths` list, so that is what is asserted present.
     expect(fromSource.length).toBeGreaterThan(10);
     expect(fromSource).toContain("writablePaths: [");
     expect(fromSource).toContain("`${stateRoot}/plan/pending.json`,");
@@ -1971,11 +1974,11 @@ describe("backlog-groomer-chain.ts — where the session capture lands", () => {
 
   /**
    * One real groom tick over `fx.repo` with state at `flumeDir`. The chain is
-   * built from the same `FlumePaths` object the `Dispatcher` is spread from,
-   * so `api.paths.flumeDir` is the root the engine resolved, by identity —
-   * neither half can agree with itself (`engineering.md`, *A seam gate reads
-   * what the real writer wrote*). `configDir` is the shipped `examples/`, so
-   * `Phase.promptPath` finds the committed prompt rather than a copy.
+   * built from the same `FlumePaths` object the `Dispatcher` is spread from, so
+   * `api.paths.flumeDir` is the root the engine resolved, by identity — neither
+   * half can agree with itself (`.claude/rules/engineering.md`, *A seam gate
+   * reads what the real writer wrote*). `configDir` is the shipped `examples/`,
+   * so `Phase.promptPath` finds the committed prompt rather than a copy.
    */
   async function groomTick(fx: Fixture, flumeDir: string): Promise<TickOutcome> {
     const paths: FlumePaths = {
@@ -1999,10 +2002,10 @@ describe("backlog-groomer-chain.ts — where the session capture lands", () => {
       chainLoader: async () => ({ chain }),
       log: silent,
     }).tick();
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // a declined or failed tick produced no stdout at all, and every capture
-    // assertion below would be judging the absence of a tick, not a
-    // placement.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a declined or failed tick produced no stdout at all, and
+    // every capture assertion below would be judging the absence of a tick, not
+    // a placement.
     expect(outcome.failed, outcome.summary).toBeUndefined();
     expect(outcome.declined, outcome.summary).toBeUndefined();
     expect(outcome.result?.committed, outcome.summary).toBe(true);
@@ -2107,9 +2110,9 @@ describe("backlog-groomer-chain.ts — the reason is one line", () => {
 
   it("the backlog groomer's entry extension refuses a multi-line reason", () => {
     const extension = backlogGroomerChain.entryExtension;
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // an absent extension parses both bodies identically, and the refusal
-    // below would be judging core-field validation.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an absent extension parses both bodies identically, and
+    // the refusal below would be judging core-field validation.
     expect(Object.keys(extension ?? {})).toContain("reason");
 
     // Direction: the same entry with the newline removed is accepted, so the

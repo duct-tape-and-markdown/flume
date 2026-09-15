@@ -483,7 +483,8 @@ describe("Gate.command — optional field, type passthrough", () => {
   });
 });
 
-// ---------- GateResult.failingFiles (spec/chain.md "What a gate returns") ----------
+// ---------- GateResult.failingFiles (spec/chain.md "What a gate returns")
+// ----------
 
 describe("GateResult.failingFiles — optional, type passthrough", () => {
   it("a hand-built Gate compiles and runs with no failingFiles declared", async () => {
@@ -693,7 +694,7 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
 });
 
 // ---------- ctx.touchedPaths dedup (GATECONTEXT-TOUCHED-PATHS-DEDUP,
-// engineering.md "The fix lands at the mechanism") ----------
+// .claude/rules/engineering.md "The fix lands at the mechanism") ----------
 
 describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no independent git show", () => {
   let notARepo: string;
@@ -752,9 +753,9 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
 
 // ---------- the GateContext keys every context states
 // (GATECONTEXT-TOUCHEDPATHS-REQUIRED / GATECONTEXT-STATEROOTREL-REQUIRED-KEY /
-// GATECONTEXT-COMMITSHA-AND-BASESHA-REQUIRED, engineering.md "A seam gate
-// reads what the real writer wrote" and "Narration is the ladder's bottom
-// rung") ----------
+// GATECONTEXT-COMMITSHA-AND-BASESHA-REQUIRED, .claude/rules/engineering.md "A
+// seam gate reads what the real writer wrote" and "Narration is the ladder's
+// bottom rung") ----------
 
 // Every claim here is type-level, so the judge is the type-checker itself: a
 // `GateContext` literal that omits the field is compiled for real and its
@@ -823,7 +824,7 @@ describe("GateContext — the fields every gate context states", () => {
   it("GateContext.touchedPaths is required, so a gate context omitting it is a type error", async () => {
     // Control first, so the refusal below is the field's and not the
     // fixture's: the same literal *with* the field compiles clean
-    // (engineering.md "A green verdict is proven non-vacuous").
+    // (.claude/rules/engineering.md "A green verdict is proven non-vacuous").
     expect(await diagnose(ALL)).toBe("");
 
     expect(await diagnose(allBut(TOUCHED))).toContain("touchedPaths");

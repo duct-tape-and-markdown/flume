@@ -249,8 +249,9 @@ describe("ensureRuntimeIgnores — create-or-merge", () => {
 // list respelled here.
 describe("ensureRuntimeIgnores — the runtime files a tick drops", () => {
   it("RUNTIME_IGNORES names the stop flag, the latest-tick verdict and the verdict log", async () => {
-    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
-    // empty set would leave `check-ignore` below judging nothing.
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an empty set would leave `check-ignore` below judging
+    // nothing.
     expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
     const tickArtifacts = [
       STATE_ROOT_NAMES.stopFlag,
@@ -298,8 +299,8 @@ describe("ensureRuntimeIgnores — the runtime files a tick drops", () => {
 // the real reader — git — rather than respelling either side here.
 describe("ensureRuntimeIgnores — the crash-surviving merge marker", () => {
   it("RUNTIME_IGNORES names the merging-marker dir", async () => {
-    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
-    // empty set would leave `status` below judging nothing.
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an empty set would leave `status` below judging nothing.
     expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
     expect(RUNTIME_IGNORES).toContain(`${STATE_ROOT_NAMES.merging}/`);
 
@@ -1983,9 +1984,9 @@ describe.runIf(process.platform === "win32")(
       try {
         const jobs = join(dir, ".flume", "jobs");
         // Same deep-friction shape as the Dispatcher.ts win32 suites
-        // (WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT et al., tests/Dispatcher.test.ts):
-        // <jobDir>/<frictionDir> alone clears win32's ~260-char total-path
-        // limit.
+        // (WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT et al.,
+        // tests/Dispatcher.test.ts): <jobDir>/<frictionDir> alone clears
+        // win32's ~260-char total-path limit.
         const deepFriction = join(
           "friction",
           ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
@@ -2063,8 +2064,8 @@ describe.runIf(process.platform === "win32")(
         // present, so the `false` below is a removal rather than the same
         // over-length read the fix exists to rule out.
         expect(existsSync(namespacedJoin(dir))).toBe(true);
-        // Pre-fix, the bare-join existsSync check silently read this jobDir
-        // as absent and threw JobUsageError("no job ...") instead of removing it.
+        // Pre-fix, the bare-join existsSync check silently read this jobDir as
+        // absent and threw JobUsageError("no job ...") instead of removing it.
         await jobRm({ repoRoot: repo.dir, name, log: () => {} });
         expect(existsSync(namespacedJoin(dir))).toBe(false);
       } finally {

@@ -550,9 +550,9 @@ const NOTHING: Damage = {
  * artifact a case has broken.
  *
  * Driven through the real renderer over the shipped markdown
- * (`engineering.md`, *A seam gate reads what the real writer wrote*): the
- * claim is what `sh` does with the bytes the prompt ships once the real
- * substituter has put a real path into them.
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*): the claim is what `sh` does with the bytes the prompt ships once the
+ * real substituter has put a real path into them.
  *
  * Every plan slice is rendered, and each one's verdict is the one its own
  * spans entail: a slice that opens the artifact refuses on it, and a slice
@@ -561,15 +561,16 @@ const NOTHING: Damage = {
  *
  * Which states are supposed to refuse is the caller's, since that is what
  * differs between a guarded span and an unguarded one; how a refusal is
- * recognised is here, once (`engineering.md`, *The fix lands at the
- * mechanism*).
+ * recognised is here, once (`.claude/rules/engineering.md`, *The fix lands at
+ * the mechanism*).
  */
 async function eachSliceVerdictFollowsItsSpansOn(
   artifact: (typeof ARTIFACTS)[number],
   damage: Damage,
 ): Promise<void> {
-  // Non-vacuity: a roster that collapsed to zero would pass the loop below
-  // over nothing (`engineering.md`, *A green verdict is proven non-vacuous*).
+  // Non-vacuity: a roster that collapsed to zero would pass the loop below over
+  // nothing (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*).
   expect(PLAN_SLICES.length).toBeGreaterThan(0);
 
   const key = artifact.key;

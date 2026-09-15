@@ -17,12 +17,12 @@
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*) — the
  * next stand-in of the next type would ship unseen.
  *
- * Direction is the whole line. A cast *to* an engine type stands that type
- * in; a cast of an engine value *out* to a structural shape is the
- * refusal-test input engineering.md sanctions (*A seam gate reads what the
- * real writer wrote*). No import names a structural type, so reading the
- * cast's target against the file's engine imports is what separates them —
- * no list of exemptions.
+ * Direction is the whole line. A cast *to* an engine type stands that type in;
+ * a cast of an engine value *out* to a structural shape is the refusal-test
+ * input .claude/rules/engineering.md sanctions (*A seam gate reads what the
+ * real writer wrote*). No import names a structural type, so reading the cast's
+ * target against the file's engine imports is what separates them — no list of
+ * exemptions.
  *
  * The scanned set is every `.ts` file under `tests/`, read recursively. A
  * filename rule is the last selection a type-directed scan would still make

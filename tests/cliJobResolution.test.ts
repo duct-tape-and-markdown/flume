@@ -200,7 +200,7 @@ describe("resolveStateDirs — job resolution", () => {
  * Observed on disk 2026-08-03: a nested `flume wake groom` in a CI-smoke
  * scratch repo inherited its parent process's `FLUME_DIR`, landing
  * `.flume/awake/groom` in the wrong repo's live baton. The retired
- * path-shape detection (`impliedRepoRoot`) misfired on a deliberate
+ * path-shape detection misfired on a deliberate
  * relocation typed fresh for this repo — spec/cli.md's drift note, closed
  * by this stamp (told, not inferred: `.claude/rules/engine-boundary.md`).
  */

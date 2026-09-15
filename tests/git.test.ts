@@ -927,9 +927,9 @@ describe("checkpointBystanderState (spec/loop.md 'Crash equals stop', 'Staged by
 
 /**
  * GITDELETEBRANCH-BROAD-SWALLOW — deleteBranch's catch narrows to the
- * expected-benign "branch doesn't exist" case (engineering.md "Loud or
- * nothing"); every other failure — most commonly the branch still checked
- * out in a worktree — rethrows instead of being swallowed.
+ * expected-benign "branch doesn't exist" case (.claude/rules/engineering.md
+ * "Loud or nothing"); every other failure — most commonly the branch still
+ * checked out in a worktree — rethrows instead of being swallowed.
  */
 describe("deleteBranch (GITDELETEBRANCH-BROAD-SWALLOW)", () => {
   it("resolves silently when the branch doesn't exist", async () => {
@@ -955,12 +955,12 @@ describe("deleteBranch (GITDELETEBRANCH-BROAD-SWALLOW)", () => {
 /**
  * GIT-DELETEBRANCH-LOCALIZED-STDERR — the "branch doesn't exist" case above
  * used to be detected by matching `/not found/` against git's own English
- * stderr (engine-boundary.md "Told, not inferred": the engine has no
- * business reconstructing a statement from prose it didn't author). A git
+ * stderr (.claude/rules/engine-boundary.md "Told, not inferred": the engine has
+ * no business reconstructing a statement from prose it didn't author). A git
  * configured to a non-English locale rephrases that message and the match
  * silently stops firing. deleteBranch now probes `refs/heads/<branch>`
- * structurally (`show-ref --verify --quiet`, keyed off the exit code) so
- * the check holds regardless of what — if anything — lands on stderr. The
+ * structurally (`show-ref --verify --quiet`, keyed off the exit code) so the
+ * check holds regardless of what — if anything — lands on stderr. The
  * `node:child_process` mock above fakes exactly that: a `show-ref --verify`
  * miss on this branch's ref, carrying non-English stderr.
  *
@@ -1068,8 +1068,8 @@ describe("removeWorktree", () => {
 
   // The survival check's own stat: `existsSync` read an unstattable
   // survivor as gone, so the fallback reported a clean removal and pruned
-  // git's metadata for a directory still standing (`.claude/rules/
-  // engineering.md`, "Loud or nothing").
+  // git's metadata for a directory still standing
+  // (`.claude/rules/engineering.md`, "Loud or nothing").
   it("removeWorktree throws when the post-removal survival check cannot stat the path", async () => {
     const path = join(repo, "not-a-registered-worktree-unstattable");
     // ELOOP — present, unstattable. Not a permission bit: a root-run test
@@ -1212,8 +1212,8 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
   // The claim file's own stat: `existsSync` read an unstattable claim as no
   // claim at all, and `acquireTipClaim`'s EEXIST branch then took the
   // dead-pid path and reclaimed a tip a live writer may still hold — the
-  // one outcome the refusal exists to rule out (`.claude/rules/
-  // engineering.md`, "Loud or nothing").
+  // one outcome the refusal exists to rule out
+  // (`.claude/rules/engineering.md`, "Loud or nothing").
   it("liveTipClaimPid throws when the claim path is present but unstattable", async () => {
     const refPath = await resolveRefPath(repo);
     const claimPath = tipClaimPath(await gitCommonDir(repo), refPath);

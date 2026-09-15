@@ -1,9 +1,9 @@
 /**
  * The mechanical form of the carve-out `.claude/rules/engineering.md`
  * *Narration is the ladder's bottom rung* names: a backticked identifier in a
- * `src/` or `harness/` comment is a reference, not a sentence, so a pin may
- * resolve it against the declarations those trees hold — **the token, never
- * its meaning**. What a comment claims stays with its authors; that the name
+ * `src/`, `harness/` or `tests/` comment is a reference, not a sentence, so a
+ * pin may resolve it against the declarations those trees hold — **the token,
+ * never its meaning**. What a comment claims stays with its authors; that the name
  * it cites still exists is mechanical, and a deleted symbol may not leave its
  * citations standing.
  *
@@ -168,7 +168,7 @@ const KEYWORDS: ReadonlySet<string> = new Set(
 /** One segment of a dotted citation: an identifier, no `_`, no digits first. */
 const SEGMENT = /^[A-Za-z][A-Za-z0-9]*$/;
 
-/** A camel hump — the shape `parsedCommandLine` has and `parsed` does not. */
+/** A camel hump — the shape `programConfig` has and `program` does not. */
 const INTERNAL_CAPITAL = /[a-z0-9][A-Z]/;
 
 /** A leading capital — the shape `Dispatcher` has and `dispatcher` does not. */
@@ -189,10 +189,11 @@ const ALL_CAPS = /^[A-Z][A-Z0-9]*$/;
 const PATH_SEGMENT = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
 
 /**
- * A named file rather than a directory or a git ref: `engineering.md`,
- * `cli.ts`, `MIGRATING-0.10.md`. The extension is the whole discriminator —
- * `refs/heads/main` and `flume/<slug>` are paths in git's alphabet, not the
- * working tree's, and `src/` names a directory every checkout has.
+ * A named file rather than a directory or a git ref:
+ * `.claude/rules/engineering.md`, `cli.ts`, `docs/MIGRATING-0.10.md`. The
+ * extension is the whole discriminator — `refs/heads/main` and `flume/<slug>`
+ * are paths in git's alphabet, not the working tree's, and `src/` names a
+ * directory every checkout has.
  */
 const NAMED_EXTENSION = /[A-Za-z0-9_-]\.[A-Za-z0-9]+$/;
 
@@ -200,8 +201,9 @@ const NAMED_EXTENSION = /[A-Za-z0-9_-]\.[A-Za-z0-9]+$/;
  * Whether one token names a file: the filename charset, ending in a named
  * extension. The one filename detection the scan performs — the path arm runs
  * it on the segment behind the last slash, the backticked arm on a span
- * carrying no slash at all — so `engine-boundary.md` is judged by the charset
- * a filename spells with whether or not its author wrote the directory.
+ * carrying no slash at all — so `.claude/rules/engine-boundary.md` is judged by
+ * the charset a filename spells with whether or not its author wrote the
+ * directory.
  */
 const isNamedFile = (token: string): boolean =>
   PATH_SEGMENT.test(token) && NAMED_EXTENSION.test(token);
@@ -268,7 +270,7 @@ const OPENING_PUNCTUATION = /^[([{"'*]+/;
  *   `Runner`. A type name reads as prose only at the start of a sentence,
  *   which a backtick is not.
  * - **A named extension**, with or without a directory ahead of it:
- *   `spec/loop.md`, `src/Dispatcher.ts`, `engine-boundary.md`,
+ *   `spec/loop.md`, `src/Dispatcher.ts`, `.claude/rules/engine-boundary.md`,
  *   `pnpm-lock.yaml`. The repo holds names in two alphabets and a comment
  *   cites in both; `isNamedFile` carries the detection for either, so a page
  *   name whose spelling the identifier charset refuses — a hyphen, an
@@ -295,9 +297,10 @@ const isSubject = (text: string): boolean => {
  * Every comment in a file, once.
  *
  * A comment is trivia of the token that follows it, so walking to the leaves
- * — punctuation and `EndOfFileToken` included — reaches all of them: the
- * leading ranges catch a comment that owns its line, the trailing ranges the
- * one sitting after code on a line already started, and the dedup by start
+ * — punctuation and the end-of-file token included — reaches all of them:
+ * the
+ * leading ranges catch a comment that owns its line, the trailing ranges
+ * the one sitting after code on a line already started, and the dedup by start
  * offset drops the second sighting of either.
  */
 const commentRanges = (sf: ts.SourceFile): readonly ts.CommentRange[] => {
@@ -559,11 +562,15 @@ const commentSpans = (
  * A citation resolves when **every** one of its dotted segments is a token
  * those trees hold: a name the checker resolves to a symbol anywhere in them
  * (a declaration, an imported binding, a member, a lib global in scope), a
- * string literal they carry (a discriminant like `"blockedBy"` is declared by
- * the literal, not by a `const`), or — for the whole subject at once — a
- * module of theirs by basename, or a file the working tree holds at that
- * repo-relative path. What a segment *means* is never read: the scan proves
- * the name exists and stops there.
+ * string literal they carry (a discriminant is declared by its literal, not
+ * by a `const`; a fixture's source text is held the same way), or — for the
+ * whole subject at once — a module of theirs by basename, or a file the
+ * working tree holds at that repo-relative path. What a segment *means* is
+ * never read: the scan proves the name exists and stops there.
+ *
+ * A literal is therefore a resolution arm, which is why nothing that exists
+ * *in order to be excused* may sit in a judged tree as one: a list spelling
+ * the names it excuses would resolve every one of them.
  */
 export const scanCommentCitations = (
   request: CitationScanRequest,

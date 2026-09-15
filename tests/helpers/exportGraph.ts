@@ -12,12 +12,13 @@
  * nothing.
  *
  * The shipped surface is read from the **declaration emit** the build config
- * produces, not from the sources it is built from (`engineering.md`, *A seam
- * gate reads what the real writer wrote*): `tsc` is the writer of what a
- * consumer imports, and a source annotation is at best a partial transcript of
- * it. A `const` whose type is inferred carries no annotation to walk yet ships
- * a full type, so reading the source drops it silently. This scan runs the
- * real declaration emit in memory and walks its output.
+ * produces, not from the sources it is built from
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*): `tsc` is the writer of what a consumer imports, and a source
+ * annotation is at best a partial transcript of it. A `const` whose type is
+ * inferred carries no annotation to walk yet ships a full type, so reading the
+ * source drops it silently. This scan runs the real declaration emit in memory
+ * and walks its output.
  *
  * Two alphabets meet here, and each site says which it is in. A **position**
  * — and the type it names — is cited in the emit (`dist/src/….d.ts`), because
@@ -145,7 +146,7 @@ const parseConfig = (path: string): ts.ParsedCommandLine => {
  *
  * A skipped or diagnosed emit throws rather than yielding a short map: a scan
  * over a partial surface would report every absence verdict green for having
- * read nothing (`engineering.md`, *Loud or nothing*).
+ * read nothing (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 const emitDeclarations = (
   build: ts.ParsedCommandLine,

@@ -81,31 +81,33 @@ import {
 } from "../src/Prompt.ts";
 import { loopExitCode } from "../src/cliVerdict.ts";
 import * as git from "../src/git.ts";
-// Barrel-export pin (engineering.md "An export earns its consumer"): both
-// types are field types on the already-public TickVerdict/TickOutcome, so a
-// chain author needs to be able to name them from the package entry point.
-// This import fails tsc if either drops from src/index.ts.
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): both types are field types on the already-public
+// TickVerdict/TickOutcome, so a chain author needs to be able to name them from
+// the package entry point. This import fails tsc if either drops from
+// src/index.ts.
 import type { ProvisionFailure, TerminalMisconfiguration } from "../src/index.ts";
 
-// Barrel-export pin (engineering.md "An export earns its consumer"):
-// NoCommitMode is the field type of TickVerdict.noCommit / TickOutcome
-// .noCommit / TickResult.noCommit, so a chain author needs to be able to
-// name it from the package entry point. This import fails tsc if it drops
-// from src/index.ts.
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): NoCommitMode is the field type of TickVerdict.noCommit /
+// TickOutcome .noCommit / TickResult.noCommit, so a chain author needs to be
+// able to name it from the package entry point. This import fails tsc if it
+// drops from src/index.ts.
 import type { NoCommitMode } from "../src/index.ts";
 
-// Barrel-export pin (engineering.md "An export earns its consumer"):
-// PriorAttemptKeyspace is the field type of every PriorAttempt variant's
-// .key, and QuarantinedTag the element type of TickResult.quarantinedTags,
-// so a chain author needs to name both from the package entry point. These
-// imports fail tsc if either drops from src/index.ts.
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): PriorAttemptKeyspace is the field type of every PriorAttempt
+// variant's .key, and QuarantinedTag the element type of
+// TickResult.quarantinedTags, so a chain author needs to name both from the
+// package entry point. These imports fail tsc if either drops from
+// src/index.ts.
 import type { PriorAttemptKeyspace, QuarantinedTag } from "../src/index.ts";
 
-// Barrel-export pin (engineering.md "An export earns its consumer"):
-// slugify/priorAttemptPath are the chain-facing exported rule (spec/loop.md
-// "Prior-outcome feedback to the retrying tick"), so a chain author needs to
-// reach them from the package entry point, not just the module that defines
-// each.
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): slugify/priorAttemptPath are the chain-facing exported rule
+// (spec/loop.md "Prior-outcome feedback to the retrying tick"), so a chain
+// author needs to reach them from the package entry point, not just the module
+// that defines each.
 import {
   slugify as indexSlugify,
   priorAttemptPath as indexPriorAttemptPath,
@@ -3604,7 +3606,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
 });
 
 /**
- * Replays the incident shape (`.flume/loop-20260729.log`, batch
+ * Replays the incident shape (the loop log of 2026-07-29, batch
  * 3): a deterministic pre-tick worktree provisioning failure on ONE entry's
  * slug must not crash the whole fanout wave when its siblings are perfectly
  * pickable. `git.addWorktree` is spied to fail for exactly one slug — the
@@ -4722,9 +4724,9 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
     expect(
       outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "MARK-B")?.outcome,
     ).toBe("cherry-pick-conflict");
-    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
-    // probe that never ran would leave every assertion below reading an
-    // empty snapshot list.
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a probe that never ran would leave every assertion below
+    // reading an empty snapshot list.
     expect(seen, "the afterMerge probe never ran").toHaveLength(2);
 
     // Each entry stakes its own marker immediately before its own pick, not
@@ -4811,11 +4813,11 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
  * a plain file stands where the listing wants a directory, so the read
  * refuses — and not as ENOENT — on every host and under a root-run, where a
  * mode denies nothing.
- * Same fixture shape `countFrictionFiles` and `PriorAttempts.readAll` are
- * pinned with. Each unreadable leg reads its fixture once *before* denying
- * it, so the throw afterwards is judged against a dir that really held a
- * marker rather than a mistyped path (`.claude/rules/engineering.md`, "A
- * green verdict is proven non-vacuous").
+ * Same fixture shape `countFrictionFiles` and `PriorAttemptStore.readAll`
+ * are pinned with. Each unreadable leg reads its fixture once *before*
+ * denying it, so the throw afterwards is judged against a dir that really
+ * held a marker rather than a mistyped path
+ * (`.claude/rules/engineering.md`, "A green verdict is proven non-vacuous").
  *
  * Two denials, because the split is proven from the path rather than from an
  * errno: one at the dir the listing names, one at the *ancestor* above it —
@@ -5154,8 +5156,9 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
 
     const outcome = await dispatcher.tick();
 
-    // Vacuity (engineering.md "A green verdict is proven non-vacuous"): the
-    // gate loop really reached the throwing gate and really produced a row.
+    // Vacuity (.claude/rules/engineering.md "A green verdict is proven
+    // non-vacuous"): the gate loop really reached the throwing gate and really
+    // produced a row.
     const reported = outcome.result?.gateResults ?? [];
     expect(reported, "the gate loop produced no rows").not.toHaveLength(0);
     // The throw is the gate's refusal, verbatim — no wrapper prose, no
@@ -5203,9 +5206,9 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
 
     const outcome = await dispatcher.tick();
 
-    // Vacuity (engineering.md "A green verdict is proven non-vacuous"): the
-    // throwing gate really produced a row on the verdict — the surface that
-    // keeps `details` at all.
+    // Vacuity (.claude/rules/engineering.md "A green verdict is proven
+    // non-vacuous"): the throwing gate really produced a row on the verdict —
+    // the surface that keeps `details` at all.
     const rows = outcome.verdict?.gateResults ?? [];
     expect(rows, "the gate loop produced no rows").not.toHaveLength(0);
     const row = rows.find((g) => g.gate === "explodes");
@@ -5817,7 +5820,8 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
 
 // ---------- AFTERMERGE-REVERT-TIP-CHECK: a foreign commit landing atop the
 // merged span refuses the afterMerge revert instead of resetting over it
-// (spec/loop.md "Tip verify", "one window stays a refusal, deliberately") ----------
+// (spec/loop.md "Tip verify", "one window stays a refusal, deliberately")
+// ----------
 
 describe("Dispatcher — afterMerge revert refuses over a foreign commit landed atop the cherry-pick", () => {
   it("fanout: a foreign commit landing on trunk while the afterMerge gate runs refuses the revert, naming both shas, and leaves the foreign commit on trunk", async () => {
@@ -6408,11 +6412,12 @@ it("a tick's non-ASCII committed path reaches GateContext.touchedPaths unquoted"
   // The seam between `git.diffNameOnly` and every gate that reads
   // `ctx.touchedPaths`: git's default `--name-only` output octal-escapes a
   // non-ASCII path inside double quotes, and that spelling matches no fence
-  // glob — so the path the tick was told to write reads as out-of-fence and
-  // the commit reverts (`.claude/rules/engineering.md`, *Loud or nothing*).
-  // Driven through the real dispatcher against a real commit rather than a
-  // hand-built context, so the writer's own bytes reach the reader
-  // (engineering.md, *A seam gate reads what the real writer wrote*).
+  // glob — so the path the tick was told to write reads as out-of-fence and the
+  // commit reverts (`.claude/rules/engineering.md`, *Loud or nothing*). Driven
+  // through the real dispatcher against a real commit rather than a hand-built
+  // context, so the writer's own bytes reach the reader
+  // (.claude/rules/engineering.md, *A seam gate reads what the real writer
+  // wrote*).
   new Baton(join(fx.repo, ".flume")).wake("plan");
 
   const seen: string[][] = [];
@@ -6562,11 +6567,11 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
   }, 20_000);
 
   it("an agent whose final message says it parked still ships when no predicate is declared — the engine reads no prose (engine-boundary.md \"Told, not inferred\")", async () => {
-    // Fails on the pre-fix tree: `statesPark` matched /park(?:ed|ing)?/i
-    // against this message and classified a genuine ship as channel-only, so
-    // the entry never left the queue. The instructed workflow produces
-    // exactly this message — build.md tells an agent to park an open
-    // question, collaboration.md tells it to raise judgment calls that way.
+    // Fails on the pre-fix tree: a retired prose detector matched
+    // /\bpark(?:ed|ing)?\b/i against this message and classified a genuine
+    // ship as channel-only, so the entry never left the queue. The instructed workflow produces exactly
+    // this message — build.md tells an agent to park an open question,
+    // .claude/rules/collaboration.md tells it to raise judgment calls that way.
     await writePending(fx.repo, [makeEntry("SHIPS-AND-MENTIONS-PARK", ["src/ok.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -7304,11 +7309,11 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
 
   it("a ledger-rewrite refusal over a wave that shipped nothing carries the wave's gate-revert cause on its verdict", async () => {
     // The refusal-site verdict reads its no-commit cause through
-    // `waveNoCommitCause`, whose first line short-circuits on
-    // `committedWave`. Every other exercise of that site ships an entry, so
-    // the precedence chain below the short-circuit has never run there
-    // (engineering.md "A green verdict is proven non-vacuous"): a wave that
-    // ships nothing is the only shape that evaluates it.
+    // `waveNoCommitCause`, whose first line short-circuits on `committedWave`.
+    // Every other exercise of that site ships an entry, so the precedence chain
+    // below the short-circuit has never run there (.claude/rules/engineering.md
+    // "A green verdict is proven non-vacuous"): a wave that ships nothing is
+    // the only shape that evaluates it.
     //
     // Reaching it needs both halves at once — shipped=0 *and* a recorded
     // footprint, since `commitPendingUpdate` (and so the rewrite read that
@@ -7395,10 +7400,10 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     ]);
 
     // The claim: the refusal-site verdict reports the same cause a clean
-    // completion would have (engineering.md "Derived state is computed,
-    // never restated beside its source") — not `undefined` from a
-    // short-circuit that never ran, and not a cause invented at the
-    // refusal site.
+    // completion would have (.claude/rules/engineering.md "Derived state is
+    // computed, never restated beside its source") — not `undefined` from a
+    // short-circuit that never ran, and not a cause invented at the refusal
+    // site.
     expect(verdict?.noCommit).toBe("gate-revert");
 
     // Nothing shipped: the entry is still queued under the corrupt bytes
@@ -7435,7 +7440,8 @@ describe("Dispatcher fanout — foundations governor skips fork-blocked entries"
     const agent = fanoutAgent({
       settled: (cwd) =>
         writeAndCommit(cwd, "src/settled.ts", "ok\n", "build(SETTLED): ship"),
-      // No action registered for `blocked` — if it were selected, the agent throws.
+      // No action registered for `blocked` — if it were selected, the agent
+      // throws.
     });
 
     const dispatcher = new Dispatcher({
@@ -8849,14 +8855,14 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
 
 // ---------- fanout wave-level noCommit precedence (mixed causes) ----------
 
-// `Dispatcher.waveNoCommitCause`: when a fanout wave ships nothing, the
-// single wave-level `noCommit` label is picked from the set of per-entry causes by
-// precedence gate-revert > render-refused > platform-preempt >
-// clean-exit. Every other test above drives one mode per wave in
-// isolation, so a swapped or dropped precedence branch is invisible to the
-// suite (engineering.md "A green verdict is proven non-vacuous"). These
-// tests build waves whose entries fail via ≥2 distinct causes at once and
-// pin the label at each boundary of the chain.
+// `Dispatcher.waveNoCommitCause`: when a fanout wave ships nothing, the single
+// wave-level `noCommit` label is picked from the set of per-entry causes by
+// precedence gate-revert > render-refused > platform-preempt > clean-exit.
+// Every other test above drives one mode per wave in isolation, so a swapped or
+// dropped precedence branch is invisible to the suite
+// (.claude/rules/engineering.md "A green verdict is proven non-vacuous"). These
+// tests build waves whose entries fail via ≥2 distinct causes at once and pin
+// the label at each boundary of the chain.
 //
 // `CMD` drives the shared prompt's inline-exec span per entry (rendered
 // before the agent is invoked): every tag except RENDER-FOUR resolves to a
@@ -11151,8 +11157,9 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
       join(flumeDir, "prior-attempts", "entry", `${slugify("SHIPS")}.json`),
       JSON.stringify(validRecord),
     );
-    // Malformed JSON — PriorAttemptStore.read's own tolerance ("a garbled record
-    // must not crash the tick") should drop this key, not surface it or throw.
+    // Malformed JSON — PriorAttemptStore.read's own tolerance ("a garbled
+    // record must not crash the tick") should drop this key, not surface it or
+    // throw.
     await writeFile(
       join(flumeDir, "prior-attempts", "entry", "corrupt.json"),
       "{ not valid json",
@@ -12807,8 +12814,9 @@ describe("Dispatcher — flumeDir exposed to gates & promptArgs", () => {
 
     await dispatcher.tick();
 
-    // Default flumeDir is <repoRoot>/.flume, and the same resolved value reaches
-    // both the prompt-arg builder (pre-agent) and the gate (post-commit).
+    // Default flumeDir is <repoRoot>/.flume, and the same resolved value
+    // reaches both the prompt-arg builder (pre-agent) and the gate
+    // (post-commit).
     expect(ctxFlumeDir).toBe(join(fx.repo, ".flume"));
     expect(gateFlumeDir).toBe(join(fx.repo, ".flume"));
   });
@@ -15583,8 +15591,8 @@ describe.runIf(process.platform === "win32")(
       const second = await dispatcher.tick();
       expect(second.result?.shippedTags).toEqual([tag]);
 
-      // PriorAttemptStore.read actually decoded the deep-path record rather than
-      // existsSync silently reporting "no prior attempt": the gate-revert
+      // PriorAttemptStore.read actually decoded the deep-path record rather
+      // than existsSync silently reporting "no prior attempt": the gate-revert
       // block, carrying the first gate's own failure message, lands in the
       // second attempt's rendered prompt.
       expect(prompts[1]).toContain("<prior-attempt>");
@@ -15609,15 +15617,14 @@ describe.runIf(process.platform === "win32")(
   },
 );
 
-// Same deep-nesting shape as the win32 lane above, applied to the two
-// remaining bare-join fs-call sites this file carried: loadChainModule's
-// existence probe (the single fix point every chain-load caller reaches
-// through)
-// and the pendingPath reads/writes readPending, readPendingTolerant, and
+// Same deep-nesting shape as the win32 lane above, applied to the two remaining
+// bare-join fs-call sites this file carried: loadChainModule's existence probe
+// (the single fix point every chain-load caller reaches through) and the
+// pendingPath reads/writes readPending, readPendingTolerant, and
 // commitPendingUpdate share. Pre-fix, each silently misread a genuinely
 // existing/writable path as absent past win32's ~260-char total-path limit
-// instead of failing loud (platform-facts.md "Windows MAX_PATH (~260 chars)
-// breaks fs calls with no long component").
+// instead of failing loud (.claude/rules/platform-facts.md "Windows MAX_PATH
+// (~260 chars) breaks fs calls with no long component").
 describe.runIf(process.platform === "win32")(
   "Dispatcher — loadChainModule/pendingPath win32 total-path limit (DISPATCHER-NAMESPACEDJOIN-WIN32-PATH-TOTAL-LIMIT)",
   () => {
@@ -16023,11 +16030,11 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
   }, 20_000);
 
   /**
-   * Agreement pin (engineering.md "A seam gate reads what the real writer
-   * wrote"): the verdict handed to `superviseLoop` is the one a real declined
-   * wave produced, not a fixture. A chain declining a landed commit is that
-   * chain's verdict, never a failure of the tick that produced it — the same
-   * reason `clean-exit` stays out of the errored derivation.
+   * Agreement pin (.claude/rules/engineering.md "A seam gate reads what the
+   * real writer wrote"): the verdict handed to `superviseLoop` is the one a
+   * real declined wave produced, not a fixture. A chain declining a landed
+   * commit is that chain's verdict, never a failure of the tick that produced
+   * it — the same reason `clean-exit` stays out of the errored derivation.
    */
   it("a run whose only no-commit fact is `not-shipped` is not derived as errored", async () => {
     await writePending(fx.repo, [
@@ -16515,7 +16522,8 @@ describe('phase.promptPath resolves against configDir (spec/chain.md "Chain resi
   }, 20_000);
 });
 
-// ---------- a hook that throws (spec/chain.md "What a hook receives") ----------
+// ---------- a hook that throws (spec/chain.md "What a hook receives")
+// ----------
 
 describe("Dispatcher — a hook that throws is answered the way its sibling seam already answers", () => {
   /** What each hook raises instead of returning. */
@@ -16577,9 +16585,9 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     const preHead = await head(fx.repo);
     const outcome = await dispatcher.tick();
 
-    // Non-vacuity (engineering.md "A green verdict is proven non-vacuous"):
-    // the phase really ran — the tick reached a result rather than
-    // hibernating past the seam under test.
+    // Non-vacuity (.claude/rules/engineering.md "A green verdict is proven
+    // non-vacuous"): the phase really ran — the tick reached a result rather
+    // than hibernating past the seam under test.
     expect(outcome.hibernated).toBe(false);
     expect(outcome.result?.phaseName).toBe("plan");
 
@@ -16688,9 +16696,10 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
   }, 20_000);
 
   it("the fanout copies of both pre-invocation seams answer a throw the same way", async () => {
-    // One guard per seam, reached by both concurrencies (engineering.md
-    // "The fix lands at the mechanism"): the same throw isolates one entry
-    // here exactly as it refuses the singleton tick above.
+    // One guard per seam, reached by both concurrencies
+    // (.claude/rules/engineering.md "The fix lands at the mechanism"): the same
+    // throw isolates one entry here exactly as it refuses the singleton tick
+    // above.
     await writePending(fx.repo, [
       makeEntry("SHOULDRUN-THROWS", ["src/a.ts"]),
       makeEntry("PROMPTARGS-THROWS", ["src/b.ts"]),
@@ -16756,13 +16765,14 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
   }, 30_000);
 
   it("the render-refused prior-attempt block does not send a hook-refused retry to fix an inline-exec span", async () => {
-    // The agreement case for the block's one shared arm (engineering.md "A
-    // seam gate reads what the real writer wrote"): the record is written by
-    // the real hook-refusal writer and read back through the real renderer,
-    // because the two writers share one `failures` string and the rendered
-    // prose is the only place the reader can be told the wrong thing. The
-    // span writer's own side is pinned by the no-commit taxonomy test above,
-    // which still asserts its failing span and stderr reach the retry.
+    // The agreement case for the block's one shared arm
+    // (.claude/rules/engineering.md "A seam gate reads what the real writer
+    // wrote"): the record is written by the real hook-refusal writer and read
+    // back through the real renderer, because the two writers share one
+    // `failures` string and the rendered prose is the only place the reader can
+    // be told the wrong thing. The span writer's own side is pinned by the
+    // no-commit taxonomy test above, which still asserts its failing span and
+    // stderr reach the retry.
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 
@@ -16900,7 +16910,8 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(outcome.awakeAfter).toEqual([]);
     expect(baton.awake()).toEqual([]);
 
-    // …and it is logged, not swallowed (engineering.md "Loud or nothing").
+    // …and it is logged, not swallowed (.claude/rules/engineering.md "Loud or
+    // nothing").
     expect(
       warnings.some((w) => w.includes("handoff threw") && w.includes(BOOM)),
     ).toBe(true);

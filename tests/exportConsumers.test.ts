@@ -9,10 +9,10 @@
  * entry module exports, so the hover text shows a name no `import` can carry.
  *
  * Both are read off the **declaration emit** the build config produces: the
- * scan runs the real writer and walks what it wrote (`engineering.md`, *A seam
- * gate reads what the real writer wrote*), which is why every position below
- * is cited at a `dist/…d.ts` line. Modules stay in source coordinates, being
- * what a reader opens.
+ * scan runs the real writer and walks what it wrote
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*), which is why every position below is cited at a `dist/…d.ts` line.
+ * Modules stay in source coordinates, being what a reader opens.
  *
  * Each is asserted over a fixture as well as over this tree, because a pin
  * asserting an absence needs its detector shown working. The fixture arms

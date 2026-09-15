@@ -361,8 +361,9 @@ describe("matchesAny — a declared literal path matches only itself", () => {
     // superset of the escape class by construction, so the class cannot lose
     // a member without this going red.
     const specials = [...`!"#$%&'()+,-./:;<=>?@[\\]^_\`{|}~`];
-    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): an
-    // empty character set would assert nothing and still pass.
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an empty character set would assert nothing and still
+    // pass.
     expect(specials).toHaveLength(31);
     expect(specials).not.toContain("*");
 
@@ -488,8 +489,9 @@ describe("worktreesBase — the one worktree-base resolution", () => {
     );
   });
 
-  // The third input: `Chain.worktreesBase` already evaluated (spec/
-  // worktrees.md, "Placement — the worktree base and the job namespace").
+  // The third input: `Chain.worktreesBase` already evaluated
+  // (spec/worktrees.md, "Placement — the worktree base and the job
+  // namespace").
   // All three inputs meet at this one function, so the order they outrank
   // each other in is stated once, here, rather than at each reader.
   it("a chain-declared base replaces the state-root default", () => {
@@ -536,8 +538,9 @@ describe("STATE_ROOT_NAMES owns the tick-verdict filenames", () => {
     expect(names).toEqual(["tick-verdict.json", "tick-verdicts.jsonl"]);
 
     const modules = readdirSync(SRC).filter((n) => n.endsWith(".ts"));
-    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
-    // scan over no modules would report one spelling for every name.
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a scan over no modules would report one spelling for every
+    // name.
     expect(modules.length).toBeGreaterThan(1);
 
     for (const name of names) {
@@ -568,10 +571,10 @@ describe("STATE_ROOT_NAMES owns the tick-verdict filenames", () => {
 // leaves `chainLoadGate` reporting `skipped` over the very commit that broke
 // the chain.
 //
-// Both pins below are agreement gates (engineering.md, "A seam gate reads
-// what the real writer wrote"): the real gate / the real verb names the path,
-// and the real loader is then driven over the file that name points at. No
-// chain filename is authored by this test's hand on either side.
+// Both pins below are agreement gates (.claude/rules/engineering.md, "A seam
+// gate reads what the real writer wrote"): the real gate / the real verb names
+// the path, and the real loader is then driven over the file that name points
+// at. No chain filename is authored by this test's hand on either side.
 describe("the chain module's path has one derivation", () => {
   const PIN_CHAIN =
     `export default () => ({ chain: { phases: [{ name: "a", description: "", ` +
@@ -614,8 +617,9 @@ describe("the chain module's path has one derivation", () => {
     );
     expect(skipped.ok).toBe(true);
     const key = String(skipped.skipped ?? "").split(" ")[0] ?? "";
-    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
-    // key the gate never stated would make every assertion below vacuous.
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a key the gate never stated would make every assertion
+    // below vacuous.
     expect(key).not.toBe("");
     expect(resolve(repo, key)).toBe(chainModulePath(configDir));
 
@@ -733,8 +737,9 @@ describe("gitPath — the one host-path-to-git-path rule", () => {
         .filter((name) => name.endsWith(".ts"))
         .map((name) => `${dir}/${name}`),
     );
-    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
-    // scan over no modules would report one speller for every form.
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a scan over no modules would report one speller for every
+    // form.
     expect(modules.length).toBeGreaterThan(20);
     // And the form under test is one the tree still contains — in its home.
     expect(readFileSync(join(ROOT, "src", "paths.ts"), "utf8")).toContain(

@@ -534,8 +534,9 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
       ext,
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
-    // Vacuity pin (engineering.md "A green verdict is proven non-vacuous"):
-    // prove the foreign validators were actually invoked, not skipped past.
+    // Vacuity pin (.claude/rules/engineering.md "A green verdict is proven
+    // non-vacuous"): prove the foreign validators were actually invoked, not
+    // skipped past.
     expect(summaryCalls.length).toBeGreaterThan(0);
     expect(perCalls.length).toBeGreaterThan(0);
     expect(result.entries[0]!.summary).toBe("do the thing");
@@ -961,14 +962,14 @@ describe("renderSchemaForPrompt", () => {
   });
 
   // The core hints are injected verbatim into every downstream chain's plan
-  // prompt, so vocabulary from *this* repo's chain — a phase name, a
-  // plan-lane artifact, a noun from our stack — ships as if the engine owned
-  // it (engine-boundary.md § Capability vs convention). That class is the
-  // shared list in tests/helpers/chainVocabulary.ts, asserted over the whole
-  // rendering below and over the shipped doc comments by the same checker;
-  // only vocabulary specific to one hint is spelled here. Each pin asserts
-  // its subject line is present before asserting the absence — an absence
-  // over a vanished subject is a vacuous green.
+  // prompt, so vocabulary from *this* repo's chain — a phase name, a plan-lane
+  // artifact, a noun from our stack — ships as if the engine owned it
+  // (.claude/rules/engine-boundary.md § Capability vs convention). That class
+  // is the shared list in tests/helpers/chainVocabulary.ts, asserted over the
+  // whole rendering below and over the shipped doc comments by the same
+  // checker; only vocabulary specific to one hint is spelled here. Each pin
+  // asserts its subject line is present before asserting the absence — an
+  // absence over a vanished subject is a vacuous green.
   const hintLineFor = (rendered: string, field: string): string => {
     const line = rendered
       .split("\n")
@@ -1136,18 +1137,18 @@ describe("renderSchemaForPrompt", () => {
   });
 
   /**
-   * Core-field agreement gate (engineering.md § "A seam gate reads what the
-   * real writer wrote"). The check above judges *extension* names, and reads
-   * them off the same declaration record both surfaces are built from — the
-   * core fields have no such record, so nothing tied the render's header
-   * claim ("fields not listed here are rejected") to the field set the
-   * composed validator actually accepts. A hand-written list of core names
-   * here would be the tester re-authoring the writer's vocabulary, so both
-   * sides are read from the real thing: the names come off the engine's
+   * Core-field agreement gate (.claude/rules/engineering.md § "A seam gate
+   * reads what the real writer wrote"). The check above judges *extension*
+   * names, and reads them off the same declaration record both surfaces are
+   * built from — the core fields have no such record, so nothing tied the
+   * render's header claim ("fields not listed here are rejected") to the field
+   * set the composed validator actually accepts. A hand-written list of core
+   * names here would be the tester re-authoring the writer's vocabulary, so
+   * both sides are read from the real thing: the names come off the engine's
    * `CORE_ENTRY_FIELDS` — the same list `composePendingList` composes and
    * refuses shadows against — the render comes off the real
-   * `renderSchemaForPrompt`, and the acceptance direction runs through the
-   * real `parsePending`.
+   * `renderSchemaForPrompt`, and the acceptance direction runs through the real
+   * `parsePending`.
    */
   function renderedTopLevelFieldNames(rendered: string): string[] {
     return rendered.split("\n").flatMap((line) => {
@@ -1199,15 +1200,14 @@ describe("renderSchemaForPrompt", () => {
   });
 
   /**
-   * Agreement gate (engineering.md § "A seam gate reads what the real
-   * writer wrote"): the checks above only confirm field *names* line up.
-   * A hint's stated numeric bound (e.g. "≤200 chars") is free text on the
-   * same declaration record as `schema` — nothing ties the two together,
-   * so the hint can claim a bound the schema doesn't actually enforce (or
-   * vice versa). These tests extract the bound from the real
-   * `renderSchemaForPrompt` output and drive it through the real
-   * `parsePending`, so a hint/schema mismatch fails here instead of
-   * shipping silently.
+   * Agreement gate (.claude/rules/engineering.md § "A seam gate reads what the
+   * real writer wrote"): the checks above only confirm field *names* line up. A
+   * hint's stated numeric bound (e.g. "≤200 chars") is free text on the same
+   * declaration record as `schema` — nothing ties the two together, so the hint
+   * can claim a bound the schema doesn't actually enforce (or vice versa).
+   * These tests extract the bound from the real `renderSchemaForPrompt` output
+   * and drive it through the real `parsePending`, so a hint/schema mismatch
+   * fails here instead of shipping silently.
    */
   function extractCharBound(rendered: string, fieldName: string): number {
     const match = new RegExp(`"${fieldName}":[\\s\\S]*?≤(\\d+) chars`).exec(

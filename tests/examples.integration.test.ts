@@ -5,8 +5,9 @@
  * the unpatched engine: fixture repo, real chain + real prompt file (loaded
  * unmodified — no rewritten fixture chain source, unlike the job.*.test.ts
  * stub-chain pattern), `Dispatcher` wired in-process via the documented
- * `chainLoader` test-injection seam (`src/Dispatcher.ts` `DispatcherOptions
- * .chainLoader`). The chain's own `groom.agent` is deterministic (no LLM),
+ * `chainLoader` test-injection seam (`src/Dispatcher.ts`,
+ * `DispatcherOptions.chainLoader`). The chain's own `groom.agent` is
+ * deterministic (no LLM),
  * which is what makes this runnable in CI at all — see the chain file's
  * header for why that's in-scope for a reference example, not a test-only
  * shortcut.
@@ -153,7 +154,7 @@ describe("second reference chain (backlog-groomer-chain.ts)", () => {
         expect(outcome.hibernated).toBe(false);
         expect(outcome.failed).toBeUndefined();
         expect(outcome.result?.committed).toBe(true);
-        // Vacuity pin (engineering.md "A green verdict is proven
+        // Vacuity pin (.claude/rules/engineering.md "A green verdict is proven
         // non-vacuous"): prove the gate set judged below isn't empty before
         // trusting its every(ok) verdict.
         expect(outcome.result?.gateResults.length).toBeGreaterThan(0);
@@ -248,14 +249,14 @@ describe("second reference chain (backlog-groomer-chain.ts)", () => {
   it("surfaces a non-ENOENT BACKLOG.json read failure instead of reporting 'nothing to groom'", async () => {
     const repo = await makeRepo();
     try {
-      // BACKLOG_PATH exists as a directory: readFileSync fails with EISDIR,
-      // a real I/O failure distinct from "file absent" (ENOENT). Pre-fix,
-      // the bare catch swallowed this as a clean "nothing to groom" bail
-      // (engineering.md "Loud or nothing"). Committed, not just written:
-      // `groom` is a singleton phase and now runs in its own worktree
-      // (spec/worktrees.md "Singleton runs in a worktree") — a fresh
-      // worktree holds only tracked content, so an uncommitted directory in
-      // the primary checkout would simply be absent there.
+      // BACKLOG_PATH exists as a directory: readFileSync fails with EISDIR, a
+      // real I/O failure distinct from "file absent" (ENOENT). Pre-fix, the
+      // bare catch swallowed this as a clean "nothing to groom" bail
+      // (.claude/rules/engineering.md "Loud or nothing"). Committed, not just
+      // written: `groom` is a singleton phase and now runs in its own worktree
+      // (spec/worktrees.md "Singleton runs in a worktree") — a fresh worktree
+      // holds only tracked content, so an uncommitted directory in the primary
+      // checkout would simply be absent there.
       await mkdir(join(repo.dir, "BACKLOG.json"));
       await writeFile(join(repo.dir, "BACKLOG.json", ".keep"), "");
       await exec("git", ["add", "BACKLOG.json"], { cwd: repo.dir });

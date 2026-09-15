@@ -211,8 +211,9 @@ describe("worktrees — the base is resolved in one place", () => {
 
   it("src/ resolves the worktree base in exactly one place", async () => {
     const modules = (await readdir(SRC_DIR)).filter((n) => n.endsWith(".ts"));
-    // Vacuity (engineering.md, "A green verdict is proven non-vacuous"): a
-    // scan that read no modules would report no second reader either.
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a scan that read no modules would report no second reader
+    // either.
     expect(modules.length).toBeGreaterThan(0);
 
     const readers: string[] = [];
@@ -420,8 +421,8 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
  * Driven off the real `buildFlumeApi()` against a real repo, with the real
  * `createWorktree` as the writer whose output the read has to name: a stubbed
  * registry would agree with a hand-authored path set and prove nothing about
- * what git actually registers (`engineering.md`, *A seam gate reads what the
- * real writer wrote*).
+ * what git actually registers (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*).
  */
 describe("worktrees — git's registry on the API a chain factory receives", () => {
   let fx: Fixture;

@@ -70,11 +70,11 @@ describe("buildFlumeApi().gitPath (engineering.md 'A fact the engine holds is re
 });
 
 /**
- * The offset a chain roots a committed path at — a fence glob, a
- * `pendingGate` target, a pathspec at a sha — reported at chain load rather
- * than re-derived by every chain that needs one (`engineering.md`, *A fact
- * the engine holds is reported, never rediscovered*). Driven through the
- * real `buildFlumeApi`, the seam a chain factory is handed.
+ * The offset a chain roots a committed path at — a fence glob, a `pendingGate`
+ * target, a pathspec at a sha — reported at chain load rather than re-derived
+ * by every chain that needs one (`.claude/rules/engineering.md`, *A fact the
+ * engine holds is reported, never rediscovered*). Driven through the real
+ * `buildFlumeApi`, the seam a chain factory is handed.
  */
 describe("buildFlumeApi().paths.stateRootRel (engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
   it("buildFlumeApi reports the state root's repo-relative offset on api.paths.stateRootRel", () => {
@@ -102,11 +102,11 @@ describe("buildFlumeApi().paths.stateRootRel (engineering.md 'A fact the engine 
     const outside = join(REPO_PATHS.repoRoot, "..", "flume-state-elsewhere");
     const relocated = buildFlumeApi({ ...REPO_PATHS, flumeDir: outside });
 
-    // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-    // an api that carries no such field at all answers `undefined` to every
-    // reading below, so the key's presence is asserted before its absence
-    // means anything — and the in-repo sibling proves the same builder does
-    // report an offset when there is one.
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an api that carries no such field at all answers
+    // `undefined` to every reading below, so the key's presence is asserted
+    // before its absence means anything — and the in-repo sibling proves the
+    // same builder does report an offset when there is one.
     expect("stateRootRel" in relocated.paths).toBe(true);
     expect(relocated.paths.stateRootRel).toBeUndefined();
     expect(buildFlumeApi(REPO_PATHS).paths.stateRootRel).toBeDefined();
@@ -133,12 +133,6 @@ describe("buildFlumeApi().git.readFileAtRef", () => {
     }
   });
 });
-
-/**
- * Acceptance-driven backpressure (`.flume/vitestJudge.ts`): the real
- * reporter's JSON, produced by running vitest itself, through the real judge
- * — never a hand-authored report.
- */
 
 describe("this repo's chain is the harness factory applied to its declaration (spec/harness.md 'What this repo is')", () => {
   const { chain } = chainFactory(buildFlumeApi(REPO_PATHS));

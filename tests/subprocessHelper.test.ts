@@ -352,12 +352,12 @@ describe("tests/ reads a child's exit status through one mechanism (TESTS-EXIT-S
       );
   }
 
-  // Vacuity pin (engineering.md, "A green verdict is proven non-vacuous"):
-  // the refusals below pass over an empty set once every site is fixed, so a
-  // corpus that walked nothing — a non-recursive read, a wrong directory, a
-  // filter that keeps no file — would read exactly like a clean tree. Pinned
-  // on the subject rather than the count: the files that spawn a child are
-  // the only ones that can hold the defect at all.
+  // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+  // non-vacuous"): the refusals below pass over an empty set once every site is
+  // fixed, so a corpus that walked nothing — a non-recursive read, a wrong
+  // directory, a filter that keeps no file — would read exactly like a clean
+  // tree. Pinned on the subject rather than the count: the files that spawn a
+  // child are the only ones that can hold the defect at all.
   it("scans a populated tests/ corpus, recursively, including the suites that spawn a child", () => {
     expect(corpus.length).toBeGreaterThan(0);
     expect(corpus.map((f) => f.path)).toContain(join("helpers", "subprocess.ts"));

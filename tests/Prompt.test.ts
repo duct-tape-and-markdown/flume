@@ -357,16 +357,16 @@ describe("renderPrompt <harness> gate list renders a declared command (spec/chai
   }, SPAWN_BUDGET_MS);
 });
 
-// Agreement case (ENTRY-WRITE-SCOPE-ONE-DERIVATION, per engineering.md "The
-// fix lands at the mechanism"): the rendered effective-fence bullets and
-// writablePathsGate's actual accepted scope must agree because both sides
-// take the scope from the one `entryWriteScope` derivation — not because a
-// comment says so. The gate's half is built by the same call the dispatcher
-// makes, so a one-sided edit to either production site lands here; the
-// earlier version hand-built `{ entryPaths, channelPaths }` and would have
-// shipped such an edit green. This drives the real renderer's output through
-// the real gate rather than comparing two hand-authored path lists, per "A
-// seam gate reads what the real writer wrote".
+// Agreement case (ENTRY-WRITE-SCOPE-ONE-DERIVATION, per
+// .claude/rules/engineering.md "The fix lands at the mechanism"): the rendered
+// effective-fence bullets and writablePathsGate's actual accepted scope must
+// agree because both sides take the scope from the one `entryWriteScope`
+// derivation — not because a comment says so. The gate's half is built by the
+// same call the dispatcher makes, so a one-sided edit to either production site
+// lands here; the earlier version hand-built `{ entryPaths, channelPaths }` and
+// would have shipped such an edit green. This drives the real renderer's output
+// through the real gate rather than comparing two hand-authored path lists, per
+// "A seam gate reads what the real writer wrote".
 describe("renderPrompt effective fence agrees with writablePathsGate's accepted scope", () => {
   function gateCtx(overrides: Partial<GateContext> = {}): GateContext {
     return {
@@ -773,7 +773,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     // What it must not hold: a reading of why the agent stopped. The old
     // rendering labelled the message a "Refused constraint" and told the
     // retry the prior judgment still held — an intent the engine inferred
-    // (`engine-boundary.md`, *Told, not inferred*).
+    // (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
     expect(out).not.toMatch(/refused constraint/i);
     expect(out).not.toMatch(/refused to cross/i);
     expect(out).not.toMatch(/judgment likely still holds/i);

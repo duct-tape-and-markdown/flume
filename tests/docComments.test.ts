@@ -10,10 +10,10 @@ import {
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
 
 // Declarations ship (tsconfig.build.json), so a doc comment on a chain-facing
-// option is the hover text every consumer reads — engine surface, injected
-// into no prompt and caught by no other pin. Vocabulary from *this* repo's
-// chain there ships one implementation's conventions with the engine's
-// authority (engine-boundary.md § Capability vs convention): the option
+// option is the hover text every consumer reads — engine surface, injected into
+// no prompt and caught by no other pin. Vocabulary from *this* repo's chain
+// there ships one implementation's conventions with the engine's authority
+// (.claude/rules/engine-boundary.md § Capability vs convention): the option
 // describes only what the engine's mechanics consume.
 
 const srcText = (module: string): string =>

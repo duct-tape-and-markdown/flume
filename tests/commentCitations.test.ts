@@ -2,8 +2,8 @@
  * `.claude/rules/engineering.md` *Narration is the ladder's bottom rung* is
  * the ladder's bottom rung for its own property, and this file is the rung
  * above it for the carve-out that page names: a backticked identifier in a
- * `src/` or `harness/` comment is a reference, not a sentence, so a deleted
- * symbol may not leave its citations standing.
+ * `src/`, `harness/` or `tests/` comment is a reference, not a sentence, so a
+ * deleted symbol may not leave its citations standing.
  *
  * The repo pin asserts an absence, so it comes after its detector shown
  * working: a scan of a tree whose dangling citations are known by
@@ -16,7 +16,7 @@
  * implementation of the verdict.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -195,7 +195,7 @@ beforeAll(async () => {
   repoScan = scanCommentCitations({
     root: REPO_ROOT,
     programConfig: "tsconfig.json",
-    trees: ["src/", "harness/"],
+    trees: ["src/", "harness/", "tests/"],
   });
 });
 
@@ -582,41 +582,53 @@ it("the citation scan judges no tail an unfenced page name's line break left beh
 
 /**
  * Vocabulary the trees cite by name and legitimately do not declare, because
- * an artifact outside this repo owns it and no rung of the ladder here can
- * hold it. The scan says so by name rather than widening its resolution until
- * the residue disappears.
+ * something outside the scan's reach owns it and no rung of the ladder here
+ * can hold it. The scan says so by name rather than widening its resolution
+ * until the residue disappears.
  *
  * A path citation sits here on the same terms: the file is real but the
  * working tree is not what holds it — a build output, a running loop, a
- * consumer's state root. Resolving those would mean teaching the scan a
- * second root it cannot check, which is how an exclusion becomes a hole.
+ * consumer's state root, a prompt resolved against a chain's config dir.
+ * Resolving those would mean teaching the scan a second root it cannot
+ * check, which is how an exclusion becomes a hole.
+ *
+ * `tests/` reaches two more owners that sit inside this repo and still
+ * outside the scan's reach. A declaration of `examples/` is real code the
+ * carve-out's three trees do not include. A member of a fixture this suite
+ * authors as source *text* is spelled in no declaration the program holds.
+ * Both are cited on purpose and neither is a token the checker can answer.
  *
  * The reason rides the entry rather than the list, because an exclusion is
  * the one place the verdict is overridden by hand: a name added without one
  * is indistinguishable from residue nobody wanted to look at.
+ *
+ * **It is data, not a module, and that is load-bearing.** A string literal
+ * resolves a citation, and `tests/` is now a judged tree, so a list spelling
+ * the names it excuses would resolve every one of them from inside the
+ * program and leave this pin green over an empty override. A `.json` no
+ * module imports is in no program, so the list cannot answer for itself.
  */
-const EXTERNAL_VOCABULARY: ReadonlyMap<string, string> = new Map([
-  [".flume/loop.pid", "a live loop's pidfile, written by a run and not by us"],
-  ["cmd.exe", "the Windows command interpreter, named as a spawn target"],
-  ["dist/harness/init.js", "the published build's layout, not a checkout's"],
-  ["dist/harness/prompts.js", "the published build's layout, not a checkout's"],
-  ["dist/src/cli.js", "the published build's layout, not a checkout's"],
-  ["exactOptionalPropertyTypes", "a tsconfig compiler option"],
-  ["fs.rm", "`node:fs/promises`, under a namespace this tree never imports"],
-  ["plan/pending.json", "the state root's layout — `<flumeDir>`-relative"],
-  ["scripts.lint", "a field of the consumer's `package.json`, not of ours"],
-  ["sysexits.h", "the BSD header flume's exit codes are taken from"],
-]);
+const EXTERNAL_VOCABULARY: ReadonlyMap<string, string> = new Map(
+  Object.entries(
+    JSON.parse(
+      readFileSync(
+        new URL("./helpers/external-vocabulary.json", import.meta.url),
+        "utf8",
+      ),
+    ) as Record<string, string>,
+  ),
+);
 
-it("every backticked identifier in a src/ or harness/ comment names a declaration those trees hold", () => {
+it("every backticked identifier in a src/, harness/ or tests/ comment names a declaration those trees hold", () => {
   const scan = repoScan;
 
-  // Vacuity guard: both trees were read and the judged set is populated
+  // Vacuity guard: all three trees were read and the judged set is populated
   // before the emptiness assertion. A `trees` prefix that stopped matching
   // would otherwise report a clean tree over zero citations.
   expect(scan.modules.some((m) => m.startsWith("src/"))).toBe(true);
   expect(scan.modules.some((m) => m.startsWith("harness/"))).toBe(true);
-  expect(scan.scanned.length).toBeGreaterThan(500);
+  expect(scan.modules.some((m) => m.startsWith("tests/"))).toBe(true);
+  expect(scan.scanned.length).toBeGreaterThan(2500);
   expect(scan.resolved.length).toBeGreaterThan(0);
 
   // Each exclusion is non-vacuous in the other direction: a name the trees
@@ -624,9 +636,21 @@ it("every backticked identifier in a src/ or harness/ comment names a declaratio
   // sitting in the list unread.
   const judged = scan.scanned.map((s) => s.text);
   const excluded = [...EXTERNAL_VOCABULARY.keys()];
+  expect(excluded.length).toBeGreaterThan(0);
   for (const name of excluded) {
     expect(judged).toContain(name);
   }
+
+  // And the list as a whole is overriding something. Every name here also
+  // being *resolved* is the shape this list took the moment `tests/` joined
+  // the judged trees and the list itself was a module: a string literal is a
+  // resolution arm, so the list answered for its own keys and the override
+  // below became decorative. Per entry the claim would be order-dependent —
+  // a `dist/` citation dangles in a fresh checkout and resolves once
+  // something has built — so it is made over the set.
+  const unresolved = new Set(scan.dangling.map((s) => s.text));
+  expect(excluded.filter((name) => unresolved.has(name)).length)
+    .toBeGreaterThan(0);
 
   expect(
     scan.dangling
@@ -635,14 +659,14 @@ it("every backticked identifier in a src/ or harness/ comment names a declaratio
   ).toEqual([]);
 });
 
-it("the repo citation pin judges the repo-relative path citations src/ and harness/ comments carry", () => {
+it("the repo citation pin judges the repo-relative path citations src/, harness/ and tests/ comments carry", () => {
   const paths = repoScan.scanned.filter((site) => site.text.includes("/"));
 
   // Vacuity guard: the judged set holds path citations in quantity before
   // the verdict is read. A subject rule that stopped admitting them would
   // leave the pin above green over the identifier half alone.
-  expect(paths.length).toBeGreaterThan(400);
-  expect(new Set(paths.map((s) => s.text)).size).toBeGreaterThan(40);
+  expect(paths.length).toBeGreaterThan(1000);
+  expect(new Set(paths.map((s) => s.text)).size).toBeGreaterThan(80);
 
   // They are judged in the direction that matters: a rule page, a spec topic
   // and a module of the judged trees each resolve against the working tree,
@@ -658,17 +682,17 @@ it("the repo citation pin judges the repo-relative path citations src/ and harne
   }
 });
 
-it("the repo citation pin judges the unbackticked page names src/ comments carry", () => {
+it("the repo citation pin judges the unbackticked page names src/, harness/ and tests/ comments carry", () => {
   // The judged set holds the very sites `bare` does, so membership is
   // identity — no re-deriving the subject rule here to decide it.
   const judged = new Set(repoScan.scanned);
   const unjudged = repoScan.bare.filter((site) => !judged.has(site));
 
-  // Vacuity guard: these comments cite pages without a fence in quantity,
-  // and the subject rule admits every one of them. A page name left
-  // unspelled — a bare `engineering.md` the working tree cannot answer —
-  // would sit in the dangling set the pin above asserts empty.
-  expect(repoScan.bare.length).toBeGreaterThan(250);
+  // Vacuity guard: these comments cite pages without a fence in quantity, and
+  // the subject rule admits every one of them. A page name left unspelled —
+  // a basename the working tree cannot answer without the directory ahead of
+  // it — would sit in the dangling set the pin above asserts empty.
+  expect(repoScan.bare.length).toBeGreaterThan(350);
   expect(unjudged.map(formatCitation)).toEqual([]);
 
   // Both families the trees name this way resolve, so renaming either page
@@ -684,7 +708,7 @@ it("the repo citation pin refuses any citation broken across a comment line", ()
   // literal payloads, a fenced example — so the emptiness below is the
   // subject rule reading those wraps and passing over them as prose, not a
   // reader that found no wrap to read at all.
-  expect(repoScan.wrapped.length).toBeGreaterThan(20);
+  expect(repoScan.wrapped.length).toBeGreaterThan(40);
 
   // A citation the wrap broke is judged by nothing, so it is a defect at the
   // comment rather than a resolution arm the scan is missing: the space

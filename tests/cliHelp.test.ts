@@ -355,8 +355,9 @@ async function readCliDoc(): Promise<string> {
  * verb really returns. It is pinned against the same driven producer as the
  * help text above rather than against the help text itself — two prose
  * copies compared to each other move together in the commit that changes
- * the behavior, and agree while both are wrong (`.claude/rules/
- * engineering.md`, "A seam gate reads what the real writer wrote").
+ * the behavior, and agree while both are wrong
+ * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+ * wrote").
  */
 describe("docs/CLI.md's flume tick section against tickExitCode's derived range (CLI-DOC-TICK-EXIT-CODES-PINNED)", () => {
   it("docs/CLI.md's flume tick section names every exit code the real tick range produces", async () => {
@@ -646,16 +647,15 @@ describe("flume loop --help — the abort backstop's stage vocabulary against lo
 
 /**
  * HELP-ABORT-THRESHOLD-IS-OVERRIDABLE — both exit-1 surfaces stated the
- * consecutive-failure backstop as a fixed three ticks, which is wrong for
- * any chain declaring `supervisorPolicy.abortThreshold`
- * (`engine-boundary.md`, "Routing rule": a policy constant is an
- * overridable default, never fixed behavior). Help prints before any chain
- * is resolved, so the surface names the knob rather than rendering a run's
- * value; the default it quotes is interpolated from
- * {@link DEFAULT_ABORT_THRESHOLD}, the same constant `superviseLoop`
- * falls back to, so the number cannot drift from the engine's
- * (`engineering.md`, "Derived state is computed, never restated beside its
- * source").
+ * consecutive-failure backstop as a fixed three ticks, which is wrong for any
+ * chain declaring `supervisorPolicy.abortThreshold`
+ * (`.claude/rules/engine-boundary.md`, "Routing rule": a policy constant is an
+ * overridable default, never fixed behavior). Help prints before any chain is
+ * resolved, so the surface names the knob rather than rendering a run's value;
+ * the default it quotes is interpolated from {@link DEFAULT_ABORT_THRESHOLD},
+ * the same constant `superviseLoop` falls back to, so the number cannot drift
+ * from the engine's (`.claude/rules/engineering.md`, "Derived state is
+ * computed, never restated beside its source").
  */
 describe("flume loop/job --help — the backstop threshold names its knob (HELP-ABORT-THRESHOLD-IS-OVERRIDABLE)", () => {
   /**

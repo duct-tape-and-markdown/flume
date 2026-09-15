@@ -8,9 +8,9 @@
  * object literal can't surface.
  *
  * Also covers the tscGate/vitestGate/eslintGate pnpm cmd override
- * (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE, engine-boundary.md "Capability
- * vs convention"): the injection point a non-pnpm chain needs, and that
- * omitting it stays byte-identical to before the override existed. And the
+ * (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE, .claude/rules/engine-boundary.md
+ * "Capability vs convention"): the injection point a non-pnpm chain needs, and
+ * that omitting it stays byte-identical to before the override existed. And the
  * args override that rides alongside it (BUILTINGATES-CMD-OVERRIDE-PNPM-
  * SHAPED-ARGS): cmd alone only swaps the binary while args stay pnpm-shaped,
  * which silently misreports an npm chain's gate (npm has no bare `npm tsc`
@@ -48,13 +48,13 @@ import {
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
-// Barrel-export pin (engineering.md "An export earns its consumer",
-// CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call shellGate/tscGate/
-// vitestGate/eslintGate but, pre-fix, could not name the shape it passes
-// them — ShellGateOptions wasn't exported at all, and PkgManagerOverride /
-// PkgManagerGate weren't re-exported from src/index.ts alongside
-// PendingGateOptions. This import fails tsc if any of the three drops from
-// src/index.ts.
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer", CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call
+// shellGate/tscGate/ vitestGate/eslintGate but, pre-fix, could not name the
+// shape it passes them — ShellGateOptions wasn't exported at all, and
+// PkgManagerOverride / PkgManagerGate weren't re-exported from src/index.ts
+// alongside PendingGateOptions. This import fails tsc if any of the three drops
+// from src/index.ts.
 import type {
   ShellGateOptions,
   PkgManagerOverride,
@@ -598,9 +598,9 @@ describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, e
     const pendingResults = (outcome.verdict?.gateResults ?? []).filter(
       (g) => g.gate === "pending-gate",
     );
-    // Vacuity pin (engineering.md "A green verdict is proven non-vacuous"):
-    // the dispatcher really ran the declared gate — without this, every
-    // assertion below passes over an empty filter.
+    // Vacuity pin (.claude/rules/engineering.md "A green verdict is proven
+    // non-vacuous"): the dispatcher really ran the declared gate — without
+    // this, every assertion below passes over an empty filter.
     expect(pendingResults).toHaveLength(1);
     expect(pendingResults[0]?.ok).toBe(false);
     expect(pendingResults[0]?.message).toMatch(/outside the target fence/);
@@ -723,7 +723,7 @@ describe("tscGate / vitestGate / eslintGate — args override (BUILTINGATES-CMD-
         const green = await npmExec(clean);
         expect(green.ok).toBe(true);
 
-        // Non-vacuity (engineering.md "A green verdict is proven
+        // Non-vacuity (.claude/rules/engineering.md "A green verdict is proven
         // non-vacuous"): green over the clean project is evidence tsc *ran*
         // only if the same composed invocation reports the one error the
         // other project carries. An npm that silently no-op'd — which is
@@ -985,8 +985,8 @@ describe("Gate.command — shellGate renders cmd+args as one line (spec/chain.md
 });
 
 // ---------- the fence gate over a real tick's list
-// (GATECONTEXT-TOUCHEDPATHS-REQUIRED, engineering.md "A seam gate reads what
-// the real writer wrote") ----------
+// (GATECONTEXT-TOUCHEDPATHS-REQUIRED, .claude/rules/engineering.md "A seam gate
+// reads what the real writer wrote") ----------
 
 describe("builtin gates take the touched-path list they are handed, with no private derivation beside it", () => {
   it("src/builtinGates.ts carries no git show --name-only fallback for a commit's touched paths", async () => {
@@ -995,8 +995,8 @@ describe("builtin gates take the touched-path list they are handed, with no priv
       "utf8",
     );
     // Non-vacuity: the module really was read, and it really is the one whose
-    // gates key off the list (engineering.md "A green verdict is proven
-    // non-vacuous").
+    // gates key off the list (.claude/rules/engineering.md "A green verdict is
+    // proven non-vacuous").
     expect(src).toContain("ctx.touchedPaths");
     // A second derivation beside the dispatcher's is what let every gate
     // fixture here drive the fence gate over a list no tick ever produced.
