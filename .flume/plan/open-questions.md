@@ -35,42 +35,27 @@ cut is deliberately hand-curated (changelog mining, `smoke:install`).
 `.github/**` is already inside build's fence, so the work ships the moment the
 spec line moves.
 
-## Does a red CI lane open the inbox window, and what closes it? (PARKED — needs a spec amendment)
+## A TypeScript module-resolution fact lives in a code comment; `platform-facts.md` is its home (NEEDS AMENDMENT — a rule-page edit no phase can make)
 
-`spec/harness.md` *CI lanes as a findings source* says the inbox slice reads
-the lane and files its failing titles. `spec/cli.md` *win32 is a supported
-host* says a red lane "is a queue, never silence". Neither says whether a red
-lane makes the slice **live**. Today `inboxWindow` is live on a pending record
-or a standing build refusal (`harness/windows.ts`), both pure disk reads; a
-sync subprocess in a liveness leg is already precedented (derive runs git
-there), so the objection is not purity.
+Drained from the build note on `EXPORT-NAMEABILITY-READS-THE-DECLARATION-EMIT`.
+Making the export scan's in-memory declaration program resolve took one
+non-obvious fact, verified at `tests/helpers/exportGraph.ts`:
 
-The two halves are coupled, which is why this is parked rather than filed.
-`INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE` renders the run and lets the
-slice's agent take the titles, exactly as it takes a record's content — no
-title parser anywhere in the package. A liveness leg that closes on "every
-failing title is already filed" needs that parser, and a generic parse of a
-consumer's test-runner output is the reconstruction
-`.claude/rules/engine-boundary.md`, *Told, not inferred* fences. Without a
-closing condition the slice re-wakes every tick over a lane it already drained
-(`spec/loop.md`, *No false signal*).
+> TypeScript's module resolution abandons a lookup whose containing directory
+> it believes is absent, so a host serving a virtual `outDir` must answer
+> `directoryExists`, not only `fileExists` and `readFile`. Without it every
+> cross-module import resolves to `unknown` and the scan reports an empty
+> reach graph as a clean surface.
 
-Options:
+External toolchain behavior: no test pins it and no type holds it, which is
+`.claude/rules/platform-facts.md`'s charter (CLAUDE.md, *Tech Stack*). It sits
+today as a comment at the site — a copy the harness should own instead, seen
+only by an agent who already opened that file.
 
-1. **Render-only** — ship as filed, no leg. A red lane is drained on the next
-   inbox tick that woke for another reason, and a quiet tree hibernates over
-   it. Cheapest, and the one reading the cli sentence rules out.
-2. **A drained-run stamp in the plan state** — live iff the lane's latest
-   completed run failed *and* its run id is past the stamp the slice last
-   wrote; the slice stamps it as it stamps a cursor. Closes decidably, needs
-   no parser, costs one tick per red run. The line that moves is
-   `spec/harness.md` *Plan state as declared state* — it names the derive and
-   sweep cursors and the continuation signal, and this is a fourth field.
-3. **Title extraction** — a fourth runner operation turning a lane's log into
-   failing titles, so liveness reads "some title is unfiled". Moves
-   `spec/harness.md` *The runner interface*, which states three operations,
-   and puts a log parser in every consumer's runner.
+`.claude/rules/**` is inside the spec locus and inside no phase's fence, so
+neither build nor plan can move it; the operator's edit is the only route.
 
-**Recommended: 2.** It is the shape the other two slices already use, and the
-only one that closes without a parser. Derive files it the tick after the
-amendment lands.
+**Recommended:** add the fact to `platform-facts.md`, and the follow-on ships
+as an ordinary entry — the site comment shrinks to a pointer
+(`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*), the
+one half of this that is inside build's fence. Nothing else is blocked.

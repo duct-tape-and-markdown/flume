@@ -1,5 +1,89 @@
 [
   {
+    "tag": "PHASE-PROMPTS-STATE-THE-TURN-BOUNDARY",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/prompts.ts",
+          "description": "the turn boundary as a shared arg — one home, every phase prompt"
+        },
+        {
+          "path": "harness/prompts/build.md",
+          "description": "substitutes it"
+        },
+        {
+          "path": "harness/prompts/plan-inbox.md",
+          "description": "substitutes it"
+        },
+        {
+          "path": "harness/prompts/plan-derive.md",
+          "description": "substitutes it"
+        },
+        {
+          "path": "harness/prompts/plan-sweep.md",
+          "description": "substitutes it"
+        },
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "the arg reaches every phase prompt, beside the discipline-page pin"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "no package prompt says a tick is one turn, so an agent arming a background wake on its own work ends the invocation and the work dies uncommitted",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "One tick is one fresh process"
+    },
+    "acceptance": "every phase prompt the package renders carries the turn boundary from one home: ending the turn ends the invocation, nothing wakes it afterwards, and unfinished work is waited on inside the turn or parked.",
+    "tests": [
+      "every phase prompt the package renders substitutes the shared turn-boundary arg"
+    ],
+    "pins": [],
+    "notes": "Field-traced: WINDOWS-LANE-TRIGGER-IS-PINNED's clean-exit at 7c93b2e armed a watcher on its own suite and ended the turn. One home, not four copies — a shared arg beside NO_COMMIT_MODES. No test reads the sentence: prose against prose is not this suite's (engineering.md, *Narration is the ladder's bottom rung*); the check is that the arg reaches every phase prompt, as the discipline-page pin already does."
+  },
+  {
+    "tag": "SPAN-RENDERING-CASES-DECLARE-THE-LANE-BUDGET",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/spawnBudget.ts",
+          "description": "the seed gains the engine entry a case's spans start a shell through"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the fixture proving the widened seed fires, beside the lane's own assertion"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "the span-rendering cases the widened scan reports declare the shared budget"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a default-lane case whose subject is inline-exec spans starts a shell per span, inherits vitest's 5s default, and the budget scan is blind to it",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "the spawn scan reports a default-lane case that renders inline-exec spans, and every site it reports declares the shared budget.",
+    "tests": [
+      "the spawn scan reports a case that renders inline-exec spans without a declared budget"
+    ],
+    "pins": [],
+    "notes": "Observed: tests/examples.test.ts's unreadable-artifact case timed out at vitest's 5s under full-suite contention, ~650ms alone. `sh` is no node launcher and the scan never follows an import, so NODE_COMMANDS cannot reach it — seed the render entry the spans go through, declared where NODE_COMMANDS is. The afterMerge gate runs this lane once per cherry-picked entry, so the flake reverts an innocent entry."
+  },
+  {
     "tag": "INBOX-SLICE-RENDERS-THE-DECLARED-CI-LANE",
     "gate": {
       "kind": "open"
@@ -49,7 +133,7 @@
       "the inbox window renders a lane whose latest completed run passed as green"
     ],
     "pins": [],
-    "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content — a generic parse of a consumer's runner output is the inference the boundary rule fences. Liveness is deliberately not a leg here; the fork is the open question, and this entry ships under every branch of it."
+    "notes": "No title parser: the run is rendered and the slice's agent takes the titles, as it takes a record's content — the generic parse the boundary rule fences. The liveness fork is ruled and the spec holds it; derive files the leg and this entry ships under it unchanged. Name the reader's lane type distinctly: `lane` already means a Runner test lane in harness/. This repo's declaration carries no `ci:` line yet — a `chore(flume)` edit, outside every phase fence."
   },
   {
     "tag": "WINDOWS-LANE-TRIGGER-IS-PINNED",
