@@ -1,87 +1,8 @@
 [
   {
-    "tag": "A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "src/processTree.ts",
-          "description": "one home for the own-group spawn and the SIGTERM → grace → SIGKILL teardown both signal paths take"
-        },
-        {
-          "path": "tests/processTree.test.ts",
-          "description": "the shared teardown's own cases — the engine observed this file on the reverted attempt"
-        }
-      ],
-      "edit": [
-        {
-          "path": "src/loopSupervisor.ts",
-          "description": "`defaultTickRunner` spawns the child in its own group and terminates through the shared teardown; its default-disposition paragraph goes with it"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "`supervisorPolicy.killGraceMs` — the grace the supervisor declares, sixth knob of the block"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "the loop branch forwards the declared grace beside `quarantineScope`/`abortThreshold`"
-        },
-        {
-          "path": "harness/declaration.ts",
-          "description": "the declared-supervisor shape gains the knob the engine now names"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the signalled-loop case gains the grandchild arm, the escalation arm and the declared-grace arm, host-declared"
-        },
-        {
-          "path": "tests/loopSupervisor.test.ts",
-          "description": "the runner's group teardown and the engine default for the grace"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the knob passes through a declaration"
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      ".flume/plan/notes/A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE.md",
-      "harness/declaration.ts",
-      "src/Phase.ts",
-      "src/cli.ts",
-      "src/loopSupervisor.ts",
-      "src/processTree.ts",
-      "tests/cli.test.ts",
-      "tests/docComments.test.ts",
-      "tests/harnessDeclaration.test.ts",
-      "tests/helpers/subprocess.ts",
-      "tests/processTree.test.ts"
-    ],
-    "summary": "the signalled release kills the tick child alone, so the agent that tick spawned outlives the claim that protected it, and the wait before the drop is bounded only by what the child installs",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The loop lock and the tip claim"
-    },
-    "acceptance": "a signalled `flume loop` leaves no process of the tick tree alive when the lock and claim drop, and the wait before they drop is bounded by the declared grace rather than by the child's disposition.",
-    "tests": [
-      "a signalled `flume loop` leaves nothing the tick child spawned alive against the state root it released",
-      "a tick tree that ignores SIGTERM is killed after the declared grace rather than waited on indefinitely",
-      "a chain-declared kill grace, not the engine default, bounds a signalled loop's wait on its tick tree"
-    ],
-    "pins": [],
-    "notes": "Landed at 54f8e4c: the abort reaches the tick child and the run settles on its exit. Missing: the group, the escalation, the knob. `detached` takes the child out of the terminal's foreground group, so Ctrl-C reaches the supervisor alone and the handler's signal is the only path down; `defaultTickRunner`'s default-disposition paragraph is narration the escalation retires. POSIX arms declare their host. Knob ruled: `killGraceMs`, default 5000, read where the signal is sent (`spec/chain.md`)."
-  },
-  {
     "tag": "A-BARE-TICK-TAKES-ITS-AGENT-DOWN-THE-SAME-WAY",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "A-SIGNALLED-LOOP-TAKES-DOWN-THE-WHOLE-TICK-TREE"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -388,69 +309,6 @@
     "notes": "Target: `runAttempt(phase, wt, ref, label, entry?)` returning `{ termination, committed, tipMoved, verdict }`, called by both legs; `selectBatch(chain, pending)` called by `runFanout` and `render`. The `renderPrompt` try/catch is copied at both legs, and `render` repeats `pickableEntries` + `partitionByFileOverlap` with the same two `supervisorPolicy` reads. Blocked on the split so the sequence is unified once, at its final home."
   },
   {
-    "tag": "HARNESS-WINDOWS-IS-FIVE-MODULES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "harness/gitRange.ts",
-          "description": "the range-scan library that knows nothing about slices"
-        },
-        {
-          "path": "harness/ciLane.ts",
-          "description": "the lane's liveness and render as one `laneLeg(options)`"
-        },
-        {
-          "path": "harness/inboxWindow.ts",
-          "description": "the inbox window, records and refusals"
-        },
-        {
-          "path": "harness/deriveWindow.ts",
-          "description": "the derive window"
-        },
-        {
-          "path": "harness/sweepWindow.ts",
-          "description": "the sweep window"
-        }
-      ],
-      "edit": [
-        {
-          "path": "harness/windows.ts",
-          "description": "keeps slice assembly alone; one `cursorWindow` for the two identical window bodies and one `TickFacts` for the three spellings"
-        },
-        {
-          "path": "harness/chain.ts",
-          "description": "takes the moved names from their new homes"
-        },
-        {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "takes the moved names from their new homes"
-        },
-        {
-          "path": "tests/harnessCi.test.ts",
-          "description": "drives the lane module it is named for"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "takes the moved names from their new homes"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "harness/windows.ts is four jobs under one name — slice assembly, the inbox window's CI lane, the derive/sweep windows, and a git range-scan library that knows nothing about slices",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A module is one job"
-    },
-    "acceptance": "windows.ts holds slice assembly alone, the range scan and each slice's window sit in the file its name is, and tests/harnessCi.test.ts drives the lane module rather than strings rendered in windows.ts.",
-    "tests": [],
-    "pins": [],
-    "notes": "758 → 1161 lines in one day. `ci.ts` declares itself 'the reader alone', so the lane's liveness rule sits between two render functions in windows.ts and its 920-line test drives `planSliceWindows` instead. Also here: `specWindow` and `sweepWindowOf` are the same six lines (one `cursorWindow(field, globs, ctx, render)`), and `{ pending?, priorAttempts? }` is spelled by `SliceInputs`, `WindowContext` and `standingRefusals` (one `TickFacts`)."
-  },
-  {
     "tag": "CHAIN-IS-THE-ASSEMBLY-ITS-HEADER-PROMISES",
     "gate": {
       "kind": "open"
@@ -737,65 +595,6 @@
     "tests": [],
     "pins": [],
     "notes": "52% of the file is comment, most of it per-job rationale. `spawnBudget.ts` hardcodes this file as *the* harness module, so the leak guard and the git pin are scanned as spawn wrappers; `dispatcherFixture.ts` imports only `mkTempDir` from it. Ships before EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER so that pass routes 39 files at the maker's final home."
-  },
-  {
-    "tag": "TEST-SCANNERS-SHARE-ONE-REPO-PROGRAM",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "tests/helpers/repoProgram.ts",
-          "description": "the config parse, the repo-relative fold, the program/checker build, the source selection, the identifier walk and the directory walk"
-        }
-      ],
-      "edit": [
-        {
-          "path": "tests/helpers/exportGraph.ts",
-          "description": "a visitor over the shared base, on the shared site/request/verdict vocabulary"
-        },
-        {
-          "path": "tests/helpers/commentCitations.ts",
-          "description": "a visitor over the shared base, on the shared site/request/verdict vocabulary"
-        },
-        {
-          "path": "tests/helpers/spawnBudget.ts",
-          "description": "takes its root and its file walk from the shared base"
-        },
-        {
-          "path": "tests/exportConsumers.test.ts",
-          "description": "takes the moved names from their new homes"
-        },
-        {
-          "path": "tests/commentCitations.test.ts",
-          "description": "takes the moved names from their new homes"
-        },
-        {
-          "path": "tests/subprocessHelper.test.ts",
-          "description": "takes the moved names from their new homes"
-        },
-        {
-          "path": "tests/stubRunner.test.ts",
-          "description": "its own corpus scan comes through the shared walk"
-        },
-        {
-          "path": "tests/PendingSchema.test.ts",
-          "description": "its own corpus scan comes through the shared walk"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "three AST scanners in tests/helpers copy a program base byte-for-byte and spell site, request and verdict three ways; a fourth would copy it again",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A module is one job"
-    },
-    "acceptance": "one module carries the scanners' shared base, the three scanners are visitors over it, each takes a request object and returns `{ scanned, findings }`, and 'every .ts under a directory' is spelled once.",
-    "tests": [],
-    "pins": [],
-    "notes": "`parseConfig` is byte-identical across exportGraph and commentCitations; `relPath` is spelled four times; the domain-program block and the identifier walk twice each. Four spellings of the directory walk, two of them regex corpus scans inside test files. The compiler-API tier split — declaration emit, checker-backed program, scopeless `createSourceFile` — is deliberate and declared, and stays; only the base and the vocabulary are shared."
   },
   {
     "tag": "EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER",
