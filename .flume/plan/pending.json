@@ -314,6 +314,45 @@
     "notes": "From PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED's note: the same errno-keyed absent arm stands at every `ENOENT \u2192 empty` in src/job.ts and src/friction.ts too. Only this one feeds a refusal \u2014 an unseen marker lets a loop start over an interrupted merge \u2014 so only this one is filed; the rest are debt until a red or a consumer names them. `Baton.sleep`'s fold is a write no-op and the constructor's mkdir already refuses."
   },
   {
+    "tag": "RENDER-NAMES-THE-LANE-THAT-WOKE-THE-TICK",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/windows.ts",
+          "description": "one lane read per tick, shared by the liveness leg and the render; each block says whether that lane is the one that made the slice live"
+        },
+        {
+          "path": "harness/ci.ts",
+          "description": "an unread degraded from a failing status keeps the run whose log could not be fetched"
+        },
+        {
+          "path": "tests/harnessCi.test.ts",
+          "description": "the wake marker, a wake whose log fetch failed, the stamped lane's silence, and the per-lane call count"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the liveness verdict is a boolean the render re-derives and the degraded unread drops its run, so a tick woken by a lane it then cannot fetch renders a bare UNREAD",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "CI lanes as a findings source"
+    },
+    "acceptance": "every rendered lane says whether it is the one that made the slice live, and a wake whose log fetch failed names the run it was woken over \u2014 no unread standing over an invisible cause.",
+    "tests": [
+      "the inbox window names the lane whose undrained failing run made the slice live",
+      "a lane woken by a run whose log the forge refuses renders unread over that run, not over nothing",
+      "a failing lane already stamped at its latest run renders without the wake marker its unstamped self carries",
+      "one tick's liveness leg and render ask the forge once per lane between them"
+    ],
+    "pins": [],
+    "notes": "3b3dca4 accepted the double read as debt riding this entry: `undrainedRedLane` and `renderCiLanes` each walk every lane, and handing the render the liveness verdict is the same edit this sentence forces. `withMaterial`'s unread arm drops the failing status it degraded from, which is why the wake's cause cannot be named today. One window object serves both callers within a tick (`harness/chain.ts` builds it once; each tick is a fresh child)."
+  },
+  {
     "tag": "TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES",
     "gate": {
       "kind": "open"
