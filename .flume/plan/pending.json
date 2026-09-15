@@ -1,79 +1,5 @@
 [
   {
-    "tag": "A-SIGNALLED-LOOP-TAKES-ITS-TICK-CHILD-WITH-IT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "the signal path drops the lock and claim only once the tick tree it held them for is gone"
-        },
-        {
-          "path": "src/loopSupervisor.ts",
-          "description": "the in-flight tick child is reachable from the run's teardown, and the exit awaits it"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the signalled-loop case, in the lane the judge runs"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "a signalled `flume loop` releases its lock and tip claim and exits while its in-flight tick child keeps writing to the state root that claim protected",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The loop lock and the tip claim"
-    },
-    "acceptance": "a SIGTERM'd `flume loop` leaves no flume process writing to the state root \u2014 the in-flight tick is terminated and awaited before the claim and the lock drop, so the release the section promises is the whole tree's.",
-    "tests": [
-      "a signalled `flume loop` leaves no tick child alive against the state root whose claim it released"
-    ],
-    "pins": [],
-    "notes": "Verified on disk: `dropLock` (src/cli.ts) unlinks loop.pid, releases the claim and exits 143; `superviseLoop` keeps no handle on the child `defaultTickRunner` spawned \u2014 no kill, no wait. The posix lane's red (tests/tip-claim.integration.test.ts, the SIGTERM case) is that orphan's last write racing teardown; the case needs no edit once the tree is gone at exit. The integration lane is outside the judge's, so the named line lands in the default lane."
-  },
-  {
-    "tag": "AN-UNREAD-WAKE-STAMPS-THE-RUN-IT-WOKE-ON",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/windows.ts",
-          "description": "the unread arm names the stamp for the run it woke over, as the failing arm does for the run it drained"
-        },
-        {
-          "path": "harness/prompts/plan-inbox.md",
-          "description": "the lane paragraph's stamp directive follows the amended section"
-        },
-        {
-          "path": "tests/harnessCi.test.ts",
-          "description": "the named case, beside the unread-over-a-run case already there"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "a lane woken by a failing run whose log the forge refuses renders no stamp to write, so it wakes the inbox slice every tick with no way out",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "CI lanes as a findings source"
-    },
-    "acceptance": "an unread block over the run that woke the slice names the stamp that closes the lane, so a forge that will not surrender a log costs one wake per run rather than one per tick.",
-    "tests": [
-      "the unread block over the run a lane woke on names the stamp that closes that lane"
-    ],
-    "pins": [
-      "a lane stamped at the run whose log the forge refused no longer makes the inbox slice live"
-    ],
-    "notes": "Verified on disk: `renderLane`'s unread arm (harness/windows.ts ~456) names the run off `CiUnreadOver` but writes no stamp, and plan-inbox.md still says such a lane \"wakes the next tick the same way until the forge answers\". The liveness leg needs no edit \u2014 `wokenLanes` compares the cheap `failing` status's run id, so stamping that id already closes the lane; that is the pin. The stamp line rides `over`, present on exactly this unread."
-  },
-  {
     "tag": "A-POSIX-ONLY-CASE-DECLARES-ITS-HOST",
     "gate": {
       "kind": "open"
@@ -138,7 +64,7 @@
       "tests/priorAttempts.test.ts",
       "tests/worktrees.test.ts"
     ],
-    "summary": "the cases with no structural substitute \u2014 a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one \u2014 red the lane on their fixture, not a defect",
+    "summary": "the cases with no structural substitute — a stat that fails after a readdir succeeds, a symlink loop, `ln -s`, a sh shim reached through one — red the lane on their fixture, not a defect",
     "per": {
       "path": "spec/cli.md",
       "section": "win32 is a supported host"
@@ -150,52 +76,6 @@
       "every declared-host case carries the reason it cannot run on the other host"
     ],
     "notes": "The declared-host list is an allowlist with a reason each, on the `EXTERNAL_VOCABULARY` idiom (`tests/commentCitations.test.ts`): a site added without one is indistinguishable from residue. `harnessRunner`'s `ln -s` is also what `.claude/rules/platform-facts.md`, *pnpm deletes a symlinked `node_modules` on install* already says not to do. `bin/flume` is the sh shim; the published win32 bin is `bin/flume.js`, so the walk's subject is POSIX-only by construction."
-  },
-  {
-    "tag": "MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/fsProbe.ts",
-          "description": "the descent `readAll` already runs, in the shared home both readers take it from"
-        },
-        {
-          "path": "src/priorAttempts.ts",
-          "description": "drops its private copy onto the shared one"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "readMergingMarkers proves its dir absent from the path, never from the listing's errno"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the obstructed-ancestor arm, asserting the reader's own refusal rather than an errno"
-        },
-        {
-          "path": "tests/priorAttempts.test.ts",
-          "description": "the standing refusals survive the move"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`readMergingMarkers` reads its listing's ENOENT as no interrupted merge, and win32 reports a path through a non-directory as ENOENT \u2014 the startup refusal passes over markers it cannot see",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "acceptance": "the one reader feeding the crash-equals-stop refusal proves its empty answer from the path on both hosts, and the descent has one home rather than two.",
-    "tests": [
-      "readMergingMarkers refuses an obstructed merging dir with a reading of its own, naming the path that is not a directory"
-    ],
-    "pins": [
-      "readAll refuses when a plain file sits above the prior-attempts root"
-    ],
-    "notes": "From PRIOR-ATTEMPTS-ABSENCE-IS-PROVEN-NOT-INFERRED's note: the same errno-keyed absent arm stands at every `ENOENT \u2192 empty` in src/job.ts and src/friction.ts too. Only this one feeds a refusal \u2014 an unseen marker lets a loop start over an interrupted merge \u2014 so only this one is filed; the rest are debt until a red or a consumer names them. `Baton.sleep`'s fold is a write no-op and the constructor's mkdir already refuses."
   },
   {
     "tag": "TESTS-COMMENTS-ARE-CITATIONS-THE-SCAN-RESOLVES",
@@ -244,7 +124,7 @@
       "tests/subprocessHelper.test.ts",
       "tests/worktrees.test.ts"
     ],
-    "summary": "the comment-citation scan judges `src/` and `harness/` only, so the nine `tests/` citations of a rule page \u2014 three by section name \u2014 stand silently through a rename",
+    "summary": "the comment-citation scan judges `src/` and `harness/` only, so the nine `tests/` citations of a rule page — three by section name — stand silently through a rename",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
@@ -256,7 +136,7 @@
       "the repo citation pin judges the repo-relative path citations src/, harness/ and tests/ comments carry",
       "the repo citation pin judges the unbackticked page names src/, harness/ and tests/ comments carry"
     ],
-    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges \u2014 one names `src/` alone \u2014 so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix."
+    "notes": "Ruled in the inbox; the carve-out already reads `tests/` and `platform-facts.md` already loads there. The widen is `trees: [\"src/\", \"harness/\", \"tests/\"]` in `tests/commentCitations.test.ts`. All three standing repo pins name fewer trees than the widen judges — one names `src/` alone — so all three retitle here. Citations the widen turns up dangling are repaired here too; the nine `platform-facts.md` sites are the first judged set, not the whole one. Vacuity guards want a `tests/` module prefix."
   },
   {
     "tag": "A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK",
@@ -279,12 +159,12 @@
       "path": ".claude/rules/engineering.md",
       "section": "A green verdict is proven non-vacuous"
     },
-    "acceptance": "each negative names the subject its title names \u2014 the prior-attempt block's own render-refused prose \u2014 so the case's verdict no longer turns on what the tick's worktree is called.",
+    "acceptance": "each negative names the subject its title names — the prior-attempt block's own render-refused prose — so the case's verdict no longer turns on what the tick's worktree is called.",
     "tests": [],
     "pins": [
       "the render-refused prior-attempt block does not send a hook-refused retry to fix an inline-exec span"
     ],
-    "notes": "Build-observed: tests/Dispatcher.test.ts:16722-16725 `not.toMatch` over `retry`, the whole prompt. The `<prior-attempt>` block quotes the hook's stack, whose absolute frames are the worktree path, and a worktree is named after the entry tag \u2014 so the tag INLINE-EXEC-CAP-ABORT-AWAITS-ITS-KILLED-CHILD red it for that entry's whole fork, green in the trunk checkout. Scope the negatives; never constrain tags."
+    "notes": "Build-observed: tests/Dispatcher.test.ts:16722-16725 `not.toMatch` over `retry`, the whole prompt. The `<prior-attempt>` block quotes the hook's stack, whose absolute frames are the worktree path, and a worktree is named after the entry tag — so the tag INLINE-EXEC-CAP-ABORT-AWAITS-ITS-KILLED-CHILD red it for that entry's whole fork, green in the trunk checkout. Scope the negatives; never constrain tags."
   },
   {
     "tag": "PRIOR-ATTEMPT-PROSE-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS",
@@ -314,33 +194,7 @@
     "acceptance": "every site turning on the two stat facts points at the section that owns them rather than restating it, and each keeps the decision it exists to state.",
     "tests": [],
     "pins": [],
-    "notes": "The leftovers DENIAL-HELPER-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS named, handed back by the ruling and re-verified on disk: src/priorAttempts.ts ~104 (cites *Loud or nothing* for the posture, not the page for the fact) and ~373 (no cite); tests/priorAttempts.test.ts ~369 (cites the neighbouring *chmod denies nothing on win32*) and ~412 (no cite). src/fsProbe.ts ~22 already cites it and declares its bound \u2014 out of scope. Collides with MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH on both files."
-  },
-  {
-    "tag": "LONG-PATH-FIXTURE-PROSE-CITES-THE-CEILING-THAT-OWNS-IT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/job.test.ts",
-          "description": "`longJobName`'s doc shrinks to a cite of the section that owns the ceiling, keeping the decision it states"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`longJobName`'s doc spells out the spawn-cwd MAX_PATH ceiling `platform-facts.md` now owns, so one measured external fact is held in two prose copies that can drift apart",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "the fixture helper turning on the spawn-cwd ceiling points at the section that owns it rather than restating it, and keeps the decision it exists to state \u2014 why the depth rides the name.",
-    "tests": [],
-    "pins": [],
-    "notes": "The leftover the inbox record handed derive, re-verified on disk: tests/job.test.ts ~2011-2019 restates the CreateProcess refusal, its `spawn git ENOENT` surfacing and the `toNamespacedPath` bound in full. All three are now owned by `.claude/rules/platform-facts.md`, *win32 refuses to spawn a process whose working directory exceeds MAX_PATH*. The two callers (~2057, ~2103) already point at `longJobName` and stay. Sole site; no other comment states the fact."
+    "notes": "The leftovers DENIAL-HELPER-CITES-THE-PAGE-THAT-OWNS-ITS-FACTS named, handed back by the ruling and re-verified on disk: src/priorAttempts.ts ~104 (cites *Loud or nothing* for the posture, not the page for the fact) and ~373 (no cite); tests/priorAttempts.test.ts ~369 (cites the neighbouring *chmod denies nothing on win32*) and ~412 (no cite). src/fsProbe.ts ~22 already cites it and declares its bound — out of scope. Collides with MERGING-MARKERS-PROVE-ABSENCE-FROM-THE-PATH on both files."
   },
   {
     "tag": "EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER",
@@ -514,12 +368,12 @@
       ],
       "retire": []
     },
-    "summary": "163 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), \u2026))`, each correct-by-accident until a comparison against git's output grows beside it",
+    "summary": "163 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), …))`, each correct-by-accident until a comparison against git's output grows beside it",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
     },
-    "acceptance": "every temp fixture root in tests/ is made by the one helper that folds the spelling at creation, and a scan holds the suite to it \u2014 so a new bare root reds where it is written rather than on a Windows lane months later.",
+    "acceptance": "every temp fixture root in tests/ is made by the one helper that folds the spelling at creation, and a scan holds the suite to it — so a new bare root reds where it is written rather than on a Windows lane months later.",
     "tests": [
       "every temp fixture root in tests/ is created through the helper that folds it to git's spelling"
     ],
