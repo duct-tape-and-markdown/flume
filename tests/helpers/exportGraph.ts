@@ -198,10 +198,8 @@ const emitDeclarations = (
  * it — `lib`, `node_modules` — comes off disk through the base host.
  *
  * The `outDir` tree exists only in that map, so the host answers for its
- * directories as well as its files: module resolution abandons a lookup whose
- * containing directory it believes is absent, which would resolve every
- * cross-module import to `unknown` and report an empty reach graph as a clean
- * surface.
+ * directories as well as its files (`.claude/rules/platform-facts.md`,
+ * *TypeScript abandons a module lookup whose directory the host denies*).
  */
 const declarationProgram = (
   emitted: ReadonlyMap<string, string>,
