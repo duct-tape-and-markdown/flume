@@ -272,14 +272,26 @@ function referenced(node: ts.Node): Set<string> {
  * Every named *function* in the file, at any depth — a suite's spawn wrapper
  * is as often declared inside its `describe` as beside it.
  *
+ * Keyed by name, valued by **every** declaration of that name rather than the
+ * last one walked: a file that declares `boot` in one `describe` and an
+ * unrelated `boot` in a sibling is ordinary, and keeping one node per name
+ * would let the innocent declaration decide reach for the whole file — an
+ * under-approximation, which is the one direction this scan must not take
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
  * Functions only: a `const gate = tscGate({ cmd: process.execPath })` is a
  * value one case built, not a wrapper its siblings call, and treating it as
  * one would hand a budget to every unrelated case that reuses the name.
  */
-function namedFunctions(src: ts.SourceFile): Map<string, ts.Node> {
-  const fns = new Map<string, ts.Node>();
+function namedFunctions(src: ts.SourceFile): Map<string, ts.Node[]> {
+  const fns = new Map<string, ts.Node[]>();
+  const declare = (name: string, node: ts.Node): void => {
+    const nodes = fns.get(name);
+    if (nodes) nodes.push(node);
+    else fns.set(name, [node]);
+  };
   const walk = (n: ts.Node): void => {
-    if (ts.isFunctionDeclaration(n) && n.name) fns.set(n.name.text, n);
+    if (ts.isFunctionDeclaration(n) && n.name) declare(n.name.text, n);
     if (
       ts.isVariableDeclaration(n) &&
       ts.isIdentifier(n.name) &&
@@ -287,7 +299,7 @@ function namedFunctions(src: ts.SourceFile): Map<string, ts.Node> {
       (ts.isArrowFunction(n.initializer) ||
         ts.isFunctionExpression(n.initializer))
     )
-      fns.set(n.name.text, n.initializer);
+      declare(n.name.text, n.initializer);
     ts.forEachChild(n, walk);
   };
   walk(src);
@@ -299,15 +311,20 @@ function namedFunctions(src: ts.SourceFile): Map<string, ts.Node> {
  * whose body reaches one, to a fixed point. Over-approximating by
  * design — a name that merely looks like a spawn wrapper costs one declared
  * budget, while a missed one costs the flake.
+ *
+ * A name reaches when **any** of its declarations does, on that same trade:
+ * the scan has no scopes, so a name shared by a wrapper and an unrelated
+ * helper is judged by the wrapper, and the helper's callers pay a ceiling
+ * they never needed.
  */
 function spawnNames(src: ts.SourceFile, seed: readonly string[]): Set<string> {
   const fns = namedFunctions(src);
   const reaching = new Set<string>(seed);
   for (;;) {
     let grew = false;
-    for (const [name, node] of fns) {
+    for (const [name, nodes] of fns) {
       if (reaching.has(name)) continue;
-      const refs = referenced(node);
+      const refs = new Set(nodes.flatMap((node) => [...referenced(node)]));
       if ([...reaching].some((n) => refs.has(n))) {
         reaching.add(name);
         grew = true;

@@ -565,6 +565,65 @@ it("the spawn-budget scan reports a case that starts node under a command-string
 });
 
 /**
+ * A name declared twice in one file, which is ordinary: two `describe`s, each
+ * with its own `boot`.
+ *
+ * The scan has no scopes, and the reach map used to keep one node per name, so
+ * the *last* declaration walked decided reach for the whole file — an innocent
+ * sibling silently un-flagged a case that boots node through a file-local
+ * wrapper, and the suite read as a lane in order. That is under-approximation,
+ * which is the one direction this scan must not take
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * The widening's cost is priced in the fixture below, not hidden from it: the
+ * innocent half's case is reported too, because a name that reaches a spawn
+ * anywhere is treated as reaching everywhere. One unneeded declared ceiling is
+ * the trade this scan takes against one missed flake.
+ */
+it("a same-named function elsewhere in the file does not hide a spawning case from the scan", async () => {
+  const FIXTURE = [
+    `import { SPAWN_BUDGET_MS } from "../helpers/subprocess.ts";`,
+    ``,
+    `describe("the half that wraps a spawn", () => {`,
+    `  const boot = (args: string[]) => exec(process.execPath, args);`,
+    ``,
+    `  it("boots the CLI through a file-local wrapper", async () => {`,
+    `    await boot(["--version"]);`,
+    `  });`,
+    `});`,
+    ``,
+    `describe("the half that reuses the name", () => {`,
+    `  const boot = (n: number) => n + 1;`,
+    ``,
+    `  it("reuses the name for arithmetic", () => {`,
+    `    expect(boot(1)).toBe(2);`,
+    `  });`,
+    `});`,
+    ``,
+    `it("shares no name with either half", () => {`,
+    `  expect(1).toBe(1);`,
+    `});`,
+    ``,
+  ].join("\n");
+
+  const dir = await mkdtemp(join(tmpdir(), "flume-budget-shadowed-"));
+  try {
+    await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+    const sites = await scanDefaultLaneSpawnSites(dir);
+
+    // The whole list: the spawning case is back, and the case sharing neither
+    // name is still absent — so the widening is the shadowed declaration's
+    // doing rather than a scan that started reporting every case it reads.
+    expect(sites.map((s) => [s.title, s.budget])).toEqual([
+      ["boots the CLI through a file-local wrapper", null],
+      ["reuses the name for arithmetic", null],
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
  * The scan's own sensitivity, driven over a fixture written to be caught:
  * the assertion above is green over an empty set by design, so a detector
  * that stopped firing would be indistinguishable from a lane in order
