@@ -13,7 +13,11 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
 
 `flume <command> [options]`. A bare `flume` with no argument is `tick`.
 
-- `status` — observational; prints baton and liveness state, exits 0 always.
+- `status` — observational; prints baton and liveness state. It never exits
+  non-zero on anything it observes — a dead supervisor, a corrupt queue, a
+  detached HEAD, a chain that will not load are reports, not failures — and
+  refuses (`EX_IOERR`) only when a file it must read is present and unreadable,
+  so no observation is printed as its opposite.
   It mutates no baton flag and loads no agent; the one filesystem effect is
   that constructing the baton creates `<flumeDir>/awake/` when absent
   (`Baton`).
@@ -40,6 +44,10 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
   park/bail vocabulary is the chain's, so `log` prints what the record
   states and nothing derived (`engine-boundary.md`, *Told, not inferred*).
   No verdicts file → prints nothing, exits 0. Mutates nothing.
+- `render` — renders what a named phase (and, under fanout, `--entry <tag>`)
+  would be handed, and prints or writes it, invoking nothing: the other half
+  of what `check` does for the queue. An unresolved span exits `EX_DATAERR`
+  naming it, the refusal a tick would have bought with an invocation.
 - `check` — validates the working tree's `pending.json` without spending an
   agent: the real parse (`parsePending`, the same decode a tick's resolution
   takes) plus fence arithmetic for every entry — declared paths against the
@@ -85,7 +93,7 @@ was awake is the field-reported shape (gh#1); `--entry` with no matching
 entry; a `--max` that is missing, non-numeric, or negative (refused before any
 tick runs); a resolution-authority conflict (below); a cross-repo `FLUME_DIR`
 (below); and the CJS-context refusal (below). `status` is the one named
-exception: specced to exit 0 always, it ignores extras rather than acquiring
+exception: specced to fail on no observation, it ignores extras rather than acquiring
 its first failure mode. Everything else is the tick/loop exit-code contract in
 `spec/loop.md`.
 
@@ -351,11 +359,10 @@ unrelated package.
   scaffolded chain — on both the POSIX and the Windows lane. A shim that does
   not start is invisible to every other check in the suite.
 
-  All three fixtures CI installs the tarball against — `CHAIN_FIXTURE` in
-  `scripts/smoke-install.mjs` (Windows lane), the POSIX consumer-install heredoc,
-  and the POSIX second-reference-chain (backlog-groomer) heredoc, which drives a
-  real `wake` + `tick` and asserts on the committed result — export the factory
-  form `loadChainModule` requires.
+  Every fixture CI installs the tarball against exports the factory form
+  `loadChainModule` requires, on every lane; the second-reference-chain
+  (backlog-groomer) fixture additionally drives a real `wake` + `tick` and
+  asserts on the committed result.
 
 ## win32 is a supported host
 

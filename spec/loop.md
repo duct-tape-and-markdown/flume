@@ -280,7 +280,10 @@ owning it" (below) went with it.
 What survives a refusal on disk: where the dispatcher undoes a commit it observed
 the undo is `reset --soft`, itself refused unless the current tip is the sha it
 observed — run inside
-the tick's worktree, which teardown removes along with any uncommitted work; no
+the tick's worktree, which teardown removes along with any uncommitted work — the
+tracked paths a tick modified and did not commit are reported on the tick verdict
+before teardown, on every tick that ran an agent, so the loss is seen even though it
+is not preserved; no
 snapshot is taken (`PriorAttemptStore.snapshotReverted` rides the afterCommit gate-revert leg
 only). Where a wave refuses *before* cherry-picking, no reset is involved: the
 commit is still on its private worktree branch, which teardown removes. The entry

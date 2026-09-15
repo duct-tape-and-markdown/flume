@@ -116,7 +116,7 @@ one refuses the load naming the field and the valid set.
 | `fence` | Build's `writablePaths`, and per plan slice the paths that slice may write beyond the package's own plan artifacts. |
 | `channelPaths` | Build's `entryChannelPaths`. Optional. |
 | `scopeWritesToEntry` | Off by default. The package documents both arguments and takes no side. |
-| `runner` | A factory over the engine's API, `(api) => Runner`, for the test runner the judge drives — see *The runner interface*. The package calls it at chain load with the same `FlumeApi` the chain receives, so a runner takes the engine's installer and the state root's worktree base from there and a consumer constructs neither by hand. |
+| `runner` | A factory, `({ api, provision }) => Runner`, for the test runner the judge drives — see *The runner interface*. The package calls it at chain load with the chain's own `FlumeApi` and the declared `setup` as a provisioning function, so a runner constructs neither by hand. |
 | `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
 | `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script; the package's own gates are always present and always first. |
@@ -140,16 +140,22 @@ than exit codes the judge would have to interpret:
 - **`runAtBase(names, files, baseSha, cwd)`** — lay the merged bytes of `files`
   over a detached checkout of `baseSha` and run the same names there; the judge
   refuses a `tests[]` line that passes here.
-- **`lanes`** — the runner's declared lanes and which files each excludes, so
-  the judge can refuse at plan time a line homed in a lane it will not run,
-  instead of at build time after a wave.
+- **`lanes`** — the runner's declared lanes and which files each excludes. The
+  running lane's exclusions are rendered into plan's `tests[]` and `pins[]`
+  hints, so plan is told at authorship which globs no judge will reach — never
+  refused for a prediction, since an entry's `files` is a prediction build is
+  not held to.
 
-A runner is declared as a factory over the engine's API, because two things a
-base checkout needs are the engine's to hand out: its lockfile-aware installer
-for the checkout's dependencies, and the state root's worktree base, so a run
-that dies mid-flight leaves a directory the stale-worktree sweep reclaims. The
-package ships a vitest runner factory that takes both from the API it is
-given. A consumer with cargo, dotnet, or a script declares its own against the
+A runner is declared as a factory over what a base checkout needs and cannot
+reach from a static declaration: the engine's API — its lockfile-aware
+installer and the state root's worktree base, so a run that dies mid-flight
+leaves a directory the stale-worktree sweep reclaims — and the consumer's own
+declared `setup`, reduced to a function that provisions a checkout the way a
+build worktree is provisioned (the installer at the root when none is declared).
+The factory receives both, `(ctx: { api, provision }) => Runner`; the package
+ships a vitest runner factory that takes them from what it is given, so a
+consumer whose install is not at the repo root judges its base the same way it
+builds. A consumer with cargo, dotnet, or a script declares its own against the
 same three operations.
 
 ## The cite resolver

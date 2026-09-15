@@ -214,7 +214,11 @@ decorator stack, different model". There is no `Phase.model`.
 The model itself is a typed option on the adapter: `claudeCode({ model })`
 (`ClaudeCodeOptions.model`), rendered to `--model <value>` on the
 argv. It has **no default** — undeclared, the binary's own default applies and
-the engine passes nothing. `extraArgs` remains the passthrough for every other
+the engine passes nothing. A tick loads only the MCP configuration the chain
+hands it: the adapter passes `--strict-mcp-config` unless
+`ClaudeCodeOptions.inheritUserMcp` is set, because by-user runtime state is what
+a stateless tick excludes, and a wedged inherited server has stalled a wave.
+`extraArgs` remains the passthrough for every other
 flag; the engine types the one knob every consumer varies per phase and
 declines to mirror the rest of the CLI (`.claude/rules/engine-boundary.md`,
 *Surface, not prescription*). The result event reports the model
@@ -458,7 +462,8 @@ confines side effects to disk inside `cwd`.
   therefore *not* nested under `repoRoot` — the worktree lives inside it —
   so a gate never derives a repo-relative path from the two.
 - **`stateRootRel`** is the state root's path relative to the primary repo
-  root, set when the state root lives inside the repo and absent when it is
+  root, in git's own alphabet — forward slashes, whatever the host's separator —
+  set when the state root lives inside the repo and absent when it is
   relocated outside it. It is the one value a gate needs to read a
   **tracked** state-root file as the gated commit holds it —
   `git show <commitSha>:<stateRootRel>/plan/pending.json` — and the
@@ -475,7 +480,10 @@ confines side effects to disk inside `cwd`.
   relocated state root) and is a required key carrying that absence.
 - **`baseSha`** — the sha the span started from: the worktree's tip when the
   tick branched, the same value the dispatcher cherry-picks from. Set on both
-  stages. It is how a gate tells an input the tick *ignored* from one it
+  stages. A gate that needs the *tree* at that sha, not a file from it, asks
+  the API for a detached checkout (`api.git.checkoutAt`) placed under the
+  state root's worktree base and removed by the engine when the gate returns —
+  a differential gate never provisions its own. It is how a gate tells an input the tick *ignored* from one it
   *never saw*: `git log <baseSha>..HEAD -- <inputs>` names what landed on
   trunk after the tick branched, and `git show <baseSha>:<path>` is the
   input as the tick read it. Without it a gate reading trunk claims reverts
@@ -499,8 +507,9 @@ confines side effects to disk inside `cwd`.
 skipped?, verdict? }`.
 
 - **A gate that throws is a gate that failed.** The engine catches the throw at
-  every gate-run site, records `{ ok: false, message: <the error's message> }`
-  for it, and completes the tick — verdict written, merge bookkeeping done —
+  every gate-run site, records `{ ok: false, message: <the error's message>,
+  details: <its stack> }` for it — the stack is the `details` a returned
+  refusal would have carried — and completes the tick — verdict written, merge bookkeeping done —
   exactly as it would for a refusal the gate returned. A gate's exception is
   a fact about the gate, never a reason to lose the tick's facts or to strand
   a merge behind the crash marker (`spec/loop.md`, *Crash equals stop*).
@@ -537,6 +546,16 @@ not prescription*: a hook receives facts, never re-derives them). The test for
 adding a field: a chain that reads `process.env`, scans a directory under
 `flumeDir`, or recomputes a verdict the dispatcher already reached is naming a
 missing field, and the field is added rather than the chain excused.
+
+A hook that throws is answered the way its sibling seams already are, never
+by losing the tick. `promptArgs` throwing is `render-refused`: the prompt never
+resolved, the agent is never invoked, and the record is persisted as for any
+other render refusal. `shouldRun` throwing is a refused tick, not a decline —
+a hook that cannot decide has not decided to skip. `handoff` throwing is logged
+and the tick's facts stand, since they are written before it runs. `shipped`
+throwing is not `false`: the entry stays pending and the verdict names the
+throw, as it names a declined ship. In every case the verdict is written and
+the merge bookkeeping completes.
 
 - **`TickContext`** (`shouldRun`, `promptArgs`) —
   `cwd`, `flumeDir`, `assignedEntry` (fanout), `pending` (singleton), plus:
@@ -684,6 +703,10 @@ Durable packaging policy:
   point `package.json` at the compiled tree — the broadly-compatible choice for
   any consumer (pure Node, bundler, TS or JS project), and it removes a runtime
   dependency on `tsx` for the package's own surface.
+- **Git 2.36 or newer.** The engine reads `worktree list --porcelain -z`, which
+  git grew in 2.36; on an older git worktree reclamation degrades loudly and
+  nothing else does. Stated here beside the node floor so the README's
+  prerequisite line derives from one place.
 - **ESM-only.** `"type": "module"`, Node 22+. `attw --pack . --profile esm-only`
   is the accurate *profile* — the default profile's `CJSResolvesToESM` finding
   is the expected shape, not a defect — but it runs non-blocking in CI while

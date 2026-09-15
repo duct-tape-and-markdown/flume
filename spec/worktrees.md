@@ -68,9 +68,12 @@ every repo-path prefix removes the prefix, and with it the inference.
 there — `createWorktree`, per-wave stale-slug removal, and the startup sweep (*Startup
 sweep*, below). A second computation is a defect: a sweep basing on the default while
 creation honored the override found nothing to remove, then failed every `git branch -D`
-against worktrees still standing at the real base (field-traced four times). There is no
-`Chain.worktreesDir`: the base is machine-local placement, the operator's to set per host,
-and a committed chain file is the wrong home for it.
+against worktrees still standing at the real base (field-traced four times). A chain
+does not commit a base path: placement is machine-local, the operator's per host, and
+a committed literal is the wrong home for it. A chain may declare how to compute one —
+`Chain.worktreesBase?: (paths) => string`, evaluated at load against the resolved
+roots — so a chain that wants worktrees outside the checkout says so once, without
+an environment variable set before the engine's own module loads.
 
 **The base must be flume-exclusive.** Before `worktree add`, `createWorktree` clears the
 computed `<base>/[<namespace>/]<dirName>` path only when git's own worktree registry names it
@@ -392,9 +395,12 @@ The suite has two lanes:
 - **Integration lane** — a test whose method is slow or load-sensitive by construction:
   spawning `flume tick`/`loop` **to drive multi-tick or engine behavior** (each spawn is a
   full Node runtime startup, and engine behavior stacks several per test), invoking a
-  **real agent**, or asserting on **wall-clock timing**. A single-invocation CLI-surface
-  test — argv parsing, an exit code, output shape — must spawn one process to test
-  process-level behavior at all; that spawn is the test's subject, not overhead, and
+  **real agent**, or asserting on **wall-clock timing**. A CLI-surface test may spawn a
+  fixed, small number of processes when each spawn is the test's subject — an exit
+  code, an agreement between two surfaces, an idempotent re-run — and declares a
+  per-case budget rather than inheriting the runner's default; what moves a test to
+  this lane is the cost drivers above, never a spawn count. Such a spawn is the
+  test's subject, not overhead, and
   (~100 such default-lane tests, zero flakes ever) is not what this lane exists to
   exclude. Marked by the `*.integration.test.ts` filename convention and
   **excluded from the default run** by `vitest.config.ts`, so the gate never runs them. They
