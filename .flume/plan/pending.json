@@ -1,6 +1,6 @@
 [
   {
-    "tag": "DANGLING-CITATION-PIN",
+    "tag": "DANGLING-CITATION-SCAN",
     "gate": {
       "kind": "open"
     },
@@ -12,24 +12,28 @@
         },
         {
           "path": "tests/commentCitations.test.ts",
-          "description": "the pin over src/ and harness/, plus the scanner's own flagging case"
+          "description": "the scan over src/ and harness/, plus the scanner's own flagging case"
         }
       ],
-      "edit": [],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "repair the two citations naming no declaration"
+        }
+      ],
       "retire": []
     },
-    "summary": "Promote the deleted-symbol verdict: a pin that reds on a backticked identifier in a src/ or harness/ comment naming no declaration those trees hold",
+    "summary": "Promote the deleted-symbol verdict: a scan that reds on a backticked identifier in a src/ or harness/ comment naming no declaration those trees hold",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
     },
-    "acceptance": "the suite carries a pin that reds on a comment citing a name src/ and harness/ no longer declare, and is green on the tip",
+    "acceptance": "the suite reds on a comment citing a name src/ and harness/ no longer declare, and is green on the tip with Dispatcher's two stale citations repaired",
     "tests": [
-      "the citation scan flags a backticked identifier no src/ or harness/ declaration holds"
-    ],
-    "pins": [
+      "the citation scan flags a backticked identifier no src/ or harness/ declaration holds",
       "every backticked identifier in a src/ or harness/ comment names a declaration those trees hold"
     ],
-    "notes": "The token, never its meaning — a name either appears as a declaration in those two trees or it does not. Subjects are camelCase/PascalCase only, so backticked prose words are not judged. Vacuity guard: assert the subject set is non-empty before the emptiness assertion; crude probe on this tip reports 1010 subjects, 0 misses. No historical tree reds on the property (the deletion and its hand-repair shipped in one commit), so the tests[] line is the detector's own flagging case over a fixture."
+    "pins": [],
+    "notes": "Prior note's `0 misses` was a tokenizer artifact. This tip: 951 subjects (backticked, internal capital, no `_`), 15 misses. Two real, both src/Dispatcher.ts — `hasPickable` (names nothing repo-wide; the real surface is `TickResult.pickableAfter`) and `cherryPick` (`cherryPickRange`/`cherryPickAbort`). Rest is external vocabulary: resolve via the TS checker (precedent tests/helpers/exportGraph.ts) over lib globals, imported bindings, module basenames; the residue is a cited exclusion."
   }
 ]
