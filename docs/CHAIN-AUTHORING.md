@@ -85,16 +85,15 @@ resolve relative to `.flume/`.
     open-questions.md
 ```
 
-**Harness-managed state:** `awake/`, `worktrees/`, `prior-attempts/`,
-`rendered-prompts/`, `merging/`, `plan/pending.json`, `loop.pid`, `stop`,
-`tick-verdict.json`, `tick-verdicts.jsonl` — the runtime spells each of those
-names itself, so you neither author nor move them (`plan/pending.json` is the
-default the runtime places; `Chain.pendingPath` moves it). `sessions/` is
-*not* among them: session capture is a chain's own artifact
-(`withSessionCapture`), placed by the chain that captures it — the runtime
-never puts a directory there. Per-run artifacts your chain writes are yours
-to place: root them at `api.paths.flumeDir` and the one-`rm` teardown covers
-them too.
+**Harness-managed state:** the runtime spells the names of its own state
+dirs and files itself, so you neither author nor move them — the set is
+`spec/jobs.md`, "Runtime ignores", which owns it and grows without asking
+your chain. Two neighbours that set doesn't carry: `plan/pending.json` is
+the default the runtime places, and `Chain.pendingPath` moves it;
+`sessions/` is a chain's own artifact (`withSessionCapture`), placed by the
+chain that captures it — the runtime never puts a directory there. Per-run
+artifacts your chain writes are yours to place: root them at
+`api.paths.flumeDir` and the one-`rm` teardown covers them too.
 
 **One chain governs every job, too.** Job resolution (`--job`/`FLUME_JOB`)
 retargets only the mutable state root (`.flume` → `.flume/jobs/<name>`) —
