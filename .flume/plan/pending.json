@@ -1,5 +1,41 @@
 [
   {
+    "tag": "MEMBER-SIGNATURE-TYPES-RESOLVE-FROM-THE-EXPORTS-MAP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/exportGraph.ts",
+          "description": "signatureOf reaches member signatures of reached types"
+        },
+        {
+          "path": "tests/exportConsumers.test.ts",
+          "description": "detector arm over the fixture, repo arm over this tree"
+        },
+        {
+          "path": "src/index.ts",
+          "description": "the member-signature types the widened scan finds"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The unnamable-type scan stops at top-level functions; Chain.worktreesBase's FlumePaths is unexported and unflagged",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "The package a chain loads through"
+    },
+    "acceptance": "The export scan walks member signatures of reached types — excluding namespace members and `private` class members — and its unnamable set over this repo is empty.",
+    "tests": [
+      "every type a member signature of a reached type names is exported from an entry module"
+    ],
+    "pins": [],
+    "notes": "Known finding: `Chain.worktreesBase?: (paths: FlumePaths) => string` (src/Phase.ts) names FlumePaths (src/flumeApi.ts), which no entry module exports — a chain author cannot annotate that callback's parameter. The two exclusions are the design call: a `private` member carries no signature into the .d.ts, a namespace member is named through its namespace. Drained from the PUBLIC-SIGNATURE-TYPES note."
+  },
+  {
     "tag": "MIGRATION-NOTES-ARE-REACHABLE-FROM-THE-DOCS-ROOT",
     "gate": {
       "kind": "open"
@@ -30,5 +66,31 @@
     ],
     "pins": [],
     "notes": "0.10 is linked from both, 0.11 and 0.12 from CHANGELOG, 0.16 from neither. CHANGELOG's own link lands at the cut — its [Unreleased] block is empty — so README is the site now."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-POINTS-AT-THE-INIT-CONTRACT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the adoption section shrinks to a pointer"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CHAIN-AUTHORING.md restates init's write list, pinned-range rule and refusals that docs/CLI.md now holds under a gate",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "docs/CHAIN-AUTHORING.md's `Adopting: flume-harness init` section keeps the install commands and the chain.ts hop, and points at docs/CLI.md § `flume-harness init` for what init writes, refuses and leaves alone — restating none of it.",
+    "tests": [],
+    "pins": [],
+    "notes": "CLI.md's copy is gated (verb set against the bin, exit codes measured off it); CHAIN-AUTHORING's is pinned by nothing, so it is the copy that drifts while still reading as current. No pin here — docs against docs is prose read against prose."
   }
 ]
