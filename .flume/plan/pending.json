@@ -1,1 +1,140 @@
-[]
+[
+  {
+    "tag": "HANDOFF-FACTS-ON-THE-TICK-SURFACE",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "src/Phase.ts", "description": "the shipped entry's payload beside its tag on the per-entry outcome" },
+        { "path": "src/Dispatcher.ts", "description": "fill it where the wave folds its tag lists" },
+        { "path": "src/flumeApi.ts", "description": "the stop-flag path rule on the API, beside priorAttemptPath" },
+        { "path": "src/index.ts", "description": "same value on the index list" },
+        { "path": "tests/Dispatcher.test.ts", "description": "both facts" }
+      ]
+    },
+    "summary": "Report the shipped entry's payload and the stop-flag path rule on the surfaces a handoff reads",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "A `handoff` reads a shipped entry's extension field and the stop flag's path off the engine alone — no re-read of `pending.json` at a base sha, no composed `stop` literal.",
+    "tests": [
+      "a fanout wave reports the shipped entry's payload beside its tag",
+      "FlumeApi carries the stop-flag path rule"
+    ],
+    "notes": "Unblocks HANDOFF-STOPS-ON-A-CONTRACT-TOUCHING-SHIP: the default handoff has shippedTags and flumeDir and can reach neither fact. priorAttemptPath is the standing precedent for a path rule on the API (spec/pending.md, What the package exports)."
+  },
+  {
+    "tag": "HANDOFF-STOPS-ON-A-CONTRACT-TOUCHING-SHIP",
+    "gate": { "kind": "blockedBy", "tags": ["HANDOFF-FACTS-ON-THE-TICK-SURFACE"] },
+    "files": {
+      "edit": [
+        { "path": "harness/entryExtension.ts", "description": "optional contractTouching beside the package fields, with its hint" },
+        { "path": "harness/handoff.ts", "description": "write the stop flag after a marked ship" },
+        { "path": "tests/harnessEntryExtension.test.ts", "description": "the field" },
+        { "path": "tests/harnessHandoff.test.ts", "description": "both legs" }
+      ]
+    },
+    "summary": "Package entry extension gains optional `contractTouching`; the default handoff writes the stop flag after shipping one",
+    "per": { "path": "spec/loop.md", "section": "One tick is one fresh process" },
+    "acceptance": "A shipped entry marked `contractTouching` leaves the stop flag on disk; an unmarked ship leaves none. The ladder's own routing is unchanged in both cases.",
+    "tests": [
+      "the default handoff writes the stop flag after a contractTouching entry ships",
+      "the default handoff writes no stop flag when no shipped entry is contractTouching"
+    ],
+    "pins": [
+      "the package entry extension accepts an entry that omits contractTouching"
+    ],
+    "notes": "The mechanism the cited section already points at — \"its build handoff writing the stop flag after shipping an entry plan marked contract-touching\". `.flume/PROTOCOL.md` rule 6's single-entry case is the operator's; it is outside every phase lane."
+  },
+  {
+    "tag": "TICK-REPORTS-UNCOMMITTED-TRACKED-EDITS",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "src/Dispatcher.ts", "description": "read the worktree's tracked modifications after the agent exits, before teardown; carry them on the verdict" },
+        { "path": "tests/Dispatcher.test.ts", "description": "both legs" }
+      ]
+    },
+    "summary": "Report on the tick verdict the tracked paths a tick modified and did not commit, before teardown removes the worktree",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Tip verify — one writer per branch, absorption at the merge"
+    },
+    "acceptance": "Every tick that ran an agent writes its uncommitted tracked paths on the verdict before teardown, so the loss is seen though not preserved.",
+    "tests": [
+      "a tick that commits nothing reports the tracked paths it modified before teardown",
+      "a tick that left no tracked modification reports an empty set"
+    ],
+    "notes": "Read NUL-separated (.claude/rules/platform-facts.md, git's porcelain quoting). The fact is the engine's; what it means stays the chain's. The package's clean-tree gate re-runs `git status` today and is the fact's intended reader once it rides a gate-reachable surface — a later entry, not this one."
+  },
+  {
+    "tag": "LANE-EXCLUDES-INFORM-THE-NAMED-LINE-HINTS",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "harness/entryExtension.ts", "description": "render the running lane's excludes into the tests[]/pins[] hints" },
+        { "path": "harness/chain.ts", "description": "build the runner before the extension and hand it the lanes" },
+        { "path": "harness/vitestRunner.ts", "description": "retire the site comment claiming a plan-time refusal" },
+        { "path": "tests/harnessEntryExtension.test.ts", "description": "all three cases" }
+      ]
+    },
+    "summary": "Render the running lane's exclusions into plan's `tests[]` and `pins[]` hints — informed at authorship, never refused on a prediction",
+    "per": { "path": "spec/harness.md", "section": "The runner interface" },
+    "acceptance": "Plan's rendered schema names the globs no judge will reach; no gate refuses an entry over its declared `files`.",
+    "tests": [
+      "the tests[] hint names the globs the running lane excludes",
+      "the pins[] hint names the globs the running lane excludes",
+      "a running lane with no exclusions renders the hint without a lane clause"
+    ],
+    "notes": "`Runner.lanes` has shipped with no reader; this is the reader the cited section names. The hints stay tool-neutral — the globs come from the consumer's own declaration. `.flume/declaration.ts:61-63` still claims a plan-time refusal; that file is outside every phase lane."
+  },
+  {
+    "tag": "PLAN-DISCIPLINE-NAMES-THE-OVERLAP-RULE",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "harness/prompts/plan-discipline.md", "description": "one clause in the named-lines paragraph" }
+      ]
+    },
+    "summary": "State in plan's discipline that a `tests[]` line is judgeable only when the entry also changes a file not among the ones holding it",
+    "per": { "path": "spec/harness.md", "section": "The judges" },
+    "acceptance": "The named-lines paragraph states the overlap condition, so a tests-only entry declares its behavior elsewhere or carries no `tests[]` line.",
+    "notes": "Red-on-base lays the merged bytes of the files holding the named tests over the base checkout; for a tests-only diff that is the whole change, so the line passes at the base by construction. Five field instances. The lane half of the same wall is LANE-EXCLUDES-INFORM-THE-NAMED-LINE-HINTS."
+  },
+  {
+    "tag": "CLI-DOC-TICK-EXIT-CODES-PINNED",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "docs/CLI.md", "description": "§ `flume tick`'s exit-code sentence" },
+        { "path": "tests/cliHelp.test.ts", "description": "the page's section against the driven range" }
+      ]
+    },
+    "summary": "Pin `docs/CLI.md` § `flume tick`'s exit codes against the real tick range the suite already drives, and correct the section",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "acceptance": "The page's `flume tick` section names exactly the codes the driven `tickExitCode` range plus the named process-level set produce; a one-sided change to either is red.",
+    "tests": [
+      "docs/CLI.md's flume tick section names every exit code the real tick range produces"
+    ],
+    "notes": "The section names 0, 69 and 1 and neither 2 nor 78, both of which `flume tick --help` documents. Drive the producer, never compare the page to the help block — both copies drift together in the commit that changes the behavior. The remaining ten verb sections stay unheld."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-IGNORES-POINT-AT-THE-SPEC",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "shrink the runtime-ignore list to a pointer" }
+      ]
+    },
+    "summary": "Shrink `docs/CHAIN-AUTHORING.md`'s copy of the runtime ignore list to a pointer at `spec/jobs.md`, *Runtime ignores*",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "acceptance": "The guide names no runtime ignore line; the bullet points at the section that owns the list, and the surrounding seedDir prose still reads standing alone.",
+    "notes": "Third of three unpinned copies; pinning is off the table outside the `.d.ts` carve-out, so removing a copy is the whole fix. Leaves `spec/jobs.md` and `RUNTIME_IGNORES` — the pair the human already maintains."
+  }
+]
