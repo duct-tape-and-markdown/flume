@@ -48,7 +48,9 @@
       "src/cliJobResolution.ts",
       "src/index.ts",
       "examples/cascade-chain.ts",
-      "harness/citeResolver.ts"
+      "harness/citeResolver.ts",
+      "examples/backlog-groomer-chain.ts",
+      "examples/minimal-chain.ts"
     ]
   }
 }
