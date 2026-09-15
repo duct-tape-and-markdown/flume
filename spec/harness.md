@@ -168,7 +168,9 @@ same three operations.
 
 `per` is `{ path, section }`. The package resolves it against `specLocus`: the
 path must match a declared glob and be present in the gated commit; the section
-must be a heading in that file at that commit. A consumer whose spec is typed
+must head exactly one section in that file at that commit — a text the file
+heads twice, sibling or nested, is refused naming both lines, since a cite that
+names two sections names neither. A consumer whose spec is typed
 (a temper `contract-spec` kind, for example) may declare a resolver that
 resolves a section by key rather than by heading text; the gate's verdict shape
 is the same either way.
