@@ -134,7 +134,6 @@ export interface HarnessChainOptions {
 export function harnessChain(options: HarnessChainOptions): Chain {
   const { api } = options;
   const declaration = parseDeclaration(options.declaration);
-  const extension = entryExtension(options.entryFields);
   const stateRoot = repoRelativeStateRoot(api);
 
   /**
@@ -154,6 +153,16 @@ export function harnessChain(options: HarnessChainOptions): Chain {
    * declaration (`spec/harness.md`, *The runner interface*).
    */
   const runner = declaration.runner({ api, provision });
+
+  /**
+   * The entry extension, composed ahead of every prompt that renders it and
+   * behind the runner that informs it: the running lane's exclusions ride
+   * the `tests[]` and `pins[]` hints, so plan names its lines already knowing
+   * which globs the judge will not reach (`spec/harness.md`, *The runner
+   * interface*). Told once, at authorship — nothing downstream refuses an
+   * entry over where its `files` predicted the work would land.
+   */
+  const extension = entryExtension(options.entryFields, runner.lanes);
 
   /**
    * The engine values the package's gates run through, taken off `api` —

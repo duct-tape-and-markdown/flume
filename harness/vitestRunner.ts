@@ -56,8 +56,10 @@ export interface VitestRunnerOptions {
   /**
    * The consumer's lanes. Defaults to the single unsplit lane; a project
    * whose vitest config excludes a slice of its suite from the default run
-   * declares both lanes here, so a judge can refuse a line homed in the lane
-   * this runner will not reach.
+   * declares both lanes here, and the running lane's exclusions are rendered
+   * into plan's `tests[]` and `pins[]` hints (`spec/harness.md`, *The runner
+   * interface*) — plan is told which globs no judge will reach, never
+   * refused for having predicted `files` that name one.
    */
   lanes?: readonly Lane[];
   /**

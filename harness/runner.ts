@@ -20,16 +20,18 @@ import type { FlumeApi } from "../src/flumeApi.js";
 /**
  * One selection of the consumer's suite, run as a unit. Lanes exist because
  * a suite that splits — a fast lane and a slow one — can only judge a named
- * behavior whose test lands in the lane the judge actually runs, and the
- * judge would otherwise discover that after a wave rather than at plan time.
+ * behavior whose test lands in the lane the judge actually runs, and plan
+ * would otherwise name its lines blind to that and discover it after a wave.
  */
 export interface Lane {
   /** The lane's name, as the consumer's own tooling spells it. */
   readonly name: string;
   /**
    * Patterns for the test files this lane does not run, in the consumer's
-   * own glob vocabulary — vitest's `exclude`, cargo's filters. Reported for
-   * the judge to match a declared file against; never interpreted here.
+   * own glob vocabulary — vitest's `exclude`, cargo's filters. Reported, not
+   * interpreted: the running lane's are rendered verbatim into plan's
+   * `tests[]` and `pins[]` hints (`entryExtension.ts`), which informs
+   * authorship and refuses nothing.
    */
   readonly excludes: readonly string[];
   /**
@@ -101,7 +103,11 @@ export interface Runner {
     baseSha: string,
     cwd: string,
   ): Promise<RunResult>;
-  /** The runner's declared lanes, and which files each excludes. */
+  /**
+   * The runner's declared lanes, and which files each excludes. Read at
+   * chain load, where the running lane's exclusions become part of plan's
+   * named-line hints (`spec/harness.md`, *The runner interface*).
+   */
   readonly lanes: readonly Lane[];
 }
 
