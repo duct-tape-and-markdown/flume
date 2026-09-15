@@ -273,6 +273,51 @@
     "notes": "`Runner.lanes` has shipped with no reader; this is the reader the cited section names. The hints stay tool-neutral — the globs come from the consumer's own declaration. `.flume/declaration.ts:61-63` still claims a plan-time refusal; that file is outside every phase lane."
   },
   {
+    "tag": "API-REPORTS-GIT-STATUS-RECORDS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/git.ts",
+          "description": "the decode becomes the reported one; `trackedModifications` its tracked filter"
+        },
+        {
+          "path": "src/flumeApi.ts",
+          "description": "the decoder beside the other read-only git helpers"
+        },
+        {
+          "path": "harness/gates.ts",
+          "description": "clean-tree takes its records from the engine"
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "the reported decode"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "the gate over engine-supplied records"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Report git's decoded `status --porcelain -z` records on `api.git`, and stop the clean-tree gate re-decoding them beside the engine",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "One porcelain record walk in the tree: the engine reports code and path with a rename or copy's origin field consumed, `trackedModifications` is its `??`-dropping filter, and the clean-tree gate spawns no git of its own.",
+    "tests": [
+      "api.git reports a status record's code and path with a rename's origin field consumed",
+      "the clean-tree gate takes its status records from the engine rather than spawning git"
+    ],
+    "pins": [],
+    "notes": "Two identical walks: `trackedModifications` (src/git.ts:788) and `cleanTreeGate` (harness/gates.ts:347), differing only in filter. `GateEngine` (harness/gates.ts) is the injection point the other three gates already take. The gate asks `--untracked-files=all`; the engine drops `??` either way, so one call at `all` serves both. gates.ts's module doc already claims no gate shells out."
+  },
+  {
     "tag": "CHAIN-AUTHORING-IGNORES-POINT-AT-THE-SPEC",
     "gate": {
       "kind": "open"
@@ -297,5 +342,38 @@
     "tests": [],
     "pins": [],
     "notes": "Third of three unpinned copies; pinning is off the table outside the `.d.ts` carve-out, so removing a copy is the whole fix. Leaves `spec/jobs.md` and `RUNTIME_IGNORES` — the pair the human already maintains."
+  },
+  {
+    "tag": "CLI-DOC-LOOP-EXIT-CODES-PINNED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CLI.md",
+          "description": "§§ `flume loop` and `flume job run`'s exit-code sentences"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "both sections against the driven loop range"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin `docs/CLI.md` §§ `flume loop` and `flume job run`'s exit codes against a driven `loopExitCode` range, and correct both sections",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "acceptance": "Each section names exactly the codes the driven `loopExitCode` range plus a named process-level set produce; a one-sided change to either is red, and a backticked integer the prose uses for something other than a code is not read as one.",
+    "tests": [
+      "docs/CLI.md's flume loop section names every exit code the real loop range produces",
+      "docs/CLI.md's flume job run section names every exit code the real loop range produces"
+    ],
+    "pins": [],
+    "notes": "The loop section names 0/1/69 and neither 74 nor 78; job run misses 74. Drive `loopExitCode` (src/cliVerdict.ts) over a `SuperviseResult` space beside the process-level set, as tests/cliHelp.test.ts already does for tick — never against the `--help` block. Both sections backtick `50` for `--max`, which the tick pin's bare-integer reader would read as a code. The four `--help` blocks stay unheld."
   }
 ]

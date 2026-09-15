@@ -37,7 +37,7 @@ spec line moves.
 
 ## Spec enumerations that read exhaustive and lag the shipped surface (PARKED — the human's file)
 
-Three sites, one shape; all verified on disk this tick.
+Four sites, one shape; all verified on disk this tick.
 
 1. **`spec/pending.md`, *What the package exports*** reads "`src/index.ts` and
    `FlumeApi` are the canonical lists. Both carry the *values*
@@ -55,12 +55,27 @@ Three sites, one shape; all verified on disk this tick.
    mergeOutcome? }`. `FanoutEntryOutcome.extension` — the entry's
    chain-declared payload, split by `CORE_ENTRY_FIELDS` (`src/Phase.ts:151`,
    `src/Dispatcher.ts:3128`) — shipped at `993c516` and is not on it.
+4. **`spec/harness.md`, *The entry extension*** enumerates `summary`, `per`,
+   `acceptance`, `tests[]`, `pins[]`, `notes` and says a consumer may add
+   fields but not remove these. The package itself now declares a seventh,
+   `contractTouching` (`harness/entryExtension.ts:84`), rendered last in the
+   schema every plan slice reads. The list reads closed and is not.
 
-Options; one ruling covers all three:
+Beside them, one drift in the same file that is **not** an enumeration and
+carries no fork — it rides the same edit pass. `spec/harness.md`, *The
+default `handoff`*, says it "Reads the engine's reported pickable set and
+no-commit facts." It also writes: `stopAfterContractTouchingShip`
+(`harness/handoff.ts:190`) puts `<flumeDir>/stop` on disk after a shipped
+entry marked contract-touching — the package's first disk write on the
+handoff path, and live for this repo's own loop, which declares no override.
+`spec/loop.md`, *One tick is one fresh process*, sanctions the mechanism, so
+the drift is in this sentence alone.
+
+Options; one ruling covers all four:
 
 - **Transcribe.** Name the missing values in each sentence. Cheapest, and
-  leaves three hand-maintained lists that go stale at the next export — which
-  is how all three of these got here.
+  leaves four hand-maintained lists that go stale at the next export — which
+  is how all four of these got here.
 - **State the property, not the roster** (recommended). Say what makes a value
   canonical — the two lists carry the same values, held by the `.d.ts`
   doc-comment scan the carve-out sanctions — and say what a hook record
