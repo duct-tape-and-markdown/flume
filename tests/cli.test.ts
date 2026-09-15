@@ -2725,6 +2725,34 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
       await repo.cleanup();
     }
   }, 30_000);
+
+  it("flume friction refuses with EX_IOERR when a listed note cannot be stat'd", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      await writeFile(join(frictionDir, "a.md"), "note a\n");
+      // Read without traverse on the channel dir: readdir still enumerates
+      // the note, stat on it fails EACCES. Unlike the two arms above, no
+      // permission-independent fixture reaches this one — a symlink, a
+      // directory, or a device in a note's place is filtered out by the
+      // dirent's own isFile() before stat runs — so this follows the EACCES
+      // precedent of the `flume status` friction-line test above.
+      await chmod(frictionDir, 0o444);
+
+      const r = await runCli(repo.dir, ["friction"]);
+      expect(r.code).toBe(EX_IOERR);
+      expect(r.out).toContain("friction/a.md");
+      expect(r.out).toContain("failed to read");
+      // The refusal replaces the listing rather than trailing a partial one:
+      // rows redirected to a file would otherwise read as a whole channel.
+      expect(r.out).not.toMatch(/a\.md {2}\d+ {2}\d{4}-/);
+    } finally {
+      await chmod(join(repo.dir, ".flume", "friction"), 0o755).catch(() => {});
+      await repo.cleanup();
+    }
+  }, 30_000);
 });
 
 describe("cli.ts — loop.pid win32 MAX_PATH fix (platform-facts.md)", () => {

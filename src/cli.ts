@@ -22,7 +22,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { Dirent } from "node:fs";
+import type { Dirent, Stats } from "node:fs";
 
 import { Baton } from "./Baton.js";
 import {
@@ -754,10 +754,27 @@ async function main(): Promise<number> {
       .filter((e) => e.isFile())
       .map((e) => e.name)
       .sort();
+    // Every row is stat'd before any is printed: a half-list on stdout
+    // followed by a refusal on stderr reads, to anything redirecting the
+    // list, as a complete channel. A note readdir enumerated but stat cannot
+    // see is an unresolved input, ENOENT included — unlike the dir itself
+    // above, absence here is a note that vanished mid-list, never a
+    // legitimate zero state — so this arm refuses on any stat failure with
+    // the same EX_IOERR the readdir and named-note arms return.
+    const rows: string[] = [];
     for (const fileName of files) {
-      const stats = statSync(namespacedJoin(frictionDir, fileName));
-      console.log(`${fileName}  ${stats.size}  ${stats.mtime.toISOString()}`);
+      let stats: Stats;
+      try {
+        stats = statSync(namespacedJoin(frictionDir, fileName));
+      } catch (err) {
+        console.error(
+          `[flume] friction: '${chain.friction}/${fileName}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return EX_IOERR;
+      }
+      rows.push(`${fileName}  ${stats.size}  ${stats.mtime.toISOString()}`);
     }
+    for (const row of rows) console.log(row);
     return 0;
   }
 

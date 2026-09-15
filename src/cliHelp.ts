@@ -281,6 +281,13 @@ Exit codes:
       beside .flume/chain.ts) lacks "type": "module".
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load for any
       other reason. Nothing was read — fix the chain and re-run.
+  74  I/O error (EX_IOERR): the channel dir, or a note in it, exists but
+      could not be read or stat'd (permission denied, a symlink loop, a
+      non-directory in the channel's place, ...). Named <name> and bare list
+      alike refuse rather than report the note missing or the channel empty
+      — that reading would tell the operator there is no friction to route
+      when there may be some. The bare list prints no rows at all on a
+      refusal, never a partial listing.
 `,
 };
 

@@ -4,18 +4,42 @@
  * violation counts only when verified on disk this tick").
  */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { EX_IOERR } from "../src/cli.ts";
 import { loopCompletionSummary, tickExitCode } from "../src/cliVerdict.ts";
 import { DEFAULT_ABORT_THRESHOLD } from "../src/loopSupervisor.ts";
 import type { TickOutcome, TickVerdict } from "../src/Dispatcher.ts";
 import type { TickResult } from "../src/Phase.ts";
 import { mkFixtureRoot, runCli } from "./helpers/subprocess.ts";
+
+/**
+ * The codes a `--help` text's own "Exit codes:" block lists — read off the
+ * real help output, never restated, so both suites below compare a real
+ * producer against the shipped prose rather than against a hand copy.
+ */
+function documentedExitCodes(help: string): Set<number> {
+  const start = help.indexOf("Exit codes:\n");
+  expect(start).toBeGreaterThan(-1);
+  const codes = new Set<number>();
+  for (const line of help.slice(start).split("\n").slice(1)) {
+    if (line.trim() === "") continue;
+    // A continuation line is indented past its code; anything unindented
+    // ended the block.
+    if (!line.startsWith("  ")) break;
+    const listed = /^ {2}(\d+) {2,}\S/.exec(line);
+    if (listed) codes.add(Number(listed[1]));
+  }
+  return codes;
+}
+
+const ascending = (codes: Iterable<number>): number[] =>
+  [...new Set(codes)].sort((a, b) => a - b);
 
 /**
  * CLI-HELP-TICK-MISSING-EXIT2 — `flume tick --help`'s exit-code list is the
@@ -124,25 +148,6 @@ describe("flume tick --help — the exit-code list against tickExitCode's derive
       );
     }
   }
-
-  /** The codes the help text's own "Exit codes:" block lists. */
-  function documentedExitCodes(help: string): Set<number> {
-    const start = help.indexOf("Exit codes:\n");
-    expect(start).toBeGreaterThan(-1);
-    const codes = new Set<number>();
-    for (const line of help.slice(start).split("\n").slice(1)) {
-      if (line.trim() === "") continue;
-      // A continuation line is indented past its code; anything unindented
-      // ended the block.
-      if (!line.startsWith("  ")) break;
-      const listed = /^ {2}(\d+) {2,}\S/.exec(line);
-      if (listed) codes.add(Number(listed[1]));
-    }
-    return codes;
-  }
-
-  const ascending = (codes: Iterable<number>): number[] =>
-    [...new Set(codes)].sort((a, b) => a - b);
 
   it("flume tick --help documents every exit code tickExitCode returns, beside a named process-level set", async () => {
     const returned = new Set<number>();
@@ -425,4 +430,63 @@ describe("flume loop/job --help — the backstop threshold names its knob (HELP-
     expect(code).toBe(0);
     expectsOverridableThreshold(exitOneClause(out, "\n  2 "));
   });
+});
+
+/**
+ * FRICTION-LIST-STAT-REFUSAL-CLASSIFIED — `flume friction --help`'s
+ * exit-code block against the code the verb's own I/O refusal really
+ * returns. The fixture drives the real refusal (a channel dir readable but
+ * not traversable: readdir enumerates the note, stat on it fails EACCES) and
+ * the documented set is read off the real help text, so a refusal arm the
+ * help never gained is red here instead of surfacing as an exit status no
+ * operator was told about (`.claude/rules/engineering.md`, "A seam gate
+ * reads what the real writer wrote").
+ */
+describe("flume friction --help — the exit-code list against the verb's own I/O refusal (FRICTION-LIST-STAT-REFUSAL-CLASSIFIED)", () => {
+  const CHAIN_SRC =
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: "probe",\n` +
+    `    description: "",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `  friction: "friction",\n` +
+    `} });\n`;
+
+  it("flume friction --help names exit 74 for an I/O failure in the channel dir", async () => {
+    const root = await mkFixtureRoot("flume-friction-help-");
+    const frictionDir = join(root, ".flume", "friction");
+    try {
+      await mkdir(join(root, ".flume", "prompts"), { recursive: true });
+      await writeFile(join(root, ".flume", "chain.ts"), CHAIN_SRC, "utf8");
+      await writeFile(
+        join(root, ".flume", "prompts", "prompt.md"),
+        "probe prompt\n",
+        "utf8",
+      );
+      await mkdir(frictionDir, { recursive: true });
+      await writeFile(join(frictionDir, "a.md"), "note a\n");
+      await chmod(frictionDir, 0o444);
+
+      const refusal = await runCli(root, ["friction"]);
+      // Non-vacuity: the fixture has to have reached the list's stat arm —
+      // a chain that failed to load, or a channel read as empty, would
+      // agree with any help text at all.
+      expect(refusal.out).toContain("friction/a.md");
+      expect(refusal.out).toContain("failed to read");
+      expect(refusal.code).toBe(EX_IOERR);
+
+      const { out, code } = await runCli(root, ["friction", "--help"]);
+      expect(code).toBe(0);
+      expect(ascending(documentedExitCodes(out))).toContain(refusal.code);
+    } finally {
+      await chmod(frictionDir, 0o755).catch(() => {});
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
