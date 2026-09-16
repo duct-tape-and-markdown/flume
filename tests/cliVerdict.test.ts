@@ -7,11 +7,9 @@
  * exercises `formatTickVerdictLine`'s rendering through the CLI read-side.
  */
 
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -30,14 +28,12 @@ import {
 } from "../src/cliVerdict.ts";
 import { awakeDir } from "../src/paths.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS, runCli } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, exec, runCli } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 describe("tickExitCode — axis classification", () => {
   it("terminal misconfiguration → 78 (EX_CONFIG)", () => {

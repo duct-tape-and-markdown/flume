@@ -17,11 +17,9 @@
  * a fixture repo with zero `src/` changes attributable to it.
  */
 
-import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -34,8 +32,7 @@ import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-
-const exec = promisify(execFile);
+import { exec } from "./helpers/subprocess.ts";
 
 /**
  * `examples/`, resolved from this test file's own URL — `configDir` for the

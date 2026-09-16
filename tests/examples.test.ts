@@ -21,7 +21,6 @@
  * the entry so a new case cannot land outside it.
  */
 
-import { execFile } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -32,7 +31,6 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import ts from "typescript";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -53,7 +51,7 @@ import {
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { REPO_ROOT } from "./helpers/repoProgram.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
 import cascadeFactory, {
   declaredFilesGate,
@@ -64,8 +62,6 @@ import minimalFactory from "../examples/minimal-chain.ts";
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 /**
  * The roots a real tick would resolve for an `examples/`-hosted chain — this

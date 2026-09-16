@@ -12,11 +12,9 @@
  * writer wrote*). A one-sided drift in either renderer reds it.
  */
 
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { expect, it, vi } from "vitest";
 
@@ -33,6 +31,7 @@ import { silent } from "./helpers/dispatcherFixture.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
 import {
   SPAWN_BUDGET_MS,
+  exec,
   runCli,
   runCliStreams,
 } from "./helpers/subprocess.ts";
@@ -41,8 +40,6 @@ import {
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 /**
  * One fanout phase whose `promptArgs` echoes the two `TickContext` fields a

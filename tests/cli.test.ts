@@ -9,14 +9,13 @@
  * env-set-relative cases.
  */
 
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, win32 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -51,6 +50,7 @@ import {
   CLI,
   SPAWN_BUDGET_MS,
   TSX_CLI,
+  exec,
   processAlive,
   runCli,
   runCliStreams,
@@ -60,8 +60,6 @@ import {
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 const CLI_SRC_PATH = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 

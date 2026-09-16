@@ -1,6 +1,17 @@
 /**
- * Which of the spawns this repo ships or runs capture a child's streams, and
- * which of those name the cap they capture under.
+ * Which of the spawns this repo ships or runs capture a child's streams,
+ * which of those name the cap they capture under, and — over any domain a
+ * caller names — where a capturing API is turned into a spawn wrapper by
+ * hand.
+ *
+ * Two verdicts over two judged sets, so two `Scan`s
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*):
+ * {@link scanSpawnCaps} judges calls, {@link scanPromisifiedSpawns} judges
+ * the `promisify(execFile)` line a call is written against. The second exists
+ * because a domain can be one where judging every call is the wrong question
+ * — `tests/`, where a fixture's deliberately capless spawn is a subject and
+ * a mocked `execFile` is not a spawn at all — and the answerable question is
+ * instead how many wrappers the domain is allowed to have.
  *
  * `execFile`, `exec`, their sync forms, and a piped `spawnSync` keep at most
  * `maxBuffer` bytes per stream — 1 MiB unless the call says otherwise — and
@@ -114,6 +125,12 @@ const EXCLUDED_SUFFIXES: readonly string[] = [".d.ts"];
 
 /** The specifiers a capturing API is imported through. */
 const CHILD_PROCESS = new Set(["node:child_process", "child_process"]);
+
+/** The specifiers `promisify` is imported through. */
+const UTIL = new Set(["node:util", "util"]);
+
+/** Its name in that module, before any module renames it locally. */
+const PROMISIFY = "promisify";
 
 /**
  * How a capturing API decides whether it buffers. `execFile`, `exec` and
@@ -611,4 +628,121 @@ export function scanSpawnCaps(
       if (verdict === "capless") findings.push(site);
     }
   return { modules: modules.map((mod) => mod.module), scanned, findings };
+}
+
+/**
+ * One place a module hands a capturing API to `promisify` — the line every
+ * hand-rolled async spawn wrapper is written as, and the point at which that
+ * module's spawns stop being governed by anyone else's declared cap.
+ */
+export interface PromisifiedSpawnSite extends ScanSite {
+  /** The capturing API, as the source spells it — e.g. `execFile`. */
+  readonly api: string;
+}
+
+/** Every such wrapper in the domain, and the ones built outside a home. */
+export interface PromisifiedSpawnScan extends Scan<PromisifiedSpawnSite> {
+  /** Every module read, repo-relative and posix-separated, in path order. */
+  readonly modules: readonly string[];
+}
+
+/** A site as a failure message cites it. */
+export const formatPromisifiedSpawnSite = (
+  site: PromisifiedSpawnSite,
+): string => `${site.module}:${site.line} promisify(${site.api})`;
+
+/**
+ * The local names, and the namespace objects, a module can spell `promisify`
+ * by — `import { promisify }`, a rename of it, and `import util` or
+ * `import * as util` reached as `util.promisify`.
+ *
+ * A binding the scan cannot read statically — a destructure off a dynamic
+ * `import("node:util")` — is invisible here, and deliberately so: the
+ * judgement below turns on the *argument* being a capturing API this module
+ * imported by name, which `importedApis` already refuses to leave unread. A
+ * wrapper built through a dynamically-bound `promisify` therefore has to
+ * spell a capturing import that is itself read, so the call it is written
+ * against is judged by {@link scanSpawnCaps} where it sits.
+ */
+function promisifyNames(src: ts.SourceFile): {
+  direct: Set<string>;
+  namespaces: Set<string>;
+} {
+  const direct = new Set<string>();
+  const namespaces = new Set<string>();
+  for (const st of src.statements) {
+    if (!ts.isImportDeclaration(st)) continue;
+    if (!ts.isStringLiteralLike(st.moduleSpecifier)) continue;
+    if (!UTIL.has(st.moduleSpecifier.text)) continue;
+    const clause = st.importClause;
+    if (!clause) continue;
+    if (clause.name) namespaces.add(clause.name.text);
+    const bindings = clause.namedBindings;
+    if (!bindings) continue;
+    if (ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
+    else
+      for (const el of bindings.elements)
+        if ((el.propertyName ?? el.name).text === PROMISIFY)
+          direct.add(el.name.text);
+  }
+  return { direct, namespaces };
+}
+
+/** Whether `callee` names `promisify` under one of that module's spellings. */
+function isPromisify(
+  callee: ts.Expression,
+  names: { direct: Set<string>; namespaces: Set<string> },
+): boolean {
+  if (ts.isIdentifier(callee)) return names.direct.has(callee.text);
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    callee.name.text === PROMISIFY &&
+    ts.isIdentifier(callee.expression) &&
+    names.namespaces.has(callee.expression.text)
+  );
+}
+
+/**
+ * Every `promisify(<capturing API>)` in the domain, and the subset built
+ * outside `homes` — repo-relative posix module paths, the alphabet
+ * {@link ScanSite} reports in.
+ *
+ * Per module, not through the global name set the cap scan settles: the
+ * subject is the wrapper's *construction*, which is local by definition, and
+ * a domain-wide set would let one module's `exec` decide another's.
+ *
+ * `homes` is the caller's, never this module's: which wrapper a domain is
+ * allowed is the caller's declaration, and the scan reports where the line
+ * was written.
+ */
+export function scanPromisifiedSpawns(
+  root: string,
+  domain: SpawnCapDomain,
+  homes: readonly string[],
+): PromisifiedSpawnScan {
+  const allowed = new Set(homes);
+  const modules: string[] = [];
+  const scanned: PromisifiedSpawnSite[] = [];
+  const findings: PromisifiedSpawnSite[] = [];
+  for (const path of spawnCapModules(root, domain)) {
+    const module = relPath(root, path);
+    modules.push(module);
+    const src = parse(path);
+    const apis = importedApis(src, module);
+    if (apis.size === 0) continue;
+    const names = promisifyNames(src);
+    walk(src, (n) => {
+      if (!ts.isCallExpression(n) || !isPromisify(n.expression, names)) return;
+      const arg = n.arguments[0];
+      if (!arg || !ts.isIdentifier(arg) || !apis.has(arg.text)) return;
+      const site: PromisifiedSpawnSite = {
+        module,
+        line: src.getLineAndCharacterOfPosition(arg.getStart()).line + 1,
+        api: arg.text,
+      };
+      scanned.push(site);
+      if (!allowed.has(module)) findings.push(site);
+    });
+  }
+  return { modules, scanned, findings };
 }

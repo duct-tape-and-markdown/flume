@@ -1,7 +1,7 @@
 /**
  * Starting a child process from a suite: the tsx/src/cli.ts entry paths the
- * spawns go through, the `runCli`/`runNodeStreams`/`gitOut` wrappers that
- * cli.test.ts, job.test.ts, job.integration.test.ts and
+ * spawns go through, the `exec`/`runCli`/`runNodeStreams`/`gitOut` wrappers
+ * that cli.test.ts, job.test.ts, job.integration.test.ts and
  * loop-process-boundary.integration.test.ts each hand-rolled a copy of, the
  * two numbers every one of those spawns runs under — the output cap
  * (`SPAWN_OUTPUT_CAP_BYTES`) and the wall-clock budget the spawning file
@@ -15,7 +15,7 @@
  * as a suite of its own.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, type PromiseWithChild } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -52,15 +52,42 @@ export const SPAWN_OUTPUT_CAP_BYTES = 16 * 1024 * 1024;
 const MAXBUFFER_CODE = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
 
 /**
- * `execFile` under {@link SPAWN_OUTPUT_CAP_BYTES}. Every spawn in this module
- * goes through it, so the cap is declared once instead of at each call site —
- * where a site that forgot would inherit node's default silently.
+ * What a suite hands one spawn beyond the binary and its argv. Narrower than
+ * node's own options bag by intent: `maxBuffer` is absent because {@link exec}
+ * owns it, and a site able to name it could take back the 1 MiB default this
+ * module exists to keep off the lane.
  */
-function exec(
+export interface SpawnOptions {
+  readonly cwd?: string;
+  readonly env?: NodeJS.ProcessEnv;
+  /** win32 needs one to invoke a `.cmd` shim — `npm`, `pnpm`, `npx`. */
+  readonly shell?: boolean | string;
+  readonly timeout?: number;
+}
+
+/**
+ * `execFile` under {@link SPAWN_OUTPUT_CAP_BYTES}. Every spawn this suite
+ * makes goes through it, so the cap is declared once instead of at each call
+ * site — where a site that forgot would inherit node's default silently, and
+ * buy an overrun that arrives where an exit status belongs.
+ *
+ * Exported rather than module-private: every suite and fixture that spawned
+ * anything had spelled `promisify(execFile)` for itself and named no cap, so
+ * the declaration above governed this module's own spawns and nothing else.
+ * `tests/subprocessHelper.test.ts` holds the scan that keeps the wrapper
+ * count at one (`.claude/rules/engineering.md`, *A module is one job*: a
+ * helper spelled in three modules has one home).
+ *
+ * The child rides the promise, as it does on node's own promisified form: a
+ * case asserting on a spawned process — its pid, a signal it was sent — reads
+ * it off `.child`, and dropping it here is what would send that case back to
+ * a capless wrapper of its own.
+ */
+export function exec(
   file: string,
   args: readonly string[],
-  options: { cwd: string; env?: NodeJS.ProcessEnv },
-): Promise<{ stdout: string; stderr: string }> {
+  options: SpawnOptions = {},
+): PromiseWithChild<{ stdout: string; stderr: string }> {
   return execFileAsync(file, [...args], {
     ...options,
     maxBuffer: SPAWN_OUTPUT_CAP_BYTES,

@@ -17,12 +17,10 @@
  * each invoked as the manifest invokes it.
  */
 
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
@@ -35,6 +33,7 @@ import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
   SPAWN_BUDGET_MS,
+  exec,
   runCli,
   runNodeStreams,
 } from "./helpers/subprocess.ts";
@@ -43,8 +42,6 @@ import {
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const TSC_BIN = fileURLToPath(
@@ -664,7 +661,6 @@ it("the package's files allowlist covers the emitted harness assets", async () =
     cwd: pkgDir,
     env: hermeticEnv(),
     shell: process.platform === "win32",
-    maxBuffer: 16 << 20,
   });
   const [packed] = JSON.parse(stdout) as { files: { path: string }[] }[];
   const tarball = new Set((packed?.files ?? []).map((f) => f.path));

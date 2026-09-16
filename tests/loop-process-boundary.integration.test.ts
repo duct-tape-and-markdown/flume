@@ -9,11 +9,10 @@
  * between them and asserts the second process is governed by the new chain.
  */
 
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -21,10 +20,8 @@ import { Baton } from "../src/Baton.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
-import { CLI, TSX_CLI, gitOut, runCli } from "./helpers/subprocess.ts";
+import { CLI, TSX_CLI, exec, gitOut, runCli } from "./helpers/subprocess.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
-
-const exec = promisify(execFile);
 
 /**
  * A chain.ts that declares one singleton phase `<name>` and exports a no-op

@@ -9,19 +9,16 @@
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
-import { execFile } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import type { Logger } from "../../src/log.ts";
 import type { TickVerdict } from "../../src/tickVerdict.ts";
 import { RUNTIME_IGNORES } from "../../src/job.ts";
 
 import { mkTempDir } from "./fixtureRoot.ts";
-
-const exec = promisify(execFile);
+import { exec } from "./subprocess.ts";
 
 /** A logger that swallows every level — the default for suites asserting on facts, not output. */
 export const silent: Logger = {

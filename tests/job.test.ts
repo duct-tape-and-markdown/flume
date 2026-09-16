@@ -9,7 +9,6 @@
  * no per-job link involved.
  */
 
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
   chmod,
@@ -21,7 +20,6 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -49,14 +47,12 @@ import { NAME_MAX } from "../src/PendingSchema.ts";
 import { loadChainModule } from "../src/chainLoad.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS, gitOut, runCli } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, exec, gitOut, runCli } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 /** Scratch git repo on `main` with one seed commit. */
 async function makeRepo(): Promise<{

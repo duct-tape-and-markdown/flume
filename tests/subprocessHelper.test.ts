@@ -12,13 +12,11 @@
  * `tests/helpers/vitestSetup.ts`.
  */
 
-import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -35,12 +33,17 @@ import {
   SPAWN_BUDGET_MS,
   SPAWN_OUTPUT_CAP_BYTES,
   TSX_CLI,
+  exec,
   exitStatusOf,
   requireEntryPoint,
   runCli,
   runNodeStreams,
 } from "./helpers/subprocess.ts";
-import { filesUnder, relPath } from "./helpers/repoProgram.ts";
+import { REPO_ROOT, filesUnder, relPath } from "./helpers/repoProgram.ts";
+import {
+  formatPromisifiedSpawnSite,
+  scanPromisifiedSpawns,
+} from "./helpers/spawnCaps.ts";
 import {
   LANES,
   type Lane,
@@ -58,8 +61,6 @@ import {
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 describe("requireEntryPoint — an unresolvable CLI entry point refuses (SUBPROCESS-TSX-SENTINEL)", () => {
   it("refuses by name instead of returning an exit code", async () => {
@@ -210,6 +211,44 @@ it("a child whose output exceeds the wrapper's declared cap refuses by naming th
     await rm(dir, { recursive: true, force: true });
   }
 }, SPAWN_BUDGET_MS);
+
+/**
+ * The cap above governs one wrapper, so it governs this suite only while the
+ * suite has one. Twenty-two files under `tests/` each spelled
+ * `promisify(execFile)` for themselves and ran on node's 1 MiB default; every
+ * one of those spawns is small today, and the first that is not rejects with
+ * an errno where an exit status belongs — which `exitStatusOf` reads as a
+ * child that never ran.
+ *
+ * Judged by the construction rather than by every call: a fixture's
+ * deliberately capless spawn and a mocked `execFile` both live under
+ * `tests/`, and neither is a spawn this cap is about.
+ */
+const WRAPPER_HOME = "tests/helpers/subprocess.ts";
+const wrappers = scanPromisifiedSpawns(REPO_ROOT, { trees: ["tests"] }, [
+  WRAPPER_HOME,
+]);
+
+// Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is proven
+// non-vacuous"): the verdict below is an absence, and a domain that walked no
+// module, or a needle that stopped reading a `promisify` call, would report it
+// exactly as a clean tree does. Pinned on the subject — the one wrapper this
+// suite is allowed, read off the module that declares the cap.
+it("the wrapper scan reads tests/ and finds the home's own promisified spawn", () => {
+  expect(wrappers.modules.length).toBeGreaterThan(0);
+  expect(wrappers.modules).toContain(WRAPPER_HOME);
+  expect(wrappers.scanned.map((site) => site.module)).toContain(WRAPPER_HOME);
+  expect(wrappers.scanned.map((site) => site.api)).toContain("execFile");
+});
+
+it("no file under tests/ promisifies execFile outside the module that declares the output cap", () => {
+  expect(
+    wrappers.findings.map(formatPromisifiedSpawnSite),
+    `import { exec } from "${WRAPPER_HOME}" instead — a wrapper of its own ` +
+      "runs on node's 1 MiB default, and the overrun arrives as a child that " +
+      "never ran",
+  ).toEqual([]);
+});
 
 describe("runCli — reports the CLI's own status, not a default", () => {
   it("surfaces an exit code the CLI chose, distinct from the laundered 1", async () => {
@@ -437,12 +476,20 @@ describe("tests/ reads a child's exit status through one mechanism (TESTS-EXIT-S
   // fixed, so a corpus that walked nothing — a non-recursive read, a wrong
   // directory, a filter that keeps no file — would read exactly like a clean
   // tree. Pinned on the subject rather than the count: the files that spawn a
-  // child are the only ones that can hold the defect at all.
+  // child are the only ones that can hold the defect at all — which, now that
+  // `tests/` spawns through one wrapper, is the module naming `execFile` plus
+  // every file importing that module.
   it("scans a populated tests/ corpus, recursively, including the suites that spawn a child", () => {
     expect(corpus.length).toBeGreaterThan(0);
     expect(corpus.map((f) => f.path)).toContain("helpers/subprocess.ts");
     const spawners = corpus
-      .filter((f) => f.lines.some((line) => line.includes("execFile")))
+      .filter((f) =>
+        f.lines.some(
+          (line) =>
+            line.includes("execFile") ||
+            line.trimEnd().endsWith('subprocess.ts";'),
+        ),
+      )
       .map((f) => f.path);
     expect(
       spawners,

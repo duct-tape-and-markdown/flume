@@ -13,18 +13,14 @@
  * (state only, no chain shims).
  */
 
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { gitOut, runCli } from "./helpers/subprocess.ts";
-
-const exec = promisify(execFile);
+import { exec, gitOut, runCli } from "./helpers/subprocess.ts";
 
 /** Scratch git repo on `main` with one seed commit. */
 async function makeRepo(): Promise<{

@@ -22,7 +22,9 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
+  formatPromisifiedSpawnSite,
   formatSpawnCapSite,
+  scanPromisifiedSpawns,
   scanSpawnCaps,
   type SpawnCapScan,
 } from "./helpers/spawnCaps.ts";
@@ -174,6 +176,26 @@ it("the scan reds a capturing spawn written without a cap", () => {
 it("the scan judges a forwarder's callers and skips what captures nothing", () => {
   const judged = [...new Set(fixture.scanned.map((s) => s.module))].sort();
   expect(judged).toEqual([...JUDGED]);
+});
+
+/**
+ * The wrapper verdict, over the same fixture: `capless.ts` and `capped.ts`
+ * each build one `promisify(execFile)`, so a domain declaring `capped.ts` its
+ * home has exactly one finding by construction. The repo pin this backs
+ * (`tests/subprocessHelper.test.ts`) asserts an absence, which is green over
+ * a needle that reads nothing — this is the run where the needle bites.
+ */
+it("the wrapper scan reds a promisified spawn built outside the declared home", () => {
+  const scan = scanPromisifiedSpawns(fixtureRoot, FIXTURE_DOMAIN, [
+    "src/capped.ts",
+  ]);
+  expect(scan.scanned.map(formatPromisifiedSpawnSite).sort()).toEqual([
+    "src/capless.ts:3 promisify(execFile)",
+    "src/capped.ts:3 promisify(execFile)",
+  ]);
+  expect(scan.findings.map(formatPromisifiedSpawnSite)).toEqual([
+    "src/capless.ts:3 promisify(execFile)",
+  ]);
 });
 
 it("the scan refuses a child_process import it cannot read", async () => {

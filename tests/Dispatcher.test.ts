@@ -1,9 +1,7 @@
-import { execFile } from "node:child_process";
 import { existsSync, lstatSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -125,14 +123,12 @@ import {
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 /**
  * The ref one prior-attempt record is written under, derived through the

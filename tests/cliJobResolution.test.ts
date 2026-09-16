@@ -7,7 +7,6 @@
  * exercise the same seam end-to-end.
  */
 
-import { execFile } from "node:child_process";
 import { existsSync, lstatSync, readdirSync } from "node:fs";
 import {
   mkdir,
@@ -17,7 +16,6 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -34,6 +32,7 @@ import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
   SPAWN_BUDGET_MS,
+  exec,
   gitOut,
   runCli,
   runCliStreams,
@@ -43,8 +42,6 @@ import {
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 const repoRoot = "/repo/root";
 

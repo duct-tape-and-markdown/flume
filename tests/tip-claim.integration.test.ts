@@ -11,11 +11,10 @@
  * (spec/worktrees.md, "The default test lane must stay fast").
  */
 
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -23,10 +22,8 @@ import { Baton } from "../src/Baton.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
-import { CLI, TSX_CLI, runCli } from "./helpers/subprocess.ts";
+import { CLI, TSX_CLI, exec, runCli } from "./helpers/subprocess.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
-
-const exec = promisify(execFile);
 
 /**
  * Scratch git repo on a chosen branch. The engine has no opinion on branch

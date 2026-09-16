@@ -20,24 +20,21 @@
  * either assertion runs.
  */
 
-import { execFile, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { chmod, cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { declaration } from "../.flume/declaration.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS, runCli } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, exec, runCli } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 const BIN_DIR = fileURLToPath(new URL("../bin", import.meta.url));
 const BIN_FLUME = join(BIN_DIR, "flume");

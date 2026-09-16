@@ -17,10 +17,8 @@
  * tests/Dispatcher.test.ts, where the tick that produces it lives.
  */
 
-import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,14 +28,12 @@ import type { Chain } from "../src/Phase.ts";
 import { denyDirectory } from "./helpers/denial.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-const exec = promisify(execFile);
 
 describe("friction — harvest and count across the one declared dir", () => {
   let fx: Fixture;
