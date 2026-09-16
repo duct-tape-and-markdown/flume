@@ -127,6 +127,30 @@ name. Filed as a `pins[]` line on
 whichever way this question is ruled, and (a) would want a fourth arm naming
 it: a page **name** read against the tree, never a page's sentence.
 
+**The pin shipped, and its coverage is 4 of 7 — plus one dangling name it
+cannot see.** `tests/harnessPackaging.test.ts` now resolves each note's
+"previous note in this series" name against the notes on disk. Only
+`MIGRATING-0.13/0.14/0.15/0.16` carry that sentence; `0.10`, `0.11` (which
+routes to `0.10` in its own words) and `0.12` (which names no earlier page)
+are skipped, not failed — the arm judges the notes that make the claim. And
+`docs/MIGRATING-0.10.md:10` names `MIGRATING-0.8.md`, a page that does not
+exist: the citation pin's page-name arm reads `src/`, `harness/`, `tests/`
+and the sweep domain, so a dangling page name in `docs/` resolves against
+nothing. Whether the 0.8 cite is deliberate history — the note says that page
+is one it *replaces* — is this question's fork again, and (a)'s fourth arm
+would red it either way, so the ruling wants to say which.
+
+**A fourth instance, this one already false.** `docs/CHAIN-AUTHORING.md`
+*Writing a custom Gate* tells chain authors "Singleton phases never run
+`afterMerge` (they commit straight to the trunk)" — untrue since
+`spec/worktrees.md` *Singleton runs in a worktree*, and verified false on disk
+this tick (`runSingleton` filters `phase.gates` for `when === "afterMerge"`
+and runs them on trunk). Filed as
+`CHAIN-AUTHORING-STOPS-DENYING-A-SINGLETON-AFTERMERGE`; the fix needs no
+ruling, the *pin* does. The same page never enumerates `GateContext`'s fields
+at all (`CHAIN-AUTHORING-ENUMERATES-WHAT-A-GATE-RECEIVES`), which is exactly
+the field-name-against-declaration reading (a) describes for `Runner`.
+
 ## What row does a declared findings script take, and what shape is its stdout?
 
 **PARKED.** `spec/harness.md` *Declared findings sources* ratifies a fourth
@@ -257,3 +281,81 @@ autonomous phase can close this: the missing sentence is in `spec/`
 
 Recommended (a). It is what shipped and what the posture already requires;
 the sentence is the only thing missing.
+
+## Does the teardown harvest take the dot-name skip?
+
+**NEEDS AMENDMENT.** `spec/chain.md` *`Chain.friction` — the declared friction
+channel* rules **a dotfile is not a note** and names three surfaces: the
+count, the listing, the read verb. All three now skip by name alone
+(`isDotName`, `src/paths.ts`). The harvest is not among them, and on this tree
+`harvestFriction` (`src/friction.ts`) filters `e.isFile()` only, then stamps
+every moved file `<tag>--<stamp>--<name>`. So a harvested dot-prefixed file
+lands in the primary dir under a name that is **no longer dot-prefixed**: the
+skip cannot see it afterwards, and the channel reports a placeholder as a note
+awaiting routing, permanently.
+
+The harvest's tracked-at-HEAD bound covers the usual case — a placeholder
+exists because git forced it, so it is committed, so it is not harvested. It
+does not cover an untracked one: macOS writes `.DS_Store` into any directory
+Finder touches, and a `setupWorktree` hook that materializes the mirror dir
+can seed its own.
+
+- **(a)** The harvest takes the same `isDotName` filter, one more surface on
+  the section's list. The placeholder dies with the worktree, which is what a
+  placeholder is for.
+- **(b)** The harvest stays content-blind and keeps moving them — the section
+  names three surfaces deliberately, and delivery is not interpretation. Costs
+  the property: a dotfile becomes a note by being relayed.
+- **(c)** Preserve dot-ness in the stamped name (`.<tag>--<stamp>--gitkeep`) so
+  the downstream skip still bites. Keeps both properties and invents a naming
+  rule no other surface reads.
+
+Recommended (a). "The skip is by name alone, never by content" is the stated
+property, and a surface that renames a skipped name into an unskippable one
+falsifies it downstream of itself — which is the shape *Loud or nothing*
+refuses. The amendment is one clause on the existing bullet; until it lands
+this cannot be an entry, because the section's enumeration is what an entry
+would have to read as illustrative.
+
+## What spelling does the completion summary's spend line take?
+
+**PARKED.** `spec/loop.md` *Exit codes — the run never lies to CI* ratifies
+that the summary "totals the run's agent usage by phase" and stops there, so
+the shape was the build tick's to pick and it said so rather than deciding
+silently. Shipped: one segment per phase in first-invocation order, every
+total the supervisor holds named, raw counts rather than abbreviated,
+appended last so an error or abort still reads first — `build x3 (7 turns,
+4.5s, 900 in / 50 out tokens, 13 cache-write / 130 cache-read, $2.2500)`. A
+phase with no row is absent, never present at zero. All of it is one function
+(`phaseUsageSegment`, `src/cliVerdict.ts`).
+
+The operator is the audience, so the pressure-test is human:
+
+- **(a)** Keep it. Every total is named, nothing is rounded away, and an
+  operator sizing a run's cost reads it without a second command.
+- **(b)** Cost and turns only, tokens dropped. The line an operator actually
+  scans is money; token counts belong to `tick-verdicts.jsonl`, which holds
+  them already.
+- **(c)** Cost only, with the full breakdown behind a flag.
+
+No answer blocks anything — it shipped, and a re-spelling is one function.
+
+## Is prettier the tree's formatter, or a tool to keep out of it?
+
+**NEEDS AMENDMENT.** The repo declares no prettier config and no prettier
+dependency, and the tree is hand-formatted at width 100. `npx prettier --write`
+therefore reflows a whole file at prettier's default 80 — a build tick paid
+this and reformatted by hand. Nothing on disk warns the next one.
+
+- **(a)** One line in `.claude/rules/platform-facts.md`: the repo has no
+  prettier config, so the tool reflows at 80 against a tree written at 100 —
+  format by hand. That page is the declared home for a measured toolchain
+  fact, and it is the only surface a fresh tick re-reads.
+- **(b)** Declare `.prettierrc` at `printWidth: 100` and let the tool be
+  right. Risk: a config invites a tree-wide reflow, and prettier's other
+  defaults do not match what is on disk either, so the first `--write` is a
+  large unrelated diff.
+- **(c)** Nothing; the next tick pays it again.
+
+Recommended (a). (b) adopts a formatter as a side effect of fixing a footgun,
+which is a posture decision on its own terms and wants its own ask.

@@ -1,5 +1,57 @@
 [
   {
+    "tag": "CHAIN-AUTHORING-STOPS-DENYING-A-SINGLETON-AFTERMERGE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the gate-placement claim in *Writing a custom Gate*, and wherever else the page repeats it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the chain-authoring page tells authors a singleton phase never runs afterMerge gates, so a consumer declines a gate placement the engine has offered since singletons moved into worktrees",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Singleton runs in a worktree"
+    },
+    "acceptance": "the page no longer claims a singleton never runs afterMerge, and says what a singleton's afterMerge gate runs against.",
+    "tests": [],
+    "pins": [],
+    "notes": "Verified on disk: `runSingleton` (`src/singletonTick.ts`) filters `phase.gates` for `when === \"afterMerge\"` and runs them on trunk, and `GatePhase` (`src/Gate.ts`) already says so. Expired narration in a page the package ships. No `pins[]` line: whether a `docs/` sentence is pinnable is the standing open question, and this fix needs no ruling."
+  },
+  {
+    "tag": "CHAIN-AUTHORING-ENUMERATES-WHAT-A-GATE-RECEIVES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "GateContext's fields beside the Gate interface in *Writing a custom Gate*"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the page shows run(ctx: GateContext) and never says what is on ctx, so baseSha reached chain authors only through a migration note and landedOnSha through nothing at all",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a gate receives"
+    },
+    "acceptance": "the page enumerates GateContext's fields as the cited section names them, including the span fields and which stage sets each.",
+    "tests": [],
+    "pins": [],
+    "notes": "`baseSha` reached authors only via `docs/MIGRATING-0.15.md`; `landedOnSha` has no migration page (0.16.1 is current), so the standing page is its only home. A pin resolving the named fields against `GateContext`'s declared members is arm (a) of the `docs/` open question — filed there, not here."
+  },
+  {
     "tag": "THE-STATE-ROOT-OFFSET-TAKES-ITS-NAMES-FILE",
     "gate": {
       "kind": "open"
