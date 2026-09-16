@@ -58,7 +58,7 @@ describe("buildFlumeApi().matchesAny", () => {
 });
 
 describe("buildFlumeApi().slugify / .priorAttemptPath (spec/loop.md 'Prior-outcome feedback to the retrying tick')", () => {
-  it("are the same functions src/Dispatcher.ts exports, not second copies a chain's shouldRun would drift from", () => {
+  it("are the same functions src/paths.ts and src/priorAttempts.ts export, not second copies a chain's shouldRun would drift from", () => {
     const api = buildFlumeApi(REPO_PATHS);
     expect(api.slugify).toBe(slugify);
     expect(api.priorAttemptPath).toBe(priorAttemptPath);

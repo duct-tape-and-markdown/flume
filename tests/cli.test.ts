@@ -1017,7 +1017,7 @@ function minimalStubbedAgentChainSrc(): string {
 
 /**
  * `flume status`'s friction line (`frictionCountLine`,
- * `src/Dispatcher.ts`): a count of files in the declared friction dir,
+ * `src/friction.ts`): a count of files in the declared friction dir,
  * appended only when declared and non-empty. Best-effort: a missing/broken
  * chain never fails `status` (covered elsewhere); these tests hold the
  * chain fixed and vary only the friction declaration/dir contents.
@@ -4053,7 +4053,7 @@ describe("state root layout — `flume stop` writes the flag every reader honors
         // The phase re-wakes itself every tick, so absent the flag this run
         // burns all 4 iterations. The agent runs the real `flume stop` from
         // inside the first child tick; the supervisor's per-iteration check
-        // (src/Dispatcher.ts) is the only thing that can see it.
+        // (src/loopSupervisor.ts) is the only thing that can see it.
         const loop = await runCli(repo.dir, ["loop", "--max", "4"]);
 
         expect(loop.out).toContain("stop flag present");

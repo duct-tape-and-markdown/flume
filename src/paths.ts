@@ -428,8 +428,9 @@ export function awakeDir(flumeDir: string): string {
  * Where prior-attempt records and their reverted-file snapshots live —
  * gitignored harness runtime state beside the baton, NOT in a per-entry
  * worktree (a fanout retry gets a fresh worktree; the record must outlive
- * it). Re-exported from `src/Dispatcher.ts` so a chain's `shouldRun` can
- * scan the dir the dispatcher writes without hardcoding its name.
+ * it). Re-exported from `src/priorAttempts.ts`, which owns the records
+ * themselves, so a chain's `shouldRun` can scan the dir the dispatcher
+ * writes without hardcoding its name.
  */
 export function priorAttemptsDir(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.priorAttempts);
