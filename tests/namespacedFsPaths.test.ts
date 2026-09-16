@@ -28,10 +28,14 @@
  * correctly and then hands the answer to a reader that cannot take it.
  *
  * And it reads the head the fold arrives at, because a composed path is not
- * a safer argument everywhere: node's JS `realpathSync` throws on every
- * namespaced drive path through node 22, so at that one symbol the fold is
- * correct and the callee is the defect (`.claude/rules/platform-facts.md`,
- * *`realpathSync` keeps the `\\?\` prefix only where nothing resolved*).
+ * a safer argument everywhere: node's JS realpath walk refuses every
+ * namespaced drive path through node 22 — `realpathSync` throwing it, the
+ * callback `realpath` handing it to its callback — so at those spellings the
+ * fold is correct and the callee is the defect
+ * (`.claude/rules/platform-facts.md`, *`realpathSync` keeps the `\\?\` prefix
+ * only where nothing resolved*). The same name off `node:fs/promises` is the
+ * native binding, so the verdict is read against the specifier and not the
+ * name, which is the direction that would red a resolving call.
  *
  * `harness/planState.ts` is the loud one behind both: absence is a declared
  * state there, so a read that fails for a path-length reason reads back as
@@ -252,6 +256,47 @@ export function entryIdentity(argv1: string): string {
 }
 `;
 
+/**
+ * The same composed path at the async spelling of the same JS walk. The
+ * callback `realpath` splits the same root off the argument and hands the
+ * same failure to its callback rather than throwing it, so `.native` is the
+ * only head that resolves a namespaced path here too
+ * (`.claude/rules/platform-facts.md`, *`realpathSync` keeps the `\\?\` prefix
+ * only where nothing resolved*). Nothing but the callee separates this source
+ * from the one below it.
+ */
+const CALLBACK_JS_FORM_SOURCE = `
+import { realpath } from "node:fs";
+import { toNamespacedPath } from "node:path";
+import { plainPath } from "./paths.js";
+
+export function entryIdentity(argv1: string, done: (id: string) => void): void {
+  realpath(toNamespacedPath(argv1), (_err, resolved) => done(plainPath(resolved)));
+}
+`;
+
+/** The head that does take it, over the same fold and the same callback. */
+const CALLBACK_NATIVE_SOURCE = CALLBACK_JS_FORM_SOURCE.replace(
+  "  realpath(",
+  "  realpath.native(",
+);
+
+/**
+ * The third spelling of the name, and the one a flat refusal would red: off
+ * `node:fs/promises` `realpath` *is* the native binding — no root split, the
+ * prefix stripped — so the composed path resolves, and there is no `.native`
+ * head the site could be asked for instead.
+ */
+const PROMISES_REALPATH_SOURCE = `
+import { realpath } from "node:fs/promises";
+import { toNamespacedPath } from "node:path";
+import { plainPath } from "./paths.js";
+
+export async function entryIdentity(argv1: string): Promise<string> {
+  return plainPath(await realpath(toNamespacedPath(argv1)));
+}
+`;
+
 describe("the scan's reading of a member callee", () => {
   it("the namespaced-fs scan reads `realpathSync.native` as the path-answering fs call it is", () => {
     const folded = scanFsCalls("src/fixture.ts", FOLDED_SOURCE);
@@ -405,7 +450,7 @@ describe("a composed path reaches only the head that takes it", () => {
     expect(refused.nativeOnly).toBe(1);
     expect(refused.jsForm.map((call) => describeJsForm(refused, call))).toEqual([
       "src/fixture.ts:7 — realpathSync() is handed a path in win32's namespaced " +
-        "alphabet, which node's JS implementation throws on through node 22; only " +
+        "alphabet, which node's JS implementation refuses through node 22; only " +
         "realpathSync.native resolves one",
     ]);
 
@@ -415,6 +460,46 @@ describe("a composed path reaches only the head that takes it", () => {
     const native = scanFsCalls("src/fixture.ts", FOLDED_SOURCE);
     expect(native.nativeOnly).toBe(1);
     expect(native.jsForm.map((call) => describeJsForm(native, call))).toEqual([]);
+  });
+
+  it("a composed path handed to the bare callback realpath is refused", () => {
+    const refused = scanFsCalls("src/fixture.ts", CALLBACK_JS_FORM_SOURCE);
+
+    // Same green everywhere else as the sync source above: the path composes,
+    // and the answer goes to a callback rather than out through the call
+    // expression, so neither existing verdict can see this call.
+    expect(refused.bare.map((call) => describeBareCall(refused, call))).toEqual([]);
+    expect(refused.escaped.map((e) => describeEscape(refused, e))).toEqual([]);
+    expect(refused.nativeOnly).toBe(1);
+    expect(refused.jsForm.map((call) => describeJsForm(refused, call))).toEqual([
+      "src/fixture.ts:7 — realpath() is handed a path in win32's namespaced " +
+        "alphabet, which node's JS implementation refuses through node 22; only " +
+        "realpath.native resolves one",
+    ]);
+
+    // And the head that resolves one, over a source differing in the callee
+    // alone — so the callee is what this verdict turns on here too.
+    const native = scanFsCalls("src/fixture.ts", CALLBACK_NATIVE_SOURCE);
+    expect(native.nativeOnly).toBe(1);
+    expect(native.jsForm.map((call) => describeJsForm(native, call))).toEqual([]);
+  });
+
+  it("a composed path handed to fs/promises realpath is admitted as the native binding", () => {
+    const promised = scanFsCalls("src/fixture.ts", PROMISES_REALPATH_SOURCE);
+
+    // Read at all, and read as the path-answering call it is: the refusal
+    // above must not widen into the same name off the promise face of `fs`,
+    // where there is no JS form to refuse and no `.native` head to ask for.
+    expect(promised.uncalled).toEqual([]);
+    expect(promised.judged).toBe(1);
+    expect(promised.answered).toBe(1);
+    expect(promised.bare.map((call) => describeBareCall(promised, call))).toEqual([]);
+    expect(promised.escaped.map((e) => describeEscape(promised, e))).toEqual([]);
+
+    // The specifier, not the name, is what carries the verdict: `realpath`
+    // spelled identically off `node:fs` is the refusal above.
+    expect(promised.nativeOnly).toBe(0);
+    expect(promised.jsForm.map((call) => describeJsForm(promised, call))).toEqual([]);
   });
 
   it("no src/ or harness/ call hands a composed path to node's JS realpathSync", () => {

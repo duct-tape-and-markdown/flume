@@ -53,11 +53,20 @@
  *
  * **Which head takes it.** The last thing the contract says is whether the
  * symbol's plain spelling can be handed a namespaced path at all. Node's JS
- * `realpathSync` throws on every namespaced drive path through node 22, and
- * only `realpathSync.native` (libuv) resolves one, so a composed path at the
- * bare name is a call that cannot run where the composition exists for
- * ({@link JsFormCall}) — the one shape whose fold is correct and whose callee
- * is wrong.
+ * `realpath` and `realpathSync` cannot take one through node 22 — the sync
+ * form throws the root probe's error and the callback form hands that same
+ * error to its callback — and only a `.native` head (libuv) resolves one, so
+ * a composed path at the bare name is a call that cannot run where the
+ * composition exists for ({@link JsFormCall}) — the one shape whose fold is
+ * correct and whose callee is wrong.
+ *
+ * **And which contract a name carries is the specifier's to say.** One name
+ * reaches two implementations: `node:fs`'s `realpath` is that JS walk,
+ * `node:fs/promises`'s is the native binding under the same spelling. So a
+ * contract is looked up by the specifier a name was imported from ({@link
+ * contractFor}), never by the name alone — a refusal flat over the name would
+ * red a promises call that resolves, and that has no `.native` head a site
+ * could be asked for instead.
  */
 
 /**
@@ -77,6 +86,17 @@ const PROBE_STEM = "fsProbe";
 const FS_MODULE = new RegExp(
   `^(?:node:)?fs(?:/promises)?$|(?:^|/)${PROBE_STEM}\\.js$`,
 );
+
+/**
+ * Node's promise face of `fs`, by specifier. Its `realpath` is the native
+ * binding — no root split, prefix stripped — while `node:fs`'s `realpath` is
+ * the same JS walk as `realpathSync` and fails the same way on a namespaced
+ * drive path (`.claude/rules/platform-facts.md`, *`realpathSync` keeps the
+ * `\\?\` prefix only where nothing resolved*). One name, two contracts, told
+ * apart by nothing the call site spells — which is why {@link contractFor}
+ * takes the specifier.
+ */
+const PROMISES_MODULE = /^(?:node:)?fs\/promises$/;
 
 /**
  * The probe's own source, judged as nobody's caller. Its `statSync` *is* the
@@ -110,7 +130,9 @@ interface PathContract {
    * (`.claude/rules/platform-facts.md`, *`realpathSync` keeps the `\\?\`
    * prefix only where nothing resolved*). The composition and the callee are
    * one property here: a fold this symbol's bare spelling is handed is not a
-   * safer path, it is a throw.
+   * safer path, it is a failure — thrown by the sync form, handed to the
+   * callback by the async one. Read against the specifier, never the bare
+   * name ({@link contractFor}).
    */
   nativeOnly: boolean;
 }
@@ -141,14 +163,14 @@ const CALLER_FOLDS_FIRST: PathContract = {
  * it is here rather than in the default), so a namespaced argument leaves
  * again through the return value.
  *
- * `realpathSync` sits alone after them because it answers a path *and* is
- * the one symbol whose bare spelling refuses the argument: only its `.native`
- * head takes a namespaced path through node 22. The refusal stops at the
- * symbol the fact is recorded for (`.claude/rules/platform-facts.md`,
- * *`realpathSync` keeps the `\\?\` prefix only where nothing resolved*),
- * which is the one this package calls. The async `realpath` carries the same
- * `.native` spelling and is admitted here on the bare name; widening the
- * refusal to it is this one flag, the tick the page states the fact for it.
+ * `realpath` and `realpathSync` sit last because they answer a path *and*
+ * are the spellings whose bare form refuses the argument: node's JS walk
+ * splits a root off the path it was handed, so only a `.native` head takes a
+ * namespaced one through node 22 (`.claude/rules/platform-facts.md`,
+ * *`realpathSync` keeps the `\\?\` prefix only where nothing resolved*).
+ * That is `node:fs`'s contract for both names; `node:fs/promises` binds
+ * `realpath` to the native binding instead, which is {@link contractFor}'s to
+ * read off the specifier.
  */
 const PATH_CONTRACTS = new Map<string, PathContract>([
   ...[
@@ -172,7 +194,6 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
     },
   ]),
   ...[
-    "realpath",
     "readlink",
     "readlinkSync",
     "mkdtemp",
@@ -188,15 +209,15 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
       nativeOnly: false,
     },
   ]),
-  [
-    "realpathSync",
+  ...["realpath", "realpathSync"].map<[string, PathContract]>((fn) => [
+    fn,
     {
       positions: () => [0],
       calleeFolds: false,
       answersPath: true,
       nativeOnly: true,
     },
-  ],
+  ]),
   [
     "isDirectoryOrAbsent",
     {
@@ -208,6 +229,21 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
     },
   ],
 ]);
+
+/**
+ * The contract `fn` carries, given the specifier it was imported from.
+ *
+ * Every contract is the symbol's own, except where the promise face of `fs`
+ * reaches a different implementation under the same name: the JS-form refusal
+ * ({@link PathContract.nativeOnly}) is `node:fs`'s alone, because
+ * `node:fs/promises` has no JS form to refuse and no `.native` head a site
+ * could be asked for ({@link PROMISES_MODULE}).
+ */
+function contractFor(specifier: string, fn: string): PathContract {
+  const contract = PATH_CONTRACTS.get(fn) ?? CALLER_FOLDS_FIRST;
+  if (!contract.nativeOnly || !PROMISES_MODULE.test(specifier)) return contract;
+  return { ...contract, nativeOnly: false };
+}
 
 /**
  * The one symbol whose job *is* win32's namespaced alphabet: `plainPath`
@@ -411,11 +447,6 @@ export function fsImports(source: string): Map<string, string[]> {
   return found;
 }
 
-/** Every fs-call symbol `source` imports, flattened. */
-export function fsSymbols(source: string): string[] {
-  return [...fsImports(source).values()].flat();
-}
-
 /** Strip an arrow function's head, leaving its body expression. */
 function arrowBody(expression: string): string {
   const head = /^(?:async\s+)?(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*(?::\s*[^=]+?)?\s*=>\s*/.exec(
@@ -563,6 +594,9 @@ function readerPastFs(
     if (outer.callee === ALPHABET_FOLD) return undefined;
     const fn = fsCallee(outer.callee, fsSymbols);
     if (fn === undefined) return outer.callee;
+    // By name, not by specifier: this walk reads `answersPath` alone, and no
+    // specifier varies it — the one field {@link contractFor} re-keys is the
+    // JS-form refusal, which is the argument's verdict and not the answer's.
     const contract = PATH_CONTRACTS.get(fn) ?? CALLER_FOLDS_FIRST;
     if (!contract.answersPath) return undefined;
     at = outer.start;
@@ -658,7 +692,12 @@ export interface FsCallScan {
  */
 export function scanFsCalls(module: string, source: string): FsCallScan {
   const masked = maskNonCode(source);
-  const symbols = fsSymbols(source);
+  const imports = fsImports(source);
+  const symbols = [...imports.values()].flat();
+  /** Each imported fs symbol paired with the specifier its contract is read from. */
+  const bindings = [...imports].flatMap(([specifier, names]) =>
+    names.map((fn) => ({ specifier, fn })),
+  );
   const isProbe = PROBE_SOURCE.test(module);
   const bare: BareFsCall[] = [];
   const escaped: EscapedNamespacedPath[] = [];
@@ -670,7 +709,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
   let nativeOnly = 0;
   const lineOf = (index: number): number => source.slice(0, index).split("\n").length;
 
-  for (const fn of symbols) {
+  for (const { specifier, fn } of bindings) {
     const calls = [...masked.matchAll(callSites(fn))]
       .map((match) => ({
         index: match.index!,
@@ -686,7 +725,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
       continue;
     }
     if (isProbe) continue;
-    const contract = PATH_CONTRACTS.get(fn) ?? CALLER_FOLDS_FIRST;
+    const contract = contractFor(specifier, fn);
     for (const { index, callee, args } of calls) {
       let namespacedAnswer = false;
       let namespacedArgument = false;
@@ -751,7 +790,7 @@ export function describeBareCall(scan: FsCallScan, call: BareFsCall): string {
 export function describeJsForm(scan: FsCallScan, call: JsFormCall): string {
   return (
     `${scan.module}:${call.line} — ${call.callee}() is handed a path in ` +
-    `win32's namespaced alphabet, which node's JS implementation throws on ` +
+    `win32's namespaced alphabet, which node's JS implementation refuses ` +
     `through node 22; only ${call.fn}.native resolves one`
   );
 }
