@@ -45,9 +45,9 @@ const exec = promisify(execFile);
  *
  * One number, one home: every spawning file imports it, so the lane's budget
  * moves in a single edit, and `tests/subprocessHelper.test.ts` holds the scan
- * that proves the lane declares it rather than restating numbers of its own —
- * over the sites its own vocabulary reaches, which is where `git` and the
- * file-scope form are still to land.
+ * that proves every spawning file declares it — at file scope, where the
+ * declaration reaches the file's hooks and the cases it has yet to grow,
+ * rather than restating numbers of its own.
  */
 export const SPAWN_BUDGET_MS = 120_000;
 

@@ -8,7 +8,7 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { EX_IOERR } from "../src/cli.ts";
 import {
@@ -29,6 +29,11 @@ import {
   mkFixtureRoot,
   runCli,
 } from "./helpers/subprocess.ts";
+
+// This file starts processes, so it declares the lane's one budget — cases
+// and hooks alike — once here rather than inheriting the runner's default
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 /**
  * The codes a `--help` text's own "Exit codes:" block lists — read off the

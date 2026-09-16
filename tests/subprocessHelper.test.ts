@@ -39,9 +39,15 @@ import {
   harnessBudgets,
   harnessSpawnExports,
   laneMode,
+  budgetDefect,
   reduceLaneGlobs,
-  scanSpawnSites,
+  scanSpawns,
 } from "./helpers/spawnBudget.ts";
+
+// This file starts processes, so it declares the lane's one budget — cases
+// and hooks alike — once here rather than inheriting the runner's default
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 const exec = promisify(execFile);
 
@@ -418,20 +424,27 @@ describe("tests/ reads a child's exit status through one mechanism (TESTS-EXIT-S
 // (spec/worktrees.md, "The default test lane must stay fast") ----------
 
 /**
- * The lane's spawning sites against the budget they are supposed to declare.
+ * The lane's spawning files against the budget they are supposed to declare.
  *
- * The flake this pins is asymmetric: a spawning case that inherits vitest's
+ * The flake this pins is asymmetric: a spawning site that inherits vitest's
  * 5s default passes alone and reds under the afterMerge gate's full-suite
  * contention, where the cost is an innocent entry reverted. So the property
- * is checked where it is decidable — on what each site *declares* — rather
+ * is checked where it is decidable — on what the file *declares* — rather
  * than by timing a run that would have to go bad to report anything.
  *
- * Both halves of the acceptance ride here: every spawning site names a
+ * The **file** is the unit, because that is where the declaration reaches
+ * both registrars: a case ceiling covers no hook, and a spawning file's
+ * teardown holds the fixture the timed-out case was still using. A file-scope
+ * `vi.setConfig` covers every site the file adds afterwards too, so a spawning
+ * case written next month is already inside the budget rather than red on a
+ * lane months later.
+ *
+ * Both halves of the acceptance ride here: every spawning file names a
  * budget, and every one of them names the *same* constant, so the lane's
  * number has one home to move (`.claude/rules/engineering.md`, *Derived
  * state is computed, never restated beside its source*).
  */
-it("every default-lane suite that spawns the CLI declares the shared spawn budget rather than inheriting the runner's default", async () => {
+it("every default-lane file that spawns a process declares the shared spawn budget at file scope", async () => {
   // One home. `harnessBudgets` reads the harness module's exported numbers
   // off the module itself, so this is the parse and the import agreeing on
   // the same constant rather than the test restating either.
@@ -443,21 +456,30 @@ it("every default-lane suite that spawns the CLI declares the shared spawn budge
   // found no spawn wrapper, or no suite, would clear every assertion below
   // without judging anything.
   expect(harnessSpawnExports().length).toBeGreaterThan(0);
-  const scan = await scanSpawnSites({ lane: "default" });
-  expect(scan.scanned.length).toBeGreaterThan(0);
-  expect(new Set(scan.scanned.map((s) => s.module)).size).toBeGreaterThan(1);
+  const { files, sites } = await scanSpawns({ lane: "default" });
+  expect(sites.scanned.length).toBeGreaterThan(0);
+  expect(files.scanned.length).toBeGreaterThan(1);
 
-  const inheriting = scan.findings.map(
-    (s) => `${s.module}:${s.line} ${s.kind} — ${s.title}`,
+  const inheriting = files.findings.map(
+    (f) => `${f.module} — ${budgetDefect(f) ?? ""}`,
   );
   expect(
     inheriting,
-    `these sites start a process — \`process.execPath\`, a launcher like ` +
-      `\`node\`/\`npm\`/\`pnpm\`, or \`renderPrompt\`, whose inline-exec spans ` +
-      `each start an \`sh\` — on vitest's 5s default: declare ` +
-      `SPAWN_BUDGET_MS (tests/helpers/subprocess.ts) on each, rather than a ` +
+    `these files hold a site that starts a process — \`process.execPath\`, a ` +
+      `command name like \`node\`/\`npm\`/\`git\`, or \`renderPrompt\`, whose ` +
+      `inline-exec spans each start an \`sh\` — on vitest's 5s defaults: ` +
+      `declare the budget once at file scope, above the first registrar, as ` +
+      `\`vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: ` +
+      `SPAWN_BUDGET_MS })\` (tests/helpers/subprocess.ts), rather than a ` +
       `number of its own`,
   ).toEqual([]);
+
+  // Every declaring file names the one constant, rather than each naming a
+  // budget of its own: the scan reports the arm's identifier, so this reads
+  // the names the files actually wrote.
+  expect(
+    new Set(files.scanned.flatMap((f) => Object.values(f.arms))),
+  ).toEqual(new Set([...budgets.keys()]));
 });
 
 /**
@@ -537,10 +559,8 @@ it("the spawn-budget scan's lane rule agrees with the default lane vitest.config
  * kept vitest's 5s default — the exact inheritance this scan exists to
  * report. Both spellings pay one Node startup, so both are reported.
  *
- * The negative half is the lane boundary itself: `git` plumbing is measured
- * fast and is explicitly *not* a trigger (spec/worktrees.md, "The default
- * test lane must stay fast"), so a vocabulary wide enough to catch it would
- * be reporting most of the dispatcher's suite.
+ * The negative half is a case that spawns nothing at all: the report is the
+ * command name reaching the registrar's body, not the file being in scope.
  *
  * Top-level rather than inside the describe below: the fixture it drives is
  * its own, and the two shapes it separates are the ones the widening turns
@@ -548,18 +568,12 @@ it("the spawn-budget scan's lane rule agrees with the default lane vitest.config
  */
 it("the spawn-budget scan reports a case that starts node under a command-string name", async () => {
   const FIXTURE = [
-    `import { SPAWN_BUDGET_MS } from "../helpers/subprocess.ts";`,
-    ``,
     `it("hands a bare node to a gate", async () => {`,
     `  await shellGate({ name: "n", when: "afterCommit", cmd: "node" }).run(ctx());`,
     `});`,
     ``,
     `it("shells out to npm", async () => {`,
     `  await exec("npm", ["pack", "--dry-run"], { cwd: dir });`,
-    `}, SPAWN_BUDGET_MS);`,
-    ``,
-    `it("runs git plumbing on a temp fixture", async () => {`,
-    `  await exec("git", ["rev-parse", "HEAD"], { cwd: dir });`,
     `});`,
     ``,
     `it("spawns nothing at all", () => {`,
@@ -571,14 +585,86 @@ it("the spawn-budget scan reports a case that starts node under a command-string
   const dir = await mkdtemp(join(tmpdir(), "flume-budget-command-"));
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-    const { scanned: sites } = await scanSpawnSites({ lane: "default", dir });
+    const { sites } = await scanSpawns({ lane: "default", dir });
 
-    // The whole list, so the two shapes the scan must *not* report — git
-    // plumbing and a case that spawns nothing — are pinned by their absence
-    // rather than by a filter that could quietly match nothing.
-    expect(sites.map((s) => [s.title, s.budget])).toEqual([
-      ["hands a bare node to a gate", null],
-      ["shells out to npm", "SPAWN_BUDGET_MS"],
+    // The whole list, so the shape the scan must *not* report — a case that
+    // spawns nothing — is pinned by its absence rather than by a filter that
+    // could quietly match nothing.
+    expect(sites.scanned.map((s) => s.title)).toEqual([
+      "hands a bare node to a gate",
+      "shells out to npm",
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The command name that is no node launcher: `git`.
+ *
+ * Raw plumbing on a temp fixture is not what moves a test to the integration
+ * lane — naming it a trigger would move most of the dispatcher's suite for a
+ * cost it does not pay — but it is a process startup all the same, and the
+ * file that runs it declares the lane's budget like any other
+ * (spec/worktrees.md, "The default test lane must stay fast"). While the
+ * scan's vocabulary stopped at the node launchers, ~30 default-lane files
+ * whose every case drives real git read as spawning nothing: one of them
+ * crossed the runner's 5s case default on the windows lane and took its own
+ * teardown hook down with it, EBUSY on the fixture repository the timed-out
+ * case still held.
+ *
+ * The negative half is prose: `git` inside a longer string is a message a
+ * case asserts on, not a binary it starts, and the scan resolves the token
+ * rather than a substring of it.
+ */
+it("the spawn scan reads a git spawn as a process startup", async () => {
+  const FIXTURE = [
+    `beforeEach(async () => { await exec("git", ["init"], { cwd: dir }); });`,
+    ``,
+    `it("runs git plumbing on a temp fixture", async () => {`,
+    `  await exec("git", ["rev-parse", "HEAD"], { cwd: dir });`,
+    `});`,
+    ``,
+    `it("commits through a file-local wrapper", async () => {`,
+    `  commit(dir, "one");`,
+    `});`,
+    ``,
+    `it("names git in a message it asserts on", () => {`,
+    `  expect(refusal).toContain("run git status first");`,
+    `});`,
+    ``,
+  ].join("\n");
+  const WRAPPER = `const commit = (repo, m) => execFileSync("git", ["commit", "-m", m], { cwd: repo });`;
+
+  const dir = await mkdtemp(join(tmpdir(), "flume-budget-git-"));
+  try {
+    await writeFile(
+      join(dir, "fixture.test.ts"),
+      `${WRAPPER}\n\n${FIXTURE}`,
+      "utf8",
+    );
+    const { sites, files } = await scanSpawns({ lane: "default", dir });
+
+    // The whole list: the hook, the direct spawn and the one reached through
+    // a file-local wrapper are reported, and the case that only quotes the
+    // word is absent — so the widening is the command name's doing rather
+    // than a scan that started reporting every case in the file.
+    expect(sites.scanned.map((s) => s.kind)).toEqual(["hook", "case", "case"]);
+    expect(sites.scanned[0]?.title).toMatch(
+      /^beforeEach at .*fixture\.test\.ts:3$/,
+    );
+    expect(sites.scanned.slice(1).map((s) => s.title)).toEqual([
+      "runs git plumbing on a temp fixture",
+      "commits through a file-local wrapper",
+    ]);
+
+    // And the file it puts in the budget verdict's judged set: a git-only
+    // file is a spawning file, which is the whole consequence of the
+    // widening.
+    expect(files.scanned.length).toBe(1);
+    expect(files.scanned[0]?.module).toMatch(/fixture\.test\.ts$/);
+    expect(files.findings.map((f) => budgetDefect(f))).toEqual([
+      "declares no file-scope `vi.setConfig` budget",
     ]);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -604,7 +690,6 @@ it("the spawn-budget scan reports a case that starts node under a command-string
 it("the spawn scan reports a case that renders inline-exec spans without a declared budget", async () => {
   const FIXTURE = [
     `import { InlineExecRenderError, renderPrompt } from "../../src/Prompt.ts";`,
-    `import { SPAWN_BUDGET_MS } from "../helpers/subprocess.ts";`,
     ``,
     `const render = (file: string) =>`,
     `  renderPrompt({ phase, promptFile: file, cwd, flumeDir: root, args });`,
@@ -617,10 +702,6 @@ it("the spawn scan reports a case that renders inline-exec spans without a decla
     `  expect(await render("plan.md")).toContain("x");`,
     `});`,
     ``,
-    `it("declares the budget over a render", async () => {`,
-    `  expect(await render("build.md")).toContain("x");`,
-    `}, SPAWN_BUDGET_MS);`,
-    ``,
     `it("names the render error without rendering", () => {`,
     `  expect(new InlineExecRenderError([]).failures).toEqual([]);`,
     `});`,
@@ -630,16 +711,15 @@ it("the spawn scan reports a case that renders inline-exec spans without a decla
   const dir = await mkdtemp(join(tmpdir(), "flume-budget-render-"));
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-    const { scanned: sites } = await scanSpawnSites({ lane: "default", dir });
+    const { sites } = await scanSpawns({ lane: "default", dir });
 
-    // The whole list: the two inheriting shapes are reported, the declaring
-    // one is reported as declaring, and the case that only names the module
-    // is absent — so the widening is the render entry's doing rather than a
-    // scan that started reporting every case in the file.
-    expect(sites.map((s) => [s.title, s.budget])).toEqual([
-      ["renders a template's spans", null],
-      ["renders through a file-local wrapper", null],
-      ["declares the budget over a render", "SPAWN_BUDGET_MS"],
+    // The whole list: both rendering shapes are reported, and the case that
+    // only names the module is absent — so the widening is the render
+    // entry's doing rather than a scan that started reporting every case in
+    // the file.
+    expect(sites.scanned.map((s) => s.title)).toEqual([
+      "renders a template's spans",
+      "renders through a file-local wrapper",
     ]);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -691,14 +771,14 @@ it("a same-named function elsewhere in the file does not hide a spawning case fr
   const dir = await mkdtemp(join(tmpdir(), "flume-budget-shadowed-"));
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-    const { scanned: sites } = await scanSpawnSites({ lane: "default", dir });
+    const { sites } = await scanSpawns({ lane: "default", dir });
 
     // The whole list: the spawning case is back, and the case sharing neither
     // name is still absent — so the widening is the shadowed declaration's
     // doing rather than a scan that started reporting every case it reads.
-    expect(sites.map((s) => [s.title, s.budget])).toEqual([
-      ["boots the CLI through a file-local wrapper", null],
-      ["reuses the name for arithmetic", null],
+    expect(sites.scanned.map((s) => s.title)).toEqual([
+      "boots the CLI through a file-local wrapper",
+      "reuses the name for arithmetic",
     ]);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -706,30 +786,21 @@ it("a same-named function elsewhere in the file does not hide a spawning case fr
 });
 
 /**
- * The scan's own sensitivity, driven over a fixture written to be caught:
- * the assertion above is green over an empty set by design, so a detector
- * that stopped firing would be indistinguishable from a lane in order
+ * The scan's own sensitivity, driven over fixtures written to be caught: the
+ * assertion above is green over an empty set by design, so a detector that
+ * stopped firing would be indistinguishable from a lane in order
  * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
  */
 describe("the default-lane spawn-budget scan", () => {
-  const FIXTURE = [
-    `import { runCli, SPAWN_BUDGET_MS } from "../helpers/subprocess.ts";`,
-    ``,
+  /** The spawning half every fixture below carries, declaration aside. */
+  const SPAWNS = [
     `const viaWrapper = (dir: string) => runCli(dir, ["status"]);`,
     ``,
     `beforeAll(async () => { await runCli("/tmp", ["status"]); });`,
     ``,
-    `it("declares the budget", async () => {`,
-    `  await runCli("/tmp", ["status"]);`,
-    `}, SPAWN_BUDGET_MS);`,
-    ``,
-    `it("inherits the runner's default", async () => {`,
+    `it("spawns through the harness", async () => {`,
     `  await runCli("/tmp", ["status"]);`,
     `});`,
-    ``,
-    `it("restates a number of its own", async () => {`,
-    `  await runCli("/tmp", ["status"]);`,
-    `}, 30_000);`,
     ``,
     `it("reaches the spawn through a local wrapper", async () => {`,
     `  await viaWrapper("/tmp");`,
@@ -742,31 +813,98 @@ describe("the default-lane spawn-budget scan", () => {
     `it("spawns nothing at all", () => {`,
     `  expect(1).toBe(1);`,
     `});`,
-    ``,
   ].join("\n");
 
-  it("flags every shape that inherits the default, and clears only the site that names the budget", async () => {
+  const IMPORTS = [
+    `import { vi } from "vitest";`,
+    `import { runCli, SPAWN_BUDGET_MS } from "../helpers/subprocess.ts";`,
+  ].join("\n");
+
+  /** One spawning file, with `declaration` wherever `place` puts it. */
+  const fixture = (
+    declaration: string,
+    place: "above" | "below" = "above",
+  ): string =>
+    place === "above"
+      ? [IMPORTS, declaration, SPAWNS, ``].join("\n\n")
+      : [IMPORTS, SPAWNS, declaration, ``].join("\n\n");
+
+  const FIXTURE = fixture(
+    `vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });`,
+  );
+
+  it("flags every file whose spawning sites inherit the runner's defaults, and clears only the file that declares both arms above them", async () => {
+    const BOTH = `vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });`;
+    const files: Record<string, string> = {
+      // The lane's form: both arms, naming the harness constant, above the
+      // first registrar.
+      "declares.test.ts": FIXTURE,
+      "inherits.test.ts": fixture(`const unrelated = 1;`),
+      // A case ceiling reaches no hook, and a spawning file's teardown holds
+      // the fixture the timed-out case was still using.
+      "caseArmOnly.test.ts": fixture(
+        `vi.setConfig({ testTimeout: SPAWN_BUDGET_MS });`,
+      ),
+      // A literal is the lane's number restated per file, which is the defect
+      // one file up from restating it per case.
+      "restates.test.ts": fixture(
+        `vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });`,
+      ),
+      // Vitest resolves a site's timeout at registration, so a declaration
+      // under the registrars reaches none of them.
+      "below.test.ts": fixture(BOTH, "below"),
+    };
+
     const dir = await mkdtemp(join(tmpdir(), "flume-budget-scan-"));
     try {
-      await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-      const { scanned: sites } = await scanSpawnSites({ lane: "default", dir });
+      for (const [name, text] of Object.entries(files))
+        await writeFile(join(dir, name), text, "utf8");
+      const scan = await scanSpawns({ lane: "default", dir });
+      const basename = (module: string): string =>
+        module.slice(module.lastIndexOf("/") + 1);
 
-      // A spawning hook inherits `hookTimeout`, which is lower still than
-      // the case default — the same defect one registrar over.
-      const hooks = sites.filter((s) => s.kind === "hook");
-      expect(hooks.map((s) => s.budget)).toEqual([null]);
-      expect(hooks[0]?.title).toMatch(/^beforeAll at .*fixture\.test\.ts:5$/);
+      // Every fixture is in the judged set — the verdict below is five files
+      // judged, not four read and one missed.
+      expect(new Set(scan.files.scanned.map((f) => basename(f.module)))).toEqual(
+        new Set(Object.keys(files)),
+      );
 
       expect(
-        sites.filter((s) => s.kind === "case").map((s) => [s.title, s.budget]),
+        scan.files.findings.map(
+          (f) => `${basename(f.module)} — ${budgetDefect(f) ?? ""}`,
+        ),
       ).toEqual([
-        ["declares the budget", "SPAWN_BUDGET_MS"],
-        ["inherits the runner's default", null],
-        // A literal is the number restated per case, not a declared budget.
-        ["restates a number of its own", null],
-        ["reaches the spawn through a local wrapper", null],
-        ["spawns node without the harness", null],
+        "below.test.ts — declares the budget at line 24, below the spawning site at line 6",
+        "caseArmOnly.test.ts — names no harness budget for hookTimeout",
+        "inherits.test.ts — declares no file-scope `vi.setConfig` budget",
+        "restates.test.ts — names no harness budget for testTimeout, hookTimeout",
       ]);
+
+      // The one file that declares the lane's form, and the sites it covers:
+      // the hook among them, which is the arm a per-case ceiling never
+      // reached.
+      const declaring = scan.files.scanned.find(
+        (f) => basename(f.module) === "declares.test.ts",
+      );
+      expect(declaring?.arms).toEqual({
+        testTimeout: "SPAWN_BUDGET_MS",
+        hookTimeout: "SPAWN_BUDGET_MS",
+      });
+      expect(declaring?.sites.map((site) => site.kind)).toEqual([
+        "hook",
+        "case",
+        "case",
+        "case",
+      ]);
+      expect(declaring?.sites[0]?.title).toMatch(
+        /^beforeAll at .*declares\.test\.ts:8$/,
+      );
+      // The case that spawns nothing is absent from the file's own site list,
+      // so the coverage above is the spawns' doing rather than every
+      // registrar in the file.
+      expect(
+        declaring?.sites.some((site) => site.title === "spawns nothing at all"),
+      ).toBe(false);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -776,29 +914,31 @@ describe("the default-lane spawn-budget scan", () => {
     const dir = await mkdtemp(join(tmpdir(), "flume-budget-lane-"));
     try {
       await writeFile(join(dir, "fixture.integration.test.ts"), FIXTURE, "utf8");
-      expect((await scanSpawnSites({ lane: "default", dir })).scanned).toEqual([]);
+      const ours = await scanSpawns({ lane: "default", dir });
+      expect(ours.sites.scanned).toEqual([]);
+      expect(ours.files.scanned).toEqual([]);
 
       // The same bytes, read by the lane whose suffix they carry: the absence
       // above is the default lane's exclude doing work rather than a scan
       // that stopped reading.
-      const { scanned: theirs } = await scanSpawnSites({
+      const { sites: theirs } = await scanSpawns({
         lane: "integration",
         dir,
       });
-      expect(theirs.length).toBeGreaterThan(0);
-      expect(theirs.every((s) => s.module.endsWith(".integration.test.ts"))).toBe(
-        true,
-      );
+      expect(theirs.scanned.length).toBeGreaterThan(0);
+      expect(
+        theirs.scanned.every((s) => s.module.endsWith(".integration.test.ts")),
+      ).toBe(true);
 
       // And the symmetric half: the integration lane does not collect a
       // default-lane file sitting beside it.
       await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
       expect(
-        (await scanSpawnSites({ lane: "default", dir })).scanned.length,
+        (await scanSpawns({ lane: "default", dir })).sites.scanned.length,
       ).toBeGreaterThan(0);
       expect(
-        (await scanSpawnSites({ lane: "integration", dir })).scanned,
-      ).toEqual(theirs);
+        (await scanSpawns({ lane: "integration", dir })).sites.scanned,
+      ).toEqual(theirs.scanned);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -845,7 +985,7 @@ describe("the default-lane spawn-budget scan", () => {
  */
 it("no case that starts a node process awaits a timer, in either lane", async () => {
   const byLane = new Map<Lane, SpawnScan>();
-  for (const lane of LANES) byLane.set(lane, await scanSpawnSites({ lane }));
+  for (const lane of LANES) byLane.set(lane, await scanSpawns({ lane }));
 
   // Vacuity: both lanes were reached, both carry spawning sites, and the two
   // sets are the different lanes they claim to be — a scan that read the same
@@ -855,12 +995,12 @@ it("no case that starts a node process awaits a timer, in either lane", async ()
   expect([...byLane.keys()]).toEqual([...LANES]);
   for (const [lane, scan] of byLane) {
     expect(
-      scan.scanned.length,
+      scan.sites.scanned.length,
       `${lane} lane: no spawning site found`,
     ).toBeGreaterThan(0);
   }
-  const integration = byLane.get("integration")?.scanned ?? [];
-  const fast = byLane.get("default")?.scanned ?? [];
+  const integration = byLane.get("integration")?.sites.scanned ?? [];
+  const fast = byLane.get("default")?.sites.scanned ?? [];
   expect(
     integration.every((s) => s.module.endsWith(".integration.test.ts")),
   ).toBe(true);
@@ -869,7 +1009,7 @@ it("no case that starts a node process awaits a timer, in either lane", async ()
   );
 
   const sleeping = [...byLane].flatMap(([lane, scan]) =>
-    scan.sleeping.map(
+    scan.sites.findings.map(
       (s) =>
         `${lane} lane — ${s.module}:${s.line} ${s.kind} "${s.title}" awaits ` +
         `${s.awaitedTimer ?? ""}`,
@@ -936,12 +1076,12 @@ it("the timer scan reports an awaited timer in a spawning fixture case", async (
   const dir = await mkdtemp(join(tmpdir(), "flume-sync-point-"));
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-    const { scanned: sites } = await scanSpawnSites({ lane: "default", dir });
+    const { sites } = await scanSpawns({ lane: "default", dir });
 
     // The whole list, so the four shapes that must read as event-based — and
     // the sleeping case that spawns nothing, absent entirely — are pinned by
     // their verdicts rather than by a filter that could match nothing.
-    expect(sites.map((s) => [s.title, s.awaitedTimer])).toEqual([
+    expect(sites.scanned.map((s) => [s.title, s.awaitedTimer])).toEqual([
       ["sleeps a fixed guess after spawning", "setTimeout"],
       // The local wrapper is named at the site, not the timer under it.
       ["sleeps through a file-local wrapper", "settle"],

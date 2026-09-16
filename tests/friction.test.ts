@@ -23,13 +23,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { frictionCountLine, harvestFriction } from "../src/friction.ts";
 import { parsePending, TAG_MAX_LENGTH } from "../src/PendingSchema.ts";
 import type { Chain } from "../src/Phase.ts";
 import { denyDirectory } from "./helpers/denial.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+
+// This file starts processes, so it declares the lane's one budget — cases
+// and hooks alike — once here rather than inheriting the runner's default
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 const exec = promisify(execFile);
 

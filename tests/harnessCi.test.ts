@@ -36,7 +36,7 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { laneLeg, type LaneLeg } from "../harness/ciLane.ts";
 import { INBOX_PHASE } from "../harness/declaration.ts";
@@ -48,6 +48,11 @@ import {
 } from "../harness/index.ts";
 
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+
+// This file starts processes, so it declares the lane's one budget — cases
+// and hooks alike — once here rather than inheriting the runner's default
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 /** The repository the window reads its branch from; also its state root. */
 let repo: string;

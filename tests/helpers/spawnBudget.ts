@@ -21,7 +21,7 @@
  * files a lane contains out of `vitest.config.ts`, so a wrapper, a rename, or
  * a widened include arms the scan without a second edit
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
- * beside its source*). The three lists held here are `NODE_COMMANDS`,
+ * beside its source*). The three lists held here are `SPAWN_COMMANDS`,
  * `SHELL_ENTRIES` and `TIMERS`, none of which has a source to be read off;
  * each is declared at its site below rather than left looking derived.
  */
@@ -59,33 +59,38 @@ const HOOK = /^(beforeAll|beforeEach|afterAll|afterEach)$/;
 const EXEC_PATH = "process.execPath";
 
 /**
- * The same startup spelled as a command *name*, folded to one name the
- * propagation carries exactly like `EXEC_PATH`: a case that hands `"node"`
- * to a gate, or shells out to `npm`, pays the runtime startup the lane's
- * budget exists for just as a case holding `process.execPath` does.
+ * A startup spelled as a command *name*, folded to one name the propagation
+ * carries exactly like `EXEC_PATH`: a case that hands `"node"` to a gate,
+ * shells out to `npm`, or runs `git` plumbing on a temp fixture pays a
+ * process startup the lane's budget exists for just as a case holding
+ * `process.execPath` does.
  */
-const NODE_COMMAND = "<node command>";
+const SPAWN_COMMAND = "<spawn command>";
 
 /**
  * Which command names are that startup. This list is the one copy — no
- * surface in this repo enumerates the node launchers, so unlike the lane's
- * globs, the spawn wrappers and the budget's number there is nothing to read
- * it off (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * surface in this repo enumerates them, so unlike the lane's globs, the
+ * spawn wrappers and the budget's number there is nothing to read it off
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*: declared here rather than looking derived).
  *
- * Launchers only. A name that merely *runs under* node once a launcher has
- * started it — `tsc`, `vitest`, a bin on PATH — is already covered by the
- * launcher that spawns it, and listing it would flag prose. `git` is
- * deliberately absent: raw plumbing is measured fast and is not a lane
- * trigger (spec/worktrees.md, "The default test lane must stay fast").
+ * The node launchers, and `git`. A name that merely *runs under* node once a
+ * launcher has started it — `tsc`, `vitest`, a bin on PATH — is already
+ * covered by the launcher that spawns it, and listing it would flag prose.
+ * `git` is not a lane trigger — raw plumbing on temp fixtures stays in the
+ * default lane — but it is a spawn all the same, and the file that runs it
+ * declares the budget the same way (spec/worktrees.md, "The default test lane
+ * must stay fast"): a git-only file inheriting the runner's 5s default has
+ * already crossed it on a slow host, taking its teardown hook down with it.
  *
  * Over-approximating on the same trade the propagation below takes: a name
  * asserted on rather than handed to a runner, or handed to a mocked one,
- * reads as a startup here and costs the case one declared ceiling it never
+ * reads as a startup here and costs the file one declared ceiling it never
  * pays. A missed one costs the flake, which is the cost this scan exists to
  * prevent.
  */
-const NODE_COMMANDS: ReadonlySet<string> = new Set([
+const SPAWN_COMMANDS: ReadonlySet<string> = new Set([
+  "git",
   "node",
   "npm",
   "npx",
@@ -103,11 +108,11 @@ const NODE_COMMANDS: ReadonlySet<string> = new Set([
  * pays one process startup per span — several per case, and a whole suite of
  * them per file.
  *
- * `sh` is no node launcher, so `NODE_COMMANDS` cannot reach this; and the
- * propagation never follows an import, so the spawn inside the engine module
- * is invisible from a lane file. The entry the spans go through is the name
- * the scan can see, declared here for the same reason `NODE_COMMANDS` is: no
- * surface enumerates it.
+ * `sh` is no command name a case spells, so `SPAWN_COMMANDS` cannot reach
+ * this; and the propagation never follows an import, so the spawn inside the
+ * engine module is invisible from a lane file. The entry the spans go through
+ * is the name the scan can see, declared here for the same reason
+ * `SPAWN_COMMANDS` is: no surface enumerates it.
  *
  * Over-approximating on the propagation's standing trade — a render over a
  * template with no spans starts nothing and still costs its case one declared
@@ -120,7 +125,7 @@ const SHELL_ENTRIES: readonly string[] = ["renderPrompt"];
 /** Every spelling of a process startup, as the propagation's seed. */
 const PROCESS_STARTS: readonly string[] = [
   EXEC_PATH,
-  NODE_COMMAND,
+  SPAWN_COMMAND,
   ...SHELL_ENTRIES,
 ];
 
@@ -150,12 +155,6 @@ export interface SpawnSite extends ScanSite {
   /** The case's title, or a `<module>:<line>` stand-in for a hook. */
   readonly title: string;
   readonly kind: "case" | "hook";
-  /**
-   * The harness constant this site declares as its budget, or `null` when it
-   * declares none — or declares a number of its own, which is the same defect
-   * wearing a value.
-   */
-  readonly budget: string | null;
   /**
    * The name this site awaits that reaches a wall-clock timer — the local
    * wrapper's name where there is one, `setTimeout` where the sleep is
@@ -359,8 +358,8 @@ function referenced(node: ts.Node): Set<string> {
       n.expression.text === "process"
     )
       names.add(EXEC_PATH);
-    if (ts.isStringLiteralLike(n) && NODE_COMMANDS.has(n.text))
-      names.add(NODE_COMMAND);
+    if (ts.isStringLiteralLike(n) && SPAWN_COMMANDS.has(n.text))
+      names.add(SPAWN_COMMAND);
     ts.forEachChild(n, walk);
   };
   walk(node);
@@ -531,37 +530,123 @@ function harnessImports(src: ts.SourceFile): Set<string> {
 }
 
 /**
- * The budget a registrar call declares, or `null`. Read positionally-agnostically
- * — a case carries `(title, fn, timeout)` and a hook `(fn, timeout)`, and both
- * spell it as an options-object `timeout` too — so the scan never encodes
- * vitest's argument order.
- *
- * A literal at the callsite is not a declared budget: it is the number
- * restated per case, which is what left six different timeouts on this lane's
- * spawning cases before the budget had a home.
+ * The two arms a file-scope declaration carries, and the registrars each one
+ * reaches. Vitest resolves a case's ceiling from `testTimeout` and a hook's
+ * from `hookTimeout`, and a spawning file needs both: the windows-lane red
+ * this scan's widening came from was a git case crossing the case default and
+ * its teardown then failing EBUSY on the fixture repository the timed-out
+ * case still held — one slow spawn reddening two sites, only one of which a
+ * case arm would have covered.
  */
-function declaredBudget(
-  call: ts.CallExpression,
+const BUDGET_ARMS = ["testTimeout", "hookTimeout"] as const;
+
+/** One of them. */
+export type BudgetArm = (typeof BUDGET_ARMS)[number];
+
+/** The call a file declares its budget through, as the file spells it. */
+const CONFIG_OBJECT = "vi";
+const CONFIG_CALL = "setConfig";
+
+/**
+ * The file-scope budget declaration: the harness constant each arm of a
+ * top-level `vi.setConfig({ testTimeout, hookTimeout })` names, with the line
+ * the call sits on.
+ *
+ * Top-level, because that is the whole claim. Vitest resolves a site's
+ * timeout when the registrar *runs*, so a declaration below a file's hooks
+ * never reaches them and one nested inside a `describe` reaches only what
+ * that block registers after it — a per-site declaration wearing a
+ * file-scope spelling. The line is reported so the caller can refuse a
+ * declaration the file's own sites sit above.
+ *
+ * As at a registrar, a numeric literal is not a declaration: it is the lane's
+ * number restated per file, which is the defect one file up.
+ *
+ * The first top-level call is the declaration. A file spelling its budget
+ * across two calls reads as declaring whatever the first one carries and reds
+ * on the rest, which is this scan's standing direction — a file over-reported
+ * costs one edit, a file missed costs the flake.
+ */
+function declaredFileBudget(
+  src: ts.SourceFile,
   budgets: ReadonlySet<string>,
-): string | null {
-  let declared: string | null = null;
-  const consider = (expr: ts.Expression): void => {
-    if (ts.isNumericLiteral(expr)) declared = null;
-    else if (ts.isIdentifier(expr) && budgets.has(expr.text))
-      declared = expr.text;
-  };
-  for (const arg of call.arguments) {
-    if (ts.isNumericLiteral(arg) || ts.isIdentifier(arg)) consider(arg);
-    else if (ts.isObjectLiteralExpression(arg))
-      for (const prop of arg.properties)
-        if (
-          ts.isPropertyAssignment(prop) &&
-          prop.name.getText() === "timeout" &&
-          ts.isExpression(prop.initializer)
-        )
-          consider(prop.initializer);
+): {
+  readonly arms: Record<BudgetArm, string | null>;
+  readonly line: number;
+} | null {
+  for (const st of src.statements) {
+    if (!ts.isExpressionStatement(st)) continue;
+    const call = st.expression;
+    if (!ts.isCallExpression(call)) continue;
+    const callee = call.expression;
+    if (
+      !ts.isPropertyAccessExpression(callee) ||
+      callee.name.text !== CONFIG_CALL ||
+      !ts.isIdentifier(callee.expression) ||
+      callee.expression.text !== CONFIG_OBJECT
+    )
+      continue;
+    const arms: Record<BudgetArm, string | null> = {
+      testTimeout: null,
+      hookTimeout: null,
+    };
+    for (const arg of call.arguments) {
+      if (!ts.isObjectLiteralExpression(arg)) continue;
+      for (const prop of arg.properties) {
+        if (!ts.isPropertyAssignment(prop)) continue;
+        const arm = BUDGET_ARMS.find((name) => prop.name.getText() === name);
+        if (!arm) continue;
+        const named =
+          ts.isIdentifier(prop.initializer) && budgets.has(prop.initializer.text);
+        arms[arm] = named ? prop.initializer.getText() : null;
+      }
+    }
+    return {
+      arms,
+      line: src.getLineAndCharacterOfPosition(call.getStart()).line + 1,
+    };
   }
-  return declared;
+  return null;
+}
+
+/**
+ * One lane file that starts a process, which is the unit the budget verdict
+ * is read over: the ceiling is declared once for a file, so a file that
+ * spawns anywhere is a file that declares, whatever its individual cases say.
+ */
+export interface SpawnFile extends ScanSite {
+  /** The line of this file's first spawning site — what a finding cites. */
+  readonly line: number;
+  /** Every spawning case and hook in it, in source order. */
+  readonly sites: readonly SpawnSite[];
+  /**
+   * The harness constant each arm of the file-scope declaration names, or
+   * `null` where the arm is absent, restates a number, or the declaration
+   * itself is missing.
+   */
+  readonly arms: Record<BudgetArm, string | null>;
+  /**
+   * The line the file-scope declaration sits on, or `null` when the file
+   * carries none. A declaration below the file's first spawning site leaves
+   * that site on the runner's default, so the line is part of the verdict
+   * rather than a decoration on it.
+   */
+  readonly declaredAt: number | null;
+}
+
+/**
+ * Why a spawning file fails the budget verdict, in the words its report
+ * carries — or `null` when it declares the budget the lane's way.
+ */
+export function budgetDefect(file: SpawnFile): string | null {
+  if (file.declaredAt === null)
+    return `declares no file-scope \`${CONFIG_OBJECT}.${CONFIG_CALL}\` budget`;
+  const missing = BUDGET_ARMS.filter((arm) => file.arms[arm] === null);
+  if (missing.length > 0)
+    return `names no harness budget for ${missing.join(", ")}`;
+  if (file.declaredAt > file.line)
+    return `declares the budget at line ${file.declaredAt}, below the spawning site at line ${file.line}`;
+  return null;
 }
 
 /** Which lane's files the scan walks, and which subtree of them. */
@@ -578,26 +663,31 @@ export interface SpawnScanRequest {
 }
 
 /**
- * Two verdicts over one judged set, so both are finding lists beside it:
- * every case and hook of the lane that starts a node process is `scanned`,
- * the ones declaring no budget are `findings`, and the ones awaiting a
- * wall-clock timer between the spawn and the assertion are `sleeping`.
+ * Two judged sets, so two scans rather than two finding lists
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*:
+ * a vacuity pin reads the `scanned` of whichever verdict it guards).
+ *
+ * `sites` judges every case and hook of the lane that starts a process, for
+ * the wall-clock timer some await between the spawn and the assertion.
+ * `files` judges the lane files those sites sit in, for the budget — which is
+ * declared once per file, so the file is the unit a missing declaration is
+ * reported at.
  */
-export interface SpawnScan extends Scan<SpawnSite> {
-  readonly sleeping: readonly SpawnSite[];
+export interface SpawnScan {
+  readonly sites: Scan<SpawnSite>;
+  readonly files: Scan<SpawnFile>;
 }
 
 /**
- * Every case and hook the request's lane holds that starts a node process,
- * with the budget it declares and the timer it awaits.
+ * Every case and hook the request's lane holds that starts a process, folded
+ * to the files that hold them with the budget each file declares.
  */
-export async function scanSpawnSites(
-  request: SpawnScanRequest,
-): Promise<SpawnScan> {
+export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> {
   const rule = await laneRule(request.lane);
   const wrappers = harnessSpawnExports();
   const budgets = new Set(harnessBudgets().keys());
   const sites: SpawnSite[] = [];
+  const files: SpawnFile[] = [];
 
   for (const path of filesUnder(rule, request.dir)) {
     const src = parse(path);
@@ -652,7 +742,6 @@ export async function scanSpawnSites(
                   ? first.text
                   : `${root} at ${module}:${line}`,
               kind,
-              budget: declaredBudget(node, named),
               awaitedTimer: [...timers].find((n) => awaited.has(n)) ?? null,
             });
           }
@@ -660,12 +749,30 @@ export async function scanSpawnSites(
       }
       ts.forEachChild(node, visit);
     };
+    const before = sites.length;
     visit(src);
+    const own = sites.slice(before);
+    const first = own[0];
+    if (first) {
+      const declared = declaredFileBudget(src, named);
+      files.push({
+        module,
+        line: first.line,
+        sites: own,
+        arms: declared?.arms ?? { testTimeout: null, hookTimeout: null },
+        declaredAt: declared?.line ?? null,
+      });
+    }
   }
 
   return {
-    scanned: sites,
-    findings: sites.filter((site) => site.budget === null),
-    sleeping: sites.filter((site) => site.awaitedTimer !== null),
+    sites: {
+      scanned: sites,
+      findings: sites.filter((site) => site.awaitedTimer !== null),
+    },
+    files: {
+      scanned: files,
+      findings: files.filter((file) => budgetDefect(file) !== null),
+    },
   };
 }

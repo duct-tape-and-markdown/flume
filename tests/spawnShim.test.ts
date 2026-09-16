@@ -43,6 +43,11 @@ import {
 } from "../src/spawnShim.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
+// This file starts processes, so it declares the lane's one budget — cases
+// and hooks alike — once here rather than inheriting the runner's default
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
+
 const execFileMock = vi.mocked(execFile);
 
 type ExecCb = (err: Error | null, stdout: string, stderr: string) => void;

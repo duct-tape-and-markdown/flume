@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
 import { PHASES, PLAN_SLICES } from "../harness/declaration.ts";
@@ -50,6 +50,11 @@ import {
   renderPrompt,
 } from "../src/Prompt.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+
+// This file starts processes, so it declares the lane's one budget — cases
+// and hooks alike — once here rather than inheriting the runner's default
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 /** The repo root, and the directory the package's prompts ship in. */
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));

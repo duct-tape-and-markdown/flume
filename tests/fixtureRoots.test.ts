@@ -20,12 +20,17 @@
 import { mkdir, realpath, rm, symlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { readWorktreeRegistry } from "../src/worktrees.ts";
 
 import { makeFixture } from "./helpers/dispatcherFixture.ts";
-import { gitOut, mkTempDir } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, gitOut, mkTempDir } from "./helpers/subprocess.ts";
+
+// This file starts processes, so it declares the lane's one budget — cases
+// and hooks alike — once here rather than inheriting the runner's default
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 describe("a temp fixture root speaks git's spelling of itself", () => {
   it("a fixture repo root is the path git reports for it, not the spelling the temp dir was named by", async () => {

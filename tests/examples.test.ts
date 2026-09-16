@@ -16,9 +16,9 @@
  * The second exception is the span-rendering block below: every case that
  * puts a shipped template through `renderPrompt` starts one `sh` per
  * inline-exec span, which is the subject of those cases rather than
- * overhead. Each declares `SPAWN_BUDGET_MS` rather than inheriting the
- * runner's default, and `tests/helpers/spawnBudget.ts` reports the entry so
- * a new one cannot land without it.
+ * overhead. This file declares `SPAWN_BUDGET_MS` at file scope rather than
+ * inheriting the runner's default, and `tests/helpers/spawnBudget.ts` reports
+ * the entry so a new case cannot land outside it.
  */
 
 import { execFile } from "node:child_process";
@@ -37,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import ts from "typescript";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Gate, GateContext } from "../src/Gate.ts";
 import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
@@ -60,6 +60,11 @@ import cascadeFactory, {
   declaredFilesGate,
 } from "../examples/cascade-chain.ts";
 import minimalFactory from "../examples/minimal-chain.ts";
+
+// This file starts processes, so it declares the lane's one budget — cases
+// and hooks alike — once here rather than inheriting the runner's default
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 const exec = promisify(execFile);
 

@@ -120,7 +120,12 @@ import {
   writeMinimalChain,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
-import { mkTempDir } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, mkTempDir } from "./helpers/subprocess.ts";
+
+// This file starts processes, so it declares the lane's one budget — cases
+// and hooks alike — once here rather than inheriting the runner's default
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 const exec = promisify(execFile);
 
