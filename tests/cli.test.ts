@@ -97,7 +97,11 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
     expect(isInvokedDirectly(process.argv[1])).toBe(false);
   });
 
-  it("realpathSync throwing on a nonexistent argv[1] falls back to the raw comparison instead of crashing the import", () => {
+  it("a throwing realpathSync leaves the CLI entry check answering rather than crashing the import", () => {
+    // `realpathSync` throws on a path that is not on disk, so this is the
+    // catch leg: what it must produce is an answer — the unresolved path,
+    // folded — never an exception out of a module-level call the import
+    // cannot catch.
     const missing = join(tmpdir(), "flume-cli-junction-missing", "cli.js");
     expect(() => isInvokedDirectly(missing)).not.toThrow();
     expect(isInvokedDirectly(missing)).toBe(false);
@@ -137,26 +141,41 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
     }
   });
 
-  it("the CLI entry check reads a namespaced realpath answer and its plain spelling as the same file", () => {
-    // The case above, reduced to the pair of values it produces on win32 —
-    // where alone it can produce them, and where this suite does not run.
-    // `realpathSync` builds its answer from the argument it was handed, so the
-    // `\\?\` prefix `toNamespacedPath` put there survives the leg that
-    // resolved no link and is gone from the leg that resolved a junction. One
-    // file, two spellings, and the two sides of the entry check land on
-    // opposite ones through a linked install.
+  it("the CLI entry check's throwing leg compares the unresolved path folded into one alphabet", () => {
+    // Both sides here are win32 spellings, which name no file on any lane
+    // this suite runs on — win32 included, since no such install exists in a
+    // test process — so `realpathSync` throws on each and both go through
+    // `onDiskIdentity`'s catch leg. What that leg must do is fold: the
+    // `\\?\` prefix `toNamespacedPath` put on one side is not on the other,
+    // and a catch leg answering the path verbatim would read one file as
+    // two. The namespaced side is spelled by win32's own `toNamespacedPath`
+    // rather than by hand, because that is the writer whose prefix the check
+    // has to read back, and `win32` answers in its alphabet on every host.
     //
-    // The namespaced side is spelled by win32's own `toNamespacedPath` rather
-    // than by hand here: it is the writer whose prefix the check has to read
-    // back, and `win32` answers in its alphabet on every host, which is what
-    // makes the pair reachable from this lane at all.
+    // The resolving leg's fold is not reachable from here: it needs a
+    // `realpathSync` that answers namespaced, which only win32 produces and
+    // only over a file that exists. It is pinned directly on the fold
+    // instead — `plainPath` against `win32.toNamespacedPath`, in
+    // `tests/paths.test.ts` — and the two legs share that one function, so
+    // this case's subject is which leg spends it, never whether the fold is
+    // right.
+    // Why a namespaced answer needs folding at all:
+    // `.claude/rules/platform-facts.md`, "realpathSync keeps the \\?\ prefix
+    // only where nothing resolved".
     const cli = String.raw`C:\pnpm-store\flume\dist\cli.js`;
+    const share = String.raw`\\build-host\tools\flume\dist\cli.js`;
+
+    // The vacuity pin the pair rides: a composer that stopped prefixing would
+    // hand both sides the same string and leave the assertions below green
+    // over a fold that never ran.
+    expect(win32.toNamespacedPath(cli)).not.toBe(cli);
+    expect(win32.toNamespacedPath(share)).not.toBe(share);
+
     expect(onDiskIdentity(win32.toNamespacedPath(cli))).toBe(onDiskIdentity(cli));
 
     // A UNC install answers the same way one prefix further out
     // (`\\?\UNC\host\share\…`): the fold restores the `\\` root rather than
     // eating it, so the host name is not silently re-read as a directory.
-    const share = String.raw`\\build-host\tools\flume\dist\cli.js`;
     expect(onDiskIdentity(win32.toNamespacedPath(share))).toBe(
       onDiskIdentity(share),
     );
