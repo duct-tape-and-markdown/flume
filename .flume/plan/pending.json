@@ -1,121 +1,5 @@
 [
   {
-    "tag": "THE-PLAN-SLICES-TAKE-A-QUEUE-PARSE-FAILURE-AS-INPUT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/sliceWindow.ts",
-          "description": "the parse failure reaches the liveness legs as a tick fact"
-        },
-        {
-          "path": "harness/inboxWindow.ts",
-          "description": "a queue that failed to parse makes the slice live"
-        },
-        {
-          "path": "harness/prompts/plan-inbox.md",
-          "description": "the failure as the drain's input, the rewrite as the repair"
-        },
-        {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "liveness and render over a parse failure"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the package's slices read a parsed queue only, so once the engine admits them over an unparseable one nothing makes a slice live for it or tells the agent to repair it",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The gates the discipline needs"
-    },
-    "acceptance": "a queue that fails to parse makes the plan slice live and its render carries the failure, so the next plan tick's rewrite is the repair and no queue state needs a hand edit.",
-    "tests": [
-      "a queue that fails to parse makes the inbox slice live",
-      "the inbox render carries the queue's parse failure as the drain's input"
-    ],
-    "pins": [],
-    "notes": "The prompt already cats the raw queue bytes (`PENDING_PATH`), so the agent sees the file; what is missing is the failure stated as a fact and a liveness leg that fires on it. Blocked on the engine leg that reports the fact."
-  },
-  {
-    "tag": "FLUME-HELP-FLAG-ANSWERS-FOR-A-SUBCOMMAND",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "the trailing-name arm covers the flag spelling too, through the same decider"
-        },
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "the answer and the refusal on the flag spelling"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "the flag form beside the verb form"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`flume --help <name>` prints the top-level page and discards the name — the one place left in the CLI where argv is dropped rather than honored or refused",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "acceptance": "`flume --help <subcommand>` answers that subcommand's page and an unknown name there is usage-shaped (exit 2), through the same decider the verb spelling uses.",
-    "tests": [
-      "flume --help status prints the status subcommand's usage",
-      "flume --help with an unknown name exits 2 with usage"
-    ],
-    "pins": [],
-    "notes": "The trailing-name lookup is gated on the bare verb today, so the flag arm falls through to the top-level page. One decider serves every spelling — the site's own comment already condemns the drop for the verb arm."
-  },
-  {
-    "tag": "THE-SCRIPT-RUNNER-READS-THROUGH-A-DECLARED-READER",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/scriptRunner.ts",
-          "description": "`read` on the options — the declared reader, the line reader as default"
-        },
-        {
-          "path": "tests/harnessRunner.test.ts",
-          "description": "a real document-emitting script driven through a declared reader, beside the line one"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the adoption price names the declared reader, not the line shape alone"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the script runner reads verdict lines and nothing else, so a validator emitting one JSON document needs a wrapper script — the wrapper the runner row exists to remove",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The runner interface"
-    },
-    "acceptance": "`scriptRunner` takes a reader the declaration names over the command's whole stdout; absent, the line reader; a validator emitting one document declares a function over that document and needs no wrapper script.",
-    "tests": [
-      "a declared reader turns a validator's one JSON document into a verdict per name"
-    ],
-    "pins": [
-      "an undeclared reader takes one verdict line per name from stdout"
-    ],
-    "notes": "The fixture is the agreement gate's (`engineering.md`, *A seam gate reads what the real writer wrote*): a real script emitting a real document through the real reader, beside the line fixture already there. A document whose clean run omits its drift key is the shape priced."
-  },
-  {
     "tag": "A-LANE-STAMP-CARRIES-THE-FAILING-TITLES-IT-WOKE-ON",
     "gate": {
       "kind": "parked",
@@ -267,48 +151,6 @@
     "notes": "Wire shape ratified: one `{ name, body }` object per line. The delta is the package's, never the script's — a consumer measuring a standing set re-emits it every tick and pays only its first drain. Watch the records gate: the package writes the materialized file and the slice drains it the same tick. Blocked on the friction leg, which rewrites the same window."
   },
   {
-    "tag": "THE-DECLARATION-ASSERTS-ITS-CAPABILITIES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "`capabilities` on the declaration"
-        },
-        {
-          "path": "harness/chain.ts",
-          "description": "pass-through to Chain.capabilities, whole"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the field"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the pass-through, declared and absent"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the harness declaration asserts no capabilities, so under the package a requiresCapability entry is unpickable forever and no declaration can change it",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "What a consumer declares"
-    },
-    "acceptance": "a declared `capabilities` list reaches Chain.capabilities whole, and a declaration that names none asserts none.",
-    "tests": [
-      "a declared capabilities list reaches Chain.capabilities whole"
-    ],
-    "pins": [
-      "a declaration naming no capabilities leaves Chain.capabilities unasserted"
-    ],
-    "notes": "Engine side is complete: `Chain.capabilities` (`src/Phase.ts`) decides a `requiresCapability` entry's pickability and `flume status` already names one held back — nothing in `src/` moves. The pass-through mirrors the `supervisor` row's (`supervisorPolicy`, `harness/chain.ts`). Per-job capabilities add to this set and ride THE-DECLARATION-NAMES-ITS-JOBS."
-  },
-  {
     "tag": "THE-DECLARATION-CARRIES-SETUP-SERIALIZE",
     "gate": {
       "kind": "open"
@@ -353,10 +195,7 @@
   {
     "tag": "THE-DECLARATION-NAMES-ITS-JOBS",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THE-DECLARATION-ASSERTS-ITS-CAPABILITIES"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
