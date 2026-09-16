@@ -45,16 +45,20 @@ Every check lives at the most deterministic layer that can express it — a
   against it. Two carve-outs, both reading prose against the program rather
   than against prose. A doc comment reachable from the `exports` map's
   `.d.ts` is the hover text a chain author reads, so it is engine surface and
-  may be pinned for what it says. And a reference in a `src/`, `harness/`, or
-  `tests/` comment — a backticked identifier, a backticked repo-relative path, or a
-  `*.md` page name with or without backticks, since a filename is never a
-  sentence — is not prose: a pin may resolve it against the declarations
-  those trees hold and the working tree — the token, never its meaning — so
-  a deleted symbol or a renamed page cannot leave its citations standing.
+  may be pinned for what it says. And a reference in a comment — a
+  backticked identifier or a backticked repo-relative path in `src/`,
+  `harness/`, or `tests/`, where the program reaches; a `*.md` page name,
+  with or without backticks, in any tree the sweep domain names, since a
+  filename resolves on disk and is never a sentence — is not prose: a pin
+  may resolve it against the declarations those trees hold and the working
+  tree — the token, never its meaning — so a deleted symbol or a renamed
+  page cannot leave its citations standing.
   An identifier the citation pairs with a path, `` `name` (`src/file.ts`) ``,
   resolves in that file: where a declaration lives is the token's fact, not
   its meaning, and a split that moves the job moves the pair or is caught.
-  A path named on its own is context, and no pair is read into it.
+  A path named on its own is context, and no pair is read into it; nor is a
+  pair whose path is a `*.md` page — no declaration lives in a page, so the
+  identifier resolves repo-wide and the page against disk.
   A test's title carries the page-name arm alone: a title is a string
   literal, and a literal is itself a resolution arm, so an identifier in a
   title would resolve itself; only the `*.md` name, read against the working
