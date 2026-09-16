@@ -313,3 +313,84 @@ describe("friction harvest — the destination filename clears NAME_MAX at the s
     }
   });
 });
+
+/**
+ * A dotfile is not a note (spec/chain.md, "`Chain.friction` — the declared
+ * friction channel"). The two cases share one mirror shape — an untracked
+ * dot-prefixed placeholder beside a real note — so the skip is proven to
+ * turn on the name alone: the tracked-at-HEAD bound covers a *committed*
+ * placeholder and has nothing to say about this one, and the delivery of
+ * the sibling in the same call proves the dir was harvested at all rather
+ * than skipped whole.
+ */
+describe("friction harvest — a dot-prefixed mirror name is not a note", () => {
+  let fx: Fixture;
+  let primaryRoot: string;
+  const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+    primaryRoot = await mkTempDir("flume-friction-dot-primary-");
+    const mirrorDir = join(fx.repo, ".flume", "friction");
+    await mkdir(mirrorDir, { recursive: true });
+    // The placeholder git made the consumer create, and this tick's real
+    // note beside it.
+    await writeFile(join(mirrorDir, ".gitkeep"), "");
+    await writeFile(join(mirrorDir, "note.md"), "the loop wants owner input\n");
+
+    // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): the mirror holds both names, and the dotfile is
+    // untracked at the worktree's own HEAD — so nothing but the name test
+    // can hold it back.
+    expect((await readdir(mirrorDir)).sort()).toEqual([".gitkeep", "note.md"]);
+    const { stdout } = await exec(
+      "git",
+      ["ls-files", "--", ".flume/friction/.gitkeep"],
+      { cwd: fx.repo },
+    );
+    expect(stdout).toBe("");
+  });
+
+  afterEach(async () => {
+    await rm(primaryRoot, { recursive: true, force: true });
+    await fx.cleanup();
+  });
+
+  it("harvestFriction leaves a dot-prefixed mirror file where it is", async () => {
+    await harvestFriction(chain, fx.repo, "HARVEST-DOT", {
+      flumeDir: primaryRoot,
+      stateRootRel: ".flume",
+      log: silent,
+    });
+
+    // Stays in the mirror, and so dies with the worktree the dispatcher
+    // removes moments later.
+    expect(await readdir(join(fx.repo, ".flume", "friction"))).toEqual([
+      ".gitkeep",
+    ]);
+    // Nothing carrying the placeholder's name landed under the stamped
+    // spelling, which no reading surface would skip.
+    const landed = await readdir(join(primaryRoot, "friction"));
+    expect(landed.filter((n) => n.endsWith(".gitkeep"))).toEqual([]);
+  });
+
+  it("harvestFriction delivers a non-dot file from a mirror dir that also holds a dot-prefixed one", async () => {
+    await harvestFriction(chain, fx.repo, "HARVEST-DOT", {
+      flumeDir: primaryRoot,
+      stateRootRel: ".flume",
+      log: silent,
+    });
+
+    const primaryDir = join(primaryRoot, "friction");
+    const delivered = (await readdir(primaryDir)).filter((n) =>
+      n.endsWith("--note.md"),
+    );
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatch(
+      /^HARVEST-DOT--\d{4}-\d{2}-\d{2}T[\d-]+Z--note\.md$/,
+    );
+    expect(await readFile(join(primaryDir, delivered[0]!), "utf8")).toBe(
+      "the loop wants owner input\n",
+    );
+  });
+});

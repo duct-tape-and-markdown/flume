@@ -323,13 +323,16 @@ export function boundedName(
 
 /**
  * Whether a filename is dot-prefixed — the one spelling of "a placeholder
- * git made the consumer create is no work". The friction channel's three
- * reading surfaces share it (spec/chain.md, "`Chain.friction` — the declared
- * friction channel"): `countFrictionFiles` (`src/job.ts`) behind every
- * status count, and the `friction` verb's bare listing and read-by-name
- * (`src/cli.ts`). One detection, never re-derived beside each
- * (`.claude/rules/engineering.md`, "The fix lands at the mechanism") — a
- * second spelling is how the count and the listing come to disagree about
+ * git made the consumer create is no work". Every friction-channel surface
+ * that decides whether a name is a note shares it (spec/chain.md,
+ * "`Chain.friction` — the declared friction channel"): `countFrictionFiles`
+ * (`src/job.ts`) behind every status count, the `friction` verb's bare
+ * listing and read-by-name (`src/cli.ts`), and the teardown harvest's
+ * candidate filter (`harvestFriction`, `src/friction.ts`), which would
+ * otherwise relay a skipped name into the primary dir under a stamped one
+ * the readers can no longer skip. One detection, never re-derived beside
+ * each (`.claude/rules/engineering.md`, "The fix lands at the mechanism") —
+ * a second spelling is how the count and the listing come to disagree about
  * what the channel holds.
  *
  * The test is on the name alone, never on content: the caller passes the

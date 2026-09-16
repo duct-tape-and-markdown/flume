@@ -29,6 +29,7 @@ import {
   assertStateRootRelative,
   boundedName,
   fsStamp,
+  isDotName,
   namespacedJoin,
 } from "./paths.js";
 import { NAME_MAX } from "./PendingSchema.js";
@@ -210,7 +211,12 @@ export async function harvestFriction(
     }
     return;
   }
-  const candidates = entries.filter((e) => e.isFile());
+  // A dotfile is not a note (spec/chain.md, "`Chain.friction` — the declared
+  // friction channel"): `isDotName` (`src/paths.ts`) is the same name test
+  // the count and the read verb take, and a placeholder relayed here would
+  // land in the primary dir under a stamped name — the one spelling those
+  // surfaces skip on, turned into one they cannot see.
+  const candidates = entries.filter((e) => e.isFile() && !isDotName(e.name));
   if (candidates.length === 0) return;
 
   // Tracked-at-HEAD bound: a file already tracked at the worktree's own
