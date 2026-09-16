@@ -61,9 +61,11 @@ export interface AgentInvocation {
    * Milliseconds the aborted process tree gets between its SIGTERM and the
    * SIGKILL that follows — what bounds the wait `signal` and `timeoutMs`
    * above commit the provider to. The dispatcher forwards the chain's
-   * `supervisorPolicy.killGraceMs` (`src/Phase.ts`) here, the same value the
-   * `flume loop` supervisor bounds a tick tree by; absent takes
-   * `DEFAULT_KILL_GRACE_MS` (`src/processTree.ts`).
+   * `supervisorPolicy.killGraceMs` (`src/Phase.ts`) here, off the tick's own
+   * resolved chain; absent takes `DEFAULT_KILL_GRACE_MS`
+   * (`src/processTree.ts`). This is the only timer over a signalled tick
+   * tree — a `flume loop` above signals its child and waits on it unbounded
+   * (spec/loop.md, "The loop lock and the tip claim").
    */
   killGraceMs?: number;
   /**

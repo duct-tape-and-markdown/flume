@@ -24,7 +24,7 @@ import {
 import { frictionCountLine } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
 import { defaultStateRoot, namespacedJoin, stopFlagPath } from "./paths.js";
-import { spawnProcessTree, terminateProcessTree } from "./processTree.js";
+import { signalProcessTree, spawnProcessTree } from "./processTree.js";
 
 /**
  * Engine default for the run-scoped quarantine — the scope `superviseLoop`
@@ -94,24 +94,12 @@ interface SuperviseLoopOptions {
    */
   abortThreshold?: number;
   /**
-   * Chain-declared override for the grace the default runner leaves between
-   * the SIGTERM it sends the tick tree on teardown and the SIGKILL that
-   * follows, in milliseconds. Defaults to `DEFAULT_KILL_GRACE_MS`
-   * (`src/processTree.ts`), which is what the escalation applies when nothing
-   * is forwarded. The CLI forwards this from the resolved chain's
-   * `supervisorPolicy.killGraceMs` (`src/Phase.ts`); undeclared falls through
-   * to that default. Read by the default runner alone — a caller supplying
-   * its own {@link SuperviseLoopOptions.runTick} owns its child's teardown
-   * and this never reaches it.
-   */
-  killGraceMs?: number;
-  /**
    * The run's teardown, reaching the tick tree the run owns. Aborting it ends
-   * the run: the in-flight tick child is terminated, awaited, and only then
-   * does `superviseLoop` resolve — so a caller that releases a resource the
-   * run held (the loop lock and the tip claim, `src/cli.ts`) releases it with
-   * no process of this run's still writing under it. No further child is
-   * spawned once it has aborted.
+   * the run: the in-flight tick child is signalled, awaited with no bound of
+   * this level's, and only then does `superviseLoop` resolve — so a caller
+   * that releases a resource the run held (the loop lock and the tip claim,
+   * `src/cli.ts`) releases it with no process of this run's still writing
+   * under it. No further child is spawned once it has aborted.
    *
    * A caller that declines one gets a signal that never aborts: the run is
    * then bounded by `maxTicks`, hibernation and the stop flag alone, exactly
@@ -130,10 +118,10 @@ interface SuperviseLoopOptions {
    *
    * `stopSignal` is {@link SuperviseLoopOptions.stopSignal}, handed to the
    * runner because the child handle lives here and nowhere else: a runner
-   * that spawns a process **terminates it on abort and still resolves on the
+   * that spawns a process **signals it on abort and still resolves on the
    * child's `exit`**, never on the abort itself — resolving early is what
    * leaves the supervisor's caller releasing a claim out from under a live
-   * writer. A stub with nothing to terminate may ignore it.
+   * writer. A stub with nothing to signal may ignore it.
    */
   runTick?: (
     quarantinedSlugs: ReadonlySet<string>,
@@ -255,8 +243,7 @@ export async function superviseLoop(
   const flumeDir = opts.flumeDir ?? defaultStateRoot(opts.repoRoot);
   const configDir = opts.configDir ?? defaultStateRoot(opts.repoRoot);
   const baton = new Baton(flumeDir);
-  const runTick =
-    opts.runTick ?? defaultTickRunner(opts.repoRoot, opts.killGraceMs);
+  const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot);
   // A caller with no teardown of its own gets one that never fires, so the
   // runner and both checks below read one shape rather than branching on
   // whether a signal was supplied.
@@ -616,18 +603,23 @@ export async function superviseLoop(
  * claim in `src/cli.ts`'s `loop` command — so the child tick trusts the
  * claim already held instead of acquiring (and colliding on) its own.
  *
- * `stopSignal` is the run's teardown reaching this child: on abort the tick
- * *tree* is signalled (`spawnProcessTree`/`terminateProcessTree`,
- * `src/processTree.ts` — the child leads its own process group, and the agent
- * it spawned is in that group), and the promise still resolves on the child's
- * `exit` — the supervisor hands its caller a settled tree, not a kill that was
- * merely requested. `graceMs` is what bounds the wait between the group's
- * SIGTERM and its SIGKILL; undefined takes the engine default there.
+ * `stopSignal` is the run's teardown reaching this child: on abort the child's
+ * group is signalled with SIGTERM (`spawnProcessTree`/`signalProcessTree`,
+ * `src/processTree.ts` — the child leads its own process group) and the
+ * promise resolves on the child's `exit` — the supervisor hands its caller a
+ * settled tree, not a kill that was merely requested.
+ *
+ * The wait carries no bound of its own. The agent the child started leads a
+ * group of its own, which this signal never reaches and a timer here could
+ * only orphan: at the grace the supervisor would SIGKILL the child moments
+ * before the child's own escalation reached that agent. The one timer in the
+ * tree is the child's, over the tree it can see (spec/loop.md, "The loop lock
+ * and the tip claim"). The cost that section names is a child wedged past its
+ * handler, which holds the run open rather than releasing over a live writer
+ * — the operator kills it, and the next acquirer's liveness probe reclaims
+ * the claim.
  */
-function defaultTickRunner(
-  repoRoot: string,
-  graceMs: number | undefined,
-): (
+function defaultTickRunner(repoRoot: string): (
   quarantinedSlugs: ReadonlySet<string>,
   stopSignal: AbortSignal,
 ) => Promise<{ exitCode: number | null }> {
@@ -646,15 +638,13 @@ function defaultTickRunner(
       // Wired by hand rather than through spawn's own `signal` option: that
       // option reports the abort as an `error` event, and a runner that
       // resolved there would hand the supervisor a still-running child.
-      const terminate = (): void => {
-        terminateProcessTree(child, {
-          ...(graceMs !== undefined ? { graceMs } : {}),
-        });
+      const signalChild = (): void => {
+        signalProcessTree(child, "SIGTERM");
       };
-      if (stopSignal.aborted) terminate();
-      else stopSignal.addEventListener("abort", terminate, { once: true });
+      if (stopSignal.aborted) signalChild();
+      else stopSignal.addEventListener("abort", signalChild, { once: true });
       const settle = (result: { exitCode: number | null }): void => {
-        stopSignal.removeEventListener("abort", terminate);
+        stopSignal.removeEventListener("abort", signalChild);
         resolveExit(result);
       };
       child.on("exit", (code) => settle({ exitCode: code }));

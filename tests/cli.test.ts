@@ -14,6 +14,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -1724,11 +1725,12 @@ describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the
 });
 
 /**
- * A chain whose agent records the pid of the process running it, then parks —
- * so a test can observe the loop's tick *child* mid-tick and signal the
- * supervisor while that child is still writing under the state root the claim
- * protects. The pid is the tick child's own: a chain-declared agent runs
- * in-process in the `flume tick` the supervisor spawned.
+ * A chain whose agent records the pid of the process running it, then parks
+ * until the tick's own abort releases it — so a test can observe the loop's
+ * tick *child* mid-tick and signal the supervisor while that child is still
+ * writing under the state root the claim protects. The pid is the tick
+ * child's own: a chain-declared agent runs in-process in the `flume tick` the
+ * supervisor spawned.
  *
  * Every path handed in is absolute and outside the fixture repo — these files
  * are the test's sync points, not tick artifacts, and a write into the
@@ -1739,13 +1741,17 @@ describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the
  *
  * - `grandchildPidPath` — the agent spawns a parked process of its own and
  *   reports its pid. That grandchild is what a `ChildProcess.kill` aimed at
- *   the tick child alone never reaches.
- * - `ignoreSigterm` — the tick child installs a SIGTERM handler that does
- *   nothing, so only an escalation can end it. Installed *before* the pid is
- *   reported, which makes that report the readiness event: a signal landing
- *   ahead of it would meet the default disposition instead.
- * - `killGraceMs` — declared on `supervisorPolicy`, the grace the supervisor
- *   is to bound its wait by.
+ *   the tick child alone never reaches; it shares the tick child's group, so
+ *   the supervisor's own signal is what must reach it.
+ * - `wedged` — the agent parks *through* the abort instead of settling on it,
+ *   so the tick child never finishes its release and never exits. That is the
+ *   child spec/loop.md leaves holding the run open rather than releasing over
+ *   a live writer — the shape a supervisor with a grace of its own would
+ *   SIGKILL instead.
+ * - `killGraceMs` — declared on `supervisorPolicy`, the grace a signalled
+ *   tick escalates under. This agent is in-process, so nothing in this chain
+ *   escalates on it: it is the number a supervisor must *not* bound its own
+ *   wait by.
  *
  * The park outlasts `SPAWN_BUDGET_MS` deliberately: a tree that is never
  * taken down must red its case on the budget rather than outliving the wait
@@ -1755,7 +1761,7 @@ function tickChildPidChainSrc(
   pidPath: string,
   opts: {
     grandchildPidPath?: string;
-    ignoreSigterm?: boolean;
+    wedged?: boolean;
     killGraceMs?: number;
   } = {},
 ): string {
@@ -1780,16 +1786,22 @@ function tickChildPidChainSrc(
     `},\n` +
     `agent: {\n` +
     `  name: "parked",\n` +
-    `  async invoke() {\n` +
-    (opts.ignoreSigterm === true
-      ? `    process.on("SIGTERM", () => {});\n`
-      : ``) +
+    `  async invoke({ signal }) {\n` +
     (opts.grandchildPidPath !== undefined
       ? `    const kid = spawn(process.execPath, ["-e", ${JSON.stringify(PARKED_GRANDCHILD)}], { stdio: "ignore" });\n` +
         `    writeFileSync(${JSON.stringify(opts.grandchildPidPath)}, String(kid.pid));\n`
       : ``) +
     `    writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));\n` +
-    `    await new Promise((r) => setTimeout(r, 600_000));\n` +
+    // The park, and how it ends. A well-behaved agent settles on the tick's
+    // abort and clears its timer, so the child completes its own release and
+    // exits; `wedged` drops that listener, leaving a child no signal of the
+    // supervisor's can move.
+    `    await new Promise((r) => {\n` +
+    `      const t = setTimeout(r, 600_000);\n` +
+    (opts.wedged === true
+      ? ``
+      : `      signal?.addEventListener("abort", () => { clearTimeout(t); r(undefined); }, { once: true });\n`) +
+    `    });\n` +
     `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
     `  },\n` +
     `} });\n`
@@ -1803,6 +1815,25 @@ function tickChildPidChainSrc(
  * engine's own value could not be mistaken for one bounded by this.
  */
 const DECLARED_GRACE_MS = 250;
+
+/**
+ * The grace the loop's *tick child* escalates under in the delegated-grace
+ * arm, an order of magnitude above {@link DECLARED_GRACE_MS} — which that arm
+ * declares to the supervisor alone. Two numbers rather than one because the
+ * property is *whose* timer ended the tree: at one number the supervisor's
+ * SIGKILL and the child's land milliseconds apart, and which arrived first is
+ * a coin toss rather than an assertion.
+ */
+const TICK_GRACE_MS = DECLARED_GRACE_MS * 8;
+
+/**
+ * How long the wedged-child arm watches a signalled run stay open. Several
+ * times {@link DECLARED_GRACE_MS}, so a supervisor that bounded its own wait
+ * by the declared grace would have escalated, released both guards and exited
+ * well inside it — the one arm here with no event to wait on, because the run
+ * not ending is its subject.
+ */
+const WEDGED_HOLD_MS = DECLARED_GRACE_MS * 8;
 
 /**
  * Every pid a signalled-teardown driver learned about — the loop's below and
@@ -1832,10 +1863,22 @@ function killIfAlive(pid: number | undefined): void {
 }
 
 /**
- * Drive a real `flume loop` to a tick parked mid-agent, SIGTERM the
- * supervisor, and wait for the run to end — the shape every arm below shares.
- * Returns the pids it observed and how long the teardown took, plus the
+ * Drive a real `flume loop` to a tick parked mid-agent and SIGTERM the
+ * supervisor — the shape every arm below shares. Returns the pids it
+ * observed, the run's exit as a promise, the output collected so far, and the
  * cleanup its caller owns.
+ *
+ * The exit is handed over rather than awaited here: the supervisor bounds its
+ * wait on the tick child by nothing of its own (spec/loop.md, "The loop lock
+ * and the tip claim"), so an arm whose child is wedged past its handler has
+ * no exit to wait for — the run staying open *is* that arm's subject.
+ *
+ * `agent` chooses which park the tick holds at. `"in-process"` (the default)
+ * runs a chain-declared agent inside the tick child itself, so the pid
+ * reported is that child's. `"spawned"` runs the shipped `claudeCode`
+ * provider against a node one-liner, so the pid reported is a real agent
+ * process in a group of its own — the tree the supervisor's signal cannot
+ * reach and only the tick child's own escalation can end.
  *
  * The signal targets the pid in `loop.pid` rather than the spawned process's
  * own: tsx re-execs itself into a second node process, so the spawned handle
@@ -1843,26 +1886,37 @@ function killIfAlive(pid: number | undefined): void {
  * operator's SIGTERM finds in production.
  */
 async function signalledLoopRun(opts: {
+  agent?: "in-process" | "spawned";
   grandchild?: boolean;
+  /** `agent: "spawned"` only — the agent process swallows the SIGTERM. */
   ignoreSigterm?: boolean;
+  /** `agent: "spawned"` only — the grace only the supervisor's resolve sees. */
+  supervisorGraceMs?: number;
+  /** In-process only — the agent never settles, so the child never exits. */
+  wedged?: boolean;
   killGraceMs?: number;
 }): Promise<{
-  tickChildPid: number;
+  /**
+   * The pid the arm's park reported: the tick child under the in-process
+   * agent, the agent process itself under `agent: "spawned"`.
+   */
+  parkedPid: number;
+  supervisorPid: number;
   grandchildPid: number | undefined;
   loopPidPath: string;
   claimPath: string;
-  teardownMs: number;
-  out: string;
+  exited: Promise<void>;
+  out: () => string;
   cleanup: () => Promise<void>;
 }> {
   const repo = await makeJobRepo("main");
   const scratch = await mkTempDir("flume-signalled-loop-");
-  let tickChildPid: number | undefined;
+  let parkedPid: number | undefined;
   let grandchildPid: number | undefined;
   let loop: ReturnType<typeof spawn> | undefined;
   const cleanup = async (): Promise<void> => {
     killIfAlive(grandchildPid);
-    killIfAlive(tickChildPid);
+    killIfAlive(parkedPid);
     killIfAlive(loop?.pid);
     await rm(scratch, { recursive: true, force: true });
     await repo.cleanup();
@@ -1874,17 +1928,28 @@ async function signalledLoopRun(opts: {
     return pid;
   };
   try {
-    const childPidPath = join(scratch, "tick-child.pid");
+    const parkedPidPath = join(scratch, "parked.pid");
     const grandchildPidPath = join(scratch, "grandchild.pid");
+    const shared = {
+      ...(opts.grandchild === true ? { grandchildPidPath } : {}),
+      ...(opts.killGraceMs !== undefined
+        ? { killGraceMs: opts.killGraceMs }
+        : {}),
+    };
     await writeRepoConfig(
       repo.dir,
-      tickChildPidChainSrc(childPidPath, {
-        ...(opts.grandchild === true ? { grandchildPidPath } : {}),
-        ...(opts.ignoreSigterm === true ? { ignoreSigterm: true } : {}),
-        ...(opts.killGraceMs !== undefined
-          ? { killGraceMs: opts.killGraceMs }
-          : {}),
-      }),
+      opts.agent === "spawned"
+        ? bareTickAgentChainSrc(parkedPidPath, {
+            ...shared,
+            ...(opts.ignoreSigterm === true ? { ignoreSigterm: true } : {}),
+            ...(opts.supervisorGraceMs !== undefined
+              ? { supervisorGraceMs: opts.supervisorGraceMs }
+              : {}),
+          })
+        : tickChildPidChainSrc(parkedPidPath, {
+            ...shared,
+            ...(opts.wedged === true ? { wedged: true } : {}),
+          }),
     );
     new Baton(join(repo.dir, ".flume")).wake("probe");
 
@@ -1898,15 +1963,15 @@ async function signalledLoopRun(opts: {
     loop.stdout?.on("data", (d: Buffer) => (out += d));
     loop.stderr?.on("data", (d: Buffer) => (out += d));
 
-    // The event every arm turns on: a tick child parked mid-agent, past the
-    // supervisor's lock and claim and past its signal handlers. The agent
-    // writes this last, so it also reports the grandchild and the SIGTERM
-    // handler above it as already in place.
-    tickChildPid = record(
+    // The event every arm turns on: a tick parked mid-agent, past the
+    // supervisor's lock and claim and past the child's signal handlers. The
+    // park writes this last, so it also reports the grandchild and the
+    // SIGTERM handler above it as already in place.
+    parkedPid = record(
       Number(
         await waitFor(
-          `the loop's tick child to record its pid at ${childPidPath}`,
-          () => fileWithContent(childPidPath),
+          `the loop's parked process to record its pid at ${parkedPidPath}`,
+          () => fileWithContent(parkedPidPath),
         ),
       ),
     );
@@ -1925,26 +1990,26 @@ async function signalledLoopRun(opts: {
         ),
       ),
     );
-    // Non-vacuity: the subject of every teardown assertion below must be a
-    // live *other* process at the moment the signal lands, or "nothing of the
-    // tree is alive" is green over a tree that never ran.
-    expect(tickChildPid).not.toBe(supervisorPid);
-    expect(processAlive(tickChildPid)).toBe(true);
+    // Non-vacuity: the subject of every assertion below must be a live
+    // *other* process at the moment the signal lands, or a case reading
+    // "nothing of the tree is alive" — or "the wedged child is still there" —
+    // is green over a tree that never ran.
+    expect(parkedPid).not.toBe(supervisorPid);
+    expect(processAlive(parkedPid)).toBe(true);
 
     const exited = new Promise<void>((resolveExit) => {
       loop?.on("exit", () => resolveExit());
     });
-    const signalledAt = Date.now();
     process.kill(supervisorPid, "SIGTERM");
-    await exited;
 
     return {
-      tickChildPid,
+      parkedPid,
+      supervisorPid,
       grandchildPid,
       loopPidPath,
       claimPath: tipClaimPath(await gitCommonDir(repo.dir), "refs/heads/main"),
-      teardownMs: Date.now() - signalledAt,
-      out,
+      exited,
+      out: () => out,
       cleanup,
     };
   } catch (err) {
@@ -1963,16 +2028,20 @@ async function signalledLoopRun(opts: {
  * teardown. Signalling the direct child alone closes one rung of that: the
  * agent is reparented and writes on.
  *
- * The second half is the wait. A SIGTERM the tree declines to act on bounds
- * the release by whatever disposition the tree installed, which is not a
- * bound the supervisor chose — so the grace is declared and the escalation
- * is what ends it.
+ * The second half is the wait, and it belongs to the tick child alone. The
+ * agent that child spawned leads a group of its own, which the supervisor's
+ * signal never reaches; a grace bounding the supervisor's wait fires first
+ * and kills the child moments before the child's own escalation would have
+ * reached that agent, leaving it reparented and writing under the released
+ * root. So the supervisor signals and waits unbounded, the one timer in the
+ * tree is the child's, and a child wedged past its handler holds the run open
+ * rather than releasing over a live writer.
  *
- * Fast lane despite the real subprocesses: every arm is event-based (the
- * agent's own pid file, then `loop.pid`, then the supervisor's exit), so a
- * warm host pays a startup and nothing more. The one wall-clock reading is
- * the declared-grace arm's, and it is a ceiling far below the value it
- * discriminates against.
+ * Fast lane despite the real subprocesses: the arms are event-based (the
+ * park's own pid file, then `loop.pid`, then the supervisor's exit), so a
+ * warm host pays a startup and nothing more. The one wall-clock wait is the
+ * wedged arm's, which has no event to wait for — the run not ending is its
+ * subject — and it is a small multiple of the declared grace.
  *
  * win32 maps SIGTERM to TerminateProcess, which runs no handler at all —
  * release-on-signal is a POSIX guarantee and the cross-platform one is
@@ -1990,16 +2059,18 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
     async () => {
       const run = await signalledLoopRun({});
       try {
+        await run.exited;
+
         // The run ended through the signal path rather than by reaching
         // `--max` — which is what makes the absences below a teardown.
-        expect(run.out).toContain("signalled; stopping after");
+        expect(run.out()).toContain("signalled; stopping after");
         // The supervisor released both guards...
         expect(existsSync(run.loopPidPath)).toBe(false);
         expect(existsSync(run.claimPath)).toBe(false);
-        // ...and took the writer they were held for with it. The child was
-        // reaped before the release, so this is a settled fact, not a race:
-        // no wait stands between the parent's exit and this read.
-        expect(processAlive(run.tickChildPid)).toBe(false);
+        // ...and took the writer they were held for with it. The tick child
+        // was reaped before the release, so this is a settled fact, not a
+        // race: no wait stands between the parent's exit and this read.
+        expect(processAlive(run.parkedPid)).toBe(false);
       } finally {
         await run.cleanup();
       }
@@ -2012,15 +2083,17 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
     async () => {
       const run = await signalledLoopRun({ grandchild: true });
       try {
+        await run.exited;
+
         // Non-vacuity: the grandchild is a third process, neither the tick
         // child nor the supervisor — the one a kill aimed at the direct child
         // never reaches.
         expect(run.grandchildPid).toBeDefined();
-        expect(run.grandchildPid).not.toBe(run.tickChildPid);
+        expect(run.grandchildPid).not.toBe(run.parkedPid);
 
         expect(existsSync(run.loopPidPath)).toBe(false);
         expect(existsSync(run.claimPath)).toBe(false);
-        expect(processAlive(run.tickChildPid)).toBe(false);
+        expect(processAlive(run.parkedPid)).toBe(false);
         // The group signal reaches every member at once, but they exit
         // independently — the tick child's own exit orders nothing about what
         // it spawned — so this one death is awaited rather than read off the
@@ -2038,19 +2111,35 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
   );
 
   it.skipIf(process.platform === "win32")(
-    "a tick tree that ignores SIGTERM is killed after the declared grace rather than waited on indefinitely",
+    "an agent that swallows SIGTERM for the whole grace is dead when a signalled loop's run ends",
     async () => {
+      // Non-vacuity for the split below: the supervisor's grace must be far
+      // enough under the tick's that a run bounded by it could not be mistaken
+      // for one that waited the tick out.
+      expect(DECLARED_GRACE_MS * 4).toBeLessThan(TICK_GRACE_MS);
+
       const run = await signalledLoopRun({
+        agent: "spawned",
         ignoreSigterm: true,
-        killGraceMs: DECLARED_GRACE_MS,
+        killGraceMs: TICK_GRACE_MS,
+        supervisorGraceMs: DECLARED_GRACE_MS,
       });
       try {
-        // The tree swallowed the SIGTERM and would have parked past this
-        // case's whole budget, so reaching here at all is the escalation:
-        // the run ended, the guards dropped, and the writer is gone.
+        await run.exited;
+
+        // The run ended through the signal path, and both guards are down.
+        expect(run.out()).toContain("signalled; stopping after");
         expect(existsSync(run.loopPidPath)).toBe(false);
         expect(existsSync(run.claimPath)).toBe(false);
-        expect(processAlive(run.tickChildPid)).toBe(false);
+
+        // The agent leads a process group of its own, so the supervisor's
+        // signal never reached it and only the tick child's escalation — at
+        // the grace the *tick* resolved — could end it. A supervisor holding a
+        // grace of its own escalates first, against the group it *can* reach:
+        // the child dies at that instant, its own escalation never fires, and
+        // this process is reparented and writing under the root whose guards
+        // just dropped.
+        expect(processAlive(run.parkedPid)).toBe(false);
       } finally {
         await run.cleanup();
       }
@@ -2059,26 +2148,30 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
   );
 
   it.skipIf(process.platform === "win32")(
-    "a chain-declared kill grace, not the engine default, bounds a signalled loop's wait on its tick tree",
+    "a signalled loop still holds its lock and tip claim past the declared grace while its wedged tick child lives",
     async () => {
-      // Non-vacuity, and what makes the ceiling below discriminate: the
-      // declared grace must be far enough under the engine's that a run
-      // bounded by the default cannot land inside it.
-      expect(DECLARED_GRACE_MS * 10).toBeLessThan(DEFAULT_KILL_GRACE_MS);
+      // Non-vacuity for the wait below: it must leave room for a supervisor
+      // that bounded its own wait by the declared grace to escalate, release
+      // and exit several times over inside it.
+      expect(WEDGED_HOLD_MS).toBeGreaterThan(DECLARED_GRACE_MS * 4);
 
       const run = await signalledLoopRun({
-        ignoreSigterm: true,
+        wedged: true,
         killGraceMs: DECLARED_GRACE_MS,
       });
       try {
-        expect(processAlive(run.tickChildPid)).toBe(false);
-        // A ceiling, not a cost. The tree ignores SIGTERM, so the only thing
-        // that can end it is the escalation, and the only question is which
-        // grace timed it: under the engine default this teardown could not
-        // have finished before `DEFAULT_KILL_GRACE_MS`, and half of that
-        // still leaves the declared grace an order of magnitude of slack on a
-        // loaded host.
-        expect(run.teardownMs).toBeLessThan(DEFAULT_KILL_GRACE_MS / 2);
+        await delay(WEDGED_HOLD_MS);
+
+        // This chain's agent never settles on the tick's abort, so the child
+        // cannot finish its own release — and the supervisor holds rather
+        // than dropping the guards over a live writer. The operator kills the
+        // child, and the next acquirer's liveness probe reclaims the claim;
+        // that is the cost the section names, in place of a timer that would
+        // orphan the tree instead.
+        expect(processAlive(run.parkedPid)).toBe(true);
+        expect(processAlive(run.supervisorPid)).toBe(true);
+        expect(existsSync(run.loopPidPath)).toBe(true);
+        expect(existsSync(run.claimPath)).toBe(true);
       } finally {
         await run.cleanup();
       }
@@ -2106,6 +2199,15 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
  *   which makes that report the readiness event.
  * - `killGraceMs` — declared on `supervisorPolicy`, the grace the tick is to
  *   bound its wait by.
+ * - `supervisorGraceMs` — a *second* grace, declared only where a `flume
+ *   loop` supervisor resolves this chain: its own process, which the tick
+ *   child's `FLUME_TIP_CLAIM_HELD` marks apart (spec/loop.md, "The loop lock
+ *   and the tip claim"). The knob is per-tick, so a live chain declares one
+ *   number and both processes would read it — which leaves "whose grace ended
+ *   the tree" unobservable, the two timers being the same number a few
+ *   milliseconds apart. Splitting them is what makes the answer readable: a
+ *   supervisor bounding its own wait by this one kills its child long before
+ *   the tick's escalation could reach the agent.
  *
  * The park outlasts `SPAWN_BUDGET_MS` deliberately, for the same reason the
  * loop driver's does: a tree that is never taken down must red its case on
@@ -2117,6 +2219,7 @@ function bareTickAgentChainSrc(
     grandchildPidPath?: string;
     ignoreSigterm?: boolean;
     killGraceMs?: number;
+    supervisorGraceMs?: number;
   } = {},
 ): string {
   const PARKED_GRANDCHILD = "setInterval(() => {}, 1000);";
@@ -2143,7 +2246,14 @@ function bareTickAgentChainSrc(
     `  }],\n` +
     `  humanOnly: [],\n` +
     (opts.killGraceMs !== undefined
-      ? `  supervisorPolicy: { killGraceMs: ${opts.killGraceMs} },\n`
+      ? `  supervisorPolicy: { killGraceMs: ` +
+        (opts.supervisorGraceMs !== undefined
+          ? // Load time, per resolving process: the tick child is the one the
+            // runner told the claim is held, so the other reader is the
+            // supervisor.
+            `process.env.FLUME_TIP_CLAIM_HELD ? ${opts.killGraceMs} : ${opts.supervisorGraceMs}`
+          : `${opts.killGraceMs}`) +
+        ` },\n`
       : ``) +
     `},\n` +
     `agent: claudeCode({\n` +

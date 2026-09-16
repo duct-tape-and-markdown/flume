@@ -108,7 +108,7 @@ it("the shipped `killGraceMs` doc comment restates no DEFAULT_KILL_GRACE_MS lite
   // Vacuity guard: this is the block it claims to be before the absence is
   // asserted over it — an absence over a vanished subject is a false green.
   expect(doc).toContain("SIGKILL");
-  expect(doc).toContain("tick tree");
+  expect(doc).toContain("agent tree");
 
   expect(doc).not.toContain(String(DEFAULT_KILL_GRACE_MS));
 });

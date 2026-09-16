@@ -1,13 +1,15 @@
 /**
- * `src/processTree.ts` — the own-group spawn and the bounded teardown, driven
- * against real processes rather than a mocked `node:child_process`. The
- * subject is what the kernel does with a signal aimed at a process *group*,
- * so a stubbed spawn would pin this suite's own idea of reach instead of the
- * host's.
+ * `src/processTree.ts` — the own-group spawn, the group signal, and the
+ * bounded teardown built over it, driven against real processes rather than a
+ * mocked `node:child_process`. The subject is what the kernel does with a
+ * signal aimed at a process *group*, so a stubbed spawn would pin this
+ * suite's own idea of reach instead of the host's.
  *
  * The end-to-end property these mechanics exist for — a signalled `flume
  * loop` releasing its guards over a dead tree — is `tests/cli.test.ts`. Here
- * the halves are exercised apart, so a regression names the half that broke.
+ * the halves are exercised apart, so a regression names the half that broke:
+ * the reach of the bare signal (which is all a supervisor takes over its tick
+ * child) below, then the escalation a tick applies over its agent.
  *
  * Every case declares win32 as a skip rather than passing silently there:
  * that host has no process group to signal and maps SIGTERM to
@@ -19,10 +21,12 @@
 
 import type { ChildProcess } from "node:child_process";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  signalProcessTree,
   spawnProcessTree,
   terminateProcessTree,
   DEFAULT_KILL_GRACE_MS,
@@ -83,9 +87,9 @@ function ended(
   });
 }
 
-describe("terminateProcessTree — the signal reaches the whole tree", () => {
+describe("signalProcessTree — the signal reaches the whole tree, and bounds nothing", () => {
   it.skipIf(process.platform === "win32")(
-    "a grandchild the terminated child spawned is signalled with it, not reparented and left running",
+    "a grandchild the signalled child spawned is signalled with it, not reparented and left running",
     async () => {
       const scratch = await mkTempDir("flume-process-tree-");
       const pidFile = join(scratch, "grandchild.pid");
@@ -110,7 +114,7 @@ describe("terminateProcessTree — the signal reaches the whole tree", () => {
       expect(grandchildPid).not.toBe(child.pid);
       expect(processAlive(grandchildPid)).toBe(true);
 
-      terminateProcessTree(child, { graceMs: SHORT_GRACE_MS });
+      expect(signalProcessTree(child, "SIGTERM")).toBe(true);
       await ended(child);
 
       // The group signal reaches every member at once, but the members exit
@@ -126,6 +130,59 @@ describe("terminateProcessTree — the signal reaches the whole tree", () => {
     SPAWN_BUDGET_MS,
   );
 
+  it.skipIf(process.platform === "win32")(
+    "a child that swallows SIGTERM outlives the bare signal, which arms no escalation over it",
+    async () => {
+      const scratch = await mkTempDir("flume-process-tree-");
+      const pidFile = join(scratch, "ready.pid");
+      // The pid file is the readiness event, as in the escalation case below:
+      // a SIGTERM landing before node has evaluated this script meets the
+      // default disposition and ends the child, which would red this case
+      // over a child that never installed the handler it is about.
+      const child = park(
+        `process.on("SIGTERM", () => {});` +
+          `require("node:fs").writeFileSync(process.env[${JSON.stringify(PID_FILE_VAR)}], String(process.pid));` +
+          PARK,
+        pidFile,
+      );
+      await waitFor(
+        `the child to report it has installed its SIGTERM handler at ${pidFile}`,
+        () => fileWithContent(pidFile),
+      );
+
+      expect(signalProcessTree(child, "SIGTERM")).toBe(true);
+
+      // Several times the grace the escalation cases below pay: under a timer
+      // this child would be gone. This half installs none, which is what lets
+      // `src/loopSupervisor.ts` wait on its tick child unbounded and leave the
+      // one timer in the tree to that child (spec/loop.md, "The loop lock and
+      // the tip claim").
+      await delay(SHORT_GRACE_MS * 4);
+
+      expect(child.exitCode).toBeNull();
+      expect(processAlive(child.pid!)).toBe(true);
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "signalling a child that has already exited reports nothing signalled",
+    async () => {
+      const child = park("");
+      const { code } = await ended(child);
+
+      // Non-vacuity: the child is finished and reaped before the signal
+      // below — the state whose pid the host is free to hand to a stranger.
+      expect(code).toBe(0);
+      expect(child.exitCode).toBe(0);
+
+      expect(signalProcessTree(child, "SIGTERM")).toBe(false);
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
+describe("terminateProcessTree — the escalation bounds the wait", () => {
   it.skipIf(process.platform === "win32")(
     "a child that ignores SIGTERM is killed once the grace runs out",
     async () => {
@@ -180,7 +237,7 @@ describe("terminateProcessTree — the signal reaches the whole tree", () => {
   );
 
   it.skipIf(process.platform === "win32")(
-    "terminating a child that has already exited signals nothing",
+    "terminating a child that has already exited arms no escalation over its pid",
     async () => {
       const child = park("");
       const { code } = await ended(child);
@@ -193,6 +250,11 @@ describe("terminateProcessTree — the signal reaches the whole tree", () => {
       expect(() =>
         terminateProcessTree(child, { graceMs: SHORT_GRACE_MS }),
       ).not.toThrow();
+
+      // The SIGTERM found nothing, so no timer was armed: past the grace
+      // there is no SIGKILL left to land on whatever the host has since
+      // handed this pid to.
+      await delay(SHORT_GRACE_MS * 2);
     },
     SPAWN_BUDGET_MS,
   );

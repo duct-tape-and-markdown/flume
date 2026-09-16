@@ -1697,8 +1697,8 @@ since a singleton tick has no entry to blame.
 Beside the net, the block carries the knobs that shape the tick itself and
 have nowhere else to be set from a chain: how wide a fanout wave runs, the
 wall-clock cap on one agent invocation, the paths the fanout partition
-ignores, and the grace a signalled run gives its in-flight tick tree before it
-stops waiting. Each knob ships as an engine default; `Chain.supervisorPolicy`
+ignores, and the grace a signalled tick gives the agent tree it started before
+it stops waiting. Each knob ships as an engine default; `Chain.supervisorPolicy`
 lets a chain choose otherwise:
 
 ```ts
@@ -1730,14 +1730,19 @@ const chain: Chain = {
   between them, before the supervisor aborts the run rather than burning
   the remaining `--max` ticks against the same wall. Default 3.
 - **`killGraceMs`** — milliseconds between the `SIGTERM` a signalled `flume
-  loop` sends its in-flight tick tree and the `SIGKILL` that follows. The
-  supervisor releases the loop lock and the tip claim only once that tree is
-  gone (`spec/loop.md`, "The loop lock and the tip claim"), so this is the
-  ceiling on how long a `Ctrl-C` takes to come back — and the window an agent
-  mid-invocation gets to finish writing under the state root. A tree that
-  exits on the `SIGTERM` never reaches it. Default 5000. POSIX only: win32
-  maps `SIGTERM` to `TerminateProcess`, which runs no handler, so there is no
-  disposition for a grace to bound.
+  tick` sends the agent tree it started and the `SIGKILL` that follows — the
+  window an agent mid-invocation gets to finish writing under the state root.
+  A tree that exits on the `SIGTERM` never reaches it. It is the **one timer
+  over a signalled run**: a `flume loop` signals its tick child's group and
+  waits on that child unbounded, because the agent leads a group of its own
+  and a timer at the supervisor would kill the child before its escalation
+  reached that agent (`spec/loop.md`, "The loop lock and the tip claim"). So
+  this is what a `Ctrl-C` costs when a well-behaved-but-slow agent is what
+  holds it up; a tick wedged past its own handler holds the run open instead
+  of releasing over a live writer, and the operator kills it — the next
+  acquirer's liveness probe reclaims the claim. Default 5000. POSIX only:
+  win32 maps `SIGTERM` to `TerminateProcess`, which runs no handler, so there
+  is no disposition for a grace to bound.
 - **`maxParallel`** — how many entry ticks one fanout wave starts at once.
   Default 4. The partition (§3) decides which entries *may* share a wave —
   disjoint declared files — and this decides how many of that set actually
@@ -1768,22 +1773,22 @@ engine defaults, byte-identical (`spec/loop.md`, "Repeated identical
 failures — quarantine, then abort").
 
 **The fields split by when they are read, and a self-editing chain feels the
-difference.** `quarantineScope`, `abortThreshold` and `killGraceMs` are bound
-**once per run**: `flume loop`'s supervisor resolves the chain in its own
-process before the first child and nothing re-reads them between ticks, so a
-tick that commits a changed value is governed by the old one until the
-operator restarts the loop — with no indication the new declaration was
-ignored. For the first two that is the point rather than an oversight: the
-quarantine set and the consecutive-failure streak are run-scoped accounting
-that resets per run, and a mid-run change would rewrite the rules the
-accumulated counts were gathered under. `killGraceMs` is bound there because
-the supervisor is the process that sends the signal; a bare `flume tick`,
-which signals its own tree, reads it off its own chain instead.
-`maxParallel`, `tickTimeoutMs` and `partitionIgnore` are read **per tick**,
-straight off the tick's own resolved chain — the dispatcher reloads `chain.ts`
-fresh every tick and none of the three accumulates run-scoped state, so a
-mid-run change governs from the next tick onward (`spec/chain.md`, "Supervisor
-policy is a chain-overridable default").
+difference.** `quarantineScope` and `abortThreshold` are bound **once per
+run**: `flume loop`'s supervisor resolves the chain in its own process before
+the first child and nothing re-reads them between ticks, so a tick that
+commits a changed value is governed by the old one until the operator restarts
+the loop — with no indication the new declaration was ignored. That is the
+point rather than an oversight: the quarantine set and the consecutive-failure
+streak are run-scoped accounting that resets per run, and a mid-run change
+would rewrite the rules the accumulated counts were gathered under.
+`killGraceMs`, `maxParallel`, `tickTimeoutMs` and `partitionIgnore` are read
+**per tick**, straight off the tick's own resolved chain — the dispatcher
+reloads `chain.ts` fresh every tick and none of the four accumulates
+run-scoped state, so a mid-run change governs from the next tick onward
+(`spec/chain.md`, "Supervisor policy is a chain-overridable default").
+`killGraceMs` reads there because the timer belongs to the process that can
+see the tree it is timing: a `flume tick` — bare or loop-spawned — signals the
+agent it started, and the supervisor above it holds no grace of its own.
 
 A chain that fails to load at supervisor start surfaces nothing new here: the
 defaults apply for that run and the first child tick still reports the load

@@ -1,6 +1,6 @@
 /**
- * processTree — the own-group spawn, and the bounded teardown that takes the
- * whole spawned tree down with one signal.
+ * processTree — the own-group spawn, the group signal over it, and the
+ * bounded teardown built from the two.
  *
  * `ChildProcess.kill` reaches the direct child and nothing that child
  * spawned: a grandchild is reparented and keeps running. For this engine
@@ -8,20 +8,25 @@
  * the signalled process is about to release (spec/loop.md, "The loop lock and
  * the tip claim"), so the guard drops with a writer still inside what it
  * protected. Spawning the child as its own process group leader is what lets
- * one signal reach the tree; the escalation below is what bounds the wait,
- * which a bare SIGTERM leaves to whatever disposition the tree happens to
- * install.
+ * one signal reach the tree.
  *
- * Two callers, one rung apart: `src/loopSupervisor.ts` starts a `flume tick`
- * child this way, and `src/Agent.ts` starts the agent the same way — so a
- * signalled `flume tick` reaches the tools and MCP servers its agent spawned
- * whether or not a supervisor is above it.
+ * Two callers, one rung apart, and they take different halves.
+ * `src/loopSupervisor.ts` starts a `flume tick` child this way and, on
+ * teardown, signals that child's group and waits on its exit unbounded —
+ * {@link signalProcessTree} alone. `src/Agent.ts` starts the agent the same
+ * way and bounds it — {@link terminateProcessTree}, escalating to SIGKILL
+ * after the grace the chain declares. The agent leads a group of its own, so
+ * a timer at the supervisor would fire over a tree it cannot see, killing the
+ * tick child before the child's own escalation reached the agent it spawned;
+ * the one timer in the tree belongs to the process that can see the tree it
+ * is timing. A tick wedged past its handler holds the run open rather than
+ * releasing over a live writer, which that section names as the cost.
  *
  * POSIX only, as that section states: win32 has no process group to signal,
  * and maps SIGTERM to TerminateProcess, which runs no handler. There
- * {@link spawnProcessTree} spawns exactly as `spawn` would and
- * {@link terminateProcessTree} signals the child alone — the same reach
- * `ChildProcess.kill` already had, never a silently wider one.
+ * {@link spawnProcessTree} spawns exactly as `spawn` would and both signal
+ * paths reach the child alone — the same reach `ChildProcess.kill` already
+ * had, never a silently wider one.
  *
  * Sibling to `fsProbe.ts` and `spawnShim.ts`: nothing beyond
  * `node:child_process` here, so any module that spawns can reach it without
@@ -106,8 +111,18 @@ export function spawnProcessTree(
  * state the caller is asking for rather than a degradation. Any other failure
  * — an `EPERM` says the tree is there and not ours to signal — is the
  * caller's to see (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * The signal alone, with no timer over it: a caller that wants the tree gone
+ * within a bound takes {@link terminateProcessTree}, and a caller whose wait
+ * is deliberately unbounded — `src/loopSupervisor.ts` over a tick child whose
+ * own escalation is the one that can see the agent — takes this. Either way
+ * the delivery is a request; what proves the tree is gone is the child's
+ * `exit`.
  */
-function signalTree(child: ChildProcess, signal: NodeJS.Signals): boolean {
+export function signalProcessTree(
+  child: ChildProcess,
+  signal: NodeJS.Signals,
+): boolean {
   const { pid } = child;
   if (pid === undefined) return false;
   // Already reaped: its pid may since have been recycled onto an unrelated
@@ -125,26 +140,26 @@ function signalTree(child: ChildProcess, signal: NodeJS.Signals): boolean {
 }
 
 /**
- * Take `child` and everything it spawned down: SIGTERM the tree now, SIGKILL
- * it after `graceMs` if it is still there. Returns immediately — the caller
- * settles on the child's own `exit`, which is what proves the tree is gone
- * rather than merely asked to go.
+ * Take `child` and everything it spawned down within a bound: SIGTERM the
+ * tree now, SIGKILL it after `graceMs` if it is still there. Returns
+ * immediately — the caller settles on the child's own `exit`, which is what
+ * proves the tree is gone rather than merely asked to go.
  *
  * The escalation timer is cleared at that `exit`, so a tree with the default
  * disposition never pays the grace, and the SIGKILL can never land on a pid
  * the host has since recycled.
  *
- * Defaults to {@link DEFAULT_KILL_GRACE_MS}; the CLI forwards a chain's
- * `supervisorPolicy.killGraceMs` (`src/Phase.ts`) here through
- * `superviseLoop` (`src/loopSupervisor.ts`).
+ * Defaults to {@link DEFAULT_KILL_GRACE_MS}; the dispatcher forwards a
+ * chain's `supervisorPolicy.killGraceMs` (`src/Phase.ts`) here through the
+ * agent invocation it bounds (`src/Agent.ts`).
  */
 export function terminateProcessTree(
   child: ChildProcess,
   opts: { graceMs?: number } = {},
 ): void {
-  if (!signalTree(child, "SIGTERM")) return;
+  if (!signalProcessTree(child, "SIGTERM")) return;
   const escalate = setTimeout(() => {
-    signalTree(child, "SIGKILL");
+    signalProcessTree(child, "SIGKILL");
   }, opts.graceMs ?? DEFAULT_KILL_GRACE_MS);
   child.once("exit", () => clearTimeout(escalate));
 }

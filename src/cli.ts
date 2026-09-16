@@ -1124,8 +1124,15 @@ async function main(): Promise<number> {
     // dropping both while that child still runs hands the root to the next
     // acquirer with a live writer inside it — the release the section
     // promises has not happened yet. `stopRun` reaches the supervisor, which
-    // terminates the in-flight child and resolves only once it has exited;
-    // the drop and the exit ride that promise.
+    // signals the in-flight child's group and resolves only once it has
+    // exited; the drop and the exit ride that promise.
+    //
+    // The wait is that child's, not a timer's. `supervisorPolicy.killGraceMs`
+    // is the grace the child escalates under, over the agent tree only it can
+    // see (`src/Phase.ts`); a bound here would fire first and orphan that
+    // agent. A child wedged past its own handler therefore holds this exit
+    // open rather than releasing over a live writer — the operator kills it,
+    // and the next acquirer's liveness probe reclaims the claim.
     //
     // Before the run starts (and after it returns) `supervisedRun` is
     // undefined and the handler drops immediately: there is no tree to take
@@ -1282,9 +1289,6 @@ async function main(): Promise<number> {
         : {}),
       ...(supervisorPolicy?.abortThreshold !== undefined
         ? { abortThreshold: supervisorPolicy.abortThreshold }
-        : {}),
-      ...(supervisorPolicy?.killGraceMs !== undefined
-        ? { killGraceMs: supervisorPolicy.killGraceMs }
         : {}),
     });
     const supervised = await supervisedRun;
