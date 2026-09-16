@@ -1,28 +1,26 @@
 /**
- * Shared CLI-subprocess harness — the tsx/dist/cli.mjs + src/cli.ts entry
- * paths, the hermetic env, and the runCli/gitOut subprocess wrappers that
- * cli.test.ts, job.test.ts, job.integration.test.ts, and
- * loop-process-boundary.integration.test.ts each hand-rolled a copy of.
- * Also home to the fixture-rooting idiom (`mkTempDir`, `mkFixtureRoot`), the
- * suite-wide guard that refuses a state root planted above the fixtures
- * (`installStateRootLeakGuard`, wired through `vitest.config.ts`), and the
- * one number every spawning file in the default lane declares as its budget
- * (`SPAWN_BUDGET_MS`), the output cap every spawn here runs under
- * (`SPAWN_OUTPUT_CAP_BYTES`), and the git-config pin every fixture repository
- * runs under (`pinGitAutoGcOff`, armed through the same setup file).
+ * Starting a child process from a suite: the tsx/src/cli.ts entry paths the
+ * spawns go through, the `runCli`/`runNodeStreams`/`gitOut` wrappers that
+ * cli.test.ts, job.test.ts, job.integration.test.ts and
+ * loop-process-boundary.integration.test.ts each hand-rolled a copy of, the
+ * two numbers every one of those spawns runs under — the output cap
+ * (`SPAWN_OUTPUT_CAP_BYTES`) and the wall-clock budget the spawning file
+ * declares (`SPAWN_BUDGET_MS`) — and the liveness probe (`processAlive`) that
+ * reads a child back afterwards.
+ *
+ * What a child is *told* is `tests/helpers/gitEnv.ts`, and where it runs is
+ * `tests/helpers/fixtureRoot.ts`; this module starts it.
+ *
  * Not *.test.ts, so neither vitest lane (unit or integration) collects it
  * as a suite of its own.
  */
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, realpath } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { afterEach, beforeAll, expect } from "vitest";
+import { hermeticEnv } from "./gitEnv.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -140,240 +138,6 @@ export const TSX_CLI = requireEntryPoint(
 );
 
 /**
- * The identity/provenance FLUME_* keys an outer flume harness is known to
- * set. `hermeticEnv()` does not strip by this list — it strips every
- * `/^FLUME_/` key (below) — so the list is seed input only: cli.test.ts sets
- * each one ambiently to prove the strip is non-vacuous without restating
- * the harness's vocabulary (`.claude/rules/engineering.md`, "Derived state
- * is computed, never restated beside its source").
- */
-export const HERMETIC_ENV_STRIP_KEYS: readonly string[] = [
-  "FLUME_DIR",
-  "FLUME_CONFIG_DIR",
-  "FLUME_JOB",
-  "FLUME_DIR_RESOLVED_FOR",
-  "FLUME_TIP_CLAIM_HELD",
-];
-
-/**
- * A copy of this process's env with every `FLUME_*` key stripped, so a
- * spawned CLI resolves the caller's own temp dir/repo default — or the
- * test's own explicit job resolution — instead of inheriting this process's.
- * Without this the suite is not hermetic: run under a flume harness (whose
- * canonicalized env, including a job resolution and its provenance stamp,
- * the vitest process inherits), the child would either escape the fixture
- * and operate on the outer state root/branch, or — once FLUME_DIR is
- * overridden per-test but the stale stamp survives — misfire
- * `CrossRepoFlumeDirError` against the outer repo it was actually stamped
- * for (CLI-FLUMEDIR-PROVENANCE-STAMP).
- *
- * By prefix, never by list: the supervisor adds vars a list falls behind
- * (`FLUME_QUARANTINED_SLUGS` after the first quarantine of a run), and this
- * suite runs as an afterMerge gate inside exactly that process. A test that
- * wants a `FLUME_*` var layers it on top of this function's output.
- */
-export function hermeticEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const key of Object.keys(env)) {
-    if (/^FLUME_/.test(key)) delete env[key];
-  }
-  return env;
-}
-
-/**
- * A fresh temp directory under `parent`, named by the spelling the host
- * reports for it: `mkdtemp`, folded through `realpath`.
- *
- * `tmpdir()` answers the path the environment was configured with, not the
- * one the filesystem canonicalizes it to — `/var/folders/…` for macOS's
- * `/private/var/folders/…`, `C:\Users\RUNNER~1\…` for the Windows runner's
- * `C:\Users\runneradmin\…`, `/tmp` wherever it is a link. Git never carries
- * that spelling forward: it resolves a working directory to its physical path
- * before it reports one, so a fixture rooted at the raw `mkdtemp` result makes
- * every assertion comparing a `join`-composed path against something git
- * emitted — a worktree registry entry, a `rev-parse --show-toplevel`, a
- * name-only line — read two spellings of one directory. The comparison is
- * correct by accident on a host whose temp dir is already canonical and wrong
- * everywhere else, which is the fixture answering for the real writer in the
- * tester's own vocabulary (`.claude/rules/engineering.md`, *A seam gate reads
- * what the real writer wrote*).
- *
- * Folded once, at creation, rather than at each comparison: a `realpath` per
- * assertion is the same fact restated at every site that composes a path from
- * the root, and the site that forgets is the one that reds.
- */
-export async function mkTempDir(
-  prefix: string,
-  parent: string = tmpdir(),
-): Promise<string> {
-  return realpath(await mkdtemp(join(parent, prefix)));
-}
-
-/**
- * A fresh temp fixture directory that **owns its own bay** — `mkdtemp`, plus
- * an empty `.flume` planted at the root.
- *
- * Bay discovery walks up from cwd to the nearest `.flume` and only falls back
- * to cwd at the filesystem root (spec/cli.md, "Bay discovery walks up to the
- * nearest `.flume`"). A fixture rooted at `mkdtemp(tmpdir(), …)` therefore
- * resolves through `/tmp`'s ancestors: any `.flume` a crashed run, another
- * suite, or an unrelated process leaves at `/tmp` — or above it — captures
- * every fixture below and silently retargets `repoRoot`, every state-dir
- * resolution, and every `job` verb at the litter. The suite then asserts a
- * verdict the CLI reached about a directory the test never wrote
- * (`.claude/rules/engineering.md`, "A green verdict is proven non-vacuous").
- *
- * The planted `.flume` stops the walk at the fixture, so no ancestor can
- * change a verdict regardless of who wrote the litter. It is behaviour-inert
- * for the fixture itself: an empty bay is what `<dir>/.flume` resolution
- * already assumed, and nothing reads a directory that holds no chain, no
- * baton markers, and no queue.
- *
- * `parent` exists for the tests that plant the ancestor litter deliberately —
- * they need a fixture underneath a directory they control. Fixtures that are
- * never a CLI cwd (a scratch output dir, a worktree base handed over by env)
- * do not need rooting and keep plain `mkdtemp`.
- *
- * The root itself is `mkTempDir`'s, so the bay and everything composed from
- * it are spelled the way git spells them.
- *
- * Not rootable: a fixture whose subject **is** the no-ancestor fallback. It
- * must reach the filesystem root without meeting a `.flume`, which no fixture
- * can guarantee — `resolveRepoRoot`'s fallback case in
- * `tests/cliJobResolution.test.ts` is the one such site in this suite.
- */
-export async function mkFixtureRoot(
-  prefix: string,
-  parent: string = tmpdir(),
-): Promise<string> {
-  const dir = await mkTempDir(prefix, parent);
-  await mkdir(join(dir, ".flume"), { recursive: true });
-  return dir;
-}
-
-/**
- * The `.flume` paths that sit **above** every fixture created under
- * `fixtureParent` — the parent's own bay and each ancestor's, to the
- * filesystem root. Exactly the set `resolveRepoRoot`'s walk
- * (`src/cliJobResolution.ts`) meets after it leaves the fixture, derived by
- * the same walk rather than by a list of hosts' temp dirs.
- */
-function stateRootsAbove(fixtureParent: string): string[] {
-  const scope: string[] = [];
-  let dir = resolve(fixtureParent);
-  for (;;) {
-    scope.push(join(dir, ".flume"));
-    const parent = dirname(dir);
-    if (parent === dir) return scope;
-    dir = parent;
-  }
-}
-
-/** The watched set, plus the members that were already there when it opened. */
-export interface StateRootWatch {
-  /** Every ancestor bay a fixture under the watched parent could resolve to. */
-  readonly scope: readonly string[];
-  /**
-   * Members present when the watch opened — not this run's doing, and
-   * absorbed again as each is reported so one leak names one offender rather
-   * than reddening every test that follows it.
-   */
-  readonly known: Set<string>;
-}
-
-/** Open a watch over the bays above `fixtureParent` (default: the host temp dir). */
-export function watchStateRoots(
-  fixtureParent: string = tmpdir(),
-): StateRootWatch {
-  const scope = stateRootsAbove(fixtureParent);
-  return { scope, known: new Set(scope.filter((p) => existsSync(p))) };
-}
-
-/**
- * Refuse a run that starts with litter already above its fixtures.
- *
- * A fixture that plants its own bay (`mkFixtureRoot`) survives it; the one
- * that cannot — `resolveRepoRoot`'s no-ancestor fallback, whose subject *is*
- * the walk reaching the filesystem root — reds with no stated cause. Refusing
- * up front states the cause once, instead of leaving a marker downstream
- * assertions must remember to interpret (`.claude/rules/engineering.md`,
- * "Loud or nothing").
- */
-export function refusePreexistingStateRoots(watch: StateRootWatch): void {
-  if (watch.known.size === 0) return;
-  const paths = [...watch.known];
-  throw new Error(
-    `flume test harness: a flume state root is already present above this ` +
-      `run's fixtures:\n` +
-      paths.map((p) => `  ${p}`).join("\n") +
-      `\nIt is not this run's doing — an earlier run leaked it, or it belongs ` +
-      `to an unrelated repo. Bay discovery walks up from a fixture to the ` +
-      `nearest \`.flume\` (spec/cli.md), so it captures every fixture below ` +
-      `that does not plant its own. Refusing rather than running over it. ` +
-      `Remove it: rm -rf ${paths.join(" ")}`,
-  );
-}
-
-/**
- * Refuse — naming `offender` — when a state root appeared in `watch.scope`
- * since the watch opened.
- *
- * `offender` is the test that was running in *this* worker when the directory
- * was first seen. Vitest runs test files in parallel, so a concurrent file
- * can be the real writer; that is the declared bound on the attribution, and
- * the message says so along with the flag that removes the ambiguity. The
- * refusal itself is exact — a state root above the fixtures is always this
- * run's defect, whichever test planted it.
- */
-export function refuseLeakedStateRoots(
-  watch: StateRootWatch,
-  offender: string,
-): void {
-  const leaked = watch.scope.filter(
-    (p) => !watch.known.has(p) && existsSync(p),
-  );
-  if (leaked.length === 0) return;
-  for (const p of leaked) watch.known.add(p);
-  throw new Error(
-    `flume test harness: a flume state root appeared above this run's ` +
-      `fixtures:\n` +
-      leaked.map((p) => `  ${p}`).join("\n") +
-      `\nFirst observed after: ${offender}\n` +
-      `Bay discovery walks up from a fixture to the nearest \`.flume\` ` +
-      `(spec/cli.md), so this directory retargets \`repoRoot\`, every ` +
-      `state-dir resolution, and every \`job\` verb for fixtures below it ` +
-      `that do not plant their own bay — later runs then assert verdicts ` +
-      `about a directory no test wrote. Vitest runs test files in parallel, ` +
-      `so the name above is the test this worker was running when the ` +
-      `directory first appeared; re-run with \`--no-file-parallelism\` to ` +
-      `pin the writer exactly. Remove it: rm -rf ${leaked.join(" ")}`,
-  );
-}
-
-/**
- * Arm both refusals for the calling suite file: the pre-existing check once
- * before its tests, the leak check after each one.
- *
- * Wired suite-wide through the `setupFiles` entry `vitest.config.ts` names,
- * which is `tests/helpers/vitestSetup.ts`, rather than per suite, because the
- * writer is unknown — a guard only the CLI suites installed would watch every
- * file except the one that leaks.
- */
-export function installStateRootLeakGuard(
-  fixtureParent: string = tmpdir(),
-): StateRootWatch {
-  const watch = watchStateRoots(fixtureParent);
-  beforeAll(() => refusePreexistingStateRoots(watch));
-  afterEach(() =>
-    refuseLeakedStateRoots(
-      watch,
-      expect.getState().currentTestName ?? "(unnamed test)",
-    ),
-  );
-  return watch;
-}
-
-/**
  * The exit status carried by a rejected `execFile`, or a refusal.
  *
  * `execFile` rejects for three unrelated reasons: the child ran and exited
@@ -478,62 +242,6 @@ export async function runCli(
 export async function gitOut(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await exec("git", args, { cwd });
   return stdout.trimEnd();
-}
-
-/**
- * The config git must see in every fixture repository: auto gc off.
- *
- * Git runs `gc --auto` after ordinary write commands (commit, merge, am), and
- * `gc.autoDetach` defaults on, so the gc it starts is a **detached
- * grandchild that outlives the test that provoked it**. It then walks
- * `.git/objects` while the fixture's teardown is recursively removing the
- * same tree, and the remove reds with ENOTEMPTY — a failure in no assertion,
- * on whichever case happened to be holding the directory. Retrying the remove
- * would hide the same race behind a wait rather than stop the process.
- */
-const GIT_AUTO_GC_OFF: readonly [key: string, value: string] = ["gc.auto", "0"];
-
-/**
- * Pin auto gc off on `env`, for every git child that inherits it.
- *
- * Through git's `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`
- * sequence rather than a `git config` call per fixture: the pin then reaches
- * every git process the run starts — the suite's own ~25 `git init` sites,
- * the git a spawned `flume` runs (`src/git.ts` inherits this process's
- * environment), and the git a spawned git runs — from one home, instead of
- * from each creation site remembering it (`.claude/rules/engineering.md`,
- * "The fix lands at the mechanism").
- *
- * Appends to whatever sequence the host already declared, and overwrites in
- * place when the host pinned this same key, so arming is idempotent — a
- * worker that loads the setup file once per test file does not grow the
- * sequence. A `GIT_CONFIG_COUNT` that is not a count refuses here rather than
- * reaching git as a clobbered sequence: git would reject the value we wrote
- * over, and the suite would read a git failure with no cause
- * (`.claude/rules/engineering.md`, "Loud or nothing").
- */
-export function pinGitAutoGcOff(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const [key, value] = GIT_AUTO_GC_OFF;
-  const declared = env.GIT_CONFIG_COUNT ?? "0";
-  if (!/^\d+$/.test(declared)) {
-    throw new Error(
-      `flume test harness: GIT_CONFIG_COUNT is not a count (${declared}), so ` +
-        `this run cannot append \`${key}=${value}\` to the host's git config ` +
-        `sequence without clobbering it. Unset GIT_CONFIG_COUNT, or set it to ` +
-        `the number of GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n pairs it declares.`,
-    );
-  }
-  const count = Number(declared);
-  for (let i = 0; i < count; i++) {
-    if (env[`GIT_CONFIG_KEY_${i}`] === key) {
-      env[`GIT_CONFIG_VALUE_${i}`] = value;
-      return env;
-    }
-  }
-  env[`GIT_CONFIG_KEY_${count}`] = key;
-  env[`GIT_CONFIG_VALUE_${count}`] = value;
-  env.GIT_CONFIG_COUNT = String(count + 1);
-  return env;
 }
 
 /**

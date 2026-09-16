@@ -30,11 +30,8 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { declaration } from "../.flume/declaration.ts";
-import {
-  SPAWN_BUDGET_MS,
-  mkFixtureRoot,
-  runCli,
-} from "./helpers/subprocess.ts";
+import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
+import { SPAWN_BUDGET_MS, runCli } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default

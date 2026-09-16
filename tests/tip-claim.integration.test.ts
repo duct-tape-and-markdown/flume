@@ -22,7 +22,8 @@ import { describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
-import { CLI, TSX_CLI, hermeticEnv, runCli } from "./helpers/subprocess.ts";
+import { hermeticEnv } from "./helpers/gitEnv.ts";
+import { CLI, TSX_CLI, runCli } from "./helpers/subprocess.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
 
 const exec = promisify(execFile);

@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { existsLoud, isDirectoryOrAbsent, statLoud } from "../src/fsProbe.ts";
-import { mkTempDir } from "./helpers/subprocess.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
 const roots: string[] = [];
 

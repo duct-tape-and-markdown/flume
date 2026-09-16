@@ -25,7 +25,8 @@ import { describe, expect, it, vi } from "vitest";
 import { readWorktreeRegistry } from "../src/worktrees.ts";
 
 import { makeFixture } from "./helpers/dispatcherFixture.ts";
-import { SPAWN_BUDGET_MS, gitOut, mkTempDir } from "./helpers/subprocess.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { SPAWN_BUDGET_MS, gitOut } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default

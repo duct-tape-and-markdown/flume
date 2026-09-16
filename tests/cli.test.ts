@@ -45,14 +45,12 @@ import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import { denyDirectory } from "./helpers/denial.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
+import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
+import { HERMETIC_ENV_STRIP_KEYS, hermeticEnv } from "./helpers/gitEnv.ts";
 import {
   CLI,
-  HERMETIC_ENV_STRIP_KEYS,
   SPAWN_BUDGET_MS,
   TSX_CLI,
-  hermeticEnv,
-  mkFixtureRoot,
-  mkTempDir,
   processAlive,
   runCli,
   runCliStreams,
@@ -228,8 +226,8 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
 });
 
 /**
- * The shared subprocess harness's `hermeticEnv()`
- * (`tests/helpers/subprocess.ts`) strips every identity/provenance FLUME_* var
+ * The shared child-environment helper's `hermeticEnv()`
+ * (`tests/helpers/gitEnv.ts`) strips every identity/provenance FLUME_* var
  * it knows of — a job resolution or a tip-claim PID leaked from the vitest
  * process's own env is exactly as capable of retargeting a spawned CLI as a
  * relocated state root is. The assertion below checks the invariant directly —
@@ -4200,7 +4198,7 @@ describe("state root layout — an undeclared Chain.pendingPath is one file for 
 
 /**
  * CLI-FIXTURE-ANCESTOR-PROOF — the rooting idiom every CLI fixture above now
- * goes through (`mkFixtureRoot`, tests/helpers/subprocess.ts), pinned against
+ * goes through (`mkFixtureRoot`, tests/helpers/fixtureRoot.ts), pinned against
  * the litter it exists to survive: a `.flume` planted in an ancestor the
  * fixture happens to live under, which is what a leaked `/tmp/.flume` is.
  * Each case carries its own control — the same CLI invocation from an

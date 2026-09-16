@@ -14,9 +14,9 @@ import { promisify } from "node:util";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { denyDirectory } from "./helpers/denial.ts";
+import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
   SPAWN_BUDGET_MS,
-  hermeticEnv,
   runCli,
   runNodeStreams,
 } from "./helpers/subprocess.ts";

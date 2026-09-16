@@ -25,11 +25,8 @@ import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import type { TickOutcome } from "../src/Dispatcher.ts";
 import type { TickVerdict } from "../src/tickVerdict.ts";
 import type { TickResult } from "../src/Phase.ts";
-import {
-  SPAWN_BUDGET_MS,
-  mkFixtureRoot,
-  runCli,
-} from "./helpers/subprocess.ts";
+import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
+import { SPAWN_BUDGET_MS, runCli } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default

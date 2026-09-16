@@ -9,7 +9,8 @@
  * Not *.test.ts, so neither lane collects it as a suite of its own.
  */
 
-import { installStateRootLeakGuard, pinGitAutoGcOff } from "./subprocess.ts";
+import { installStateRootLeakGuard } from "./fixtureRoot.ts";
+import { pinGitAutoGcOff } from "./gitEnv.ts";
 
 /** The bays this run refuses to see appear — read back by the wiring pin. */
 export const ARMED_STATE_ROOT_WATCH = installStateRootLeakGuard();

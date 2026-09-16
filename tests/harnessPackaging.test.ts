@@ -32,9 +32,9 @@ import { consumerIgnores } from "../harness/ignores.ts";
 import { harnessInit, protocolTemplatePath } from "../harness/init.ts";
 import { PROMPT_NAMES, promptPath } from "../harness/prompts.ts";
 import { resolvePackageJson } from "../src/selfPackage.ts";
+import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
   SPAWN_BUDGET_MS,
-  hermeticEnv,
   runCli,
   runNodeStreams,
 } from "./helpers/subprocess.ts";

@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DENIAL_NOTE, denyDirectory, denyFile } from "./helpers/denial.ts";
-import { mkTempDir } from "./helpers/subprocess.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
 const roots: string[] = [];
 

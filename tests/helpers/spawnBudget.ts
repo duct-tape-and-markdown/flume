@@ -18,8 +18,8 @@
  * that run them.
  *
  * Nothing here holds a second copy of a lane's vocabulary — the spawn
- * wrappers are read out of the harness module, the budget names out of its
- * exported numbers, each lane's vitest mode out of `package.json`, and which
+ * wrappers are read out of the module that holds them, the budget names out of
+ * its exported numbers, each lane's vitest mode out of `package.json`, and which
  * files a lane contains out of `vitest.config.ts`, so a wrapper, a rename, or
  * a widened include arms the scan without a second edit
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
@@ -44,10 +44,18 @@ import {
 } from "./repoProgram.ts";
 
 const TESTS_DIR = join(REPO_ROOT, "tests");
-const HARNESS = join(TESTS_DIR, "helpers", "subprocess.ts");
 
-/** The specifier a suite imports the spawn wrappers and the budget through. */
-const HARNESS_MODULE = /(^|\/)helpers\/subprocess\.ts$/;
+/**
+ * The module the spawn wrappers and the lane's budget live in — keyed by the
+ * job, not by whatever else a helper file has accumulated. The scan reads its
+ * exports for the names that reach a process startup and for the numbers a
+ * site is allowed to name, so a helper holding no wrapper and no budget is
+ * none of this scan's business however adjacent it sits.
+ */
+const SPAWN_WRAPPERS = join(TESTS_DIR, "helpers", "subprocess.ts");
+
+/** The specifier a suite imports those wrappers and that budget through. */
+const SPAWN_WRAPPERS_MODULE = /(^|\/)helpers\/subprocess\.ts$/;
 
 /** Vitest's registrars — the calls that can carry a per-site timeout. */
 const CASE = /^(it|test)$/;
@@ -499,22 +507,22 @@ function exportedNames(src: ts.SourceFile): Set<string> {
 }
 
 /**
- * The harness module's spawn wrappers: every export of it that reaches a
+ * The spawn wrappers: every export of the module holding them that reaches a
  * process startup, by the same propagation the suites are scanned with.
  */
 export function harnessSpawnExports(): string[] {
-  const src = parse(HARNESS);
+  const src = parse(SPAWN_WRAPPERS);
   const exported = exportedNames(src);
   return [...reachingNames(src, PROCESS_STARTS)].filter((n) => exported.has(n));
 }
 
 /**
- * The harness module's exported numeric constants, by name — the budgets a
+ * That same module's exported numeric constants, by name — the budgets a
  * site is allowed to name, and the only place the lane's number lives.
  */
 export function harnessBudgets(): Map<string, number> {
   const out = new Map<string, number>();
-  const src = parse(HARNESS);
+  const src = parse(SPAWN_WRAPPERS);
   const exported = exportedNames(src);
   const walk = (n: ts.Node): void => {
     if (
@@ -531,13 +539,13 @@ export function harnessBudgets(): Map<string, number> {
   return out;
 }
 
-/** The names `src` imports from the harness module. */
+/** The names `src` imports from the spawn-wrapper module. */
 function harnessImports(src: ts.SourceFile): Set<string> {
   const names = new Set<string>();
   for (const st of src.statements) {
     if (!ts.isImportDeclaration(st)) continue;
     if (!ts.isStringLiteralLike(st.moduleSpecifier)) continue;
-    if (!HARNESS_MODULE.test(st.moduleSpecifier.text)) continue;
+    if (!SPAWN_WRAPPERS_MODULE.test(st.moduleSpecifier.text)) continue;
     const bindings = st.importClause?.namedBindings;
     if (bindings && ts.isNamedImports(bindings))
       for (const el of bindings.elements) names.add(el.name.text);

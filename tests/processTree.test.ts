@@ -32,7 +32,8 @@ import {
   DEFAULT_KILL_GRACE_MS,
 } from "../src/processTree.ts";
 
-import { SPAWN_BUDGET_MS, mkTempDir, processAlive } from "./helpers/subprocess.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { SPAWN_BUDGET_MS, processAlive } from "./helpers/subprocess.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases

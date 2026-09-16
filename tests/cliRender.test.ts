@@ -30,9 +30,9 @@ import {
 } from "../src/priorAttempts.ts";
 import type { Agent, AgentInvocation } from "../src/Agent.ts";
 import { silent } from "./helpers/dispatcherFixture.ts";
+import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
 import {
   SPAWN_BUDGET_MS,
-  mkFixtureRoot,
   runCli,
   runCliStreams,
 } from "./helpers/subprocess.ts";

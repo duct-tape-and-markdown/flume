@@ -19,7 +19,7 @@ import type { Logger } from "../../src/log.ts";
 import type { TickVerdict } from "../../src/tickVerdict.ts";
 import { RUNTIME_IGNORES } from "../../src/job.ts";
 
-import { mkTempDir } from "./subprocess.ts";
+import { mkTempDir } from "./fixtureRoot.ts";
 
 const exec = promisify(execFile);
 
@@ -63,7 +63,7 @@ export interface Fixture {
 
 /**
  * A seeded temp git repository and its config dir, both rooted at the
- * spelling git reports (`mkTempDir`, tests/helpers/subprocess.ts) — every
+ * spelling git reports (`mkTempDir`, tests/helpers/fixtureRoot.ts) — every
  * worktree-registry and `rev-parse` verdict in the suites below compares a
  * path composed from `repo` against one git emitted.
  *

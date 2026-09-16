@@ -4,6 +4,12 @@
  * tests it, because the helper is where a CLI that never started used to
  * become an ordinary exit code 1 (`.claude/rules/engineering.md`, "A green
  * verdict is proven non-vacuous").
+ *
+ * It also holds the suites for the two protections armed around every one of
+ * those spawns rather than inside one: the state-root leak guard
+ * (`tests/helpers/fixtureRoot.ts`) and the auto-gc pin
+ * (`tests/helpers/gitEnv.ts`), both wired through
+ * `tests/helpers/vitestSetup.ts`.
  */
 
 import { execFile } from "node:child_process";
@@ -17,20 +23,22 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  mkFixtureRoot,
+  mkTempDir,
+  refuseLeakedStateRoots,
+  refusePreexistingStateRoots,
+  watchStateRoots,
+} from "./helpers/fixtureRoot.ts";
+import { pinGitAutoGcOff } from "./helpers/gitEnv.ts";
+import {
   CLI,
   SPAWN_BUDGET_MS,
   SPAWN_OUTPUT_CAP_BYTES,
   TSX_CLI,
   exitStatusOf,
-  mkFixtureRoot,
-  mkTempDir,
-  pinGitAutoGcOff,
-  refuseLeakedStateRoots,
-  refusePreexistingStateRoots,
   requireEntryPoint,
   runCli,
   runNodeStreams,
-  watchStateRoots,
 } from "./helpers/subprocess.ts";
 import { filesUnder, relPath } from "./helpers/repoProgram.ts";
 import {

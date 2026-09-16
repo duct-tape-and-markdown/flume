@@ -20,13 +20,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
-import {
-  CLI,
-  TSX_CLI,
-  gitOut,
-  hermeticEnv,
-  runCli,
-} from "./helpers/subprocess.ts";
+import { hermeticEnv } from "./helpers/gitEnv.ts";
+import { CLI, TSX_CLI, gitOut, runCli } from "./helpers/subprocess.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
 
 const exec = promisify(execFile);

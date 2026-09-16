@@ -32,11 +32,11 @@ import {
 import { Baton } from "../src/Baton.ts";
 import { EX_IOERR } from "../src/cli.ts";
 import { jobNew } from "../src/job.ts";
+import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
+import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
   SPAWN_BUDGET_MS,
   gitOut,
-  hermeticEnv,
-  mkFixtureRoot,
   runCli,
   runCliStreams,
 } from "./helpers/subprocess.ts";
@@ -411,7 +411,7 @@ describe("resolveRepoRoot — bay discovery walk-up", () => {
   });
 
   // The one fixture in this suite that cannot be rooted (`mkFixtureRoot`,
-  // tests/helpers/subprocess.ts): its subject *is* the walk reaching the
+  // tests/helpers/fixtureRoot.ts): its subject *is* the walk reaching the
   // filesystem root without meeting a `.flume`, so planting one would delete
   // the behavior under test. It stays on a plain `mkdtemp` and stays
   // vulnerable to a `.flume` littered above `tmpdir()` — a red here means the
