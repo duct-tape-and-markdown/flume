@@ -223,3 +223,45 @@ symptom rather than a reproduced one is a guess (`CLAUDE.md`,
 Non-Negotiables), and (a) is what converts the next red into the
 reproduction (b) would need. (c) alone leaves an intermittent red training
 the reader to ignore the lane.
+
+**2026-09-16 — the title did not recur, and the nondeterminism proof gained a
+third point.** Run 35123877254 is green on the `windows` job over ea8d3519 —
+9af54562's child, touching `.claude/rules/` and `spec/` only. So the same
+program bytes ran red (35123050551) and then green, one commit apart, with
+nothing vitest reads changed between them. That closes nothing: this
+section's subject *is* the intermittency, so a green run is evidence for (c),
+not an answer to (a). No reproduction was obtained; the park stands and the
+next red is what (a) exists to make readable.
+
+## Do npm's install-reconciliation behaviors earn a platform fact?
+
+**NEEDS AMENDMENT.** Two npm behaviors measured against the packed 0.16.0
+while shipping adoption, both carried today as comments on one workflow step
+(`.github/workflows/ci.yml`, *Consumer type-resolution gate*) — which
+`CLAUDE.md` names as exactly the copy `platform-facts.md` should own: an
+external tool's behavior that no test pins and no type holds, seen only by an
+agent who already opened that file.
+
+- **`npm install` resolves every range in the manifest from the registry,
+  whatever the install supplies out of band.** `flume init` writes
+  `@dtmd/flume@^<version>` into the adopted consumer's manifest, so on a
+  release-cut commit — that version not yet published — any later `npm
+  install` in that directory exits ETARGET on a lookup unrelated to what it
+  was installing. Reproduced; the workaround was a second consumer directory
+  with the tarball as the only handoff between steps.
+- **`npm install` reconciles `node_modules` against the manifest and prunes a
+  `--no-save`'d package**, so a tarball installed that way must go in last.
+
+This cannot be an entry either way: `.claude/rules/**` is outside build's
+fence (`.flume/declaration.ts`), so only a human can write the page.
+
+- **(a)** One section for both, and the ci.yml comments shrink to a pointer
+  in the same commit (`engineering.md`, *Narration is the ladder's bottom
+  rung*).
+- **(b)** Leave them at the site — they bite one step of one workflow, and a
+  fact no other site can reach is not shared knowledge.
+
+Recommended (a) for the first and (b) for the second. The ETARGET behavior is
+a property of adoption that any consumer packing its own package hits, and it
+will bite the next release cut that touches the smoke; the prune-order fact
+is local to how that one step is written.

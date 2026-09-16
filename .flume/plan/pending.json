@@ -29,7 +29,7 @@
       "flume help prints the same usage as flume --help and exits 0"
     ],
     "pins": [],
-    "notes": "Pilot's first command after adoption. src/cli.ts:221 short-circuits `--help`/`-h` alone; the bare verb falls through to the unknown-command refusal at :1365. The text stays src/cliHelp.ts's — this is one arm on the dispatch, not a second usage string."
+    "notes": "Pilot's first command after adoption. src/cli.ts:221 short-circuits `--help`/`-h` alone; the bare verb falls through to the unknown-command refusal at :1373. The text stays src/cliHelp.ts's — this is one arm on the dispatch, not a second usage string."
   },
   {
     "tag": "THE-0.16-NOTE-LEADS-WITH-THE-MANIFEST-STEP",
