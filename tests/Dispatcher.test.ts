@@ -4889,8 +4889,29 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
 
     const outcome = await dispatcher.tick();
 
-    // The fates this pin depends on: B's pick conflicted (so B never reached
-    // the probe), A and C picked clean (so the probe ran exactly twice).
+    // The fates this pin depends on: all three agents committed under their
+    // own gates, B's pick then conflicted (so B never reached the probe), A
+    // and C picked clean (so the probe ran exactly twice).
+    //
+    // Read the per-entry fate off `result.entries` first, before any merge
+    // row below derives from it (.claude/rules/engineering.md, "A fact the
+    // engine holds is reported, never rediscovered"): a B that never
+    // committed — a gate revert, a clean exit, a platform preempt — writes
+    // no `mergeOutcomes` row at all, so the conflict assertion alone would
+    // red with `undefined` where the engine already named the no-commit
+    // class. `?? null` because `toEqual` reads an absent key and an
+    // `undefined` one alike, and the class is the whole point of the line.
+    expect(
+      outcome.result?.entries?.map((e) => ({
+        tag: e.tag,
+        committed: e.committed,
+        noCommit: e.noCommit ?? null,
+      })),
+    ).toEqual([
+      { tag: "MARK-A", committed: true, noCommit: null },
+      { tag: "MARK-B", committed: true, noCommit: null },
+      { tag: "MARK-C", committed: true, noCommit: null },
+    ]);
     expect(outcome.result?.shippedTags).toEqual(["MARK-A", "MARK-C"]);
     expect(
       outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "MARK-B")?.outcome,
