@@ -20,7 +20,13 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isInvokedDirectly, onDiskIdentity, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
+import {
+  CLI_MODULE_IDENTITY,
+  isInvokedDirectly,
+  onDiskIdentity,
+  EX_DATAERR,
+  EX_IOERR,
+} from "../src/cli.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): stopFlagPath is the chain-facing rule for `<flumeDir>/stop`,
@@ -70,9 +76,13 @@ const AGENT_SRC_PATH = fileURLToPath(new URL("../src/Agent.ts", import.meta.url)
 /**
  * `isInvokedDirectly` (`src/cli.ts`), the seam gating `main()`.
  * Unit-level rather than a subprocess: the seam takes `argv1` and answers
- * against this module's own `import.meta.url`, so calling it directly with
- * `CLI` (this file's own import of cli.ts) exercises the exact comparison
- * `main()` gates on, without the overhead of spawning `tsx` per case.
+ * against this module's own `import.meta.url`, so calling it directly
+ * exercises the exact comparison `main()` gates on, without the overhead of
+ * spawning `tsx` per case. The side it answers *with* comes from the module
+ * too — `CLI_MODULE_IDENTITY`, never this file's `CLI`, which is the
+ * tester's own spelling of the same file and would re-author the half under
+ * test (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
  */
 describe("isInvokedDirectly — CLI entry survives junctions", () => {
   it("argv[1] undefined is never direct (unchanged guard)", () => {
@@ -93,7 +103,7 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
     expect(isInvokedDirectly(missing)).toBe(false);
   });
 
-  it("a directory-junction-equivalent argv[1] — raw path differs from the realpath — still resolves as direct", async () => {
+  it("the CLI entry check resolves a junctioned argv[1] to the same on-disk identity as the module's own path", async () => {
     const linkParent = await mkdtemp(join(tmpdir(), "flume-cli-junction-"));
     const linkDir = join(linkParent, "src-link");
     try {
@@ -106,9 +116,20 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
 
       // The DEV-9191 shape: the raw invoked path differs from the file's
       // realpath — exactly what a junction- or symlink-based install
-      // (pnpm's linked store) produces.
+      // (pnpm's linked store) produces. Non-vacuity for the assertion below:
+      // the fixture really produced a second spelling, and that spelling is
+      // not already the identity the check compares against, so what the
+      // case exercises is the fold rather than a raw string match.
       expect(junctioned).not.toBe(CLI);
+      expect(junctioned).not.toBe(CLI_MODULE_IDENTITY);
       expect(realpathSync(junctioned)).toBe(realpathSync(CLI));
+
+      // The seam's comparison, asserted on the two values it compares — the
+      // module's side read off the module itself, which is the half a caller
+      // cannot spell without it. A red prints the two spellings one file was
+      // read as; `expect(false).toBe(true)`, which is all the windows lane
+      // has ever reported from this title, names neither of them.
+      expect(onDiskIdentity(junctioned)).toBe(CLI_MODULE_IDENTITY);
 
       expect(isInvokedDirectly(junctioned)).toBe(true);
     } finally {

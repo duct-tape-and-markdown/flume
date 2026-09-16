@@ -1388,6 +1388,20 @@ export function onDiskIdentity(path: string): string {
   }
 }
 
+/**
+ * This module's own on-disk identity — the side of the check below that an
+ * invoked path is compared against.
+ *
+ * Exported because it is the one side a caller cannot spell for itself: the
+ * comparison answers against this module's import.meta.url, and any value
+ * derived from another module's URL is the tester's re-derivation of the
+ * writer's side rather than the writer's own
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). A case that asserts on it reds naming the two spellings one file
+ * was read as, instead of naming a boolean.
+ */
+export const CLI_MODULE_IDENTITY = onDiskIdentity(fileURLToPath(import.meta.url));
+
 // Run only when invoked as the binary, not when imported (tests reach in for
 // `resolveStateDirs` at the resolution seam).
 //
@@ -1400,7 +1414,7 @@ export function onDiskIdentity(path: string): string {
 // one side out of it — which is why the fold is spent there rather than here.
 export function isInvokedDirectly(argv1: string | undefined): boolean {
   if (argv1 === undefined) return false;
-  return onDiskIdentity(argv1) === onDiskIdentity(fileURLToPath(import.meta.url));
+  return onDiskIdentity(argv1) === CLI_MODULE_IDENTITY;
 }
 
 const invokedDirectly = isInvokedDirectly(process.argv[1]);
