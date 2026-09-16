@@ -3,7 +3,7 @@
 > **Current reference.** Describes flume as it ships now; every spec cite
 > names a live `spec/*.md` section.
 
-`flume <subcommand>`. All commands run against the current working directory; the chain config is loaded from `./.flume/chain.ts`. Top-level `flume --help` lists the subcommands, `flume --version` prints the package version, and `flume <subcommand> --help` prints per-command usage with exit codes.
+`flume <subcommand>`. All commands run against the current working directory; the chain config is loaded from `./.flume/chain.ts`. Top-level `flume --help` lists the subcommands — as does the bare verb `flume help`, the same answer to the byte — `flume --version` prints the package version, and `flume <subcommand> --help` prints per-command usage with exit codes.
 
 Flume is exec-local: a bay declares `@dtmd/flume` as a dev dependency and invokes it through the package manager (`pnpm exec flume`, an npm script, `npx flume`). The binary that runs is the bay's own pinned copy, resolved the same way as every other dependency — global installs are unsupported, and the engine makes no attempt to detect or accommodate one.
 

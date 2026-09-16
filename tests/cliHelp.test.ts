@@ -4,7 +4,14 @@
  * violation counts only when verified on disk this tick").
  */
 
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,7 +33,11 @@ import type { TickOutcome } from "../src/Dispatcher.ts";
 import type { TickVerdict } from "../src/tickVerdict.ts";
 import type { TickResult } from "../src/Phase.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS, runCli } from "./helpers/subprocess.ts";
+import {
+  SPAWN_BUDGET_MS,
+  runCli,
+  runCliStreams,
+} from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
@@ -782,3 +793,53 @@ it("job new help names every RUNTIME_IGNORES entry", async () => {
   const block = out.slice(start + marker.length, out.indexOf("\n\n", start));
   expect(block.replace(/\s+/g, " ").trim()).toBe(RUNTIME_IGNORES.join(", "));
 }, SPAWN_BUDGET_MS);
+
+/**
+ * FLUME-HELP-IS-THE-SAME-ANSWER — `flume help` answered `unknown command:
+ * help`, refusing the one question the bare verb exists to ask: it is what an
+ * operator types at a command line they have not run before, ahead of knowing
+ * the flag spelling (spec/cli.md, *Subcommand surface*).
+ *
+ * Both spellings are driven through the real CLI and read against each other,
+ * never against a copy of the usage text — there is one `HELP_TOP`, and what
+ * this case is about is the arm on the dispatch
+ * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+ * wrote").
+ */
+describe("flume help — the bare verb against the flag (FLUME-HELP-IS-THE-SAME-ANSWER)", () => {
+  it("flume help prints the same usage as flume --help and exits 0", async () => {
+    // A bay of its own, holding no chain: the state a chain load refuses on
+    // and a baton read writes into, so both are observable below.
+    const dir = await mkFixtureRoot("flume-help-verb-");
+    try {
+      // Vacuity: the flag's answer is the real top-level usage before it
+      // stands as the expected value for anything.
+      const flag = await runCliStreams(dir, ["--help"]);
+      expect({ code: flag.code, stderr: flag.stderr }).toEqual({
+        code: 0,
+        stderr: "",
+      });
+      expect(flag.stdout).toContain("Usage: flume <command> [options]");
+      expect(flag.stdout).toContain("\nCommands:\n");
+
+      const verb = await runCliStreams(dir, ["help"]);
+      expect(verb).toEqual(flag);
+
+      // Short-circuited above every side effect: the bay the run resolved to
+      // is as empty as the fixture planted it — no chain load attempted, no
+      // `awake/` written by a baton.
+      expect(await readdir(join(dir, ".flume"))).toEqual([]);
+
+      // Non-vacuity for that absence: in this same directory a verb that does
+      // load the chain and construct the baton leaves both traces, so the
+      // empty bay above is the short-circuit's doing rather than a fixture
+      // nothing could have marked.
+      const status = await runCliStreams(dir, ["status"]);
+      expect(status.code).toBe(0);
+      expect(status.stderr).toContain("chain failed to load");
+      expect(await readdir(join(dir, ".flume"))).toEqual(["awake"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+});

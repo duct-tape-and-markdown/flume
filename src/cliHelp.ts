@@ -74,7 +74,7 @@ Options:
                       Refuses (exit 2) if <name> names no existing state
                       root — every command reached this way except
                       \`job run\`, which may create one; use \`job new\`.
-  -h, --help          Print this message.
+  -h, --help          Print this message (\`flume help\` prints the same).
   -v, --version       Print the flume version.
 
 Run \`flume <command> --help\` for per-command usage and exit codes.

@@ -217,8 +217,12 @@ async function main(): Promise<number> {
   const [firstArg, ...restArgs] = argv;
 
   // Top-level --help / --version short-circuit before subcommand dispatch
-  // (and before any resolution or chain load) so they work in any cwd.
-  if (firstArg === "--help" || firstArg === "-h") {
+  // (and before any resolution or chain load) so they work in any cwd. The
+  // bare `help` verb is one more arm on this same branch, never a usage text
+  // of its own: it is the first thing an operator types at a command line
+  // they have not run before, and the answer it gets is `--help`'s to the
+  // byte.
+  if (firstArg === "--help" || firstArg === "-h" || firstArg === "help") {
     process.stdout.write(HELP_TOP);
     return 0;
   }
