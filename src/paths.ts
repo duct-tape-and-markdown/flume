@@ -1,8 +1,10 @@
 /**
  * paths — shared path machinery: the win32 total-path-limit fix idiom, the
  * glob matcher, the filesystem-safe tag slug, the length bound every
- * composed path component passes through, the dot-prefixed-name test, and
- * the layout a repo root, a flume state root, and a config dir each carry.
+ * composed path component passes through, the dot-prefixed-name test, the
+ * fold into git's alphabet with the escape verdict and state-root offset
+ * built on it, and the layout a repo root, a flume state root, and a config
+ * dir each carry.
  *
  * For the MAX_PATH idiom see `.claude/rules/platform-facts.md`, "Windows
  * MAX_PATH (~260 chars) breaks fs calls with no long component"; every call
@@ -84,15 +86,53 @@ export function gitPath(path: string): string {
  * and with an absolute path when the two share no root at all (a different
  * win32 drive), and those two shapes are the whole verdict. Here rather than
  * at each asker because three reach it — the declared-field check below, the
- * state root's own escape verdict (`computeStateRootRel`, `src/Dispatcher.ts`)
- * and the ledger's relocation check (`isPendingRelocated`,
- * `src/pendingLedger.ts`) — and a fourth spelling is how two of them come to
- * disagree about what leaving a root means (`.claude/rules/engineering.md`,
- * *The fix lands at the mechanism*).
+ * state root's own escape verdict ({@link computeStateRootRel}) and the
+ * ledger's relocation check (`isPendingRelocated`, `src/pendingLedger.ts`) —
+ * and a fourth spelling is how two of them come to disagree about what
+ * leaving a root means (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
  */
 export function escapesRoot(root: string, path: string): boolean {
   const rel = relative(root, path);
   return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+}
+
+/**
+ * The state root's path relative to the primary repo root **in git's own
+ * alphabet** ({@link gitPath}), or `undefined` when the state root is
+ * relocated outside it (climbs out via `..`, or is already absolute — a
+ * relocated `flumeDir` set by an absolute `FLUME_DIR`).
+ *
+ * The fold lands here, at the one reporter, because every consumer of this
+ * value composes a path git will name — a pathspec at a sha, a fence glob, a
+ * commit's touched path. `relative` answers in the host's dialect, so
+ * reporting it raw makes the conversion each reader's problem and puts a
+ * sibling path in the other alphabet the first time one reader forgets. Path
+ * arithmetic and nothing else, which is why it sits with the engine's other
+ * path rules rather than inside the orchestrator that happens to call it
+ * first (`.claude/rules/engineering.md`, *A module is one job*).
+ *
+ * The dispatcher (`src/Dispatcher.ts`) computes it once, from the two roots
+ * that never change after its construction, and shares it on every
+ * `GateContext.stateRootRel` and with `harvestFriction`'s own worktree-mirror
+ * check (`src/friction.ts`; spec/chain.md "What a gate receives"). One
+ * further consumer calls it with a different second root, a path whose escape
+ * status decides whether a worktree holds a mirror of it: the `afterCommit`
+ * gate-context build passes `configDir`, rebasing it onto the worktree only
+ * when it resolves inside the repo. The ledger's own relocation check
+ * (`isPendingRelocated`, `src/pendingLedger.ts`) asks the escape half of the
+ * same question about `pendingPath` — a descendant of the state root
+ * ({@link resolvePendingPath}) whose escape status against `repoRoot` always
+ * matches `flumeDir`'s own — and reaches it through the {@link escapesRoot}
+ * this function reads it from. Neither re-derives the check
+ * (`.claude/rules/engineering.md` "The fix lands at the mechanism").
+ */
+export function computeStateRootRel(
+  repoRoot: string,
+  flumeDir: string,
+): string | undefined {
+  if (escapesRoot(repoRoot, flumeDir)) return undefined;
+  return gitPath(relative(repoRoot, flumeDir));
 }
 
 /**

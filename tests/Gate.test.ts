@@ -7,7 +7,7 @@ import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { computeStateRootRel } from "../src/Dispatcher.ts";
+import { computeStateRootRel } from "../src/paths.ts";
 import { diffNameOnly } from "../src/git.ts";
 
 import * as builtinGates from "../src/builtinGates.ts";

@@ -35,7 +35,8 @@ import {
   vitestGate,
   writablePathsGate,
 } from "../src/builtinGates.ts";
-import { computeStateRootRel, Dispatcher } from "../src/Dispatcher.ts";
+import { Dispatcher } from "../src/Dispatcher.ts";
+import { computeStateRootRel } from "../src/paths.ts";
 import type { Agent } from "../src/Agent.ts";
 import { Baton } from "../src/Baton.ts";
 import type { Chain, Phase } from "../src/Phase.ts";

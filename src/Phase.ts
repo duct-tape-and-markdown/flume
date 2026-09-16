@@ -136,7 +136,7 @@ export interface TickContext {
    * The state root's path relative to the primary repo root, in git's own
    * alphabet, or `undefined` when the state root is relocated outside it —
    * the same value `GateContext.stateRootRel` carries, from the same
-   * `computeStateRootRel` (`src/Dispatcher.ts`; spec/chain.md "What a hook
+   * `computeStateRootRel` (`src/paths.ts`; spec/chain.md "What a hook
    * receives"). A hook composing a path some commit must hold — a note the
    * phase's own gate keys, an artifact read at a ref — reads this
    * forward-slashed value straight rather than deriving or re-folding it,

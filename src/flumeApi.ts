@@ -31,7 +31,6 @@ import {
   pendingGate,
 } from "./builtinGates.js";
 import { CjsContextLoadError } from "./chainLoad.js";
-import { computeStateRootRel } from "./Dispatcher.js";
 import { PendingParseFailure } from "./PendingSchema.js";
 import { readTickVerdicts, readLatestVerdictsSync } from "./tickVerdict.js";
 import {
@@ -41,7 +40,13 @@ import {
   TipClaimHeldError,
 } from "./git.js";
 import { partitionByFileOverlap } from "./partition.js";
-import { gitPath, matchesAny, slugify, stopFlagPath } from "./paths.js";
+import {
+  computeStateRootRel,
+  gitPath,
+  matchesAny,
+  slugify,
+  stopFlagPath,
+} from "./paths.js";
 import { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
 import {
   composePendingList,
@@ -96,8 +101,8 @@ export interface FlumeApiPaths extends FlumePaths {
    * `undefined` when the root is relocated outside the repository.
    *
    * The same value `GateContext.stateRootRel` and `TickContext.stateRootRel`
-   * carry, from the same `computeStateRootRel` (`src/Dispatcher.ts`) — here
-   * at chain load, which is where a fence glob is decided and where no
+   * carry, from the same `computeStateRootRel` (`src/paths.ts`) — here at
+   * chain load, which is where a fence glob is decided and where no
    * context exists yet to read it off. A chain rooting `writablePaths`, an
    * `entryChannelPaths` glob, or a `git show <sha>:<path>` pathspec at the
    * state root reads this rather than spelling `.flume/` — which `--job` and
@@ -288,7 +293,7 @@ export interface FlumeApi {
 export function buildFlumeApi(paths: FlumePaths): FlumeApi {
   return {
     // The three roots by reference, and the offset off the engine's one
-    // owner of that computation (`computeStateRootRel`, `src/Dispatcher.ts`)
+    // owner of that computation (`computeStateRootRel`, `src/paths.ts`)
     // — the same call the dispatcher makes for its gate and tick contexts,
     // never a second spelling of the escape check or of the fold into git's
     // alphabet.

@@ -373,7 +373,7 @@ function inTree(cwd: string): (path: string) => string | null {
  * commit reaches (*Loud or nothing*).
  *
  * The offset the engine does report is already git's alphabet
- * (`computeStateRootRel`, `src/Dispatcher.ts`), which is what the note this
+ * (`computeStateRootRel`, `src/paths.ts`), which is what the note this
  * names has to be: the path the agent commits, the records gate keys, and the
  * park predicate reads back are all git paths, and a prompt naming the host's
  * spelling instead sends a tick to write where none of the three looks.

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, win32 } from "node:path";
+import { dirname, join, relative, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -14,6 +14,7 @@ import type { PendingEntry } from "../src/PendingSchema.ts";
 import {
   CHAIN_MODULE_NAME,
   chainModulePath,
+  computeStateRootRel,
   entryWriteScope,
   entryWriteScopeUnion,
   gitPath,
@@ -731,7 +732,7 @@ describe("the chain module's path has one derivation", () => {
 // converts one, exported so that a consumer composing a committed path is
 // reading the engine's fold rather than spelling a second. The state-root
 // offset is the value that most wanted it, and the engine now applies it
-// there before reporting (`computeStateRootRel`, `src/Dispatcher.ts`), so no
+// there before reporting (`computeStateRootRel`, `src/paths.ts`), so no
 // consumer folds that one at all.
 describe("gitPath — the one host-path-to-git-path rule", () => {
   it("the engine's path surface renders a backslash-separated relative path as a git path", () => {
@@ -788,6 +789,47 @@ describe("gitPath — the one host-path-to-git-path rule", () => {
         "second copy is how one surface comes to key a committed path by a " +
         "separator another one does not",
     ).toEqual(["src/paths.ts"]);
+  });
+});
+
+// STATE-ROOT-REL-IS-REPORTED-IN-GITS-ALPHABET, per spec/chain.md "What a gate
+// receives": the offset every `GateContext.stateRootRel`,
+// `TickContext.stateRootRel` and `FlumeApiPaths.stateRootRel` carries is
+// `relative()` folded through `gitPath` above, so a consumer comparing it
+// against a commit's touched path re-folds nothing. Pinned beside the fold it
+// is built on rather than against a dispatcher fixture: the verdict is path
+// arithmetic over two roots and touches no disk.
+describe("computeStateRootRel — the offset's alphabet", () => {
+  const REPO = resolve("flume-offset-repo");
+
+  it("computeStateRootRel reports a nested state root in git's alphabet, so no consumer re-folds the offset", () => {
+    const repoRoot = join(REPO, "wherever");
+    const nested = join(repoRoot, "jobs", "alpha", ".flume");
+    // Non-vacuity: the offset under test is a multi-segment path, so the
+    // separator between its segments is a real character the claim is about
+    // — not a single segment where every alphabet agrees.
+    expect(relative(repoRoot, nested).split(/[\\/]/)).toHaveLength(3);
+
+    expect(computeStateRootRel(repoRoot, nested)).toBe("jobs/alpha/.flume");
+  });
+
+  it("a state-root segment carrying the host's other separator is reported folded too, so a mixed-dialect offset never reaches a gate half-converted", () => {
+    // `relative` answers in the host's dialect and nothing guarantees the
+    // segments it joins are free of the other one — on win32 a declared
+    // `jobs/alpha` tail rides a backslash-separated head, and this is that
+    // shape reachable from a posix run. The reporter folds both separators
+    // (`gitPath`, `src/paths.ts`), so the value a gate compares against a
+    // commit's touched path is git's alphabet whole, never half.
+    const repoRoot = join(REPO, "wherever");
+    const odd = join(repoRoot, String.raw`jobs\alpha`, ".flume");
+    expect(relative(repoRoot, odd)).toContain("\\");
+
+    expect(computeStateRootRel(repoRoot, odd)).toBe("jobs/alpha/.flume");
+  });
+
+  it("a relocated state root is still reported absent, not as a folded climb-out", () => {
+    const outside = join(REPO, "..", "elsewhere", ".flume");
+    expect(computeStateRootRel(REPO, outside)).toBeUndefined();
   });
 });
 

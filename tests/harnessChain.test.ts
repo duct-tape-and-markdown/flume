@@ -40,7 +40,7 @@ import { notesDir } from "../harness/layout.ts";
 import type { RunnerContext, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
 import type { ClaudeCodeOptions } from "../src/Agent.ts";
-import { computeStateRootRel } from "../src/Dispatcher.ts";
+import { computeStateRootRel } from "../src/paths.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
 import type {

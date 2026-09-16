@@ -34,10 +34,9 @@ import {
   type GateEngine,
 } from "../harness/index.ts";
 import { pendingGate } from "../src/builtinGates.ts";
-import { computeStateRootRel } from "../src/Dispatcher.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import { readFileAtRef, statusRecords } from "../src/git.ts";
-import { matchesAny } from "../src/paths.ts";
+import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";

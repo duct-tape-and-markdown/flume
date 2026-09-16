@@ -70,7 +70,7 @@ export interface PendingLedgerContext {
  * re-derived ones. Delegates to the escape check `escapesRoot`
  * (`src/paths.ts`) owns rather than re-deriving it
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*), which
- * is the same verdict `computeStateRootRel` (`src/Dispatcher.ts`) reports the
+ * is the same verdict `computeStateRootRel` (`src/paths.ts`) reports the
  * state root under — `pendingPath` being a descendant of that root
  * (`resolvePendingPath`, `src/paths.ts`), the two always agree.
  */

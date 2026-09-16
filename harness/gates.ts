@@ -278,7 +278,7 @@ function recordsGate(engine: GateEngine): Gate {
       // The engine reports the offset in git's alphabet, which is the one
       // `ctx.touchedPaths` speaks, so the directory globs and the note path
       // below are built from it straight (`computeStateRootRel`,
-      // `src/Dispatcher.ts`).
+      // `src/paths.ts`).
       const stateRoot = ctx.stateRootRel;
       // Trailing separator per directory, so `inbox` cannot prefix-match
       // `inbox-archive`.

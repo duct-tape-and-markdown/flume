@@ -8,7 +8,7 @@
  * real tick (`tests/Dispatcher.test.ts`), because what they read is a
  * committed tip and what they write is a harness commit. This one is a pure
  * verdict over two paths, so it is pinned where it is decided: against
- * `computeStateRootRel` (`src/Dispatcher.ts`), which answers the same
+ * `computeStateRootRel` (`src/paths.ts`), which answers the same
  * question about the state root the ledger sits under. The two must agree —
  * a ledger the dispatcher reports as in-tree while the rewrite treats it as
  * an out-of-tree dock would write the queue to disk and commit nothing, and
@@ -19,7 +19,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { computeStateRootRel } from "../src/Dispatcher.ts";
+import { computeStateRootRel } from "../src/paths.ts";
 import {
   isPendingRelocated,
   type PendingLedgerContext,

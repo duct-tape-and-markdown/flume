@@ -51,7 +51,7 @@ import {
   type SectionResolver,
 } from "../harness/index.ts";
 import { PerSchema } from "../harness/entryExtension.ts";
-import { computeStateRootRel } from "../src/Dispatcher.ts";
+import { computeStateRootRel } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";

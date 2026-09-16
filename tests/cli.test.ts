@@ -42,12 +42,15 @@ import { buildFlumeApi } from "../src/flumeApi.ts";
 import { stopFlagPath as indexStopFlagPath } from "../src/index.ts";
 import { Baton } from "../src/Baton.ts";
 import { loadChainModule } from "../src/chainLoad.ts";
-import { computeStateRootRel } from "../src/Dispatcher.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import { pendingGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 import { RUNTIME_IGNORES } from "../src/job.ts";
-import { DEFAULT_PENDING_REL, resolvePendingPath } from "../src/paths.ts";
+import {
+  computeStateRootRel,
+  DEFAULT_PENDING_REL,
+  resolvePendingPath,
+} from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import {
