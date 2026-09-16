@@ -1,5 +1,63 @@
 [
   {
+    "tag": "CLI-JUNCTION-RED-NAMES-ITS-DIVERGENCE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the junction case asserts identities, and reaches the side it cannot reach today"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the windows lane junction case asserts a bare boolean, so its red names neither spelling; the last fix at this title was aimed at a described symptom and the lane says it missed",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fix ships the test that would have caught it"
+    },
+    "acceptance": "the junction case asserts on the on-disk identities the seam compares — the module's own side included, which the case cannot reach today — so a windows-lane red prints the two spellings instead of `false`. Posix stays green.",
+    "tests": [],
+    "pins": [
+      "the CLI entry check resolves a junctioned argv[1] to the same on-disk identity as the module's own path"
+    ],
+    "notes": "Run 35045533117 at 8159d2b9: a28caa4c shipped and the title still reds `expected false to be true`. Test-only, so no tests[] line is judgeable. Hypothesis to instrument: `onDiskIdentity` catches every throw, and node's JS `realpathSync` may throw on a namespaced-root walk, so both legs take the unresolved fallback spec/cli.md declares. Adjacent to EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER, not the same property."
+  },
+  {
+    "tag": "REALPATH-FACT-SHRINKS-ITS-TWO-DOC-COMMENTS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/paths.ts",
+          "description": "`plainPath` doc comment shrinks to a pointer"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "`onDiskIdentity` doc comment shrinks to a pointer"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`plainPath` and `onDiskIdentity` still spell the realpath-alphabet fact in full now that .claude/rules/platform-facts.md holds it",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "each comment points at the platform-facts section holding the fact and states only what its own site decides; no fact the removed prose was covering for is left orphaned.",
+    "tests": [],
+    "pins": [],
+    "notes": "From the inbox ruling at 62bb651a, which added the section beside the MAX_PATH one. The pointer is held by the existing comment-citation pin (a *.md page name resolves on disk), so no new pin. `plainPath`'s UNC-inverse arm and `onDiskIdentity`'s absent-argv[1] bound are site decisions, not the platform fact: they stay."
+  },
+  {
     "tag": "DISPATCHER-HOMES-ITS-FIVE-FRONT-JOBS",
     "gate": {
       "kind": "open"
