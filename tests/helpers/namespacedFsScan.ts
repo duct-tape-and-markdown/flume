@@ -36,6 +36,19 @@
  * The scan reads that contract per symbol ({@link PATH_CONTRACTS}), so a
  * subject label is never mistaken for a path and a descent's paths are never
  * charged to the caller.
+ *
+ * **Where the answer goes.** The same contract says whether a call answers
+ * with a path built from the one it was handed — `realpath`, `readlink`,
+ * `mkdtemp`, recursive `mkdir`. A fold spent at one of those rides back out
+ * through its answer, still in win32's `\\?\` alphabet, and a consumer that
+ * parses a path reads that alphabet as something else entirely
+ * (`pathToFileURL` reads `\\?\C:\…` as a UNC host). So the scan follows
+ * the answer outward through the call expression it is written into: another
+ * fs call may read it, anything else is an escape ({@link
+ * EscapedNamespacedPath}). It follows an *expression*, never a binding
+ * graph — a fold bound to a name or returned to a caller is spent wherever
+ * that name is, which is the fold's own module to say and the composition
+ * verdict above to judge.
  */
 
 /**
@@ -75,12 +88,20 @@ interface PathContract {
    * owes nothing: the argument is read as a path and not judged.
    */
   calleeFolds: boolean;
+  /**
+   * `true` when the call answers with a path built from the one it was
+   * handed, so a namespaced argument comes back out through the answer.
+   * Content (`readFile`), stats (`stat`), a boolean or nothing at all carry
+   * no path, and the fold is spent at the call.
+   */
+  answersPath: boolean;
 }
 
 /** Argument 0, composed by the caller — every fs call not named below. */
 const CALLER_FOLDS_FIRST: PathContract = {
   positions: () => [0],
   calleeFolds: false,
+  answersPath: false,
 };
 
 /**
@@ -95,6 +116,11 @@ const CALLER_FOLDS_FIRST: PathContract = {
  * is the noun phrase its refusal names, and every argument after it is a
  * step of a descent the probe namespaces itself, because it owns the whole
  * walk rather than a path a caller composed.
+ *
+ * The middle family is node's path-answering one: each builds its answer
+ * from the path it was given (`mkdir`'s under `{ recursive }`, which is why
+ * it is here rather than in the default), so a namespaced argument leaves
+ * again through the return value.
  */
 const PATH_CONTRACTS = new Map<string, PathContract>([
   ...[
@@ -110,7 +136,20 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
     "symlinkSync",
   ].map<[string, PathContract]>((fn) => [
     fn,
-    { positions: () => [0, 1], calleeFolds: false },
+    { positions: () => [0, 1], calleeFolds: false, answersPath: false },
+  ]),
+  ...[
+    "realpath",
+    "realpathSync",
+    "readlink",
+    "readlinkSync",
+    "mkdtemp",
+    "mkdtempSync",
+    "mkdir",
+    "mkdirSync",
+  ].map<[string, PathContract]>((fn) => [
+    fn,
+    { positions: () => [0], calleeFolds: false, answersPath: true },
   ]),
   [
     "isDirectoryOrAbsent",
@@ -118,11 +157,15 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
       positions: (arity) =>
         Array.from({ length: Math.max(arity - 1, 0) }, (_, i) => i + 1),
       calleeFolds: true,
+      answersPath: false,
     },
   ],
 ]);
 
-/** How many bindings deep a path expression may be resolved before giving up. */
+/**
+ * How many hops a path may be followed before the scan gives up — bindings
+ * resolved inward from a call site, fs answers followed outward from one.
+ */
 const MAX_HOPS = 8;
 
 /** One fs call site whose path argument was not composed. */
@@ -330,6 +373,87 @@ function splitArguments(masked: string, open: number): string[] {
   return args;
 }
 
+/** Heads that open a parenthesis without being a call. */
+const NOT_A_CALLEE = new Set(["if", "while", "for", "switch", "catch", "return"]);
+
+/**
+ * The call whose argument list encloses `index`, if any: its callee as the
+ * source spells it, and where that callee starts.
+ *
+ * Read right-to-left over the masked source — a closing bracket opens a depth
+ * its opener closes, and the first opener still open at depth zero is the one
+ * `index` sits inside. Only a `(` with a callee before it is a call: a
+ * grouping paren, `if (`, an array or object literal, and a statement
+ * boundary all answer `undefined`, which is this reader saying the value was
+ * written somewhere it does not follow. A member callee keeps its dots, so
+ * `JSON.parse` is never read as an imported `parse`.
+ */
+function enclosingCall(
+  masked: string,
+  index: number,
+): { callee: string; start: number } | undefined {
+  let depth = 0;
+  for (let i = index - 1; i >= 0; i--) {
+    const ch = masked[i]!;
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth++;
+      continue;
+    }
+    if (ch === ";" && depth === 0) return undefined;
+    if (ch === "(" || ch === "[" || ch === "{") {
+      if (depth > 0) {
+        depth--;
+        continue;
+      }
+      if (ch !== "(") return undefined;
+      const head = /([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*$/.exec(
+        masked.slice(0, i),
+      );
+      const callee = head?.[1]?.replace(/\s+/g, "");
+      if (callee === undefined || NOT_A_CALLEE.has(callee)) return undefined;
+      return { callee, start: i - head![1]!.length };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The callee that reads the namespaced answer of the fs call starting at
+ * `start` while being no fs call itself — the escape, if there is one.
+ *
+ * A path-answering fs call hands the alphabet along in its own answer, so the
+ * walk follows it outward; any other fs call spends the path and the walk
+ * stops. An answer written into a binding, a `return`, or a statement of its
+ * own leaves the expression this reader follows, and is the module's own to
+ * spend (the header's *Where the answer goes*).
+ */
+function readerPastFs(
+  masked: string,
+  fsSymbols: readonly string[],
+  start: number,
+): string | undefined {
+  let at = start;
+  for (let hop = 0; hop < MAX_HOPS; hop++) {
+    const outer = enclosingCall(masked, at);
+    if (outer === undefined) return undefined;
+    if (!fsSymbols.includes(outer.callee)) return outer.callee;
+    const contract = PATH_CONTRACTS.get(outer.callee) ?? CALLER_FOLDS_FIRST;
+    if (!contract.answersPath) return undefined;
+    at = outer.start;
+  }
+  return undefined;
+}
+
+/** One namespaced answer read by a callee that does not speak that alphabet. */
+export interface EscapedNamespacedPath {
+  /** The fs symbol that answered with a path, as the module binds it. */
+  fn: string;
+  /** The callee that read the answer, as the source spells it. */
+  reader: string;
+  /** 1-indexed line of the fs call that answered, for the failure message. */
+  line: number;
+}
+
 /** What one module's scan found. */
 export interface FsCallScan {
   /** The module scanned, from the repo root — the failure message's subject. */
@@ -345,6 +469,15 @@ export interface FsCallScan {
   delegated: number;
   /** The judged arguments that were not composed. */
   bare: BareFsCall[];
+  /**
+   * How many calls answered with a path built from a namespaced argument —
+   * the vacuity count for {@link FsCallScan.escaped}, which is empty both
+   * for a module that spends every answer at an fs call and for one that
+   * never made such a call at all.
+   */
+  answered: number;
+  /** The answers of those calls that a non-fs callee read. */
+  escaped: EscapedNamespacedPath[];
   /** Imported fs symbols the module never calls — an import the scan cannot judge. */
   uncalled: string[];
 }
@@ -358,6 +491,12 @@ export interface FsCallScan {
  * list as a verdict (`.claude/rules/engineering.md`, *A green verdict is
  * proven non-vacuous*).
  *
+ * `escaped` is the other half: where a call answered with a path built from
+ * a namespaced argument ({@link PathContract.answersPath}), the answer is
+ * followed outward through the expression it was written into, and a callee
+ * that is no fs call reading it is reported. `answered` is that verdict's
+ * vacuity count, for the same reason `judged` is the composition verdict's.
+ *
  * Member calls (`api.readFile(…)`) are not call sites of the imported symbol
  * and are skipped.
  */
@@ -366,9 +505,12 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
   const symbols = fsSymbols(source);
   const isProbe = PROBE_SOURCE.test(module);
   const bare: BareFsCall[] = [];
+  const escaped: EscapedNamespacedPath[] = [];
   const uncalled: string[] = [];
   let judged = 0;
   let delegated = 0;
+  let answered = 0;
+  const lineOf = (index: number): number => source.slice(0, index).split("\n").length;
 
   for (const fn of symbols) {
     const calls = [...masked.matchAll(new RegExp(`(?<![.\\w$])${fn}\\s*\\(`, "g"))];
@@ -381,6 +523,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
     for (const call of calls) {
       const open = call.index! + call[0].length - 1;
       const args = splitArguments(masked, open);
+      let namespacedAnswer = false;
       for (const position of contract.positions(args.length)) {
         const argument = args[position];
         if (argument === undefined) continue;
@@ -389,20 +532,38 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
           continue;
         }
         judged++;
-        if (isComposed(masked, argument)) continue;
+        if (isComposed(masked, argument)) {
+          namespacedAnswer ||= contract.answersPath;
+          continue;
+        }
         bare.push({
           fn,
           position,
           argument: argument.trim(),
-          line: source.slice(0, call.index!).split("\n").length,
+          line: lineOf(call.index!),
         });
+      }
+      if (!namespacedAnswer) continue;
+      answered++;
+      const reader = readerPastFs(masked, symbols, call.index!);
+      if (reader !== undefined) {
+        escaped.push({ fn, reader, line: lineOf(call.index!) });
       }
     }
   }
-  return { module, symbols, judged, delegated, bare, uncalled };
+  return { module, symbols, judged, delegated, bare, answered, escaped, uncalled };
 }
 
 /** A `BareFsCall` as one line of a failure message, named by its module. */
 export function describeBareCall(scan: FsCallScan, call: BareFsCall): string {
   return `${scan.module}:${call.line} — ${call.fn}() path argument ${call.position}, \`${call.argument}\`, is not composed for win32's path limit`;
+}
+
+
+/** An `EscapedNamespacedPath` as one line of a failure message. */
+export function describeEscape(
+  scan: FsCallScan,
+  escape: EscapedNamespacedPath,
+): string {
+  return `${scan.module}:${escape.line} — ${escape.fn}() answers a path in win32's namespaced alphabet and ${escape.reader}(), which is no fs call, reads it`;
 }

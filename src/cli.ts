@@ -21,7 +21,7 @@ import {
   writeFileSync,
   unlinkSync,
 } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import type { Dirent, Stats } from "node:fs";
 
 import { Baton } from "./Baton.js";
@@ -1370,24 +1370,38 @@ async function main(): Promise<number> {
   return 2;
 }
 
+/**
+ * One file's on-disk identity, for the comparison below. `realpathSync`
+ * throws on a path that is not on disk — an argv[1] naming a file that was
+ * never there — and the raw path is the honest answer then: a file that is
+ * absent is not this module either way, and the import must not crash over
+ * it.
+ *
+ * The fold is spent at the call, and its answer is read by nothing that
+ * parses a path: `realpathSync` speaks back in whichever alphabet win32
+ * hands it, so the answer is only ever compared with another answer from
+ * this same function.
+ */
+function onDiskIdentity(path: string): string {
+  try {
+    return realpathSync(toNamespacedPath(path));
+  } catch {
+    return path;
+  }
+}
+
 // Run only when invoked as the binary, not when imported (tests reach in for
 // `resolveStateDirs` at the resolution seam).
 //
 // import.meta.url resolves through junctions/symlinks to the file's realpath;
 // process.argv[1] keeps the invoked path verbatim. Through a junction- or
 // symlink-based install (pnpm's linked store) the two never match on a raw
-// string comparison, so resolve argv[1]'s realpath first.
-// realpathSync throws if argv[1] doesn't exist on disk — fall back to the raw
-// comparison rather than crash the import.
+// string comparison, so both sides go through {@link onDiskIdentity} and the
+// comparison is made on what it answered — one derivation, so neither side
+// can be in an alphabet the other is not.
 export function isInvokedDirectly(argv1: string | undefined): boolean {
   if (argv1 === undefined) return false;
-  let argv1Url: string;
-  try {
-    argv1Url = pathToFileURL(realpathSync(toNamespacedPath(argv1))).href;
-  } catch {
-    argv1Url = pathToFileURL(argv1).href;
-  }
-  return import.meta.url === argv1Url;
+  return onDiskIdentity(argv1) === onDiskIdentity(fileURLToPath(import.meta.url));
 }
 
 const invokedDirectly = isInvokedDirectly(process.argv[1]);

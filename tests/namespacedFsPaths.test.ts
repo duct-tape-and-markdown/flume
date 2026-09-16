@@ -19,6 +19,14 @@
  *   writer wrote*). On posix it proves the composition survives the depth;
  *   on win32 it is the case that fails without the prefix.
  *
+ * The scan reads both halves of a fold: that the path a call reaches disk on
+ * was composed, and — where the call answers with a path built from it —
+ * where that answer goes. A namespaced answer is still in win32's `\\?\`
+ * alphabet, so a consumer that parses a path reads it as something else
+ * (`pathToFileURL` takes `\\?\C:\…` for a UNC host). Composed and spent
+ * are one property; a scan holding only the first passes the site that folds
+ * correctly and then hands the answer to a reader that cannot take it.
+ *
  * `harness/planState.ts` is the loud one behind both: absence is a declared
  * state there, so a read that fails for a path-length reason reads back as
  * *no cursor*, and every plan window re-arms over a corpus that was already
@@ -47,6 +55,7 @@ import {
 
 import {
   describeBareCall,
+  describeEscape,
   scanFsCalls,
   type FsCallScan,
 } from "./helpers/namespacedFsScan.ts";
@@ -161,6 +170,53 @@ describe("the scan's reading of one call", () => {
     // The subject label composes through nothing and would red here if the
     // scan read argument 0 as the path — which is the direction this pins.
     expect(scan.bare.map((call) => describeBareCall(scan, call))).toEqual([]);
+  });
+});
+
+/**
+ * The shape `src/cli.ts` carried until the windows lane read it: a fold spent
+ * at `realpathSync`, whose answer was handed straight to `pathToFileURL`. On
+ * win32 that answer is `\\?\C:\…`, which the URL builder reads as a UNC
+ * host, so the entry check answered "not the entry" for every junction- or
+ * symlink-based install (pnpm's linked store) and `flume` ran nothing. The
+ * behavior cannot red off win32 — `toNamespacedPath` is identity elsewhere —
+ * so the expression the answer is written into is where the defect is
+ * decidable, and this is the reader that decides it.
+ */
+const ESCAPING_SOURCE = `
+import { realpathSync } from "node:fs";
+import { toNamespacedPath } from "node:path";
+import { pathToFileURL } from "node:url";
+
+export function entryUrl(argv1: string): string {
+  return pathToFileURL(realpathSync(toNamespacedPath(argv1))).href;
+}
+`;
+
+describe("a namespaced path never leaves its fs call", () => {
+  it("the win32 path scan refuses a toNamespacedPath result consumed by anything but an fs call", () => {
+    // The refusal itself, on the shape that shipped it: the fold composes, so
+    // the composition verdict above is green over this source — the whole
+    // reason the answer needs its own reader.
+    const fixture = scanFsCalls("src/fixture.ts", ESCAPING_SOURCE);
+    expect(fixture.bare).toEqual([]);
+    expect(fixture.answered).toBe(1);
+    expect(fixture.escaped.map((e) => describeEscape(fixture, e))).toEqual([
+      "src/fixture.ts:7 — realpathSync() answers a path in win32's namespaced alphabet " +
+        "and pathToFileURL(), which is no fs call, reads it",
+    ]);
+
+    // And the package under that same reader. The accepted shape is not
+    // re-authored here: `src/cli.ts` spends its own answer at the comparison
+    // it derives both sides through, and is one of the calls counted below.
+    const scans = [...scanTree("src"), ...scanTree("harness")];
+    const answered = scans.reduce((n, scan) => n + scan.answered, 0);
+    expect(answered, "path-answering fs calls on a composed path").toBeGreaterThan(0);
+    expect(
+      scans.flatMap((scan) =>
+        scan.escaped.map((escape) => describeEscape(scan, escape)),
+      ),
+    ).toEqual([]);
   });
 });
 
