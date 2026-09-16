@@ -27,6 +27,12 @@
  * are one property; a scan holding only the first passes the site that folds
  * correctly and then hands the answer to a reader that cannot take it.
  *
+ * And it reads the head the fold arrives at, because a composed path is not
+ * a safer argument everywhere: node's JS `realpathSync` throws on every
+ * namespaced drive path through node 22, so at that one symbol the fold is
+ * correct and the callee is the defect (`.claude/rules/platform-facts.md`,
+ * *`realpathSync` keeps the `\\?\` prefix only where nothing resolved*).
+ *
  * `harness/planState.ts` is the loud one behind both: absence is a declared
  * state there, so a read that fails for a path-length reason reads back as
  * *no cursor*, and every plan window re-arms over a corpus that was already
@@ -58,6 +64,7 @@ import {
 import {
   describeBareCall,
   describeEscape,
+  describeJsForm,
   scanFsCalls,
   type FsCallScan,
 } from "./helpers/namespacedFsScan.ts";
@@ -176,54 +183,22 @@ describe("the scan's reading of one call", () => {
 });
 
 /**
- * The shape `src/cli.ts` carried until the windows lane read it: a fold spent
- * at `realpathSync`, whose answer was handed straight to `pathToFileURL`. On
- * win32 that answer is `\\?\C:\…`, which the URL builder reads as a UNC
- * host, so the entry check answered "not the entry" for every junction- or
- * symlink-based install (pnpm's linked store) and `flume` ran nothing. The
- * behavior cannot red off win32 — `toNamespacedPath` is identity elsewhere —
- * so the expression the answer is written into is where the defect is
- * decidable, and this is the reader that decides it.
- */
-const ESCAPING_SOURCE = `
-import { realpathSync } from "node:fs";
-import { toNamespacedPath } from "node:path";
-import { pathToFileURL } from "node:url";
-
-export function entryUrl(argv1: string): string {
-  return pathToFileURL(realpathSync(toNamespacedPath(argv1))).href;
-}
-`;
-
-/**
- * The shape that ends the alphabet instead of carrying it out: the same fold,
- * the same answer, spent at `plainPath` (`src/paths.ts`). This is what
- * `src/cli.ts` carries, and the reader must admit it — a reader that refused
- * it would leave only the two shapes that hide the escape, binding the answer
- * to a name or not folding back at all.
+ * The shape `src/cli.ts` carries: a fold spent at libuv's
+ * `realpathSync.native`, whose answer is spent again at `plainPath`
+ * (`src/paths.ts`) — the fold that ends win32's namespaced alphabet.
+ *
+ * Two axes ride this one fixture, because one source carries both and a
+ * second spelling of it would only be a second thing to keep in step. The
+ * callee is a member expression, and the scan reads member callees dotted so
+ * `JSON.parse` is never taken for an imported `parse` — so without the head
+ * rule this call site would go unread: its path argument unjudged, its answer
+ * unfollowed, and the symbol reported as imported-and-never-called while a
+ * real call sits two lines below the import. And the answer is spent, not
+ * escaping, which the reader must admit — a reader that refused it would
+ * leave only the two shapes that hide an escape, binding the answer to a name
+ * or not folding back at all.
  */
 const FOLDED_SOURCE = `
-import { realpathSync } from "node:fs";
-import { toNamespacedPath } from "node:path";
-import { plainPath } from "./paths.js";
-
-export function entryIdentity(argv1: string): string {
-  return plainPath(realpathSync(toNamespacedPath(argv1)));
-}
-`;
-
-/**
- * The shape `src/cli.ts` carries now: the same fold, spent at the same
- * `plainPath`, but resolved through libuv's `realpathSync.native` rather than
- * node's JS `realpathSync`, which throws over a namespaced drive root on node
- * 22 (`src/cli.ts`). The callee is a member expression, and the scan reads
- * member callees dotted so `JSON.parse` is never taken for an imported
- * `parse` — so without the head rule this call site would go unread: its path
- * argument unjudged, its answer unfollowed, and the symbol reported as
- * imported-and-never-called while a real call sits two lines below the
- * import.
- */
-const NATIVE_FOLDED_SOURCE = `
 import { realpathSync } from "node:fs";
 import { toNamespacedPath } from "node:path";
 import { plainPath } from "./paths.js";
@@ -233,8 +208,21 @@ export function entryIdentity(argv1: string): string {
 }
 `;
 
-/** The same native call with its answer handed to a reader that cannot take it. */
-const NATIVE_ESCAPING_SOURCE = `
+/**
+ * The shape `src/cli.ts` carried until the windows lane read it: the same
+ * fold and the same native call, whose answer is handed straight to
+ * `pathToFileURL`. On win32 that answer is `\\?\C:\…`, which the URL builder
+ * reads as a UNC host, so the entry check answered "not the entry" for every
+ * junction- or symlink-based install (pnpm's linked store) and `flume` ran
+ * nothing. The behavior cannot red off win32 — `toNamespacedPath` is identity
+ * elsewhere — so the expression the answer is written into is where the
+ * defect is decidable, and this is the reader that decides it.
+ *
+ * The call resolves through `.native` like the fixture above, so this source
+ * differs from it in the answer's reader alone: the axis it exists to decide
+ * is not confounded by a second defect at the same call.
+ */
+const ESCAPING_SOURCE = `
 import { realpathSync } from "node:fs";
 import { toNamespacedPath } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -244,9 +232,29 @@ export function entryUrl(argv1: string): string {
 }
 `;
 
+/**
+ * The composed path at the head that cannot take it: node's JS
+ * `realpathSync`, which lstats the root it splits off its argument and throws
+ * on every namespaced drive path through node 22 — the version `engines`
+ * admits and CI runs (`.claude/rules/platform-facts.md`, *`realpathSync`
+ * keeps the `\\?\` prefix only where nothing resolved*). Every other verdict
+ * is green over this source: the path composes, and its answer is spent at
+ * the fold that ends the alphabet. The fold is correct and the callee throws
+ * on it, which is why the head needs a verdict of its own.
+ */
+const JS_FORM_SOURCE = `
+import { realpathSync } from "node:fs";
+import { toNamespacedPath } from "node:path";
+import { plainPath } from "./paths.js";
+
+export function entryIdentity(argv1: string): string {
+  return plainPath(realpathSync(toNamespacedPath(argv1)));
+}
+`;
+
 describe("the scan's reading of a member callee", () => {
   it("the namespaced-fs scan reads `realpathSync.native` as the path-answering fs call it is", () => {
-    const folded = scanFsCalls("src/fixture.ts", NATIVE_FOLDED_SOURCE);
+    const folded = scanFsCalls("src/fixture.ts", FOLDED_SOURCE);
 
     // Read at all: the call is the symbol's, so the import is not reported
     // unjudgeable and its path argument is one this module owed a fold on.
@@ -260,7 +268,7 @@ describe("the scan's reading of a member callee", () => {
     expect(folded.answered).toBe(1);
     expect(folded.escaped.map((e) => describeEscape(folded, e))).toEqual([]);
 
-    const escaping = scanFsCalls("src/fixture.ts", NATIVE_ESCAPING_SOURCE);
+    const escaping = scanFsCalls("src/fixture.ts", ESCAPING_SOURCE);
     expect(escaping.answered).toBe(1);
     expect(escaping.escaped.map((e) => describeEscape(escaping, e))).toEqual([
       "src/fixture.ts:7 — realpathSync() answers a path in win32's namespaced alphabet " +
@@ -358,9 +366,10 @@ describe("a namespaced path never leaves its fs call", () => {
   });
 
   it("the win32 path scan refuses a toNamespacedPath result consumed by anything but an fs call", () => {
-    // The refusal itself, on the shape that shipped it: the fold composes, so
-    // the composition verdict above is green over this source — the whole
-    // reason the answer needs its own reader.
+    // The refusal itself, on the shape that shipped the defect: the fold
+    // composes and resolves at the head that takes it, so every other verdict
+    // is green over this source — the whole reason the answer needs its own
+    // reader.
     const fixture = scanFsCalls("src/fixture.ts", ESCAPING_SOURCE);
     expect(fixture.bare).toEqual([]);
     expect(fixture.answered).toBe(1);
@@ -380,6 +389,45 @@ describe("a namespaced path never leaves its fs call", () => {
       scans.flatMap((scan) =>
         scan.escaped.map((escape) => describeEscape(scan, escape)),
       ),
+    ).toEqual([]);
+  });
+});
+
+describe("a composed path reaches only the head that takes it", () => {
+  it("the namespaced-fs scan refuses a composed path handed to node's JS realpathSync", () => {
+    const refused = scanFsCalls("src/fixture.ts", JS_FORM_SOURCE);
+
+    // Every other verdict is green over this source — the path composes and
+    // its answer is spent at the fold that ends the alphabet — so nothing
+    // already here can see the call that throws. Only the head is wrong.
+    expect(refused.bare.map((call) => describeBareCall(refused, call))).toEqual([]);
+    expect(refused.escaped.map((e) => describeEscape(refused, e))).toEqual([]);
+    expect(refused.nativeOnly).toBe(1);
+    expect(refused.jsForm.map((call) => describeJsForm(refused, call))).toEqual([
+      "src/fixture.ts:7 — realpathSync() is handed a path in win32's namespaced " +
+        "alphabet, which node's JS implementation throws on through node 22; only " +
+        "realpathSync.native resolves one",
+    ]);
+
+    // The head that does take one, over the same fold spent at the same
+    // reader: the two sources differ in the callee alone, so the callee is
+    // what this verdict turns on.
+    const native = scanFsCalls("src/fixture.ts", FOLDED_SOURCE);
+    expect(native.nativeOnly).toBe(1);
+    expect(native.jsForm.map((call) => describeJsForm(native, call))).toEqual([]);
+  });
+
+  it("no src/ or harness/ call hands a composed path to node's JS realpathSync", () => {
+    // The package under the same reader. `src/cli.ts` resolves its entry
+    // check through `realpathSync.native` and is the call counted here; a
+    // tree that stopped reaching that call site would leave the verdict below
+    // green over nothing (`.claude/rules/engineering.md`, *A green verdict is
+    // proven non-vacuous*).
+    const scans = [...scanTree("src"), ...scanTree("harness")];
+    const nativeOnly = scans.reduce((n, scan) => n + scan.nativeOnly, 0);
+    expect(nativeOnly, "composed paths at a symbol only .native resolves").toBeGreaterThan(0);
+    expect(
+      scans.flatMap((scan) => scan.jsForm.map((call) => describeJsForm(scan, call))),
     ).toEqual([]);
   });
 });

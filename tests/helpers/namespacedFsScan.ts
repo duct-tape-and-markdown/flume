@@ -50,6 +50,14 @@
  * graph — a fold bound to a name or returned to a caller is spent wherever
  * that name is, which is the fold's own module to say and the composition
  * verdict above to judge.
+ *
+ * **Which head takes it.** The last thing the contract says is whether the
+ * symbol's plain spelling can be handed a namespaced path at all. Node's JS
+ * `realpathSync` throws on every namespaced drive path through node 22, and
+ * only `realpathSync.native` (libuv) resolves one, so a composed path at the
+ * bare name is a call that cannot run where the composition exists for
+ * ({@link JsFormCall}) — the one shape whose fold is correct and whose callee
+ * is wrong.
  */
 
 /**
@@ -96,6 +104,15 @@ interface PathContract {
    * no path, and the fold is spent at the call.
    */
   answersPath: boolean;
+  /**
+   * `true` when the symbol's JS implementation refuses a path in win32's
+   * namespaced alphabet, so only its `.native` head reaches disk with one
+   * (`.claude/rules/platform-facts.md`, *`realpathSync` keeps the `\\?\`
+   * prefix only where nothing resolved*). The composition and the callee are
+   * one property here: a fold this symbol's bare spelling is handed is not a
+   * safer path, it is a throw.
+   */
+  nativeOnly: boolean;
 }
 
 /** Argument 0, composed by the caller — every fs call not named below. */
@@ -103,6 +120,7 @@ const CALLER_FOLDS_FIRST: PathContract = {
   positions: () => [0],
   calleeFolds: false,
   answersPath: false,
+  nativeOnly: false,
 };
 
 /**
@@ -122,6 +140,15 @@ const CALLER_FOLDS_FIRST: PathContract = {
  * from the path it was given (`mkdir`'s under `{ recursive }`, which is why
  * it is here rather than in the default), so a namespaced argument leaves
  * again through the return value.
+ *
+ * `realpathSync` sits alone after them because it answers a path *and* is
+ * the one symbol whose bare spelling refuses the argument: only its `.native`
+ * head takes a namespaced path through node 22. The refusal stops at the
+ * symbol the fact is recorded for (`.claude/rules/platform-facts.md`,
+ * *`realpathSync` keeps the `\\?\` prefix only where nothing resolved*),
+ * which is the one this package calls. The async `realpath` carries the same
+ * `.native` spelling and is admitted here on the bare name; widening the
+ * refusal to it is this one flag, the tick the page states the fact for it.
  */
 const PATH_CONTRACTS = new Map<string, PathContract>([
   ...[
@@ -137,11 +164,15 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
     "symlinkSync",
   ].map<[string, PathContract]>((fn) => [
     fn,
-    { positions: () => [0, 1], calleeFolds: false, answersPath: false },
+    {
+      positions: () => [0, 1],
+      calleeFolds: false,
+      answersPath: false,
+      nativeOnly: false,
+    },
   ]),
   ...[
     "realpath",
-    "realpathSync",
     "readlink",
     "readlinkSync",
     "mkdtemp",
@@ -150,8 +181,22 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
     "mkdirSync",
   ].map<[string, PathContract]>((fn) => [
     fn,
-    { positions: () => [0], calleeFolds: false, answersPath: true },
+    {
+      positions: () => [0],
+      calleeFolds: false,
+      answersPath: true,
+      nativeOnly: false,
+    },
   ]),
+  [
+    "realpathSync",
+    {
+      positions: () => [0],
+      calleeFolds: false,
+      answersPath: true,
+      nativeOnly: true,
+    },
+  ],
   [
     "isDirectoryOrAbsent",
     {
@@ -159,6 +204,7 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
         Array.from({ length: Math.max(arity - 1, 0) }, (_, i) => i + 1),
       calleeFolds: true,
       answersPath: false,
+      nativeOnly: false,
     },
   ],
 ]);
@@ -534,6 +580,19 @@ export interface EscapedNamespacedPath {
   line: number;
 }
 
+/**
+ * One namespaced path handed to the JS spelling of a symbol only `.native`
+ * can take it at.
+ */
+export interface JsFormCall {
+  /** The fs symbol called, as the module binds it. */
+  fn: string;
+  /** The callee the site spelled, whitespace out — the form that refuses. */
+  callee: string;
+  /** 1-indexed line of the call, for the failure message. */
+  line: number;
+}
+
 /** What one module's scan found. */
 export interface FsCallScan {
   /** The module scanned, from the repo root — the failure message's subject. */
@@ -558,6 +617,15 @@ export interface FsCallScan {
   answered: number;
   /** The answers of those calls that a non-fs callee read. */
   escaped: EscapedNamespacedPath[];
+  /**
+   * How many composed paths reached a symbol whose JS spelling refuses one
+   * ({@link PathContract.nativeOnly}) — the vacuity count for {@link
+   * FsCallScan.jsForm}, empty both for a module that spells every such call
+   * `.native` and for one that makes none.
+   */
+  nativeOnly: number;
+  /** Those of them spelled at a head that is not `.native`. */
+  jsForm: JsFormCall[];
   /** Imported fs symbols the module never calls — an import the scan cannot judge. */
   uncalled: string[];
 }
@@ -581,6 +649,12 @@ export interface FsCallScan {
  * call site of the imported symbol and is skipped; a callee the symbol itself
  * heads (`realpathSync.native(…)`) is one, and is judged on that symbol's
  * contract ({@link fsCallee}).
+ *
+ * `jsForm` is the third verdict, and the only one a *composed* path can fail:
+ * where the contract says the symbol's JS implementation refuses the
+ * namespaced alphabet ({@link PathContract.nativeOnly}), the head the site
+ * spelled decides, and anything but `.native` is reported. `nativeOnly` is its
+ * vacuity count.
  */
 export function scanFsCalls(module: string, source: string): FsCallScan {
   const masked = maskNonCode(source);
@@ -588,16 +662,22 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
   const isProbe = PROBE_SOURCE.test(module);
   const bare: BareFsCall[] = [];
   const escaped: EscapedNamespacedPath[] = [];
+  const jsForm: JsFormCall[] = [];
   const uncalled: string[] = [];
   let judged = 0;
   let delegated = 0;
   let answered = 0;
+  let nativeOnly = 0;
   const lineOf = (index: number): number => source.slice(0, index).split("\n").length;
 
   for (const fn of symbols) {
     const calls = [...masked.matchAll(callSites(fn))]
       .map((match) => ({
         index: match.index!,
+        // The callee as written, whitespace out: the bare name, or the name
+        // extended by member access ({@link fsCallee}). Which head was
+        // spelled is what a `nativeOnly` contract turns on.
+        callee: match[0].slice(0, -1).replace(/\s+/g, ""),
         args: splitArguments(masked, match.index! + match[0].length - 1),
       }))
       .filter((site) => !declaresParameters(site.args));
@@ -607,8 +687,9 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
     }
     if (isProbe) continue;
     const contract = PATH_CONTRACTS.get(fn) ?? CALLER_FOLDS_FIRST;
-    for (const { index, args } of calls) {
+    for (const { index, callee, args } of calls) {
       let namespacedAnswer = false;
+      let namespacedArgument = false;
       for (const position of contract.positions(args.length)) {
         const argument = args[position];
         if (argument === undefined) continue;
@@ -619,6 +700,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
         judged++;
         if (isComposed(masked, argument)) {
           namespacedAnswer ||= contract.answersPath;
+          namespacedArgument = true;
           continue;
         }
         bare.push({
@@ -628,6 +710,15 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
           line: lineOf(index),
         });
       }
+      if (namespacedArgument && contract.nativeOnly) {
+        // A path the site composed correctly, at a callee that throws on it:
+        // only the `.native` head resolves one. An uncomposed argument is
+        // already reported above, and is not this alphabet's problem.
+        nativeOnly++;
+        if (callee !== `${fn}.native`) {
+          jsForm.push({ fn, callee, line: lineOf(index) });
+        }
+      }
       if (!namespacedAnswer) continue;
       answered++;
       const reader = readerPastFs(masked, symbols, index);
@@ -636,7 +727,18 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
       }
     }
   }
-  return { module, symbols, judged, delegated, bare, answered, escaped, uncalled };
+  return {
+    module,
+    symbols,
+    judged,
+    delegated,
+    bare,
+    answered,
+    escaped,
+    nativeOnly,
+    jsForm,
+    uncalled,
+  };
 }
 
 /** A `BareFsCall` as one line of a failure message, named by its module. */
@@ -644,6 +746,15 @@ export function describeBareCall(scan: FsCallScan, call: BareFsCall): string {
   return `${scan.module}:${call.line} — ${call.fn}() path argument ${call.position}, \`${call.argument}\`, is not composed for win32's path limit`;
 }
 
+
+/** A `JsFormCall` as one line of a failure message, named by its module. */
+export function describeJsForm(scan: FsCallScan, call: JsFormCall): string {
+  return (
+    `${scan.module}:${call.line} — ${call.callee}() is handed a path in ` +
+    `win32's namespaced alphabet, which node's JS implementation throws on ` +
+    `through node 22; only ${call.fn}.native resolves one`
+  );
+}
 
 /** An `EscapedNamespacedPath` as one line of a failure message. */
 export function describeEscape(
