@@ -81,7 +81,8 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
 
 Every subcommand answers `--help` / `-h` with usage and its exit codes, and
 that short-circuits before any side effect — chain load, baton mutation, agent
-invocation. `flume --help` lists all subcommands; `flume --version` / `-v`
+invocation. `flume --help` lists all subcommands, and `flume help` is the
+same answer, since it is the first thing a new operator types; `flume --version` / `-v`
 prints the package version, read from flume's own `package.json` at
 `../package.json` relative to the running module — the same relative position
 in a source checkout and in the published tarball. Both top-level flags
@@ -132,8 +133,11 @@ In printed order:
    the same loose read `flume job status` performs, so a corrupt queue reads
    identically on both surfaces.
 6. **Chain-declared extras**, behind a best-effort chain load that can never
-   fail status — a missing or broken chain withholds them and says so on
-   stderr, never silently; nothing above this line is withheld, and the count's fall
+   fail status — a missing or broken chain withholds them and says so **as a
+   row of this listing**, `chain: failed to load — <reason>`, printed before
+   the pending count on the same stream as the rest, so a status over a chain
+   that did not load never has the shape of a healthy one; nothing above this
+   line is withheld, and the count's fall
    back to the default queue path is the one cost that report names: the
    friction count when `Chain.friction` is declared and its dir holds files,
    and one line per pending entry blocked on a `requiresCapability` the chain
@@ -446,6 +450,9 @@ Standing consequences:
   semver.
 - Each public-API breaking change lands under a `### Breaking` subheading in
   `CHANGELOG.md`.
+- A migration note opens by naming the minors it does not cover, so a
+  consumer jumping more than one version reads the earlier `### Breaking`
+  sections before concluding they are done.
 - The mined draft closes `### Breaking` with a `### Uncategorized` subheading over every
   non-breaking entry, so the draft leads with breaks as the curated changelog does, and
   the second heading is the curating human's cue for what is still unsorted. A

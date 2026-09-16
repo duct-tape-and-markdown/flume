@@ -218,11 +218,17 @@ is the same either way.
 `flume`, so the engine's verb set stays closed and never imports the harness —
 writes the declaration
 skeleton, a `chain.ts` that applies the factory to it (the engine refuses a
-load without one), the state root with an empty queue in it (nothing else
+load without one), a `package.json` in the state root declaring
+`"type": "module"` — the package is ESM-only (`spec/chain.md`), and the chain
+loads as ESM whatever the consumer's own manifest says, on every node the
+engine supports — the state root with an empty queue in it (nothing else
 creates one before the first build wave, and a plan slice refuses over an
 absent queue), the ignore set, and `PROTOCOL.md`, and adds the package as the
-consumer's dependency. A consumer never copies a prompt, a slice,
-or a judge from another consumer; what it wants to change it declares.
+consumer's dependency. The install smoke runs this verb over the manifest
+`npm init` produces and loads the chain it wrote. `init --help` answers with
+usage and exits 0 before anything is written. A consumer never copies a
+prompt, a slice, or a judge from another consumer; what it wants to change it
+declares.
 
 Upgrading is one version bump plus the release's migration note. A harness
 breaking change lands under the same `### Breaking` heading as an engine one
