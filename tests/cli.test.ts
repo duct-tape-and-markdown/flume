@@ -2632,6 +2632,76 @@ describe("flume tick — a signalled bare tick takes its agent down (spec/loop.m
   );
 });
 
+/**
+ * A chain that records every application of its factory: one byte appended to
+ * `countPath` per call, so a process's count is that file's length.
+ *
+ * The append sits in the factory body rather than at module scope. A module is
+ * evaluated once per process whatever the engine does with it
+ * (`.claude/rules/platform-facts.md`, "Node's ESM registry is keyed by
+ * resolved URL and cannot be evicted"), so a module-scope append would read 1
+ * however many times the factory was applied — the count this case exists to
+ * see.
+ */
+function factoryCountingChainSrc(countPath: string): string {
+  return (
+    `import { appendFileSync } from "node:fs";\n` +
+    `export default () => {\n` +
+    `  appendFileSync(${JSON.stringify(countPath)}, "x");\n` +
+    `  return { chain: {\n` +
+    `    phases: [{\n` +
+    `      name: "probe",\n` +
+    `      description: "",\n` +
+    `      promptPath: "prompts/prompt.md",\n` +
+    `      concurrency: "singleton",\n` +
+    `      writablePaths: ["**"],\n` +
+    `      gates: [],\n` +
+    `      handoff: () => [],\n` +
+    `    }],\n` +
+    `    humanOnly: [],\n` +
+    `  } };\n` +
+    `};\n`
+  );
+}
+
+/**
+ * `.claude/rules/engineering.md` *A fact the engine holds is reported, never
+ * rediscovered*: a `flume tick` reads the grace its signal handler announces
+ * off `Dispatcher.agentKillGraceMs` rather than resolving a chain of its own
+ * beside the one `tick` resolves. The count is what holds that — the
+ * handler's line is pinned above, and a second resolve beneath it would print
+ * the very same number.
+ */
+describe("flume tick — one chain application per process (ONE-CHAIN-APPLICATION-PER-TICK-PROCESS)", () => {
+  it(
+    "a bare flume tick applies the chain factory once for the process",
+    async () => {
+      const repo = await makeJobRepo("main");
+      // Outside the repo: the count is the subject, never something the tick
+      // could read as a working-tree change of its own.
+      const scratch = await mkTempDir("flume-factory-count-");
+      try {
+        const countPath = join(scratch, "applications");
+        await writeRepoConfig(repo.dir, factoryCountingChainSrc(countPath));
+
+        // Nothing awake, so the tick hibernates without invoking an agent:
+        // what is left is exactly the applications the process itself makes.
+        const r = await runCli(repo.dir, ["tick"]);
+
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("hibernating");
+        // Read, never defaulted — an absent file is a tick that never applied
+        // the factory at all, which reds here rather than passing as zero.
+        expect(readFileSync(countPath, "utf8")).toBe("x");
+      } finally {
+        await rm(scratch, { recursive: true, force: true });
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
 describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful stop — the stop flag\")", () => {
   it(
     "refuses before any tick, exit 1, naming the flag path — no lock taken, no tick runs",

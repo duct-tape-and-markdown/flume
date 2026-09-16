@@ -805,11 +805,6 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  // Dispatcher resolves .flume/chain.ts from configDir once at tick start (one
-  // load per process — `flume loop` re-resolves by spawning a fresh `flume
-  // tick` per iteration); a chain.ts whose factory returns `agent` overrides
-  // the default agent per tick.
-  const resolveChain = diskChainLoader(paths);
   // The `flume loop` supervisor's run-scoped quarantine crosses the process
   // boundary via this env var (set by `defaultTickRunner`,
   // `src/loopSupervisor.ts`) — an entry whose quarantine key (`slug@hash` of
@@ -837,6 +832,13 @@ async function main(): Promise<number> {
   // handlers that abort it are installed in the `tick` branch below, which is
   // the only command that runs one.
   const stopTick = new AbortController();
+  // Dispatcher resolves .flume/chain.ts from configDir once at tick start —
+  // the one chain-factory application a `flume tick` process makes, which is
+  // why every fact a tick needs off its chain is read back off the dispatcher
+  // rather than resolved again here (`Dispatcher.agentKillGraceMs` is the
+  // teardown's). `flume loop` re-resolves by spawning a fresh `flume tick` per
+  // iteration; a chain.ts whose factory returns `agent` overrides the default
+  // agent per tick.
   const dispatcher = new Dispatcher({
     repoRoot,
     configDir,
@@ -1008,11 +1010,17 @@ async function main(): Promise<number> {
     // than a hang to bound — exiting anyway is the release-over-a-live-writer
     // this whole path exists to stop. What bounds a well-behaved agent is its
     // own teardown (`supervisorPolicy.killGraceMs`, `src/Phase.ts`), which is
-    // the number `agentKillGraceMs` carries to the line the handler writes at
-    // receipt: the wait is silent otherwise, and an agent that swallows the
-    // SIGTERM makes it a long one.
+    // the number the handler writes into the line it prints at receipt: the
+    // wait is silent otherwise, and an agent that swallows the SIGTERM makes
+    // it a long one. It reads that number off `Dispatcher.agentKillGraceMs` —
+    // the engine's own fold over the chain it resolved, reported rather than
+    // re-derived from a chain this process would have to apply a second time
+    // (`.claude/rules/engineering.md`, "A fact the engine holds is reported,
+    // never rediscovered"). Before the chain resolves — and after one that
+    // failed to, which `tick()` reports as mount-dead — the getter still
+    // names the engine default the teardown would apply anyway
+    // (`src/processTree.ts`).
     let tickRun: Promise<TickOutcome> | undefined;
-    let agentKillGraceMs = DEFAULT_KILL_GRACE_MS;
     const releaseAndExit = async (code: number): Promise<never> => {
       stopTick.abort();
       if (tickRun !== undefined) {
@@ -1023,7 +1031,7 @@ async function main(): Promise<number> {
         console.log(
           signalledWaitLine(
             "the agent tree this tick started",
-            agentKillGraceMs,
+            dispatcher.agentKillGraceMs,
           ),
         );
         // The tick's own failure is the tick's to report; this path owes the
@@ -1051,21 +1059,6 @@ async function main(): Promise<number> {
       }
     }
     try {
-      // The grace the handler above names, read where the handler cannot read
-      // it: at receipt the tree is already going down, and a chain resolved
-      // then would delay the wait it is announcing. Best-effort and silent on
-      // failure — the tick below resolves the same chain and reports that
-      // load's failure as mount-dead (`.claude/rules/engineering.md`, "Loud or
-      // nothing": the refusal that bounds this degraded path). A chain that
-      // declares nothing leaves the engine's own default standing, which is
-      // what the teardown would apply anyway (`src/processTree.ts`).
-      try {
-        const { chain } = await resolveChain();
-        agentKillGraceMs =
-          chain.supervisorPolicy?.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
-      } catch {
-        // unresolved chain — the default stands and `tick()` names the failure
-      }
       tickRun = dispatcher.tick();
       const outcome = await tickRun;
       console.log(outcome.summary);
@@ -1308,7 +1301,9 @@ async function main(): Promise<number> {
     let supervisorPolicy: Chain["supervisorPolicy"];
     let friction: Chain["friction"];
     try {
-      ({ chain: { supervisorPolicy, friction } } = await resolveChain());
+      ({
+        chain: { supervisorPolicy, friction },
+      } = await diskChainLoader(paths)());
       childKillGraceMs = supervisorPolicy?.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
     } catch {
       // unresolved chain — defaults apply; the child tick names the failure

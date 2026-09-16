@@ -69,6 +69,7 @@ import {
   tickVerdictPath,
   tickVerdictsLogPath,
 } from "./paths.js";
+import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import {
   buildCleanExit,
   buildGateRevert,
@@ -1291,6 +1292,36 @@ export function diskChainLoader(
 }
 
 /**
+ * What a tick's chain declares about how long an agent invocation runs and how
+ * long its tree gets to go — the two `AgentInvocation` (`src/Agent.ts`)
+ * fields a tick carries over from its `supervisorPolicy` (`src/Phase.ts`), in
+ * that seam's own optional shape: absent is what tells a provider nothing was
+ * declared.
+ */
+interface AgentBounds {
+  timeoutMs?: number;
+  killGraceMs?: number;
+}
+
+/**
+ * Derive {@link AgentBounds} from a chain's declaration, the embedder's
+ * `tickTimeoutMs` below it. Taken once per tick rather than at each of the two
+ * legs that invoke an agent, which would be the same fallback chain spelled
+ * twice (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+function resolveAgentBounds(
+  policy: Chain["supervisorPolicy"],
+  fallbackTimeoutMs: number | undefined,
+): AgentBounds {
+  const timeoutMs = policy?.tickTimeoutMs ?? fallbackTimeoutMs;
+  const killGraceMs = policy?.killGraceMs;
+  return {
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...(killGraceMs !== undefined ? { killGraceMs } : {}),
+  };
+}
+
+/**
  * Constructor input for `Dispatcher`. `repoRoot`, `configDir`, and `agent`
  * are required; the rest tune chain resolution, concurrency, trunk
  * identification, logging, and per-tick wall-clock budget.
@@ -1758,6 +1789,13 @@ export class Dispatcher {
   private readonly chainLoader: () => Promise<ChainModule>;
   /** Set when tick() loads the chain; composes pending parses. */
   private entryExtension: EntryExtension | undefined;
+  /**
+   * What the chain this dispatcher last loaded declared about its agent
+   * invocations, reported through {@link agentKillGraceMs}. Initialized to
+   * the constructor's own fallbacks, which is what a dispatcher that has
+   * resolved no chain yet would apply.
+   */
+  private bounds: AgentBounds;
 
   constructor(opts: DispatcherOptions) {
     this.opts = opts;
@@ -1777,6 +1815,7 @@ export class Dispatcher {
     );
     this.maxParallel = opts.maxParallel ?? 4;
     this.tickTimeoutMs = opts.tickTimeoutMs;
+    this.bounds = resolveAgentBounds(undefined, this.tickTimeoutMs);
     this.pendingPath = resolvePendingPath(this.flumeDir);
     this.chainLoader = opts.chainLoader ?? diskChainLoader(this.paths);
   }
@@ -1805,6 +1844,26 @@ export class Dispatcher {
         ? { declaredWorktreesBase: this.chainWorktreesBase }
         : {}),
     };
+  }
+
+  /**
+   * The grace an agent tree this dispatcher aborts gets between its SIGTERM
+   * and the SIGKILL that follows: what the chain {@link tick} resolved
+   * declares, the engine's own {@link DEFAULT_KILL_GRACE_MS} where it declares
+   * none — the number `terminateProcessTree` (`src/processTree.ts`) will
+   * actually apply, rather than the absence a caller would have to fold for
+   * itself. Before any chain resolves it is that default, which is what an
+   * abort at that point would apply anyway.
+   *
+   * Reported rather than kept (`.claude/rules/engineering.md`, *A fact the
+   * engine holds is reported, never rediscovered*): the caller that must name
+   * this number is the `flume tick` signal handler, which writes it into the
+   * line it prints at receipt (`src/cli.ts`), and reading it here instead of
+   * resolving a chain of its own is what keeps a tick process to the single
+   * chain-factory application {@link tick} makes.
+   */
+  get agentKillGraceMs(): number {
+    return this.bounds.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   }
 
   /** Run one phase × one tick. Returns hibernated outcome if nothing awake. */
@@ -1865,6 +1924,11 @@ export class Dispatcher {
       };
     }
     const chain = chainModule.chain;
+    // The bounds every agent invocation this tick makes runs under, read at
+    // the one point per process where a chain is in hand — the same per-tick
+    // read as `entryExtension` and `pendingPath` below, and what
+    // `agentKillGraceMs` reports to a caller that has no chain of its own.
+    this.bounds = resolveAgentBounds(chain.supervisorPolicy, this.tickTimeoutMs);
     // Pending parses compose core + the chain's declared entry extension
     // remembered here because readPending runs downstream of the
     // one place the chain is loaded.
@@ -2417,7 +2481,7 @@ export class Dispatcher {
         wt.path,
         prompt,
         agent,
-        this.agentBounds(chain),
+        this.bounds,
         extraEnv,
       );
       invocationRow = {
@@ -2808,8 +2872,8 @@ export class Dispatcher {
     const maxParallel = chain.supervisorPolicy?.maxParallel ?? this.maxParallel;
     // spec/pending.md "Fanout partition — disjoint touched paths": narrows
     // the collision set only — `declaredPaths` (fence, write guard, ship
-    // detection) is untouched. Same per-tick read as maxParallel above and
-    // `agentBounds` below.
+    // detection) is untouched. Same per-tick read as maxParallel above and as
+    // `resolveAgentBounds`, which `tick` already took for this chain.
     const partitionIgnore = chain.supervisorPolicy?.partitionIgnore ?? [];
     const batches = partitionByFileOverlap(pickable, {
       maxParallel,
@@ -3739,7 +3803,7 @@ export class Dispatcher {
       wt.path,
       prompt,
       agent,
-      this.agentBounds(chain),
+      this.bounds,
       extraEnv,
       entry.tag,
     );
@@ -4019,32 +4083,13 @@ export class Dispatcher {
     return true;
   }
 
-  /**
-   * What this tick's chain declares about how long an agent invocation runs
-   * and how long its tree gets to go — read once here rather than at each of
-   * the two legs that invoke an agent, which would be the same two-line
-   * fallback spelled twice (`.claude/rules/engineering.md`, *The fix lands at
-   * the mechanism*).
-   */
-  private agentBounds(chain: Chain): {
-    timeoutMs?: number;
-    killGraceMs?: number;
-  } {
-    const timeoutMs = chain.supervisorPolicy?.tickTimeoutMs ?? this.tickTimeoutMs;
-    const killGraceMs = chain.supervisorPolicy?.killGraceMs;
-    return {
-      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-      ...(killGraceMs !== undefined ? { killGraceMs } : {}),
-    };
-  }
-
   private async invokeAgent(
     phase: Phase,
     key: string,
     cwd: string,
     prompt: string,
     agent: Agent,
-    bounds: { timeoutMs?: number; killGraceMs?: number },
+    bounds: AgentBounds,
     extraEnv?: Record<string, string>,
     /**
      * The provisioned entry's tag under fanout; omitted by the singleton
