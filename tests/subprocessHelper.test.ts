@@ -483,6 +483,41 @@ it("every default-lane file that spawns a process declares the shared spawn budg
 });
 
 /**
+ * The other half of that declaration: what a file declares is the lane's
+ * ceiling only while no registrar under it declares another.
+ *
+ * Vitest resolves a registrar's own timeout argument last, so a per-site
+ * number overrides the file-scope budget from either direction, and the
+ * verdict above cannot see it — a file naming `SPAWN_BUDGET_MS` correctly is
+ * green there however many of its cases then hand themselves a number. 250
+ * of them stood across eight files that all declared the budget. Below it
+ * they are the flake the budget exists to stop, handed back per case; above
+ * it they are a ceiling nobody measured — seven at 180_000 and 240_000 over
+ * cases that run in about a second.
+ *
+ * So the number has one home, and a registrar argument is not it. A site
+ * that *names* the harness budget is not a restatement and passes; what
+ * cannot ship is a case quietly choosing its own.
+ */
+it("no spawning site in the default lane carries a numeric timeout beside the budget its file declares", async () => {
+  const { sites } = await scanSpawns({ lane: "default" });
+
+  // Vacuity: the lane was walked and its spawning registrars found, so the
+  // empty verdict below is a scan that judged them rather than one that read
+  // nothing. That the arm fires at all is pinned over a fixture written to be
+  // caught, below.
+  expect(sites.scanned.length).toBeGreaterThan(0);
+
+  expect(
+    sites.ceilings.map((s) => `${s.module}:${s.line} — ${s.ownCeiling}`),
+    `these registrars carry a timeout of their own, which vitest resolves ` +
+      `over the file-scope \`vi.setConfig\` budget: drop the argument so the ` +
+      `site inherits \`SPAWN_BUDGET_MS\` (tests/helpers/subprocess.ts), which ` +
+      `is the lane's one number`,
+  ).toEqual([]);
+});
+
+/**
  * The lane the scan walks against the lane the runner is told to run.
  *
  * Both used to be spelled here — a root and two suffixes in the helper, the
@@ -780,6 +815,77 @@ it("a same-named function elsewhere in the file does not hide a spawning case fr
       "boots the CLI through a file-local wrapper",
       "reuses the name for arithmetic",
     ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The per-site arm's own sensitivity, over a fixture that declares the budget
+ * correctly at file scope and then overrides it four registrars later.
+ *
+ * Four shapes, because the arm answers each differently and only the whole
+ * list says which is which: a positional literal on a case, a positional
+ * literal on a hook (`beforeEach(fn, timeout)` is the only spelling a hook
+ * has), the options-object `timeout` key, and a registrar naming the harness
+ * budget. The last one passes — naming the lane's constant is the number
+ * staying in its one home, not a restatement of it — and it is the arm's
+ * only negative that a numeric filter could not fake.
+ *
+ * Read off the argument rather than from vitest's own order: the fixture
+ * spells the options form as `(name, options, fn)` and the positional form as
+ * `(name, fn, timeout)`, both of which vitest accepts, and the scan reports
+ * the same ceiling for either.
+ */
+it("the spawn scan reports a numeric timeout literal on a spawning registrar", async () => {
+  const FIXTURE = [
+    `import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";`,
+    ``,
+    `vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });`,
+    ``,
+    `beforeEach(async () => {`,
+    `  await exec("git", ["init"], { cwd: dir });`,
+    `}, 30_000);`,
+    ``,
+    `it("restates the number positionally", async () => {`,
+    `  await exec("git", ["status"], { cwd: dir });`,
+    `}, 20_000);`,
+    ``,
+    `it("restates it under the options key", { timeout: 20_000 }, async () => {`,
+    `  await exec("git", ["status"], { cwd: dir });`,
+    `});`,
+    ``,
+    `it("names the lane's budget instead", async () => {`,
+    `  await exec("git", ["status"], { cwd: dir });`,
+    `}, SPAWN_BUDGET_MS);`,
+    ``,
+  ].join("\n");
+
+  const dir = await mkdtemp(join(tmpdir(), "flume-budget-ceiling-"));
+  try {
+    await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+    const { sites, files } = await scanSpawns({ lane: "default", dir });
+
+    // Vacuity: all four registrars are in the judged set, so the verdict
+    // below is three of four rather than a scan that read one.
+    expect(sites.scanned.length).toBe(4);
+
+    // The whole list, so the registrar that names the budget is pinned by its
+    // absence — and the hook is pinned as reported, which no case-only arm
+    // would have covered.
+    expect(
+      sites.ceilings.map((s) => `${s.kind}: ${s.title} — ${s.ownCeiling}`),
+    ).toEqual([
+      expect.stringMatching(/^hook: beforeEach at .* — 30_000$/),
+      "case: restates the number positionally — 20_000",
+      "case: restates it under the options key — 20_000",
+    ]);
+
+    // And the file-scope verdict is clean over the same fixture: the two arms
+    // are independent, so a correctly declaring file cannot absorb a site's
+    // own ceiling and a site's clean argument cannot excuse a missing
+    // declaration.
+    expect(files.scanned.map((f) => budgetDefect(f))).toEqual([null]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

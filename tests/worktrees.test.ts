@@ -189,7 +189,7 @@ describe("worktrees — one lifecycle over one directory tree", () => {
     expect(await readdir(join(flumeDir, "friction"))).toEqual([
       expect.stringContaining(`${tag}--`),
     ]);
-  }, 30_000);
+  });
 });
 
 /**
@@ -322,7 +322,7 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     );
     expect(await registeredWorktrees(fx.repo)).not.toContain(occupied);
     expect(await flumeBranches(fx.repo)).toEqual([]);
-  }, 30_000);
+  });
 
   // `existsSync` collapsed every stat failure to `false`, so a path that is
   // on disk but unstattable read as free and provisioning ran straight over
@@ -353,7 +353,7 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     expect((await lstat(occupied)).isSymbolicLink()).toBe(true);
     expect(await registeredWorktrees(fx.repo)).not.toContain(occupied);
     expect(await flumeBranches(fx.repo)).toEqual([]);
-  }, 30_000);
+  });
 
   it("createWorktree removes a stale worktree directory git still has registered", async () => {
     const { ctx, base } = contextFor(silent);
@@ -378,7 +378,7 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     expect(existsSync(join(stale, "crashed.txt"))).toBe(false);
     expect(await registeredWorktrees(fx.repo)).toContain(stale);
     expect(await flumeBranches(fx.repo)).toEqual([wt.branch]);
-  }, 30_000);
+  });
 
   it("the startup sweep warns that it removed nothing when the worktree registry cannot be read", async () => {
     const log = collectingLogger();
@@ -412,7 +412,7 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     );
     expect(existsSync(residue)).toBe(true);
     expect(await registeredWorktrees(fx.repo)).toContain(residue);
-  }, 30_000);
+  });
 });
 
 /**
@@ -511,7 +511,7 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     if (!after.read) throw new Error("unreachable: asserted above");
     expect(after.paths.has(resolve(one.path))).toBe(false);
     expect(after.paths.has(resolve(two.path))).toBe(true);
-  }, 30_000);
+  });
 
   it("an unreadable worktree registry reports the failure rather than an empty set", async () => {
     const api = apiFor();
@@ -537,7 +537,7 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     // The failing branch carries no path set at all, so a consumer cannot
     // reach for one and read absence out of a failure.
     expect(blind).not.toHaveProperty("paths");
-  }, 30_000);
+  });
 
   /**
    * Register a worktree of the fixture repo at a path git spells verbatim,
@@ -587,7 +587,6 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
       // sweep declines to remove.
       expect(registry.paths.has(resolve(odd.split("\n")[0]!))).toBe(false);
     },
-    30_000,
   );
 
   it.runIf(onPosix)(
@@ -612,6 +611,5 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
       // caller's path ever matches it.
       expect(registry.paths.has(resolve(odd.trimEnd()))).toBe(false);
     },
-    30_000,
   );
 });

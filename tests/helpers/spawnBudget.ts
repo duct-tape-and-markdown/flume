@@ -1,8 +1,10 @@
 /**
  * Either lane's spawn scan: which of its cases and hooks start a process,
- * which of those declare the shared budget (`SPAWN_BUDGET_MS`,
- * `tests/helpers/subprocess.ts`), and which of them await a wall-clock timer
- * between the spawn and the assertion downstream of it.
+ * which of the files holding them declare the shared budget
+ * (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`), which of the sites
+ * override that declaration with a ceiling of their own, and which of them
+ * await a wall-clock timer between the spawn and the assertion downstream
+ * of it.
  *
  * A source scan rather than a runtime probe, because both properties are what
  * a site *declares*: a budget observable only once a case has already run long
@@ -161,6 +163,20 @@ export interface SpawnSite extends ScanSite {
    * inline — or `null` when it awaits none.
    */
   readonly awaitedTimer: string | null;
+  /**
+   * The ceiling this registrar carries of its own, as the source spells it —
+   * or `null` when it carries none, and when the one it carries *names* a
+   * harness budget.
+   *
+   * Those two are one answer because they are one outcome: a site that names
+   * the budget and a site that inherits it from the file-scope declaration
+   * both run under the lane's single number. A literal is the other outcome
+   * whichever side of that declaration it sits on — vitest resolves the
+   * registrar's own argument last, so a per-case number silently overrides
+   * the file's budget in either direction, and 250 of them across eight
+   * files is the lane's one number restated per case.
+   */
+  readonly ownCeiling: string | null;
 }
 
 function parse(path: string): ts.SourceFile {
@@ -529,6 +545,50 @@ function harnessImports(src: ts.SourceFile): Set<string> {
   return names;
 }
 
+/** The options-object key a registrar spells its own timeout under. */
+const SITE_TIMEOUT_KEY = "timeout";
+
+/**
+ * The ceiling a registrar call carries of its own, or `null`. Read
+ * position-agnostically — a case carries `(title, fn, timeout)`, a hook
+ * carries `(fn, timeout)`, and both spell it as an options-object `timeout`
+ * too — so the scan never encodes vitest's argument order.
+ *
+ * A **numeric literal** is the ceiling, in the text the source spells (`20_000`
+ * separators and all), because that is the number restated per case. An
+ * identifier naming a harness budget is not: it is the lane's one number, named
+ * where it lives.
+ *
+ * The two positions read differently, and the asymmetry is the point. A bare
+ * positional identifier is almost always the *body* — `it("…", runsTheCase)` —
+ * so only a literal is read as a ceiling there; under the `timeout` key the
+ * argument's meaning is spelled by the key, so anything that is not a harness
+ * budget is a ceiling, a locally-named constant included. Guessing the other
+ * way in the positional slot would report every case that passes its body by
+ * name as carrying a ceiling.
+ */
+function ownCeiling(
+  call: ts.CallExpression,
+  budgets: ReadonlySet<string>,
+): string | null {
+  for (const arg of call.arguments) {
+    if (ts.isNumericLiteral(arg)) return arg.getText();
+    if (!ts.isObjectLiteralExpression(arg)) continue;
+    for (const prop of arg.properties) {
+      if (
+        !ts.isPropertyAssignment(prop) ||
+        prop.name.getText() !== SITE_TIMEOUT_KEY
+      )
+        continue;
+      const value = prop.initializer;
+      return ts.isIdentifier(value) && budgets.has(value.text)
+        ? null
+        : value.getText();
+    }
+  }
+  return null;
+}
+
 /**
  * The two arms a file-scope declaration carries, and the registrars each one
  * reaches. Vitest resolves a case's ceiling from `testTimeout` and a hook's
@@ -663,18 +723,33 @@ export interface SpawnScanRequest {
 }
 
 /**
+ * The lane's spawning cases and hooks, judged twice over the one set
+ * (`repoProgram.ts`, {@link Scan}: a second verdict over the same judged set
+ * is a second finding list beside `findings`).
+ *
+ * `findings` are the sites awaiting a wall-clock timer between the spawn and
+ * the assertion. `ceilings` are the sites carrying a ceiling of their own
+ * beside the budget their file declares — the number restated per registrar,
+ * which the per-file verdict cannot see, because a file declaring the budget
+ * correctly is green there however many of its cases then override it.
+ */
+export interface SiteScan extends Scan<SpawnSite> {
+  readonly ceilings: readonly SpawnSite[];
+}
+
+/**
  * Two judged sets, so two scans rather than two finding lists
  * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*:
  * a vacuity pin reads the `scanned` of whichever verdict it guards).
  *
  * `sites` judges every case and hook of the lane that starts a process, for
- * the wall-clock timer some await between the spawn and the assertion.
- * `files` judges the lane files those sites sit in, for the budget — which is
- * declared once per file, so the file is the unit a missing declaration is
- * reported at.
+ * the wall-clock timer some await between the spawn and the assertion, and
+ * for the ceiling some carry of their own. `files` judges the lane files
+ * those sites sit in, for the budget — which is declared once per file, so
+ * the file is the unit a missing declaration is reported at.
  */
 export interface SpawnScan {
-  readonly sites: Scan<SpawnSite>;
+  readonly sites: SiteScan;
   readonly files: Scan<SpawnFile>;
 }
 
@@ -743,6 +818,7 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
                   : `${root} at ${module}:${line}`,
               kind,
               awaitedTimer: [...timers].find((n) => awaited.has(n)) ?? null,
+              ownCeiling: ownCeiling(node, named),
             });
           }
         }
@@ -769,6 +845,7 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
     sites: {
       scanned: sites,
       findings: sites.filter((site) => site.awaitedTimer !== null),
+      ceilings: sites.filter((site) => site.ownCeiling !== null),
     },
     files: {
       scanned: files,

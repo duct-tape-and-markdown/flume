@@ -656,7 +656,7 @@ describe("chain.ts existence probe — jobNew and loadChainModule agree", () => 
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("jobNew and loadChainModule report the same unstattable chain.ts the same way, and no job is created over it", async () => {
     const repo = await makeRepo();
@@ -698,7 +698,7 @@ describe("chain.ts existence probe — jobNew and loadChainModule agree", () => 
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 });
 
 describe('jobNew/jobRm — commitMessage override (engine-boundary.md "Capability vs convention")', () => {
@@ -718,7 +718,7 @@ describe('jobNew/jobRm — commitMessage override (engine-boundary.md "Capabilit
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("omitting commitMessage reproduces jobNew's exact default seed-commit text", async () => {
     const repo = await makeRepo();
@@ -731,7 +731,7 @@ describe('jobNew/jobRm — commitMessage override (engine-boundary.md "Capabilit
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("a commitMessage override lands verbatim on jobRm's cleanup commit, receiving the job name", async () => {
     const repo = await makeRepo();
@@ -750,7 +750,7 @@ describe('jobNew/jobRm — commitMessage override (engine-boundary.md "Capabilit
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("omitting commitMessage reproduces jobRm's exact default cleanup-commit text", async () => {
     const repo = await makeRepo();
@@ -764,7 +764,7 @@ describe('jobNew/jobRm — commitMessage override (engine-boundary.md "Capabilit
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 });
 
 describe("flume job new — Chain.friction pass-through", () => {
@@ -954,7 +954,7 @@ describe("job-dir link provisioning removed — bay resolution", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("rejects a bad name in-process as JobUsageError before touching git", async () => {
     await expect(
@@ -1011,7 +1011,7 @@ describe("jobRun preflight — wake units (branch grammar retired)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("leaves a non-hibernating baton untouched — mid-job resume never re-wakes the entry phase", async () => {
     const repo = await makeRepo();
@@ -1030,7 +1030,7 @@ describe("jobRun preflight — wake units (branch grammar retired)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("wakes the entry phase regardless of which branch HEAD is on — no branch asserted or checked out", async () => {
     const repo = await makeRepo();
@@ -1054,7 +1054,7 @@ describe("jobRun preflight — wake units (branch grammar retired)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("no existence check: wakes the entry phase for a name never seeded by `job new`", async () => {
     const repo = await makeRepo();
@@ -1078,7 +1078,7 @@ describe("jobRun preflight — wake units (branch grammar retired)", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("real CLI: missing <name> exits 2", async () => {
     const repo = await makeRepo();
@@ -1147,7 +1147,7 @@ describe("jobRm — refusal + removal units", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("removes tracked harness + untracked runtime, commits cleanup on the current HEAD; history survives; stale pid reclaimed", async () => {
     const repo = await makeRepo();
@@ -1191,7 +1191,7 @@ describe("jobRm — refusal + removal units", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("leaves a pre-staged unrelated file staged and out of the cleanup commit", async () => {
     const repo = await makeRepo();
@@ -1216,7 +1216,7 @@ describe("jobRm — refusal + removal units", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("rejects a bad name and a name that names no job as JobUsageError, touching nothing", async () => {
     await expect(
@@ -1237,7 +1237,7 @@ describe("jobRm — refusal + removal units", () => {
     } finally {
       await repo.cleanup();
     }
-  }, 60_000);
+  });
 
   it("real CLI: missing <name> and nonexistent job exit 2; live pid exits 1", async () => {
     const repo = await makeRepo();
@@ -1313,7 +1313,6 @@ it.runIf(process.platform !== "win32")(
       await repo.cleanup();
     }
   },
-  60_000,
 );
 
 it.runIf(process.platform !== "win32")(
@@ -1350,7 +1349,6 @@ it.runIf(process.platform !== "win32")(
       await repo.cleanup();
     }
   },
-  60_000,
 );
 
 /**
@@ -1390,7 +1388,7 @@ it("jobNew's seed commit names its job dir in git's forward-slash alphabet", asy
   } finally {
     await repo.cleanup();
   }
-}, 60_000);
+});
 
 // ---------- `flume job status` enumeration units ----------
 
@@ -1977,7 +1975,7 @@ describe.runIf(process.platform === "win32")(
       } finally {
         await repo.cleanup();
       }
-    }, 60_000);
+    });
   },
 );
 
@@ -2076,7 +2074,7 @@ describe.runIf(process.platform === "win32")(
       } finally {
         await repo.cleanup();
       }
-    }, 60_000);
+    });
 
     it("jobStatus reports the awake phase when the job dir nests past win32's ~260-char limit", async () => {
       const base = await mkdtemp(join(tmpdir(), "flume-job-w32-"));
@@ -2145,7 +2143,7 @@ describe.runIf(process.platform === "win32")(
         await rm(cfgBase, { recursive: true, force: true });
         await repo.cleanup();
       }
-    }, 60_000);
+    });
   },
 );
 
@@ -2179,4 +2177,4 @@ it("`job status` lists a job `job new` seeded", async () => {
   } finally {
     await repo.cleanup();
   }
-}, 60_000);
+});

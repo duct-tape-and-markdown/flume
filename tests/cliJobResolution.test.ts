@@ -1224,4 +1224,4 @@ it("`--job <name>` resolves the state root `job new <name>` seeded", async () =>
   } finally {
     await repo.cleanup();
   }
-}, 30_000);
+});

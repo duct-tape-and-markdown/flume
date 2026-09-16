@@ -1325,7 +1325,7 @@ describe("hook-side gate results — the reported row, not a narrowed copy", () 
     expect(row?.details).toBe(detail);
     expect(row?.verdict).toBe("advisory-clean");
     expect(row?.skipped).toBe(reason);
-  }, 20_000);
+  });
 });
 
 // ---------- GateResult.failingFiles → ReportedGateResult.failingFiles
@@ -1669,7 +1669,7 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
     expect(existsSync(join(fx.repo, ".flume", "worktrees", "test-b"))).toBe(
       false,
     );
-  }, 20_000);
+  });
 });
 
 /**
@@ -1735,7 +1735,7 @@ describe("Dispatcher — the agent invocation states which entry it is running",
       "TAG-CARRY-A",
       "TAG-CARRY-B",
     ]);
-  }, 20_000);
+  });
 
   it("a singleton agent invocation carries no entry tag", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -1782,7 +1782,7 @@ describe("Dispatcher — the agent invocation states which entry it is running",
     // `TickVerdictInvocation.entryTag` row follows.
     expect(seenEntryTag).toBeUndefined();
     expect(seenKeys).not.toContain("entryTag");
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md 'The pending queue')", () => {
@@ -1867,7 +1867,7 @@ describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md '
 
     // The afterCommit gate saw the same resolved, absolute path.
     expect(capturedPendingPath).toBe(join(fx.repo, ".flume", customRel));
-  }, 20_000);
+  });
 
   it("undeclared pendingPath defaults to .flume/plan/pending.json", async () => {
     const entries = [makeEntry("DEFAULT-PATH", ["src/default.ts"])];
@@ -1911,7 +1911,7 @@ describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md '
     expect(capturedPendingPath).toBe(
       join(fx.repo, ".flume", "plan", "pending.json"),
     );
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher fanout — wave auto-unblock (spec/pending.md § Wave auto-unblock)", () => {
@@ -1966,7 +1966,7 @@ describe("Dispatcher fanout — wave auto-unblock (spec/pending.md § Wave auto-
         gate: { kind: "open" },
       },
     ]);
-  }, 20_000);
+  });
 
   it("stays blockedBy with the shorter list when only some named parents ship", async () => {
     const entries = [
@@ -2017,7 +2017,7 @@ describe("Dispatcher fanout — wave auto-unblock (spec/pending.md § Wave auto-
         },
       },
     ]);
-  }, 20_000);
+  });
 });
 
 /**
@@ -2081,7 +2081,7 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
     expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "MP-C",
     ]);
-  }, 20_000);
+  });
 
   it("a chain declaring nothing gets maxParallel: 4", async () => {
     const entries = [
@@ -2135,7 +2135,7 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
       "MPD-D",
     ]);
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["MPD-E"]);
-  }, 20_000);
+  });
 });
 
 /**
@@ -2233,7 +2233,7 @@ describe("Dispatcher — supervisorPolicy.tickTimeoutMs overrides the per-invoca
 
     expect(outcome.result?.shippedTags).toEqual(["TTMS-A"]);
     expect(seenTimeoutMs).toBe(777);
-  }, 20_000);
+  });
 
   it("a chain declaring neither maxParallel nor tickTimeoutMs still gets the DispatcherOptions defaults, byte-identical", async () => {
     const phase = makePhase({
@@ -2486,7 +2486,7 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
     // both ship in wave 1 — no cherry-pick conflict on the ignored file.
     expect(outcome.result?.shippedTags).toEqual(["PI-A", "PI-B"]);
     expect(outcome.result?.pendingAfter).toEqual([]);
-  }, 20_000);
+  });
 
   it("still splits two entries that collide on a non-ignored path in addition to the ignored one", async () => {
     const entries = [
@@ -2524,7 +2524,7 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
     // only the first ships this wave — the ignore widened nothing here.
     expect(outcome.result?.shippedTags).toEqual(["PIC-A"]);
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PIC-B"]);
-  }, 20_000);
+  });
 
   it("a chain declaring no partitionIgnore still collides on the shared path", async () => {
     const entries = [
@@ -2557,7 +2557,7 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
 
     expect(outcome.result?.shippedTags).toEqual(["PID-A"]);
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PID-B"]);
-  }, 20_000);
+  });
 
   it("declaredPaths / write guard / ship detection are unaffected — an ignored path still fails writablePaths outside the phase's ceiling", async () => {
     // partitionIgnore widens the wave only; it must not act as a second
@@ -2602,7 +2602,7 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
 
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PIG-A"]);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a tick-start snapshot (regression)", () => {
@@ -2664,7 +2664,7 @@ describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a t
     // stale pre-wave snapshot that never saw it. No reintroduced or
     // foreign keys, no lost edits.
     expect(after).toEqual([concurrentKeepB]);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — dispatch reads resolve from the committed tip, not the working tree (spec/pending.md \"Dispatch reads come from the tip, not the tree\")", () => {
@@ -2705,7 +2705,7 @@ describe("Dispatcher — dispatch reads resolve from the committed tip, not the 
     // TIP-A shipped — the working-tree edit that parked it never reached
     // the decide-read, which resolved the committed tip where it's open.
     expect(outcome.result?.shippedTags).toEqual(["TIP-A"]);
-  }, 20_000);
+  });
 
   it("PendingParseFailure still throws when the tip's committed content fails to parse", async () => {
     await commitPendingFile(fx.repo, "{ this is not valid json");
@@ -2787,7 +2787,7 @@ describe("Dispatcher fanout — two consecutive ship waves leave an untouched en
 
     const afterSecond = await readPendingFromDisk(fx.repo);
     expect(afterSecond).toEqual([keep]);
-  }, 20_000);
+  });
 });
 
 // ---------- trunk contract ----------
@@ -2850,7 +2850,7 @@ describe("Trunk contract — HEAD-is-truth, trunkBranch purged", () => {
       await exec("git", ["rev-parse", initBranch], { cwd: fx.repo })
     ).stdout.trim();
     expect(initTipAfter).toBe(initTip);
-  }, 20_000);
+  });
 });
 
 /**
@@ -2912,7 +2912,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
     } finally {
       await rm(container, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   it("no override → worktree lands under join(flumeDir, 'worktrees')", async () => {
     delete process.env.FLUME_WORKTREES_DIR;
@@ -2949,7 +2949,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
     expect(observedCwd).toBe(join(flumeDir, "worktrees", "wt-def"));
     // Teardown cleaned the slug dir under the state root.
     expect(existsSync(join(flumeDir, "worktrees", "wt-def"))).toBe(false);
-  }, 20_000);
+  });
 
   // spec/worktrees.md "Placement — the worktree base and the job namespace":
   // the third input to the same resolution — a chain declaring *how* to
@@ -3017,7 +3017,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
     } finally {
       await rm(container, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   it("FLUME_WORKTREES_DIR outranks a chain-declared base", async () => {
     const container = await mkdtemp(join(tmpdir(), "flume-wt-rank-"));
@@ -3061,7 +3061,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
     } finally {
       await rm(container, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   it("a chain whose worktreesBase returns a relative path is refused, and no tick work happens", async () => {
     delete process.env.FLUME_WORKTREES_DIR;
@@ -3097,7 +3097,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
     expect(outcome.failed).toBe(true);
     expect(outcome.summary).toContain("worktreesBase");
     expect(agentRan).toBe(false);
-  }, 20_000);
+  });
 });
 
 /**
@@ -3174,7 +3174,7 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
     } finally {
       await rm(dock, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 });
 
 describe(
@@ -3269,7 +3269,7 @@ describe("Dispatcher — relocated pendingPath existence probe", () => {
     } finally {
       await rm(dock, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   it("an absent relocated pendingPath still reads as an empty queue, not a refusal", async () => {
     const dock = await mkdtemp(join(tmpdir(), "flume-dock-absent-"));
@@ -3298,7 +3298,7 @@ describe("Dispatcher — relocated pendingPath existence probe", () => {
     } finally {
       await rm(dock, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 });
 
 describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capability vs convention")', () => {
@@ -3344,7 +3344,7 @@ describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capa
       "chain-custom: shipped=SHIP-MSG footprint=",
     );
     expect(captured).toEqual([["SHIP-MSG"], []]);
-  }, 20_000);
+  });
 
   it("omitting commitMessage reproduces today's exact ship-commit text", async () => {
     await writePending(fx.repo, [makeEntry("SHIP-DEFAULT", ["src/a.ts"])]);
@@ -3375,7 +3375,7 @@ describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capa
       { cwd: fx.repo },
     );
     expect(subject.trim()).toBe("chore(flume): ship SHIP-DEFAULT");
-  }, 20_000);
+  });
 
   it("omitting commitMessage reproduces today's exact merge-failure-footprint text", async () => {
     // Same FOOT-STRAY shape as the trunk-footprint regression test above: an
@@ -3424,7 +3424,7 @@ describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capa
     expect(subject.trim()).toBe(
       "chore(flume): record merge-failure footprints for FOOT-DEFAULT",
     );
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree create/teardown", () => {
@@ -3508,7 +3508,7 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
     expect(existsSync(join(fx.repo, ".flume", "worktrees", "race-b"))).toBe(
       false,
     );
-  }, 30_000);
+  });
 });
 
 /**
@@ -3627,7 +3627,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
       await exec("git", ["worktree", "prune"], repoOpts).catch(() => {});
       await exec("git", ["branch", "-D", "flume/orphan"], repoOpts).catch(() => {});
     }
-  }, 20_000);
+  });
 
   it("an unnamespaced instance's sweep does not remove a sibling namespaced job's live worktree directory or branches under a shared FLUME_WORKTREES_DIR", async () => {
     const savedOverride = process.env.FLUME_WORKTREES_DIR;
@@ -3703,7 +3703,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
       await exec("git", ["worktree", "prune"], repoOpts).catch(() => {});
       await exec("git", ["branch", "-D", "flume/beta/sib-tag"], repoOpts).catch(() => {});
     }
-  }, 20_000);
+  });
 
   it("an empty worktree base sweeps silently", async () => {
     // No `.flume/worktrees` dir was ever created — the normal case for a
@@ -3860,7 +3860,7 @@ describe("Dispatcher fanout — pre-tick worktree provisioning failure isolates 
         (w) => w.includes("HELD-ENTRY") && w.includes("provisioning failed"),
       ),
     ).toBe(true);
-  }, 30_000);
+  });
 });
 
 /**
@@ -3938,7 +3938,7 @@ describe("Dispatcher fanout — setupWorktree hook throw isolates one entry (WOR
         (w) => w.includes("FAIL-HOOK") && w.includes("setupWorktree hook failed"),
       ),
     ).toBe(true);
-  }, 30_000);
+  });
 
   it("worktree/extraEnv indices stay aligned to the surviving entries after a sibling's hook failure is spliced out", async () => {
     const entries = [
@@ -4006,7 +4006,7 @@ describe("Dispatcher fanout — setupWorktree hook throw isolates one entry (WOR
       (e) => e.tag,
     );
     expect(pendingTags).toEqual(["ENTRY-B"]);
-  }, 30_000);
+  });
 });
 
 /**
@@ -4089,7 +4089,7 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
     expect(result.shippedTags).not.toContain("FAIL-HOOK");
     expect(result.revertedTags).not.toContain("FAIL-HOOK");
     expect(result.pendingAfter.map((e) => e.tag)).toEqual(["FAIL-HOOK"]);
-  }, 30_000);
+  });
 
   it("its siblings still run, ship, and appear in `entries`", async () => {
     const result = await waveWithFailingHook();
@@ -4113,7 +4113,7 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
       reverted: false,
       mergeOutcome: "merged",
     });
-  }, 30_000);
+  });
 
   it("a singleton whose setupWorktree hook throws carries the same record on the TickResult handoff receives", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -4160,7 +4160,7 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
     expect(outcome.provisionFailures).toEqual(
       handedToHandoff?.provisionFailures,
     );
-  }, 30_000);
+  });
 });
 
 /**
@@ -4229,7 +4229,7 @@ describe("Dispatcher singleton — a worktree-prune throw is recorded, not just 
     // Repo-level: there is no entry to blame on a singleton, so nothing
     // quarantinable rides the record.
     expect(outcome.provisionFailures?.[0]?.tag).toBeUndefined();
-  }, 30_000);
+  });
 
   it("a singleton's worktree-prune failure reaches both the tick result and the outcome envelope", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -4281,7 +4281,7 @@ describe("Dispatcher singleton — a worktree-prune throw is recorded, not just 
     expect(outcome.result?.provisionFailures).toEqual(expected);
     expect(handedToHandoff?.provisionFailures).toEqual(expected);
     expect(outcome.verdict?.provisionFailures).toEqual(expected);
-  }, 30_000);
+  });
 });
 
 /**
@@ -4400,7 +4400,7 @@ describe("Dispatcher fanout — job-scoped branch namespace", () => {
       { cwd: fx.repo },
     );
     expect(branches.trim()).toBe("");
-  }, 20_000);
+  });
 
   it("two state roots with identical tags fan out onto disjoint branches", async () => {
     const dockA = await mkdtemp(join(tmpdir(), "flume-ns-a-"));
@@ -4450,7 +4450,7 @@ describe("Dispatcher fanout — job-scoped branch namespace", () => {
       await rm(dockA, { recursive: true, force: true });
       await rm(dockB, { recursive: true, force: true });
     }
-  }, 30_000);
+  });
 
   it("no namespace → legacy repo-global flume/<slug> (bare .flume harnesses unchanged)", async () => {
     await writePending(fx.repo, [makeEntry("LEGACY-FAN", ["src/legacy-fan.ts"])]);
@@ -4484,7 +4484,7 @@ describe("Dispatcher fanout — job-scoped branch namespace", () => {
 
     expect(outcome.result?.shippedTags).toEqual(["LEGACY-FAN"]);
     expect(observedBranch).toBe("flume/legacy-fan");
-  }, 20_000);
+  });
 });
 
 /**
@@ -4544,7 +4544,7 @@ describe("Dispatcher fanout — job-scoped worktree paths", () => {
     } finally {
       await rm(container, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   it("two namespaces, shared base, identical tag → disjoint paths; neither run rm's the other's live worktree", async () => {
     const container = await mkdtemp(join(tmpdir(), "flume-nspath-shared-"));
@@ -4650,7 +4650,7 @@ describe("Dispatcher fanout — job-scoped worktree paths", () => {
       await rm(dockA, { recursive: true, force: true });
       await rm(dockB, { recursive: true, force: true });
     }
-  }, 30_000);
+  });
 
   it("no namespace → legacy <base>/<slug> (bare .flume harnesses unchanged)", async () => {
     const container = await mkdtemp(join(tmpdir(), "flume-nspath-legacy-"));
@@ -4692,7 +4692,7 @@ describe("Dispatcher fanout — job-scoped worktree paths", () => {
     } finally {
       await rm(container, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entry in pending", () => {
@@ -4813,7 +4813,7 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
       { cwd: fx.repo },
     );
     expect(status.trim()).toBe("");
-  }, 20_000);
+  });
 });
 
 // spec/loop.md "Crash equals stop", "A merge the crash interrupted is refused,
@@ -4919,7 +4919,7 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
       branch: "flume/mark-a",
       baseSha: preHead,
     });
-  }, 30_000);
+  });
 
   it("the merging marker is gone once the ship bookkeeping has landed", async () => {
     const entries = [makeEntry("GONE-A", ["src/gone-a.ts"])];
@@ -4969,7 +4969,7 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
     expect([...(await markersNow(fx.repo)).keys()]).toEqual([]);
     // The queue rewrite is what the removal waits on — and it landed.
     expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
-  }, 30_000);
+  });
 });
 
 /**
@@ -5276,7 +5276,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     expect(failPrompts[1]).toContain("Failing gate: iso-veto");
     expect(failPrompts[1]).toContain("Reverted at: afterMerge");
     expect(failPrompts[1]).toContain("ISO-FAIL-DETAIL-QQQ");
-  }, 30_000);
+  });
 });
 
 // ---------- a gate that throws is a gate that failed (GATE-THROW-IS-A-GATE-
@@ -5353,7 +5353,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     ]);
     // Short-circuit is unchanged: writable-paths never ran.
     expect(reported.some((g) => g.gate === "writable-paths")).toBe(false);
-  }, 20_000);
+  });
 
   it("a gate that throws records its stack as that gate's details", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -5395,7 +5395,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     // The raising frame is this file's gate body, not a dispatcher frame
     // synthesized where the throw was caught.
     expect(details).toContain("Dispatcher.test.ts");
-  }, 20_000);
+  });
 
   it("a gate that throws a non-Error records the value as its message and no details", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -5436,7 +5436,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
       message: "gate runner died, stackless",
     });
     expect(outcome.verdict?.noCommit).toBe("gate-revert");
-  }, 20_000);
+  });
 
   it("a tick whose gate throws writes its verdict instead of dying at the crash marker", async () => {
     await writePending(fx.repo, [makeEntry("THROW-M", ["src/throw-m.ts"])]);
@@ -5496,7 +5496,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     // Nothing is left behind for the next start to refuse over: the wave
     // reached its bookkeeping and retired the marker it staked.
     expect([...(await markersNow(fx.repo)).keys()]).toEqual([]);
-  }, 30_000);
+  });
 
   it("an afterMerge gate that throws reverts the merge as a returned refusal would", async () => {
     await writePending(fx.repo, [makeEntry("THROW-R", ["src/throw-r.ts"])]);
@@ -5571,7 +5571,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     // not the one message line.
     expect(prompts[1]).toContain("Gate details:");
     expect(prompts[1]).toMatch(/\n\s+at /);
-  }, 30_000);
+  });
 
   it("a singleton phase's afterMerge gate that throws reverts the merged commit off trunk", async () => {
     const preHead = await head(fx.repo);
@@ -5607,7 +5607,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     expect(outcome.verdict?.noCommit).toBe("gate-revert");
     expect(await head(fx.repo)).toBe(preHead);
     expect(existsSync(join(fx.repo, "src", "plan-out.ts"))).toBe(false);
-  }, 20_000);
+  });
 });
 
 // ---------- shared-checkout keep-semantics revert (spec/loop.md "Tip
@@ -5691,7 +5691,7 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
     );
     expect(status).toContain("operator-staged.txt");
     expect(status).toContain("operator-unstaged.txt");
-  }, 20_000);
+  });
 
   it("singleton: an afterMerge revert on the trunk leaves an operator's unrelated staged/unstaged edit intact", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -5747,7 +5747,7 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
     );
     expect(status).toContain("operator-staged.txt");
     expect(status).toContain("operator-unstaged.txt");
-  }, 20_000);
+  });
 });
 
 // ---------- bystander checkpoint before the primary-checkout merge stage
@@ -5809,7 +5809,7 @@ describe("Dispatcher — staged bystander state is checkpointed to a recoverable
       { cwd: fx.repo },
     );
     expect(stdout).toBe("bystander content\n");
-  }, 20_000);
+  });
 
   it("singleton: absent when the primary checkout was clean at merge time", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -5931,7 +5931,7 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
         (g) => g.tag === "COLLIDE-BAD" && g.message.includes("stays on trunk"),
       ),
     ).toBe(true);
-  }, 20_000);
+  });
 
   it("singleton: a collision on the tick's own afterMerge revert surfaces as a handled outcome, not an uncaught process crash", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -5985,7 +5985,7 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
     const gf = outcome.verdict?.gateFailures ?? [];
     expect(gf.some((g) => g.message === "collide veto")).toBe(true);
     expect(gf.some((g) => g.message.includes("stays on trunk"))).toBe(true);
-  }, 20_000);
+  });
 });
 
 // ---------- AFTERMERGE-REVERT-TIP-CHECK: a foreign commit landing atop the
@@ -6078,7 +6078,7 @@ describe("Dispatcher — afterMerge revert refuses over a foreign commit landed 
     // foreign trunk tip it actually found.
     expect(tipRefusal?.message).toMatch(/merged commit [0-9a-f]{7,40}/);
     expect(tipRefusal?.message).toContain("trunk tip");
-  }, 20_000);
+  });
 
   it("singleton: same refusal on the phase's own primary-checkout revert", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -6136,7 +6136,7 @@ describe("Dispatcher — afterMerge revert refuses over a foreign commit landed 
     expect(tipRefusal).toBeDefined();
     expect(tipRefusal?.message).toMatch(/merged commit [0-9a-f]{7,40}/);
     expect(tipRefusal?.message).toContain("trunk tip");
-  }, 20_000);
+  });
 });
 
 // ---------- entry-scoped write guard ----------
@@ -6184,7 +6184,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
       "cross-tick\n",
     );
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
-  }, 20_000);
+  });
 
   it("scopeWritesToEntry undeclared: a fanout tick's write allowance is byte-identical to a singleton tick's — writablePaths ceiling only, entry.files ignored", async () => {
     await writePending(fx.repo, [makeEntry("SCOPE-UNDECLARED", ["src/a.ts"])]);
@@ -6230,7 +6230,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
       "stray\n",
     );
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
-  }, 20_000);
+  });
 
   it("reverts a path outside entry scope but inside phase globs; the retry prompt names it", async () => {
     await writePending(fx.repo, [makeEntry("SCOPE-STRAY", ["src/a.ts"])]);
@@ -6332,7 +6332,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     // The in-scope retry ships.
     expect(second.result?.shippedTags).toEqual(["SCOPE-STRAY"]);
     expect(await readFile(join(fx.repo, "src/a.ts"), "utf8")).toBe("clean\n");
-  }, 30_000);
+  });
 
   it("reverts a path inside entry.files but outside phase globs — the ceiling still binds", async () => {
     await writePending(fx.repo, [
@@ -6388,7 +6388,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     expect(record.gate).toBe("writable-paths");
     expect(record.details).toContain("outside/d.ts");
     expect(record.details).toContain("outside phase writablePaths");
-  }, 20_000);
+  });
 
   it("an in-worktree afterCommit gate revert leaves the same trunk footprint an afterMerge revert does", async () => {
     // Same shape as "reverts a path outside entry scope but inside phase
@@ -6476,7 +6476,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     expect(outcome.verdict?.gateFailures).toEqual([
       expect.objectContaining({ tag: "FOOT-STRAY", signature: expect.any(String) }),
     ]);
-  }, 20_000);
+  });
 
   it("an in-worktree afterCommit gate revert derives the footprint from runAfterCommitGates' own gate-loop capture, not a second git show (engineering.md 'the fix lands at the mechanism')", async () => {
     // Same FOOT-STRAY shape as the footprint test above, but pinned on the
@@ -6538,7 +6538,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     // runAfterCommitGates' own gate-loop capture — and reused by the fanout
     // caller's trunk-footprint grab, not re-derived via a second git call.
     expect(diffNameOnlySpy).toHaveBeenCalledTimes(1);
-  }, 20_000);
+  });
 
   it("singleton ticks keep phase-wide scope — undeclared paths inside globs still ship", async () => {
     // Pending declares a different file; a singleton tick is not entry-scoped,
@@ -6575,7 +6575,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
         (g) => g.gate === "writable-paths" && g.ok,
       ),
     ).toBe(true);
-  }, 20_000);
+  });
 });
 
 it("a tick's non-ASCII committed path reaches GateContext.touchedPaths unquoted", async () => {
@@ -6636,7 +6636,7 @@ it("a tick's non-ASCII committed path reaches GateContext.touchedPaths unquoted"
   expect(outcome.result?.committed).toBe(true);
   expect(outcome.result?.gateResults.every((g) => g.ok)).toBe(true);
   expect(existsSync(join(fx.repo, "src", "café.ts"))).toBe(true);
-}, 20_000);
+});
 
 describe("Dispatcher fanout — ship classification is the chain's call, not the engine's (spec/pending.md \"Ship detection trusts the agent's own account\")", () => {
   it("a commit touching no declared file still ships when the phase declares no `shipped` predicate", async () => {
@@ -6688,7 +6688,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
     expect(warnings.some((w) => w.includes("shipped returned false"))).toBe(
       false,
     );
-  }, 20_000);
+  });
 
   it("a normal ship that also touches channels/CHANGELOG is unaffected", async () => {
     await writePending(fx.repo, [makeEntry("NORMAL-SHIP", ["src/ok.ts"])]);
@@ -6734,7 +6734,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
       "context\n",
     );
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
-  }, 20_000);
+  });
 
   it("an agent whose final message says it parked still ships when no predicate is declared — the engine reads no prose (engine-boundary.md \"Told, not inferred\")", async () => {
     // Fails on the pre-fix tree: a retired prose detector matched
@@ -6784,7 +6784,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
 
     expect(outcome.result?.shippedTags).toEqual(["SHIPS-AND-MENTIONS-PARK"]);
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
-  }, 20_000);
+  });
 
   it("an entry the phase's own `shipped` predicate rejects is not classified shipped, even though its commit landed and gates passed", async () => {
     await writePending(fx.repo, [makeEntry("STATED-PARK", ["src/ok.ts"])]);
@@ -6859,7 +6859,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
         (w) => w.includes("STATED-PARK") && w.includes("shipped returned false"),
       ),
     ).toBe(true);
-  }, 20_000);
+  });
 
   it("a wave's second entry's ShipContext.gateResults never carries an earlier sibling's afterMerge results", async () => {
     // Two disjoint entries in one wave, both passing the same afterMerge
@@ -6944,7 +6944,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
         { gate: "record-gate", ok: true, message: "recorded" },
       ]);
     }
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher fanout — empty pickable set", () => {
@@ -7189,7 +7189,7 @@ describe("Dispatcher — the run-scoped quarantine keys the entry as read (QUARA
     expect(secondFailure?.quarantineKey).toMatch(/^rekey-me@[0-9a-f]{10}$/);
     // Slug half unchanged, hash half moved — the key tracks the bytes.
     expect(secondFailure?.quarantineKey).not.toBe(firstFailure?.quarantineKey);
-  }, 30_000);
+  });
 
   it("an entry re-scoped on trunk is pickable again without a relaunch", async () => {
     await writePending(fx.repo, [makeEntry("RESCOPED", ["src/rescoped.ts"])]);
@@ -7262,7 +7262,7 @@ describe("Dispatcher — the run-scoped quarantine keys the entry as read (QUARA
     expect(after.result?.nothingPickable).toBeUndefined();
     expect(after.result?.quarantinedTags).toBeUndefined();
     expect(after.result?.shippedTags).toEqual(["RESCOPED"]);
-  }, 30_000);
+  });
 });
 
 describe("Dispatcher fanout — corrupt pending.json refuses instead of reading as empty (PENDING-PARSE-FAILURE-REFUSES)", () => {
@@ -7358,7 +7358,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // The rewrite never derived `[]` from the corrupted read and overwrote
     // it — the concurrent corruption survives byte-for-byte.
     expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
-  }, 20_000);
+  });
 
   it("LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE: a wave that cherry-picks and gates entries clean, then fails commitPendingUpdate's rewrite read, still writes a tick verdict recording the shipped tags", async () => {
     const entries = [makeEntry("SHIP-A", ["src/a.ts"])];
@@ -7405,7 +7405,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(outcome.verdict?.committed).toBe(true);
     expect(outcome.verdict?.tags).toEqual(["SHIP-A"]);
     expect(outcome.verdict?.phaseName).toBe("build");
-  }, 20_000);
+  });
 
   it("LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE (multi-entry): a wave with one shipped and one declined entry still folds both facts into the verdict when the ledger rewrite fails", async () => {
     const entries = [
@@ -7475,7 +7475,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(outcome.verdict?.tags).toHaveLength(2);
     expect(outcome.verdict?.declined).toBe(true);
     expect(outcome.verdict?.phaseName).toBe("build");
-  }, 20_000);
+  });
 
   it("a ledger-rewrite refusal over a wave that shipped nothing carries the wave's gate-revert cause on its verdict", async () => {
     // The refusal-site verdict reads its no-commit cause through
@@ -7580,7 +7580,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // the refusal preserved, and neither written file reached trunk.
     expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(false);
     expect(existsSync(join(fx.repo, "src", "stray.ts"))).toBe(false);
-  }, 20_000);
+  });
 });
 
 // ---------- foundations governor ----------
@@ -7631,7 +7631,7 @@ describe("Dispatcher fanout — foundations governor skips fork-blocked entries"
     expect(await readPendingFromDisk(fx.repo)).toEqual([
       expect.objectContaining({ tag: "BLOCKED" }),
     ]);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher fanout — all entries fork-blocked", () => {
@@ -7711,7 +7711,7 @@ describe("Dispatcher fanout — gate=requiresCapability", () => {
 
     expect(outcome.result?.shippedTags).toEqual(["GATED"]);
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
-  }, 20_000);
+  });
 
   it("skips an entry gated on a capability the chain does not assert", async () => {
     const entries: PendingEntry[] = [
@@ -7785,7 +7785,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
     expect(await readPendingFromDisk(fx.repo)).toEqual([
       expect.objectContaining({ tag: "ONLY" }),
     ]);
-  }, 20_000);
+  });
 
   it("loadChainModule surfaces a chain.ts forkResolver export → governs selection, overrides the constructor default", async () => {
     // The closure-loader test above proves a ChainModule.forkResolver gates
@@ -7849,7 +7849,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — per-phase agent resolution", () => {
@@ -7971,7 +7971,7 @@ describe("Dispatcher fanout — fork-blocked entry becomes pickable when the pre
     const second = await dispatcher.tick();
     expect(second.result?.shippedTags).toEqual(["GATED"]);
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher fanout — no forkResolver supplied never blocks selection", () => {
@@ -8009,7 +8009,7 @@ describe("Dispatcher fanout — no forkResolver supplied never blocks selection"
 
     expect(outcome.result?.shippedTags).toEqual(["ONLY"]);
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher fanout — forkResolver invoked once per tick with the repo root", () => {
@@ -8056,7 +8056,7 @@ describe("Dispatcher fanout — forkResolver invoked once per tick with the repo
     expect(await readPendingFromDisk(fx.repo)).toEqual([
       expect.objectContaining({ tag: "OPEN" }),
     ]);
-  }, 20_000);
+  });
 });
 
 // ---------- gate-failure feedback to the retrying tick ----------
@@ -8124,7 +8124,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     expect(prompts[1]).toContain("boom-details-XYZ");
     expect(prompts[1]).toContain("second line of details");
     expect(prompts[1]).toContain("boom-msg");
-  }, 20_000);
+  });
 
   it("afterCommit gate-revert whose raw details exceed MAX_PRIOR_DETAILS keeps the failing-test lines AND the closing counts, eliding only the middle (PRIORATTEMPT-GATE-DETAILS-KEEPS-FAILURES)", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -8226,7 +8226,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     expect(record.mode).toBe("gate-revert");
     expect(record.details.length).toBeLessThan(details.length);
     expect(record.details.length).toBeLessThan(9 * 1024);
-  }, 20_000);
+  });
 
   it("afterMerge gate-revert → each reverted fanout entry's next prompt carries the block; first attempt absent", async () => {
     const entries = [
@@ -8293,7 +8293,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
       expect(ps[1]).toContain("Reverted at: afterMerge");
       expect(ps[1]).toContain("merge-details-QQQ");
     }
-  }, 30_000);
+  });
 
   it("clears the prior-attempt slot once a later attempt ships clean", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -8356,7 +8356,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     expect(
       existsSync(join(fx.repo, ".flume", "prior-attempts", "phase", "plan.json")),
     ).toBe(false);
-  }, 20_000);
+  });
 
   // ---------- suspectFlake derivation (spec/chain.md "What a gate
   // returns", spec/loop.md "Prior-outcome feedback") ----------
@@ -8415,7 +8415,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     const record = await readPlanPriorAttempt();
     expect(record.mode).toBe("gate-revert");
     expect(record.suspectFlake).toBe(true);
-  }, 20_000);
+  });
 
   it("gate-revert record: failingFiles overlaps the reverted span's footprint → no suspectFlake marker", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -8455,7 +8455,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     const record = await readPlanPriorAttempt();
     expect(record.mode).toBe("gate-revert");
     expect(record.suspectFlake).toBeUndefined();
-  }, 20_000);
+  });
 
   it("gate-revert record: no failingFiles on the gate result → no suspectFlake marker (today's behavior)", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -8491,7 +8491,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     const record = await readPlanPriorAttempt();
     expect(record.mode).toBe("gate-revert");
     expect(record.suspectFlake).toBeUndefined();
-  }, 20_000);
+  });
 
   // The builtin that now names its violating paths, driven through the real
   // derivation rather than a hand-built gate result: the auto-attached
@@ -8535,7 +8535,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     expect(record.mode).toBe("gate-revert");
     expect(record.gate).toBe("writable-paths");
     expect(record.suspectFlake).toBeUndefined();
-  }, 20_000);
+  });
 });
 
 // ---------- no-commit outcome taxonomy ----------
@@ -8614,7 +8614,7 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     // …and ONLY that variant — not the other two modes' phrasing.
     expect(prompts[1]).not.toContain(CLEAN_EXIT_INTRO);
     expect(prompts[1]).not.toContain(PREEMPT_INTRO);
-  }, 20_000);
+  });
 
   it("a clean exit with no commit is classified clean-exit; the retry prompt quotes its final message verbatim; first attempt empty", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -8685,7 +8685,7 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     // …and ONLY that variant.
     expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
     expect(prompts[1]).not.toContain(PREEMPT_INTRO);
-  }, 20_000);
+  });
 
   it("clean-exit under a stream-json agent: the prior-attempt block quotes the final message legibly, free of NDJSON/cost noise; plain-text path is the test above", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -8841,7 +8841,7 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     expect(retry).not.toContain("cache_read_input_tokens");
     expect(retry).not.toContain("duration_ms");
     expect(retry).not.toContain('\\"text\\"');
-  }, 20_000);
+  });
 
   it("clean-exit under a stream-json agent with no result/assistant event: falls back to the bounded raw transcript, never an empty final message", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -8910,7 +8910,7 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     expect(retry).not.toContain(
       "agent exited cleanly without committing and produced no final message",
     );
-  }, 20_000);
+  });
 
   it("platform-preempt: TickOutcome.noCommit==='platform-preempt'; retry prompt marks it not-a-defect with the failure class; first attempt empty", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -8957,7 +8957,7 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     // …and ONLY that variant.
     expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
     expect(prompts[1]).not.toContain(CLEAN_EXIT_INTRO);
-  }, 20_000);
+  });
 
   it("render-refused: an unresolved inline-exec span aborts the render — the agent is never invoked, and the mode is distinguishable from clean-exit", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -9020,7 +9020,7 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     expect(prompts[0]).not.toContain(GATE_REVERT_INTRO);
     expect(prompts[0]).not.toContain(CLEAN_EXIT_INTRO);
     expect(prompts[0]).not.toContain(PREEMPT_INTRO);
-  }, 20_000);
+  });
 });
 
 // ---------- fanout wave-level noCommit precedence (mixed causes) ----------
@@ -9122,7 +9122,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     expect(outcome.noCommit).toBe("gate-revert");
     expect(outcome.verdict?.noCommit).toBe("gate-revert");
     expect(await readPendingFromDisk(fx.repo)).toHaveLength(4);
-  }, 20_000);
+  });
 
   it("render-refused + platform-preempt + clean-exit, no gate-revert → wave-level noCommit is render-refused", async () => {
     await writePending(fx.repo, [
@@ -9163,7 +9163,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     expect(outcome.noCommit).toBe("render-refused");
     expect(outcome.verdict?.noCommit).toBe("render-refused");
     expect(await readPendingFromDisk(fx.repo)).toHaveLength(3);
-  }, 20_000);
+  });
 
   it("platform-preempt + clean-exit, no gate-revert/render-refused → wave-level noCommit is platform-preempt", async () => {
     await writePending(fx.repo, [
@@ -9200,7 +9200,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     expect(outcome.noCommit).toBe("platform-preempt");
     expect(outcome.verdict?.noCommit).toBe("platform-preempt");
     expect(await readPendingFromDisk(fx.repo)).toHaveLength(2);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — tip verify: commit only onto the tick's starting tip", () => {
@@ -9251,7 +9251,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
       { cwd: fx.repo },
     );
     expect(log.trim().split("\n")).toEqual(["plan: step two", "plan: step one"]);
-  }, 20_000);
+  });
 
   it("singleton: a worktree branch rewritten out from under the agent (base is no longer an ancestor of HEAD) refuses, names both shas, and never touches trunk", async () => {
     // Mirrors the fanout per-entry ancestry-violation shape: the worktree
@@ -9308,7 +9308,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
     expect(parsed.mode).toBe("tip-moved");
     expect(parsed.expectedTip).toBe(recordedBase);
     expect(parsed.observedTip).toBe(observedHead);
-  }, 20_000);
+  });
 
   it("singleton: an unmoved tip commits exactly as before — no tip-moved fact", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -9383,7 +9383,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
     expect(prompts[1]).not.toContain(GATE_REVERT_INTRO);
     expect(prompts[1]).not.toContain(CLEAN_EXIT_INTRO);
     expect(prompts[1]).not.toContain(PREEMPT_INTRO);
-  }, 20_000);
+  });
 
   it("fanout: an entry's worktree commit stacks two commits, both descending from the recorded base — ancestry holds, whole span ships (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", async () => {
     // Pre-fix bug (field report, inbox 2026-08-05): the per-entry leg used
@@ -9456,7 +9456,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
       "build(TEST-A): ship",
       "external: concurrent commit",
     ]);
-  }, 20_000);
+  });
 
   it("fanout: an entry's worktree commit is rewritten out from under the agent (base is no longer an ancestor of HEAD) — refuses, naming both shas, and a fanout wave whose entry fails the per-entry tip verify records exactly one mergeOutcomes entry for that tag (LOOP-TIPVERIFY-PERENTRY-ANCESTRY)", async () => {
     await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
@@ -9539,7 +9539,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
     expect(await readPendingFromDisk(fx.repo)).toEqual([
       makeEntry("TEST-A", ["src/a.ts"]),
     ]);
-  }, 20_000);
+  });
 
   it("fanout: a foreign non-engine commit lands on trunk mid-wave — the cherry-pick absorbs it instead of refusing tipMoved", async () => {
     // spec/loop.md "Tip verify", "Harness-driven commits carry no
@@ -9601,7 +9601,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
     expect(await readFile(join(fx.repo, "src/a.ts"), "utf8")).toBe(
       "from-A\n",
     );
-  }, 20_000);
+  });
 
   it("fanout: a foreign non-engine commit lands before the wave's own pending-ledger commit — commitPendingUpdate recommits the footprint on whatever tip is current", async () => {
     await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
@@ -9664,7 +9664,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
     expect(await readFile(join(fx.repo, "src/interloper.ts"), "utf8")).toBe(
       "external\n",
     );
-  }, 20_000);
+  });
 
   describe("a live foreign tip claim still refuses (spec/loop.md 'Tip verify')", () => {
     async function claimPathFor(repo: string): Promise<string> {
@@ -9726,7 +9726,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
         makeEntry("TEST-A", ["src/a.ts"]),
       ]);
       expect(existsSync(join(fx.repo, "src/a.ts"))).toBe(false);
-    }, 20_000);
+    });
 
     it("refuses only the pending-ledger commit when the claim appears after a clean cherry-pick — shipped work stays shipped", async () => {
       await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
@@ -9786,7 +9786,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
       } finally {
         await rm(claimPath, { force: true });
       }
-    }, 20_000);
+    });
   });
 });
 
@@ -9939,7 +9939,7 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
     } finally {
       await fx2.cleanup();
     }
-  }, 20_000);
+  });
 });
 
 /**
@@ -10144,7 +10144,7 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
       (g) => g.gate === "writable-paths" && !g.ok,
     );
     expect(violation?.details).toContain("outside.txt");
-  }, 60_000);
+  });
 
   it("clearTickVerdict removes the latest record without touching history; no-ops when absent", async () => {
     await writeTickVerdict(join(fx.repo, ".flume"), verdictFixture());
@@ -10443,7 +10443,7 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
       turns: 3,
       outputTokens: 50,
     });
-  }, 20_000);
+  });
 });
 
 describe("Uncommitted tracked edits ride the tick verdict (spec/loop.md 'Tip verify — one writer per branch, absorption at the merge')", () => {
@@ -10523,7 +10523,7 @@ describe("Uncommitted tracked edits ride the tick verdict (spec/loop.md 'Tip ver
     // states, and an absent key would read the same as a read that never ran.
     expect(rows[0]!.uncommittedTracked).toEqual([]);
     expect("uncommittedTracked" in rows[0]!).toBe(true);
-  }, 20_000);
+  });
 
   it("under fanout each entry's leftovers ride that entry's own invocation row", async () => {
     await writePending(fx.repo, [
@@ -10564,7 +10564,7 @@ describe("Uncommitted tracked edits ride the tick verdict (spec/loop.md 'Tip ver
     // launders the entry that actually lost work, and vice versa.
     expect(byTag.get("TEST-A")).toEqual(["src/seed.ts"]);
     expect(byTag.get("TEST-B")).toEqual([]);
-  }, 20_000);
+  });
 });
 
 
@@ -10833,7 +10833,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     expect(JSON.parse(await readFile(derived, "utf8")).mode).toBe(
       "gate-revert",
     );
-  }, 20_000);
+  });
 
   it("priorAttemptPath(flumeDir, phase.name) matches the path the dispatcher itself reads/writes for a singleton phase's record", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -10859,7 +10859,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     const derived = priorAttemptPath(flumeDir, phaseRef("plan"));
     expect(existsSync(derived)).toBe(true);
     expect(derived).toBe(join(flumeDir, "prior-attempts", "phase", "plan.json"));
-  }, 20_000);
+  });
 
   /**
    * None of the five modes below land anything on trunk (afterCommit
@@ -10905,7 +10905,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     expect(record.mode).toBe("gate-revert");
     expect(record.headSha).toBe(preHead);
     expect(new Date(record.at).toISOString()).toBe(record.at);
-  }, 20_000);
+  });
 
   it("clean-exit record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
     const preHead = await head(fx.repo);
@@ -10937,7 +10937,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     expect(record.mode).toBe("clean-exit");
     expect(record.headSha).toBe(preHead);
     expect(new Date(record.at).toISOString()).toBe(record.at);
-  }, 20_000);
+  });
 
   it("platform-preempt record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
     const preHead = await head(fx.repo);
@@ -10969,7 +10969,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     expect(record.mode).toBe("platform-preempt");
     expect(record.headSha).toBe(preHead);
     expect(new Date(record.at).toISOString()).toBe(record.at);
-  }, 20_000);
+  });
 
   it("render-refused record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
     const preHead = await head(fx.repo);
@@ -11006,7 +11006,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     expect(record.mode).toBe("render-refused");
     expect(record.headSha).toBe(preHead);
     expect(new Date(record.at).toISOString()).toBe(record.at);
-  }, 20_000);
+  });
 
   it("tip-moved record carries headSha (pre-tick trunk tip) and a self-consistent ISO at", async () => {
     const preHead = await head(fx.repo);
@@ -11047,7 +11047,7 @@ describe("PriorAttempt anchoring — exported priorAttemptPath/slugify, headSha/
     expect(record.mode).toBe("tip-moved");
     expect(record.headSha).toBe(preHead);
     expect(new Date(record.at).toISOString()).toBe(record.at);
-  }, 20_000);
+  });
 });
 
 describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'No false signal')", () => {
@@ -11143,7 +11143,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
     ) as Record<string, unknown>;
     expect(phaseRecord.mode).toBe("clean-exit");
     expect(phaseRecord.key).toBe("phase");
-  }, 30_000);
+  });
 
   it("a wave clears a prior-attempt record whose entry tag the queue no longer carries", async () => {
     const flumeDir = join(fx.repo, ".flume");
@@ -11160,7 +11160,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
     // The entry still queued keeps its record — the clear is keyed on the
     // queue, not on age.
     expect(existsSync(priorAttemptPath(flumeDir, entryRef("LIVE-ONE")))).toBe(true);
-  }, 30_000);
+  });
 
   it("a wave leaves a phase-keyed prior-attempt record standing", async () => {
     const flumeDir = join(fx.repo, ".flume");
@@ -11199,7 +11199,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
     ) as Record<string, unknown>;
     expect(phaseRecord.key).toBe("phase");
     expect(phaseRecord.mode).toBe("clean-exit");
-  }, 30_000);
+  });
 
   it("the tick verdict reports the prior-attempt keys the wave cleared", async () => {
     const flumeDir = join(fx.repo, ".flume");
@@ -11228,7 +11228,7 @@ describe("PriorAttempt keyspace + the wave's stale-record clear (spec/loop.md 'N
       `entry:${slugify("STALE-B")}`,
     ]);
     expect(existsSync(priorAttemptPath(flumeDir, entryRef("LIVE-ONE")))).toBe(true);
-  }, 30_000);
+  });
 });
 
 describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a hook reads instead of re-deriving (spec/chain.md 'What a hook receives')", () => {
@@ -11304,7 +11304,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(
       capturedPickable!.map((e) => e.tag).sort(),
     );
-  }, 20_000);
+  });
 
   it("TickContext.priorAttempts is keyed by keyspace and identity as the on-disk layout is, and a corrupt record reads as absent", async () => {
     const entries: PendingEntry[] = [makeEntry("SHIPS", ["src/ships.ts"])];
@@ -11362,7 +11362,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     expect(captured!.has(slugify("SHIPS"))).toBe(false);
     expect(captured!.has("entry:corrupt")).toBe(false);
     expect(captured!.size).toBe(1);
-  }, 20_000);
+  });
 
   /**
    * Drop `records` (raw JSON, whatever shape) under the phase keyspace's own
@@ -11422,7 +11422,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     expect(captured.has("phase:un-anchored")).toBe(false);
     expect(captured.has("phase:bad-mode")).toBe(false);
     expect(captured.size).toBe(0);
-  }, 20_000);
+  });
 
   it("a record missing only `at` is refused too — the anchor is both fields", async () => {
     const captured = await priorAttemptsSeenBy({
@@ -11431,7 +11431,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
 
     expect(captured.has("phase:no-at")).toBe(false);
     expect(captured.size).toBe(0);
-  }, 20_000);
+  });
 
   it("an anchored record of each union variant still reads back, so the refusal is not swallowing the map", async () => {
     // `key: "phase"` on every arm, matching the directory the helper writes
@@ -11465,7 +11465,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
       expect(captured.get(`phase:${key}`)).toEqual(rec);
     }
     expect(captured.size).toBe(6);
-  }, 20_000);
+  });
 
 });
 
@@ -11539,7 +11539,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     expect(capturedPickable!.map((e) => e.tag)).toEqual(
       outcome.result?.pickableAfter.map((e) => e.tag),
     );
-  }, 20_000);
+  });
 
   it("a fanout wave with a shipped entry and a clean-exit sibling reports that sibling's mode in entries[] while shippedTags/noCommit stay the existing wave-summary shape", async () => {
     await writePending(fx.repo, [
@@ -11602,7 +11602,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       reverted: false,
       noCommit: "clean-exit",
     });
-  }, 20_000);
+  });
 
   // The two fates below are byte-identical in `committed`/`shipped`/
   // `reverted` — `{ committed: true, shipped: false, reverted: false }` in
@@ -11683,7 +11683,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "PICKS-DIRTY")
         ?.outcome,
     ).toBe("cherry-pick-conflict");
-  }, 20_000);
+  });
 
   it("TickResult.entries reports the merge outcome of an entry the chain declined to ship", async () => {
     await writePending(fx.repo, [makeEntry("PARKED", ["src/parked.ts"])]);
@@ -11726,7 +11726,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     expect(
       outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "PARKED")?.outcome,
     ).toBe("not-shipped");
-  }, 20_000);
+  });
 
   it("a fanout wave reports the shipped entry's payload beside its tag", async () => {
     // A shipped entry leaves the queue, so `pendingAfter`/`pickableAfter` no
@@ -11805,7 +11805,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       per: bailsPer,
       risk: "low",
     });
-  }, 20_000);
+  });
 });
 
 // ---------- plan-tick prose durability ----------
@@ -11923,7 +11923,7 @@ describe("Dispatcher — plan-tick prose durability", () => {
     const second = await dispatcher.tick(); // attempt 1 → ships clean
     expect(second.result?.committed).toBe(true);
     expect(existsSync(snapDir)).toBe(false);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher fanout — render-refused: an unresolved inline-exec span aborts one entry's render", () => {
@@ -11966,7 +11966,7 @@ describe("Dispatcher fanout — render-refused: an unresolved inline-exec span a
     // Never reached cherry-pick/merge — the entry stays pending for a retry
     // once the span is fixed.
     expect(await readPendingFromDisk(fx.repo)).toHaveLength(1);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED)", () => {
@@ -12086,7 +12086,7 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
     expect(singletonMatch![1]).toBe("plan");
     expect(fanoutMatch![1]).toBe("FANOUT-TWIN");
     expect(fanoutMatch![2]).toBe(singletonMatch![2]);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => {
@@ -12368,7 +12368,7 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => 
     expect(outcome.awakeAfter).toEqual(["plan"]);
     expect(baton.isAwake("build")).toBe(false);
     expect(baton.isAwake("plan")).toBe(true);
-  }, 20_000);
+  });
 
   it("fanout: shouldRun is consulted per assigned entry — one entry declines while its sibling ships normally", async () => {
     await writePending(fx.repo, [
@@ -12417,7 +12417,7 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => 
 
     const remaining = await readPendingFromDisk(fx.repo);
     expect(remaining.map((e) => e.tag)).toEqual(["SHOULDRUN-DECLINE"]);
-  }, 20_000);
+  });
 
   it("fanout: shouldRun sees the same TickContext promptArgs sees (assignedEntry)", async () => {
     await writePending(fx.repo, [makeEntry("CTX-CHECK-FANOUT", ["src/a.ts"])]);
@@ -12458,7 +12458,7 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => 
     expect(shouldRunCtx).toBeDefined();
     expect(shouldRunCtx?.assignedEntry?.tag).toBe("CTX-CHECK-FANOUT");
     expect(shouldRunCtx).toBe(promptArgsCtx);
-  }, 20_000);
+  });
 });
 
 // ---------- TickResult carries the no-commit classification ----------
@@ -12508,7 +12508,7 @@ describe("Dispatcher — TickResult.noCommit reaches phase.handoff", () => {
     expect(outcome.noCommit).toBe("clean-exit");
     expect(handoffResults).toHaveLength(1);
     expect(handoffResults[0]?.noCommit).toBe("clean-exit");
-  }, 20_000);
+  });
 
   it("committed tick: the TickResult handed to handoff has no noCommit field", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -12800,7 +12800,7 @@ describe("Dispatcher — chainLoadGate reverts a broken self-edited chain", () =
     expect(gr.some((g) => g.gate === "writable-paths")).toBe(false);
     // Loop survives the bad self-edit — tick() returned normally.
     expect(outcome.hibernated).toBe(false);
-  }, 20_000);
+  });
 });
 
 // The chain-load gate's recovery clause: a chainLoadGate revert is only
@@ -12905,7 +12905,7 @@ describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to
     expect(await readFile(join(fx.repo, ".flume", "chain.ts"), "utf8")).toBe(
       goodChain,
     );
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — ungated chain resolution failure → loud no-work outcome", () => {
@@ -13162,7 +13162,7 @@ describe("Dispatcher — GateContext.repoRoot", () => {
     // afterMerge runs on the trunk after the cherry-pick lands.
     expect(mergeRepoRoot).toBe(fx.repo);
     expect(mergeRepoRoot).toBe(mergeCwd);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — the span base is reported: GateContext.baseSha, TickResult.baseSha, ShipContext.baseSha (SPAN-BASE-SHA-ON-GATE-AND-HOOK, spec/chain.md 'What a gate receives')", () => {
@@ -13251,7 +13251,7 @@ describe("Dispatcher — the span base is reported: GateContext.baseSha, TickRes
     // the branch point is named, the one that predates it is not.
     expect(landedAfterBranch).toEqual(["docs: late note"]);
     expect(claimAtBase).toBe("old\n");
-  }, 20_000);
+  });
 
   it("singleton: an afterCommit gate and an afterMerge gate on the same span both receive the sha the span branched from", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -13305,7 +13305,7 @@ describe("Dispatcher — the span base is reported: GateContext.baseSha, TickRes
     // trunk tip — here they coincide only because nothing else moved trunk.
     expect(commitBase).toBe(branchedFrom);
     expect(mergeBase).toBe(branchedFrom);
-  }, 20_000);
+  });
 
   it("handoff receives baseSha on TickResult under both concurrencies", async () => {
     // Singleton leg.
@@ -13375,7 +13375,7 @@ describe("Dispatcher — the span base is reported: GateContext.baseSha, TickRes
     expect(waveResult?.baseSha).toBe(waveBranchedFrom);
     // Not the post-tick tip: the wave's own commits are inside the range.
     expect(waveResult?.baseSha).not.toBe(await head(fx.repo));
-  }, 30_000);
+  });
 
   it("the shipped hook receives the span base beside the merged sha", async () => {
     await writePending(fx.repo, [makeEntry("BASE-SHIP", ["src/ship.ts"])]);
@@ -13424,7 +13424,7 @@ describe("Dispatcher — the span base is reported: GateContext.baseSha, TickRes
     expect(stdout.trim().split("\n").filter(Boolean)).toEqual([
       "build(BASE-SHIP): ship",
     ]);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — the offset's alphabet (STATE-ROOT-REL-IS-REPORTED-IN-GITS-ALPHABET, spec/chain.md 'What a gate receives')", () => {
@@ -13582,7 +13582,7 @@ describe("Dispatcher — GateContext.stateRootRel (GATE-CONTEXT-STATE-ROOT-REL, 
     } finally {
       await rm(dock, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — TickContext.stateRootRel (TICKCONTEXT-STATE-ROOT-REL, spec/chain.md 'What a hook receives')", () => {
@@ -13658,7 +13658,7 @@ describe("Dispatcher — TickContext.stateRootRel (TICKCONTEXT-STATE-ROOT-REL, s
     // root's parent in a way a hook could invert, and `flumeDir` is absolute.
     expect(buildCtx?.cwd).not.toBe(fx.repo);
     expect(buildCtx?.flumeDir).toBe(flumeDir);
-  }, 30_000);
+  });
 
   it("fanout: TickContext.stateRootRel is undefined when flumeDir is relocated outside repoRoot", async () => {
     const dock = await mkdtemp(join(tmpdir(), "flume-dock-tcsrr-"));
@@ -13710,7 +13710,7 @@ describe("Dispatcher — TickContext.stateRootRel (TICKCONTEXT-STATE-ROOT-REL, s
     } finally {
       await rm(dock, { recursive: true, force: true });
     }
-  }, 30_000);
+  });
 });
 
 describe("Dispatcher — GateContext.configDir rebase (GATECTX-CONFIGDIR-ESCAPE)", () => {
@@ -13932,7 +13932,7 @@ describe("Dispatcher — GateContext.touchedPaths (GATECONTEXT-TOUCHED-PATHS-DED
     expect(outcome.result?.shippedTags).toEqual(["TP-FANOUT"]);
     expect(commitTouched).toEqual(["src/tp.ts"]);
     expect(mergeTouched).toEqual(["src/tp.ts"]);
-  }, 20_000);
+  });
 });
 
 describe("Dispatcher — Chain.friction load-time validation", () => {
@@ -14370,7 +14370,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     expect(
       existsSync(join(fx.repo, ".flume", "worktrees", "friction-a")),
     ).toBe(false);
-  }, 20_000);
+  });
 
   it("a per-file harvest failure logs and continues rather than aborting the wave", async () => {
     await writePending(fx.repo, [makeEntry("FRICTION-B", ["src/friction-b.ts"])]);
@@ -14435,7 +14435,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     expect(
       existsSync(join(primaryFrictionDir, destName)),
     ).toBe(true);
-  }, 20_000);
+  });
 
   it("an unreadable friction dir is logged, not silently swallowed", async () => {
     await writePending(fx.repo, [makeEntry("FRICTION-C", ["src/friction-c.ts"])]);
@@ -14485,7 +14485,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     ).toBe(true);
     // Nothing landed in the primary dir — there was nothing readable to move.
     expect(existsSync(join(fx.repo, ".flume", "friction"))).toBe(false);
-  }, 20_000);
+  });
 
   it("an undeclared chain.friction is a no-op — no primary friction dir is created", async () => {
     await writePending(fx.repo, [makeEntry("FRICTION-D", ["src/friction-d.ts"])]);
@@ -14522,7 +14522,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
 
     expect(outcome.result?.shippedTags).toEqual(["FRICTION-D"]);
     expect(existsSync(join(fx.repo, ".flume", "friction"))).toBe(false);
-  }, 20_000);
+  });
 
   it("a relocated state root has no worktree-local mirror to harvest from — no-op", async () => {
     const dock = await mkdtemp(join(tmpdir(), "flume-dock-friction-"));
@@ -14580,7 +14580,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     } finally {
       await rm(dock, { recursive: true, force: true });
     }
-  }, 20_000);
+  });
 
   it("two harvests for the same tag with the same agent-chosen source filename land as two distinct files, neither overwriting the other", async () => {
     const phase = makePhase({ name: "build", concurrency: "fanout" });
@@ -14678,7 +14678,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     );
     expect(contents).toContain("first attempt's note\n");
     expect(contents).toContain("second attempt's note\n");
-  }, 20_000);
+  });
 
   it("a friction note the tick's own agent commits is harvested zero times, not delivered twice under a stamped name (dispatcher-worktree-harvest-tracked-at-head)", async () => {
     await writePending(fx.repo, [makeEntry("FRICTION-D", ["src/friction-d.ts"])]);
@@ -14768,7 +14768,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     const afterSecond = await readdir(frictionDir);
     expect(afterSecond.sort()).toEqual(afterFirst.sort());
     expect(afterSecond.some((f) => f.startsWith("FRICTION-E--"))).toBe(false);
-  }, 20_000);
+  });
 
   it("a readFileAtRef failure during the tracked-at-HEAD probe is logged and does not abort teardown of the wave's remaining worktrees", async () => {
     await writePending(fx.repo, [
@@ -14877,7 +14877,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     const files = await readdir(frictionDir);
     expect(files.length).toBe(1);
     expect(files[0]).toMatch(/^FRICTION-PROBE-2--/);
-  }, 20_000);
+  });
 });
 
 /**
@@ -14955,7 +14955,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
     expect(note).toContain("boom-details-123");
     expect(note).toContain("build(REVERT-NOTE-A): ship");
     expect(note).toContain("This is the body of the commit.");
-  }, 20_000);
+  });
 
   it("a write-gate revert (entry-scope stray path) carries the offending path list in the note's details", async () => {
     await writePending(fx.repo, [makeEntry("REVERT-NOTE-B", ["src/rnb.ts"])]);
@@ -15013,7 +15013,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
     );
     expect(note).not.toContain("- src/rnb.ts");
     expect(note).toContain("build(REVERT-NOTE-B): overreach");
-  }, 20_000);
+  });
 
   it("an undeclared Chain.friction is a no-op — no note is written on revert", async () => {
     await writePending(fx.repo, [makeEntry("REVERT-NOTE-C", ["src/rnc.ts"])]);
@@ -15057,7 +15057,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
 
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(existsSync(join(fx.repo, ".flume", "friction"))).toBe(false);
-  }, 20_000);
+  });
 
   it("a note-write failure (unwritable friction dir) logs and does not block the revert", async () => {
     await writePending(fx.repo, [makeEntry("REVERT-NOTE-D", ["src/rnd.ts"])]);
@@ -15127,7 +15127,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
           w.includes("revert note write failed"),
       ),
     ).toBe(true);
-  }, 20_000);
+  });
 
   // Runs on every platform: createWorktree derives the fanout
   // worktree directory from a length-bounded name, not the raw tag slug, so
@@ -15135,9 +15135,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
   // path refusal ("fatal: '$GIT_DIR' too big"). The fanoutAgent key below
   // is `worktreeDirName(tag)` — the bounded directory name — not the raw
   // slug the tag would otherwise produce.
-  it(
-    "a gate-revert on the longest tag parsePending accepts writes a revert-note filename within NAME_MAX — the schema's ceiling driven through the real writer (TAG-LENGTH-BOUND-AGREEMENT-PIN)",
-    async () => {
+  it("a gate-revert on the longest tag parsePending accepts writes a revert-note filename within NAME_MAX — the schema's ceiling driven through the real writer (TAG-LENGTH-BOUND-AGREEMENT-PIN)", async () => {
     const tag = "A".repeat(TAG_MAX_LENGTH);
     await writePending(fx.repo, [makeEntry(tag, ["src/tag-len.ts"])]);
     // The real reader accepts the boundary tag — a value one over would
@@ -15196,9 +15194,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
     expect(files.length).toBe(1);
     expect(files[0]!.length).toBeLessThanOrEqual(255);
     expect(files[0]).toContain(tag);
-    },
-    20_000,
-  );
+  });
 
   it("two tags sharing a long common prefix provision distinct worktree directories (WORKTREE-DIRNAME-LENGTH-BOUND)", async () => {
     const prefix = "SHARED-PREFIX-".repeat(10);
@@ -15248,7 +15244,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
     expect(new Set(outcome.result?.shippedTags)).toEqual(
       new Set([tagA, tagB]),
     );
-  }, 20_000);
+  });
 });
 
 // win32 lane: fanout worktree paths nest as deep as job dirs and
@@ -15293,7 +15289,7 @@ describe.runIf(process.platform === "win32")(
         { cwd: fx.repo },
       );
       expect(stdout.trim()).toBe("true");
-    }, 30_000);
+    });
 
     it("writeRevertNote lands the note when the friction dir's own total path exceeds win32's ~260-char limit (WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT)", async () => {
       const tag = "LONGFRICTION-A";
@@ -15357,7 +15353,7 @@ describe.runIf(process.platform === "win32")(
       const files = await readdir(frictionDir);
       expect(files.length).toBe(1);
       expect(files[0]).toContain(tag);
-    }, 20_000);
+    });
 
     it("harvestFriction moves the worktree-local file into the primary dir when the friction channel nests past win32's ~260-char limit (HARVESTFRICTION-WIN32-PATH-TOTAL-LIMIT)", async () => {
       const tag = "LONGFRICTION-B";
@@ -15419,7 +15415,7 @@ describe.runIf(process.platform === "win32")(
       expect(await readFile(join(primaryFrictionDir, files[0]!), "utf8")).toBe(
         "the loop wants owner input\n",
       );
-    }, 20_000);
+    });
 
     it("frictionCountLine resolves a real count when chain.friction nests past win32's ~260-char limit (FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT)", async () => {
       const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-w32-"));
@@ -15444,7 +15440,7 @@ describe.runIf(process.platform === "win32")(
       } finally {
         await rm(stateRoot, { recursive: true, force: true });
       }
-    }, 20_000);
+    });
 
     it("PriorAttemptStore.snapshotReverted lands the snapshot when the reverted commit's own diff path pushes prior-attempts/<key>.reverted/<rel> past win32's ~260-char limit (SNAPSHOTREVERTEDFILES-WIN32-PATH-TOTAL-LIMIT)", async () => {
       // snapshotReverted runs on the singleton afterCommit-revert path
@@ -15513,7 +15509,7 @@ describe.runIf(process.platform === "win32")(
       expect(snapshotPath.length).toBeGreaterThan(260);
       expect(existsSync(snapshotPath)).toBe(true);
       expect(await readFile(snapshotPath, "utf8")).toBe("ok\n");
-    }, 20_000);
+    });
 
     it("PriorAttemptStore.snapshotReverted clears a deep-path stale snapshot before rewriting on a repeat revert under the same key (SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT: repeat revert)", async () => {
       // Same singleton/afterCommit-revert shape as SNAPSHOTREVERTEDFILES-
@@ -15593,7 +15589,7 @@ describe.runIf(process.platform === "win32")(
       expect(await readFile(pathB, "utf8")).toBe("second\n");
       // Attempt 0's stale tree is gone, not merged alongside attempt 1's.
       expect(existsSync(pathA)).toBe(false);
-    }, 20_000);
+    });
 
     it("PriorAttemptStore.clear clears a deep-path stale snapshot on a clean ship without the tick throwing (SNAPSHOTREVERTEDFILES-RM-WIN32-PATH-TOTAL-LIMIT: clean ship)", async () => {
       // PriorAttemptStore.clear's own `rm(snapshotDir(key), ...)` is
@@ -15673,7 +15669,7 @@ describe.runIf(process.platform === "win32")(
       const second = await dispatcher.tick();
       expect(second.result?.committed).toBe(true);
       expect(existsSync(snapDir)).toBe(false);
-    }, 20_000);
+    });
 
     // createWorktree's fanout worktree path is now bounded by
     // worktreeDirName, so a TAG_MAX_LENGTH tag no longer hits git's own
@@ -15771,7 +15767,7 @@ describe.runIf(process.platform === "win32")(
       // PriorAttemptStore.clear removed the deep-path record after the clean
       // ship-and-merge.
       expect(existsSync(priorAttemptPath)).toBe(false);
-    }, 20_000);
+    });
 
     // WORKTREE-WIN32-PATH-TOTAL-LIMIT (fresh create + stale cleanup)
     // retired: operator ruling on a real win32 host found `git worktree
@@ -15908,7 +15904,7 @@ describe.runIf(process.platform === "win32")(
         else process.env.FLUME_WORKTREES_DIR = savedOverride;
         await rm(dock, { recursive: true, force: true });
       }
-    }, 20_000);
+    });
   },
 );
 
@@ -16116,7 +16112,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(record.key).toBe("entry");
     expect(record.keyedAs).toBe(slugify("DECLINED-ONCE"));
     expect(record.headSha).toBe(trunkTip);
-  }, 20_000);
+  });
 
   it("the next tick's `TickContext.priorAttempts` carries it, and a later clean ship clears the slot", async () => {
     await writePending(fx.repo, [
@@ -16197,7 +16193,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(
       existsSync(priorAttemptPath(flumeDir, entryRef("DECLINED-THEN-SHIPS"))),
     ).toBe(false);
-  }, 20_000);
+  });
 
   /**
    * Agreement pin (.claude/rules/engineering.md "A seam gate reads what the
@@ -16265,7 +16261,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(res.ticks).toBe(1);
     expect(res.erroredTicks).toEqual([]);
     expect(loopExitCode(res)).toBe(0);
-  }, 20_000);
+  });
 });
 
 /**
@@ -16362,7 +16358,7 @@ describe("TickVerdict span rows — base beside head", () => {
     expect(await readFile(join(fx.repo, "src", "stray.ts"), "utf8")).toBe(
       "stray\n",
     );
-  }, 20_000);
+  });
 
   it("a singleton tick reverted by an afterCommit gate leaves a span row naming both shas", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -16419,7 +16415,7 @@ describe("TickVerdict span rows — base beside head", () => {
     });
     expect(await readFile(join(fx.repo, "src/plan-a.ts"), "utf8")).toBe("a\n");
     expect(await readFile(join(fx.repo, "outside/b.ts"), "utf8")).toBe("b\n");
-  }, 20_000);
+  });
 });
 
 // `existsSync` collapsed every stat failure to `false`, so a pending.json
@@ -16611,7 +16607,7 @@ describe('phase.promptPath resolves against configDir (spec/chain.md "Chain resi
     expect(outcome.declined).toBeFalsy();
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain("shipped-by-the-package");
-  }, 20_000);
+  });
 
   it("a fanout tick reads an absolute promptPath as the prompt file's address", async () => {
     expect(relative(fx.configDir, shipped).startsWith("..")).toBe(true);
@@ -16646,7 +16642,7 @@ describe('phase.promptPath resolves against configDir (spec/chain.md "Chain resi
     expect(outcome.result?.shippedTags).toEqual(["ADDR-A"]);
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain("shipped-by-the-package");
-  }, 30_000);
+  });
 
   it("a relative promptPath resolves beneath the chain's config directory", async () => {
     // The same basename exists inside the chain and inside the package; a
@@ -16689,7 +16685,7 @@ describe('phase.promptPath resolves against configDir (spec/chain.md "Chain resi
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain("authored-beside-the-chain");
     expect(prompts[0]).not.toContain("shipped-by-the-package");
-  }, 20_000);
+  });
 });
 
 // ---------- a hook that throws (spec/chain.md "What a hook receives")
@@ -16782,7 +16778,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(failures).toContain("promptArgs hook threw");
     expect(failures).toContain(BOOM);
     expect(failures).toContain("Dispatcher.test.ts");
-  }, 20_000);
+  });
 
   it("a throwing shouldRun refuses the tick rather than declining it", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -16836,7 +16832,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect([...records.keys()]).toEqual(["plan"]);
     expect(records.get("plan")!.failures).toContain("shouldRun hook threw");
     expect(records.get("plan")!.failures).toContain(BOOM);
-  }, 20_000);
+  });
 
   it("a declining shouldRun is still a decline, not a refusal", async () => {
     // The other direction of the pin above: the guard added for the throw
@@ -16863,7 +16859,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(outcome.verdict?.declined).toBe(true);
     expect(outcome.noCommit).toBeUndefined();
     expect(await renderRefusedRecords(fx.repo)).toEqual(new Map());
-  }, 20_000);
+  });
 
   it("the fanout copies of both pre-invocation seams answer a throw the same way", async () => {
     // One guard per seam, reached by both concurrencies
@@ -16932,7 +16928,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(records.get("promptargs-throws")!.failures).toContain(
       "promptArgs hook threw",
     );
-  }, 30_000);
+  });
 
   it("the render-refused prior-attempt block does not send a hook-refused retry to fix an inline-exec span", async () => {
     // The agreement case for the block's one shared arm
@@ -17035,7 +17031,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(arm).not.toMatch(/failing span/i);
     expect(arm).not.toMatch(/failing command/i);
     expect(arm).not.toMatch(/fix or remove/i);
-  }, 20_000);
+  });
 
   it("a throwing handoff is logged and the tick's facts stand", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -17085,7 +17081,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(
       warnings.some((w) => w.includes("handoff threw") && w.includes(BOOM)),
     ).toBe(true);
-  }, 20_000);
+  });
 
   it("a throwing shipped leaves the entry pending and names the throw on the verdict", async () => {
     await writePending(fx.repo, [makeEntry("SHIPPED-THROWS", ["src/s.ts"])]);
@@ -17148,7 +17144,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
       await readFile(priorAttemptPath(flumeDir, entryRef("SHIPPED-THROWS")), "utf8"),
     ) as Record<string, unknown>;
     expect(record.mode).toBe("not-shipped");
-  }, 30_000);
+  });
 
   it("a `shipped` predicate that returns false records no throw on the verdict", async () => {
     // The other direction: `threw` is present only when a throw produced the
@@ -17185,7 +17181,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(rows, "the wave recorded no merge outcome").not.toHaveLength(0);
     expect(rows[0]?.outcome).toBe("not-shipped");
     expect(rows[0]?.threw).toBeUndefined();
-  }, 30_000);
+  });
 });
 
 describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, reclaimed by the engine at the gate boundary (API-CHECKOUT-AT-FOR-A-DIFFERENTIAL-GATE, spec/chain.md 'What a gate receives')", () => {
@@ -17299,7 +17295,7 @@ describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, rec
     // And it carries the base's bytes, not the tick's — which is the only
     // reason a differential gate wanted a second tree at all.
     expect(bytesThere).toBe("base\n");
-  }, 30_000);
+  });
 
   it("a namespaced job's checkoutAt plants under the namespace directory the startup sweep reads", async () => {
     // The level matters, not just the base. Under a namespace the startup
@@ -17354,7 +17350,7 @@ describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, rec
     const base = worktreesBase(flumeDirSeen!);
     expect(dirname(planted!)).toBe(join(base, "alpha"));
     expect(dirname(planted!)).not.toBe(base);
-  }, 30_000);
+  });
 
   it("the engine removes a gate's checkout when the gate returns", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -17398,7 +17394,7 @@ describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, rec
     // no longer registers it.
     expect(existsSync(planted!)).toBe(false);
     expect(await registered(planted!)).toBe(false);
-  }, 30_000);
+  });
 
   it("the engine removes a gate's checkout when the gate throws", async () => {
     // The leg a gate's own cleanup is most likely to miss: it crashed
@@ -17446,5 +17442,5 @@ describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, rec
 
     expect(existsSync(planted!)).toBe(false);
     expect(await registered(planted!)).toBe(false);
-  }, 30_000);
+  });
 });

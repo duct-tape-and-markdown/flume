@@ -833,7 +833,7 @@ describe("GateContext — the fields every gate context states", () => {
     expect(await diagnose(ALL)).toBe("");
 
     expect(await diagnose(allBut(TOUCHED))).toContain("touchedPaths");
-  }, 60_000);
+  });
 
   it("GateContext.stateRootRel is required, so a gate context omitting it is a type error", async () => {
     // Same control, and it doubles as the proof that stating the relocated
@@ -842,19 +842,19 @@ describe("GateContext — the fields every gate context states", () => {
     expect(await diagnose(ALL)).toBe("");
 
     expect(await diagnose(allBut(STATE_ROOT))).toContain("stateRootRel");
-  }, 60_000);
+  });
 
   it("GateContext.commitSha is required, so a gate context omitting it is a type error", async () => {
     expect(await diagnose(ALL)).toBe("");
 
     expect(await diagnose(allBut(COMMIT_SHA))).toContain("commitSha");
-  }, 60_000);
+  });
 
   it("GateContext.baseSha is required, so a gate context omitting it is a type error", async () => {
     expect(await diagnose(ALL)).toBe("");
 
     expect(await diagnose(allBut(BASE_SHA))).toContain("baseSha");
-  }, 60_000);
+  });
 });
 
 // ---------- pendingGate ----------

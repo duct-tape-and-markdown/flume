@@ -1362,7 +1362,7 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
     } finally {
       await l.fx.cleanup();
     }
-  }, 30_000);
+  });
 
   it("cascade's plan ladder routes the baton from a TickResult the dispatcher produced", async () => {
     const l = await ladderDrive();
@@ -1457,7 +1457,7 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
     } finally {
       await l.fx.cleanup();
     }
-  }, 30_000);
+  });
 });
 
 /**
@@ -2148,7 +2148,7 @@ describe("backlog-groomer-chain.ts — where the session capture lands", () => {
     } finally {
       await fx.cleanup();
     }
-  }, 30_000);
+  });
 
   it("a relocated flumeDir moves the backlog groomer's session capture with it", async () => {
     const fx = await makeFixture();
@@ -2170,7 +2170,7 @@ describe("backlog-groomer-chain.ts — where the session capture lands", () => {
       rmSync(relocated, { recursive: true, force: true });
       await fx.cleanup();
     }
-  }, 30_000);
+  });
 });
 
 /**

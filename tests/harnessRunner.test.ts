@@ -282,7 +282,7 @@ describe("the vitest runner", () => {
     api = apiWithInstaller(link);
     ctx = contextFrom(api);
     runner = vitestRunner()(ctx);
-  }, 60_000);
+  });
 
   afterAll(async () => {
     if (fixture) await rm(fixture, { recursive: true, force: true });
@@ -307,7 +307,7 @@ describe("the vitest runner", () => {
       },
       { name: "a behavior nobody titled", carried: false, files: [] },
     ]);
-  }, 120_000);
+  });
 
   it("lays the merged bytes over a detached base checkout and runs the same names there", async () => {
     const r = await inGateScope(() =>
@@ -347,7 +347,7 @@ describe("the vitest runner", () => {
     // whether the gate ruled or threw, so the worktree base holds no
     // residue of it.
     expect(await checkoutsOf(fixture)).toEqual([]);
-  }, 180_000);
+  });
 
   it("the judge proves a named line over the real vitest runner's merged-tree and base reports", async () => {
     const test = "carries the merged widget";
@@ -380,7 +380,7 @@ describe("the vitest runner", () => {
     // The base checkout is gone with the gate that drove the ruling, as it
     // is with a bare run.
     expect(await checkoutsOf(fixture)).toEqual([]);
-  }, 240_000);
+  });
 
   it("the judge reports green-on-base for a line the real vitest runner already carries at the base", async () => {
     // The fixture's second name passes wherever its file is laid down, so the
@@ -408,7 +408,7 @@ describe("the vitest runner", () => {
     ]);
     expect(verdict.message).toContain(line);
     expect(verdict.message).toContain(baseSha.slice(0, 7));
-  }, 240_000);
+  });
 
   it("the vitest runner factory places its base checkout under the state root's worktree base", async () => {
     const { checkouts, result } = await recordedBaseRun();
@@ -426,7 +426,7 @@ describe("the vitest runner", () => {
     // Nothing of it survives the run; what a killed run would leave sits
     // where the engine's stale-worktree sweep reads.
     expect(existsSync(checkouts[0]!)).toBe(false);
-  }, 180_000);
+  });
 
   it("runAtBase takes its base checkout from the engine's api rather than adding a worktree", async () => {
     // A base the runner has no way to compute: not the state root's default,
@@ -462,7 +462,7 @@ describe("the vitest runner", () => {
     // And reclaimed by the engine when the scope closed, not by the runner.
     expect(existsSync(standing[0]!)).toBe(false);
     expect(await checkoutsOf(fixture)).toEqual([]);
-  }, 180_000);
+  });
 
   it.runIf(process.platform !== "win32")("the vitest runner provisions a base checkout through the declared setup", async () => {
     const installs: string[] = [];
@@ -503,7 +503,7 @@ describe("the vitest runner", () => {
     // was handed would provision the base one way while this consumer's
     // build worktrees are provisioned another.
     expect(installs).toEqual([]);
-  }, 180_000);
+  });
 
   it("a consumer declaring no setup provisions a base checkout with the installer at the root", async () => {
     const { checkouts, result } = await recordedBaseRun();
@@ -525,7 +525,7 @@ describe("the vitest runner", () => {
       carried: true,
       files: ["tests/widget.test.ts"],
     });
-  }, 180_000);
+  });
 
   it("reports its lanes and the files each excludes", () => {
     const declared: Lane[] = [
@@ -561,7 +561,7 @@ describe("the vitest runner", () => {
     await expect(
       runner.runAtBase(["x"], ["tests/absent.test.ts"], baseSha, fixture),
     ).rejects.toThrow(/tests\/absent\.test\.ts is not in the tree/);
-  }, 60_000);
+  });
 
   it("refuses a run that produced no report rather than reading one as empty", async () => {
     const silent = vitestRunner({

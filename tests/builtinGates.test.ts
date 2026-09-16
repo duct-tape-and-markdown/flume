@@ -612,7 +612,7 @@ describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, e
     expect(pendingResults[0]?.details ?? "").toContain("spec/loop.md");
     // The gate's verdict is the tick's: the entry never shipped.
     expect(outcome.result?.shippedTags).toEqual([]);
-  }, 20_000);
+  });
 });
 
 describe("tscGate / vitestGate / eslintGate — pnpm cmd override (BUILTINGATES-PNPM-HARDCODED-NO-OVERRIDE)", () => {
@@ -1114,5 +1114,5 @@ describe("writablePathsGate — the fence seam, both sides real", () => {
 
     // The fence gate's verdict is the tick's: nothing shipped.
     expect(outcome.result?.shippedTags).toEqual([]);
-  }, 30_000);
+  });
 });
