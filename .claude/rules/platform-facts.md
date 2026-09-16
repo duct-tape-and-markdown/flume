@@ -102,8 +102,11 @@ Through node 22 it does not answer at all on win32: it lstats the root it
 splits off its argument before walking, reads `\\?\C:\…`'s leading `\\` as a
 UNC root, hands that root to the binding unstripped, and throws on every
 namespaced drive path. Node 24 strips the prefix for that one probe; it is not
-backported, and `engines` admits 22. So a namespaced path goes to
-`realpathSync.native`, never the JS form.
+backported, and `engines` admits 22. The callback `fs.realpath` is the same
+JS walk with the same root probe, handing the error to its callback instead of
+throwing it. `realpathSync.native`, `realpath.native`, and
+`fs.promises.realpath` are the native binding, no root split, prefix stripped.
+So a namespaced path goes to a native form, never a JS one.
 
 A namespaced answer that is **compared** rather than handed back to an fs call
 is folded out of the namespaced alphabet first — `plainPath` (`src/paths.ts`)

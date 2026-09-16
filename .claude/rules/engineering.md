@@ -51,6 +51,10 @@ Every check lives at the most deterministic layer that can express it — a
   sentence — is not prose: a pin may resolve it against the declarations
   those trees hold and the working tree — the token, never its meaning — so
   a deleted symbol or a renamed page cannot leave its citations standing.
+  An identifier the citation pairs with a path, `` `name` (`src/file.ts`) ``,
+  resolves in that file: where a declaration lives is the token's fact, not
+  its meaning, and a split that moves the job moves the pair or is caught.
+  A path named on its own is context, and no pair is read into it.
   A test's title carries the page-name arm alone: a title is a string
   literal, and a literal is itself a resolution arm, so an identifier in a
   title would resolve itself; only the `*.md` name, read against the working
