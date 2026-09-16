@@ -108,6 +108,71 @@
     "notes": "Ruled 2026-09-15, rule landed at ea26ffe. 17 unresolved titles, not the record's 14: `engineering.md` x8, `engine-boundary.md` x4, `platform-facts.md` x2, plus `state.md/open-questions.md` (Dispatcher, stale since state.json), `SHIPPED.md` (examples, a runtime artifact no checkout holds), `PROTOCOL.md` (harnessInit). The repo pin is green at base by construction, so it needs its own non-vacuity assertion — titles scanned > 0. One stale span, PendingSchema, same pass."
   },
   {
+    "tag": "A-SPAWNING-SITE-TAKES-THE-FILES-BUDGET",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/spawnBudget.ts",
+          "description": "the per-site arm: a registrar's own numeric timeout beside the file-scope declaration"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the arm's fixture case and the repo-wide verdict"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "its 202 registrar literals go; the file's declaration is the ceiling"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "its 20 registrar literals go"
+        },
+        {
+          "path": "tests/worktrees.test.ts",
+          "description": "its 7 registrar literals go"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "its 4 registrar literals go"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "its 4 registrar literals go"
+        },
+        {
+          "path": "tests/harnessRunner.test.ts",
+          "description": "its three at-or-below literals go; the two above the declaration stay, cited at the site"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "its 2 registrar literals go"
+        },
+        {
+          "path": "tests/cliJobResolution.test.ts",
+          "description": "its 1 registrar literal goes"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "243 registrar timeout literals across eight default-lane files sit at or under the budget their file declares, and the per-file scan judges none of them",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "the scan judges a registrar's own timeout argument beside the file-scope one — a named harness budget passes, a literal at or below the file's declaration is a finding — and the 243 literals are gone, so a case cannot ship a ceiling tighter than the lane's without reddening. A literal above the declaration is left standing and cited at its site; the widening direction is the parked question's.",
+    "tests": [
+      "the spawn scan reports a numeric timeout literal on a spawning registrar",
+      "no spawning site in the default lane restates or narrows the budget its file declares"
+    ],
+    "pins": [],
+    "notes": "Left by THE-SPAWN-BUDGET-IS-DECLARED-PER-FILE: the judged unit moved to the file and `SpawnSite.budget` went with it, so these went unseen. Dispatcher 202 (20_000 x165, 30_000 x36, 60_000), job 20, worktrees 7, Gate 4, examples 4, harnessRunner 3, builtinGates 2, cliJobResolution 1 — all at or under the 120_000 each of the eight declares. harnessRunner's 180_000/240_000 are the open question's. Integration lane declares no budget at all: out of scope."
+  },
+  {
     "tag": "DISPATCHER-HOMES-ITS-FIVE-FRONT-JOBS",
     "gate": {
       "kind": "open"
