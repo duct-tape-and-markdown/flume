@@ -5,15 +5,21 @@
  *
  * One declared command carries all three operations. It runs once per
  * operation, in the tree under judgment, with the named lines as its
- * arguments, and says what it found on stdout: one **verdict line** per name.
- * Exit status is not the verdict; the lines are. A validator that exits
- * non-zero because something it checked is wrong has still answered every
- * name it was asked about, and a judge reading the status instead would rule
- * on a fact nobody stated (`.claude/rules/engine-boundary.md`, *Told, not
- * inferred*).
+ * arguments, and writes its report to stdout. Exit status is not the verdict;
+ * the report is. A validator that exits non-zero because something it checked
+ * is wrong has still answered every name it was asked about, and a judge
+ * reading the status instead would rule on a fact nobody stated
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
  *
- * The encoding is declared here because the spec fixes the line's *fields* —
- * the name, whether a passing check carried it, and the file that did — and
+ * What that report *says* is the consumer's, so {@link ScriptRunnerOptions}
+ * carries a reader over the command's whole stdout. A validator that already
+ * emits one document — a JSON summary whose clean run omits its drift key —
+ * declares a function over that document and ships no wrapper script; the
+ * reader is the package's, never a second program beside the first.
+ *
+ * Absent one, {@link readVerdictLines} is the default, and the encoding it
+ * reads is declared here because the spec fixes the line's *fields* — the
+ * name, whether a passing check carried it, and the file that did — and
  * leaves their spelling to whatever ships them. It is tab-separated, one line
  * per name, each line led by a marker so a validator's own output can share
  * the stream:
@@ -34,9 +40,12 @@
  *   above; a malformed one is refused rather than skipped, since skipping it
  *   would report the name as uncarried and pin a runner's defect on build.
  *
- * A verdict set that does not answer exactly the names it was asked about —
+ * Whichever reader ran, the answers it returns are reconciled against the
+ * names that were asked about: a set that does not answer exactly those —
  * one missing, one twice, one nobody asked for — is refused at the point of
- * detection (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * detection (`.claude/rules/engineering.md`, *Loud or nothing*). That is the
+ * runner interface's own guarantee rather than an encoding's, so a declared
+ * reader inherits it instead of restating it.
  */
 
 import { isAbsolute, resolve, sep } from "node:path";
@@ -61,46 +70,39 @@ const MARKER = "flume";
 const PASS = "pass";
 const FAIL = "fail";
 
-export interface ScriptRunnerOptions {
+/** What one run of the declared command produced, and what was asked of it. */
+export interface ScriptReport {
+  /** Everything the command wrote to stdout, verbatim. */
+  readonly stdout: string;
   /**
-   * The command to spawn, once per operation, in the tree under judgment.
-   *
-   * Resolved the way a shell resolves one: a command carrying a path
-   * separator is the tree's own and is resolved against the tree the
-   * operation runs in — so a base run drives the base tree's copy of the
-   * validator, not the caller's — while a bare name is found on `PATH`. A
-   * relative command left to the platform resolves against the parent's
-   * working directory on some hosts and the child's on others, which is a
-   * base run judging the wrong tree with nothing to show for it.
+   * The names it was handed, in the order they were requested. A reader over
+   * a document answers these — the document states what the validator found,
+   * and which of it answers which name is the reader's to say.
    */
-  command: string;
+  readonly names: readonly string[];
   /**
-   * The arguments the command takes ahead of the named lines. The same in
-   * every operation: the tree under judgment differs between them, never the
-   * question asked.
+   * The tree the run happened in — the caller's for `run`, the base checkout
+   * for `runAtBase`. A reader's own refusal names it, so a message says which
+   * run produced the report it choked on.
    */
-  args?: readonly string[];
-  /**
-   * The consumer's lanes. Defaults to the single unsplit lane; a consumer
-   * whose validator splits — a fast check and a slow one — declares both
-   * here, and the running lane's exclusions are rendered into plan's
-   * `tests[]` and `pins[]` hints (`spec/harness.md`, *The runner interface*).
-   */
-  lanes?: readonly Lane[];
+  readonly cwd: string;
 }
 
-/** One verdict line, decoded. */
-interface Verdict {
-  readonly name: string;
-  readonly carried: boolean;
-  readonly files: readonly string[];
-}
+/**
+ * How a consumer's validator says what it found: one answer per name it was
+ * asked about, in any order, refused by the runner if the set is not exactly
+ * that.
+ *
+ * A file named on a carried answer is run-relative and forward-slashed — the
+ * file a base run lays over the base tree.
+ */
+export type ScriptReader = (report: ScriptReport) => readonly NamedResult[];
 
 /**
  * Decode one marked line, or throw naming what it said. `where` is the tree
  * the line came from, so a refusal says which run produced it.
  */
-function readLine(line: string, where: string): Verdict {
+function readLine(line: string, where: string): NamedResult {
   const [, verdict, file, ...rest] = line.split("\t");
   const quoted = JSON.stringify(line);
   if (rest.length === 0) {
@@ -142,58 +144,116 @@ function readLine(line: string, where: string): Verdict {
 }
 
 /**
+ * The default reader: one verdict line per name, in the encoding this
+ * module's header states, with every unmarked line passed over as the
+ * validator's own output.
+ *
+ * It reads only the lines, never the names it was handed: which names were
+ * asked about is the reconciliation's question, and answering it twice is how
+ * two refusals drift apart.
+ */
+const readVerdictLines: ScriptReader = ({ stdout, cwd }) =>
+  stdout
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith(MARKER + "\t"))
+    .map((line) => readLine(line, cwd));
+
+/**
  * One answer per requested name, in the order they were requested.
  *
- * The three ways a verdict set can fail to be one — a name unanswered, a name
- * answered twice, an answer nobody asked for — are each refused here. Reading
- * a missing answer as "no check carried it" would turn a validator's defect
- * into a refusal build cannot act on, and an unrequested name means the
- * command and the request disagree about what was asked.
+ * The three ways an answer set can fail to be one — a name unanswered, a name
+ * answered twice, an answer nobody asked for — are each refused here, for
+ * whichever reader produced it. Reading a missing answer as "no check carried
+ * it" would turn a validator's defect into a refusal build cannot act on, and
+ * an unrequested name means the report and the request disagree about what
+ * was asked.
  */
-function readRun(output: string, names: readonly string[], where: string): NamedResult[] {
-  const seen = new Map<string, Verdict>();
-  for (const line of output.split(/\r?\n/)) {
-    if (!line.startsWith(MARKER + "\t")) continue;
-    const verdict = readLine(line, where);
-    if (seen.has(verdict.name)) {
+function answersFor(
+  read: readonly NamedResult[],
+  names: readonly string[],
+  where: string,
+): NamedResult[] {
+  const lead = `scriptRunner: reading the command's report from ${where}`;
+  const seen = new Map<string, NamedResult>();
+  for (const answer of read) {
+    if (seen.has(answer.name)) {
       throw new Error(
-        `scriptRunner: the command in ${where} wrote two verdict lines for ` +
-          `${JSON.stringify(verdict.name)}. One line per name; which one holds cannot be guessed.`,
+        `${lead} answered ${JSON.stringify(answer.name)} twice. One answer per name; ` +
+          `which one holds cannot be guessed.`,
       );
     }
-    seen.set(verdict.name, verdict);
+    seen.set(answer.name, answer);
   }
 
   const asked = new Set(names);
   const extra = [...seen.keys()].filter((name) => !asked.has(name));
   if (extra.length > 0) {
     throw new Error(
-      `scriptRunner: the command in ${where} wrote verdict lines for ` +
-        `${extra.length} name(s) nobody asked about: ${extra.map((n) => JSON.stringify(n)).join(", ")}. ` +
+      `${lead} answered ${extra.length} name(s) nobody asked about: ` +
+        `${extra.map((n) => JSON.stringify(n)).join(", ")}. ` +
         `The names it was handed are its arguments.`,
     );
   }
   const missing = names.filter((name) => !seen.has(name));
   if (missing.length > 0) {
     throw new Error(
-      `scriptRunner: the command in ${where} wrote no verdict line for ` +
-        `${missing.length} of ${names.length} name(s): ${missing.map((n) => JSON.stringify(n)).join(", ")}. ` +
-        `A name with no line is not a name nothing carried.`,
+      `${lead} answered nothing for ${missing.length} of ${names.length} name(s): ` +
+        `${missing.map((n) => JSON.stringify(n)).join(", ")}. ` +
+        `A name with no answer is not a name nothing carried.`,
     );
   }
   return names.map((name) => seen.get(name)!);
 }
 
+/** What a consumer declares to {@link scriptRunner}. */
+export interface ScriptRunnerOptions {
+  /**
+   * The command to spawn, once per operation, in the tree under judgment.
+   *
+   * Resolved the way a shell resolves one: a command carrying a path
+   * separator is the tree's own and is resolved against the tree the
+   * operation runs in — so a base run drives the base tree's copy of the
+   * validator, not the caller's — while a bare name is found on `PATH`. A
+   * relative command left to the platform resolves against the parent's
+   * working directory on some hosts and the child's on others, which is a
+   * base run judging the wrong tree with nothing to show for it.
+   */
+  command: string;
+  /**
+   * The arguments the command takes ahead of the named lines. The same in
+   * every operation: the tree under judgment differs between them, never the
+   * question asked.
+   */
+  args?: readonly string[];
+  /**
+   * How the command's stdout answers the names it was handed. Defaults to
+   * {@link readVerdictLines}, the line encoding this module's header states.
+   *
+   * A validator that already reports one document declares a function over
+   * that document here — the whole of stdout, parsed however it is written —
+   * rather than a script that reprints it as lines. What the reader hands
+   * back is reconciled against the requested names either way.
+   */
+  read?: ScriptReader;
+  /**
+   * The consumer's lanes. Defaults to the single unsplit lane; a consumer
+   * whose validator splits — a fast check and a slow one — declares both
+   * here, and the running lane's exclusions are rendered into plan's
+   * `tests[]` and `pins[]` hints (`spec/harness.md`, *The runner interface*).
+   */
+  lanes?: readonly Lane[];
+}
+
 /**
- * What one complete verdict set reports.
+ * What one complete answer set reports.
  *
  * `passed` counts the names a passing check carried — the judge's vacuity
- * check, and the only count these lines carry. `failed` is zero and
+ * check, and the only count these answers carry. `failed` is zero and
  * `failures` empty for the same reason: a name nothing carried is reported as
  * `carried: false`, which is the judge's `unnamed`, while a check that failed
- * over something no name asked about is not a fact the encoding states. And
- * `ok` is true wherever this is reached at all — an incomplete or malformed
- * set threw before it, and the exit status was never the verdict.
+ * over something no name asked about is not a fact a reader is asked to
+ * state. And `ok` is true wherever this is reached at all — an incomplete or
+ * malformed set threw before it, and the exit status was never the verdict.
  */
 const reportOf = (names: readonly NamedResult[]): RunResult => ({
   ok: true,
@@ -204,8 +264,9 @@ const reportOf = (names: readonly NamedResult[]): RunResult => ({
 });
 
 /**
- * Declare the script runner: a consumer whose proof is a validator writes the
- * verdict lines from its own tool and declares the command that prints them.
+ * Declare the script runner: a consumer whose proof is a validator declares
+ * the command that reports what it found, and the reader that turns that
+ * report into an answer per name.
  *
  * Returns the factory, not the runner, for the reason every runner is
  * declared as one (`runner.ts`, {@link RunnerFactory}): a base run needs the
@@ -215,6 +276,7 @@ const reportOf = (names: readonly NamedResult[]): RunResult => ({
 export function scriptRunner(options: ScriptRunnerOptions): RunnerFactory {
   const lanes = resolveLanes("scriptRunner", options.lanes);
   const args = options.args ?? [];
+  const read = options.read ?? readVerdictLines;
   /** Whether the command names a file rather than something on `PATH`. */
   const pathed = options.command.includes("/") || options.command.includes(sep);
   /** The command as the tree under judgment spells it. */
@@ -222,8 +284,8 @@ export function scriptRunner(options: ScriptRunnerOptions): RunnerFactory {
     pathed && !isAbsolute(options.command) ? resolve(tree, options.command) : options.command;
 
   const runIn = async (tree: string, names: readonly string[]): Promise<RunResult> => {
-    const output = await captureRun(commandIn(tree), [...args, ...names], tree);
-    return reportOf(readRun(output, names, tree));
+    const stdout = await captureRun(commandIn(tree), [...args, ...names], tree);
+    return reportOf(answersFor(read({ stdout, names, cwd: tree }), names, tree));
   };
 
   return ({ api, provision }: RunnerContext): Runner => ({

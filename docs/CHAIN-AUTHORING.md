@@ -191,10 +191,16 @@ declaration and nothing further. A vitest suite declares
 `runner: vitestRunner()`. A consumer whose proof is a validator it can run as
 one command declares `runner: scriptRunner({ command })`: the package runs
 that command once per operation in the tree under judgment with the named
-lines as its arguments, and reads one verdict line per name off its stdout —
-the name, whether a passing check carried it, and the file that did. Exit
-status is not the verdict; the lines are. What a verdict line looks like is
-on `scriptRunner`'s own hover text, which is where it is spelled.
+lines as its arguments, and reads its report off stdout. Exit status is not
+the verdict; the report is. Undeclared, the reader takes one verdict line per
+name — the name, whether a passing check carried it, and the file that did;
+what such a line looks like is on `scriptRunner`'s own hover text, which is
+where it is spelled. A validator that already writes one document declares
+`read` beside the command — a function over the whole of that stdout,
+answering the names it was handed — and ships no wrapper script for the
+package to run instead. Either way the answers are reconciled against the
+requested names: one missing, one twice, or one nobody asked about is refused
+rather than read as a name nothing carried.
 
 Anything else — cargo, dotnet, a tool that answers to no such command —
 authors a `RunnerFactory`: `(ctx) => Runner`, called once at chain load, over
@@ -206,8 +212,8 @@ they return.
   carried it and in which files, and per failure the file it was attributed to.
   A tool that cannot name tests and attribute failures machine-readably needs
   an adapter written before it can be declared at all — and where that adapter
-  can be one command printing verdict lines, `scriptRunner()` is it, already
-  written.
+  can be one command plus a function over what it prints, `scriptRunner()` is
+  it, already written.
 - `runAtBase` lays the working-tree bytes of the judged files over a detached
   checkout of a base sha and runs the same names there — a provisioned
   checkout, and in a compiled language a build, per judged entry. That
@@ -219,7 +225,7 @@ they return.
 `TestFailure` and `Lane` are exported from `@dtmd/flume/harness`, and
 `vitestRunner()` and `scriptRunner()` are two working implementations of
 `Runner` to read against — one over a tool's report, one over a command's
-stdout.
+stdout, whose `ScriptReader` and `ScriptReport` are exported beside them.
 `runner` is a required field, so there is no adopting now and porting the
 runner later.
 

@@ -42,6 +42,8 @@ import {
   type RunResult,
   type Runner,
   type RunnerContext,
+  type ScriptReader,
+  type ScriptReport,
 } from "../harness/index.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import { worktreesBase } from "../src/paths.ts";
@@ -623,6 +625,41 @@ process.exit(failed === 0 ? 0 : 1);
 `;
 
 /**
+ * A second validator, deciding exactly what the first one does and reporting
+ * it the way most validators already do: one JSON document on stdout, no
+ * verdict line anywhere in it.
+ *
+ * Its clean run omits the `drift` key rather than writing an empty list,
+ * which is the shape a declared reader is priced against — the fact "nothing
+ * drifted" is carried by the key's absence, so a reader that only looked up
+ * names in it would answer nothing at all.
+ *
+ * A real program, for the reason the line validator above is one: the reader
+ * under test is the half of a seam whose other half is a validator's output,
+ * and a document written by the tester's hand would re-author it
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+const SUMMARY = `import { readFileSync } from "node:fs";
+
+const names = process.argv.slice(2);
+const declared = readFileSync("checks/widget.checks", "utf8").split("\\n").filter(Boolean);
+const source = readFileSync("src/widget.ts", "utf8");
+
+const drift = names.filter(
+  (name) => !declared.includes(name) || !source.includes(name.split(" ").pop()),
+);
+const report = {
+  tree: process.cwd(),
+  checks: declared.map((name) => ({ name, file: "checks/widget.checks" })),
+};
+if (drift.length > 0) report.drift = drift;
+
+process.stdout.write(JSON.stringify(report) + "\\n");
+process.exit(drift.length === 0 ? 0 : 1);
+`;
+
+/**
  * A second validator, committed at the base and changed in the working tree,
  * whose whole verdict is which copy of itself ran. Declared by a path rather
  * than by an absolute one, it is how the tree under judgment's own copy is
@@ -680,6 +717,7 @@ describe("the script runner", () => {
 
     await put(fixture, "package.json", `{ "name": "fixture", "private": true, "type": "module" }\n`);
     await put(fixture, "checks/run.mjs", VALIDATOR);
+    await put(fixture, "checks/summary.mjs", SUMMARY);
     await put(fixture, "checks/verdict.sh", verdictScript("pass"));
     await chmod(join(fixture, "checks/verdict.sh"), 0o755);
     // The base declares a check nobody asks about: a name carried at the base
@@ -755,7 +793,9 @@ describe("the script runner", () => {
     }
   });
 
-  it("reads one verdict line per name from the command's stdout", async () => {
+  it("an undeclared reader takes one verdict line per name from stdout", async () => {
+    // `runner` declares a command and no reader, so what reads this stdout is
+    // the default the package ships.
     const r = await runner.run([CARRIED, MERGED_ONLY, UNLISTED], fixture);
 
     // Vacuity: the verdict set is read off a validator that carried something.
@@ -769,6 +809,88 @@ describe("the script runner", () => {
       { name: MERGED_ONLY, carried: true, files: ["checks/widget.checks"] },
       { name: UNLISTED, carried: false, files: [] },
     ]);
+  });
+
+  it("a declared reader turns a validator's one JSON document into a verdict per name", async () => {
+    /** What the validator's document says, as the reader below reads it. */
+    interface Summary {
+      readonly tree: string;
+      readonly checks: readonly { readonly name: string; readonly file: string }[];
+      /** Absent on a clean run — nothing drifted is said by not saying it. */
+      readonly drift?: readonly string[];
+    }
+
+    /** Every report the reader was handed, in the order the runs happened. */
+    const seen: ScriptReport[] = [];
+    const read: ScriptReader = (report) => {
+      seen.push(report);
+      const doc = JSON.parse(report.stdout) as Summary;
+      const drifted = new Set(doc.drift ?? []);
+      return report.names.map((name) => {
+        const check = doc.checks.find((c) => c.name === name);
+        return check !== undefined && !drifted.has(name)
+          ? { name, carried: true, files: [check.file] }
+          : { name, carried: false, files: [] };
+      });
+    };
+
+    const summaryArgs = [join(fixture, "checks", "summary.mjs")];
+    const declared = scriptRunner({
+      command: process.execPath,
+      args: summaryArgs,
+      read,
+    })(ctx);
+
+    const clean = await declared.run([CARRIED, MERGED_ONLY], fixture);
+
+    // The reader read one document off the run's whole stdout — a real one,
+    // written in the tree the run happened in, and carrying no verdict line
+    // for the default reader to have taken instead.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.cwd).toBe(fixture);
+    const cleanDoc = JSON.parse(seen[0]!.stdout) as Summary;
+    expect(cleanDoc.tree).toBe(fixture);
+    // The shape this seam is priced against: a clean run states nothing about
+    // drift, so the verdict per name comes from the reader, not from a lookup.
+    expect("drift" in cleanDoc).toBe(false);
+
+    // And the verdicts are the runner's own: one per name, in the order asked,
+    // each carrying the file a base run would lay over the base tree.
+    expect(clean.passed).toBe(2);
+    expect(clean.names).toEqual([
+      { name: CARRIED, carried: true, files: ["checks/widget.checks"] },
+      { name: MERGED_ONLY, carried: true, files: ["checks/widget.checks"] },
+    ]);
+
+    // What the declaration buys, stated as the price it removes: this same
+    // command under the default reader answers nothing, so a consumer without
+    // this seam ships a second program that reprints the document as lines.
+    await expect(
+      scriptRunner({ command: process.execPath, args: summaryArgs })(ctx).run(
+        [CARRIED],
+        fixture,
+      ),
+    ).rejects.toThrow(/answered nothing for 1 of 1/);
+
+    // The other arm of the same document: a name the validator drifted on is
+    // uncarried, and a run carrying one still reports no failure of its own.
+    const drifted = await declared.run([CARRIED, UNLISTED], fixture);
+    expect((JSON.parse(seen[1]!.stdout) as Summary).drift).toEqual([UNLISTED]);
+    expect(drifted.ok).toBe(true);
+    expect(drifted.names).toEqual([
+      { name: CARRIED, carried: true, files: ["checks/widget.checks"] },
+      { name: UNLISTED, carried: false, files: [] },
+    ]);
+
+    // Both operations read through the declared reader, over the tree each one
+    // judges: the base checkout's source carries one of these names and not
+    // the other, which is the disagreement the line reader reports too.
+    const base = await inGateScope(() =>
+      declared.runAtBase([CARRIED, MERGED_ONLY], ["checks/widget.checks"], baseSha, fixture),
+    );
+    expect(seen).toHaveLength(3);
+    expect(dirname(seen[2]!.cwd)).toBe(worktreesBase(flumeDir));
+    expect(base.names.map((n) => n.carried)).toEqual([true, false]);
   });
 
   it("a non-zero exit carrying a complete verdict set is not a failure", async () => {
@@ -805,7 +927,7 @@ describe("the script runner", () => {
 
     // A name with no line of its own is not a name nothing carried.
     await expect(printing("nothing to say\n").run([CARRIED], fixture)).rejects.toThrow(
-      /wrote no verdict line for 1 of 1/,
+      /answered nothing for 1 of 1/,
     );
     // A line about something nobody asked about.
     await expect(
@@ -819,7 +941,7 @@ describe("the script runner", () => {
       printing(
         `flume\tpass\tchecks/widget.checks\t${CARRIED}\nflume\tfail\t\t${CARRIED}\n`,
       ).run([CARRIED], fixture),
-    ).rejects.toThrow(/two verdict lines/);
+    ).rejects.toThrow(/answered "the source names widget" twice/);
     // A verdict the encoding does not spell.
     await expect(
       printing(`flume\tmaybe\t\t${CARRIED}\n`).run([CARRIED], fixture),
