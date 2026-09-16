@@ -32,6 +32,7 @@ import {
   parseDeclaration,
   planSliceWindows,
   RECORD_MAX_BYTES,
+  recordsPending,
   writePlanState,
   type Declaration,
   type PlanSliceWindow,
@@ -201,6 +202,22 @@ function record(
   }
 }
 
+/**
+ * One record waiting under the state root, written at a state-root-relative
+ * path — `inbox/<date>-<slug>.md` for an operator's finding, or
+ * `plan/notes/<TAG>.md` for a build tick's note. Both directories are the
+ * record queue, and the window's record leg reads them together.
+ *
+ * Returns the host-native path the window renders the record at, so a case
+ * asserting what the block carries compares against the file it wrote.
+ */
+function writeRecord(rel: string, text: string): string {
+  const path = join(stateRoot(), ...rel.split("/"));
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text);
+  return path;
+}
+
 it("the derive window is live exactly while commits past the derive cursor touch the declared spec locus", () => {
   commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
   writePlanState(stateRoot(), planState());
@@ -336,6 +353,101 @@ it("the inbox window is live while a standing build refusal is keyed to an entry
     retiredEntry: false,
     gateRevert: false,
   });
+});
+
+/**
+ * The record leg's half of the yield, over the spec's own case: a build
+ * tick's observation note, waiting while the queue still has work in it.
+ */
+it("the inbox slice is not live for a waiting record while the engine reports anything pickable", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  writeRecord(
+    "plan/notes/AN-OBSERVATION.md",
+    "# An observation\n\nThe gate names its own command twice.\n",
+  );
+  const inbox = windows()[INBOX_PHASE];
+
+  expect({
+    // Vacuity: the note really is in the queue the leg reads, so the
+    // verdicts below are the yield's doing and not an empty directory's.
+    waiting: recordsPending(stateRoot()),
+    yielding: inbox.live({ flumeDir: stateRoot(), pickable: true }),
+    // Control: the same note with the one fact flipped.
+    idle: inbox.live({ flumeDir: stateRoot(), pickable: false }),
+  }).toEqual({ waiting: true, yielding: false, idle: true });
+});
+
+/**
+ * The refusal leg's half: it is keyed to an entry the queue still carries, so
+ * a pickable queue is the state it exists to interrupt rather than one to
+ * stand aside for. Asserted beside the leg that does yield, because "even
+ * while entries are pickable" is a claim about the difference between them.
+ *
+ * Ordered: the park arm is taken before any record is on disk, so it is the
+ * park holding the window open and not the queue the later arm writes into.
+ */
+it("the inbox slice is live for a standing park even while entries are pickable", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const inbox = windows()[INBOX_PHASE];
+
+  const pending = [entry("HARNESS-STANDING-PARK")];
+  const parked = record("HARNESS-STANDING-PARK", "clean-exit");
+  const park = inbox.live({
+    flumeDir: stateRoot(),
+    pickable: true,
+    pending,
+    priorAttempts: new Map([[`${parked.key}:${parked.keyedAs}`, parked]]),
+  });
+  // Vacuity: with neither leg's material present the window is shut, so
+  // `park` above is the refusal leg's verdict.
+  const bare = inbox.live({ flumeDir: stateRoot(), pickable: true });
+
+  writeRecord("inbox/2026-09-16-a-finding.md", "# A finding\n\nObserved.\n");
+  const waitingRecord = inbox.live({ flumeDir: stateRoot(), pickable: true });
+
+  expect({ bare, park, waitingRecord }).toEqual({
+    bare: false,
+    park: true,
+    waitingRecord: false,
+  });
+});
+
+/**
+ * The deferred record, on the tick that runs: the yield puts the drain on the
+ * next plan tick, and that tick is handed the same record — deferring is not
+ * dropping.
+ */
+it("the inbox slice is live for a waiting record when nothing is pickable", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const inbox = windows()[INBOX_PHASE];
+
+  // Vacuity: nothing waits and nothing is pickable, so the record written
+  // below is the only thing that can open the window.
+  const noRecord = inbox.live({ flumeDir: stateRoot(), pickable: false });
+  const path = writeRecord(
+    "inbox/2026-09-16-a-finding.md",
+    "# A finding\n\nObserved.\n",
+  );
+
+  expect({
+    noRecord,
+    // The tick that deferred it ...
+    deferred: inbox.live({ flumeDir: stateRoot(), pickable: true }),
+    // ... and the tick that runs once the queue is drained.
+    live: inbox.live({ flumeDir: stateRoot(), pickable: false }),
+  }).toEqual({ noRecord: false, deferred: false, live: true });
+
+  // The render leg never read `pickable`, so the record the yield passed over
+  // is in the block whichever tick runs is handed.
+  const rendered = windows()[INBOX_PHASE].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).RECORDS;
+  expect(rendered).toContain(path);
+  expect(rendered).toContain("Observed.");
 });
 
 /**

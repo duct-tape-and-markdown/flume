@@ -11,6 +11,11 @@
  * lanes are the third source, and the only one whose evidence sits off this
  * disk (`ciLane.ts`).
  *
+ * **A signal is not unrouted work.** Those two legs read the same disk and
+ * answer differently to a queue that still has work in it: the record leg
+ * yields to it, the refusal leg does not. Which is which is at the predicate
+ * below.
+ *
  * **One derivation per leg, two readers.** The ladder asks "is this slice
  * live"; the prompt asks "what is in it". Both answers come from the same
  * scan, so the slice cannot be woken over material its prompt then renders as
@@ -40,6 +45,22 @@ import {
 /**
  * The inbox slice's window.
  *
+ * **The record leg yields to pickable work; the refusal leg does not**
+ * (`spec/harness.md`, *The phases*). A waiting record is a signal, and while
+ * the engine reports anything pickable the material it points at is behind
+ * entries the queue can ship now — so the drain rides the next plan tick that
+ * runs for its own reasons, which is the sweep's rule read at the other
+ * queue (`.claude/rules/posture-sweep.md`, *The sweep yields to pickable
+ * work*; `sweepWindow.ts`). A standing refusal is the opposite case by
+ * construction: it is keyed to an entry that is *still pickable*, so yielding
+ * to the queue hands the baton straight back to the build wave that already
+ * walled on it.
+ *
+ * Deferring is not dropping. Only the liveness leg reads `pickable` — the
+ * render below takes a `WindowContext`, which carries no such fact — so a
+ * record the yield passed over is in the block the tick that does run is
+ * handed, whichever slice woke it.
+ *
  * **The lane leg is asked last, and that ordering is load-bearing.** The
  * record and refusal legs are two directory listings and a map walk; the lane
  * leg spawns the forge CLI once per lane on the selection path. A tick the
@@ -55,7 +76,7 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
   return {
     name: INBOX_PHASE,
     live: (inputs) =>
-      recordsPending(inputs.flumeDir) ||
+      (!inputs.pickable && recordsPending(inputs.flumeDir)) ||
       standingRefusals(inputs).length > 0 ||
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
