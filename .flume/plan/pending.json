@@ -1,49 +1,8 @@
 [
   {
-    "tag": "A-GIT-SPAWNING-SUITE-DECLARES-ITS-BUDGET",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/harnessGates.test.ts",
-          "description": "declares the shared budget at file scope instead of inheriting the runner's 5s default"
-        },
-        {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "same — its cases report 7.5s on the same lane"
-        },
-        {
-          "path": "tests/chain.test.ts",
-          "description": "same — the third suite spawning git under no declared budget"
-        },
-        {
-          "path": "tests/helpers/subprocess.ts",
-          "description": "the budget's doc comment names a process, not a node process"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "three git-spawning default-lane suites declare no budget at all; on win32 the first harnessGates case crossed vitest's 5s default and red the lane",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "win32 is a supported host"
-    },
-    "acceptance": "no case in the lane's three budget-less git-spawning suites inherits the runner's 5s default, so the windows lane's harnessGates red is gone and the other two sit off the runner's number.",
-    "tests": [],
-    "pins": [],
-    "notes": "Windows lane, run 35032751113: `the per gate refuses a commit whose cited file is not in it, naming the tag` timed out at 5000ms (9993ms reported), its afterEach then EBUSY on the still-held repo. Ruled at 4d6d7ad: the declaration is file-scope and `git` is a spawn, so the form here is one declaration per file. The scan's own widening is THE-SPAWN-BUDGET-IS-DECLARED-PER-FILE, which blocks on this — these three land first."
-  },
-  {
     "tag": "THE-SPAWN-BUDGET-IS-DECLARED-PER-FILE",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "A-GIT-SPAWNING-SUITE-DECLARES-ITS-BUDGET"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -192,67 +151,6 @@
     ],
     "pins": [],
     "notes": "Ruled at 4d6d7ad. Today `NODE_COMMANDS` excludes `git` with a cite and `declaredBudget` reads the registrar call. The per-file form wants `vi.setConfig({ testTimeout, hookTimeout })` — used nowhere in the suite yet — and the scan reading it. Declaring nothing at all: `friction`, `exportConsumers`, `fixtureRoots` (git-only, via `gitOut`); `worktrees` restates `30_000`. Per-case declarations stay standing; removing them is the sweep's."
-  },
-  {
-    "tag": "THE-SUPERVISOR-DELEGATES-THE-RELEASE-GRACE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/loopSupervisor.ts",
-          "description": "the default runner signals the tick child's group and waits on its exit unbounded; the run's own grace option goes with the timer"
-        },
-        {
-          "path": "src/processTree.ts",
-          "description": "the group signal the runner takes, beside the escalation src/Agent.ts keeps; its two comments stop naming the supervisor as the grace's forwarder"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "the loop branch stops forwarding the grace to superviseLoop"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "the knob's doc comment stops naming the supervisor as a binder"
-        },
-        {
-          "path": "src/Agent.ts",
-          "description": "the killGraceMs doc comment stops cross-referencing the supervisor's retired bound"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the three killGraceMs passages name the tick's grace over its agent tree, and the per-tick read scope"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the loop driver gains the real spawned agent; the two arms pinning the outer grace retire"
-        },
-        {
-          "path": "tests/loopSupervisor.test.ts",
-          "description": "whatever the dropped option moves"
-        },
-        {
-          "path": "tests/processTree.test.ts",
-          "description": "the signal half, apart from the escalation over it"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the supervisor still bounds its tick child by the chain's grace and fires first; spec/loop.md now has it signal the child's group and wait unbounded",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The loop lock and the tip claim"
-    },
-    "acceptance": "a signalled loop signals the tick child's group and waits on the child's exit with no bound of its own, so the one timer in the tree is the child's over the agent it can see. No shipped narration — doc comment or authoring page — still names the supervisor as the grace's binder or classes killGraceMs run-scoped.",
-    "tests": [
-      "an agent that swallows SIGTERM for the whole grace is dead when a signalled loop's run ends",
-      "a signalled loop still holds its lock and tip claim past the declared grace while its wedged tick child lives"
-    ],
-    "pins": [],
-    "notes": "Spec at d9e80fe, read scope at ce37152. Live at HEAD: defaultTickRunner calls terminateProcessTree(child, { graceMs }); that timer starts strictly before the child's own, so the agent's group is orphaned at the grace. SuperviseLoopOptions.killGraceMs loses its only consumer. Test 1 wants bareTickAgentChainSrc's spawned agent under the loop driver; test 2 a driver arm that does not await the run's exit. CHAIN-AUTHORING 1700/1732/1771 and processTree's comments carry the retired binder."
   },
   {
     "tag": "A-SIGNALLED-RELEASE-ANNOUNCES-ITS-WAIT",
