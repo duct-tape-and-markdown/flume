@@ -146,7 +146,7 @@
         },
         {
           "path": "tests/harnessRunner.test.ts",
-          "description": "its three at-or-below literals go; the two above the declaration stay, cited at the site"
+          "description": "its ten registrar literals go; the file's declaration is the ceiling"
         },
         {
           "path": "tests/builtinGates.test.ts",
@@ -159,18 +159,18 @@
       ],
       "retire": []
     },
-    "summary": "243 registrar timeout literals across eight default-lane files sit at or under the budget their file declares, and the per-file scan judges none of them",
+    "summary": "250 registrar timeout literals across eight default-lane files carry a ceiling beside the budget their file declares, and the per-file scan judges none of them",
     "per": {
       "path": "spec/worktrees.md",
       "section": "The default test lane must stay fast"
     },
-    "acceptance": "the scan judges a registrar's own timeout argument beside the file-scope one — a named harness budget passes, a literal at or below the file's declaration is a finding — and the 243 literals are gone, so a case cannot ship a ceiling tighter than the lane's without reddening. A literal above the declaration is left standing and cited at its site; the widening direction is the parked question's.",
+    "acceptance": "the scan judges a registrar's own timeout argument beside the file-scope one — a named harness budget passes, a numeric literal is a finding whichever side of the file's declaration it falls — and all 250 literals are gone, so a case cannot ship a ceiling of its own without reddening.",
     "tests": [
       "the spawn scan reports a numeric timeout literal on a spawning registrar",
-      "no spawning site in the default lane restates or narrows the budget its file declares"
+      "no spawning site in the default lane carries a numeric timeout beside the budget its file declares"
     ],
     "pins": [],
-    "notes": "Left by THE-SPAWN-BUDGET-IS-DECLARED-PER-FILE: the judged unit moved to the file and `SpawnSite.budget` went with it, so these went unseen. Dispatcher 202 (20_000 x165, 30_000 x36, 60_000), job 20, worktrees 7, Gate 4, examples 4, harnessRunner 3, builtinGates 2, cliJobResolution 1 — all at or under the 120_000 each of the eight declares. harnessRunner's 180_000/240_000 are the open question's. Integration lane declares no budget at all: out of scope."
+    "notes": "Left by THE-SPAWN-BUDGET-IS-DECLARED-PER-FILE: the judged unit moved to the file and `SpawnSite.budget` went with it, so these went unseen. Dispatcher 202, job 20, harnessRunner 10, worktrees 7, Gate 4, examples 4, builtinGates 2, cliJobResolution 1 — 250 over eight files each declaring 120_000. harnessRunner's seven over-budget ceilings ruled in 2026-09-15: measured 514–1040 ms under ceilings of 180_000/240_000. Integration lane declares no budget: out of scope."
   },
   {
     "tag": "DISPATCHER-HOMES-ITS-FIVE-FRONT-JOBS",
