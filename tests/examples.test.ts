@@ -49,7 +49,7 @@ import {
   type FlumePaths,
 } from "../src/flumeApi.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
-import { sectionOf } from "./helpers/docSections.ts";
+import { restatementsOf, sectionOf, walkOf } from "./helpers/docSections.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { REPO_ROOT } from "./helpers/repoProgram.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
@@ -1952,7 +1952,10 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
  * is the only prose a chain author reads before declaring
  * `Chain.supervisorPolicy`, and a knob the section skips is a knob nobody
  * finds — `tickTimeoutMs` and `partitionIgnore` were each reachable only
- * through a migration note for a release line before this pin.
+ * through a migration note for a release line before this pin. A bullet the
+ * block no longer declares is a knob nobody can set, so the claim is equality
+ * rather than coverage, and the walk is read by `walkOf`
+ * (`tests/helpers/docSections.ts`), the one reader the page's walks share.
  *
  * The knob list is read off the declaration through the repo program, never
  * kept as a second list beside it (*Derived state is computed, never restated
@@ -2021,17 +2024,15 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
       ),
       /^## \d+\. Supervisor policy \(`supervisorPolicy`\)$/m,
     );
-    // The section is the one it claims to be before an absence is asserted
-    // over it: a heading match that captured the wrong span would report
-    // every knob missing, or none.
+    // The section is the one it claims to be before a set is read off it: a
+    // heading match that captured the wrong span would report every knob
+    // missing, or an empty walk against an empty span.
     expect(section).toContain("`Chain.supervisorPolicy`");
 
-    for (const knob of knobs) {
-      expect(
-        section,
-        `docs/CHAIN-AUTHORING.md's supervisor-policy section walks \`${knob}\``,
-      ).toContain(`- **\`${knob}\`** —`);
-    }
+    expect(
+      [...walkOf(section, knobs)].sort(),
+      "docs/CHAIN-AUTHORING.md's supervisor-policy section walks exactly the knobs `Chain.supervisorPolicy` declares",
+    ).toEqual([...knobs].sort());
   });
 });
 
@@ -2050,9 +2051,9 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
  * prose re-listing the operations beside the bullets is a copy no equality
  * read reaches, so a fourth operation lands in the walk and strands it
  * (*Derived state is computed, never restated beside its source*). Both cases
- * read the same mention list — every backticked operation name in the
- * section, bullet lead or not — so neither can be green over a naming the
- * other cannot see.
+ * read one page through `walkOf` and `restatementsOf`
+ * (`tests/helpers/docSections.ts`), the reader this page's walks share, so
+ * neither can be green over a naming the other cannot see.
  *
  * Neither side is restated here (same section): the members come off the
  * declaration through a checker, the namings off the page.
@@ -2114,25 +2115,6 @@ describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () =
   };
 
   /**
-   * Every place the section names an operation, in page order — the name, and
-   * whether it leads a top-level bullet. The read is over every mention
-   * rather than over the bullet leads alone, because the defect this pair
-   * catches is a second naming of the set beside the walk it points at
-   * (*Derived state is computed, never restated beside its source*), and a
-   * reader that only sees bullets cannot see one.
-   */
-  const mentionsIn = (
-    section: string,
-    operations: readonly string[],
-  ): { name: string; leadsBullet: boolean }[] =>
-    [...section.matchAll(/`([A-Za-z][A-Za-z0-9]*)`/g)]
-      .filter((mention) => operations.includes(mention[1]!))
-      .map((mention) => ({
-        name: mention[1]!,
-        leadsBullet: /(?:^|\n)- $/.test(section.slice(0, mention.index)),
-      }));
-
-  /**
    * Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
    * non-vacuous"): a resolution that fell through to an empty property list
    * would compare two empty sets and pass, and a mention list filtered
@@ -2150,13 +2132,8 @@ describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () =
     const operations = declaredOperations();
     const section = adoptionSection();
 
-    /** The operations the section walks: one top-level bullet each, led by its name. */
-    const walked = mentionsIn(section, operations)
-      .filter((mention) => mention.leadsBullet)
-      .map((mention) => mention.name);
-
     expect(
-      [...walked].sort(),
+      [...walkOf(section, operations)].sort(),
       "docs/CHAIN-AUTHORING.md's adoption section walks exactly the operations `Runner` declares",
     ).toEqual([...operations].sort());
   });
@@ -2164,22 +2141,19 @@ describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () =
   it("docs/CHAIN-AUTHORING.md's adoption section names Runner's operation set in one place", () => {
     const operations = declaredOperations();
     const section = adoptionSection();
-    const mentions = mentionsIn(section, operations);
 
+    // The walk is there before an absence is asserted beside it: over a
+    // section that walks nothing, every listing reads as the only one
+    // (.claude/rules/engineering.md, "A green verdict is proven non-vacuous").
     expect(
-      mentions.length,
-      "docs/CHAIN-AUTHORING.md's adoption section names the operations at all",
+      walkOf(section, operations).length,
+      "docs/CHAIN-AUTHORING.md's adoption section walks the operations at all",
     ).toBeGreaterThan(1);
 
     expect(
-      mentions.filter((mention) => !mention.leadsBullet).map((mention) => mention.name),
-      "docs/CHAIN-AUTHORING.md's adoption section names an operation outside the walk's bullets",
+      restatementsOf(section, operations),
+      "docs/CHAIN-AUTHORING.md's adoption section lists the operations beside its walk",
     ).toEqual([]);
-
-    expect(
-      mentions.map((mention) => mention.name),
-      "docs/CHAIN-AUTHORING.md's adoption section names each operation once",
-    ).toEqual([...new Set(mentions.map((mention) => mention.name))]);
   });
 });
 
@@ -2240,16 +2214,26 @@ describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () =>
     return context.getProperties().map((field) => field.name);
   };
 
-  it("docs/CHAIN-AUTHORING.md's gate section names every GateContext field the engine sets", () => {
+  /**
+   * Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+   * non-vacuous"): a resolution that fell through to an empty property list
+   * would compare two empty sets and pass, and a section read against it would
+   * name nothing to restate. One anchor rather than a second copy of the list
+   * — the count is what proves the set is the real one.
+   */
+  const declaredFields = (): string[] => {
     const fields = gateContextFields();
-
-    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
-    // non-vacuous"): a resolution that fell through to an empty property list
-    // would compare two empty sets and pass. One anchor rather than a second
-    // copy of the list — the count is what proves the set is the real one.
     expect(fields.length).toBeGreaterThan(1);
     expect(fields).toContain("baseSha");
+    return fields;
+  };
 
+  /**
+   * The section under judgment, anchored before anything is read off it: a
+   * heading match that captured the wrong span would report every field
+   * missing, or an empty walk against an empty span.
+   */
+  const gateSection = (): string => {
     const section = sectionOf(
       readFileSync(
         fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
@@ -2257,28 +2241,43 @@ describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () =>
       ),
       /^### What's on `ctx`$/m,
     );
-    // The section is the one it claims to be before a set is read off it: a
-    // heading match that captured the wrong span would report every field
-    // missing, or an empty walk against an empty span.
     expect(section).toContain("`GateContext` is the gate's whole input surface");
+    return section;
+  };
 
-    /** The fields the section walks: one top-level bullet each, led by its name. */
-    const walked = [...section.matchAll(/^- `([A-Za-z][A-Za-z0-9]*)` —/gm)].map((m) => m[1]!);
+  it("docs/CHAIN-AUTHORING.md's gate section names every GateContext field the engine sets", () => {
+    const fields = declaredFields();
+    const section = gateSection();
 
     expect(
-      [...walked].sort(),
+      [...walkOf(section, fields)].sort(),
       "docs/CHAIN-AUTHORING.md's gate section walks exactly the fields `GateContext` declares",
     ).toEqual([...fields].sort());
   });
 
+  it("docs/CHAIN-AUTHORING.md's gate section names GateContext's field set in one place", () => {
+    const fields = declaredFields();
+    const section = gateSection();
+
+    // The walk is there before an absence is asserted beside it: over a
+    // section that walks nothing, every listing reads as the only one.
+    expect(
+      walkOf(section, fields).length,
+      "docs/CHAIN-AUTHORING.md's gate section walks the fields at all",
+    ).toBeGreaterThan(1);
+
+    // The walk's own two lists — where the gate is running, what is being
+    // gated — are both walk, so this reads the prose around them: a paragraph
+    // naming two fields is the section listing the set a second time, while a
+    // bullet naming a sibling is the walk explaining itself.
+    expect(
+      restatementsOf(section, fields),
+      "docs/CHAIN-AUTHORING.md's gate section lists the fields beside its walk",
+    ).toEqual([]);
+  });
+
   it("docs/CHAIN-AUTHORING.md's gate section says which stage sets each span field", () => {
-    const section = sectionOf(
-      readFileSync(
-        fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
-        "utf8",
-      ),
-      /^### What's on `ctx`$/m,
-    );
+    const section = gateSection();
 
     /**
      * One bullet's body, its lead name through the line before the next
