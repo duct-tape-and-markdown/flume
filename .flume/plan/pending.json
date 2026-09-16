@@ -378,5 +378,39 @@
     ],
     "pins": [],
     "notes": "From build's note on A-CURSOR-GATE-BOUNDS-THE-DERIVE-CURSORS-ADVANCE, which added the fifth. The set is `records`, `clean-tree`, `pending-gate`, `per cites resolve`, `derive cursor`; the page names three. tests/harnessGates.test.ts already builds the real set through `gates()` at its ordering case, so the check reads the writer's own output; its module header still says \"four\". MIGRATING-0.16 is era-scoped and stays."
+  },
+  {
+    "tag": "THE-WIN32-LOADER-FACT-IS-CITED-NOT-RESTATED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/host-declarations.json",
+          "description": "the rows leaning on the loader fact shrink to a cite"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the recorder's doc comment and its posixOnly block shrink to a cite"
+        },
+        {
+          "path": "tests/harnessRunner.test.ts",
+          "description": "the case's comment cites the loader section rather than the `.cmd` one"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the loader fact has a home now, but five sites still spell it out and two of them cite the `.cmd` section for a shebang subject, so the next fixture restates it a sixth time",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "win32 spawns no shebang script"
+    },
+    "acceptance": "every site leaning on the win32 loader fact states only what is specific to its own case and cites the section that holds the fact; no shebang-spawn subject cites the `.cmd`-shim section for it.",
+    "tests": [],
+    "pins": [],
+    "notes": "The rows: `tests/bin.test.ts::bin/flume symlink walk`, the harnessChain command-gate row, the harnessRunner path-separator row, and the two cli.test.ts git-floor rows whose reason names a `.cmd` refusal over a shebang plant. The setup-restore row is the model — case-specific reason, then the cite. No tests[]: a section cite is unresolved by the citation pin (`tests/commentCitations.test.ts`), and prose read against prose is out of scope."
   }
 ]
