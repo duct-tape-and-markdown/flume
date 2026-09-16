@@ -1375,16 +1375,14 @@ async function main(): Promise<number> {
  * file that is absent is not this module either way, and the import must not
  * crash over it.
  *
- * That leg is libuv's `realpathSync.native`, never node's JS `realpathSync`,
- * because the JS one lstats the root it splits off its argument and a
- * namespaced drive root splits to a `\\?\C:` that names nothing. Node 22
- * therefore throws over exactly the argument the fold below hands it, while
- * node 24 strips the root's separator first; `engines` admits both, so a leg
- * that resolved on one and fell through to the unresolved comparison on the
- * other would make every junctioned install's entry check a coin flip on the
- * host's node. The native call splits no root, and answers outside the
- * namespaced alphabet either way (`.claude/rules/platform-facts.md`,
- * "realpathSync keeps the \\?\ prefix only where nothing resolved").
+ * That leg is libuv's `realpathSync.native`, never node's JS `realpathSync`:
+ * the fold below hands it a namespaced path, and that is the argument the JS
+ * form does not take on a node `engines` admits
+ * (`.claude/rules/platform-facts.md`, "realpathSync keeps the \\?\ prefix
+ * only where nothing resolved"). The choice is pinned rather than
+ * remembered — the namespaced-fs scan (`tests/namespacedFsPaths.test.ts`)
+ * reds a composed path spelled at the JS head anywhere in `src/` or
+ * `harness/`.
  *
  * Both legs still fold through `plainPath` (`src/paths.ts`), the resolving
  * one and the throwing one alike, so the comparison below is made in one
