@@ -856,7 +856,9 @@ describe("flume help — the bare verb against the flag (FLUME-HELP-IS-THE-SAME-
  * argument went nowhere. FLUME-HELP-FLAG-ANSWERS-FOR-A-SUBCOMMAND — the same
  * drop survived on the flag spelling, `flume --help status`, because the
  * lookup was gated on the bare verb alone (spec/cli.md, *Subcommand
- * surface*).
+ * surface*). The short flag `-h <name>` is the third spelling the one
+ * decider serves; it holds today and is pinned here, so narrowing that arm
+ * back to two spellings cannot ship green.
  *
  * Each spelling pair is driven through the real CLI and read against the
  * other, never against a copy of the page — there is one writer per page and
@@ -866,7 +868,7 @@ describe("flume help — the bare verb against the flag (FLUME-HELP-IS-THE-SAME-
  */
 describe("flume help <name> and flume --help <name> — the trailing name through one decider (FLUME-HELP-ANSWERS-FOR-A-SUBCOMMAND, FLUME-HELP-FLAG-ANSWERS-FOR-A-SUBCOMMAND)", () => {
   /** The spellings that carry a trailing name to the same decider. */
-  type Lead = "help" | "--help";
+  type Lead = "help" | "--help" | "-h";
 
   /**
    * `flume <lead> <name>` against `flume <name> --help`, in a bay holding no
@@ -943,12 +945,20 @@ describe("flume help <name> and flume --help <name> — the trailing name throug
     );
   }, SPAWN_BUDGET_MS);
 
+  it("flume -h status prints the status subcommand's usage", async () => {
+    await expectLeadingHelpMatchesFlag("-h", "status", "Usage: flume status");
+  }, SPAWN_BUDGET_MS);
+
   it("flume help with an unknown name exits 2 with usage", async () => {
     await expectUnknownNameRefuses("help");
   }, SPAWN_BUDGET_MS);
 
   it("flume --help with an unknown name exits 2 with usage", async () => {
     await expectUnknownNameRefuses("--help");
+  }, SPAWN_BUDGET_MS);
+
+  it("flume -h with an unknown name exits 2 with usage", async () => {
+    await expectUnknownNameRefuses("-h");
   }, SPAWN_BUDGET_MS);
 
   /**
