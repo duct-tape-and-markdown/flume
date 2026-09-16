@@ -1,99 +1,5 @@
 [
   {
-    "tag": "THE-CRASH-MARKER-CASE-READS-THE-REPORTED-FATE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the merge-stage crash-marker case reads each entry's fate off result.entries before the merge row that derives from it"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the crash-marker case reads MARK-B's fate off a mergeOutcomes row's absence, so a red says `undefined` where the engine already reported committed:false and a noCommit class",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A fact the engine holds is reported, never rediscovered"
-    },
-    "acceptance": "the case asserts every entry's committed and noCommit off result.entries[] before it reads a mergeOutcomes row, so the next red on this title names which no-commit class happened instead of reporting an absence.",
-    "tests": [],
-    "pins": [],
-    "notes": "Closes the windows-lane park on arm (a): make the fate readable, reproduce after. Row absence is a derivative of the fate (src/Dispatcher.ts, the !r.committed leg); result.entries[] carries committed and noCommit (src/Phase.ts:329). Whole diff is the case's own file, so no tests[] line is judgeable — the assertions ride the existing it(), not a new one. Case at tests/Dispatcher.test.ts:4826."
-  },
-  {
-    "tag": "EVERY-TEST-SYNC-SPAWN-RUNS-UNDER-THE-DECLARED-CAP",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/subprocess.ts",
-          "description": "the capped sync wrapper beside the async one, and the git-capture helper the seven files each spell"
-        },
-        {
-          "path": "tests/helpers/spawnCaps.ts",
-          "description": "the landed async scanner gains its sync arm rather than a sibling scanner"
-        },
-        {
-          "path": "tests/spawnCaps.test.ts",
-          "description": "the scanner's own suite covers the sync arm over its fixture domain"
-        },
-        {
-          "path": "tests/subprocessHelper.test.ts",
-          "description": "the tests/ scan gains its sync arm, exemptions spelled rather than discovered"
-        },
-        {
-          "path": "tests/chain.test.ts",
-          "description": "its sync git helper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "its sync git helper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/harnessGates.test.ts",
-          "description": "its sync git helper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "its sync git helper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/harnessCi.test.ts",
-          "description": "its sync git helper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/harnessRunner.test.ts",
-          "description": "its sync git helper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/bin.test.ts",
-          "description": "its shim spawnSync comes from the module that declares the cap"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "9 capturing execFileSync/spawnSync sites across 7 tests/ files run on node's 1 MiB default, seven of them the same git helper spelled seven times",
-    "per": {
-      "path": ".claude/rules/platform-facts.md",
-      "section": "Node caps a captured child stream at 1 MiB, and reports the overrun as a spawn failure"
-    },
-    "acceptance": "every capturing sync spawn in tests/ goes through the wrapper that declares the cap, and the scan reds a bare one — its capture-free and fixture-literal exemptions spelled, not discovered.",
-    "tests": [
-      "no file under tests/ captures a sync child's output outside the module that declares the cap"
-    ],
-    "pins": [],
-    "notes": "Async arm landed 0a972dd6 as scanPromisifiedSpawns (tests/helpers/spawnCaps.ts), driven from tests/subprocessHelper.test.ts over {trees:['tests']}; the sync arm extends that scanner. Sites: chain:36, harnessWindows:80,631, harnessGates:108, harnessChain:123, harnessCi:89,449, harnessRunner:62, bin:191. Exempt: harnessCi:447 (stdio ignore) and execFileSync inside fixture string literals (cli, cliJobResolution, subprocessHelper) — the scan parses, so a needle cannot be the reader."
-  },
-  {
     "tag": "THE-PAGE-NAME-ARM-READS-EVERY-SWEEP-TREE",
     "gate": {
       "kind": "open"
@@ -125,6 +31,14 @@
       ],
       "retire": []
     },
+    "observedFiles": [
+      ".flume/plan/notes/THE-PAGE-NAME-ARM-READS-EVERY-SWEEP-TREE.md",
+      "tests/commentCitations.test.ts",
+      "tests/helpers/commentCitations.ts",
+      "tests/helpers/external-vocabulary.json",
+      "tests/helpers/repoProgram.ts",
+      "tests/helpers/spawnCaps.ts"
+    ],
     "summary": "the citation pin judges page names in src/, harness/, tests/ alone, so every *.md cite in bin/, examples/, scripts/ and .flume/chain.ts is held by nothing",
     "per": {
       "path": ".claude/rules/engineering.md",
@@ -135,15 +49,7 @@
       "every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.ts cites names a page the working tree holds"
     ],
     "pins": [],
-    "notes": "Ruled 29e3df4c, option 1: one tree list per arm. bin/*.js and scripts/*.mjs are outside the tsconfig, so this arm reads them at the scopeless createSourceFile tier. Copy the {trees, files} domain shape from tests/helpers/spawnCaps.ts for .flume/chain.ts — copy, never lift: a5243281 moved it out and left spawnCapModules and parse dangling there, and tsc reverted the span. Measured 51 comment-borne page names in the widened trees, 9 of them examples/ narrating a consumer's repo.",
-    "observedFiles": [
-      ".flume/plan/notes/THE-PAGE-NAME-ARM-READS-EVERY-SWEEP-TREE.md",
-      "tests/commentCitations.test.ts",
-      "tests/helpers/commentCitations.ts",
-      "tests/helpers/external-vocabulary.json",
-      "tests/helpers/repoProgram.ts",
-      "tests/helpers/spawnCaps.ts"
-    ]
+    "notes": "Ruled 29e3df4c, option 1: one tree list per arm. bin/*.js and scripts/*.mjs are outside the tsconfig, so this arm reads them at the scopeless createSourceFile tier. Copy the {trees, files} domain shape from tests/helpers/spawnCaps.ts for .flume/chain.ts — copy, never lift: a5243281 moved it out and left spawnCapModules and parse dangling there, and tsc reverted the span. Measured 51 comment-borne page names in the widened trees, 9 of them examples/ narrating a consumer's repo."
   },
   {
     "tag": "SELECTION-AND-ATTEMPT-LEAVE-THE-DISPATCHER",
@@ -264,58 +170,6 @@
     "tests": [],
     "pins": [],
     "notes": "The module move shipped at 04c4d344; its suite did not. Describes to move: the leak guard at :278, the gc pin at :1447. Behavior-free — the same cases run, and tests/helpers/subprocess.ts:77 and :116 cite this file for the scan, which stays. Collides on file with the two tests/ scan entries above; the partitioner serializes them."
-  },
-  {
-    "tag": "THE-ETARGET-COMMENT-SHRINKS-TO-ITS-PAGE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": ".github/workflows/ci.yml",
-          "description": "the type-resolution gate's npm-resolution narration shrinks to a pointer; the install-order comment stays at the site"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the consumer type-resolution gate re-explains npm's manifest-range resolution in eight comment lines that platform-facts.md now owns as a named section",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "the ETARGET narration on the type-resolution gate is a pointer at the platform-facts section, the step's own decision (its own consumer dir, the tarball as the only handoff) still reads at the site, and the --no-save install-order comment is untouched.",
-    "tests": [],
-    "pins": [],
-    "notes": "Closes the npm park: (a) for the ETARGET fact, (b) for the prune order. The owning section already defers install order to the site, so the prune comment at ci.yml:114-117 stays. Shrink target: ci.yml:106-113. A shrink is not complete until what the removed prose covered for is re-homed — nothing else in the step leans on it, so the pointer is the whole move."
-  },
-  {
-    "tag": "THE-PORT-TABLE-NAMES-WHAT-THE-PACKAGE-RETIRES",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/MIGRATING-0.16.md",
-          "description": "s6 names the consumer code the package retires outright, beside the table of what a declaration field replaces"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "s6's port table maps a chain's fields onto declaration fields and names none of the consumer code the package retires with no field to replace it",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Adoption and upgrade"
-    },
-    "acceptance": "a consumer reading s6 can name, per surface, which of its own code the package retires outright: the per-gate at a ref, the agent wrapper stack, and the entry contract split across a prompt and a schema.",
-    "tests": [],
-    "pins": [],
-    "notes": "From a 947-line consumer chain audit. Verified on this tree: perGate (harness/gates.ts:195) is the consumer's 56-line perPathsExist; harness/chain.ts:364 builds withTerminalRenderer(withSessionCapture(claudeCode())) from `agents`; harness/entryExtension.ts renders schema-plus-hint through renderSchemaForPrompt. Scope is what 0.16 ships — setup.serialize, jobs and gate facts are later minors and belong in their own note."
   },
   {
     "tag": "A-MIGRATION-NOTE-FOR-0-13",
@@ -1034,8 +888,8 @@
       "a chain declaring no per-entry refusal leaves the pickable set unchanged"
     ],
     "pins": [],
-    "contractTouching": true,
-    "notes": "The capability, not the policy: the chain supplies the predicate, the engine enforces and reports (`engine-boundary.md`, *Capability vs convention*). Every input a predicate needs is already on the tick — the entry and its prior-attempt record. Contract-touching: a resident supervisor and a fresh tick child must agree on the Chain shape."
+    "notes": "The capability, not the policy: the chain supplies the predicate, the engine enforces and reports (`engine-boundary.md`, *Capability vs convention*). Every input a predicate needs is already on the tick — the entry and its prior-attempt record. Contract-touching: a resident supervisor and a fresh tick child must agree on the Chain shape.",
+    "contractTouching": true
   },
   {
     "tag": "THE-HANDOFF-DECLINES-A-CLEAN-EXIT-AT-THIS-HEAD",
