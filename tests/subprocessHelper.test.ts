@@ -146,9 +146,11 @@ describe("exitStatusOf — a failure with no exit status refuses instead of repo
 
 /**
  * Both cases drive a real child past a real cap, because an overrun is
- * node's own construction: the rejection it builds carries an errno-shaped
- * `code` that a hand-written fixture could only guess at, and guessing it is
- * how the arm below could agree with itself while disagreeing with node.
+ * node's own construction: a hand-written fixture could only guess at the
+ * rejection node builds (`.claude/rules/platform-facts.md`, *Node caps a
+ * captured child stream at 1 MiB, and reports the overrun as a spawn
+ * failure*), and guessing it is how the arm below could agree with itself
+ * while disagreeing with node.
  */
 it("the shared spawn wrapper captures a child's stdout past node's default execFile cap", async () => {
   const dir = await mkTempDir("flume-spawn-cap-");

@@ -504,10 +504,10 @@ describe("build-changelog", () => {
     await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
     await git(repo, ["tag", "v1.0.0"]);
 
-    // Node caps a child's captured stdout at 1 MiB by default, and the mined
-    // range only grows: this repo's own unreleased range already emits more
-    // than that, so the release cut's one mining tool died `spawnSync git
-    // ENOBUFS` with no draft.
+    // The mined range only grows, so what this case pins is the release
+    // cut's one mining tool reading a log past the cap it would otherwise
+    // inherit (`.claude/rules/platform-facts.md`, *Node caps a captured child
+    // stream at 1 MiB, and reports the overrun as a spawn failure*).
     //
     // The oversized body rides a non-`build:` commit on purpose, so what
     // crosses the limit is the *log the script reads* rather than the draft

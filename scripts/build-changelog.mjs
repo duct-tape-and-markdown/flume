@@ -62,12 +62,13 @@ const BUILD_SUBJECT_ATTEMPT = /^build[:(]/;
  * `maxBuffer: Infinity`, not a raised number. The read this helper exists for
  * is the log over `<last release>..HEAD` — and, with no prior release
  * recorded, over the whole of history — so its size grows with the repository
- * and never shrinks. Node's 1 MiB default already fails this repo's own
- * unreleased range (`spawnSync git ENOBUFS`, no draft), and any finite
- * replacement is that same failure rescheduled for a later cut. What bounds
- * the read instead is the process's own memory, which fails loudly rather
- * than handing back a truncated log for a human to curate a release from
- * (`.claude/rules/engineering.md`, "Loud or nothing").
+ * and never shrinks, which makes the inherited cap
+ * (`.claude/rules/platform-facts.md`, "Node caps a captured child stream at
+ * 1 MiB, and reports the overrun as a spawn failure") not a sizing question:
+ * any finite replacement is that same failure rescheduled for a later cut.
+ * What bounds the read instead is the process's own memory, which fails
+ * loudly rather than handing back a truncated log for a human to curate a
+ * release from (`.claude/rules/engineering.md`, "Loud or nothing").
  */
 function git(cwd, args) {
   return execFileSync("git", args, {

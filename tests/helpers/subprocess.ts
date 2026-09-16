@@ -29,13 +29,10 @@ const execFileAsync = promisify(execFile);
 /**
  * How much of one child's stdout — and of its stderr — this harness keeps.
  *
- * Node caps a captured stream at 1 MiB unless it is told otherwise, and it
- * reports the overrun by killing the child mid-stream: the rejection carries
- * an errno-shaped string where an exit status would be, so an inherited cap
- * does not surface as a truncation anything downstream could notice — it
- * surfaces through {@link exitStatusOf}'s no-exit-status arm, as a child that
- * never ran. A large-but-correct run then reds under a cause it does not
- * have, which is the accident the refusal below exists to name.
+ * Declared rather than inherited (`.claude/rules/platform-facts.md`, *Node
+ * caps a captured child stream at 1 MiB, and reports the overrun as a spawn
+ * failure*); {@link exitStatusOf} carries the refusal that keeps an overrun
+ * under this number from reading as a child that never ran.
  *
  * Sized off the engine's own spawns rather than off any one case's fixture:
  * every spawn site in `src/` declares a cap — 16 MiB at `src/git.ts`,
@@ -49,7 +46,11 @@ const execFileAsync = promisify(execFile);
  */
 export const SPAWN_OUTPUT_CAP_BYTES = 16 * 1024 * 1024;
 
-/** Node's own `code` on the rejection it builds when a stream outruns `maxBuffer`. */
+/**
+ * Node's own `code` on an async overrun (`.claude/rules/platform-facts.md`,
+ * *Node caps a captured child stream at 1 MiB, and reports the overrun as a
+ * spawn failure*).
+ */
 const MAXBUFFER_CODE = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
 
 /**
@@ -387,6 +388,10 @@ export function installStateRootLeakGuard(
  * harness's own number rather than anything the child did wrong: read as a
  * spawn failure it says the subject never ran, which is the one thing an
  * overrun proves false (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * Every code an overrun can arrive as is node's own, and none of them is a
+ * truncation a caller could have read instead
+ * (`.claude/rules/platform-facts.md`, *Node caps a captured child stream at
+ * 1 MiB, and reports the overrun as a spawn failure*).
  */
 export function exitStatusOf(err: unknown): number {
   const e = err as { code?: unknown; signal?: unknown };
