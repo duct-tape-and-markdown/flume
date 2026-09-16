@@ -77,10 +77,11 @@ Options:
   -h, --help          Print this message (\`flume help\` prints the same).
   -v, --version       Print the flume version.
 
-Run \`flume <command> --help\` for per-command usage and exit codes.
+Run \`flume <command> --help\` — or \`flume help <command>\` — for that
+command's usage and exit codes.
 `;
 
-export const HELP_SUB: Record<Subcommand, string> = {
+const HELP_SUB: Record<Subcommand, string> = {
   status: `Usage: flume status
 
 Print baton state: awake phases (or "hibernating" if none), then, when
@@ -446,6 +447,21 @@ Exit codes:
 
 export function isSubcommand(value: string): value is Subcommand {
   return (SUBCOMMANDS as readonly string[]).includes(value);
+}
+
+/**
+ * The page that answers one command name — its {@link HELP_SUB} entry, or
+ * {@link HELP_JOB} for `job`, whose verbs share a page of their own rather
+ * than sitting in the subcommand table. `undefined` is a name this surface
+ * carries no page for.
+ *
+ * One decision, read by both arms that print a page: `flume <name> --help`
+ * and `flume help <name>`. A page reachable through one spelling and not the
+ * other is the shape this function exists to make unspellable.
+ */
+export function helpPageFor(name: string): string | undefined {
+  if (isSubcommand(name)) return HELP_SUB[name];
+  return name === "job" ? HELP_JOB : undefined;
 }
 
 export function wantsHelp(args: readonly string[]): boolean {

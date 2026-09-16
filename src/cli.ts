@@ -93,7 +93,7 @@ import {
   loopCompletionSummary,
   formatTickVerdictLine,
 } from "./cliVerdict.js";
-import { HELP_TOP, HELP_SUB, HELP_JOB, isSubcommand, wantsHelp } from "./cliHelp.js";
+import { HELP_TOP, helpPageFor, wantsHelp } from "./cliHelp.js";
 import {
   loadChainForObservation,
   refuseCjsContextHost,
@@ -263,6 +263,22 @@ async function main(): Promise<number> {
   // they have not run before, and the answer it gets is `--help`'s to the
   // byte.
   if (firstArg === "--help" || firstArg === "-h" || firstArg === "help") {
+    // ...and `flume help <command>` is that command's own `--help` page, by
+    // the same reasoning: the operator reaching for the bare verb is the one
+    // who has not learned the flag spelling yet. A name this surface holds no
+    // page for refuses usage-shaped rather than answering the top-level page
+    // over an argument it dropped.
+    if (firstArg === "help" && restArgs.length > 0) {
+      const page =
+        restArgs.length === 1 ? helpPageFor(restArgs[0] as string) : undefined;
+      if (page === undefined) {
+        console.error(`no help page for: ${restArgs.join(" ")}`);
+        console.error("usage: flume help [<command>]");
+        return 2;
+      }
+      process.stdout.write(page);
+      return 0;
+    }
     process.stdout.write(HELP_TOP);
     return 0;
   }
@@ -275,9 +291,11 @@ async function main(): Promise<number> {
   let rest = restArgs;
 
   // Per-subcommand --help short-circuits before any side effects (chain load,
-  // baton mutation, agent invocation).
-  if (isSubcommand(cmd) && wantsHelp(rest)) {
-    process.stdout.write(HELP_SUB[cmd]);
+  // baton mutation, agent invocation). `job` is on this same arm — its verbs
+  // share one page, which `helpPageFor` decides alongside the table's.
+  const cmdHelp = helpPageFor(cmd);
+  if (cmdHelp !== undefined && wantsHelp(rest)) {
+    process.stdout.write(cmdHelp);
     return 0;
   }
 
@@ -293,10 +311,6 @@ async function main(): Promise<number> {
   let jobRunName: string | undefined;
   let jobVerbArgs: readonly string[] | undefined;
   if (cmd === "job") {
-    if (wantsHelp(rest)) {
-      process.stdout.write(HELP_JOB);
-      return 0;
-    }
     if (rest[0] === "run") {
       const words = rest.slice(1);
       let maxArgs: string[] = [];

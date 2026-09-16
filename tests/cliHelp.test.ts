@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { EX_IOERR } from "../src/cli.ts";
+import { HELP_TOP, helpPageFor } from "../src/cliHelp.ts";
 import {
   loopCompletionSummary,
   loopExitCode,
@@ -859,4 +860,102 @@ describe("flume help — the bare verb against the flag (FLUME-HELP-IS-THE-SAME-
       await rm(dir, { recursive: true, force: true });
     }
   }, SPAWN_BUDGET_MS);
+});
+
+/**
+ * FLUME-HELP-ANSWERS-FOR-A-SUBCOMMAND — `flume help status` printed the
+ * top-level listing and dropped the name, so the bare verb an operator
+ * reaches for before learning the flag spelling was the one verb whose
+ * argument went nowhere (spec/cli.md, *Subcommand surface*).
+ *
+ * Each spelling pair is driven through the real CLI and read against the
+ * other, never against a copy of the page — there is one writer per page and
+ * what these cases are about is the dispatch arm that reaches it
+ * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+ * wrote").
+ */
+describe("flume help <name> — the trailing name against the flag spelling (FLUME-HELP-ANSWERS-FOR-A-SUBCOMMAND)", () => {
+  /**
+   * `flume help <name>` against `flume <name> --help`, in a bay holding no
+   * chain: the flag form is pinned as the real page carrying `marker` before
+   * it stands as the expected value, then the verb form is read against it
+   * whole — both streams and the status.
+   */
+  async function expectHelpVerbMatchesFlag(
+    name: string,
+    marker: string,
+  ): Promise<void> {
+    const dir = await mkFixtureRoot("flume-help-name-");
+    try {
+      const flag = await runCliStreams(dir, [name, "--help"]);
+      expect({ code: flag.code, stderr: flag.stderr }).toEqual({
+        code: 0,
+        stderr: "",
+      });
+      expect(flag.stdout).toContain(marker);
+
+      const verb = await runCliStreams(dir, ["help", name]);
+      expect(verb).toEqual(flag);
+
+      // Short-circuited above every side effect, on this arm as on the bare
+      // verb's: the bay is as empty as the fixture planted it — no chain load
+      // attempted, no `awake/` written by a baton. The non-vacuity for that
+      // absence is the bare verb's own case above, where a verb that does
+      // load the chain leaves both traces in this same fixture.
+      expect(await readdir(join(dir, ".flume"))).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("flume help status prints the status subcommand's usage", async () => {
+    await expectHelpVerbMatchesFlag("status", "Usage: flume status");
+  }, SPAWN_BUDGET_MS);
+
+  it("flume help job prints the job verb's usage", async () => {
+    await expectHelpVerbMatchesFlag("job", "Usage: flume job <verb> [args]");
+  }, SPAWN_BUDGET_MS);
+
+  it("flume help with an unknown name exits 2 with usage", async () => {
+    const dir = await mkFixtureRoot("flume-help-unknown-");
+    try {
+      const { stdout, stderr, code } = await runCliStreams(dir, [
+        "help",
+        "stauts",
+      ]);
+      // Usage-shaped, naming what was typed — and stdout empty rather than
+      // carrying the top-level listing, which is the drop this case exists
+      // to refuse.
+      expect({ code, stdout }).toEqual({ code: 2, stdout: "" });
+      expect(stderr).toContain("no help page for: stauts");
+      expect(stderr).toContain("usage: flume help [<command>]");
+      expect(await readdir(join(dir, ".flume"))).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  /**
+   * The listing against the decider: every command `flume --help` advertises
+   * is a name `flume help <name>` answers. A command added to the table and
+   * not to a page would otherwise ship a listed name whose help refuses.
+   */
+  it("every command the top-level listing advertises has a page flume help reaches", () => {
+    const start = HELP_TOP.indexOf("Commands:\n");
+    expect(start).toBeGreaterThan(-1);
+    const block = HELP_TOP.slice(start, HELP_TOP.indexOf("\n\nOptions:"));
+    const names = [
+      ...new Set(
+        block
+          .split("\n")
+          .map((line) => /^ {2}(\S+)/.exec(line)?.[1])
+          .filter((name): name is string => name !== undefined),
+      ),
+    ];
+    // Vacuity: an unparsed block would leave nothing to judge, and every
+    // name below would hold over the empty set.
+    expect(names.length).toBeGreaterThan(1);
+    expect(names).toContain("job");
+    expect(names.filter((name) => helpPageFor(name) === undefined)).toEqual([]);
+  });
 });
