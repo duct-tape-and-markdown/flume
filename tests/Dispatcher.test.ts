@@ -2713,7 +2713,16 @@ describe("Dispatcher — dispatch reads resolve from the committed tip, not the 
     await commitPendingFile(fx.repo, "{ this is not valid json");
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    // A fence that admits no queue path: the strict read's carve-out is for
+    // the phase that rewrites the queue (spec/pending.md "Queue reads are
+    // strict"), and this phase is not it, so the refusal stands. `makePhase`'s
+    // default `["**"]` would carve it out.
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [],
+    });
     const chain: Chain = { phases: [phase], humanOnly: [] };
     const agent = fanoutAgent({});
 
@@ -7249,9 +7258,12 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     await commitPendingFile(fx.repo, "{ this is not valid json");
     new Baton(join(fx.repo, ".flume")).wake("build");
 
+    // Not the queue's writer: the carve-out (spec/pending.md "Queue reads are
+    // strict") turns on the declared fence, and `src/**` names no queue path.
     const phase = makePhase({
       name: "build",
       concurrency: "fanout",
+      writablePaths: ["src/**"],
       gates: [],
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
@@ -17546,5 +17558,177 @@ describe("Dispatcher — the trunk tip an afterMerge span landed onto", () => {
     expect(
       await git.diffNameOnly(fx.repo, second.baseSha, second.commitSha),
     ).toEqual(["src/landed-first.ts", "src/landed-second.ts"]);
+  });
+});
+
+/**
+ * spec/pending.md "Queue reads are strict": the strict read's one carve-out.
+ * A refusal that also stops the phase whose rewrite is the repair leaves an
+ * unparseable queue clearable only by hand, so the refusal is keyed on the
+ * phase's **declared** fence — the same `writablePaths` the write guard
+ * enforces, never an intent inferred from the phase's name or its last commit
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * The queue is committed rather than left on disk: every decide-read resolves
+ * the committed `HEAD` tip (spec/pending.md, "Dispatch reads come from the
+ * tip, not the tree"), so an uncommitted corrupt file would be invisible to
+ * the read under test and each case below would pass over a clean queue.
+ */
+describe("Dispatcher — the queue's declared writer runs over an unparseable queue", () => {
+  /** What every case here corrupts the committed queue with. */
+  const CORRUPT = "{ this is not valid json";
+  /** The queue's path as the fence names it — repo-relative, git's alphabet. */
+  const QUEUE_REL = ".flume/plan/pending.json";
+
+  it("a phase whose writable paths include the queue is invoked over an unparseable queue", async () => {
+    await commitPendingFile(fx.repo, CORRUPT);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    const repaired: PendingEntry[] = [makeEntry("REPAIRED", ["src/a.ts"])];
+    let invoked = false;
+    const agent: Agent = {
+      name: "fake-queue-writer",
+      async invoke(inv) {
+        invoked = true;
+        // The rewrite *is* the repair: this phase's whole output is the
+        // queue, so it writes a parseable one over the corrupt tip.
+        await writeAndCommit(
+          inv.cwd,
+          QUEUE_REL,
+          JSON.stringify(repaired, null, 2) + "\n",
+          "plan: re-derive the queue",
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      writablePaths: [QUEUE_REL],
+      gates: [],
+    });
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+
+    expect(invoked).toBe(true);
+    expect(outcome.failed).toBeUndefined();
+    expect(outcome.result?.committed).toBe(true);
+    // The repair reached trunk, so the next tick's strict read resolves.
+    expect(await readPendingFromDisk(fx.repo)).toEqual(repaired);
+  });
+
+  it("a phase that cannot write the queue is refused over an unparseable one", async () => {
+    await commitPendingFile(fx.repo, CORRUPT);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let invoked = false;
+    const agent: Agent = {
+      name: "fake-non-writer",
+      async invoke() {
+        invoked = true;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    // `src/**` names no queue path, so this phase could not rewrite the queue
+    // even if it ran — the refusal stands exactly as it did before the
+    // carve-out existed.
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [],
+    });
+
+    const errors: string[] = [];
+    const rec: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (l) => errors.push(l),
+    };
+
+    const preHead = await head(fx.repo);
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: rec,
+    }).tick();
+
+    expect(invoked).toBe(false);
+    expect(outcome.failed).toBe(true);
+    expect(outcome.result).toBeUndefined();
+    // The refusal names the fence verdict that kept it standing, not just the
+    // broken file: with a carve-out in place, "why was this tick refused" is a
+    // fact the engine decided on and therefore reports
+    // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+    // never rediscovered*).
+    expect(errors.length).toBeGreaterThan(0);
+    const refusal = errors.find((e) => e.includes("failed to parse"));
+    expect(refusal).toBeDefined();
+    expect(refusal).toContain("'build' does not declare");
+    expect(refusal).toContain(QUEUE_REL);
+    expect(outcome.summary).toContain(QUEUE_REL);
+    // Nothing was written over the corrupt tip by the refusal itself.
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(
+      await readFile(join(fx.repo, ".flume", "plan", "pending.json"), "utf8"),
+    ).toBe(CORRUPT);
+  });
+
+  it("the tick context carries the queue's parse failure as a fact", async () => {
+    await commitPendingFile(fx.repo, CORRUPT);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let seen: TickContext | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      writablePaths: [QUEUE_REL],
+      gates: [],
+      promptArgs: (ctx) => {
+        seen = ctx;
+        return {};
+      },
+    });
+
+    const agent: Agent = {
+      name: "fake-queue-writer",
+      async invoke() {
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+
+    expect(seen).toBeDefined();
+    // Non-vacuity: the parse really did fail, and the errors really are the
+    // parse's own — a green over an empty error list would prove nothing
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(seen!.queueParseFailure?.errors.length).toBeGreaterThan(0);
+    expect(seen!.queueParseFailure?.path).toBe(QUEUE_REL);
+    expect(seen!.queueParseFailure?.errors[0]?.message).toContain(
+      "invalid JSON",
+    );
+    // `pending` is empty because nothing resolved, never because the queue is
+    // drained — this field is what tells the two apart, on the context the
+    // agent's prompt is built from and on the result the handoff reads.
+    expect(seen!.pending).toEqual([]);
+    expect(outcome.result?.queueParseFailure?.path).toBe(QUEUE_REL);
   });
 });

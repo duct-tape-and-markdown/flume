@@ -27,7 +27,7 @@ import {
 } from "./paths.js";
 import {
   commitPendingUpdate,
-  readPending,
+  readPendingForDecision,
   readPendingTolerant,
 } from "./pendingLedger.js";
 import {
@@ -174,7 +174,14 @@ export async function runFanout(
 ): Promise<PhaseTickOutcome> {
   const repoRoot = leg.repoRoot;
   const preHead = await git.revParse(repoRoot);
-  const pending = await readPending(leg);
+  // spec/pending.md "Queue reads are strict": the same carve-out the singleton
+  // decide-read takes. A wave over an unparseable queue has no entry to assign
+  // — `pending` is `[]`, so nothing is pickable — and the fact rides the result
+  // below, so a `handoff` never reads that empty batch as a drained queue.
+  const { pending, queueParseFailure } = await readPendingForDecision(
+    leg,
+    phase,
+  );
   // spec/loop.md "No false signal": this queue read is the one place the
   // engine learns a tag has left the queue, so it is where records keyed
   // by a departed tag are retired — before selection, so nothing this
@@ -207,6 +214,7 @@ export async function runFanout(
         revertedTags: [],
         quarantinedTags,
         nothingPickable: true,
+        ...(queueParseFailure ? { queueParseFailure } : {}),
       },
       ...(clearedPriorAttempts.length > 0 ? { clearedPriorAttempts } : {}),
     };
@@ -988,6 +996,7 @@ export async function runFanout(
       ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
       shippedTags: shipped.map((s) => s.tag),
       revertedTags: mergeReverted.map((e) => e.tag),
+      ...(queueParseFailure ? { queueParseFailure } : {}),
     },
     ...(waveNoCommit ? { noCommit: waveNoCommit } : {}),
     ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),

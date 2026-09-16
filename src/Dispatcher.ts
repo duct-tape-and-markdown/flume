@@ -53,7 +53,10 @@ import {
   phasePromptPath,
   resolvePendingPath,
 } from "./paths.js";
-import { readPending, type PendingLedgerContext } from "./pendingLedger.js";
+import {
+  readPendingForDecision,
+  type PendingLedgerContext,
+} from "./pendingLedger.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { PriorAttemptStore } from "./priorAttempts.js";
 import { PendingParseFailure } from "./PendingSchema.js";
@@ -800,15 +803,19 @@ export class Dispatcher {
     } catch (err) {
       if (!(err instanceof PendingParseFailure)) throw err;
       // Same failure class as an unresolved chain: no agent ran
-      // (singleton/fanout's decide-read refused before invoking one) or a
+      // (the decide-read refused before invoking one, because this phase's
+      // declared fence does not admit the ledger — `readPendingForDecision`,
+      // `src/pendingLedger.ts`, whose reason `err.message` carries) or a
       // wave's shipped work landed on trunk but the rewrite that would clear
       // it from pending.json refused rather than deriving `[]` from a parse
-      // it never trusted — either way this tick does no more work, and a
-      // fresh process next tick reads the same unparseable file until a
-      // human fixes it. The exit code is unchanged either way (EX_MOUNT_DEAD,
-      // `failed: true`) — `WaveLedgerParseFailure`'s carried `verdict` only
-      // adds the record of what the wave shipped before the ledger rewrite
-      // refused; it never softens the refusal itself.
+      // it never trusted — either way this tick does no more work. The repair
+      // is a tick of the phase that declares the queue writable, which the
+      // decide-read's carve-out lets run over exactly this file
+      // (spec/pending.md, "Queue reads are strict"). The exit code is
+      // unchanged either way (EX_MOUNT_DEAD, `failed: true`) —
+      // `WaveLedgerParseFailure`'s carried `verdict` only adds the record of
+      // what the wave shipped before the ledger rewrite refused; it never
+      // softens the refusal itself.
       this.log.error(`[flume] ${err.message}`);
       return {
         hibernated: false,
@@ -936,8 +943,8 @@ export class Dispatcher {
    * The prompt one tick would be handed, resolved without invoking anything —
    * `flume render`'s whole body (spec/cli.md, *Subcommand surface*).
    *
-   * Every step below is the tick's own: `chainLoader`, `readPending`
-   * (`src/pendingLedger.ts`),
+   * Every step below is the tick's own: `chainLoader`,
+   * `readPendingForDecision` (`src/pendingLedger.ts`),
    * `pickableEntries`, `partitionByFileOverlap`, `attempts.readAll`,
    * `phasePromptPath`, `renderPrompt`. The verb this replaces re-derived
    * three of them beside the dispatcher and disagreed with it on all three
@@ -982,7 +989,15 @@ export class Dispatcher {
       );
     }
 
-    const pending = await readPending(this.ledgerCtx);
+    // The tick's own decide-read, carve-out included (spec/pending.md, "Queue
+    // reads are strict"): a preview of a phase that could repair an
+    // unparseable queue must resolve the prompt that repair is rendered from,
+    // and a preview of a phase that could not must refuse exactly where the
+    // tick would.
+    const { pending, queueParseFailure } = await readPendingForDecision(
+      this.ledgerCtx,
+      phase,
+    );
     const isForkResolved =
       (chainModule.forkResolver ?? this.opts.forkResolver)?.(
         this.opts.repoRoot,
@@ -1031,6 +1046,7 @@ export class Dispatcher {
       pickable,
       priorAttempts,
       ...(entry !== undefined ? { assignedEntry: entry } : { pending }),
+      ...(queueParseFailure ? { queueParseFailure } : {}),
     };
 
     let args: Record<string, string>;

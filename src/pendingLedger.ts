@@ -1,9 +1,10 @@
 /**
  * The pending ledger's I/O: every way a tick reads the queue file, the
- * relocation check those reads turn on, and the one rewrite that retires
- * what a wave shipped.
+ * relocation check those reads turn on, the fence verdict that decides whose
+ * read may survive a parse failure, and the one rewrite that retires what a
+ * wave shipped.
  *
- * Four calls that share one fact each — where the ledger lives, which
+ * Calls that share one fact each — where the ledger lives, which
  * alphabet it is read out of, and whether git can see it at all — so they
  * live in the file their name is rather than split across the class that
  * dispatches a tick and the leg that ships one
@@ -14,6 +15,7 @@
  * (`src/tickLeg.ts`, which extends the context below).
  *
  * Nothing here interprets what it read. The strict reader refuses, the
+ * decide-read hands the refusal to the queue's own writer as a fact, the
  * tolerant one announces and degrades, and the rewrite reports the sha and
  * the tip verdict it got — what a tick does about any of it stays with the
  * dispatcher (`src/Dispatcher.ts`) and the wave (`src/waveTick.ts`).
@@ -25,9 +27,14 @@ import { dirname, relative } from "node:path";
 import { existsLoud } from "./fsProbe.js";
 import * as git from "./git.js";
 import type { Logger } from "./log.js";
-import { escapesRoot, matchesAny, namespacedJoin } from "./paths.js";
+import { escapesRoot, gitPath, matchesAny, namespacedJoin } from "./paths.js";
 import { parsePending, PendingParseFailure } from "./PendingSchema.js";
-import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
+import type {
+  EntryExtension,
+  PendingEntry,
+  QueueParseFailure,
+} from "./PendingSchema.js";
+import type { Phase } from "./Phase.js";
 import type { TickVerdictMergeOutcome } from "./tickVerdict.js";
 import { liveForeignClaimPid } from "./tipVerify.js";
 
@@ -79,6 +86,47 @@ export function isPendingRelocated(ctx: PendingLedgerContext): boolean {
 }
 
 /**
+ * The ledger's path relative to the repo root **in git's own alphabet**
+ * ({@link gitPath}), or `undefined` when it is relocated outside that root
+ * and git can name it at all.
+ *
+ * The fold lands here, at the one reporter, for the reason
+ * `computeStateRootRel` (`src/paths.ts`) folds its own: every consumer
+ * composes a value git will read — a pathspec at a ref ({@link readPending}
+ * below) or a declared fence glob ({@link writesPendingLedger}) — and
+ * `relative` answers in the host's dialect, so reporting it raw puts one
+ * consumer in the other alphabet on win32 the first time one forgets.
+ */
+function pendingPathRel(
+  ctx: PendingLedgerContext,
+): string | undefined {
+  if (isPendingRelocated(ctx)) return undefined;
+  return gitPath(relative(ctx.repoRoot, ctx.pendingPath));
+}
+
+/**
+ * Whether `phase` is the queue's own writer — its declared
+ * {@link Phase.writablePaths} admit the ledger's path, read through the same
+ * `matchesAny` the write guard enforces the fence with, so the carve-out and
+ * the enforcement cannot disagree about what a glob covers.
+ *
+ * Keyed on the **declared** fence and nothing else
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*): the chain said
+ * which paths this phase may write, so the engine reads that statement rather
+ * than guessing from a phase's name, its prompt, or what its last commit
+ * touched. A relocated ledger ({@link pendingPathRel}) is no phase's writer
+ * here — `writablePaths` is repo-relative by declaration, so no glob a chain
+ * can write names a path outside the repo.
+ */
+function writesPendingLedger(
+  ctx: PendingLedgerContext,
+  phase: Pick<Phase, "writablePaths">,
+): boolean {
+  const rel = pendingPathRel(ctx);
+  return rel !== undefined && matchesAny(rel, phase.writablePaths);
+}
+
+/**
  * Strict reader: throws {@link PendingParseFailure} on a parse error rather
  * than degrading to `[]`. Used at every read a tick acts on — the
  * singleton/fanout decide-reads and {@link commitPendingUpdate}'s rewrite
@@ -96,7 +144,7 @@ export function isPendingRelocated(ctx: PendingLedgerContext): boolean {
  * git by construction ({@link commitPendingUpdate}), so it stays the one
  * disk-reading case here, alongside {@link readPendingTolerant}.
  */
-export async function readPending(
+async function readPending(
   ctx: PendingLedgerContext,
 ): Promise<PendingEntry[]> {
   if (isPendingRelocated(ctx)) {
@@ -113,7 +161,8 @@ export async function readPending(
     if (!r.ok) throw new PendingParseFailure(r.errors);
     return r.entries;
   }
-  const rel = relative(ctx.repoRoot, ctx.pendingPath);
+  // Non-relocated by the branch above, so the fold always answers.
+  const rel = pendingPathRel(ctx)!;
   const raw = await git.readFileAtRef(ctx.repoRoot, "HEAD", rel);
   if (raw === null) return [];
   const r = parsePending(raw, ctx.entryExtension);
@@ -325,4 +374,75 @@ export async function commitPendingUpdate(
     paths: [ctx.pendingPath],
   });
   return { sha, tipMoved: false };
+}
+
+/**
+ * What a decide-read answered with: the queue as the tick will act on it,
+ * and — only ever on the queue's own writer — the parse failure that queue
+ * did not survive.
+ *
+ * `queueParseFailure` present means `pending` is `[]` because nothing
+ * resolved, never because the queue is drained. The two are told apart by
+ * this field and by nothing a reader has to infer from the empty list.
+ */
+interface DecideRead {
+  readonly pending: PendingEntry[];
+  readonly queueParseFailure: QueueParseFailure | undefined;
+}
+
+/**
+ * The decide-read both legs take, and the one carve-out in {@link readPending}'s
+ * refusal (spec/pending.md, *Queue reads are strict*).
+ *
+ * A phase the strict read refuses over cannot be the phase that repairs the
+ * queue, so refusing every phase leaves an unparseable queue clearable only by
+ * hand — including for the plan phase whose whole output is the rewrite. Here
+ * the refusal is keyed on {@link writesPendingLedger}: the phase whose declared
+ * fence admits the ledger runs, with the failure handed to it as a tick fact
+ * (`TickContext.queueParseFailure`) and an empty queue to derive from; every
+ * other phase is refused exactly as before, and the refusal now names the fence
+ * verdict that kept it standing rather than leaving the operator to guess why
+ * the tick could not repair itself.
+ *
+ * One home for the carve-out because three reads take it — `runSingleton`
+ * (`src/singletonTick.ts`), `runFanout` (`src/waveTick.ts`) and the preview
+ * `Dispatcher.render` resolves one call short of the invocation. A copy at any
+ * of them is how a preview comes to disagree with the tick it previews
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * Only the decide-reads. `commitPendingUpdate`'s rewrite read keeps the bare
+ * refusal: it runs after this tick's shipped work already landed, and a rewrite
+ * derived from a parse that failed is exactly the destruction the strict read
+ * exists to prevent.
+ */
+export async function readPendingForDecision(
+  ctx: PendingLedgerContext,
+  phase: Pick<Phase, "name" | "writablePaths">,
+): Promise<DecideRead> {
+  let pending: PendingEntry[];
+  try {
+    pending = await readPending(ctx);
+  } catch (err) {
+    if (!(err instanceof PendingParseFailure)) throw err;
+    const rel = pendingPathRel(ctx);
+    if (rel === undefined || !matchesAny(rel, phase.writablePaths)) {
+      throw new PendingParseFailure(
+        err.errors,
+        rel === undefined
+          ? `the ledger is relocated outside the repo root, which no ` +
+            `repo-relative fence can name, so '${phase.name}' cannot rewrite it`
+          : `'${phase.name}' does not declare ${rel} writable, so this tick ` +
+            `cannot rewrite it`,
+      );
+    }
+    ctx.log.warn(
+      `[flume] ${phase.name} declares ${rel} writable; running it over the ` +
+        `unparseable queue with the failure as a tick fact (${err.errors.length} error(s))`,
+    );
+    return {
+      pending: [],
+      queueParseFailure: { path: rel, errors: err.errors },
+    };
+  }
+  return { pending, queueParseFailure: undefined };
 }

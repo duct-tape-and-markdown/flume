@@ -21,7 +21,10 @@ import type { Agent } from "./Agent.js";
 import { bound } from "./bounds.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
-import { readPending, readPendingTolerant } from "./pendingLedger.js";
+import {
+  readPendingForDecision,
+  readPendingTolerant,
+} from "./pendingLedger.js";
 import type { Chain, Phase, TickContext, TickResult } from "./Phase.js";
 import type { NoCommitMode } from "./Prompt.js";
 import { buildGateRevert, priorAttemptRef } from "./priorAttempts.js";
@@ -55,7 +58,14 @@ export async function runSingleton(
 ): Promise<PhaseTickOutcome> {
   const repoRoot = leg.repoRoot;
   const preHead = await git.revParse(repoRoot);
-  const pending = await readPending(leg);
+  // spec/pending.md "Queue reads are strict": strict, with the queue writer's
+  // one carve-out — a phase whose declared fence admits the ledger runs over
+  // an unparseable queue with the failure as a tick fact, every other phase
+  // is refused here before anything is provisioned.
+  const { pending, queueParseFailure } = await readPendingForDecision(
+    leg,
+    phase,
+  );
   // spec/chain.md "What a hook receives": the same selection verdict
   // `runFanout` computes for its own batch, so a singleton `shouldRun` and
   // the next fanout tick cannot disagree.
@@ -82,6 +92,7 @@ export async function runSingleton(
     configDir: leg.configDir,
     shippedTags: [],
     revertedTags: [],
+    ...(queueParseFailure ? { queueParseFailure } : {}),
   });
 
   // spec/loop.md "Declining a tick before the invocation": every
@@ -94,6 +105,7 @@ export async function runSingleton(
     pending,
     pickable,
     priorAttempts,
+    ...(queueParseFailure ? { queueParseFailure } : {}),
   };
 
   // spec/loop.md "Declining a tick before the invocation": consulted
@@ -494,6 +506,7 @@ export async function runSingleton(
       shippedTags: [],
       revertedTags: [],
       ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
+      ...(queueParseFailure ? { queueParseFailure } : {}),
     },
     ...(noCommit ? { noCommit } : {}),
     ...(tipMoved ? { tipMoved } : {}),

@@ -469,6 +469,28 @@ function issuesToParseErrors(issues: z.core.$ZodIssue[]): ParseError[] {
 }
 
 /**
+ * The same refusal as a **fact a phase reads**, for the one phase the strict
+ * read must not stop: the one whose declared writable paths include the queue
+ * itself, whose rewrite is the repair (spec/pending.md, *Queue reads are
+ * strict*). `readPendingForDecision` (`src/pendingLedger.ts`) hands it to that
+ * phase on `TickContext.queueParseFailure` and reports it on
+ * `TickResult.queueParseFailure`, in place of the throw below.
+ *
+ * A fact, never a verdict (`.claude/rules/engine-boundary.md`, *Routing
+ * rule*): the engine states which file did not resolve and what the parse
+ * said about it, and what to do about that stays the phase's.
+ */
+export interface QueueParseFailure {
+  /**
+   * The queue's path relative to the repo root, in git's own alphabet — the
+   * same value the fence that carved this failure out was matched against.
+   */
+  path: string;
+  /** One per validation failure, exactly as {@link parsePending} reported them. */
+  errors: readonly ParseError[];
+}
+
+/**
  * The throwing form of a {@link parsePending} refusal, for the reads that act
  * on the result rather than report it: `readPending` (`src/pendingLedger.ts`
  * — the reads that decide pickable work, and the wave's ledger rewrite)
@@ -479,7 +501,17 @@ function issuesToParseErrors(issues: z.core.$ZodIssue[]): ParseError[] {
  * or a rewrite from it. `tick()` (`src/Dispatcher.ts`) catches it exactly
  * where it catches chain-resolution failure and folds it into the same
  * mount-dead failed-outcome shape — a pending.json no agent can parse is
- * exactly as unusable next tick as this one.
+ * exactly as unusable next tick as this one. The one read that answers with
+ * {@link QueueParseFailure} instead is the decide-read taken for a phase that
+ * can write the queue (`readPendingForDecision`, `src/pendingLedger.ts`).
+ *
+ * `detail` is the refusing read's own reason, appended to the message: the
+ * decide-read names the fence verdict that kept the refusal standing, so the
+ * operator reading the failed tick sees *why* this phase could not be handed
+ * the failure as a fact rather than only that the file is broken
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). The reads that have no reason beyond the parse pass
+ * none.
  *
  * Lives beside the parse it wraps rather than at the reader, because the wave
  * leg subclasses it (`WaveLedgerParseFailure`, `src/waveTick.ts`) and a chain's
@@ -487,10 +519,11 @@ function issuesToParseErrors(issues: z.core.$ZodIssue[]): ParseError[] {
  */
 export class PendingParseFailure extends Error {
   readonly errors: readonly ParseError[];
-  constructor(errors: readonly ParseError[]) {
+  constructor(errors: readonly ParseError[], detail?: string) {
     super(
       `pending.json failed to parse (${errors.length} error(s)): ` +
-        errors.map((e) => `[${e.index}] ${e.path}: ${e.message}`).join("; "),
+        errors.map((e) => `[${e.index}] ${e.path}: ${e.message}`).join("; ") +
+        (detail ? `; ${detail}` : ""),
     );
     this.name = "PendingParseFailure";
     this.errors = errors;

@@ -72,6 +72,10 @@ export {
   type EntryExtensionField,
   type ParseError,
   type ParseResult,
+  // `TickContext.queueParseFailure` / `TickResult.queueParseFailure` carry
+  // one; a chain rendering the queue's parse errors into its repair prompt
+  // needs the name.
+  type QueueParseFailure,
 } from "./PendingSchema.js";
 
 export { partitionByFileOverlap, type PartitionOptions } from "./partition.js";

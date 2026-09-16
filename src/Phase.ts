@@ -14,7 +14,11 @@ import type {
 } from "./tickVerdict.js";
 import type { FlumePaths } from "./flumeApi.js";
 import type { Gate } from "./Gate.js";
-import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
+import type {
+  EntryExtension,
+  PendingEntry,
+  QueueParseFailure,
+} from "./PendingSchema.js";
 import type { NoCommitMode, PriorAttempt } from "./Prompt.js";
 
 /**
@@ -147,6 +151,23 @@ export interface TickContext {
    * relocated rather than unreported.
    */
   stateRootRel?: string | undefined;
+  /**
+   * The queue's own parse failure, present only on a tick whose phase can
+   * write the queue — the carve-out in the strict read (spec/pending.md,
+   * *Queue reads are strict*; `readPendingForDecision`,
+   * `src/pendingLedger.ts`). Absent means the queue resolved; a phase that
+   * cannot write it never sees this field because such a tick is refused
+   * before it runs.
+   *
+   * Present, `pending` is `[]` because nothing resolved rather than because
+   * the queue is drained, and this field is the only thing that tells the two
+   * apart — a `promptArgs` rendering the queue for its agent reads it and
+   * renders the errors as the tick's input, since the rewrite it is about to
+   * produce is the repair. Reported as a fact, never a verdict: what to do
+   * about it is the chain's (`.claude/rules/engine-boundary.md`, *Routing
+   * rule*).
+   */
+  queueParseFailure?: QueueParseFailure;
 }
 
 /**
@@ -345,6 +366,20 @@ export interface TickResult {
    * `false`, mirroring `noCommit`'s absent-on-committed convention.
    */
   nothingPickable?: boolean;
+  /**
+   * The same fact `TickContext.queueParseFailure` handed this tick's agent,
+   * reported back on the result so a `handoff` reads it too. Absent on every
+   * tick whose queue resolved.
+   *
+   * What it buys a `handoff`: `pendingAfter`/`pickableAfter` come from the
+   * post-tick re-read and say nothing about the decide-read this tick acted
+   * on, and a fanout wave over an unparseable queue has nothing pickable by
+   * construction — so without this field a queue that never resolved is
+   * indistinguishable from a drained one, which is the silent degradation
+   * the strict read exists to prevent (`.claude/rules/engineering.md`, *Loud
+   * or nothing*).
+   */
+  queueParseFailure?: QueueParseFailure;
 }
 
 /**
