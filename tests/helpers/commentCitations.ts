@@ -12,6 +12,21 @@
  * working tree. One mechanism either way — the citation names something the
  * repo holds, or it names nothing and the tree renamed out from under it.
  *
+ * A comment that writes the two together — `` `name` (`src/file.ts`) `` — has
+ * said more than either alone: it named the file the declaration sits in, and
+ * where a declaration lives is the token's fact rather than its meaning. So
+ * that pair is resolved against what the named file declares and against
+ * nothing else, and a split that moves the job out from under the citation
+ * reds it. The repo-wide token set would answer it from wherever the symbol
+ * went, which is the reading the pair exists to refuse.
+ *
+ * The pair is the whole parenthetical and nothing else: the open paren is all
+ * that sits between the two spans, and the path closes it. A path a sentence
+ * merely follows a name with, and a parenthetical carrying a path plus an
+ * aside — the section cite `` (`spec/loop.md`, *Section*) `` among them — are
+ * context, and drawing a home out of either would red a comment that claimed
+ * none.
+ *
  * A `*.md` page name is a citation backticked or not, because a filename is
  * never a sentence: the extension is the whole claim, so no surrounding prose
  * has to be read to know the token names a file. The unfenced ones are
@@ -110,6 +125,16 @@ export interface WrappedCitation extends CitationSite {
 }
 
 /**
+ * A citation whose author named the file the token lives in:
+ * `` `name` (`src/file.ts`) ``. The pair is the claim, so the file is what
+ * answers it.
+ */
+export interface PairedCitation extends CitationSite {
+  /** The repo-relative path the pair named — where the token must be declared. */
+  readonly home: string;
+}
+
+/**
  * Two verdicts over two judged sets. `scanned` is the citations shaped like a
  * reference — the backticked spans and the page names — and `findings` is the
  * subset naming nothing the trees hold. `wraps` carries the second, over a
@@ -128,6 +153,12 @@ export interface CitationScan extends Scan<CitationSite> {
   readonly bare: readonly CitationSite[];
   /** Judged citations whose every token names something the trees hold. */
   readonly resolved: readonly CitationSite[];
+  /**
+   * The judged citations whose author paired them with a home — the subset of
+   * `scanned` resolved against one file's declarations rather than against
+   * every token the trees hold. What a vacuity pin over that arm reads.
+   */
+  readonly pairs: readonly PairedCitation[];
   /**
    * The citations a comment line left open — a backticked span the line never
    * closed, or an unfenced page name the break split at a directory boundary
@@ -310,6 +341,26 @@ const isSubject = (text: string): boolean => {
     ? !ALL_CAPS.test(text)
     : INTERNAL_CAPITAL.test(text);
 };
+
+/**
+ * Whether a span is the identifier half of a pair: a name spelled in the
+ * identifier charset, admitted by the same subject rule every other citation
+ * is held to. A slash routes a span to the path arm, so a span carrying one
+ * is a path however its segments read.
+ */
+const isIdentifierSubject = (text: string): boolean =>
+  !text.includes("/") &&
+  isSubject(text) &&
+  text.split(".").every((segment) => SEGMENT.test(segment));
+
+/**
+ * The gap a pair spells between its two spans, and the character that closes
+ * it: `` `name` (`src/file.ts`) ``. Nothing else is read as a pair — a path a
+ * sentence merely follows a name with is context, and drawing a home out of
+ * it would red a comment that claimed nothing.
+ */
+const PAIR_OPEN = "(";
+const PAIR_CLOSE = ")";
 
 /** The call heads a test title sits behind, in this suite's runner. */
 const TITLE_CALLEES: ReadonlySet<string> = new Set(["describe", "it", "test"]);
@@ -528,10 +579,12 @@ const commentSpans = (
   readonly closed: CitationSite[];
   readonly bare: CitationSite[];
   readonly wrapped: WrappedCitation[];
+  readonly paired: Array<{ site: CitationSite; home: string }>;
 } => {
   const closed: CitationSite[] = [];
   const bare: CitationSite[] = [];
   const wrapped: WrappedCitation[] = [];
+  const paired: Array<{ site: CitationSite; home: string }> = [];
 
   const read = (run: readonly CommentLine[]): void => {
     if (run.length === 0) return;
@@ -555,6 +608,9 @@ const commentSpans = (
     }));
     /** Every span the pairing below closed, fences included. */
     const fenced: Array<{ start: number; end: number }> = [];
+    /** The unwrapped ones with their extents — what the pair arm reads. */
+    const onOneLine: Array<{ start: number; end: number; site: CitationSite }> =
+      [];
     let index = 0;
     while (index < marks.length) {
       const open = marks[index];
@@ -587,8 +643,30 @@ const commentSpans = (
         });
       } else {
         closed.push(site);
+        onOneLine.push({
+          start: open.start,
+          end: close.start + close.length,
+          site,
+        });
       }
       index = closeAt + 1;
+    }
+
+    // The pair: an identifier span the author parenthesised a path behind.
+    // Read off the two spans' own extents rather than out of the prose — the
+    // gap is the one open paren, the path closes it, and anything else the
+    // sentence put between them is a path standing on its own.
+    for (let at = 0; at + 1 < onOneLine.length; at += 1) {
+      const name = onOneLine[at];
+      const home = onOneLine[at + 1];
+      if (!name || !home) continue;
+      if (!isIdentifierSubject(name.site.text)) continue;
+      if (!home.site.text.includes("/") || !isPathSubject(home.site.text))
+        continue;
+      const gap = joinWrapped(joined.slice(name.end, home.start), " ").trim();
+      if (gap !== PAIR_OPEN) continue;
+      if (joined.slice(home.end, home.end + 1) !== PAIR_CLOSE) continue;
+      paired.push({ site: name.site, home: home.site.text });
     }
 
     /** Every unfenced page name a line break split, both halves covered. */
@@ -652,7 +730,7 @@ const commentSpans = (
   }
   read(run);
 
-  return { closed, bare, wrapped };
+  return { closed, bare, wrapped, paired };
 };
 
 /**
@@ -686,6 +764,20 @@ export const scanCommentCitations = (
   // --- what those trees hold ---------------------------------------------
   const tokens = new Set<string>();
   const modules = new Set<string>();
+  // Where each name is *declared*, which is the fact a pair cites and the
+  // token set cannot answer: a scope holds every global, so `WeakMap` is in
+  // scope in every module and declared in none of them.
+  const homes = new Map<string, Set<string>>();
+  const holds = (name: string, module: string): void => {
+    const held = homes.get(name) ?? new Set<string>();
+    held.add(module);
+    homes.set(name, held);
+  };
+  const declares = (sym: ts.Symbol): void => {
+    for (const declaration of sym.getDeclarations() ?? []) {
+      holds(sym.getName(), relPath(root, resolve(declaration.getSourceFile().fileName)));
+    }
+  };
   for (const sf of sources) {
     const module = relPath(root, resolve(sf.fileName));
     modules.add(module);
@@ -695,18 +787,27 @@ export const scanCommentCitations = (
     const basename = module.slice(module.lastIndexOf("/") + 1);
     tokens.add(basename);
     tokens.add(basename.replace(/\.[^.]+$/, ""));
+    holds(basename, module);
+    holds(basename.replace(/\.[^.]+$/, ""), module);
     // Scope at the file, which is globals plus its own top level — the arm
     // that holds a lib global or an import a comment cites and no statement
     // in the tree happens to use.
     for (const sym of checker.getSymbolsInScope(sf, ts.SymbolFlags.All)) {
       tokens.add(sym.getName());
+      declares(sym);
     }
     eachToken(sf, (token) => {
       if (ts.isIdentifier(token)) {
         const sym = checker.getSymbolAtLocation(token);
-        if (sym) tokens.add(sym.getName());
+        if (sym) {
+          tokens.add(sym.getName());
+          declares(sym);
+        }
       } else {
         tokens.add(token.text);
+        // A discriminant is declared by the literal spelling it, so the file
+        // spelling it is where that name lives.
+        holds(token.text, module);
       }
     });
   }
@@ -719,12 +820,15 @@ export const scanCommentCitations = (
   const wrapped: WrappedCitation[] = [];
   const scanned: CitationSite[] = [];
   const titled: CitationSite[] = [];
+  /** The home each paired citation named, keyed by the very site judged. */
+  const pairedHome = new Map<CitationSite, string>();
   for (const sf of sources) {
     titled.push(...titleSites(sf, relPath(root, resolve(sf.fileName))));
     const spans = commentSpans(sf, relPath(root, resolve(sf.fileName)));
     backticked.push(...spans.closed);
     bare.push(...spans.bare);
     wrapped.push(...spans.wrapped);
+    for (const pair of spans.paired) pairedHome.set(pair.site, pair.home);
     scanned.push(
       ...[
         ...spans.closed.filter((site) => isSubject(site.text)),
@@ -751,6 +855,25 @@ export const scanCommentCitations = (
           .split(".")
           .every((segment) => KEYWORDS.has(segment) || tokens.has(segment));
 
+  // A pair names the home, so the home is what answers it: every segment is
+  // resolved against the declarations that one file holds, and the repo-wide
+  // token set is not consulted at all. Answered by that set, a citation whose
+  // symbol a split moved out of the file it names would keep resolving from
+  // wherever the symbol went, which is the reading the pair exists to refuse.
+  const resolvesAtHome = (text: string, home: string): boolean =>
+    text
+      .split(".")
+      .every(
+        (segment) => KEYWORDS.has(segment) || homes.get(segment)?.has(home),
+      );
+
+  const answered = (site: CitationSite): boolean => {
+    const home = pairedHome.get(site);
+    return home === undefined
+      ? resolves(site.text)
+      : resolvesAtHome(site.text, home);
+  };
+
   // The page names the titles carry, judged by the page-name arm alone. The
   // token set is not consulted: a title is a string literal, so a name written
   // in one is a token of the tree by having been written, and every verdict
@@ -774,9 +897,12 @@ export const scanCommentCitations = (
       scanned: titlePageNames,
       findings: titlePageNames.filter((site) => !onDisk(site.text)),
     },
+    pairs: scanned
+      .filter((site) => pairedHome.has(site))
+      .map((site) => ({ ...site, home: pairedHome.get(site) ?? "" })),
     scanned,
-    resolved: scanned.filter((site) => resolves(site.text)),
-    findings: scanned.filter((site) => !resolves(site.text)),
+    resolved: scanned.filter(answered),
+    findings: scanned.filter((site) => !answered(site)),
   };
 };
 

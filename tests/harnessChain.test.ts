@@ -848,8 +848,8 @@ it("a declared setup gives every returned phase a setupWorktree hook that provis
 
 it("each registry gate name the package ships constructs that builtin at the declared when", () => {
   // The keys are spelled as a consumer spells them, and each is paired with
-  // the builtin it has to construct. The registry keys by each gate's own
-  // `Function.name` (`src/builtinGates.ts`), so the name a declaration
+  // the builtin it has to construct. The registry in `src/builtinGates.ts`
+  // keys by each gate's own `Function.name`, so the name a declaration
   // carries and the name the package ships are two sides of a seam no type
   // joins — this reads the declaration side through the real factory.
   const shipped: Record<string, Gate> = {

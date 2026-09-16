@@ -353,10 +353,10 @@ export function refuseLeakedStateRoots(
  * Arm both refusals for the calling suite file: the pre-existing check once
  * before its tests, the leak check after each one.
  *
- * Wired suite-wide through `vitest.config.ts`'s `setupFiles`
- * (`tests/helpers/vitestSetup.ts`) rather than per suite, because the writer
- * is unknown — a guard only the CLI suites installed would watch every file
- * except the one that leaks.
+ * Wired suite-wide through the `setupFiles` entry `vitest.config.ts` names,
+ * which is `tests/helpers/vitestSetup.ts`, rather than per suite, because the
+ * writer is unknown — a guard only the CLI suites installed would watch every
+ * file except the one that leaks.
  */
 export function installStateRootLeakGuard(
   fixtureParent: string = tmpdir(),

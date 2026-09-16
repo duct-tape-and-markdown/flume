@@ -87,6 +87,16 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * literal: the page names are answered by the working tree alone, and the
  * module path is the arm that still reads the token set.
  *
+ * Then the pairs, which name a home the token set cannot answer: a
+ * declaration in the file the pair names, a declaration of the other module
+ * cited at the wrong door, and a lib global no module of the tree declares at
+ * all. Each of the three resolves against the trees at large, so the two that
+ * red are the home arm displacing that reading rather than a name the fixture
+ * never declared. Beside them the two spellings no pair is drawn from — a
+ * path a sentence merely follows a name with, and a parenthetical the path
+ * opens without closing — on those same two names, so the refusal is visible
+ * as a refusal.
+ *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
  */
@@ -202,6 +212,20 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// \`lib/retired.ts\` still resolves through that same literal.`,
     `export const RETIRED = ["docs/retired.md", "docs/withdrawn.md", "lib/retired.ts"];`,
     ``,
+    `// A pair names the home, and the home is what answers it: \`Shipped\``,
+    `// (\`lib/dataShapes.ts\`) is declared in the file the pair names. \`Holder\``,
+    `// (\`lib/dataShapes.ts\`) is a declaration of this module cited at the wrong`,
+    `// door, and \`WeakMap\` (\`lib/dataShapes.ts\`) is a global no module of this`,
+    `// tree declares at all.`,
+    `export const PAIRED = 9;`,
+    ``,
+    `// A path a sentence merely follows a name with is context: \`Holder\` is`,
+    `// spelled by this module, and the file beside it (\`lib/dataShapes.ts\`) is`,
+    `// where the pair above cites it, not where it lives. Nor does a pair open a`,
+    `// parenthetical it does not close: \`WeakMap\` (\`lib/dataShapes.ts\`, with an`,
+    `// aside behind it) claims no home either.`,
+    `export const CONTEXT = 10;`,
+    ``,
   ].join("\n"),
 };
 
@@ -245,7 +269,10 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/dataShapes.ts",
     "lib/surface.ts",
   ]);
-  expect(scan.scanned.map((s) => s.text).sort()).toEqual([
+  // Read as the vocabulary rather than the roll: the pair cases at the foot
+  // of the fixture cite three of these names a second time, at a home, and
+  // which sites carry which name is what `findings` below states by line.
+  expect([...new Set(scan.scanned.map((s) => s.text))].sort()).toEqual([
     "Holder",
     "Shipped",
     "Shipped.maxDepth",
@@ -280,11 +307,13 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:68 vanished-notes.md",
     "lib/surface.ts:85 docs/retired.md",
     "lib/surface.ts:85 docs/withdrawn.md",
+    "lib/surface.ts:91 Holder",
+    "lib/surface.ts:93 WeakMap",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
   // discrimination rather than a scan that flagged what it could not classify.
-  expect(scan.resolved.map((s) => s.text).sort()).toEqual([
+  expect([...new Set(scan.resolved.map((s) => s.text))].sort()).toEqual([
     "Holder",
     "Shipped",
     "Shipped.maxDepth",
@@ -342,6 +371,8 @@ it("the citation scan judges a leading-capital citation whose name carries no in
   expect(leading.map(formatCitation)).toEqual([
     "lib/surface.ts:30 Holder",
     "lib/surface.ts:31 Vanished",
+    "lib/surface.ts:91 Holder",
+    "lib/surface.ts:97 Holder",
   ]);
 
   expect(fixtureScan.resolved.map((s) => s.text)).toContain("Holder");
@@ -375,6 +406,11 @@ it("the citation scan resolves a repo-relative path citation against the working
   expect(paths.map(formatCitation)).toEqual([
     "lib/surface.ts:35 lib/dataShapes.ts",
     "lib/surface.ts:36 tsconfig.json",
+    "lib/surface.ts:91 lib/dataShapes.ts",
+    "lib/surface.ts:92 lib/dataShapes.ts",
+    "lib/surface.ts:93 lib/dataShapes.ts",
+    "lib/surface.ts:98 lib/dataShapes.ts",
+    "lib/surface.ts:100 lib/dataShapes.ts",
   ]);
 
   // Neither is a token of the program: `lib/dataShapes.ts` names the module
@@ -616,6 +652,64 @@ it("the citation scan judges no tail an unfenced page name's line break left beh
   expect(fixtureScan.resolved.map((s) => s.text)).not.toContain("guide.md");
 });
 
+// --- the pair, which names the home the token must sit in ----------------
+
+it("a comment pairing an identifier with a repo-relative path reds when the declaration is not in that file", () => {
+  // Vacuity guard: three pairs were drawn off the fixture, all naming the one
+  // home, so the split verdict below is the declaration set discriminating
+  // rather than a scan that drew no pair at all.
+  expect(
+    fixtureScan.pairs.map((site) => `${formatCitation(site)} -> ${site.home}`),
+  ).toEqual([
+    "lib/surface.ts:90 Shipped -> lib/dataShapes.ts",
+    "lib/surface.ts:91 Holder -> lib/dataShapes.ts",
+    "lib/surface.ts:93 WeakMap -> lib/dataShapes.ts",
+  ]);
+
+  // And each of the three resolves where a comment cites it unpaired — the
+  // reading the home arm has to displace. Without this the two findings below
+  // would be names the fixture never declared anywhere.
+  const resolved = fixtureScan.resolved.map(formatCitation);
+  expect(resolved).toContain("lib/surface.ts:44 Shipped");
+  expect(resolved).toContain("lib/surface.ts:97 Holder");
+  expect(resolved).toContain("lib/surface.ts:100 WeakMap");
+
+  // The verdict: the pair naming the declaration's own file resolves, and the
+  // two naming a file the declaration does not sit in red — one a declaration
+  // of the citing module, one a lib global declared outside the tree
+  // altogether. Answered by the token set, a split that moved either symbol
+  // out of the file its pair names would leave the citation standing.
+  expect(resolved).toContain("lib/surface.ts:90 Shipped");
+  const findings = fixtureScan.findings.map(formatCitation);
+  expect(findings).toContain("lib/surface.ts:91 Holder");
+  expect(findings).toContain("lib/surface.ts:93 WeakMap");
+});
+
+it("a repo-relative path a comment names on its own is read as context, never as a pair", () => {
+  // Vacuity guard: both names were read as spans and the path each sits
+  // beside was judged, so the verdict is the pair rule declining to draw
+  // rather than a reader that never saw the citations. And the pair arm is
+  // live on these same two names a few lines up, where it reds both.
+  const judged = fixtureScan.scanned.map(formatCitation);
+  expect(judged).toContain("lib/surface.ts:97 Holder");
+  expect(judged).toContain("lib/surface.ts:98 lib/dataShapes.ts");
+  expect(judged).toContain("lib/surface.ts:100 WeakMap");
+  expect(judged).toContain("lib/surface.ts:100 lib/dataShapes.ts");
+  expect(fixtureScan.findings.map(formatCitation)).toContain(
+    "lib/surface.ts:91 Holder",
+  );
+
+  // Neither spelling is a pair: a path a sentence follows a name with is
+  // context, and a parenthetical the path opens without closing is a citation
+  // standing beside a name. Drawn from either, both names would red at a home
+  // no declaration of them sits in — instead both resolve against the trees.
+  expect(fixtureScan.pairs.map((site) => site.line)).not.toContain(97);
+  expect(fixtureScan.pairs.map((site) => site.line)).not.toContain(100);
+  const resolved = fixtureScan.resolved.map(formatCitation);
+  expect(resolved).toContain("lib/surface.ts:97 Holder");
+  expect(resolved).toContain("lib/surface.ts:100 WeakMap");
+});
+
 // --- the title, which carries the page-name arm alone --------------------
 
 it("the citation scan judges an unbackticked *.md page name a describe or it title carries", () => {
@@ -759,6 +853,13 @@ it("every backticked identifier in a src/, harness/ or tests/ comment names a de
   expect(scan.modules.some((m) => m.startsWith("tests/"))).toBe(true);
   expect(scan.scanned.length).toBeGreaterThan(2500);
   expect(scan.resolved.length).toBeGreaterThan(0);
+
+  // And the home arm is drawing, in quantity: these comments name the file a
+  // symbol sits in wherever they cite one across a module boundary. A pair
+  // rule that stopped matching would leave every one of them answered by the
+  // repo-wide token set, and the emptiness below would pass over a stranded
+  // cite exactly as it did before the arm existed.
+  expect(scan.pairs.length).toBeGreaterThan(50);
 
   // Each exclusion is non-vacuous in the other direction: a name the trees
   // stopped citing is a hole widened for nothing, and reds here rather than

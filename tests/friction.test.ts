@@ -148,8 +148,9 @@ describe("frictionCountLine — EACCES/ENOENT split (dispatcher-frictioncountlin
       // Deny the friction dir structurally (`tests/helpers/denial.ts`):
       // readdir now fails ENOTDIR — the path is there but is not a dir to
       // read — not ENOENT (`.claude/rules/engineering.md`, "Loud or
-      // nothing"). Same primitive `countFrictionFiles` (`tests/job.test.ts`)
-      // is pinned with, and unlike a mode it denies on win32 too.
+      // nothing"). Same primitive `countFrictionFiles` (`src/job.ts`) is
+      // pinned with in `tests/job.test.ts`, and unlike a mode it denies on
+      // win32 too.
       denyDirectory(frictionDir);
 
       expect(await frictionCountLine(stateRoot, chain)).toBe(
