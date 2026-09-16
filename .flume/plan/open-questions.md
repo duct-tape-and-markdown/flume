@@ -94,3 +94,39 @@ it is not exclusive of (b) or (c). If (a) is taken, *Narration is the
 ladder's bottom rung* wants the third carve-out spelled, since `docs/` is not
 shipped in the package's `files` allowlist and so is not the `.d.ts` hover
 text the first carve-out names.
+
+## What row does a declared findings script take, and what shape is its stdout?
+
+**PARKED.** `spec/harness.md` *Declared findings sources* ratifies a fourth
+source: "a command the inbox slice runs at the tip before it renders, whose
+stdout is records — one per finding, in the record shape — drained like the
+rest." Verified on this tree: no field exists (`harness/declaration.ts`), and
+*What a consumer declares*'s table carries no row for it — the table has `ci`
+for the lane source and nothing for this one. The friction channel is in the
+same position and is derived anyway
+(`THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY`): its field mirrors the
+engine's `Chain.friction` with nothing to invent. This one has no such anchor,
+and the real fork is not the field name.
+
+**The fork is the record shape on stdout.** A record on disk is a file — a
+name and bytes (*Records as one file each*). One record per line cannot carry
+the bytes; a concatenation needs a frame, and a frame is a vocabulary two
+sides must agree on, which is the seam `engineering.md`, *A seam gate reads
+what the real writer wrote*, governs. Nothing in the section says which.
+
+- **(a)** NDJSON, one `{ name, body }` object per line; the package
+  materializes each as a record file so the drain is literally the drain it
+  already runs. The record's name and bytes are stated, never parsed out of
+  prose, and the agreement pin has a real writer to drive.
+- **(b)** Stdout is a directory path the script wrote records into — the
+  script does the file writing, the package only drains. Cheapest to state,
+  but the script then owns a naming and collision policy the package owns
+  everywhere else, which is the verbatim-copying detector in
+  `engine-boundary.md`, *Surface, not prescription*.
+- **(c)** A framed text stream (`--- name ---` blocks), matching the render
+  `inboxWindow` already produces. Reuses a render format as a wire format,
+  and the render is the package's to change under a consumer.
+
+Recommended (a). Whichever is ruled, the declaration table wants the row
+spelled with it — and the friction row alongside, which the derived entry
+above ships against a table that does not yet name it.

@@ -446,5 +446,683 @@
       "every minor from 0.10 whose CHANGELOG.md section carries a ### Breaking heading has a migration note under docs/"
     ],
     "notes": "Promotes the Versioning-policy bullet a rung (engineering.md, Narration is the ladder's bottom rung). The floor is 0.10 because MIGRATING-0.10.md is the routing table covering 0.2.x, 0.6.x and 0.9.0 — below it there is no per-minor note by design, so the floor is declared and cited at the scan, not discovered. Blocked on the three notes: the pin is green only once they land."
+  },
+  {
+    "tag": "A-DOTFILE-IS-NEVER-A-FRICTION-NOTE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/job.ts",
+          "description": "countFrictionFiles skips a name beginning with a dot"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "the friction verb's bare listing and its read-by-name skip the same names"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "the count's skip"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the listing's and the read verb's skip"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the friction count, the bare listing and the read verb all treat a dot-prefixed placeholder as a note, so a git-forced .gitkeep reads as work",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "`Chain.friction` — the declared friction channel"
+    },
+    "acceptance": "a dot-prefixed file in the declared friction dir counts zero, lists nothing and is unreadable by name, and the skip is by name alone.",
+    "tests": [
+      "the friction count skips a name beginning with a dot",
+      "the bare friction listing omits a name beginning with a dot",
+      "the friction read verb refuses a name beginning with a dot"
+    ],
+    "pins": [],
+    "notes": "Sites: countFrictionFiles (src/job.ts:557) is the count both `flume status` and `flume job status` print; the listing and read are the `friction` arm of src/cli.ts. The teardown harvest (src/friction.ts) is not named by the section and stays as it is."
+  },
+  {
+    "tag": "LOOP-AND-JOB-RUN-WARN-ONCE-BELOW-THE-GIT-FLOOR",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/git.ts",
+          "description": "the version read, reported as a fact"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "`loop` and `job run` warn once at start below the floor"
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "the version read"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the two verbs' warning, and its absence at or above the floor"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the 2.36 git floor is stated in the spec and read by nothing, so a run on an older git degrades worktree reclamation with no word to the operator",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "The package a chain loads through"
+    },
+    "acceptance": "`flume loop` and `flume job run` below the floor print one warning naming the version, the floor and what degrades, and still run; at or above the floor they print nothing.",
+    "tests": [
+      "flume loop below the git floor warns once naming the version, the floor, and what degrades",
+      "flume job run below the git floor warns once and still runs",
+      "a git at or above the floor warns nothing"
+    ],
+    "pins": [],
+    "notes": "A warning, not a refusal: the degrade is bounded to reclamation (`worktree list --porcelain -z`, src/worktrees.ts:150) and the loop is otherwise a working one. Once per run, read at start — never per tick."
+  },
+  {
+    "tag": "A-GATE-IS-TOLD-THE-TRUNK-IT-LANDED-ONTO",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Gate.ts",
+          "description": "`landedOnSha` on GateContext, afterMerge only"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "set on every dispatcher-built afterMerge context"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "the field's presence and absence by stage"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the value is the lower end of the touchedPaths range"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "GateContext carries baseSha and not the trunk tip a span landed onto, so an afterMerge gate measuring trunk before and after an entry rebuilds it from HEAD^",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a gate receives"
+    },
+    "acceptance": "every dispatcher-built afterMerge context carries landedOnSha — the lower end of the range touchedPaths is diffed over — and an afterCommit context carries none.",
+    "tests": [
+      "an afterMerge gate context carries the trunk tip the span landed onto",
+      "an afterCommit gate context carries no landedOnSha",
+      "landedOnSha is the lower end of the range touchedPaths is diffed over"
+    ],
+    "pins": [],
+    "notes": "The dispatcher already holds the sha; it reported it on no context. baseSha keeps its own meaning — what the tick saw when it branched, shared by every sibling in a wave — so the two are distinct fields, never one renamed."
+  },
+  {
+    "tag": "A-DECLARED-GATE-RUNS-WITH-THE-ENGINES-GATE-FACTS",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "A-GATE-IS-TOLD-THE-TRUNK-IT-LANDED-ONTO"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaredGates.ts",
+          "description": "the gate facts, FLUME_-prefixed, in the child's environment"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "what a shell and a script gate's child is handed, by stage"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a declared shell or script gate runs with no context, so a gate needing the span's base or the trunk it landed onto rederives HEAD^, which a multi-commit span makes wrong",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "a declared shell or script gate's child sees the engine's gate facts FLUME_-prefixed — the gated commit, the span's base, the trunk landed onto under afterMerge, the state root and its repo-relative offset, and the touched paths.",
+    "tests": [
+      "a declared shell gate's child is handed the engine's gate facts FLUME_-prefixed",
+      "a declared script gate's child is handed the same facts",
+      "FLUME_LANDED_ON_SHA is absent from an afterCommit gate's environment"
+    ],
+    "pins": [],
+    "notes": "The `gates` row spells two names (FLUME_BASE_SHA, FLUME_LANDED_ON_SHA) and names the rest of the set; the remaining spellings and the touched-paths encoding are build's, declared at the site. Blocked on the engine field the afterMerge variable reads."
+  },
+  {
+    "tag": "THE-COMPLETION-SUMMARY-TOTALS-THE-RUNS-SPEND",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "the completion summary totals the run's agent usage by phase"
+        },
+        {
+          "path": "src/tickVerdict.ts",
+          "description": "the totaller over verdict rows, if it lands beside the rows it reads"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "the totals, and the explicit no-invocation case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume loop's completion summary names what a run did and never what it cost, though every verdict row already carries its invocation's usage",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "Exit codes — the run never lies to CI"
+    },
+    "acceptance": "the completion summary totals the run's agent usage by phase, read from the verdict rows this run's ticks wrote.",
+    "tests": [
+      "the completion summary totals the run's agent usage by phase",
+      "a run whose ticks left no usage row totals nothing in the completion summary"
+    ],
+    "pins": [],
+    "notes": "TickVerdictInvocation extends AgentUsage (src/tickVerdict.ts:279) and readTickVerdicts already reads the rows; nothing totals them. This run's rows, not the log's whole history. The empty case is spelled, never inherited (`engineering.md`, *A green verdict is proven non-vacuous*)."
+  },
+  {
+    "tag": "STATUS-PRINTS-THE-LIVE-RUNS-SPEND-SO-FAR",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "THE-COMPLETION-SUMMARY-TOTALS-THE-RUNS-SPEND"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "item 7 of the printed order, after the friction and capability lines"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the line with a live supervisor, and its absence without one"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "the status page names the seventh thing"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume status prints six things and not the one that decides whether a loop keeps running: what the live run has spent so far",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "`flume status` owes exactly this"
+    },
+    "acceptance": "with a live supervisor `flume status` prints the run's agent usage totalled by phase from the verdict rows written since it started; with no live supervisor it prints nothing extra.",
+    "tests": [
+      "flume status totals the live run's agent usage by phase",
+      "flume status prints no spend line when no supervisor is live"
+    ],
+    "pins": [],
+    "notes": "Liveness is the probe status already runs (loop.pid, src/cli.ts:414) and it bounds the rows to the run. The totaller is the summary entry's — shared, never respelled beside it (`engineering.md`, *The fix lands at the mechanism*)."
+  },
+  {
+    "tag": "THE-INBOX-SLICE-IS-LIVE-ONLY-FOR-UNROUTED-WORK",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/inboxWindow.ts",
+          "description": "the record leg yields to a pickable entry; the park leg does not"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "liveness across the three cases"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the inbox slice wakes on any waiting record, so an observation note holds the baton while the queue carries pickable entries — the sweep's yield rule, unapplied to the inbox",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The phases"
+    },
+    "acceptance": "while the engine reports anything pickable the inbox slice is live only for a standing park; with nothing pickable a waiting record makes it live, and a deferred record still renders on the tick that runs.",
+    "tests": [
+      "the inbox slice is not live for a waiting record while the engine reports anything pickable",
+      "the inbox slice is live for a standing park even while entries are pickable",
+      "the inbox slice is live for a waiting record when nothing is pickable"
+    ],
+    "pins": [],
+    "notes": "SliceWindow already carries `pickable`, so the predicate reads a reported fact. The park leg is `standingRefusals` and stays unconditional — build must not re-pick an entry whose park stands; the record leg is `recordsPending` and yields. The lane leg is bounded by its own once-per-run stamp and is untouched here."
+  },
+  {
+    "tag": "A-LANE-STAMP-CARRIES-THE-FAILING-TITLES-IT-WOKE-ON",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/planState.ts",
+          "description": "a drained-run stamp is the run and the failing titles it reported"
+        },
+        {
+          "path": "harness/ciLane.ts",
+          "description": "the wake compares title sets, not run identity alone"
+        },
+        {
+          "path": "harness/ci.ts",
+          "description": "the failing titles reach the stamp the slice writes"
+        },
+        {
+          "path": "tests/harnessPlanState.test.ts",
+          "description": "the stamp's shape, and a bare-string stamp already on disk"
+        },
+        {
+          "path": "tests/harnessCi.test.ts",
+          "description": "wake and no-wake across matching and differing title sets"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a red lane wakes the inbox slice once per run, so a red that persists across runs wakes it again on the same titles — the stamp is the run alone",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "CI lanes as a findings source"
+    },
+    "acceptance": "the drained-run stamp is the run and the failing titles it reported, and a later failing run whose title set matches the stamp advances the stamp at the next tick that runs anyway without waking the slice.",
+    "tests": [
+      "a drained-run stamp carries the failing titles the run reported",
+      "a failing run whose title set matches the stamp does not make the inbox slice live",
+      "a failing run whose title set differs from the stamp makes the inbox slice live"
+    ],
+    "pins": [],
+    "notes": "The titles are what ci.ts already harvests from a failed job's log (:278). Build's fence cannot reach .flume/plan/state.json, so the reader must survive the bare-string stamps on disk — read one as a run drained with no title set, which differs from any failing set, wakes once and re-stamps. No hand edit, by construction."
+  },
+  {
+    "tag": "THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "THE-INBOX-SLICE-IS-LIVE-ONLY-FOR-UNROUTED-WORK"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "the friction channel as a declared findings source"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "pass-through to Chain.friction"
+        },
+        {
+          "path": "harness/inboxWindow.ts",
+          "description": "a fourth-leg read of the declared friction dir, as it reads the inbox"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the field"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the pass-through"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the render and the liveness leg"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the harness declaration mirrors no part of Chain.friction and the inbox slice reads none, so a consumer routing its own friction notes writes the prompt paragraph the package owes",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Declared findings sources"
+    },
+    "acceptance": "a declared friction directory reaches Chain.friction and the inbox slice reads, renders and drains its files as it does the inbox's — one record per file, removed the way a record is drained.",
+    "tests": [
+      "a declared friction directory reaches Chain.friction",
+      "the inbox slice renders a declared friction directory's files as records",
+      "the inbox slice is live for a waiting friction file"
+    ],
+    "pins": [],
+    "notes": "Chain.friction exists on the engine and the declaration mirrors none of it — no schema field, no pass-through, and no row in *What a consumer declares*'s table. The missing row is the operator's amendment; the field mirrors the engine's value as `supervisor` does. Blocked on the liveness rule so the fourth leg lands under it."
+  },
+  {
+    "tag": "THE-DECLARATION-CARRIES-SETUP-SERIALIZE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "`serialize` on the setup object"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "the provisioning reduction serializes the restore across a wave"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the field"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "serialized and concurrent restores across a wave"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a restore whose shared cache is not safe to warm concurrently has no way to say so; every fanout wave warms every worktree at once",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "`setup.serialize: true` runs the declared restore one worktree at a time across a fanout wave while the wave's other provisioning stays parallel; absent, restores run as they do now.",
+    "tests": [
+      "setup.serialize runs a fanout wave's restores one worktree at a time",
+      "setup.serialize leaves the wave's other provisioning parallel",
+      "an undeclared serialize runs restores concurrently"
+    ],
+    "pins": [],
+    "notes": "The reduction is `provisioning(api, declaration)` in harness/chain.ts, built once per chain load — so the serialization is that function's own queue, not a second mechanism beside it. The `setup` row of the declaration table already states the behavior."
+  },
+  {
+    "tag": "THE-DECLARATION-NAMES-ITS-JOBS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "`jobs`: a map from job name to specLocus, fence and optional slots"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "the named job's values applied over the shared declaration, and the package's own seedDir"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the field and its shape"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "resolution under a job's state root, and the one-job case"
+        },
+        {
+          "path": "tests/harnessInit.test.ts",
+          "description": "the skeleton a job root seeds from"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a bay has no way to say a job is a named fence over shared values, so each job carries a second declaration and a loader the package should own",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "`jobs` maps a job name to a specLocus, a fence and optional slots, a chain loaded under a job's state root applies that job's values over the shared declaration, and an absent `jobs` resolves the repo-level one-job case.",
+    "tests": [
+      "a chain loaded under a named job's state root takes that job's specLocus and fence",
+      "a named job's slots override the declaration's shared slots",
+      "a declaration naming no jobs resolves the repo-level values",
+      "the chain the factory builds declares a seedDir at the package's skeleton"
+    ],
+    "pins": [],
+    "notes": "The engine's job partition already gives each job its state root (spec/jobs.md); which job the chain is under is read from api.paths.flumeDir. `flume job new` seeds from the package skeleton through the factory's declared seedDir — harness/ declares none today, so that is part of this entry, not a second one."
+  },
+  {
+    "tag": "A-JOB-FENCE-STOPS-AT-A-SIBLINGS-ARTIFACTS",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "THE-DECLARATION-NAMES-ITS-JOBS"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "the job-fence refusal at chain load, naming the glob and the root"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the refusal, its message, and the admitted consumer file"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the refusal arrives at load, not at a tick"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "nothing refuses a job fence whose globs reach the package's own artifacts under a sibling job's state root, so one job's build writes another job's queue",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "chain load refuses a job fence glob that can match the package's queue, plan state, a record or a note under any state root but the job's own, naming the glob and the root; a consumer's own file under a sibling root still loads.",
+    "tests": [
+      "a job fence reaching the package's queue under a sibling job's root refuses the load",
+      "the refusal names the offending glob and the root it reaches",
+      "a job fence reaching a consumer's own file under a sibling root loads"
+    ],
+    "pins": [],
+    "notes": "The engine declines cross-job fence policing by design (spec/jobs.md) and every package gate keys on the tick's own root, so the refusal is the package's alone. The artifact set is the package's own layout — queue, plan state, records, notes — never a consumer's product; where a bay keeps its product is the bay's."
+  },
+  {
+    "tag": "A-SCRIPT-RUNNER-SHIPS-BESIDE-THE-VITEST-ONE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "harness/scriptRunner.ts",
+          "description": "the script runner factory over the three runner operations"
+        }
+      ],
+      "edit": [
+        {
+          "path": "harness/index.ts",
+          "description": "the factory joins vitestRunner on the package's surface"
+        },
+        {
+          "path": "tests/harnessRunner.test.ts",
+          "description": "the three operations, the arguments, the verdict lines, and exit status not being the verdict"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the runner row prices a non-vitest consumer at a declaration, not a script"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "every consumer outside the JS test ecosystem writes the same script gate against the three runner operations; the package ships only the vitest factory",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The runner interface"
+    },
+    "acceptance": "a declared command runs once per operation in the tree under judgment with the named lines as its arguments, and the runner reads one verdict line per name from its stdout — the name, whether a passing check carried it, and the file that did.",
+    "tests": [
+      "the script runner runs its command once per operation in the tree under judgment",
+      "the script runner passes the named lines as the command's arguments",
+      "the script runner reads one verdict line per name from the command's stdout",
+      "a non-zero exit carrying a complete verdict set is not a failure"
+    ],
+    "pins": [],
+    "notes": "Same three operations as vitestRunner, same factory shape ({ api, provision }) => Runner. The spec fixes the verdict line's fields, not its encoding; the encoding is the factory's to declare at its site, and the pin that holds it drives the real writer through the real reader."
+  },
+  {
+    "tag": "THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "the per-entry refusal a chain declares, and what the engine reports about it"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "enforcement on the pickable set, and the fact reported for each entry held back"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the set with and without a declared refusal, and the reported facts"
+        },
+        {
+          "path": "tests/chain.test.ts",
+          "description": "the declaration surface"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the engine's pickable set carries no per-entry refusal a chain can declare, so a chain that must decline one entry can only decline the whole phase",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The default `handoff`"
+    },
+    "acceptance": "a chain-declared per-entry refusal removes an entry from the reported pickable set, and the engine reports which entries it held back as a fact rather than a verdict.",
+    "tests": [
+      "a chain-declared per-entry refusal removes an entry from the reported pickable set",
+      "the engine reports each entry a chain-declared refusal held back",
+      "a chain declaring no per-entry refusal leaves the pickable set unchanged"
+    ],
+    "pins": [],
+    "contractTouching": true,
+    "notes": "The capability, not the policy: the chain supplies the predicate, the engine enforces and reports (`engine-boundary.md`, *Capability vs convention*). Every input a predicate needs is already on the tick — the entry and its prior-attempt record. Contract-touching: a resident supervisor and a fresh tick child must agree on the Chain shape."
+  },
+  {
+    "tag": "THE-HANDOFF-DECLINES-A-CLEAN-EXIT-AT-THIS-HEAD",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/handoff.ts",
+          "description": "the package's declaration of the engine's per-entry refusal"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "the refusal reaches the chain the factory builds"
+        },
+        {
+          "path": "tests/harnessHandoff.test.ts",
+          "description": "the three fates by mode and anchor"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the declaration arrives on the chain"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the default handoff re-dispatches an entry whose latest attempt was a clean exit at the current HEAD — the same dispatch against an unchanged world, for the same outcome",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The default `handoff`"
+    },
+    "acceptance": "the package declares the engine's per-entry refusal, and an entry whose latest prior attempt is a clean exit at the tick's own HEAD is not handed to build while one at an older HEAD still is.",
+    "tests": [
+      "an entry whose latest clean exit is at the current HEAD is not handed to build",
+      "an entry whose latest clean exit is at an older HEAD is handed to build",
+      "an entry whose latest attempt is a gate revert at the current HEAD is handed to build"
+    ],
+    "pins": [],
+    "notes": "Read from the mode and the anchor the engine reports on the record — PriorAttempt's `mode` and `headSha` (src/Prompt.ts) — never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change."
+  },
+  {
+    "tag": "THE-INBOX-DRAIN-ADVANCES-THE-DERIVE-CURSOR",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "THE-INBOX-SLICE-IS-LIVE-ONLY-FOR-UNROUTED-WORK"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/inboxWindow.ts",
+          "description": "the derive cursor in the slice's rendered window"
+        },
+        {
+          "path": "harness/prompts/plan-inbox.md",
+          "description": "the advance the drain may make, and its bound"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the cursor in the rendered window"
+        },
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "the paragraph's data key"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a record routing a spec commit's derivation leaves the derive cursor behind it, so the next derive tick re-reads sections already queued and moves the cursor alone",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Plan state as declared state"
+    },
+    "acceptance": "the inbox slice is told the derive cursor and may advance it through a spec commit whose derivation it routed from a drained record, so derive runs only over spec deltas no record claimed.",
+    "tests": [
+      "the inbox slice's rendered window names the derive cursor"
+    ],
+    "pins": [],
+    "notes": "Plan state is already the inbox slice's to write — it stamps drainedRuns. What is missing is the cursor in its window and the paragraph licensing the advance. The bound is the spec commit the routed record derived from, never a sha the slice rediscovered. Blocked on the liveness rule, which rewrites the same window."
   }
 ]
