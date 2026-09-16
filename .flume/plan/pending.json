@@ -10,26 +10,28 @@
       "edit": [
         {
           "path": "tests/helpers/namespacedFsScan.ts",
-          "description": "`realpath` takes the native-only contract `realpathSync` carries; the paragraph declaring the admission shrinks to the page"
+          "description": "the contract lookup keys `realpath` by the specifier it came from — `node:fs`'s takes `realpathSync`'s native-only contract, `node:fs/promises`'s does not; the paragraph declaring the admission shrinks to the page, and the js-form message stops saying `throws` for a form that calls back"
         },
         {
           "path": "tests/namespacedFsPaths.test.ts",
-          "description": "the case that reds a composed path at the bare async spelling"
+          "description": "the case that reds a composed path at the bare callback `realpath`, and the one admitting the promises spelling"
         }
       ],
       "retire": []
     },
-    "summary": "the scan admits a composed path at the bare async `realpath`, on a page that now states the JS-vs-native split for both spellings",
+    "summary": "the scan admits a composed path at the bare async `realpath` and cannot tell node:fs's JS callback form from fs/promises's native one",
     "per": {
       "path": ".claude/rules/platform-facts.md",
       "section": "`realpathSync` keeps the `\\\\?\\` prefix only where nothing resolved"
     },
-    "acceptance": "a composed path reaches no JS-form realpath in the scanned trees, and the contract table stops narrating the admission it no longer makes.",
+    "acceptance": "a composed path reaches no JS-form realpath in the scanned trees, `node:fs/promises`'s realpath is not read as one, and the contract table stops narrating the admission it no longer makes.",
     "tests": [
-      "a composed path handed to the bare async realpath is refused"
+      "a composed path handed to the bare callback realpath is refused"
     ],
-    "pins": [],
-    "notes": "The site names this flip as its own trigger (PATH_CONTRACTS, tests/helpers/namespacedFsScan.ts:144-151). No src/ or harness/ module imports the async form today, so the refusal lands ahead of its first violator. Closes the inbox ruling at 6426288."
+    "pins": [
+      "a composed path handed to fs/promises realpath is admitted as the native binding"
+    ],
+    "notes": "The site names this flip as its own trigger (PATH_CONTRACTS, tests/helpers/namespacedFsScan.ts:144-151). The page splits the spellings; the scan keys contracts by symbol name alone while FS_MODULE admits fs/promises, so a flat flip false-reds a promises import that has no `.native` head to pass at. `fsImports` already keys by specifier. No src/ or harness/ module imports either async form today. Closes the inbox ruling at 6426288."
   },
   {
     "tag": "A-CITED-HOME-RESOLVES-IN-THE-FILE-IT-NAMES",
