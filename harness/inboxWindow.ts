@@ -41,7 +41,8 @@
 
 import { readFileSync } from "node:fs";
 
-import { namespacedJoin, slugify } from "../src/paths.js";
+import { namespacedJoin } from "../src/paths.js";
+import { entryAttemptKey } from "../src/priorAttempts.js";
 import type { PriorAttempt } from "../src/Prompt.js";
 
 import { laneLeg } from "./ciLane.js";
@@ -161,24 +162,35 @@ const PLAN_RESOLVES_STANDING: Record<PriorAttempt["mode"], boolean> = {
  *
  * Keyed to a live entry is the whole test: a record whose entry has left the
  * queue outlived the work it was about, and waking the inbox over it would
- * hold the slice open on nothing. The keyspace is the record's own stated
- * `key` field rather than a guess from the key's text — a stem the queue no
- * longer carries is a retired tag in one keyspace and a live phase in the
- * other (`spec/loop.md`, *No false signal*) — and the queue side is
- * slugified with the engine's own `slugify`, which is what wrote the key.
+ * hold the slice open on nothing. So the walk runs the queue's way — each
+ * queued entry looked up under the engine's own `entryAttemptKey`
+ * (`src/priorAttempts.ts`), which is the key the store's walk filed the
+ * record under. Reaching the record through that key rather than re-spelling
+ * its two halves here is what keeps the keyspace and the tag's slug one
+ * spelling: a slice that composed either itself would stop waking the day
+ * the engine changed how it keys, silently, and over exactly the records a
+ * wave is walling on (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*). The keyspace comes with the key, which is what keeps a stem
+ * the queue no longer carries from matching a live phase's record
+ * (`spec/loop.md`, *No false signal*).
+ *
+ * The same set either way: the map holds one record per written identity, so
+ * looking each queued entry up finds exactly the entry-keyspace records a
+ * scan of the map's values would have kept.
  *
  * One derivation, two readers: the window's liveness leg above counts this,
- * and the rendered build-records block marks exactly these.
+ * and the rendered build-records block marks exactly these — by object
+ * identity, since these are the map's own records.
  */
 function standingRefusals(ctx: TickFacts): PriorAttempt[] {
-  if (ctx.pending === undefined || ctx.priorAttempts === undefined) return [];
-  const queued = new Set(ctx.pending.map((entry) => slugify(entry.tag)));
-  return [...ctx.priorAttempts.values()].filter(
-    (record) =>
-      record.key === "entry" &&
-      queued.has(record.keyedAs) &&
-      PLAN_RESOLVES_STANDING[record.mode],
-  );
+  const attempts = ctx.priorAttempts;
+  if (ctx.pending === undefined || attempts === undefined) return [];
+  return ctx.pending
+    .map((entry) => attempts.get(entryAttemptKey(entry)))
+    .filter(
+      (record): record is PriorAttempt =>
+        record !== undefined && PLAN_RESOLVES_STANDING[record.mode],
+    );
 }
 
 /**

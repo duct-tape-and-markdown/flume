@@ -55,6 +55,7 @@ import {
   type PriorAttemptMode,
 } from "../src/Prompt.ts";
 import { slugify } from "../src/paths.ts";
+import { entryAttemptKey } from "../src/priorAttempts.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 
@@ -566,6 +567,45 @@ it("the inbox slice is live for a waiting friction file", () => {
   expect(
     declared().args({ cwd: repo, flumeDir: stateRoot() }).RECORDS,
   ).toContain(note);
+});
+
+/**
+ * The slug is what keys a record, so a tag carrying anything outside the key's
+ * alphabet is filed under text it does not itself spell. Both arms run over
+ * one such tag, and the map is keyed by the engine's own `entryAttemptKey`
+ * (`src/priorAttempts.ts`) rather than by a spelling of this test's hand, so
+ * what the window reaches for is read against what the store's walk files
+ * under (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
+ */
+it("the inbox slice's standing refusals key a tag slugify rewrites the way the engine's own entry-attempt key does", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const inbox = windows()[INBOX_PHASE];
+
+  // A tag `slugify` rewrites: uppercase, a space and a slash all leave the
+  // key's alphabet, so the written identity is not the tag's own text.
+  const tag = "HARNESS SLICE/WINDOWS";
+  const pending = [entry(tag)];
+  const slugged = record(tag, "clean-exit");
+  const live = (key: string, rec: PriorAttempt): boolean =>
+    inbox.live({
+      flumeDir: stateRoot(),
+      pickable: true,
+      pending,
+      priorAttempts: new Map([[key, rec]]),
+    });
+
+  expect({
+    // Vacuity: the engine's key really did rewrite the tag, so the arms
+    // below are about the slug and not about a tag already in the alphabet.
+    keyCarriesRawTag: entryAttemptKey(pending[0]!).includes(tag),
+    slugged: live(entryAttemptKey(pending[0]!), slugged),
+    // Control: the same record for the same queued entry, written and filed
+    // under the tag's raw text instead of its slug — neither the identity
+    // the engine stamps nor the key its walk files under.
+    raw: live(`entry:${tag}`, { ...slugged, keyedAs: tag }),
+  }).toEqual({ keyCarriesRawTag: false, slugged: true, raw: false });
 });
 
 /**

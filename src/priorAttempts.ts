@@ -118,14 +118,16 @@ function priorAttemptMapKey(ref: PriorAttemptRef): string {
 }
 
 /**
- * The key one entry's own record occupies in that map, for a reader holding
+ * The key one entry's own record occupies in that map, for any reader holding
  * the entry rather than the ref — selection, which judges a chain's declared
  * per-entry refusal against the record standing for each entry it is about to
- * offer (`bindEntryRefusal`, `src/selection.ts`).
+ * offer (`bindEntryRefusal`, `src/selection.ts`), and, outside the engine, a
+ * consumer asking which of the queue's entries a refusal is still standing
+ * against.
  *
- * Here rather than beside that reader: the join and the slug are this
- * module's, and a second spelling of either is how a lookup comes to miss a
- * record the walk filed under a key it composed differently
+ * Exported rather than left beside either reader: the join and the slug are
+ * this module's, and a second spelling of either is how a lookup comes to
+ * miss a record the walk filed under a key it composed differently
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */
 export function entryAttemptKey(entry: PendingEntry): string {
