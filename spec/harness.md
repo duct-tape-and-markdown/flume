@@ -230,7 +230,12 @@ usage and exits 0 before anything is written. A consumer never copies a
 prompt, a slice, or a judge from another consumer; what it wants to change it
 declares.
 
-Upgrading is one version bump plus the release's migration note. A harness
+Upgrading is one version bump plus the release's migration note. A
+consumer whose state root carries no `package.json` adds the one init writes
+— `"type": "module"`, beside `chain.ts` — or its chain stops loading on node
+22.23 and later (`.claude/rules/platform-facts.md`); the migration note says
+so ahead of any other step, since it is the one that costs a working chain.
+A harness
 breaking change lands under the same `### Breaking` heading as an engine one
 (`spec/cli.md`, *Versioning policy*), and a
 breaking change to the declaration schema is refused at load with the field

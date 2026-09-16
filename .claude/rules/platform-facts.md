@@ -89,6 +89,28 @@ This is **not** the `git worktree add` limit above. That one is git's own
 ~200-char refusal, which `toNamespacedPath` cannot reach because git builds the
 path itself. This one is the general Node fs limit, which it does fix.
 
+## A CommonJS-scoped `chain.ts` stops loading the ESM-only package at node 22.23
+
+`tsx` loads `.flume/chain.ts` in the module mode the nearest `package.json`
+declares. With no `"type": "module"` in scope that is CommonJS, and the
+package is ESM-only. Measured against the published 0.16.0 on linux:
+
+- a chain with a runtime import from `@dtmd/flume` loads on node 22.20,
+  fails on 22.23 (`Cannot find module …/dist/…/index.js?namespace=…` — the
+  query `tsx` appends stops resolving through a CommonJS load), and loads on
+  node 24 through `require(esm)`;
+- the chain `flume-harness init` writes fails on every node 22 without the
+  manifest (`Cannot find module './declaration.js'` on 22.20, the harness
+  subpath on 22.23) and loads on 24;
+- a chain importing only types never loads the package at runtime and is
+  green everywhere, which is why a type-only fixture proves nothing here.
+
+`"type": "module"` in a `package.json` beside `chain.ts` fixes every row on
+every node and touches none of the consumer's own files; a `tsconfig.json`
+does not. A node patch upgrade is enough to cross the boundary, so an
+existing consumer is one upgrade from a dead chain until the manifest is in
+place.
+
 ## Node caps a captured child stream at 1 MiB, and reports the overrun as a spawn failure
 
 `execFile`, `exec`, and their sync forms keep at most `maxBuffer` bytes of a

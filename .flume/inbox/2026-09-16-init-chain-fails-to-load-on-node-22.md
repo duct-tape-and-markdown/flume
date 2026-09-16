@@ -1,15 +1,18 @@
-# The chain `flume-harness init` writes cannot load on node 22 under a CommonJS manifest (pilot report from a win32 consumer on node 22, relayed by the operator)
+# A CommonJS-scoped chain cannot load the package on node 22.23; init writes one (pilot report from a win32 consumer on node 22, relayed by the operator)
 
-Reproduced here from nothing against the published 0.16.0: `npm init`-shaped
-manifest (no `type`), `npx flume-harness init`, `npx flume status` — on
-node 22 the chain fails to load (`Cannot find module …/dist/harness/index.js
-?namespace=…`; the pilot saw `./declaration.js` on win32, same root), on
-node 24 it loads. `tsx` loads `chain.ts` as CommonJS when no manifest says
-ESM, and the package is ESM-only. A `.flume/tsconfig.json` does not fix it;
-`"type": "module"` on the consumer manifest does, and so does a nested
-`.flume/package.json` with only that field — measured on both nodes.
+Measured here against the published 0.16.0, three chain shapes × node
+22.20 / 22.23 / 24 (`.claude/rules/platform-facts.md`, *A CommonJS-scoped
+`chain.ts` stops loading the ESM-only package at node 22.23*):
+
+- the chain `flume-harness init` writes fails on every node 22 with no
+  `"type": "module"` in scope (the pilot's `./declaration.js`), loads on 24;
+- a hand-written chain with a runtime import from the package loads on
+  22.20 and **dies on 22.23** — the pilot's working bay broke on a node patch
+  upgrade, and every existing consumer in that shape is one upgrade away;
+- a nested `.flume/package.json` of `{ "type": "module" }` fixes all of it
+  on every node; a tsconfig does not.
 
 Ruled at `spec/harness.md` *Adoption and upgrade*: init writes the nested
-manifest (the consumer's own files are untouched), and the install smoke
-runs init over `npm init`'s manifest and loads the chain it wrote, so both
-lanes hold it on node 22. Also ruled: `init --help` answers usage, exit 0.
+manifest; the install smoke runs init over `npm init`'s manifest and loads
+the chain it wrote; `init --help` answers usage; the migration note leads
+with the manifest step for existing consumers. This wants a 0.16.1.
