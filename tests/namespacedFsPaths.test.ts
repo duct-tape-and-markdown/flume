@@ -297,6 +297,55 @@ export function config(api: CacheApi, dir: string): unknown {
   });
 });
 
+/**
+ * A type literal whose method signature spells an fs symbol the module also
+ * imports and calls. Nothing reaches disk at a signature — it is a shape the
+ * module describes — so the scan owes it neither a fold verdict nor a place
+ * in the subject count the tree verdicts ride: the composed call below is the
+ * module's one call site.
+ */
+const TYPE_POSITION_SOURCE = `
+import { readFileSync } from "node:fs";
+import { namespacedJoin } from "./paths.js";
+
+export interface FileHost {
+  readFileSync(key: string, encoding: string): string;
+}
+
+export function config(dir: string): string {
+  return readFileSync(namespacedJoin(dir, "c.json"), "utf8");
+}
+`;
+
+/** The same signature with nothing calling the symbol it spells. */
+const SIGNATURE_ONLY_SOURCE = `
+import { readFileSync } from "node:fs";
+
+export interface FileHost {
+  readFileSync(key: string, encoding: string): string;
+}
+`;
+
+describe("the scan's reading of a type position", () => {
+  it("a method signature in a type literal is not read as an fs call site", () => {
+    const scan = scanFsCalls("src/fixture.ts", TYPE_POSITION_SOURCE);
+
+    // One call site, one path argument owed a fold — the signature's `key`
+    // is no path, and a scan reading it as one both inflates the subject
+    // count and reds this module over an argument that never reaches disk.
+    expect(scan.judged).toBe(1);
+    expect(scan.bare.map((call) => describeBareCall(scan, call))).toEqual([]);
+    expect(scan.uncalled).toEqual([]);
+
+    // And the quiet direction stays loud: a module that only *describes* the
+    // symbol has no call site at all, which the scan reports rather than
+    // passing over.
+    expect(scanFsCalls("src/fixture.ts", SIGNATURE_ONLY_SOURCE).uncalled).toEqual([
+      "readFileSync",
+    ]);
+  });
+});
+
 describe("a namespaced path never leaves its fs call", () => {
   it("the win32 path scan admits a toNamespacedPath result spent at the fold that ends the alphabet", () => {
     const fixture = scanFsCalls("src/fixture.ts", FOLDED_SOURCE);

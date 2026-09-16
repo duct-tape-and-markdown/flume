@@ -207,13 +207,41 @@ function fsCallee(
  * How one fs symbol's call sites are spelled: the bare name, or that name
  * extended by member access ({@link fsCallee}). The lookbehind keeps a
  * *receiver* of the same name from matching — `api.realpathSync(…)` is not
- * this module's import.
+ * this module's import. A name opening a parenthesis is a candidate here and
+ * a call site once {@link declaresParameters} has read what the parenthesis
+ * opens.
  */
 function callSites(fn: string): RegExp {
   return new RegExp(
     `(?<![.\\w$])${fn}(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*)*\\s*\\(`,
     "g",
   );
+}
+
+/** One parameter of a signature: `k: string`, `k?: string`, `...rest: T[]`. */
+const PARAMETER = /^\s*(?:\.\.\.)?[A-Za-z_$][\w$]*\s*\??\s*:/;
+
+/**
+ * Whether a parenthesis opens a *parameter* list rather than an argument one:
+ * `readFileSync(k: string): string` inside a type literal is a signature the
+ * module describes, not a call it makes. No path reaches disk there, so
+ * counting it inflates the vacuity subject both verdicts ride
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*)
+ * and reds a correct module the first time one is written.
+ *
+ * Read off the argument text alone, which is all this scan has: under
+ * `strict` every parameter of a signature carries its own annotation, so a
+ * list whose every entry is `name: T` is a declaration. No call expression
+ * spells that — a top-level `:` in an argument list is a ternary's, and a
+ * ternary's `?` sits between the name and the colon.
+ *
+ * An empty list is nobody's declaration to tell apart, and stays a call site:
+ * both directions are loud there anyway, since an fs call with no path
+ * argument is judged bare, and a module whose only spelling of an import is
+ * `name()` in a type position reports that import uncalled.
+ */
+function declaresParameters(args: readonly string[]): boolean {
+  return args.length > 0 && args.every((arg) => PARAMETER.test(arg));
 }
 
 /** One fs call site whose path argument was not composed. */
@@ -567,16 +595,19 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
   const lineOf = (index: number): number => source.slice(0, index).split("\n").length;
 
   for (const fn of symbols) {
-    const calls = [...masked.matchAll(callSites(fn))];
+    const calls = [...masked.matchAll(callSites(fn))]
+      .map((match) => ({
+        index: match.index!,
+        args: splitArguments(masked, match.index! + match[0].length - 1),
+      }))
+      .filter((site) => !declaresParameters(site.args));
     if (calls.length === 0) {
       uncalled.push(fn);
       continue;
     }
     if (isProbe) continue;
     const contract = PATH_CONTRACTS.get(fn) ?? CALLER_FOLDS_FIRST;
-    for (const call of calls) {
-      const open = call.index! + call[0].length - 1;
-      const args = splitArguments(masked, open);
+    for (const { index, args } of calls) {
       let namespacedAnswer = false;
       for (const position of contract.positions(args.length)) {
         const argument = args[position];
@@ -594,14 +625,14 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
           fn,
           position,
           argument: argument.trim(),
-          line: lineOf(call.index!),
+          line: lineOf(index),
         });
       }
       if (!namespacedAnswer) continue;
       answered++;
-      const reader = readerPastFs(masked, symbols, call.index!);
+      const reader = readerPastFs(masked, symbols, index);
       if (reader !== undefined) {
-        escaped.push({ fn, reader, line: lineOf(call.index!) });
+        escaped.push({ fn, reader, line: lineOf(index) });
       }
     }
   }
