@@ -82,6 +82,11 @@ record byte cap is not the gate's: a note over the cap ships with its entry,
 and the drain that reads it says so in the plan commit body — a shape rule on
 a prose channel refuses the prose, never the code it rode in with.
 
+No state of the queue needs a hand edit. A queue a gate refuses is plan's to
+repair on its next tick, from the tree and the records; a refusal that leaves
+the queue in a state only a hand edit clears is a defect in the gate, filed
+against it, never a procedure a consumer learns.
+
 
 ### Records as one file each
 
@@ -130,6 +135,13 @@ the inbox — one record per file, routed and then removed the way a record is
 drained — so a consumer never carries a prompt paragraph for routing its own
 notes; a paragraph every consumer would repeat is a surface the package owes
 (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+
+A **declared script** is the fourth source: a command the inbox slice runs at
+the tip before it renders, whose stdout is records — one per finding, in the
+record shape — drained like the rest. A measurement a consumer takes every
+tick (a census of what the tree holds against what the register claims) is
+the consumer's to compute and the package's to route; it never rides a prompt
+slot, which is text, and it never becomes a prompt paragraph.
 
 ### Plan state as declared state
 
@@ -208,7 +220,7 @@ one-job case of the same shape.
 | `runner` | A factory, `({ api, provision }) => Runner`, for the test runner the judge drives — see *The runner interface*. The package calls it at chain load with the chain's own `FlumeApi` and the declared `setup` as a provisioning function, so a runner constructs neither by hand. |
 | `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
-| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
+| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the state root and its repo-relative offset, the touched paths — so a gate that needs the pre-entry trunk reads `FLUME_BASE_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
 | `agents` | Model per phase, extra agent arguments, and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. |
