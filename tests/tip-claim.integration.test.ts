@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 import { Baton } from "../src/Baton.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { parsePidClaim } from "../src/pidClaim.ts";
+import { deadPid } from "./helpers/deadPid.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { CLI, TSX_CLI, exec, runCli } from "./helpers/subprocess.ts";
@@ -540,12 +541,7 @@ describe("flume loop/tick — tip claim wiring", () => {
         expect(live.code).toBe(0);
         expect(live.out).toContain(`tip claimed by pid ${process.pid}`);
 
-        // Harvest a genuinely dead pid: spawn a no-op node child and wait
-        // for it to exit before recording its pid as the stale holder.
-        const probe = exec(process.execPath, ["-e", ""]);
-        const deadPid = probe.child.pid;
-        await probe;
-        await writeFile(claimPath, String(deadPid), "utf8");
+        await writeFile(claimPath, String(deadPid()), "utf8");
 
         const stale = await runCli(repo.dir, ["status"]);
         expect(stale.code).toBe(0);

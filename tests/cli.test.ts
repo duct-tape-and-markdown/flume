@@ -60,6 +60,7 @@ import {
   type TickVerdict,
   type TickVerdictInvocation,
 } from "../src/tickVerdict.ts";
+import { deadPid } from "./helpers/deadPid.ts";
 import { denyDirectory } from "./helpers/denial.ts";
 import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -471,14 +472,8 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
       try {
         const flumeDir = join(repo.dir, ".flume");
         const pidPath = join(flumeDir, "loop.pid");
-        // Harvest a genuinely dead pid: spawn a no-op node child and wait
-        // for it to exit before recording its pid as the stale holder.
-        const probe = exec(process.execPath, ["-e", ""]);
-        const deadPid = probe.child.pid;
-        await probe;
-        expect(deadPid).toBeDefined();
         await mkdir(flumeDir, { recursive: true });
-        await writeFile(pidPath, String(deadPid), "utf8");
+        await writeFile(pidPath, String(deadPid()), "utf8");
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);
 
@@ -536,14 +531,8 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
       try {
         const flumeDir = join(repo.dir, ".flume");
         const pidPath = join(flumeDir, "loop.pid");
-        // Harvest a genuinely dead pid: spawn a no-op node child and wait
-        // for it to exit before recording its pid as the stale holder.
-        const probe = exec(process.execPath, ["-e", ""]);
-        const deadPid = probe.child.pid;
-        await probe;
-        expect(deadPid).toBeDefined();
         await mkdir(flumeDir, { recursive: true });
-        await writeFile(pidPath, String(deadPid), "utf8");
+        await writeFile(pidPath, String(deadPid()), "utf8");
 
         // status first — before the loop below reclaims and removes the
         // pidfile out from under it.
@@ -869,13 +858,7 @@ describe("flume status — supervisor liveness", () => {
     const dir = await mkFixtureRoot("flume-status-stale-");
     try {
       const flumeDir = join(dir, ".flume");
-      // Harvest a genuinely dead pid: spawn a no-op node child and wait for
-      // it to exit before recording its pid as the stale holder.
-      const probe = exec(process.execPath, ["-e", ""]);
-      const deadPid = probe.child.pid;
-      await probe;
-      expect(deadPid).toBeDefined();
-      await writeFile(join(flumeDir, "loop.pid"), String(deadPid), "utf8");
+      await writeFile(join(flumeDir, "loop.pid"), String(deadPid()), "utf8");
 
       const r = await runCli(dir, ["status"]);
 
@@ -2048,15 +2031,9 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
   }, SPAWN_BUDGET_MS);
 
   it("flume status prints no spend line when no supervisor is live", async () => {
-    // Harvest a genuinely dead pid: spawn a no-op node child and wait for it
-    // to exit before recording its pid as the stale holder.
-    const probe = exec(process.execPath, ["-e", ""]);
-    const deadPid = probe.child.pid;
-    await probe;
-    expect(deadPid).toBeDefined();
     const { dir, runStart } = await fixture(
       "flume-status-spend-dead-",
-      deadPid ?? 999_999_999,
+      deadPid(),
     );
     try {
       const dead = await runCli(dir, ["status"]);
@@ -2102,12 +2079,7 @@ describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the
           "refs/heads/main",
         );
         await mkdir(dirname(claimPath), { recursive: true });
-        // Harvest a genuinely dead pid: spawn a no-op node child and wait for
-        // it to exit before recording its pid as the stale holder.
-        const probe = exec(process.execPath, ["-e", ""]);
-        const deadPid = probe.child.pid;
-        await probe;
-        await writeFile(claimPath, String(deadPid), "utf8");
+        await writeFile(claimPath, String(deadPid()), "utf8");
         // The claim is on disk *before* the loop runs. Without this the
         // absence below is an absence over an empty directory — green
         // whether the engine releases the claim, never takes one, or writes

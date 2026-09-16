@@ -129,6 +129,7 @@ import {
 import { parsePidClaim } from "../src/pidClaim.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 
+import { deadPid } from "./helpers/deadPid.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
 
@@ -1206,13 +1207,8 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
     const commonDir = await gitCommonDir(repo);
     const claimPath = tipClaimPath(commonDir, refPath);
 
-    // Harvest a genuinely dead pid: spawn a no-op node child and wait for it
-    // to exit before planting it as the stale holder.
-    const probe = exec(process.execPath, ["-e", ""]);
-    const deadPid = probe.child.pid;
-    await probe;
     await mkdir(dirname(claimPath), { recursive: true });
-    await writeFile(claimPath, String(deadPid));
+    await writeFile(claimPath, String(deadPid()));
 
     const claim = await acquireTipClaim(repo, refPath);
 
@@ -1231,13 +1227,10 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
     const commonDir = await gitCommonDir(repo);
     const claimPath = tipClaimPath(commonDir, refPath);
 
-    // Harvest a genuinely dead pid, same setup as the reclaim test above, so
-    // the EEXIST branch takes the reclaim path rather than refusing outright.
-    const probe = exec(process.execPath, ["-e", ""]);
-    const deadPid = probe.child.pid;
-    await probe;
+    // A dead holder, so the EEXIST branch takes the reclaim path rather than
+    // refusing outright.
     await mkdir(dirname(claimPath), { recursive: true });
-    await writeFile(claimPath, String(deadPid));
+    await writeFile(claimPath, String(deadPid()));
 
     const unlinkErr = Object.assign(new Error("permission denied"), {
       code: "EACCES",
@@ -1248,7 +1241,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
 
     // The stale claim file was never cleared — the rejection came from the
     // unlink itself, not a retried create failing on some other path.
-    expect(await readFile(claimPath, "utf8")).toBe(String(deadPid));
+    expect(await readFile(claimPath, "utf8")).toBe(String(deadPid()));
   }, SPAWN_BUDGET_MS);
 
   // The claim file's own stat: `existsSync` read an unstattable claim as no
