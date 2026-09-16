@@ -398,7 +398,9 @@ that had to rebuild an engine fact by hand — parsing agent output the engine
 had already decoded, copying a path rule it owns, inferring from commit
 shape whether a phase ran, or handing off on a queue the supervisor was
 silently skipping. The fixes report facts; the wake decisions stay the
-chain's. Nine GitHub issues close on this tag.
+chain's. Nine GitHub issues close on this tag. Chain authors: read
+[`docs/MIGRATING-0.13.md`](docs/MIGRATING-0.13.md) — its § 1 is a
+`pending.json` rewrite the first tick after the bump refuses without.
 
 ### Breaking
 

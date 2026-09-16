@@ -4,10 +4,11 @@
 > cut, not flume as it ships now.
 
 **This note does not cover 0.13, 0.14 or 0.15.** The previous note in the
-series is [`MIGRATING-0.12.md`](MIGRATING-0.12.md), and each of the three
-minors between it and this one shipped breaking changes with no note of its
-own. If your pin is below `0.15.0`, read those three releases' `### Breaking`
-sections in [`../CHANGELOG.md`](../CHANGELOG.md) before treating this note as
+series is [`MIGRATING-0.13.md`](MIGRATING-0.13.md), which walks `0.12.0` →
+`0.13.0`; `0.14.0` and `0.15.0` shipped breaking changes with no note of
+their own. If your pin is below `0.15.0`, work `MIGRATING-0.13.md` first
+where it applies and read those two releases' `### Breaking` sections in
+[`../CHANGELOG.md`](../CHANGELOG.md) before treating this note as
 the whole upgrade — the sections below describe the `0.15.0` → `0.16.0` step
 and nothing earlier. The break most likely to survive a jump unnoticed is
 0.15's `voluntary-bail` → `clean-exit` rename, which no typecheck catches in
@@ -621,5 +622,5 @@ version bump will not carry forward.
 - [`CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md) — the full shape of every chain
   surface named above.
 - [`CLI.md`](CLI.md) — `flume log`, `flume check`, `flume job`.
-- [`MIGRATING-0.12.md`](MIGRATING-0.12.md) — the previous note in this series.
+- [`MIGRATING-0.13.md`](MIGRATING-0.13.md) — the previous note in this series.
   What lies between the two is named at the head of this page.

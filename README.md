@@ -474,8 +474,9 @@ follows enough usage signal to commit under semver.
 - [`docs/MIGRATING-0.16.md`](docs/MIGRATING-0.16.md) — upgrade note for a
   chain on `0.15.0`: five renames and engine-taken defaults, plus the opt-in
   port onto the harness package. Each section opens with the `grep` that
-  says whether it applies to your chain. Earlier notes — `0.11`, `0.12` —
-  are linked from the release they cut in [`CHANGELOG.md`](CHANGELOG.md).
+  says whether it applies to your chain. Earlier notes — `0.11`, `0.12`,
+  `0.13` — are linked from the release they cut in
+  [`CHANGELOG.md`](CHANGELOG.md).
 - [`docs/MIGRATING-0.10.md`](docs/MIGRATING-0.10.md) — upgrade checklist for
   any chain on `0.2.x`, `0.6.x`, or `0.9.0` moving onto
   `@dtmd/flume@0.10.0`. Routing table up front; work only the sections your
