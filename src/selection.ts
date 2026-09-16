@@ -2,9 +2,10 @@
  * Selection — which entries of a queue a tick may pick, and the batch a
  * fanout wave carries off it.
  *
- * One derivation for every surface that asks: `runSingleton`'s pre-tick read,
- * `runFanout`'s wave, `render`'s preview, and `TickResult.pickableAfter`'s
- * post-tick re-derivation (`src/Dispatcher.ts`). The gate switch, the
+ * One derivation for every surface that asks: `runSingleton`'s pre-tick read
+ * (`src/singletonTick.ts`), `runFanout`'s wave (`src/waveTick.ts`),
+ * `render`'s preview and `TickResult.pickableAfter`'s post-tick
+ * re-derivation (`src/Dispatcher.ts`). The gate switch, the
  * run-scoped quarantine hold, and the file-overlap partition are spelled here
  * alone, so no two of those surfaces can disagree about what "pickable" means
  * at the moment each is taken (`.claude/rules/engineering.md`, *A module is
@@ -144,6 +145,33 @@ export function pickableEntries(
 }
 
 /**
+ * What {@link selectBatch} answered: the pickable set the gate switch and the
+ * run's quarantine leave standing, the batch arithmetic over it, and the two
+ * facts a caller would otherwise re-read off the chain. Named because the
+ * wave that runs the selection and the leg context that carries it
+ * (`src/tickLeg.ts`) both hold one in a variable.
+ */
+export interface BatchSelection {
+  pickable: PendingEntry[];
+  /**
+   * Entries the gate switch would pick, but this run's live quarantine
+   * drops anyway — key beside tag, so a chain's handoff can tell
+   * "quarantined open" from "genuinely pickable" without re-deriving it,
+   * and can see which read of the entry the hold stands under. Keyed on
+   * the entry as read: an entry re-scoped on trunk hashes to a new key, so
+   * the next tick picks it up without a relaunch.
+   */
+  quarantinedTags: { tag: string; key: string }[];
+  batches: PendingEntry[][];
+  /**
+   * The globs `batches` was partitioned under — reported rather than
+   * re-read by a caller, so the footprint recorder filters through exactly
+   * the list the partition collided on.
+   */
+  partitionIgnore: string[];
+}
+
+/**
  * The batch a fanout tick would carry off this queue, and the selection
  * facts it is drawn from — one derivation for `runFanout`, which runs the
  * wave, and `render`, which previews it. The two `supervisorPolicy` reads
@@ -162,25 +190,7 @@ export function selectBatch(opts: {
   quarantinedSlugs?: ReadonlySet<string>;
   /** The dispatcher's own parallelism ceiling, below whatever the chain declares. */
   maxParallel: number;
-}): {
-  pickable: PendingEntry[];
-  /**
-   * Entries the gate switch would pick, but this run's live quarantine
-   * drops anyway — key beside tag, so a chain's handoff can tell
-   * "quarantined open" from "genuinely pickable" without re-deriving it,
-   * and can see which read of the entry the hold stands under. Keyed on
-   * the entry as read: an entry re-scoped on trunk hashes to a new key, so
-   * the next tick picks it up without a relaunch.
-   */
-  quarantinedTags: { tag: string; key: string }[];
-  batches: PendingEntry[][];
-  /**
-   * The globs `batches` was partitioned under — reported rather than
-   * re-read by a caller, so the footprint recorder filters through exactly
-   * the list the partition collided on.
-   */
-  partitionIgnore: string[];
-} {
+}): BatchSelection {
   const { chain, pending, isForkResolved } = opts;
   // The environment facts this chain asserts, matched against each entry's
   // `requiresCapability` gate.

@@ -3,12 +3,12 @@
  * `<flumeDir>/merging/<slug>.json` carries, and the read that answers
  * "is a merge still staked out under this state root?"
  *
- * spec/loop.md "Crash equals stop". The merge stage writes a marker around
- * each cherry-pick (`src/Dispatcher.ts`); the CLI's startup refusal (`flume
- * loop`, `flume job run`) is the reader. The shape sits with the reader
- * rather than inside the dispatcher because it is the vocabulary of that
- * seam, not of a tick (`.claude/rules/engineering.md`, *A module is one
- * job*).
+ * spec/loop.md "Crash equals stop". The wave's merge stage writes a marker
+ * around each cherry-pick (`src/waveTick.ts`); the CLI's startup refusal
+ * (`flume loop`, `flume job run`) is the reader. The shape sits with the
+ * reader rather than inside the leg that stakes it because it is the
+ * vocabulary of that seam, not of a tick (`.claude/rules/engineering.md`, *A
+ * module is one job*).
  */
 
 import { readFile, readdir } from "node:fs/promises";

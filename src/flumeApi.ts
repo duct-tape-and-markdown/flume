@@ -31,7 +31,8 @@ import {
   pendingGate,
 } from "./builtinGates.js";
 import { CjsContextLoadError } from "./chainLoad.js";
-import { computeStateRootRel, PendingParseFailure } from "./Dispatcher.js";
+import { computeStateRootRel } from "./Dispatcher.js";
+import { PendingParseFailure } from "./PendingSchema.js";
 import { readTickVerdicts, readLatestVerdictsSync } from "./tickVerdict.js";
 import {
   readFileAtRef,

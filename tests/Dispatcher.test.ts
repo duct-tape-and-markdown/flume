@@ -22,11 +22,11 @@ import {
   type ChainModule,
 } from "../src/chainLoad.ts";
 import {
-  PendingParseFailure as realPendingParseFailure,
   Dispatcher,
   computeStateRootRel,
   type DispatcherOptions,
 } from "../src/Dispatcher.ts";
+import { PendingParseFailure as realPendingParseFailure } from "../src/PendingSchema.ts";
 import { quarantineKey } from "../src/selection.ts";
 import type { Logger } from "../src/log.ts";
 import { readMergingMarkers } from "../src/mergingMarkers.ts";

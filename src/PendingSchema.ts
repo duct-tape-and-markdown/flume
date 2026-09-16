@@ -469,6 +469,34 @@ function issuesToParseErrors(issues: z.core.$ZodIssue[]): ParseError[] {
 }
 
 /**
+ * The throwing form of a {@link parsePending} refusal, for the reads that act
+ * on the result rather than report it: `Dispatcher.readPending` (the reads
+ * that decide pickable work, and the wave's ledger rewrite) raises it when
+ * `pending.json` exists but fails to parse. Per
+ * .claude/rules/engineering.md "Loud or nothing": a queue that never resolved
+ * must not read as an empty one, and nothing downstream may derive a decision
+ * or a rewrite from it. `tick()` (`src/Dispatcher.ts`) catches it exactly
+ * where it catches chain-resolution failure and folds it into the same
+ * mount-dead failed-outcome shape — a pending.json no agent can parse is
+ * exactly as unusable next tick as this one.
+ *
+ * Lives beside the parse it wraps rather than at the reader, because the wave
+ * leg subclasses it (`WaveLedgerParseFailure`, `src/waveTick.ts`) and a chain's
+ * gate reaches it through `FlumeApi.PendingParseFailure` (`src/flumeApi.ts`).
+ */
+export class PendingParseFailure extends Error {
+  readonly errors: readonly ParseError[];
+  constructor(errors: readonly ParseError[]) {
+    super(
+      `pending.json failed to parse (${errors.length} error(s)): ` +
+        errors.map((e) => `[${e.index}] ${e.path}: ${e.message}`).join("; "),
+    );
+    this.name = "PendingParseFailure";
+    this.errors = errors;
+  }
+}
+
+/**
  * Parse pending.json contents against core + the chain's declared extension.
  * Returns structured errors rather than throwing so the harness can inject
  * them back into the plan prompt for re-derivation.

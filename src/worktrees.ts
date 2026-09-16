@@ -224,7 +224,7 @@ interface GateCheckoutScope extends GateCheckoutContext {
 /**
  * The in-flight gate invocation's checkout scope. Async-local rather than
  * module-global because gate invocations overlap: a fanout wave runs its
- * entries concurrently (`Dispatcher.runFanout`), so a single shared list
+ * entries concurrently (`runFanout`, `src/waveTick.ts`), so a single shared list
  * would hand one gate's reclamation another gate's live tree. The store is
  * entered once per gate run by {@link withGateCheckouts} and propagates
  * through every `await` the gate makes, which is exactly the scope

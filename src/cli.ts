@@ -830,7 +830,7 @@ async function main(): Promise<number> {
     ? new Set(process.env.FLUME_QUARANTINED_SLUGS.split(",").filter(Boolean))
     : undefined;
   // spec/loop.md "The loop lock and the tip claim": which pid the wave's own
-  // tip-verify checks (`liveForeignClaimPid`, src/Dispatcher.ts) treat as
+  // tip-verify checks (`liveForeignClaimPid`, `src/tipVerify.ts`) treat as
   // this run's own rather than a foreign concurrent engine — a loop-spawned
   // child's supervisor (told via FLUME_TIP_CLAIM_HELD, set by
   // `defaultTickRunner`), or this process's own pid otherwise, which is

@@ -6,11 +6,12 @@
  * Both concurrencies run exactly this sequence — a singleton on the
  * wave-of-one worktree it provisioned for the phase (spec/worktrees.md,
  * "Singleton runs in a worktree"), a fanout entry on its own — so it lives in
- * the file its name is rather than as a second job inside the class that
- * orchestrates the tick around it (`.claude/rules/engineering.md`, *A module
- * is one job*). What surrounds the attempt — the `shouldRun` consult, the
- * merge stage, the verdict vocabulary each concurrency reports in — stays
- * with the caller (`src/Dispatcher.ts`).
+ * the file its name is rather than as a second job inside whichever leg
+ * reaches it (`.claude/rules/engineering.md`, *A module is one job*). The
+ * `shouldRun` consult that decides whether to make the attempt at all comes
+ * with it, since its refusal record is the attempt's own. What surrounds the
+ * attempt — the merge stage, the verdict vocabulary each concurrency reports
+ * in — stays with the legs (`src/singletonTick.ts`, `src/waveTick.ts`).
  *
  * Every function here takes its runtime state as an {@link AttemptContext}
  * rather than reading a field off the orchestrator, so the sequence is
@@ -149,7 +150,7 @@ type AttemptFacts = {
 };
 
 /**
- * The outcome of {@link Dispatcher.runAttempt} — render → tip read → invoke
+ * The outcome of {@link runAttempt} — render → tip read → invoke
  * → tip verify → afterCommit gates → revert — in the one vocabulary both
  * concurrencies' merge stages read.
  *
@@ -828,13 +829,12 @@ async function persistRenderRefused(
  * caller supplies the no-commit outcome; this writes the record and says so
  * once, for both hooks and both concurrencies.
  *
- * Exported because the two hook consults sit on either side of this module's
- * boundary — `promptArgs` inside the attempt, `shouldRun` in the caller that
- * surrounds it (`consultShouldRun`, `src/Dispatcher.ts`) — and one helper
- * with two callers beats the same record spelled twice
- * (`.claude/rules/engineering.md`, *A module is one job*).
+ * One helper with two callers — `promptArgs` inside the attempt,
+ * `shouldRun` at the consult that precedes it (`consultShouldRun`, below) —
+ * beats the same record spelled twice (`.claude/rules/engineering.md`, *A
+ * module is one job*).
  */
-export async function persistHookRefusal(
+async function persistHookRefusal(
   ctx: AttemptContext,
   ref: PriorAttemptRef,
   label: string,
@@ -851,6 +851,42 @@ export async function persistHookRefusal(
   ctx.log.warn(
     `[flume] ${label}: ${hook} threw: ${message}; render-refused (no commit)`,
   );
+}
+
+/**
+ * `phase.shouldRun`, consulted for both concurrencies at one site — the
+ * singleton leg before it provisions anything (`src/singletonTick.ts`), the
+ * wave leg per entry (`src/waveTick.ts`); `.claude/rules/engineering.md`,
+ * *The fix lands at the mechanism*, and `runGate` (`src/gateRun.ts`) is the
+ * same shape one seam over. It sits here, beside the attempt it gates,
+ * because its refusal record is the attempt's own — {@link
+ * persistHookRefusal}, shared with the `promptArgs` consult rather than
+ * spelled twice.
+ *
+ * Three answers, not two. A throw is **refused**, never `declined`: a hook
+ * that could not decide has not decided to skip (`spec/chain.md`, *What a
+ * hook receives*), so the caller takes its no-invocation refusal path and
+ * the verdict never records a chain decision the chain never reached. An
+ * absent hook runs, byte-identically to one that returned `true`.
+ */
+export async function consultShouldRun(
+  ctx: AttemptContext,
+  phase: Phase,
+  tickCtx: TickContext,
+  ref: PriorAttemptRef,
+  label: string,
+): Promise<"run" | "declined" | "refused"> {
+  if (!phase.shouldRun) return "run";
+  let verdict: boolean;
+  try {
+    verdict = phase.shouldRun(tickCtx);
+  } catch (err) {
+    await persistHookRefusal(ctx, ref, label, "shouldRun", err);
+    return "refused";
+  }
+  if (verdict) return "run";
+  ctx.log.info(`[flume] ${label}: declined (shouldRun) — no invocation`);
+  return "declined";
 }
 
 /**

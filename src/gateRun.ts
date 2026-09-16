@@ -2,8 +2,9 @@
  * Running one gate — the single place a declared {@link Gate}'s `run` is
  * called, for every gate-run site in the engine.
  *
- * The attempt's afterCommit loop (`src/tickAttempt.ts`) and both afterMerge
- * loops (`src/Dispatcher.ts`) call through here rather than pasting their own
+ * The attempt's afterCommit loop (`src/tickAttempt.ts`) and the two legs'
+ * afterMerge loops (`src/singletonTick.ts`, `src/waveTick.ts`) call through
+ * here rather than pasting their own
  * guard, so what a throwing gate becomes, and what a gate's checkout is
  * reclaimed by, is spelled once (`.claude/rules/engineering.md`, *The fix
  * lands at the mechanism*).
