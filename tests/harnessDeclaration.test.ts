@@ -74,6 +74,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
       { kind: "script", path: "scripts/check-plan.mjs", when: "afterCommit" },
     ],
   },
+  shell: "bash",
   agents: {
     build: {
       model: "claude-opus-5",
@@ -154,7 +155,7 @@ describe("the harness declaration schema", () => {
     expect(Object.keys(declared).sort()).toEqual(
       Object.keys(DeclarationSchema.shape).sort(),
     );
-    expect(Object.keys(declared)).toHaveLength(14);
+    expect(Object.keys(declared)).toHaveLength(15);
 
     const parsed: Declaration = parseDeclaration(declared);
 
@@ -175,6 +176,7 @@ describe("the harness declaration schema", () => {
       name: "tsc",
       when: "afterCommit",
     });
+    expect(parsed.shell).toBe("bash");
     expect(parsed.agents?.build?.model).toBe("claude-opus-5");
     expect(parsed.agents?.build?.inheritUserMcp).toBe(true);
     expect(parsed.supervisor?.maxParallel).toBe(4);
@@ -305,6 +307,10 @@ describe("the harness declaration schema", () => {
     // Absent, the package resolves a cite's section by heading text.
     expect(parsed.resolver).toBeUndefined();
     expect(parsed.scopeWritesToEntry).toBe(false);
+    // Absent on the parse's output too: a command gate cannot be spawned
+    // without some shell, and the fallback lands where one is constructed
+    // rather than here (`DEFAULT_SHELL`, `harness/declaration.ts`).
+    expect(parsed.shell).toBeUndefined();
   });
 
   it("a declaration omitting its handoff parses, and handoff reads undefined", () => {

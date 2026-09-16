@@ -131,11 +131,12 @@ operations, which is adoption's largest single piece and is priced under
 *What adoption costs* below), and `slices` (which plan slices run,
 and the sweep's domain). Optional: `channelPaths`, `scopeWritesToEntry` (off
 by default, and the package takes no side), `resolver`, `handoff` per phase,
-`gates` per phase and `when`, `agents`, `supervisor` (the engine's policy
-passed through whole), `setup`, `slots` (prompt text — an autonomy dial,
-domain context; never a directive), and `ci` (the CI lanes the inbox slice
-reads as findings sources beside the records — each a workflow file, a job
-name, and the lane name its findings carry).
+`gates` per phase and `when`, `shell` (the shell a `shell` or `script` gate's
+command runs under, `sh` where the declaration is silent), `agents`,
+`supervisor` (the engine's policy passed through whole), `setup`, `slots`
+(prompt text — an autonomy dial, domain context; never a directive), and `ci`
+(the CI lanes the inbox slice reads as findings sources beside the records —
+each a workflow file, a job name, and the lane name its findings carry).
 
 It is a TypeScript module rather than JSON because three of those fields are
 values with behavior. An unknown field, or a required one missing, refuses
@@ -145,8 +146,9 @@ engine's to report and the package's to read.
 
 #### What a declared command gate's child reads
 
-A `shell` or `script` gate in `gates` runs through `sh -c` in the gate's own
-tree, with the engine's gate facts already in its environment — so the
+A `shell` or `script` gate in `gates` runs in the gate's own tree through the
+shell the declaration names — `shell`, which is `sh` where the declaration is
+silent — with the engine's gate facts already in its environment, so the
 command reads what the tick knows instead of rebuilding it from git:
 
 | Variable | What it carries |
@@ -163,6 +165,15 @@ grow, a file that may not reappear — reads `FLUME_LANDED_ON_SHA` for its
 *before*. `HEAD^` is right only while a span lands as one commit, and a
 fanout entry's may be several; `FLUME_BASE_SHA` is what the tick *saw*, which
 every sibling in a wave shares.
+
+Name the `shell` your commands are written for. `sh` is the default because
+a POSIX host resolves it and the commands most consumers write are POSIX;
+which shells a win32 host resolves depends on what put them on PATH, so a
+consumer whose gates run there declares the one it installed — `bash`, or an
+absolute path to it. The declared shell is probed once at chain load, and a
+shell this host will not run refuses the load naming the gate that declared a
+command for it, rather than reporting itself as that gate failing on the
+tick that first reached it.
 
 ### What adoption costs
 

@@ -1049,10 +1049,19 @@ async function flumeEnvSeenBy(
   }
 }
 
-/** The declared gate this chain hangs on build under `name`. */
-function declaredGate(declared: unknown, name: string): Gate {
+/**
+ * The declared gate this chain hangs on build under `name`, under `shell`
+ * where the case names one and under whatever the schema defaults to
+ * otherwise — the omission a case relies on to read the default.
+ */
+function declaredGate(declared: unknown, name: string, shell?: string): Gate {
   const gate = phaseNamed(
-    chainFor({ ...DECLARATION, runner: recordingRunner([]), gates: { build: [declared] } }),
+    chainFor({
+      ...DECLARATION,
+      runner: recordingRunner([]),
+      gates: { build: [declared] },
+      ...(shell === undefined ? {} : { shell }),
+    }),
     BUILD_PHASE,
   ).gates.find((candidate) => candidate.name === name);
   if (!gate) throw new Error(`the build phase hangs no gate named "${name}"`);
@@ -1173,7 +1182,7 @@ it("docs/CHAIN-AUTHORING.md names exactly the FLUME_ variables a declared gate's
   // The span is the one it claims to be before a set is read off it: a heading
   // match that captured the wrong section would compare an empty table against
   // the environment and report every fact missing.
-  expect(section).toContain("runs through `sh -c`");
+  expect(section).toContain("shell the declaration names");
 
   /** The table's subjects: one row each, led by the variable in its first cell. */
   const tabled = [...section.matchAll(/^\| `(FLUME_[A-Z_]+)` \|/gm)].map((row) => row[1]!);
@@ -1189,4 +1198,138 @@ it("docs/CHAIN-AUTHORING.md names exactly the FLUME_ variables a declared gate's
     [...tabled].sort(),
     "docs/CHAIN-AUTHORING.md tables exactly the facts a declared gate's child is handed",
   ).toEqual(Object.keys(seen).sort());
+});
+
+/**
+ * A shell of the case's own: a real executable that records the argv it was
+ * spawned with before running the command it was handed. The declaration
+ * names its absolute path, so what these cases read is the spawn the gate
+ * actually made — the real producer driven through a real child — rather
+ * than the command line the gate happens to print beside it
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ *
+ * `exec sh "$@"` at the end so the gate still goes green on a command that
+ * succeeds: a recorder that swallowed the command would leave every case
+ * below reading a gate that ran nothing.
+ */
+async function recordingShell(tree: string): Promise<string> {
+  const shell = join(tree, "recording-shell");
+  await writeFile(
+    shell,
+    `#!/bin/sh\nprintf '%s\\n' "$@" > "${join(tree, "shell-argv.txt")}"\nexec sh "$@"\n`,
+  );
+  await chmod(shell, 0o755);
+  return shell;
+}
+
+it("a declared shell runs a command gate's command", async () => {
+  const tree = await mkTempDir("flume-harness-chain-declared-shell-");
+  try {
+    const shell = await recordingShell(tree);
+    // Non-vacuity: the declared shell is nothing the package could have
+    // reached on its own, so every claim below is about the declaration.
+    expect(shell).not.toBe("sh");
+    expect(existsSync(join(tree, "shell-argv.txt"))).toBe(false);
+
+    const command = "printf ran > ran-the-command.txt";
+    const gate = declaredGate({ kind: "shell", command, when: "afterCommit" }, command, shell);
+
+    // The line a failing tick reports names the declared shell, not the
+    // package's default.
+    expect(gate.command).toBe(`${shell} -c ${command}`);
+
+    const result = await gate.run(gateContext(tree));
+
+    expect(result.ok, result.details).toBe(true);
+    // The declared shell was the process spawned, and it was handed the
+    // gate's own invocation form — `-c` and the command, nothing folded in.
+    expect(await readFile(join(tree, "shell-argv.txt"), "utf8")).toBe(
+      `-c\n${command}\n`,
+    );
+    // And the command itself ran, in the gate's own tree.
+    expect(await readFile(join(tree, "ran-the-command.txt"), "utf8")).toBe("ran");
+  } finally {
+    await rm(tree, { recursive: true, force: true });
+  }
+});
+
+it("a declared shell runs a script gate's committed path", async () => {
+  const tree = await mkTempDir("flume-harness-chain-declared-shell-script-");
+  try {
+    const shell = await recordingShell(tree);
+    const script = "scripts/check-the-tree.sh";
+    await mkdir(join(tree, "scripts"), { recursive: true });
+    await writeFile(join(tree, script), "#!/bin/sh\ntouch ran-the-committed-script\n");
+    await chmod(join(tree, script), 0o755);
+
+    const gate = declaredGate({ kind: "script", path: script, when: "afterMerge" }, script, shell);
+
+    const result = await gate.run(gateContext(tree));
+
+    // One mechanism with two names: the script kind takes the declared shell
+    // on the same terms the shell kind does.
+    expect({
+      ok: result.ok,
+      argv: await readFile(join(tree, "shell-argv.txt"), "utf8"),
+      ran: existsSync(join(tree, "ran-the-committed-script")),
+    }).toEqual({ ok: true, argv: `-c\n${script}\n`, ran: true });
+  } finally {
+    await rm(tree, { recursive: true, force: true });
+  }
+});
+
+it("an undeclared shell runs a command gate under sh", async () => {
+  // Non-vacuity: the base declaration genuinely says nothing about a shell,
+  // so what runs below is the schema's own default rather than a value this
+  // fixture chose.
+  expect("shell" in DECLARATION).toBe(false);
+
+  const command = `printf '%s' "$0" > shell-name.txt`;
+  const gate = declaredGate({ kind: "shell", command, when: "afterCommit" }, command);
+  expect(gate.command).toBe(`sh -c ${command}`);
+
+  const tree = await mkTempDir("flume-harness-chain-default-shell-");
+  try {
+    const result = await gate.run(gateContext(tree));
+
+    expect(result.ok, result.details).toBe(true);
+    // `$0` under `-c` is the shell as it was invoked, so this is the name the
+    // package spawned — read off the child, not off the printed line above.
+    expect(await readFile(join(tree, "shell-name.txt"), "utf8")).toBe("sh");
+  } finally {
+    await rm(tree, { recursive: true, force: true });
+  }
+});
+
+it("chain load refuses a shell the host does not resolve, naming the gate", () => {
+  const command = "printf ran";
+  const loadWith = (shell: string) => (): Chain =>
+    chainFor({
+      ...DECLARATION,
+      runner: recordingRunner([]),
+      shell,
+      gates: { build: [{ kind: "shell", command, when: "afterCommit" }] },
+    });
+
+  // Control: the package's default shell loads on this host, so the refusal
+  // below is the declared shell's doing and not the gate declaration's.
+  expect(loadWith("sh")).not.toThrow();
+
+  // `COMMAND` is the case's unresolvable name throughout this file — a shell
+  // no host answers to.
+  expect(loadWith(COMMAND)).toThrow();
+
+  let message = "";
+  try {
+    loadWith(COMMAND)();
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  // Both halves by name: which gate is stranded, and which shell stranded it.
+  // Either alone leaves a consumer with several command gates guessing.
+  expect({ gate: message.includes(command), shell: message.includes(COMMAND) }).toEqual({
+    gate: true,
+    shell: true,
+  });
 });

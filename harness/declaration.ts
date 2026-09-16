@@ -35,6 +35,17 @@ import type { RunnerFactory } from "./runner.js";
 const globs = z.array(z.string().min(1)).min(1);
 
 /**
+ * The shell a declared command gate runs under where the declaration names
+ * none — the one every POSIX host resolves.
+ *
+ * Exported because the fallback is the schema's fact and the gate
+ * construction is where it applies: one spelling of the value, read by the
+ * reader rather than re-decided there (`.claude/rules/engineering.md`,
+ * *Derived state is computed, never restated beside its source*).
+ */
+export const DEFAULT_SHELL = "sh";
+
+/**
  * The plan slice that drains the records (`spec/harness.md`, *Records as one
  * file each*). Named here for the same reason {@link BUILD_PHASE} is: the
  * slice list below and the default handoff's refusal leg — which routes a
@@ -327,6 +338,29 @@ export const DeclarationSchema = strict({
    * seconds-long check reports before a minutes-long suite.
    */
   gates: byPhase(z.array(GateDeclaration)).optional(),
+  /**
+   * The shell a `shell` or `script` gate's command line runs under, spawned
+   * as `<shell> -c <command>` in the gate's own tree. Absent means
+   * {@link DEFAULT_SHELL}.
+   *
+   * Declared rather than fixed because which shells a host resolves is the
+   * consumer's environment, not the package's: on win32 `sh` resolves from
+   * one launch shell and not another, so a package that spelled it would be
+   * naming a host where it meant to name a mechanism
+   * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*). A
+   * fallback is still mechanism — a command gate cannot be spawned without
+   * some shell — so absence resolves rather than refuses.
+   *
+   * Optional rather than `.default()`: a defaulted field is present on the
+   * parse's output, so declaring it that way would make every consumer
+   * annotating {@link Declaration} spell a shell to typecheck. The fallback
+   * is applied once, where the gate is constructed (`declaredGates.ts`).
+   *
+   * Whether the named shell is one *this* host resolves is not a claim a
+   * string can carry, so the chain factory probes it at load and refuses
+   * naming the gate (`declaredGates.ts`).
+   */
+  shell: z.string().min(1).optional(),
   /**
    * Model per phase, extra agent arguments, and whether the tick inherits
    * the user's own MCP servers; absent means the package's default.

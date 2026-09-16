@@ -2,7 +2,7 @@
  * The gates a consumer declared, as `Gate`s a phase can run (`spec/harness.md`,
  * *What a consumer declares*) — the registry of builtins a name may reach, the
  * construction each declared kind takes, and the shell line the two command
- * kinds share.
+ * kinds share under the shell the declaration named.
  *
  * **This module spawns nothing itself; it builds the gate that will.** The
  * engine's own `shellGate` is what runs a command, taken off the `FlumeApi`
@@ -18,7 +18,12 @@
 import type { FlumeApi } from "../src/flumeApi.js";
 import type { Gate, GateContext, GatePhase } from "../src/Gate.js";
 
-import { BUILD_PHASE, type Declaration } from "./declaration.js";
+import {
+  BUILD_PHASE,
+  DEFAULT_SHELL,
+  type Declaration,
+} from "./declaration.js";
+import { captureSync, detailOf } from "./exec.js";
 
 /**
  * One gate a consumer declared, as the declaration's own union — read off
@@ -57,12 +62,22 @@ function registry(api: FlumeApi): Record<string, (when: GatePhase) => Gate> {
  * set it could have been — the other half of the declaration schema's
  * ruling that a name is any non-empty string until the factory reads it
  * (`declaration.ts`). A shell command and a committed script are one
- * mechanism with two names: both run through `sh -c` in the gate's own tree,
- * which resolves a relative path against that tree and honours a script's
- * own shebang, and both read the same gate facts from their environment
- * ({@link gateFacts}).
+ * mechanism with two names: both run through `<shell> -c` in the gate's own
+ * tree, which resolves a relative path against that tree and honours a
+ * script's own shebang, and both read the same gate facts from their
+ * environment ({@link gateFacts}).
+ *
+ * `shell` is the declaration's, taken as it was declared — absent included,
+ * which is where {@link DEFAULT_SHELL} applies. The fallback lands here, at
+ * the one site that spawns under it, rather than at each caller
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */
-export function constructGate(api: FlumeApi, declared: GateDeclaration): Gate {
+export function constructGate(
+  api: FlumeApi,
+  declared: GateDeclaration,
+  shell: string | undefined,
+): Gate {
+  const under = shell ?? DEFAULT_SHELL;
   switch (declared.kind) {
     case "registry": {
       const table = registry(api);
@@ -79,9 +94,9 @@ export function constructGate(api: FlumeApi, declared: GateDeclaration): Gate {
       return make(declared.when);
     }
     case "shell":
-      return shellCommand(api, declared.command, declared.when);
+      return shellCommand(api, under, declared.command, declared.when);
     case "script":
-      return shellCommand(api, declared.path, declared.when);
+      return shellCommand(api, under, declared.path, declared.when);
   }
 }
 
@@ -125,8 +140,38 @@ function gateFacts(ctx: GateContext): Record<string, string> {
 }
 
 /**
- * A command line as a gate, named by the line itself, run with the gate
- * facts in its environment.
+ * Refuse the chain load when the host will not run `shell`, naming the gate
+ * that declared a command for it.
+ *
+ * Probed by running the shell exactly as the gate will — `<shell> -c` over a
+ * command that does nothing — so what is proven is the invocation the gates
+ * take rather than a path lookup standing in for it. It goes through the
+ * package's shared sync spawn, which carries the same win32 shim retry the
+ * gate's own spawn does (`exec.ts`, `src/spawnShim.ts`), so the probe and
+ * the gate agree about what this host resolves rather than each deciding.
+ *
+ * At load, and not at the tick that first needed the gate: a shell the host
+ * cannot run makes every command gate unrunnable, and reporting that as a
+ * gate failure hours into a run is the degraded-but-proceeding path the
+ * posture refuses (`.claude/rules/engineering.md`, *Loud or nothing*). The
+ * tree is the repository root the engine resolved, which is the one tree
+ * that exists at load — a gate's own worktree does not yet.
+ */
+function requireRunnableShell(api: FlumeApi, shell: string, gate: string): void {
+  try {
+    captureSync(shell, ["-c", "exit 0"], { cwd: api.paths.repoRoot });
+  } catch (err) {
+    throw new Error(
+      `gate "${gate}" runs under the shell \`${shell}\`, which this host ` +
+        `did not run: ${detailOf(err)} — declare a \`shell\` this host ` +
+        `resolves (spec/harness.md, What a consumer declares)`,
+    );
+  }
+}
+
+/**
+ * A command line as a gate, named by the line itself, run under `shell` with
+ * the gate facts in its environment.
  *
  * The facts are per-run and `shellGate`'s `env` is per-construction, so the
  * spawning gate is rebuilt for each context; what a failing tick reports —
@@ -135,9 +180,15 @@ function gateFacts(ctx: GateContext): Record<string, string> {
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*).
  */
-function shellCommand(api: FlumeApi, command: string, when: GatePhase): Gate {
+function shellCommand(
+  api: FlumeApi,
+  shell: string,
+  command: string,
+  when: GatePhase,
+): Gate {
+  requireRunnableShell(api, shell, command);
   const spawning = (env: Record<string, string>): Gate =>
-    api.shellGate({ name: command, when, cmd: "sh", args: ["-c", command], env });
+    api.shellGate({ name: command, when, cmd: shell, args: ["-c", command], env });
   return {
     ...spawning({}),
     run: (ctx) => spawning(gateFacts(ctx)).run(ctx),

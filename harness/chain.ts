@@ -218,7 +218,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       ...(options.entryFields ? { entryFields: options.entryFields } : {}),
       declared: [
         ...(declaration.gates?.[name] ?? []).map((gate) =>
-          constructGate(api, gate),
+          constructGate(api, gate, declaration.shell),
         ),
         ...own,
       ],
