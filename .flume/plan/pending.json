@@ -1,5 +1,41 @@
 [
   {
+    "tag": "CLI-ENTRY-CHECK-RESOLVES-A-NAMESPACED-ROOT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "`onDiskIdentity`'s resolving leg takes the realpath that does not root-split its argument"
+        },
+        {
+          "path": "tests/helpers/namespacedFsScan.ts",
+          "description": "a dotted member callee reads as the fs symbol it extends"
+        },
+        {
+          "path": "tests/namespacedFsPaths.test.ts",
+          "description": "the scan's own reading of that call, beside the cases already pinning it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the CLI entry check hands node's JS `realpathSync` a `\\\\?\\` drive root, which throws on win32/node 22 — both legs take the raw fallback, so a junctioned install never folds",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Direct invocation is detected by realpath"
+    },
+    "acceptance": "the windows lane's junction case goes green: a junctioned argv[1] resolves to `CLI_MODULE_IDENTITY`, and the fs-path scan reads the native call rather than skipping it as a member callee.",
+    "tests": [
+      "the namespaced-fs scan reads `realpathSync.native` as the path-answering fs call it is"
+    ],
+    "pins": [],
+    "notes": "Root cause diffed against node source, not run: node 22 lstats `splitRoot(p)` raw, so `\\\\?\\C:\\` loses its trailing separator and throws; node 24 added `getRealpathRootLstatPath` to strip it, and `engines` still admits 22. `realpathSync.native` root-splits nothing and strips the prefix (platform-facts). The scan keeps member callees dotted, so the native call would go unread — hence the tests[] line. The lane's own red case is the fixture, per the `per` section."
+  },
+  {
     "tag": "ENTRY-CHECK-CASES-NAME-THE-LEG-THEY-EXERCISE",
     "gate": {
       "kind": "open"
