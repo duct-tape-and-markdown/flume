@@ -1,5 +1,41 @@
 [
   {
+    "tag": "A-NAMESPACED-PATH-NEVER-LEAVES-ITS-FS-CALL",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the entry-direct check folds for its fs call and compares argv[1] against this module's own path through one derivation"
+        },
+        {
+          "path": "tests/helpers/namespacedFsScan.ts",
+          "description": "the scan reads where a namespaced value goes, not only that the call was folded"
+        },
+        {
+          "path": "tests/namespacedFsPaths.test.ts",
+          "description": "the escape arm, and the scan's own reading of it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "isInvokedDirectly hands a toNamespacedPath result to pathToFileURL, so a junctioned argv[1] reads as indirect on win32 — the windows lane's one red",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "the windows lane's junction case passes: argv[1] and cli.ts's own path are compared through one derivation, and the scan that demanded the fold refuses a namespaced value consumed by anything but an fs call.",
+    "tests": [
+      "the win32 path scan refuses a toNamespacedPath result consumed by anything but an fs call"
+    ],
+    "pins": [],
+    "notes": "Windows lane run 35040190079, title 'a directory-junction-equivalent argv[1] ... still resolves as direct'. Introduced at 492b8331, which added toNamespacedPath(argv1) at src/cli.ts:1386. Every other toNamespacedPath/namespacedJoin result in src/ and harness/ goes straight into an fs call and is discarded; this is the lone escape. The behavior cannot red off win32 (identity on posix), so the tests[] line is the scan, not the seam."
+  },
+  {
     "tag": "A-TEST-TITLE-CITES-A-PAGE-THE-TREE-HOLDS",
     "gate": {
       "kind": "open"
@@ -73,6 +109,74 @@
       "every *.md page name a src/, harness/ or tests/ title carries names a file the working tree holds"
     ],
     "notes": "Ruled 2026-09-15, rule landed at ea26ffe. 17 unresolved titles, not the record's 14: `engineering.md` x8, `engine-boundary.md` x4, `platform-facts.md` x2, plus `state.md/open-questions.md` (Dispatcher, stale since state.json), `SHIPPED.md` (examples, a runtime artifact no checkout holds), `PROTOCOL.md` (harnessInit). The repo pin is green at base by construction, so it needs its own non-vacuity assertion — titles scanned > 0. One stale span, PendingSchema, same pass."
+  },
+  {
+    "tag": "ONE-CHAIN-APPLICATION-PER-TICK-PROCESS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the tick branch reads the grace off the one application the process already makes"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the agent bounds it resolved are a fact it hands out rather than keeps"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the counting-factory case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume tick applies the chain factory twice — once for the grace its signal handler announces, once inside tick() — and respells agentBounds' own default fold beside it",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "a flume tick process applies the chain factory once, and the grace its signal handler names comes from the engine's own bounds derivation rather than a second `?? DEFAULT_KILL_GRACE_MS` spelled beside it.",
+    "tests": [
+      "a bare flume tick applies the chain factory once for the process"
+    ],
+    "pins": [],
+    "notes": "From A-SIGNALLED-RELEASE-ANNOUNCES-ITS-WAIT. src/cli.ts:1062 resolves a second time; the Dispatcher is constructed with configDir alone (cli.ts:839) so it builds its own loader, making the 'one load per process' the comment at cli.ts:807 claims already false. agentBounds (Dispatcher.ts:4029) holds the fact and reports it nowhere. The loop parent's own pair (cli.ts:1310 plus superviseLoop's) is run-scoped, not per-tick — left out of scope."
+  },
+  {
+    "tag": "A-DECLARING-FILE-HOLDS-NO-NUMERIC-CEILING",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/spawnBudget.ts",
+          "description": "a file-level ceiling verdict off the same parse — a declaring file's registrars, spawning or not"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the arm and its own subject count"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "sites.ceilings judges spawning registrars only, so the 25 numeric ceilings removed from tests/Gate.test.ts and tests/harnessRunner.test.ts can come back with nothing red",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "acceptance": "a file declaring the budget at file scope carries no numeric timeout on any registrar it holds, spawning or not, and the verdict rides its own subject count so the judged registrars are asserted populated.",
+    "tests": [],
+    "pins": [
+      "a file declaring the spawn budget carries no numeric timeout on any registrar it holds"
+    ],
+    "notes": "From A-SPAWNING-SITE-TAKES-THE-FILES-BUDGET, which parked the fork. Ruled the note's own cheaper shape over widening the spawn rule to every registrar: the verdict binds only files that opted in by declaring, so no non-declaring file comes under a spawn rule. Verified both files carry a declaration and no numeric registrar timeout today, so this is a pin, not a test. The integration lane declares no budget and is untouched."
   },
   {
     "tag": "DISPATCHER-HOMES-ITS-FIVE-FRONT-JOBS",
