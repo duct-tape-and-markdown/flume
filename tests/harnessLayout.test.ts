@@ -5,20 +5,23 @@
  * The fence case is an agreement case (`.claude/rules/engineering.md`, *A seam
  * gate reads what the real writer wrote*): every path is composed by the
  * accessor a real tick reaches that artifact through — the engine's own queue
- * resolver, the plan state's path, the questions page's, a build note's — and
- * the list is judged by the engine's real `matchesAny`, the matcher the fence
- * gate runs. A hand-spelled path on either side would re-author one of them
+ * resolver, the plan state's path, the questions directory's, a build note's
+ * — and the list is judged by the engine's real `matchesAny`, the matcher the
+ * fence gate runs. A hand-spelled path on either side would re-author one of them
  * by the tester's hand, and the one-sided rename is exactly what this is for.
  */
 
 import { expect, it } from "vitest";
 
 import {
+  QUESTION_EXT,
+  legacyQuestionsPath,
   noteGlob,
   notePath,
   planArtifacts,
   planStatePath,
-  questionsPath,
+  questionGlob,
+  questionsDir,
   queuePath,
   recordDirs,
   underStateRoot,
@@ -50,7 +53,8 @@ it("the plan fence admits every artifact the package's own accessors address", (
   const artifacts = [
     gitPath(resolvePendingPath(STATE_ROOT)),
     planStatePath(STATE_ROOT),
-    questionsPath(STATE_ROOT),
+    `${questionsDir(STATE_ROOT)}/a-parked-fork${QUESTION_EXT}`,
+    legacyQuestionsPath(STATE_ROOT),
     notePath(STATE_ROOT, "SOME-ENTRY"),
     ...recordDirs(STATE_ROOT).map((dir) => `${dir}/2026-09-15-a-finding.md`),
   ];
@@ -72,6 +76,47 @@ it("the plan fence admits every artifact the package's own accessors address", (
   // arms above are the list agreeing rather than a glob admitting everything.
   expect(matchesAny(`${STATE_ROOT}/chain.ts`, fence)).toBe(false);
   expect(matchesAny(`${STATE_ROOT}/plan/notes/a-note.txt`, fence)).toBe(false);
+});
+
+it("the plan fence admits a file under the questions directory", () => {
+  // Presence is the state of a question (`spec/harness.md`, *Records as one
+  // file each*), so opening one adds a file and answering one deletes it —
+  // both are the plan commit's touched paths, and a fence that did not reach
+  // them would revert the tick that asked or the tick that answered.
+  const fence = planArtifacts(STATE_ROOT);
+  expect(fence.length).toBeGreaterThan(0);
+
+  // At the spelling the writer composes: the directory accessor every slice
+  // prompt names, never a path spelled here.
+  const question = `${questionsDir(STATE_ROOT)}/an-open-fork${QUESTION_EXT}`;
+  expect(matchesAny(question, fence)).toBe(true);
+
+  // And the glob that admits it is the questions directory's own, so the arm
+  // above is the fence agreeing with the layout rather than a wider glob
+  // admitting anything under the state root.
+  expect(matchesAny(question, [questionGlob(STATE_ROOT)])).toBe(true);
+  // Bounded on both sides: a question spelled a directory up is not one, and
+  // neither is a file in the directory that is not markdown a human reads.
+  expect(
+    matchesAny(`${STATE_ROOT}/plan/an-open-fork${QUESTION_EXT}`, [
+      questionGlob(STATE_ROOT),
+    ]),
+  ).toBe(false);
+  expect(
+    matchesAny(`${questionsDir(STATE_ROOT)}/.gitkeep`, [
+      questionGlob(STATE_ROOT),
+    ]),
+  ).toBe(false);
+});
+
+it("the plan fence admits the legacy open-questions page a drain deletes", () => {
+  // The migration allowance (`harness/layout.ts`): a consumer upgrading into
+  // the questions directory has open questions inside the page, and the drain
+  // that moves them out `git rm`s it in the same commit. Outside the fence,
+  // that page is a file no phase can reach.
+  const fence = planArtifacts(STATE_ROOT);
+  expect(fence.length).toBeGreaterThan(0);
+  expect(matchesAny(legacyQuestionsPath(STATE_ROOT), fence)).toBe(true);
 });
 
 it("the queue's fence path is the engine's resolved queue, in git's alphabet", () => {

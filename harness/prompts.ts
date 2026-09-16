@@ -53,9 +53,10 @@ import { PerSchema } from "./entryExtension.js";
 import {
   notePath,
   planStatePath,
-  questionsPath,
+  questionsDir,
   recordDirs,
 } from "./layout.js";
+import { renderQuestions } from "./questions.js";
 import { RECORD_MAX_BYTES } from "./records.js";
 
 /**
@@ -134,7 +135,8 @@ export const SHARED_PROMPT_DATA_KEYS = [
   "PINS_HINT",
   "SPEC_LOCUS",
   "PENDING_PATH",
-  "QUESTIONS_PATH",
+  "QUESTIONS_DIR",
+  "QUESTIONS_INDEX",
   "PLAN_STATE_PATH",
   "RECORD_DIRS",
   "DOMAIN",
@@ -162,9 +164,9 @@ export interface SharedPromptArgsInput {
  * The arguments every prompt the package renders is given, whatever phase is
  * running.
  *
- * Composed per tick because two of them are state-root-relative, and free of
- * `TickContext` because none of them varies within a tick: a phase's own
- * `promptArgs` adds what does.
+ * Composed per tick because three of them are state-root-relative and one of
+ * those reads the disk under it, and free of `TickContext` because none of
+ * them varies within a tick: a phase's own `promptArgs` adds what does.
  */
 export function sharedPromptArgs(
   input: SharedPromptArgsInput,
@@ -189,7 +191,14 @@ export function sharedPromptArgs(
     PINS_HINT: hintOf(extension, "pins"),
     SPEC_LOCUS: backticked(declaration.specLocus),
     PENDING_PATH: resolvePendingPath(stateRoot),
-    QUESTIONS_PATH: questionsPath(stateRoot),
+    QUESTIONS_DIR: questionsDir(stateRoot),
+    /**
+     * Which questions are open, read off the directory that holds them
+     * (`questions.ts`) rather than grepped out of a page by a span in each
+     * slice's prompt. Presence is the state, so the listing *is* the index,
+     * and the three prompts carrying the block share one render of it.
+     */
+    QUESTIONS_INDEX: renderQuestions(stateRoot),
     PLAN_STATE_PATH: planStatePath(stateRoot),
     RECORD_DIRS: backticked(recordDirs(stateRoot)),
     DOMAIN: slot("environment", declaration.slots?.domain),

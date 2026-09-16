@@ -483,10 +483,10 @@ function supervisorPolicy(
  *
  * The engine reports the offset already forward-slashed
  * (`api.paths.stateRootRel`), which is the alphabet every path this factory
- * composes from it needs — the queue, the plan state, the questions file, the record
- * globs, build's note are each one a fence glob matches and a commit's touched
- * path is compared against. Read straight, so no path the factory builds can
- * be in a dialect its sibling is not.
+ * composes from it needs — the queue, the plan state, the questions glob, the
+ * record globs, build's note are each one a fence glob matches and a commit's
+ * touched path is compared against. Read straight, so no path the factory
+ * builds can be in a dialect its sibling is not.
  */
 function repoRelativeStateRoot(api: FlumeApi): string {
   const rel = api.paths.stateRootRel;

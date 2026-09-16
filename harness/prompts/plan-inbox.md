@@ -25,13 +25,13 @@
 </pending-now>
 
 <open-questions-index>
-!`p="{{QUESTIONS_PATH}}"; test -e "$p" || { echo "(none open)"; exit 0; }; grep -n '^## ' "$p" || { s=$?; test "$s" -eq 1 || exit "$s"; echo "(none open)"; }`
+{{QUESTIONS_INDEX}}
 </open-questions-index>
 
 <artifacts>
 queue: {{PENDING_PATH}}
 plan state: {{PLAN_STATE_PATH}}
-open questions: {{QUESTIONS_PATH}}
+open questions: {{QUESTIONS_DIR}}
 record queues: {{RECORD_DIRS}}
 discipline: {{DISCIPLINE}}
 </artifacts>
@@ -47,7 +47,7 @@ Drain the records. Each file in `<records>` is one record: a finding someone lef
 Each record routes to exactly one of:
 
 - a **pending entry**, with a `per` cite inside the spec locus ({{SPEC_LOCUS}});
-- an **open question**, when human input is needed before code can land or no clean cite exists. Open the questions file first: the index above is headings only, and a question already open takes an amendment, not a sibling;
+- an **open question**, when human input is needed before code can land or no clean cite exists. Read the index above first: it names one file per question already open, and one that covers this finding takes an amendment to that file, not a sibling beside it;
 - **accepted debt**: one line in the commit body with the reason.
 
 **Research-leaning by default.** A note that claims a gap is re-verified against the current tree before it scopes an entry — search for the claimed-missing surface; a note stamped `observed at <sha>` narrows the check to `git log <sha>..HEAD`. Scope to the verified gap, never the reported one. A finding a chain could have decided routes to the consumer's declaration or to a boundary question, not to a package entry.
@@ -64,7 +64,7 @@ Route what routes cleanly. Leave the rest on disk rather than guess; the next in
 
 Two bounds, and neither is negotiable. **Advance only through a leading run**: the oldest listed commit whose derivation no record here claimed stops the advance, and no commit behind it is ever stepped over — a cursor past an underived commit is that commit derived by nobody. And **advance only to a sha the block above names**: never one you resolved yourself, never HEAD, never a commit you found by reading git. The block is a closed list of candidates; a block that names none, or that refuses, is a tick that advances nothing. Say in the commit body which commit you advanced through and which record claimed it — or that you carried `derivedThrough` forward untouched.
 
-Entry and artifact discipline: `{{DISCIPLINE}}` — read it before writing the queue or the questions file.
+Entry and artifact discipline: `{{DISCIPLINE}}` — read it before writing the queue or a question.
 
 {{TURN_BOUNDARY}}
 

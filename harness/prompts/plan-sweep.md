@@ -13,13 +13,13 @@
 </pending-now>
 
 <open-questions-index>
-!`p="{{QUESTIONS_PATH}}"; test -e "$p" || { echo "(none open)"; exit 0; }; grep -n '^## ' "$p" || { s=$?; test "$s" -eq 1 || exit "$s"; echo "(none open)"; }`
+{{QUESTIONS_INDEX}}
 </open-questions-index>
 
 <artifacts>
 queue: {{PENDING_PATH}}
 plan state: {{PLAN_STATE_PATH}}
-open questions: {{QUESTIONS_PATH}}
+open questions: {{QUESTIONS_DIR}}
 record queues: {{RECORD_DIRS}}
 discipline: {{DISCIPLINE}}
 </artifacts>

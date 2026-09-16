@@ -148,9 +148,10 @@ beforeAll(async () => {
   await writeFile(join(repo, "src", "index.ts"), "export const seed = 1;\n");
   await writeFile(join(repo, "rules", "posture.md"), "# Posture\n");
   await writeFile(join(flumeDir, "plan", "pending.json"), "[]\n");
+  await mkdir(join(flumeDir, "plan", "questions"), { recursive: true });
   await writeFile(
-    join(flumeDir, "plan", "open-questions.md"),
-    "# Open Questions\n\n## A parked fork\n\nContext.\n",
+    join(flumeDir, "plan", "questions", "a-parked-fork.md"),
+    "# A parked fork\n\nContext.\n",
   );
   git(["add", "-A"]);
   git(["commit", "-qm", "seed"]);

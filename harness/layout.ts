@@ -1,6 +1,6 @@
 /**
  * Where every plan artifact sits under a state root — the queue, the plan
- * state, the open questions, the record queues and build's note — and the
+ * state, the questions directory, the record queues and build's note — and the
  * fence that is their list (`spec/harness.md`, *Committed-path discipline*:
  * every mechanic the package wires addresses a path some commit holds).
  *
@@ -57,8 +57,34 @@ export function underStateRoot(stateRoot: string, rel: string): string {
 /** Where the plan state artifact sits under a state root. */
 const PLAN_STATE_REL = "plan/state.json";
 
-/** Where the open-questions page sits under a state root. */
-const QUESTIONS_REL = "plan/open-questions.md";
+/**
+ * The questions directory's name under a state root — the directory a plan
+ * slice's questions block lists and a session adds a file to.
+ */
+export const QUESTIONS_DIR_REL = "plan/questions";
+
+/**
+ * The extension an open question carries. A question is markdown a human
+ * reads; a `.gitkeep` holding an otherwise-empty directory in a consumer's
+ * tree is not a question and must not read as one still open.
+ */
+export const QUESTION_EXT = ".md";
+
+/**
+ * Where the single page open questions were sections of sat, before they
+ * were one file each.
+ *
+ * **A migration allowance, and the only reason it is still spelled.** No
+ * slice renders it and nothing writes it; it rides {@link planArtifacts} so
+ * that the drain which moves a consumer's open questions into
+ * {@link questionsDir} can `git rm` the page in the same commit — outside
+ * the fence, that page is a file no phase can reach and every plan tick
+ * reverts on. Retired by the maintainer cutting the release after
+ * `docs/MIGRATING-0.17.md`, whose migration section is what tells consumers
+ * to take the drain; this constant, its accessor and its fence line go with
+ * it in that commit.
+ */
+const LEGACY_QUESTIONS_REL = "plan/open-questions.md";
 
 /** The build-note directory's name under a state root. */
 const NOTES_REL = "plan/notes";
@@ -114,15 +140,34 @@ export function planStatePath(stateRoot: string): string {
 }
 
 /**
- * The open-questions artifact under a state root.
+ * Where open questions live — one file each, present while open
+ * (`spec/harness.md`, *Records as one file each*).
  *
- * Two readers share it — the slice prompts `prompts.ts` renders, and the
- * fence the chain factory hands every plan slice. A second spelling anywhere
- * is a slice writing a question where the next slice does not look, or a
- * fence that reverts the commit carrying it.
+ * Three readers share it — the questions listing `questions.ts` renders for
+ * every plan slice, the path those prompts name for a question a tick adds,
+ * and the fence the chain factory hands every plan slice as
+ * {@link questionGlob}. A second spelling anywhere is a slice writing a
+ * question where the next slice does not look, or a fence that reverts the
+ * commit carrying it.
  */
-export function questionsPath(stateRoot: string): string {
-  return underStateRoot(stateRoot, QUESTIONS_REL);
+export function questionsDir(stateRoot: string): string {
+  return underStateRoot(stateRoot, QUESTIONS_DIR_REL);
+}
+
+/**
+ * The questions directory as a fence glob — what admits the file a tick
+ * opening a question writes, and the file a tick answering one deletes.
+ */
+export function questionGlob(stateRoot: string): string {
+  return `${questionsDir(stateRoot)}/*${QUESTION_EXT}`;
+}
+
+/**
+ * The legacy questions page under a state root ({@link LEGACY_QUESTIONS_REL})
+ * — addressable so a drain can delete it, and for nothing else.
+ */
+export function legacyQuestionsPath(stateRoot: string): string {
+  return underStateRoot(stateRoot, LEGACY_QUESTIONS_REL);
 }
 
 /**
@@ -186,7 +231,8 @@ export function planArtifacts(stateRoot: string): string[] {
   return [
     queuePath(stateRoot),
     planStatePath(stateRoot),
-    questionsPath(stateRoot),
+    questionGlob(stateRoot),
+    legacyQuestionsPath(stateRoot),
     ...recordDirs(stateRoot).map((dir) => `${dir}/${RECORD_GLOB}`),
   ];
 }

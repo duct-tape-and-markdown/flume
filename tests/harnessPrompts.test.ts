@@ -31,7 +31,13 @@ import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
 import { PHASES, PLAN_SLICES } from "../harness/declaration.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
 import { harnessInit } from "../harness/init.ts";
-import { planStatePath, questionsPath } from "../harness/layout.ts";
+import {
+  QUESTION_EXT,
+  QUESTIONS_DIR_REL,
+  legacyQuestionsPath,
+  planStatePath,
+} from "../harness/layout.ts";
+import { NONE_OPEN, renderQuestions } from "../harness/questions.ts";
 import {
   PROMPT_NAMES,
   promptPath,
@@ -77,9 +83,13 @@ beforeAll(async () => {
     join(stateRoot, "plan", "pending.json"),
     '{ "entries": [] }\n',
   );
+  // One question open, as presence states it (`spec/harness.md`, *Records as
+  // one file each*): a file under the questions directory, not a section of a
+  // page.
+  await mkdir(join(stateRoot, QUESTIONS_DIR_REL), { recursive: true });
   await writeFile(
-    join(stateRoot, "plan", "open-questions.md"),
-    "# Open questions\n",
+    join(stateRoot, QUESTIONS_DIR_REL, `a-parked-fork${QUESTION_EXT}`),
+    "# A parked fork\n",
   );
 
   // Parsed, not cast: the args under test read `specLocus` and `slots`, and a
@@ -271,8 +281,11 @@ it("every plan slice the package declares points its reader at the discipline pa
 /**
  * The artifacts the slice prompts' spans read, each addressed through the
  * module that owns its path rather than through a layout spelled here: the
- * queue's absolute form is the engine's resolver, and the plan state's and
- * the questions file's are `layout.ts`'s, with every other plan artifact's. A sentinel rides each body so a case
+ * queue's absolute form is the engine's resolver and the plan state's is
+ * `layout.ts`'s, with every other plan artifact's. The questions directory is
+ * not among them — it is listed by the package rather than opened by a span,
+ * and the cases at the end of this file judge that render.
+ * A sentinel rides each body so a case
  * asserts the bytes *arrived*, not merely that the render did not throw — a
  * span whose guard mis-fired would render its placeholder over a readable
  * artifact and look identical from the outside.
@@ -300,14 +313,6 @@ const ARTIFACTS: ReadonlyArray<{
     body: '{ "note": "PLAN-STATE-SENTINEL" }\n',
     sentinel: "PLAN-STATE-SENTINEL",
     placeholder: "(no plan state yet)",
-  },
-  {
-    key: "QUESTIONS_PATH",
-    // The span greps for `## ` headings, so the sentinel has to be one.
-    at: questionsPath,
-    body: "## QUESTIONS-SENTINEL\n",
-    sentinel: "QUESTIONS-SENTINEL",
-    placeholder: "(none open)",
   },
 ];
 
@@ -634,10 +639,6 @@ it("each plan slice prompt's verdict on a plan state directory in place follows 
   await everySliceOverWrongKindAt("PLAN_STATE_PATH");
 }, SPAWN_BUDGET_MS);
 
-it("each plan slice prompt's verdict on an open-questions directory in place follows whether its spans read that artifact", async () => {
-  await everySliceOverWrongKindAt("QUESTIONS_PATH");
-}, SPAWN_BUDGET_MS);
-
 // --------------------------------------------- unguarded spans: no fork
 
 /**
@@ -742,45 +743,147 @@ it("a cold state root renders every plan slice prompt's placeholder as its block
   expect(asserted).toBe(pairsToAssert(readers, GUARDED));
 }, SPAWN_BUDGET_MS);
 
+// ------------------------------------------------ the questions directory
+
 /**
- * The third case the questions span has to tell apart, and the reason its
- * guard cannot stop at `test -e`: `grep` exits 1 on a file it read and found
- * no headings in, and 2 on a file it could not read at all. Exit 1 is the
- * empty index — a questions file with a preamble and nothing open — and
- * stays legitimate; only the reader's real failure refuses.
+ * The questions block of one rendered prompt: the lines between its tags,
+ * trailing whitespace trimmed.
+ *
+ * Read as the whole block rather than searched for a substring: what the
+ * slice is shown is exactly the open set, and a case asserting only that a
+ * path appears somewhere would pass over a block that also claims nothing is
+ * open (`.claude/rules/posture-sweep.md`, *a negative assertion over a whole
+ * rendered artifact*).
  */
-it("a questions file carrying no headings renders the plan slices' none-open placeholder", async () => {
-  const questions = GUARDED.find((a) => a.key === "QUESTIONS_PATH");
-  expect(questions, "the questions artifact is guarded").toBeDefined();
-
-  const root = await seed(await scratchRoot("flume-prompts-no-headings-"));
-  // A real file, readable, with no `## ` heading anywhere in it.
-  await writeFile(
-    questions!.at(root),
-    "# Open questions\n\nNothing is open.\n",
-    "utf8",
+function questionsBlock(rendered: string, label: string): string[] {
+  const lines = rendered.split("\n").map((l) => l.trimEnd());
+  const open = lines.indexOf("<open-questions-index>");
+  expect(open, `${label}: no questions block in the render`).toBeGreaterThan(-1);
+  const close = lines.indexOf("</open-questions-index>", open);
+  expect(close, `${label}: the questions block does not close`).toBeGreaterThan(
+    open,
   );
+  return lines.slice(open + 1, close);
+}
 
-  // Same detector, same closing count: a plan slice set that stopped indexing
-  // the questions file reds the coverage rather than skipping past it.
-  const readers = await promptsReadingEachArtifact(PLAN_SLICES);
-  expectEveryArtifactRead(readers, [questions!]);
-
-  let asserted = 0;
+/**
+ * Which plan slices carry the questions block, off the same placeholder the
+ * renderer substitutes — the detector every case below skips and closes on,
+ * so a slice that stopped carrying the block reds rather than dropping out of
+ * the loop (`.claude/rules/engineering.md`, *A green verdict is proven
+ * non-vacuous*).
+ */
+async function slicesCarryingQuestions(): Promise<PromptName[]> {
+  const carrying: PromptName[] = [];
   for (const name of PLAN_SLICES) {
-    if (!readers.get("QUESTIONS_PATH")!.includes(name)) continue;
-    const rendered = await render(name, root);
-    placeholderIsBlockContent(
-      rendered,
-      questions!.placeholder,
-      `${name}/QUESTIONS_PATH`,
-    );
-    asserted++;
+    const raw = await readFile(promptPath(name), "utf8");
+    if (raw.includes("{{QUESTIONS_INDEX}}")) carrying.push(name);
+  }
+  expect(carrying.length, "no plan slice carries the questions block").toBe(
+    PLAN_SLICES.length,
+  );
+  return carrying;
+}
+
+/**
+ * Presence is the state, so the index is the listing
+ * (`spec/harness.md`, *Records as one file each*). No slice greps a heading
+ * out of a page, and two sessions opening two questions write two files that
+ * never conflict — which is only true while the block is the directory.
+ *
+ * The real writer is `renderQuestions` over a real directory and the real
+ * reader is the engine's renderer over the shipped markdown
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+it("a plan slice's questions span lists one file per open question", async () => {
+  const root = await scratchRoot("flume-prompts-questions-");
+  // The queue, because an absent one refuses the render before the questions
+  // block is reached.
+  for (const artifact of UNGUARDED) {
+    const at = artifact.at(root);
+    await mkdir(dirname(at), { recursive: true });
+    await writeFile(at, artifact.body, "utf8");
   }
 
-  // Every plan slice the detector found indexing the file was asserted, and
-  // the coverage above makes that count non-zero.
-  expect(asserted).toBe(pairsToAssert(readers, [questions!]));
+  // Under the directory the package names, composed the way the listing
+  // composes it — one constant, host-native on both sides — and written out
+  // of name order, so the listing's own sort is what the block is judged on.
+  const dir = join(root, QUESTIONS_DIR_REL);
+  await mkdir(dir, { recursive: true });
+  const names = [
+    `which-fence-holds${QUESTION_EXT}`,
+    `a-parked-fork${QUESTION_EXT}`,
+    // Not a question: presence states an *open question*, and a directory
+    // holder is not one.
+    ".gitkeep",
+  ];
+  for (const name of names) {
+    await writeFile(join(dir, name), `# ${name}\n`, "utf8");
+  }
+  const open = [
+    join(dir, `a-parked-fork${QUESTION_EXT}`),
+    join(dir, `which-fence-holds${QUESTION_EXT}`),
+  ];
+
+  const carrying = await slicesCarryingQuestions();
+  let asserted = 0;
+  for (const name of carrying) {
+    const rendered = await render(name, root);
+    expect(questionsBlock(rendered, name)).toEqual(open);
+    asserted++;
+  }
+  expect(asserted).toBe(carrying.length);
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The other side of it: nothing open is a directory with no files in it, and
+ * a consumer that has never opened one has no directory at all. Both are one
+ * fact, and neither is a render that refuses — a first tick is not a defect.
+ */
+it("an absent questions directory renders the slices' none-open placeholder", async () => {
+  const root = await coldRoot("flume-prompts-no-questions-");
+  expect(existsSync(join(root, QUESTIONS_DIR_REL))).toBe(false);
+
+  // The placeholder the package produces, never one spelled here: a rename of
+  // it moves this case with it rather than stranding a literal.
+  expect(renderQuestions(root)).toBe(NONE_OPEN);
+
+  const carrying = await slicesCarryingQuestions();
+  let asserted = 0;
+  for (const name of carrying) {
+    const rendered = await render(name, root);
+    expect(questionsBlock(rendered, name)).toEqual([NONE_OPEN]);
+    asserted++;
+  }
+  expect(asserted).toBe(carrying.length);
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The migration leg (`harness/layout.ts`): a consumer upgrading into the
+ * questions directory has questions open inside the page that preceded it,
+ * and none of them is in the listing. Rendering the none-open placeholder
+ * over that page would tell plan its parked forks are closed
+ * (`.claude/rules/engineering.md`, *Loud or nothing*), so the page's presence
+ * is stated and it is the one thing that suppresses the placeholder.
+ */
+it("a legacy open-questions page still on disk is named in the questions block", async () => {
+  const root = await coldRoot("flume-prompts-legacy-questions-");
+  // The page at the accessor that still addresses it, so this case moves with
+  // the migration allowance rather than pinning a literal that outlives it.
+  const page = legacyQuestionsPath(root);
+  await mkdir(dirname(page), { recursive: true });
+  await writeFile(page, "# Open questions\n\n## A parked fork\n", "utf8");
+
+  const carrying = await slicesCarryingQuestions();
+  let asserted = 0;
+  for (const name of carrying) {
+    const block = questionsBlock(await render(name, root), name);
+    expect(block.join("\n")).toContain(page);
+    expect(block).not.toContain(NONE_OPEN);
+    asserted++;
+  }
+  expect(asserted).toBe(carrying.length);
 }, SPAWN_BUDGET_MS);
 
 // ------------------------------------------------- the invocation boundary

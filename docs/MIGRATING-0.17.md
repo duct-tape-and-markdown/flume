@@ -9,11 +9,12 @@ due whether or not you take this upgrade is its § 0, the `package.json`
 beside your `chain.ts`, without which an ESM-only package stops loading under
 `tsx` on node 22.23 and later.
 
-From **0.16.x**. **One breaking change, and it is not in the API.** No type
+From **0.16.x**. **Two breaking changes, and neither is in the API.** No type
 moves, no field is renamed, and a chain that compiles against `0.16` compiles
 against `0.17` untouched. What changed is the on-disk format of two files the
-engine writes to guard a running loop — so the break is between *versions
-sharing a state root*, not between your chain and the package.
+engine writes to guard a running loop — so that break is between *versions
+sharing a state root*, not between your chain and the package — and, for a
+consumer of the harness package, where its plan slices keep open questions.
 
 Note that **a caret range on a `0.x` version pins the minor** — `^0.16.0`
 resolves within `0.16.x` and will never pick up `0.17.0` on its own. Change
@@ -23,11 +24,14 @@ the pin explicitly.
 
 ```sh
 grep -rn "loop\.pid\|tip-claims" --include='*.ts' --include='*.mjs' .   # § 2
+ls "$(git rev-parse --show-toplevel)"/.flume/plan/open-questions.md       # § 3
 ```
 
 § 1 applies to every consumer and has no symbol to grep for: it is about how
 you take the upgrade, not about what your chain says. § 2 applies only to a
-chain, script, or monitor that reads either guard file itself.
+chain, script, or monitor that reads either guard file itself. § 3 applies to
+a consumer of the harness package whose state root still carries the page —
+adjust the path if your state root is not `.flume`.
 
 ## 1. Stop every running loop before you upgrade a shared state root
 
@@ -112,3 +116,31 @@ guards it reports: `flume status` prints supervisor liveness, the current
 tip's claim and the live run's spend observationally and exits `0` whatever
 the state, which is what makes it safe in a prompt or a watch loop
 ([`CLI.md`](CLI.md)).
+
+## 3. Open questions are one file each under `plan/questions/`
+
+**Affects** a consumer of the harness package (`@dtmd/flume/harness`) whose
+state root carries `plan/open-questions.md`. Nothing in the engine is
+involved, and a chain that does not use the package's plan slices keeps
+whatever park file it declared.
+
+**What changed.** An open question is a **file**, present while the question
+is open and deleted when it is answered — the shape the inbox and note queues
+already have. The three plan slices are shown that directory's listing where
+they used to be shown headings grepped out of a single page, so no slice
+reads a status out of a word any more, and two sessions opening two questions
+write two files instead of conflicting on one.
+
+**What to do.** Give each question still open in the page its own file under
+`<stateRoot>/plan/questions/`, named for the question it asks, and delete the
+page in the same commit. A plan tick can do it: the slice fence still admits
+the old page for exactly that commit, and while the page is on disk the
+questions block names it rather than reporting nothing open, so the migration
+cannot be passed over silently. Nothing needs creating up front — a state
+root with no directory reads as nothing open, and the first question opened
+creates it.
+
+**The allowance is temporary.** The fence line that lets a plan commit delete
+the page is retired in the release after this one. A page still on disk then
+is a file no plan phase can touch, and the questions it holds are invisible
+to every slice.
