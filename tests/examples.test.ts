@@ -2042,6 +2042,101 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
 });
 
 /**
+ * Agreement pin (.claude/rules/engineering.md, *Narration is the ladder's
+ * bottom rung*: a `docs/` page stating what a shipped interface does — "a
+ * runner's operations" — may be pinned against the interface it describes).
+ * *What adoption costs* prices a non-vitest adoption by walking the runner's
+ * operations one bullet each, and that walk is the whole quote a consumer
+ * gets before it starts porting. An operation `Runner` gains and the page
+ * skips is a cost nobody was quoted; a bullet the interface no longer
+ * declares is a cost nobody owes — so the claim is equality, not coverage,
+ * and either side moving alone reds.
+ *
+ * Neither side is restated here (*Derived state is computed, never restated
+ * beside its source*): the members come off the declaration through a
+ * checker, the walk off the page's own bullets.
+ *
+ * `docs/MIGRATING-0.16.md` states the same three operations and is
+ * deliberately not pinned: that page opens by declaring itself a dated
+ * record of one release's port, a divergence declared at its own site.
+ */
+describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () => {
+  /** The section, heading line through the line before the next heading of any level. */
+  const sectionOf = (doc: string, heading: RegExp): string => {
+    const start = doc.search(heading);
+    expect(start, `\`${heading.source}\` matches a heading`).toBeGreaterThanOrEqual(0);
+    const body = doc.indexOf("\n", start) + 1;
+    const next = doc.slice(body).search(/^#{1,6} /m);
+    return next === -1 ? doc.slice(start) : doc.slice(start, body + next);
+  };
+
+  /**
+   * Every member of `Runner` (`harness/runner.ts`), resolved by a checker
+   * over that module alone — no lib, no resolution, no `@types`, for the
+   * reason the supervisor-policy pin above states: the subject is one
+   * interface in one module, and the cheap tier is what keeps the case in
+   * the fast lane (spec/worktrees.md, *The default test lane must stay
+   * fast*). An interface that moved out of `harness/runner.ts` resolves to
+   * nothing rather than quietly to something else, and the vacuity pin below
+   * is what reds on it.
+   */
+  const runnerOperations = (): string[] => {
+    const module = join(REPO_ROOT, "harness/runner.ts");
+    const program = ts.createProgram({
+      rootNames: [module],
+      options: { noLib: true, noResolve: true, types: [] },
+    });
+    const source = program.getSourceFile(module);
+    expect(source, "harness/runner.ts is in the program").toBeDefined();
+
+    let runnerName: ts.Identifier | undefined;
+    ts.forEachChild(source!, (node) => {
+      if (ts.isInterfaceDeclaration(node) && node.name.text === "Runner") {
+        runnerName = node.name;
+      }
+    });
+    expect(runnerName, "harness/runner.ts declares an interface `Runner`").toBeDefined();
+
+    const checker = program.getTypeChecker();
+    const runner = checker.getDeclaredTypeOfSymbol(
+      checker.getSymbolAtLocation(runnerName!)!,
+    );
+    return runner.getProperties().map((operation) => operation.name);
+  };
+
+  it("docs/CHAIN-AUTHORING.md's adoption section names every operation Runner declares", () => {
+    const operations = runnerOperations();
+
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a resolution that fell through to an empty property list
+    // would compare two empty sets and pass. One anchor rather than a second
+    // copy of the list — the count is what proves the set is the real one.
+    expect(operations.length).toBeGreaterThan(1);
+    expect(operations).toContain("runAtBase");
+
+    const section = sectionOf(
+      readFileSync(
+        fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
+        "utf8",
+      ),
+      /^### What adoption costs$/m,
+    );
+    // The section is the one it claims to be before a set is read off it: a
+    // heading match that captured the wrong span would report every operation
+    // missing, or an empty walk against an empty span.
+    expect(section).toContain("**The runner is the largest single piece**");
+
+    /** The operations the section walks: one top-level bullet each, led by its name. */
+    const walked = [...section.matchAll(/^- `([A-Za-z][A-Za-z0-9]*)`/gm)].map((m) => m[1]!);
+
+    expect(
+      [...walked].sort(),
+      "docs/CHAIN-AUTHORING.md's adoption section walks exactly the operations `Runner` declares",
+    ).toEqual([...operations].sort());
+  });
+});
+
+/**
  * spec/chain.md, *Per-run artifacts belong under `FLUME_DIR`* — "`examples/`
  * shows it". The backlog groomer is the example that does, so the placement
  * is driven rather than read: a real `groom` tick runs, and the transcript
