@@ -39,6 +39,29 @@ async function commit(
 }
 
 /**
+ * Commit `content` at `rel` with a message read from a file rather than from
+ * `-m`. The oversized-range fixture below needs a commit message larger than
+ * the platform's argv limit, which `-m` cannot carry on any host.
+ */
+async function commitWithMessageFile(
+  cwd: string,
+  rel: string,
+  content: string,
+  message: string,
+): Promise<string> {
+  const abs = join(cwd, rel);
+  await mkdir(dirname(abs), { recursive: true });
+  await writeFile(abs, content);
+  // Untracked and never staged — `git add` names `rel` alone — so the message
+  // file itself cannot enter the history it is describing.
+  const messageFile = join(cwd, "commit-message.txt");
+  await writeFile(messageFile, message);
+  await git(cwd, ["add", "--", rel]);
+  await git(cwd, ["commit", "-q", "-F", messageFile]);
+  return git(cwd, ["rev-parse", "HEAD"]);
+}
+
+/**
  * Spawn the script against `cwd`; never throws on non-zero exit. The ambient
  * env, not the CLI suites' hermetic one: the script is git-driven and reads
  * no FLUME_* var.
@@ -475,6 +498,62 @@ describe("build-changelog", () => {
     // parsed out as a clean tag.
     expect(out).toContain("fix the widget (MISMATCHED-TAG]");
     expect(out).not.toContain("- fix the widget (MISMATCHED-TAG)");
+  }, SPAWN_BUDGET_MS);
+
+  it("the changelog draft mines a range whose git log output exceeds node's default spawn buffer", async () => {
+    await commit(repo, "CHANGELOG.md", "# Changelog\n", "seed");
+    await git(repo, ["tag", "v1.0.0"]);
+
+    // Node caps a child's captured stdout at 1 MiB by default, and the mined
+    // range only grows: this repo's own unreleased range already emits more
+    // than that, so the release cut's one mining tool died `spawnSync git
+    // ENOBUFS` with no draft.
+    //
+    // The oversized body rides a non-`build:` commit on purpose. What must
+    // cross the limit is the *log the script reads*, not the draft it prints
+    // — a multi-megabyte stdout would only move the same ENOBUFS into this
+    // test's own spawn of the script, reddening the case for the harness's
+    // limit rather than the script's.
+    const filler = `${"x".repeat(99)}\n`.repeat(15_000);
+    // Vacuity: the fixture is only a test of the cap if it clears the cap.
+    expect(Buffer.byteLength(filler)).toBeGreaterThan(1024 * 1024);
+    await commitWithMessageFile(
+      repo,
+      "src/bulk.ts",
+      "export const bulk = 1;\n",
+      `chore(flume): record a very large body\n\n${filler}`,
+    );
+
+    await commit(
+      repo,
+      "src/small.ts",
+      "export const small = 1;\n",
+      "build: add the small feature (SMALL-FEATURE)\n\nThe why.",
+    );
+
+    const { out, err, code } = await runChangelog(repo);
+
+    expect(code).toBe(0);
+    expect(out).toContain("## [Unreleased]");
+    expect(out).toContain("- add the small feature (SMALL-FEATURE)");
+    expect(err).not.toContain("ENOBUFS");
+  }, SPAWN_BUDGET_MS);
+
+  it("a git failure while deriving entries exits with a [build-changelog] line instead of an unhandled stack", async () => {
+    // A repository with no commits yet: the boundary resolves to `null` (no
+    // CHANGELOG.md, no tag), so the derive reads the range `HEAD`, which git
+    // refuses as an unknown revision. That throw used to escape `main()`
+    // uncaught — unlike the boundary resolution's, which is caught and named
+    // — so a detected failure was reported as a raw node crash.
+    const { out, err, code } = await runChangelog(repo);
+
+    expect(code).toBe(1);
+    expect(out).not.toContain("[Unreleased]");
+    expect(err).toContain("[build-changelog]");
+    // The arm this case is about: a node stack frame, not the whole of
+    // stderr. Git's own `fatal:` lines are expected here and quoted into the
+    // reported message.
+    expect(err).not.toMatch(/^\s+at /m);
   }, SPAWN_BUDGET_MS);
 
   it("ignores non-build: commits (plan:, chore:) when mining entries", async () => {

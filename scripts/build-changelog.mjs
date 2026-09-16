@@ -56,8 +56,25 @@ const BUILD_PLAIN = /^build:\s*(.+)$/;
 // an unrelated commit that legitimately isn't a build: entry.
 const BUILD_SUBJECT_ATTEMPT = /^build[:(]/;
 
+/**
+ * Run git in `cwd` and return its stdout.
+ *
+ * `maxBuffer: Infinity`, not a raised number. The read this helper exists for
+ * is the log over `<last release>..HEAD` — and, with no prior release
+ * recorded, over the whole of history — so its size grows with the repository
+ * and never shrinks. Node's 1 MiB default already fails this repo's own
+ * unreleased range (`spawnSync git ENOBUFS`, no draft), and any finite
+ * replacement is that same failure rescheduled for a later cut. What bounds
+ * the read instead is the process's own memory, which fails loudly rather
+ * than handing back a truncated log for a human to curate a release from
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ */
 function git(cwd, args) {
-  return execFileSync("git", args, { cwd, encoding: "utf8" });
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: Infinity,
+  });
 }
 
 /**
@@ -264,7 +281,20 @@ function main() {
     return;
   }
 
-  const { range, entries, warnings } = deriveEntries(root, sinceSha);
+  // The same refusal the boundary resolution above gets: `deriveEntries`
+  // shells out to git, so every way that read can fail — an unresolvable
+  // range, a repository with no commits yet, an unreadable object store —
+  // arrives here as a throw. Left uncaught it exits over a raw node stack
+  // with no statement of what the tool was doing, which is a detected failure
+  // reported as a crash (`.claude/rules/engineering.md`, "Loud or nothing").
+  let derived;
+  try {
+    derived = deriveEntries(root, sinceSha);
+  } catch (err) {
+    fail(`could not derive entries for the draft: ${err.message}`);
+    return;
+  }
+  const { range, entries, warnings } = derived;
 
   for (const warning of warnings) {
     process.stderr.write(`[build-changelog] ${warning}\n`);
