@@ -144,7 +144,11 @@ each a workflow file, a job name, the lane name its findings carry, and
 optionally `titles`: a pattern or a function over the failing job's log
 answering the titles that log states, which the slice stamps beside the run
 so a red that persists unchanged stops re-waking it; a lane declaring none
-wakes the slice once per failing run).
+wakes the slice once per failing run), and `friction` (the state-root-relative
+directory naming the engine's friction channel, passed through whole to
+`Chain.friction`; declared here rather than left to the engine because it is
+a findings source — the inbox slice reads its files as it reads the inbox,
+one record per file, and routes and removes each the same way).
 
 It is a TypeScript module rather than JSON because three of those fields are
 values with behavior. An unknown field, or a required one missing, refuses

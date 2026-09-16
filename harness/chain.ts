@@ -357,6 +357,16 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // reaches the engine as declared — a load-time probe that found nothing
     // asserting none is a fact, not an omission.
     ...(declaration.capabilities ? { capabilities: declaration.capabilities } : {}),
+    // The channel the engine guarantees the lifecycle of, handed over
+    // unchanged: the engine refuses a path that escapes the state root at
+    // this same load, and the package's own use of the value — the inbox
+    // slice's friction leg (`inboxWindow.ts`) — reads the directory the
+    // engine was told about rather than a second spelling of it. Absent
+    // stays absent: an undeclared channel is the whole lifecycle off, never
+    // a default this factory picks.
+    ...(declaration.friction !== undefined
+      ? { friction: declaration.friction }
+      : {}),
     ...(policy ? { supervisorPolicy: policy } : {}),
   };
 }

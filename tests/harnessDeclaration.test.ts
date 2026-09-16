@@ -105,6 +105,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
   },
   slots: { autonomy: "ship without asking", domain: "an AI-derivation harness" },
   capabilities: ["network", "docker"],
+  friction: "friction",
   ci: [
     { name: "windows", workflow: "ci.yml", job: "test (windows-latest)" },
     { name: "linux", workflow: "ci.yml", job: "test (ubuntu-latest)" },
@@ -160,7 +161,7 @@ describe("the harness declaration schema", () => {
     expect(Object.keys(declared).sort()).toEqual(
       Object.keys(DeclarationSchema.shape).sort(),
     );
-    expect(Object.keys(declared)).toHaveLength(16);
+    expect(Object.keys(declared)).toHaveLength(17);
 
     const parsed: Declaration = parseDeclaration(declared);
 
@@ -190,6 +191,7 @@ describe("the harness declaration schema", () => {
     expect(parsed.slices.sweep?.domain).toEqual(["src/**", "harness/**"]);
     expect(parsed.slots?.autonomy).toBe("ship without asking");
     expect(parsed.capabilities).toEqual(["network", "docker"]);
+    expect(parsed.friction).toBe("friction");
     expect(parsed.ci?.[0]).toEqual({
       name: "windows",
       workflow: "ci.yml",

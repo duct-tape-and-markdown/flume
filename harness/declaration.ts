@@ -458,6 +458,27 @@ export const DeclarationSchema = strict({
    */
   capabilities: z.array(z.string().min(1)).optional(),
   /**
+   * The friction channel, passed through whole to `Chain.friction`: a
+   * state-root-relative directory the engine guarantees the lifecycle of —
+   * the revert note, the teardown harvest, the `friction: N` status line,
+   * the `flume friction` read verb, the ignore line that keeps it untracked
+   * (`spec/chain.md`, *`Chain.friction` — the declared friction channel*).
+   *
+   * Declared here because it is a **findings source**, not merely an engine
+   * knob: the inbox slice reads it as it reads the inbox, one record per
+   * file, so a consumer routing its own notes never writes the prompt
+   * paragraph the package owes it (`spec/harness.md`, *Declared findings
+   * sources*).
+   *
+   * Non-empty and nothing more. Whether the path escapes the state root is
+   * the engine's own refusal at chain load
+   * (`validateFrictionDeclaration`, `src/friction.ts`), and re-deriving that
+   * walk here would be the same guard in two places, disagreeing the day
+   * either moves. Absent disables the whole channel — the engine's reading,
+   * not a default this schema supplies.
+   */
+  friction: z.string().min(1).optional(),
+  /**
    * The CI lanes the inbox slice reads as findings sources beside the
    * records. Optional — a consumer with no forge, or one whose CI it does
    * not want drained into the queue, declares nothing and the slice reads

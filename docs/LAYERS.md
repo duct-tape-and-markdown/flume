@@ -73,8 +73,10 @@ the entry fields the chain factory takes:
 - `jobs` — a named fence and spec locus per unit of work in one checkout;
 - `capabilities` — the environment facts a repository asserts, which decide
   whether a capability-gated entry is pickable;
-- `setup`, `agents`, `supervisor`, `ci`, and the findings sources the inbox
-  slice drains;
+- `setup`, `agents`, `supervisor`, and the findings sources the inbox slice
+  drains — `ci`, the lanes it reads off the forge, and `friction`, the
+  engine's loop-to-owner channel, whose files it routes as it routes the
+  inbox's;
 - `handoff` — overridable per phase, for a consumer whose wake rules differ.
 
 **The test.** Would every consumer write this block identically? Then it is

@@ -644,6 +644,25 @@ it("a declaration naming no capabilities leaves Chain.capabilities unasserted", 
   expect(chainFor().capabilities).toBeUndefined();
 });
 
+it("a declared friction directory reaches Chain.friction", () => {
+  // The shared fixture declares none, so this case states its own — which is
+  // also what keeps the absence arm below reading the fixture rather than a
+  // field this case deleted from it.
+  expect(DECLARATION).not.toHaveProperty("friction");
+
+  // Whole and unchanged: what the package does with the channel is read the
+  // directory the engine was told about, never a second spelling of it.
+  expect(chainFor({ ...DECLARATION, friction: "friction" }).friction).toBe(
+    "friction",
+  );
+
+  // Undeclared stays undeclared. The engine reads an absent `friction` as the
+  // whole channel off (`spec/chain.md`, *`Chain.friction`*), so a factory that
+  // supplied one here would turn a consumer's silence into a directory it
+  // has to discover to switch off.
+  expect(chainFor().friction).toBeUndefined();
+});
+
 it("every placeholder the package's prompts name is supplied by the phase the factory returns for it", async () => {
   const chain = chainFor();
   expect(chain.phases.length).toBeGreaterThan(0);

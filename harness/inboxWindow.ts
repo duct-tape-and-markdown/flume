@@ -1,8 +1,8 @@
 /**
  * The inbox slice's window (`spec/harness.md`, *The phases*): the queue's own
- * parse failure, the record queues, the build refusals still standing against
- * entries the queue carries, the declared CI lanes, and the derive cursor this
- * drain may advance through what it routed.
+ * parse failure, the record queues, the declared friction channel, the build
+ * refusals still standing against entries the queue carries, the declared CI
+ * lanes, and the derive cursor this drain may advance through what it routed.
  *
  * **The parse failure comes first, and it is the one leg that is not a
  * findings source.** A queue that did not resolve leaves the whole loop with
@@ -19,15 +19,18 @@
  * and either alone leaves a loop: without the record leg an operator's
  * finding is never read; without the refusal leg a parked entry stays
  * pickable, plan yields to build, and build re-parks into the same wall. The
- * lanes are the third source, and the only one whose evidence sits off this
- * disk (`ciLane.ts`). The derive cursor is no source at all — nothing about
- * it wakes this slice; it is what a drained record lets this tick *close*
- * (`spec/harness.md`, *Plan state as declared state*).
+ * declared friction channel is a third way in — the engine's own
+ * loop-to-owner channel, read here as the record queues are
+ * (`friction.ts`) — and the lanes are the fourth source, the only one whose
+ * evidence sits off this disk (`ciLane.ts`). The derive cursor is no source
+ * at all — nothing about it wakes this slice; it is what a drained record
+ * lets this tick *close* (`spec/harness.md`, *Plan state as declared
+ * state*).
  *
- * **A signal is not unrouted work.** Those two legs read the same disk and
- * answer differently to a queue that still has work in it: the record leg
- * yields to it, the refusal leg does not. Which is which is at the predicate
- * below.
+ * **A signal is not unrouted work.** Those disk legs read the same tree and
+ * answer differently to a queue that still has work in it: the record and
+ * friction legs yield to it, the refusal leg does not. Which is which is at
+ * the predicate below.
  *
  * **One derivation per leg, two readers.** The ladder asks "is this slice
  * live"; the prompt asks "what is in it". Both answers come from the same
@@ -44,6 +47,7 @@ import type { PriorAttempt } from "../src/Prompt.js";
 import { laneLeg } from "./ciLane.js";
 import { cursorRange } from "./cursorWindow.js";
 import { INBOX_PHASE } from "./declaration.js";
+import { frictionFiles, frictionPending } from "./friction.js";
 import { touches } from "./gitRange.js";
 import { PLAN_RESOLVES_MERGE, PLAN_RESOLVES_NO_COMMIT } from "./handoff.js";
 import { RECORD_MAX_BYTES, recordFiles, recordsPending } from "./records.js";
@@ -80,16 +84,23 @@ import {
  * to the queue hands the baton straight back to the build wave that already
  * walled on it.
  *
+ * **The friction leg rides behind the record leg's yield**, because it is
+ * the same kind of signal: a note the loop left for its owner points at
+ * material the queue's own entries may already be shipping, and reading the
+ * channel as the inbox is read means deferring it as the inbox's is
+ * deferred (`spec/harness.md`, *Declared findings sources*).
+ *
  * Deferring is not dropping. Only the liveness leg reads `pickable` — the
  * render below takes a `WindowContext`, which carries no such fact — so a
  * record the yield passed over is in the block the tick that does run is
  * handed, whichever slice woke it.
  *
  * **The lane leg is asked last, and that ordering is load-bearing.** The
- * record and refusal legs are two directory listings and a map walk; the lane
- * leg spawns the forge CLI once per lane on the selection path. A tick the
- * disk already woke needs no forge answer to know the slice runs, so the
- * short-circuit is what keeps a woken plan tick from paying for the network.
+ * record, friction and refusal legs are three directory listings and a map
+ * walk; the lane leg spawns the forge CLI once per lane on the selection
+ * path. A tick the disk already woke needs no forge answer to know the slice
+ * runs, so the short-circuit is what keeps a woken plan tick from paying for
+ * the network.
  */
 export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
   const lanes = laneLeg({
@@ -97,16 +108,19 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
     repoRoot: options.repoRoot,
     budget: budgetOf(options),
   });
+  const friction = options.declaration.friction;
   return {
     name: INBOX_PHASE,
     live: (inputs) =>
       !queueResolved(inputs) ||
-      (!inputs.pickable && recordsPending(inputs.flumeDir)) ||
+      (!inputs.pickable &&
+        (recordsPending(inputs.flumeDir) ||
+          frictionPending(inputs.flumeDir, friction))) ||
       standingRefusals(inputs).length > 0 ||
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
-      RECORDS: renderRecords(ctx.flumeDir),
+      RECORDS: renderRecords(ctx.flumeDir, friction),
       BUILD_RECORDS: renderBuildRecords(ctx),
       CI_LANES: lanes.render(ctx.flumeDir),
       DERIVE_CURSOR: renderDeriveCursor(ctx, options),
@@ -206,7 +220,16 @@ function renderQueueParseFailure(ctx: WindowContext): string {
 
 /**
  * Every waiting record's bytes, oldest first, each under the path it sits
- * at, with an over-cap record marked by what it measured.
+ * at, with an over-cap record marked by what it measured — the record
+ * queues first, then the declared friction channel.
+ *
+ * **The friction channel is read as the inbox is** (`spec/harness.md`,
+ * *Declared findings sources*): one record per file, in the same block, so
+ * a consumer routing what its loop left for its owner carries no prompt
+ * paragraph of its own. It is a fourth findings source, not a fourth
+ * *block* — a note the engine's revert path wrote and a note an operator
+ * left in the inbox route by the same three outcomes, and splitting them
+ * would be two vocabularies for one drain.
  *
  * Read whole rather than previewed: a record is written against
  * `RECORD_MAX_BYTES`, so the queue's whole content is the material and a
@@ -218,24 +241,49 @@ function renderQueueParseFailure(ctx: WindowContext): string {
  * bytes on disk, not the decoded string: the cap is bytes and a multi-byte
  * character is what the overrun is usually made of.
  *
- * The path is rendered as `recordFiles` composed it and namespaced only for
+ * **The cap rides the records alone.** It is the package's discipline over
+ * what a *record* may weigh (`records.ts`), and a friction note is written
+ * by the engine's revert path or by the consumer's own loop, neither of
+ * which ever agreed to it — marking one would send the drain to name an
+ * overrun against a bound nobody undertook.
+ *
+ * The path is rendered as its listing composed it and namespaced only for
  * the read, so what the tick is told to open is the path it can open
  * (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks
  * fs calls with no long component*).
  */
-function renderRecords(flumeDir: string): string {
-  const files = recordFiles(flumeDir);
-  if (files.length === 0) return "(no records)";
-  return files
-    .map((file) => {
-      const bytes = readFileSync(namespacedJoin(file));
-      const mark =
-        bytes.byteLength > RECORD_MAX_BYTES
-          ? ` (${bytes.byteLength} bytes, cap ${RECORD_MAX_BYTES} — name this overrun in the commit body)`
-          : "";
-      return `--- ${file}${mark} ---\n${bytes.toString("utf8").trimEnd()}`;
-    })
-    .join("\n\n");
+function renderRecords(flumeDir: string, friction: string | undefined): string {
+  const blocks = [
+    ...renderFiles(recordFiles(flumeDir), RECORD_MAX_BYTES),
+    ...renderFiles(frictionFiles(flumeDir, friction), undefined),
+  ];
+  if (blocks.length === 0) return "(no records)";
+  return blocks.join("\n\n");
+}
+
+/**
+ * One block per file: the path it sits at, the cap mark where `cap` is a
+ * bound this file was written against and its bytes exceed it, then the
+ * bytes whole.
+ *
+ * `cap` is `undefined` for a queue that carries no byte bound, which is what
+ * keeps the mark a statement about the file rather than about the renderer
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*: the two
+ * queues differ in the bound they were written under, and in nothing else
+ * this block says).
+ */
+function renderFiles(
+  files: readonly string[],
+  cap: number | undefined,
+): string[] {
+  return files.map((file) => {
+    const bytes = readFileSync(namespacedJoin(file));
+    const mark =
+      cap !== undefined && bytes.byteLength > cap
+        ? ` (${bytes.byteLength} bytes, cap ${cap} — name this overrun in the commit body)`
+        : "";
+    return `--- ${file}${mark} ---\n${bytes.toString("utf8").trimEnd()}`;
+  });
 }
 
 /**

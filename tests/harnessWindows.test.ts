@@ -221,6 +221,26 @@ function writeRecord(rel: string, text: string): string {
   return path;
 }
 
+/**
+ * One file waiting in the declared friction channel — the engine's own
+ * loop-to-owner directory, which it creates lazily and keeps out of git
+ * (`spec/chain.md`, *`Chain.friction` — the declared friction channel*). The
+ * cases below declare it as `friction`, so the fixture and the declaration
+ * name one directory.
+ *
+ * Returns the host-native path the window renders the note at, so a case
+ * asserting what the block carries compares against the file it wrote.
+ */
+function writeFriction(name: string, text: string): string {
+  const path = join(stateRoot(), FRICTION_DIR, name);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, text);
+  return path;
+}
+
+/** The friction channel the cases below declare, and write into. */
+const FRICTION_DIR = "friction";
+
 it("the derive window is live exactly while commits past the derive cursor touch the declared spec locus", () => {
   commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
   writePlanState(stateRoot(), planState());
@@ -451,6 +471,101 @@ it("the inbox slice is live for a waiting record when nothing is pickable", () =
   }).RECORDS;
   expect(rendered).toContain(path);
   expect(rendered).toContain("Observed.");
+});
+
+/**
+ * The friction channel is the fourth findings source, and the one the engine
+ * already owns end to end: it creates the directory, writes the revert note
+ * into it, harvests a torn-down worktree's mirror into it, and counts it for
+ * `flume status` — and then routes none of it. This is the leg that routes
+ * it, read exactly as the record queues are (`spec/harness.md`, *Declared
+ * findings sources*).
+ *
+ * Its control is the same tree read by a consumer that declared no channel:
+ * an undeclared `friction` is the whole channel off, so a full directory
+ * beside a silent declaration renders and wakes nothing.
+ */
+it("the inbox slice renders a declared friction directory's files as records", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+
+  const inboxRecord = writeRecord(
+    "inbox/2026-09-16-a-finding.md",
+    "# A finding\n\nObserved.\n",
+  );
+  const note = writeFriction(
+    "revert-note-a54de89.md",
+    "# Reverted\n\nThe tsc gate reverted the span.\n",
+  );
+  // A dotfile is not a note (`spec/chain.md`), and the skip is the engine's
+  // own `isDotName` rather than this package's idea of one.
+  const placeholder = writeFriction(".gitkeep", "");
+
+  const rendered = windows({ friction: FRICTION_DIR })[INBOX_PHASE].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).RECORDS;
+
+  // One record per file, in the one block the drain already routes: the
+  // record queues first, then the channel. Both paths are the `join`-built
+  // ones this case wrote at — the window names a file where the tick
+  // draining it can open it.
+  expect(rendered).toContain(`--- ${inboxRecord} ---`);
+  expect(rendered).toContain(`--- ${note} ---`);
+  expect(rendered).toContain("The tsc gate reverted the span.");
+  // Each negative reads the listing arm it is about: a path this case wrote,
+  // asserted against the block that lists paths, never against whatever else
+  // the render happens to quote.
+  expect(rendered).not.toContain(placeholder);
+
+  // The control: one declaration away, the same tree carries the record and
+  // not the note.
+  const undeclared = windows()[INBOX_PHASE].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).RECORDS;
+  expect(undeclared).toContain(`--- ${inboxRecord} ---`);
+  expect(undeclared).not.toContain(note);
+});
+
+it("the inbox slice is live for a waiting friction file", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const declared = () => windows({ friction: FRICTION_DIR })[INBOX_PHASE];
+
+  // Vacuity: the channel exists and holds only a placeholder, so the note
+  // written below is the only thing that can open this window.
+  writeFriction(".gitkeep", "");
+  const placeholderOnly = declared().live({
+    flumeDir: stateRoot(),
+    pickable: false,
+  });
+  const note = writeFriction("revert-note-a54de89.md", "# Reverted\n");
+
+  expect({
+    placeholderOnly,
+    // A consumer that declared no channel never reads the directory, however
+    // full it is.
+    undeclared: windows()[INBOX_PHASE].live({
+      flumeDir: stateRoot(),
+      pickable: false,
+    }),
+    // The friction leg rides behind the record leg's yield ...
+    deferred: declared().live({ flumeDir: stateRoot(), pickable: true }),
+    // ... and opens on the tick that runs once the queue is drained.
+    live: declared().live({ flumeDir: stateRoot(), pickable: false }),
+  }).toEqual({
+    placeholderOnly: false,
+    undeclared: false,
+    deferred: false,
+    live: true,
+  });
+
+  // The render leg never read `pickable`, so the note the yield passed over
+  // is in the block whichever tick runs is handed.
+  expect(
+    declared().args({ cwd: repo, flumeDir: stateRoot() }).RECORDS,
+  ).toContain(note);
 });
 
 /**
