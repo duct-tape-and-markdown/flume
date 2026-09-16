@@ -1,6 +1,6 @@
 /**
- * Which of the package's own spawns capture a child's streams, and which of
- * those name the cap they capture under.
+ * Which of the spawns this repo ships or runs capture a child's streams, and
+ * which of those name the cap they capture under.
  *
  * `execFile`, `exec`, their sync forms, and a piped `spawnSync` keep at most
  * `maxBuffer` bytes per stream — 1 MiB unless the call says otherwise — and
@@ -33,7 +33,7 @@
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import ts from "typescript";
@@ -62,6 +62,42 @@ const SHIPPED_TREES: readonly string[] = [
   "scripts",
   "src",
 ];
+
+/**
+ * The chain this repo runs every tick — a consumer of the package, and the
+ * one whose spawns land on this machine on every loop. Named file by file
+ * rather than swept as a tree: the walk below recurses, and `.flume/` also
+ * holds the worktree checkouts a tick runs in (`spec/worktrees.md`), whole
+ * copies of this repo that a tree would descend into and judge again.
+ *
+ * Neither file spawns today, so the verdict over them is empty — which is
+ * the point of naming them: a capturing spawn added to this repo's own chain
+ * reds where it is written rather than inheriting 1 MiB unseen.
+ */
+const CHAIN_FILES: readonly string[] = [
+  ".flume/chain.ts",
+  ".flume/declaration.ts",
+];
+
+/**
+ * What the scan reads: trees walked whole, and files named one by one for a
+ * directory whose other contents are not source of this repo's. Both refuse
+ * when they resolve to nothing, so a renamed file or an emptied tree reds
+ * rather than shrinking the domain silently.
+ *
+ * `files` is omitted by a caller whose domain is trees alone — a fixture's,
+ * below. The repo's own domain is `REPO_DOMAIN`, which names both.
+ */
+export interface SpawnCapDomain {
+  readonly trees: readonly string[];
+  readonly files?: readonly string[];
+}
+
+/** Everything this repo ships or runs, outside `tests/`. */
+const REPO_DOMAIN: SpawnCapDomain = {
+  trees: SHIPPED_TREES,
+  files: CHAIN_FILES,
+};
 
 /** The extensions a module in those trees is written in. */
 const SOURCE_SUFFIXES: readonly string[] = [
@@ -113,20 +149,29 @@ export interface SpawnCapSite extends ScanSite {
   readonly callee: string;
 }
 
-/** The judged calls, and the ones that named no cap. */
-export type SpawnCapScan = Scan<SpawnCapSite>;
+/**
+ * The judged calls, and the ones that named no cap — over the modules the
+ * domain resolved to.
+ *
+ * `modules` is reported rather than left in the scan's head: a module holding
+ * no capturing call appears nowhere in `scanned`, so without it the domain a
+ * run actually read is a fact only the scan knows, and a caller wanting it
+ * would rebuild the walk (`.claude/rules/engineering.md`, *A fact the engine
+ * holds is reported, never rediscovered*).
+ */
+export interface SpawnCapScan extends Scan<SpawnCapSite> {
+  /** Every module read, repo-relative and posix-separated, in path order. */
+  readonly modules: readonly string[];
+}
 
 /** A site as a failure message cites it. */
 export const formatSpawnCapSite = (site: SpawnCapSite): string =>
   `${site.module}:${site.line} ${site.callee}`;
 
-/** Every module of the given trees, absolute, in a stable order. */
-function spawnCapModules(
-  root: string,
-  trees: readonly string[],
-): string[] {
+/** Every module of the domain, absolute, in a stable order. */
+function spawnCapModules(root: string, domain: SpawnCapDomain): string[] {
   const found = new Set<string>();
-  for (const tree of trees) {
+  for (const tree of domain.trees) {
     const dir = join(root, ...tree.split("/"));
     const before = found.size;
     for (const suffix of SOURCE_SUFFIXES)
@@ -141,6 +186,15 @@ function spawnCapModules(
         `no source module under ${tree}/: the spawn-cap scan would judge ` +
           "that tree's spawns as none",
       );
+  }
+  for (const file of domain.files ?? []) {
+    const path = join(root, ...file.split("/"));
+    if (!statSync(path, { throwIfNoEntry: false })?.isFile())
+      throw new Error(
+        `no source module at ${file}: the spawn-cap scan would judge that ` +
+          "file's spawns as none",
+      );
+    found.add(path);
   }
   return [...found].sort((a, b) => a.localeCompare(b));
 }
@@ -510,7 +564,7 @@ function judge(call: Call): { verdict: Verdict; forwarder: string | null } {
 }
 
 /**
- * Every capturing call in the given trees, and the ones that name no cap.
+ * Every capturing call in the given domain, and the ones that name no cap.
  *
  * Two passes over one global name set. The first grows it to a fixed point:
  * the APIs each module imports, the aliases it binds them to, and every
@@ -520,9 +574,9 @@ function judge(call: Call): { verdict: Verdict; forwarder: string | null } {
  */
 export function scanSpawnCaps(
   root: string = REPO_ROOT,
-  trees: readonly string[] = SHIPPED_TREES,
+  domain: SpawnCapDomain = REPO_DOMAIN,
 ): SpawnCapScan {
-  const modules: Module[] = spawnCapModules(root, trees).map((path) => ({
+  const modules: Module[] = spawnCapModules(root, domain).map((path) => ({
     module: relPath(root, path),
     src: parse(path),
   }));
@@ -556,5 +610,5 @@ export function scanSpawnCaps(
       scanned.push(site);
       if (verdict === "capless") findings.push(site);
     }
-  return { scanned, findings };
+  return { modules: modules.map((mod) => mod.module), scanned, findings };
 }
