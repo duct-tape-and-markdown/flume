@@ -1139,3 +1139,96 @@ it("every minor that shipped a break has a docs/MIGRATING note, and a note skipp
   // deliberately rather than to discover the loop had been idle for releases.
   expect(spanning).toEqual([]);
 });
+
+/**
+ * The page a note's head names as the one before it, as a repo-relative path:
+ * the first `MIGRATING-*.md` named after the words "previous note". Anchored
+ * on that phrase rather than on the first page the head links, because a head
+ * also names the notes *above* it and the ones behind its neighbour — the
+ * claim is the one sentence saying which page a reader arriving here should
+ * have read last.
+ *
+ * A head that never says it makes no claim and yields undefined: the earliest
+ * page in the series has no neighbour below to name.
+ */
+function previousNoteClaim(head: string): string | undefined {
+  const at = head.search(/\bprevious\s+note\b/i);
+  if (at === -1) return undefined;
+  const m = /MIGRATING-[^\s`)\]]*\.md/.exec(head.slice(at));
+  return m === null ? undefined : `docs/${m[0]}`;
+}
+
+/** The note directly below `minor` in the series, else nothing is below it. */
+function previousNoteOnDisk(
+  minor: string,
+  notes: { page: string; minor: string }[],
+): string | undefined {
+  const below = notes.filter((n) => minorRank(n.minor) < minorRank(minor));
+  if (below.length === 0) return undefined;
+  return below.reduce((a, b) => (minorRank(b.minor) > minorRank(a.minor) ? b : a)).page;
+}
+
+/**
+ * The series arm of the upgrade half (`spec/cli.md`, *Versioning policy*),
+ * beside the coverage and notice arms above: a note opens by naming the note
+ * before it, and that name resolves against the pages on disk. A consumer
+ * jumping versions walks that chain of openings backwards, so a name pointing
+ * at something which is not the minor below — a neighbour renamed, a note
+ * inserted between two, a page deleted from under the pointer — routes them
+ * past a `### Breaking` section nothing else on their path will mention.
+ * Until this arm the notice arm above judged only gaps, so a note naming the
+ * wrong neighbour over a contiguous series was judged by nothing.
+ *
+ * The verdict is the token against the working tree, never the prose around
+ * it (`.claude/rules/engineering.md`, *Narration is the ladder's bottom
+ * rung*): what a note says about the step it walks stays with its authors.
+ *
+ * Judged over the notes that make the claim, which is where a claim can be
+ * wrong; the count is pinned, so a scanner that stopped matching — or a
+ * series that stopped opening this way — reds rather than passing over
+ * nothing.
+ */
+it("each migration note names the note for the minor below it as the previous note in the series", async () => {
+  // The scanner, over heads naming pages in the voices it has to tell apart:
+  // the claim itself, a head that links a page without making one, and a head
+  // that names the note *above* it before naming the one below.
+  expect(
+    previousNoteClaim(
+      "**Covers 0.15 → 0.16.** The previous\nnote in the series is " +
+        "[`MIGRATING-0.15.md`](MIGRATING-0.15.md), which walks `0.14.0` → `0.15.0`.",
+    ),
+  ).toBe("docs/MIGRATING-0.15.md");
+  expect(previousNoteClaim("do [MIGRATING-0.10.md](MIGRATING-0.10.md) first.")).toBeUndefined();
+  expect(
+    previousNoteClaim(
+      "The next note is [`MIGRATING-0.16.md`](MIGRATING-0.16.md).\n\n" +
+        "The previous note in the series is [`MIGRATING-0.14.md`](MIGRATING-0.14.md).",
+    ),
+  ).toBe("docs/MIGRATING-0.14.md");
+  const fabricated = [
+    { page: "docs/MIGRATING-0.9.md", minor: "0.9" },
+    { page: "docs/MIGRATING-0.11.md", minor: "0.11" },
+    { page: "docs/MIGRATING-0.16.md", minor: "0.16" },
+  ];
+  expect(previousNoteOnDisk("0.16", fabricated)).toBe("docs/MIGRATING-0.11.md");
+  expect(previousNoteOnDisk("0.9", fabricated)).toBeUndefined();
+
+  const notes = (await filesUnder(join(REPO_ROOT, "docs"), "docs")).flatMap((page) => {
+    const minor = noteMinor(page);
+    return minor === undefined ? [] : [{ page, minor }];
+  });
+  expect(notes.length).toBeGreaterThan(0);
+
+  const claims: { page: string; named: string; below: string | undefined }[] = [];
+  for (const { page, minor } of notes) {
+    const head = pageHead(await readFile(join(REPO_ROOT, ...page.split("/")), "utf8"));
+    const named = previousNoteClaim(head);
+    if (named !== undefined) claims.push({ page, named, below: previousNoteOnDisk(minor, notes) });
+  }
+  // Non-vacuity: with no note opening this way the loop below judges nothing.
+  expect(claims.length).toBeGreaterThan(0);
+
+  for (const { page, named, below } of claims) {
+    expect({ page, previous: named }).toEqual({ page, previous: below });
+  }
+});
