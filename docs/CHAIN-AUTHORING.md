@@ -142,6 +142,27 @@ the chain load naming the field and the valid set. Nothing in it names an
 engine artifact path, a verdict field, or a prior-attempt mode: those are the
 engine's to report and the package's to read.
 
+#### What a declared command gate's child reads
+
+A `shell` or `script` gate in `gates` runs through `sh -c` in the gate's own
+tree, with the engine's gate facts already in its environment — so the
+command reads what the tick knows instead of rebuilding it from git:
+
+| Variable | What it carries |
+| --- | --- |
+| `FLUME_COMMIT_SHA` | The commit under inspection — the tip of the gated span. |
+| `FLUME_BASE_SHA` | The sha the span started from: the tree as the tick saw it when it branched. |
+| `FLUME_LANDED_ON_SHA` | Under `afterMerge`, the trunk tip this span landed onto. **Unset under `afterCommit`**, where no trunk is involved. |
+| `FLUME_STATE_ROOT` | The absolute state root — where the queue, the plan state and the records live. |
+| `FLUME_STATE_ROOT_REL` | That root's repo-relative offset, forward-slashed for git. Unset when the state root is relocated outside the repository. |
+| `FLUME_TOUCHED_PATHS` | The span's changed paths, one per line, repo-relative and forward-slashed; empty when the span touched nothing. |
+
+A gate that measures trunk before and after one entry — a count that may not
+grow, a file that may not reappear — reads `FLUME_LANDED_ON_SHA` for its
+*before*. `HEAD^` is right only while a span lands as one commit, and a
+fanout entry's may be several; `FLUME_BASE_SHA` is what the tick *saw*, which
+every sibling in a wave shares.
+
 ### What adoption costs
 
 A consumer enables or disables slices; it does not re-author them, and there

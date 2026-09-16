@@ -16,7 +16,7 @@
  */
 
 import type { FlumeApi } from "../src/flumeApi.js";
-import type { Gate, GatePhase } from "../src/Gate.js";
+import type { Gate, GateContext, GatePhase } from "../src/Gate.js";
 
 import { BUILD_PHASE, type Declaration } from "./declaration.js";
 
@@ -59,7 +59,8 @@ function registry(api: FlumeApi): Record<string, (when: GatePhase) => Gate> {
  * (`declaration.ts`). A shell command and a committed script are one
  * mechanism with two names: both run through `sh -c` in the gate's own tree,
  * which resolves a relative path against that tree and honours a script's
- * own shebang.
+ * own shebang, and both read the same gate facts from their environment
+ * ({@link gateFacts}).
  */
 export function constructGate(api: FlumeApi, declared: GateDeclaration): Gate {
   switch (declared.kind) {
@@ -84,7 +85,61 @@ export function constructGate(api: FlumeApi, declared: GateDeclaration): Gate {
   }
 }
 
-/** A command line as a gate, named by the line itself. */
+/**
+ * The engine's gate facts as the environment a command gate's child reads
+ * (`spec/harness.md`, *What a consumer declares*) — every value already on
+ * the context the engine built, `FLUME_`-prefixed and never re-derived by
+ * the command itself (`.claude/rules/engineering.md`, *A fact the engine
+ * holds is reported, never rediscovered*). A gate measuring trunk across one
+ * entry reads `FLUME_LANDED_ON_SHA` rather than `HEAD^`, which is right only
+ * while a span lands as one commit.
+ *
+ * Two spellings are the spec's (`FLUME_BASE_SHA`, `FLUME_LANDED_ON_SHA`);
+ * the rest are declared here, and each names the context field it carries.
+ *
+ * **Absence is a fact, not a gap.** `FLUME_LANDED_ON_SHA` is unset under
+ * `afterCommit`, where no trunk is involved, and `FLUME_STATE_ROOT_REL` is
+ * unset when the state root is relocated outside the repository — the same
+ * meaning `GateContext` gives each field's own absence, so a gate branches
+ * on the unset var instead of reading an empty string as a sha.
+ *
+ * `FLUME_TOUCHED_PATHS` is one path per line, in git's own alphabet, empty
+ * when the span touched nothing: an environment value cannot carry a NUL, so
+ * the NUL-delimited form the engine decoded from git has no encoding here,
+ * and a tracked path containing a newline is the one shape this channel
+ * cannot spell.
+ */
+function gateFacts(ctx: GateContext): Record<string, string> {
+  return {
+    FLUME_COMMIT_SHA: ctx.commitSha,
+    FLUME_BASE_SHA: ctx.baseSha,
+    ...(ctx.landedOnSha === undefined
+      ? {}
+      : { FLUME_LANDED_ON_SHA: ctx.landedOnSha }),
+    FLUME_STATE_ROOT: ctx.flumeDir,
+    ...(ctx.stateRootRel === undefined
+      ? {}
+      : { FLUME_STATE_ROOT_REL: ctx.stateRootRel }),
+    FLUME_TOUCHED_PATHS: ctx.touchedPaths.join("\n"),
+  };
+}
+
+/**
+ * A command line as a gate, named by the line itself, run with the gate
+ * facts in its environment.
+ *
+ * The facts are per-run and `shellGate`'s `env` is per-construction, so the
+ * spawning gate is rebuilt for each context; what a failing tick reports —
+ * the name, the `when`, the command line — is the same whatever the context,
+ * and is taken from one construction rather than respelled here
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ */
 function shellCommand(api: FlumeApi, command: string, when: GatePhase): Gate {
-  return api.shellGate({ name: command, when, cmd: "sh", args: ["-c", command] });
+  const spawning = (env: Record<string, string>): Gate =>
+    api.shellGate({ name: command, when, cmd: "sh", args: ["-c", command], env });
+  return {
+    ...spawning({}),
+    run: (ctx) => spawning(gateFacts(ctx)).run(ctx),
+  };
 }

@@ -19,7 +19,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
@@ -977,4 +977,156 @@ it("a declared script gate hangs the committed path at the declared when, named 
   } finally {
     await rm(tree, { recursive: true, force: true });
   }
+});
+
+/**
+ * The line a declared command gate runs to report the `FLUME_` half of its
+ * own environment. Written as JSON by a real child process, so what these
+ * cases read is what a consumer's gate would read — the real producer
+ * (`constructGate`'s gate) driven through the real consumer (a spawned
+ * command), never a fixture standing in for either
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+const REPORT_FLUME_ENV =
+  `node -e 'require("fs").writeFileSync("gate-env.json", JSON.stringify(` +
+  `Object.fromEntries(Object.entries(process.env).filter(` +
+  `([k]) => k.startsWith("FLUME_")))))'`;
+
+/**
+ * The facts the gate's environment carries, as a consumer writes a command
+ * against them: the variable name paired with the context field it reports.
+ *
+ * Spelled here rather than taken from the package's own helper — a
+ * comparison of the writer with itself would pass over any renaming of the
+ * pair.
+ */
+const expectedFacts = (ctx: GateContext): Record<string, string> => ({
+  FLUME_COMMIT_SHA: ctx.commitSha,
+  FLUME_BASE_SHA: ctx.baseSha,
+  FLUME_STATE_ROOT: ctx.flumeDir,
+  FLUME_STATE_ROOT_REL: ctx.stateRootRel!,
+  FLUME_TOUCHED_PATHS: ctx.touchedPaths.join("\n"),
+  ...(ctx.landedOnSha ? { FLUME_LANDED_ON_SHA: ctx.landedOnSha } : {}),
+});
+
+/**
+ * Run `gate` in a throwaway tree and report both the context it was handed
+ * and the `FLUME_` environment its child saw.
+ *
+ * The host's own `FLUME_` variables are cleared across the run: this suite
+ * runs inside a flume tick, whose environment already carries `FLUME_DIR`
+ * and friends, so a child read against the live host environment would judge
+ * the gate's facts against whatever the host exported — and the absence case
+ * below would be green by the host's silence rather than by the gate's
+ * (`.claude/rules/posture-sweep.md`, a negative assertion over a whole
+ * rendered artifact).
+ */
+async function flumeEnvSeenBy(
+  gate: Gate,
+  over: { touchedPaths: string[]; landedOnSha?: string },
+  seed: (tree: string) => Promise<void> = async () => {},
+): Promise<{ ctx: GateContext; seen: Record<string, string> }> {
+  const tree = await mkTempDir("flume-harness-chain-gate-env-");
+  const hostFlumeEnv = Object.entries(process.env).filter(
+    ([key, value]) => key.startsWith("FLUME_") && value !== undefined,
+  ) as [string, string][];
+  try {
+    await seed(tree);
+    for (const [key] of hostFlumeEnv) delete process.env[key];
+    const ctx: GateContext = { ...gateContext(tree), ...over };
+    const result = await gate.run(ctx);
+    // The facts ride a green run: a child that never started would report an
+    // empty environment and satisfy the absence case by accident.
+    expect(result.ok, result.details).toBe(true);
+    const seen = JSON.parse(
+      await readFile(join(tree, "gate-env.json"), "utf8"),
+    ) as Record<string, string>;
+    return { ctx, seen };
+  } finally {
+    for (const [key, value] of hostFlumeEnv) process.env[key] = value;
+    await rm(tree, { recursive: true, force: true });
+  }
+}
+
+/** The declared gate this chain hangs on build under `name`. */
+function declaredGate(declared: unknown, name: string): Gate {
+  const gate = phaseNamed(
+    chainFor({ ...DECLARATION, runner: recordingRunner([]), gates: { build: [declared] } }),
+    BUILD_PHASE,
+  ).gates.find((candidate) => candidate.name === name);
+  if (!gate) throw new Error(`the build phase hangs no gate named "${name}"`);
+  return gate;
+}
+
+it("a declared shell gate's child is handed the engine's gate facts FLUME_-prefixed", async () => {
+  const gate = declaredGate(
+    { kind: "shell", command: REPORT_FLUME_ENV, when: "afterMerge" },
+    REPORT_FLUME_ENV,
+  );
+
+  // A span that touched something, and a trunk tip it landed onto: the facts
+  // below are read off values the case actually varied, never off a context
+  // whose every field was the engine's own placeholder.
+  const touchedPaths = ["src/widget.ts", "docs/a page.md"];
+  const landedOnSha = "a".repeat(40);
+  const { ctx, seen } = await flumeEnvSeenBy(gate, { touchedPaths, landedOnSha });
+
+  // Vacuity pins: the fixture's state root is inside the repo, so its offset
+  // is a value and not the relocated-root absence, and the expected set is
+  // the whole acceptance rather than whatever happened to survive.
+  expect(ctx.stateRootRel).toBeDefined();
+  expect(Object.keys(expectedFacts(ctx)).sort()).toEqual([
+    "FLUME_BASE_SHA",
+    "FLUME_COMMIT_SHA",
+    "FLUME_LANDED_ON_SHA",
+    "FLUME_STATE_ROOT",
+    "FLUME_STATE_ROOT_REL",
+    "FLUME_TOUCHED_PATHS",
+  ]);
+
+  expect(seen).toEqual(expectedFacts(ctx));
+  // And the touched paths survive the shell verbatim, spaces and all — one
+  // path per line is the encoding a gate reads with `while read`.
+  expect(seen.FLUME_TOUCHED_PATHS!.split("\n")).toEqual(touchedPaths);
+});
+
+it("a declared script gate's child is handed the same facts", async () => {
+  const script = "scripts/report-gate-env.sh";
+  const gate = declaredGate({ kind: "script", path: script, when: "afterMerge" }, script);
+
+  const touchedPaths = ["src/widget.ts"];
+  const landedOnSha = "b".repeat(40);
+  const { ctx, seen } = await flumeEnvSeenBy(
+    gate,
+    { touchedPaths, landedOnSha },
+    async (tree) => {
+      await mkdir(join(tree, "scripts"), { recursive: true });
+      await writeFile(join(tree, script), `#!/bin/sh\nexec ${REPORT_FLUME_ENV}\n`);
+      await chmod(join(tree, script), 0o755);
+    },
+  );
+
+  expect(ctx.stateRootRel).toBeDefined();
+  // The same set, by the same contract: a committed script and an inline
+  // command are one mechanism, so neither kind carries facts the other lacks.
+  expect(seen).toEqual(expectedFacts(ctx));
+});
+
+it("FLUME_LANDED_ON_SHA is absent from an afterCommit gate's environment", async () => {
+  const gate = declaredGate(
+    { kind: "shell", command: REPORT_FLUME_ENV, when: "afterCommit" },
+    REPORT_FLUME_ENV,
+  );
+
+  const touchedPaths = ["src/widget.ts"];
+  const { ctx, seen } = await flumeEnvSeenBy(gate, { touchedPaths });
+
+  // Control: no trunk means no `landedOnSha` on the context, so the absence
+  // below is the engine's own field speaking and not a dropped variable.
+  expect(ctx.landedOnSha).toBeUndefined();
+  // The rest of the set is present, so the missing key is this one fact
+  // rather than an environment the child never received.
+  expect(seen).toEqual(expectedFacts(ctx));
+  expect("FLUME_LANDED_ON_SHA" in seen).toBe(false);
 });
