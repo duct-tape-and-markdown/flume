@@ -22,10 +22,10 @@
  * *Loud or nothing*).
  */
 
-import { execFileSync } from "node:child_process";
-
 import { literalPathspecEnv, nameOnlyPaths } from "../src/git.js";
 import { matchesAny } from "../src/paths.js";
+
+import { captureSync } from "./exec.js";
 
 /** One commit in a window's range, with the paths it touched. */
 export interface RangeCommit {
@@ -63,9 +63,6 @@ const FIELD_SEP_FMT = "%x1f";
 const HEADER_END = "\0";
 const LISTING_LEAD = "\n";
 
-/** Enough headroom for a window-sized diff on stdout. */
-const MAX_BUFFER = 64 << 20;
-
 /**
  * Every read in this module, under one pathspec dialect.
  *
@@ -86,14 +83,16 @@ const MAX_BUFFER = 64 << 20;
  * *listing* faithful — every path this module goes on to judge or hand back
  * to git is read `-z` and decoded by {@link nameOnlyPaths}, which is the one
  * form quoting cannot reach (`src/git.ts`).
+ *
+ * What the spawn itself is — how much of a diff fits on stdout, and what a
+ * failing git's own text is — is the package's one sync spawn's
+ * ({@link captureSync}, `harness/exec.ts`). Only the dialect is this
+ * module's.
  */
 function git(cwd: string, args: readonly string[]): string {
-  return execFileSync("git", ["-c", "core.quotePath=false", ...args], {
+  return captureSync("git", ["-c", "core.quotePath=false", ...args], {
     cwd,
     env: literalPathspecEnv(),
-    encoding: "utf8",
-    maxBuffer: MAX_BUFFER,
-    stdio: ["ignore", "pipe", "pipe"],
   });
 }
 

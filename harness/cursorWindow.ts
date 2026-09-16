@@ -21,6 +21,7 @@
  * to the slice windows that drive this.
  */
 
+import { detailOf } from "./exec.js";
 import {
   commitsPast,
   filesMatching,
@@ -140,6 +141,11 @@ const unresolvedCursor = (
  * The cursor is untouched by a failure this side of the render, so the
  * window re-opens over the same range next tick; the tick that was woken
  * says what it saw instead of dying silently.
+ *
+ * The text is the failure's own, folded by the package's one reader of that
+ * ({@link detailOf}, `harness/exec.ts`) — so a git that refused reaches the
+ * prompt saying what git said, rather than under the command line the window
+ * already names.
  */
 function bounded(
   field: CursorField,
@@ -149,9 +155,8 @@ function bounded(
   try {
     return render();
   } catch (err) {
-    const text = err instanceof Error ? err.message : String(err);
     return refusal(
-      `the \`${field}\` window could not be read: ${text.trim()}`,
+      `the \`${field}\` window could not be read: ${detailOf(err)}`,
       `say in the commit body what failed; \`${field}\` in ` +
         `${planStatePath(ctx.flumeDir)} is untouched, so the window re-opens ` +
         `over the same range next tick.`,

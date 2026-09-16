@@ -44,16 +44,10 @@
  * window's beyond it.
  */
 
-import {
-  execFileSync,
-  type ExecFileSyncOptionsWithStringEncoding,
-} from "node:child_process";
-
 import { z } from "zod";
 
-import { isWin32ShimSpawnFailure } from "../src/spawnShim.js";
-
 import type { Declaration } from "./declaration.js";
+import { captureSync, detailOf } from "./exec.js";
 
 /**
  * One CI lane as the declaration carries it — read off the declaration's own
@@ -122,9 +116,6 @@ const ANSI = /\u001B(?:\[[0-?]*[ -\/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\
  * a bare `##[endgroup]` is left holding nothing.
  */
 const WORKFLOW_COMMAND = /^##\[[a-z]+\]/;
-
-/** Enough headroom for a failing job's whole log on stdout. */
-const MAX_BUFFER = 64 << 20;
 
 /** The conclusion the forge reports for a job that passed. */
 const PASSED = "success";
@@ -341,10 +332,10 @@ export function withCiLaneMaterial(
  */
 function branchAt(repoRoot: string): { branch: string } | { reason: string } {
   try {
-    const name = execFileSync(
+    const name = captureSync(
       "git",
       ["symbolic-ref", "--quiet", "--short", "HEAD"],
-      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      { cwd: repoRoot },
     ).trim();
     if (name === "") {
       return { reason: `HEAD in ${repoRoot} names no branch` };
@@ -463,25 +454,16 @@ function withMaterial(
   }
 }
 
-/** The forge CLI's stdout for one invocation, or a throw carrying its stderr. */
-function forge(cwd: string, args: readonly string[]): string {
-  const options: ExecFileSyncOptionsWithStringEncoding = {
-    cwd,
-    encoding: "utf8",
-    maxBuffer: MAX_BUFFER,
-    stdio: ["ignore", "pipe", "pipe"],
-  };
-  try {
-    return execFileSync(FORGE_CLI, args, options);
-  } catch (err) {
-    // The shim case alone, and the engine's own detection of it
-    // (`src/spawnShim.ts`): on win32 a CLI installed as a `.cmd` cannot be
-    // spawned without a shell, and every other failure — including an ENOENT
-    // anywhere else — is the real one this reader reports.
-    if (!isWin32ShimSpawnFailure(err)) throw err;
-    return execFileSync(FORGE_CLI, args, { ...options, shell: true });
-  }
-}
+/**
+ * The forge CLI's stdout for one invocation, or a throw carrying its stderr.
+ *
+ * The package's one sync spawn ({@link captureSync}, `harness/exec.ts`): the
+ * headroom a failing job's whole log needs, and the win32 `.cmd`-shim retry
+ * this CLI is the package's likeliest binary to need, are both stated there
+ * rather than here.
+ */
+const forge = (cwd: string, args: readonly string[]): string =>
+  captureSync(FORGE_CLI, args, { cwd });
 
 /** One invocation's stdout, decoded against the shape the reader asked for. */
 function forgeJson<T>(schema: z.ZodType<T>, cwd: string, args: readonly string[]): T {
@@ -514,12 +496,6 @@ function readFailure(err: unknown): string {
   return `the forge could not be asked: ${detailOf(err)}`;
 }
 
-/** A failure's own text — its stderr where it has one, else its message. */
-function detailOf(err: unknown): string {
-  const stderr = (err as { stderr?: unknown }).stderr;
-  if (typeof stderr === "string" && stderr.trim() !== "") return stderr.trim();
-  return (err instanceof Error ? err.message : String(err)).trim();
-}
 
 /**
  * A job log's own lines, with the forge's decoration off each and the lines

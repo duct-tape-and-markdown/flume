@@ -45,6 +45,7 @@ import {
 } from "../src/paths.js";
 import { readSelfPackage } from "../src/selfPackage.js";
 
+import { detailOf } from "./exec.js";
 import { consumerIgnores } from "./ignores.js";
 
 /** The directory holding this module, in whichever layout it is running from. */
@@ -502,7 +503,7 @@ async function readConsumerManifest(
   try {
     parsed = JSON.parse(source);
   } catch (error) {
-    return refuse(error instanceof Error ? error.message : String(error));
+    return refuse(detailOf(error));
   }
   if (!isJsonObject(parsed)) {
     return refuse(`it parsed as ${jsonShape(parsed)}, not an object`);

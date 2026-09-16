@@ -15,6 +15,7 @@
 
 import { relative } from "node:path";
 
+import { detailOf } from "./exec.js";
 import { DEFAULT_STATE_ROOT, harnessInit } from "./init.js";
 
 const HELP = `flume-harness — adopt flume's harness package in this repository.
@@ -91,7 +92,7 @@ async function main(argv: readonly string[]): Promise<number> {
 
 process.exitCode = await main(process.argv.slice(2)).catch(
   (err: unknown): number => {
-    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(`${detailOf(err)}\n`);
     return 1;
   },
 );

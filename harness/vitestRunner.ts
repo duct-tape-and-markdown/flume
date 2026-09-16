@@ -28,6 +28,7 @@ import { existsLoud } from "../src/fsProbe.js";
 import { gitPath, namespacedJoin } from "../src/paths.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
 
+import { MAX_OUTPUT_BYTES } from "./exec.js";
 import type {
   Lane,
   NamedResult,
@@ -40,9 +41,6 @@ import type {
 
 /** The lane a plain, unsplit vitest project has: everything, nothing excluded. */
 const DEFAULT_LANE: Lane = { name: "default", excludes: [], runs: true };
-
-/** A report past this is a runaway, not a suite. */
-const MAX_OUTPUT_BYTES = 64 << 20;
 
 /** How the runner reaches vitest from one tree. */
 export interface VitestInvocation {
