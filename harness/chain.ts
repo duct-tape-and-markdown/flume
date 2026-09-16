@@ -161,6 +161,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     pendingGate: api.pendingGate,
     git: {
       readFileAtRef: api.git.readFileAtRef,
+      isAncestor: api.git.isAncestor,
       statusRecords: api.git.statusRecords,
     },
   };

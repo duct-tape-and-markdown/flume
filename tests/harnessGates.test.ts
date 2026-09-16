@@ -29,13 +29,16 @@ import {
   notePath,
   notesDir,
   parseDeclaration,
+  planStatePath,
   recordDirs,
+  writePlanState,
   type Declaration,
   type GateEngine,
+  type PlanState,
 } from "../harness/index.ts";
 import { pendingGate } from "../src/builtinGates.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
-import { readFileAtRef, statusRecords } from "../src/git.ts";
+import { isAncestor, readFileAtRef, statusRecords } from "../src/git.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
@@ -60,7 +63,7 @@ vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
  */
 const engine: GateEngine = {
   pendingGate,
-  git: { readFileAtRef, statusRecords },
+  git: { readFileAtRef, isAncestor, statusRecords },
 };
 
 /** The state root every case addresses, repo-relative. */
@@ -636,6 +639,7 @@ it("the clean-tree gate takes its status records from the engine rather than spa
     pendingGate,
     git: {
       readFileAtRef,
+      isAncestor,
       statusRecords: async (cwd: string) => {
         calls.push(cwd);
         // Vacuity pin on the seam: the real decode runs and agrees the tree
@@ -665,6 +669,143 @@ it("the clean-tree gate takes its status records from the engine rather than spa
   expect(refused.details).toBe("spec/a page.md (M)\nsrc/a widget.ts (??)");
 });
 
+/** A sha as every message this gate writes names one. */
+const short = (sha: string): string => sha.slice(0, 7);
+
+/**
+ * A plan state through the package's **own writer** — the one a slice's
+ * tick writes this artifact with. A hand-authored JSON fixture here would
+ * re-author, by the tester's hand, the vocabulary the gate's reader decodes,
+ * which is the half of this seam worth holding
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+const writeState = (derivedThrough: string, over: Partial<PlanState> = {}): void =>
+  writePlanState(join(repo, STATE_ROOT), {
+    derivedThrough,
+    sweptThrough: derivedThrough,
+    rotation: { kind: "closed" },
+    ...over,
+  });
+
+/**
+ * A real commit the gated branch cannot reach — what a cursor stepped
+ * sideways names. Called on a clean tree, so nothing of the case's own rides
+ * across with the checkout.
+ */
+async function offHistory(): Promise<string> {
+  const branch = git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  git(repo, ["checkout", "-q", "-b", "off-history"]);
+  await write("src/side.ts", `export const side = true;\n`);
+  git(repo, ["add", "-A"]);
+  git(repo, ["commit", "-q", "-m", "side: a commit this branch never sees"]);
+  const sha = git(repo, ["rev-parse", "HEAD"]);
+  git(repo, ["checkout", "-q", branch]);
+  return sha;
+}
+
+/** The derive cursor's gate, and the plan state path it keys on. */
+const cursor = (): Gate => named("derive cursor");
+const STATE_PATH = planStatePath(STATE_ROOT);
+
+it("the cursor gate refuses a plan commit whose derive cursor is not an ancestor of the tip", async () => {
+  const stray = await offHistory();
+  const reachable = git(repo, ["rev-parse", "HEAD"]);
+
+  // A cursor the commit does reach, first: the same gate on the same repo
+  // rules green, so the refusal below is the ancestry probe and not a gate
+  // that refuses every plan state it is handed.
+  writeState(reachable);
+  const within = commitAll("plan: a cursor inside the commit's own history");
+  expect(within.touchedPaths).toContain(STATE_PATH);
+  const passed = await cursor().run(ctxFor(within, { phaseName: "plan-derive" }));
+  expect(passed).toMatchObject({ ok: true });
+  expect(passed.skipped).toBeUndefined();
+
+  writeState(stray);
+  const span = commitAll("plan: a cursor stepped onto a sha this history has not got");
+  const refused = await cursor().run(ctxFor(span, { phaseName: "plan-derive" }));
+
+  expect(refused.ok).toBe(false);
+  // Both shas, because the fix is a cursor value and the tip is what bounds it.
+  expect(refused.details).toContain(
+    `derivedThrough ${short(stray)} is not an ancestor of the gated commit ${short(span.commitSha)}`,
+  );
+});
+
+it("the cursor gate refuses a plan commit whose derive cursor is not a descendant of its pre-commit value", async () => {
+  const first = git(repo, ["rev-parse", "HEAD"]);
+  await write("src/widget.ts", `export const widget = "second";\n`);
+  const second = commitAll("build: a second commit to step the cursor over").commitSha;
+
+  writeState(second);
+  const ahead = commitAll("plan: derive through the tip");
+  const passed = await cursor().run(ctxFor(ahead, { phaseName: "plan-derive" }));
+  expect(passed).toMatchObject({ ok: true });
+  expect(passed.skipped).toBeUndefined();
+
+  // Backwards onto a commit the tick had already derived through. Still an
+  // ancestor of the tip, so only the pre-commit half can catch it.
+  writeState(first);
+  const span = commitAll("plan: step the cursor back over derived history");
+  const refused = await cursor().run(ctxFor(span, { phaseName: "plan-derive" }));
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain(
+    `derivedThrough ${short(second)} -> ${short(first)} is not a step forward`,
+  );
+  // The one half that could fire did; the tip half agrees the cursor is reachable.
+  expect((refused.details ?? "").split("\n")).toHaveLength(1);
+  expect(refused.details).not.toContain("is not an ancestor of the gated commit");
+});
+
+it("the cursor gate passes a plan commit that carries its derive cursor forward unchanged", async () => {
+  const carried = git(repo, ["rev-parse", "HEAD"]);
+  writeState(carried);
+  const first = commitAll("plan: arm the rotation and stamp the cursor");
+  expect(await cursor().run(ctxFor(first, { phaseName: "plan-derive" }))).toMatchObject({
+    ok: true,
+  });
+
+  // The artifact moves — the rotation opens — and the derive cursor does not.
+  writeState(carried, { rotation: { kind: "open", covered: [] } });
+  const span = commitAll("plan: open the rotation, carry the derive cursor");
+  // Vacuity pin: the gate only judges a cursor the span actually carries.
+  expect(span.touchedPaths).toContain(STATE_PATH);
+
+  const passed = await cursor().run(ctxFor(span, { phaseName: "plan-derive" }));
+
+  expect(passed.ok).toBe(true);
+  // Judged, not skipped, and naming the step it read as a step of zero.
+  expect(passed.skipped).toBeUndefined();
+  expect(passed.message).toContain(`${short(carried)} -> ${short(carried)}`);
+});
+
+it("the cursor gate reports a commit that touched no plan state as skipped", async () => {
+  // A judged run first, so the skip below is the untouched artifact's verdict
+  // and not a gate that never rules on anything.
+  writeState(git(repo, ["rev-parse", "HEAD"]));
+  const judged = await cursor().run(
+    ctxFor(commitAll("plan: stamp the cursor"), { phaseName: "plan-derive" }),
+  );
+  expect(judged).toMatchObject({ ok: true });
+  expect(judged.skipped).toBeUndefined();
+
+  await write("src/widget.ts", `export const widget = "shipped";\n`);
+  const span = commitAll("build: ship the work, write no cursor");
+  expect(span.touchedPaths).not.toContain(STATE_PATH);
+
+  const skipped = await cursor().run(
+    ctxFor(span, { phaseName: "build", entry: assigned("MINE") }),
+  );
+
+  // Vacuous by design, and spelled: the plan state the commit did not touch
+  // still holds whatever the commit that wrote it was held to.
+  expect(skipped.ok).toBe(true);
+  expect(skipped.skipped).toBe("the plan state is not in the gated span");
+  expect(skipped.message).toContain("moves no cursor");
+});
+
 it("the package's gates precede a consumer's declared gates for the same phase", async () => {
   const declared: Gate[] = [
     { name: "consumer:lint", when: "afterCommit", run: async () => ({ ok: true, message: "lint" }) },
@@ -674,16 +815,20 @@ it("the package's gates precede a consumer's declared gates for the same phase",
   expect(declared.length).toBeGreaterThan(0);
 
   const set = gates(declared);
-  expect(set.map((g) => g.name)).toEqual([
+  const DISCIPLINE = [
     "records",
     "clean-tree",
     "pending-gate",
     "per cites resolve",
+    "derive cursor",
+  ];
+  expect(set.map((g) => g.name)).toEqual([
+    ...DISCIPLINE,
     ...declared.map((g) => g.name),
   ]);
-  // The consumer's own values, in order, after the package's four — not
+  // The consumer's own values, in order, after the package's five — not
   // copies, and not interleaved.
-  expect(set.slice(4)).toEqual(declared);
+  expect(set.slice(DISCIPLINE.length)).toEqual(declared);
 
   // And the package's pending gate is wired to the consumer's declared
   // fence: an entry declaring a file build could never write is refused

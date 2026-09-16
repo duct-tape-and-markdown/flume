@@ -34,6 +34,7 @@ import { CjsContextLoadError } from "./chainLoad.js";
 import { PendingParseFailure } from "./PendingSchema.js";
 import { readTickVerdicts, readLatestVerdictsSync } from "./tickVerdict.js";
 import {
+  isAncestor,
   readFileAtRef,
   showNameOnly,
   statusRecords,
@@ -205,6 +206,24 @@ export interface FlumeApi {
      */
     readFileAtRef: typeof readFileAtRef;
     /**
+     * Whether one commit is a (non-strict) ancestor of another — the engine's
+     * own `git merge-base --is-ancestor`, exit code as data.
+     *
+     * What a chain holding a **sha of its own** reads: a cursor an agent
+     * wrote into a state file, a baseline a config names, a tip a prior tick
+     * recorded. Those shas are the chain's, so whether one may step to
+     * another is the chain's judgement — but the reachability question
+     * underneath it is git's, and a chain answering it from a log listing or
+     * a `rev-list` grep re-derives the probe the engine already runs on its
+     * own tip-verify leg.
+     *
+     * Reported as a **fact**: yes or no. A ref neither side can resolve
+     * throws rather than folding into the negative case, so a chain never
+     * reads a typo'd sha as an honest "not an ancestor"
+     * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+     */
+    isAncestor: typeof isAncestor;
+    /**
      * Every path `git status` reports dirty in a worktree right now, decoded
      * — the porcelain walk the engine already runs to name a tick's
      * uncommitted tracked edits, handed out rather than left for a gate to
@@ -332,6 +351,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     git: {
       showNameOnly,
       readFileAtRef,
+      isAncestor,
       statusRecords,
       readWorktreeRegistry,
       checkoutAt,

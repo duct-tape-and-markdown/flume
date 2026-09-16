@@ -1,35 +1,38 @@
 /**
  * The gates the package's discipline needs (`spec/harness.md`, *The gates the
  * discipline needs*) — the `per` gate, the records gate, the clean-tree gate,
- * and the engine's pending gate wired to the consumer's fence — as one
- * ordered set per phase, always ahead of whatever gates the consumer
- * declared.
+ * the engine's pending gate wired to the consumer's fence, and the cursor
+ * gate over a plan commit's derive cursor — as one ordered set per phase,
+ * always ahead of whatever gates the consumer declared.
  *
  * **Always first is mechanism here, not a promise.** {@link harnessGates}
- * returns the package's four and then the consumer's, so a declaration
+ * returns the package's five and then the consumer's, so a declaration
  * cannot displace one by ordering, and there is no per-phase table of which
  * gate applies where to fall out of step with the fence. The set is the same
- * for every phase the package ships: each of the four is a claim about *any*
- * commit the package's chain produces, and the two that read the queue cost
- * a handful of at-ref reads on a phase that never writes it.
+ * for every phase the package ships: each of the five is a claim about *any*
+ * commit the package's chain produces, and the ones whose subject a given
+ * phase never writes cost a handful of at-ref reads to say so.
  *
- * The order the four run in is dependency order, not the spec's listing
+ * The order the five run in is dependency order, not the spec's listing
  * order: the dispatcher stops at the first refusal, so the pending gate —
  * which is what proves the queue parses at all — runs before the `per` gate
- * that reads cites out of it.
+ * that reads cites out of it. The cursor gate trails them, being the one
+ * whose probe costs a process rather than a read.
  *
  * **Every fact these gates judge on is one the engine reported.** The touched
- * span, the state root's offset, the gated commit, the assigned entry and the
- * phase's name all arrive on the `GateContext`; nothing here re-derives a
- * diff, rebuilds a state-root path, or infers which phase it is running for
- * from the shape of a commit (`.claude/rules/engine-boundary.md`, *Told, not
- * inferred*). Whether a touched record was written or drained is read by
- * asking for its bytes at the commit — absent is deleted — and what the
- * worktree still holds uncommitted is read off the engine's own status
- * decode. **This module spawns no process:** every fact the four judge on
- * either rides the context or comes off `GateEngine`.
+ * span, the state root's offset, the gated commit, the span's base, the
+ * assigned entry and the phase's name all arrive on the `GateContext`;
+ * nothing here re-derives a diff, rebuilds a state-root path, or infers which
+ * phase it is running for from the shape of a commit
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). Whether a
+ * touched record was written or drained is read by asking for its bytes at
+ * the commit — absent is deleted — what the worktree still holds uncommitted
+ * is read off the engine's own status decode, and whether one sha reaches
+ * another comes off the engine's own ancestry probe. **This module spawns no
+ * process:** every fact the five judge on either rides the context or comes
+ * off `GateEngine`.
  *
- * This module is the package's own four alone. Which phases exist and what
+ * This module is the package's own five alone. Which phases exist and what
  * fence each carries belong to the chain factory that calls this
  * (`chain.ts`); constructing a consumer's declared gates — including the
  * shell line that does spawn — belongs to `declaredGates.ts`, which is why
@@ -49,7 +52,9 @@ import type { Phase } from "../src/Phase.js";
 import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js";
 import { BUILD_PHASE, type Declaration } from "./declaration.js";
 import { entryExtension, PerSchema } from "./entryExtension.js";
-import { notePath, recordDirs, underStateRoot } from "./layout.js";
+import { notePath, planStatePath, recordDirs, underStateRoot } from "./layout.js";
+import { PlanStateSchema } from "./planState.js";
+import { parseOrThrow } from "./refusal.js";
 
 /**
  * The engine values the package's gates run through, named by the shape they
@@ -75,6 +80,17 @@ export interface GateEngine {
       ref: string,
       path: string,
     ) => Promise<string | null>;
+    /**
+     * Whether `ancestor` reaches `descendant` — non-strict, so a sha is its
+     * own ancestor and a cursor carried forward unchanged answers `true`. A
+     * ref neither side can resolve throws rather than answering `false`, so
+     * a cursor naming a sha this repository does not hold is loud.
+     */
+    readonly isAncestor: (
+      repoRoot: string,
+      ancestor: string,
+      descendant: string,
+    ) => Promise<boolean>;
     /**
      * Every path `git status` reports dirty in a worktree right now, already
      * decoded — NUL-separated, so a quoted spelling never reaches a fence
@@ -105,7 +121,7 @@ export interface HarnessGatesOptions {
    */
   readonly entryFields?: EntryExtension;
   /**
-   * The gates that follow the package's four, already constructed, in the
+   * The gates that follow the package's five, already constructed, in the
    * order they run — the consumer's declared gates for this phase, and
    * whatever the calling factory judges after them. Nothing here can be put
    * ahead of the four.
@@ -392,6 +408,114 @@ function cleanTreeGate(
 }
 
 /**
+ * A plan commit's derive cursor steps **forward, and only over history the
+ * commit itself carries** (`spec/harness.md`, *The gates the discipline
+ * needs*): `derivedThrough` at the gated commit is an ancestor of that
+ * commit, and a descendant of the value the tick read before it.
+ *
+ * Both halves fail the same silent way and that is why they are gated. A
+ * cursor stepped past commits nobody derived does not red anything — the
+ * derive slice simply never opens on the span that was skipped, every tick
+ * after, and the window it renders looks exactly like a quiet tree. A cursor
+ * stepped *backwards*, or sideways onto a sha this commit cannot reach,
+ * re-derives history or names a window the next tick cannot draw at all.
+ * Neither is recoverable by reading the artifact, because the artifact reads
+ * as a cursor either way (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * **Both shas the gate judges are ones the commit already carries.** The new
+ * value is the plan state at `ctx.commitSha`; the pre-commit value is the
+ * plan state at `ctx.baseSha`, the tick's own branch point as the engine
+ * reported it — not `HEAD^`, which names a sibling commit of the same span
+ * the moment a tick writes two. Absent at the base is a state root with no
+ * cursor yet, which every window reads as "run": there is no prior value to
+ * step from, so that half is not judged and the ancestor half still is.
+ *
+ * **Plan phases are selected by the path, never by their name.** A commit
+ * that did not touch the plan state changed no cursor, and build's fence
+ * admits the artifact at all, so the skip is read off `touchedPaths` rather
+ * than off a phase-name branch that would have to stay in step with the
+ * fence (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * The **leading-run** half of the bound — whether the span the cursor
+ * stepped over was one this tick actually derived — is judgement, and stays
+ * prose in the slice's own prompt. What is decidable is direction and
+ * reachability, and that is what this holds.
+ *
+ * A cursor naming a sha the repository does not hold throws out of the
+ * ancestry probe rather than being folded into "not an ancestor": the probe
+ * cannot tell a bad revision from a broken repository without reading git's
+ * English, and a gate that throws is a gate that failed, with git's own
+ * message on the refusal (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
+ */
+function cursorGate(engine: GateEngine): Gate {
+  return {
+    name: "derive cursor",
+    when: "afterCommit",
+    async run(ctx) {
+      if (ctx.stateRootRel === undefined) {
+        return {
+          ok: true,
+          message: "the state root is outside the repository",
+          skipped: "no commit can carry the plan state under a relocated state root",
+        };
+      }
+      const path = planStatePath(ctx.stateRootRel);
+      if (!ctx.touchedPaths.includes(path)) {
+        return {
+          ok: true,
+          message: "the commit writes no plan state, so it moves no cursor",
+          skipped: "the plan state is not in the gated span",
+        };
+      }
+
+      const raw = await engine.git.readFileAtRef(ctx.repoRoot, ctx.commitSha, path);
+      if (raw === null) {
+        return {
+          ok: false,
+          message: `${path} touched by ${short(ctx.commitSha)} and absent from it: a plan tick that deletes its own state leaves every window without a cursor`,
+        };
+      }
+      const at = (sha: string, text: string) =>
+        parseOrThrow(PlanStateSchema, JSON.parse(text), `plan state at ${short(sha)}`);
+
+      const after = at(ctx.commitSha, raw).derivedThrough;
+      const problems: string[] = [];
+      if (!(await engine.git.isAncestor(ctx.repoRoot, after, ctx.commitSha))) {
+        problems.push(
+          `derivedThrough ${short(after)} is not an ancestor of the gated commit ${short(ctx.commitSha)}`,
+        );
+      }
+
+      const baseRaw = await engine.git.readFileAtRef(ctx.repoRoot, ctx.baseSha, path);
+      const before = baseRaw === null ? undefined : at(ctx.baseSha, baseRaw).derivedThrough;
+      if (
+        before !== undefined &&
+        !(await engine.git.isAncestor(ctx.repoRoot, before, after))
+      ) {
+        problems.push(
+          `derivedThrough ${short(before)} -> ${short(after)} is not a step forward: ${short(after)} is not a descendant of the value the tick read at ${short(ctx.baseSha)}`,
+        );
+      }
+
+      if (problems.length > 0) {
+        return refuse(
+          `${problems.length} derive-cursor problem(s); a cursor stepped past commits nobody derived fails silently on every tick after`,
+          problems,
+        );
+      }
+      return {
+        ok: true,
+        message:
+          before === undefined
+            ? `derivedThrough ${short(after)} is within ${short(ctx.commitSha)}`
+            : `derivedThrough ${short(before)} -> ${short(after)}, within ${short(ctx.commitSha)}`,
+      };
+    },
+  };
+}
+
+/**
  * The fence every queued entry's declared `files` is pre-checked against:
  * build's, as the consumer declared it.
  *
@@ -417,12 +541,13 @@ function buildFence(
 /**
  * The package's gate set for one phase, followed by the consumer's own.
  *
- * The four are the discipline's, and they run in dependency order: records
+ * The five are the discipline's, and they run in dependency order: records
  * and the clean tree are facts about the commit itself; the pending gate
  * proves the queue parses and every entry's declared files survive build's
  * fence; the `per` gate then reads cites out of a queue already known to
- * parse. The dispatcher stops at the first refusal, so that order is what
- * decides which message a tick is handed back.
+ * parse. The cursor gate trails them because its probe spawns git where the
+ * others read. The dispatcher stops at the first refusal, so that order is
+ * what decides which message a tick is handed back.
  */
 export function harnessGates(options: HarnessGatesOptions): Gate[] {
   const { phase, declaration, engine, entryFields, declared = [] } = options;
@@ -434,6 +559,7 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
       targetFence: buildFence(declaration),
     }),
     perGate(declaration, engine),
+    cursorGate(engine),
     ...declared,
   ];
 }
