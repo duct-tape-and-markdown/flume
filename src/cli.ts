@@ -1373,12 +1373,10 @@ async function main(): Promise<number> {
  * absent is not this module either way, and the import must not crash over
  * it.
  *
- * Both legs answer in one alphabet. The fold this function spends at
- * `realpathSync` rides back out on its answer, and rides out *unevenly*: the
- * prefix survives where nothing resolved and is gone where a link did, so
- * the two sides of the comparison below would otherwise differ by the prefix
- * alone. `plainPath` (`src/paths.ts`) is where that ends — its answer parses
- * as the path it names, on either leg and on either platform.
+ * Both legs fold through `plainPath` (`src/paths.ts`), the resolving one and
+ * the throwing one alike, so the comparison below is made in one alphabet
+ * whatever either side resolved: `.claude/rules/platform-facts.md`,
+ * "realpathSync keeps the \\?\ prefix only where nothing resolved".
  */
 export function onDiskIdentity(path: string): string {
   try {
