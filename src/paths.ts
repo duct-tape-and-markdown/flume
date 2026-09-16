@@ -1,8 +1,8 @@
 /**
  * paths — shared path machinery: the win32 total-path-limit fix idiom, the
  * glob matcher, the filesystem-safe tag slug, the length bound every
- * composed path component passes through, and the layout a repo root, a
- * flume state root, and a config dir each carry.
+ * composed path component passes through, the dot-prefixed-name test, and
+ * the layout a repo root, a flume state root, and a config dir each carry.
  *
  * For the MAX_PATH idiom see `.claude/rules/platform-facts.md`, "Windows
  * MAX_PATH (~260 chars) breaks fs calls with no long component"; every call
@@ -319,6 +319,25 @@ export function boundedName(
   if (name.length <= max) return name;
   const hash = createHash("sha1").update(identity).digest("hex").slice(0, 10);
   return `${name.slice(0, max - hash.length - 1)}-${hash}`;
+}
+
+/**
+ * Whether a filename is dot-prefixed — the one spelling of "a placeholder
+ * git made the consumer create is no work". The friction channel's three
+ * reading surfaces share it (spec/chain.md, "`Chain.friction` — the declared
+ * friction channel"): `countFrictionFiles` (`src/job.ts`) behind every
+ * status count, and the `friction` verb's bare listing and read-by-name
+ * (`src/cli.ts`). One detection, never re-derived beside each
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism") — a
+ * second spelling is how the count and the listing come to disagree about
+ * what the channel holds.
+ *
+ * The test is on the name alone, never on content: the caller passes the
+ * name a directory entry carries on disk, so a reader given `"./.gitkeep"`
+ * resolves it to its basename first rather than asking this.
+ */
+export function isDotName(name: string): boolean {
+  return name.startsWith(".");
 }
 
 // ---------- the repo root's layout ----------

@@ -28,6 +28,7 @@ import {
   chainModulePath,
   defaultStateRoot,
   gitPath,
+  isDotName,
   jobDir,
   jobDirRel,
   jobsRoot,
@@ -543,7 +544,11 @@ interface JobStatus {
 }
 
 /**
- * Files (not subdirs) directly under `dir`. `0` when `dir` is absent
+ * Files (not subdirs) directly under `dir`, dot-prefixed names skipped — a
+ * `.gitkeep` git forced the consumer to create is not a note (spec/chain.md,
+ * "`Chain.friction` — the declared friction channel"), and the skip is
+ * `isDotName` (`src/paths.ts`), the same test the `friction` verb's listing
+ * and read-by-name apply. `0` when `dir` is absent
  * (`ENOENT` — nothing filed is nothing to count, the same reading
  * `readPendingLoose` gives an absent `pending.json`); `null` when `dir`
  * exists but `readdir` fails for any other reason — that failure is a
@@ -561,7 +566,7 @@ export function countFrictionFiles(dir: string): number | null {
     // (`src/friction.ts`) and `writeRevertNote` (`src/tickAttempt.ts`)
     // guard. `namespacedJoin` (`src/paths.ts`) is the shared idiom.
     return readdirSync(namespacedJoin(dir), { withFileTypes: true }).filter(
-      (e) => e.isFile(),
+      (e) => e.isFile() && !isDotName(e.name),
     ).length;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;

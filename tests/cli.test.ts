@@ -3863,6 +3863,57 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     }
   }, SPAWN_BUDGET_MS);
 
+  it("the bare friction listing omits a name beginning with a dot", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      // A real note beside the placeholder git forces a consumer to create
+      // for an otherwise-empty, gitignored channel dir (spec/chain.md,
+      // "`Chain.friction` — the declared friction channel").
+      await writeFile(join(frictionDir, "a.md"), "note a\n");
+      await writeFile(join(frictionDir, ".gitkeep"), "");
+
+      const r = await runCli(repo.dir, ["friction"]);
+      expect(r.code).toBe(0);
+      // The listing is non-vacuous — the real note is there — and the
+      // placeholder is not a row of it.
+      expect(r.out).toMatch(/a\.md\s+7\s+\d{4}-\d{2}-\d{2}T.*Z/);
+      expect(r.out.split("\n").filter((l) => l.includes(".gitkeep"))).toEqual(
+        [],
+      );
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("the friction read verb refuses a name beginning with a dot", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      // The placeholder genuinely exists and is a direct child, so the
+      // refusal comes from the name alone, never from absence or scope.
+      await writeFile(join(frictionDir, ".gitkeep"), "placeholder bytes");
+
+      const named = await runCli(repo.dir, ["friction", ".gitkeep"]);
+      const spelled = await runCli(repo.dir, ["friction", "./.gitkeep"]);
+      const missing = await runCli(repo.dir, ["friction", "does-not-exist.md"]);
+      expect(named.code).toBe(2);
+      expect(named.code).toBe(missing.code);
+      expect(named.out).toContain("no note named '.gitkeep'");
+      expect(named.out).not.toContain("placeholder bytes");
+      // A dot-evading spelling of the same direct child is refused too: the
+      // test is on the resolved name, not on how the caller typed it.
+      expect(spelled.code).toBe(2);
+      expect(spelled.out).not.toContain("placeholder bytes");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
   it("refuses usage-shaped (exit 2) naming Chain.friction when the chain declares no channel", async () => {
     const repo = await makeJobRepo("main");
     try {

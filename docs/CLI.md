@@ -276,7 +276,11 @@ that note's bytes verbatim to stdout. Output is never interpreted — the engine
 lifecycle guarantee over the channel is interpretation-freedom, not read-freedom,
 and this verb only moves bytes; it never derives meaning from them. `name` must name
 a direct child of the declared directory — the same scope the bare list enumerates;
-a nested or escaping path is refused, not resolved. A chain that declares no
+a nested or escaping path is refused, not resolved. A dot-prefixed name is not a
+note: the bare list omits it, `name` refuses it as absent, and the `friction: N`
+count on `flume status` and `flume job status` skips it — a `.gitkeep` git made
+the consumer create for an otherwise-empty, gitignored channel dir is no work. The
+skip is by name alone, never by content. A chain that declares no
 `Chain.friction` refuses usage-shaped, naming the missing declaration. A declared but
 not-yet-created directory lists empty and exits `0` — the directory is created
 lazily by whichever engine write needs it first. Exits `0` on a successful list or

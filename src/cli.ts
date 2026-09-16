@@ -11,7 +11,7 @@
  * return may carry `agent` to override the default `claudeCode()`.
  */
 
-import { resolve, join, dirname, toNamespacedPath } from "node:path";
+import { resolve, join, basename, dirname, toNamespacedPath } from "node:path";
 import {
   mkdirSync,
   readdirSync,
@@ -70,6 +70,7 @@ import { parsePending } from "./PendingSchema.js";
 import { InlineExecRenderError } from "./Prompt.js";
 import {
   DEFAULT_PENDING_REL,
+  isDotName,
   loopLockPath,
   mergingDir,
   namespacedJoin,
@@ -790,8 +791,14 @@ async function main(): Promise<number> {
       // a nested path is refused identically, not resolved.
       const candidate = resolve(frictionDir, name);
       const isDirectChild = dirname(candidate) === resolve(frictionDir);
+      // And a dot-prefixed note is no note (spec/chain.md, "`Chain.friction`
+      // — the declared friction channel"), so naming one reads as absent —
+      // the same `isDotName` (`src/paths.ts`) the listing below and
+      // `countFrictionFiles` (`src/job.ts`) apply, over the resolved
+      // basename so `./.gitkeep` cannot spell its way past it.
+      const isNote = isDirectChild && !isDotName(basename(candidate));
       let bytes: Buffer | undefined;
-      if (isDirectChild) {
+      if (isNote) {
         try {
           bytes = readFileSync(namespacedJoin(frictionDir, name));
         } catch (err) {
@@ -829,8 +836,13 @@ async function main(): Promise<number> {
       // absence here is a legitimate, silent, zero-note state.
       return 0;
     }
+    // Dot-prefixed names are skipped here for the same reason the count and
+    // the read verb skip them: a placeholder git made the consumer create is
+    // no work (spec/chain.md, "`Chain.friction` — the declared friction
+    // channel"). One test, `isDotName` (`src/paths.ts`), so the listing and
+    // the count can never disagree about what the channel holds.
     const files = entries
-      .filter((e) => e.isFile())
+      .filter((e) => e.isFile() && !isDotName(e.name))
       .map((e) => e.name)
       .sort();
     // Every row is stat'd before any is printed: a half-list on stdout

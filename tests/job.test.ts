@@ -1463,6 +1463,28 @@ describe("jobStatus — enumeration units", () => {
     }
   });
 
+  it("the friction count skips a name beginning with a dot", async () => {
+    const dir = await mkTempDir("flume-job-status-");
+    try {
+      const jobs = join(dir, ".flume", "jobs");
+      const frictionDir = join(jobs, "alpha", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      // One real note beside the two placeholders git forces a consumer to
+      // create for an otherwise-empty, gitignored channel dir. Only the note
+      // is work (spec/chain.md, "`Chain.friction` — the declared friction
+      // channel"); the count must read 1, never 3.
+      await writeFile(join(frictionDir, "a.md"), "x\n");
+      await writeFile(join(frictionDir, ".gitkeep"), "");
+      await writeFile(join(frictionDir, ".gitignore"), "*\n");
+
+      expect(jobStatus(dir, "friction")).toEqual([
+        { name: "alpha", awake: [], pending: 0, frictionCount: 1 },
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("frictionCount reads null (not 0) when the friction dir exists but readdir fails for a non-ENOENT reason (job-frictioncount-loud-or-nothing)", async () => {
     const dir = await mkTempDir("flume-job-status-");
     try {
