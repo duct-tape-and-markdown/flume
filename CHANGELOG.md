@@ -11,6 +11,120 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-16
+
+The harness release: **flume's opinion ships beside the engine, opted into
+by a declaration.** `@dtmd/flume/harness` is the package this repo has been
+running itself on — three plan slices and build, their prompts, judges,
+gates, records and plan state — applied by `harnessChain({ api, declaration })`
+to a `.flume/declaration.ts` that says what varies per repository and nothing
+else. `npx flume-harness init` writes that declaration and a two-line
+`chain.ts`; `docs/MIGRATING-0.16.md` carries the five breaks and the porting
+guide. Windows is a supported host, read through its own CI lane. Two
+hundred eighty-five entries.
+
+### Breaking
+
+Each break is walked with before/after code in `docs/MIGRATING-0.16.md`.
+
+- **`WorktreeSetupContext.entryTag` is `worktreeKey`.** Same value, same
+  rule — the entry's tag under fanout, the phase name under singleton, never
+  absent. `entryTag` now names the *entry* everywhere the engine reports one,
+  with the opposite absence rule, so the two could not share a spelling. A
+  `setupWorktree`/`teardownWorktree` hook renames the destructured field.
+- **The tick verdict names the entry `entryTag` on every row.** The usage row
+  and the merge-outcome row in `tick-verdicts.jsonl` and `flume log --json`
+  drop `tag` for `entryTag`. Lines written by 0.15 keep the old key; a reader
+  spanning the cut uses `(.entryTag // .tag)`.
+- **Prior-attempt records are scoped by keyspace.** A phase name and an entry
+  tag that slugified onto one stem shared a file. Records now live at
+  `prior-attempts/<entry|phase>/<slug>.json`; `priorAttemptPath` takes
+  `{ keyspace, key }`; `TickContext.priorAttempts` and the verdict's
+  `clearedPriorAttempts` key by `entry:<slug>` / `phase:<name>`. A lookup by
+  bare identity misses silently — grep for it. Pre-upgrade records are
+  ignored and may be deleted.
+- **A tick loads only the MCP configuration the chain hands it.** The
+  `claudeCode` adapter passes `--strict-mcp-config` by default, so a headless
+  tick no longer boots the invoking user's own servers. `inheritUserMcp: true`
+  restores 0.15; `extraArgs: ["--mcp-config", …]` hands the tick its own.
+  This is the one break with no symbol to grep for.
+- **`TickVerdictGateResult` is `ReportedGateResult`, and hooks get the whole
+  row.** `handoff` and `shipped` receive the row the verdict records —
+  `details`, `verdict`, `skipped`, `failingFiles` beside `gate`, `ok`,
+  `message` — instead of a three-field narrowing that made a chain parse its
+  own gate's prose. Renamed in place; no alias.
+
+### Added
+
+- **The harness package** (`@dtmd/flume/harness`, `spec/harness.md`). A
+  declaration names the spec locus, the fence, channel paths, the runner
+  factory, gates by registry name or shell or script, agents per phase,
+  supervisor policy, the plan slices' sweep domain, the prompt slots, and CI
+  lanes. The factory returns a plain `Chain`; `chain.ts` stays the consumer's
+  to compose or bypass. The judges hold an entry's `tests[]` green on the
+  merged tree and red at the base, and its `pins[]` green.
+- **`flume-harness init`** scaffolds the declaration and the chain hop,
+  seeds an empty queue, derives the runtime ignore lines from the engine, and
+  refuses over an existing state root or an unreadable consumer manifest
+  before it writes anything.
+- **CI lanes as a findings source.** A declared lane's latest failed run is
+  read by the inbox slice, its failing titles keyed and filed, the run
+  stamped; a red lane past the stamp wakes plan, and the rendered block names
+  the lane that woke it.
+- **win32 is a supported host** (`spec/cli.md`). Every fs path in `src/` and
+  `harness/` composes through the namespaced idiom; git is spoken to in its
+  own alphabet, NUL-separated on every listing; the CLI entry check resolves
+  through libuv's realpath, which node 22's JS form cannot do over a
+  namespaced drive root; a worktree directory name is bounded below git's own
+  limit. The Windows lane is the fixture: a red title there is a defect,
+  never an accepted gap.
+- **A signalled loop takes the whole tick tree down.** The tick child runs in
+  its own process group; the supervisor signals it and waits, the child
+  signals its agent's group, escalates to `SIGKILL` after
+  `supervisorPolicy.killGraceMs` (default 5000, read per tick), and the
+  release announces the wait it enters. A bare `flume tick` does the same.
+  Release-on-signal is POSIX; stale-reclaim stays the cross-platform guarantee.
+- **The tag push publishes.** A `v*` tag runs the release workflow: refuses a
+  tag the manifest disagrees with, skips a version the registry already
+  resolves, publishes, polls the registry, then smokes the published tarball
+  through the shared install script.
+- **Engine facts on chain surfaces.** `AgentInvocation.entryTag`;
+  `AgentUsage` carries the agent's reported cost; `GateContext.touchedPaths`,
+  `stateRootRel`, `commitSha` and `baseSha` are required; `api.gitPath`,
+  `api.paths.stateRootRel`, git's worktree registry and decoded status records
+  on `FlumeApi`; `failingFiles` on every gate row; a gate's chain-authored
+  `verdict` on the tick verdict and the gate-revert record; a thrown gate or
+  hook is that gate's failure with its stack as details, never a lost tick; a
+  tick's uncommitted tracked edits are reported on the verdict; `FailureStage`
+  and the no-commit modes are exported rosters; `matchesAny` is exported.
+- **`inheritUserMcp` per phase**, and a differential gate can take an
+  engine-reclaimed checkout at a sha under the job namespace.
+- **A tick applies the chain factory once**, and the dispatcher's chain
+  loading, exit codes, and the plan-artifact layout each have one home.
+
+### Fixed
+
+- **An obstructed ancestor no longer reads as absent.** The existence probe
+  refuses a plain file where a directory was expected (`ENOTDIR`) instead of
+  reporting the path missing; the prior-attempt store and the merging marker
+  prove absence from the path, never from an errno.
+- **The tip claim is released on every exit.** The loop installs its release
+  handlers before taking either lock; a bare tick releases on
+  exit/`SIGINT`/`SIGTERM`; a signalled loop no longer orphans its tick child.
+- **`globToRegex` escapes `?`**, so a declared path matches only itself, and
+  globs compile in one pass.
+- **The changelog miner survives this repository's own range** — a log past
+  node's 1 MiB `maxBuffer` is read whole, and a failing git call refuses by
+  name — and refuses an unresolvable boundary instead of guessing one.
+- **`flume job run` refuses a CJS-context host** through the same arm as
+  `tick`; an unreadable merging directory or stop flag is `EX_IOERR`, never
+  read as empty.
+- **A per cite whose section text heads two sections is refused** at the
+  gate, so a duplicate heading cannot silently resolve to the wrong one.
+- **The friction harvest's filename is bounded to `NAME_MAX`**, and the
+  inline-exec output cap awaits the child it killed.
+
+
 ## [0.15.0] - 2026-09-14
 
 The reporting release: **what the engine holds, the chain reads.** Two
