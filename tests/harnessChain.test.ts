@@ -28,6 +28,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { harnessChain } from "../harness/chain.ts";
 import {
   BUILD_PHASE,
+  DEFAULT_SHELL,
   PHASES,
   PLAN_SLICES,
   parseDeclaration,
@@ -55,7 +56,11 @@ import { renderPrompt } from "../src/Prompt.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
-import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
+import {
+  SPAWN_BUDGET_MS,
+  gitOutSync,
+  spawnCaptureSync,
+} from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
@@ -1230,6 +1235,14 @@ it("docs/CHAIN-AUTHORING.md names exactly the FLUME_ variables a declared gate's
  * `exec sh "$@"` at the end so the gate still goes green on a command that
  * succeeds: a recorder that swallowed the command would leave every case
  * below reading a gate that ran nothing.
+ *
+ * **POSIX-only, by construction.** A shebang line and an executable
+ * permission bit are what make this file spawnable, and win32 carries
+ * neither — the bit toggles a read-only attribute there and confers nothing
+ * (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*),
+ * and the interpreter a `#!` names is read by the kernel, which no win32
+ * loader does. So {@link posixOnly} guards the two cases that declare this
+ * path as their shell.
  */
 async function recordingShell(tree: string): Promise<string> {
   const shell = join(tree, "recording-shell");
@@ -1241,7 +1254,20 @@ async function recordingShell(tree: string): Promise<string> {
   return shell;
 }
 
-it("a declared shell runs a command gate's command", async () => {
+/*
+ * The host {@link recordingShell} needs, declared rather than left to a lane
+ * to discover: the interposed recorder *is* the subject of the two cases
+ * below, and win32 has no substitute for it that keeps the subject intact. A
+ * `.cmd` recorder is reachable only through cmd.exe's re-parse of the gate's
+ * argv, which would put the case's assertions on that re-parse rather than on
+ * the spawn the gate made — a different subject wearing this one's title. The
+ * shell the package reaches *without* a declaration is covered on every host
+ * by the default-shell case further down, and that a declared shell is
+ * refused when the host will not run it by the chain-load case after it.
+ */
+const posixOnly = it.runIf(process.platform !== "win32");
+
+posixOnly("a declared shell runs a command gate's command", async () => {
   const tree = await mkTempDir("flume-harness-chain-declared-shell-");
   try {
     const shell = await recordingShell(tree);
@@ -1272,7 +1298,7 @@ it("a declared shell runs a command gate's command", async () => {
   }
 });
 
-it("a declared shell runs a script gate's committed path", async () => {
+posixOnly("a declared shell runs a script gate's committed path", async () => {
   const tree = await mkTempDir("flume-harness-chain-declared-shell-script-");
   try {
     const shell = await recordingShell(tree);
@@ -1303,18 +1329,34 @@ it("an undeclared shell runs a command gate under sh", async () => {
   // fixture chose.
   expect("shell" in DECLARATION).toBe(false);
 
-  const command = `printf '%s' "$0" > shell-name.txt`;
+  const report = `printf '%s' "$0"`;
+  const command = `${report} > shell-name.txt`;
   const gate = declaredGate({ kind: "shell", command, when: "afterCommit" }, command);
-  expect(gate.command).toBe(`sh -c ${command}`);
+  expect(gate.command).toBe(`${DEFAULT_SHELL} -c ${command}`);
 
   const tree = await mkTempDir("flume-harness-chain-default-shell-");
   try {
+    // What `$0` reads as is the *host's* resolution of the default name, not
+    // the name itself: git's `sh` on win32 is bash and reports
+    // `/usr/bin/bash`. So the expectation is spawned rather than spelled —
+    // the same name, handed to the host directly, under the same `-c` form
+    // the gate uses. A posix host answers `sh` here, so this lane's verdict
+    // is the one it always was.
+    const control = spawnCaptureSync(DEFAULT_SHELL, ["-c", report], { cwd: tree });
+    // Vacuity pins: two empty strings would agree. The control ran, and it
+    // said something (`.claude/rules/engineering.md`, *A green verdict is
+    // proven non-vacuous*).
+    expect({ status: control.status, said: control.stdout !== "" }).toEqual({
+      status: 0,
+      said: true,
+    });
+
     const result = await gate.run(gateContext(tree));
 
     expect(result.ok, result.details).toBe(true);
     // `$0` under `-c` is the shell as it was invoked, so this is the name the
     // package spawned — read off the child, not off the printed line above.
-    expect(await readFile(join(tree, "shell-name.txt"), "utf8")).toBe("sh");
+    expect(await readFile(join(tree, "shell-name.txt"), "utf8")).toBe(control.stdout);
   } finally {
     await rm(tree, { recursive: true, force: true });
   }
@@ -1332,7 +1374,7 @@ it("chain load refuses a shell the host does not resolve, naming the gate", () =
 
   // Control: the package's default shell loads on this host, so the refusal
   // below is the declared shell's doing and not the gate declaration's.
-  expect(loadWith("sh")).not.toThrow();
+  expect(loadWith(DEFAULT_SHELL)).not.toThrow();
 
   // `COMMAND` is the case's unresolvable name throughout this file — a shell
   // no host answers to.
