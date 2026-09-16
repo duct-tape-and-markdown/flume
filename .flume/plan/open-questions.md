@@ -167,3 +167,59 @@ an entry can cite it.
 
 Recommended (a). A plan-tick-to-build-wave ratio of 2:1 would have been
 visible at hour two, which is the decision this number is for.
+
+## A windows-lane red over a tree whose program bytes did not change
+
+**PARKED.** The `windows` lane failed run 35123050551 on one title —
+`Dispatcher fanout — the merge-stage crash marker > the merge stage writes a
+merging marker naming the branch, the base sha and the entry before the pick`
+— at its second assertion: MARK-B's `mergeOutcomes` row was `undefined` where
+`cherry-pick-conflict` was expected. `shippedTags` was `["MARK-A","MARK-C"]`,
+so B did not ship.
+
+Nondeterminism is proven, not inferred: the run's commit (9af54562) touched
+`spec/*.md` and `.flume/inbox/` only — no `src/`, `tests/` or `harness/`
+byte — and the windows job was green on its parent (b7b6169b, run
+35120656922). Same tree for everything vitest runs, two different verdicts.
+
+The fate is readable from the engine's own code path. An entry reaching the
+merge loop with `committed: false` and no captured footprint gets **no**
+`mergeOutcomes` row at all (`src/Dispatcher.ts`, the `!r.committed` leg) —
+that absence is the `undefined`. `committed: false` with no footprint is what
+a thrown or aborted agent `invoke` produces: the catch classifies it
+platform-preempt and the phase falls through. So B never committed in its
+worktree; it did not conflict, and it did not merge.
+
+What is not readable from the log is *why*, and the log cannot say, because
+the assertion reads `mergeOutcomes` alone while the engine already reports
+the fate on `result.entries[].noCommit`.
+
+Candidate causes, all consistent with the evidence:
+
+- **Concurrent git across sibling worktrees on win32.** The wave runs three
+  agents in parallel, each running `git add` + `git commit` in its own
+  worktree of one repository. Windows file locking is mandatory; a transient
+  failure in one of those children throws out of the fixture's `exec`. If
+  this is the cause it is **not a fixture artifact** — a production win32
+  wave runs the same concurrent git through separate `claude -p` processes,
+  and would silently drop an entry per wave to platform-preempt.
+- **A per-invocation abort on a loaded runner.** The file took 575s on this
+  lane; an abort lands in the same catch and is indistinguishable here.
+- Something else in the attempt leg that leaves no commit.
+
+- **(a)** Make the fate reportable first: the test asserts B's precondition
+  off `result.entries` — which carries `committed` and `noCommit` per entry —
+  so the next red names which of the three happened, instead of `undefined`.
+  Costs nothing if the cause turns out to be environmental, and is the only
+  arm that needs no reproduction.
+- **(b)** Treat concurrent sibling-worktree git on win32 as the suspect now:
+  measure it, and if it holds, it wants a `platform-facts.md` entry and an
+  engine answer (a retry, or serialized merge-stage-adjacent git), not a
+  fixture change.
+- **(c)** Accept it as an environmental flake and re-file if it recurs.
+
+Recommended **(a) now, then (b) if it recurs** — a fix aimed at a described
+symptom rather than a reproduced one is a guess (`CLAUDE.md`,
+Non-Negotiables), and (a) is what converts the next red into the
+reproduction (b) would need. (c) alone leaves an intermittent red training
+the reader to ignore the lane.
