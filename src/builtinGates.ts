@@ -7,7 +7,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, toNamespacedPath } from "node:path";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
 import type { Phase } from "./Phase.js";
@@ -356,7 +356,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       let raw: string;
       if (ctx.stateRootRel === undefined) {
         try {
-          raw = await readFile(ctx.pendingPath, "utf8");
+          raw = await readFile(toNamespacedPath(ctx.pendingPath), "utf8");
         } catch {
           return {
             ok: false,

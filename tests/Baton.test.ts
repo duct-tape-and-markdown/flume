@@ -174,8 +174,8 @@ describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
   // identically whether Baton routes through namespacedJoin or a bare join.
   // Pin the source shape directly, per PendingSchema.test.ts's precedent for
   // this kind of platform fact — through the scan the package-wide pin
-  // (tests/harnessPaths.test.ts) judges harness/ with, so this module cannot
-  // be admitted by a looser copy of one rule.
+  // (tests/namespacedFsPaths.test.ts) judges src/ and harness/ with, so this
+  // module cannot be admitted by a looser copy of one rule.
   //
   // The scan's subjects are Baton.ts's own fs imports, never a list restated
   // here (`.claude/rules/engineering.md`, *Derived state is computed, never
@@ -185,7 +185,7 @@ describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
   // caller's, so it is a subject exactly as `node:fs` calls are.
   const src = readFileSync(BATON_SRC_PATH, "utf8");
   const imports = fsImports(src);
-  const scan = scanFsCalls(src);
+  const scan = scanFsCalls("src/Baton.ts", src);
 
   it("imports namespacedJoin from ./paths.js", () => {
     // Named alongside whatever else Baton takes from paths.js (the state-root
@@ -205,7 +205,7 @@ describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
 
   it("every fs symbol src/Baton.ts imports is called on a namespacedJoin argument", () => {
     expect(scan.uncalled, "imported but never called").toEqual([]);
-    expect(scan.bare.map((call) => describeBareCall(call, "src/Baton.ts"))).toEqual([]);
+    expect(scan.bare.map((call) => describeBareCall(scan, call))).toEqual([]);
   });
 });
 

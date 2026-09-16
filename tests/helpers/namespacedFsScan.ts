@@ -1,7 +1,7 @@
 /**
  * namespacedFsScan — the source scan that reads a module's fs calls and says
- * which of them reach disk on a path that was not composed through
- * `namespacedJoin` (`.claude/rules/platform-facts.md`, *Windows MAX_PATH
+ * which of them reach disk on a path that was not composed for win32's
+ * total-path limit (`.claude/rules/platform-facts.md`, *Windows MAX_PATH
  * (~260 chars) breaks fs calls with no long component*).
  *
  * **Why a source scan at all.** `toNamespacedPath` is identity on posix, so a
@@ -11,55 +11,125 @@
  * it, and this is the one reader of that shape.
  *
  * **One spelling.** The per-module pin (`tests/Baton.test.ts`) and the
- * tree-wide one (`tests/harnessPaths.test.ts`) both judge through here, so a
- * module joining the scan cannot be admitted by a looser copy of the rule
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ * tree-wide one (`tests/namespacedFsPaths.test.ts`) both judge through here,
+ * so a module joining the scan cannot be admitted by a looser copy of the
+ * rule (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
  * The subjects are a module's *own* fs imports, never a list restated by a
  * caller: a new fs import joins the scan by being written.
  *
- * The rule is the shared idiom, not merely a namespaced result: a path
- * already spelled `toNamespacedPath(join(…))` by hand reds here, because the
- * fact's own instruction is to reach for `namespacedJoin` rather than
- * re-pair the two steps at a call site.
+ * **What counts as composed.** `namespacedJoin` (`src/paths.ts`) is the
+ * shared idiom, and a path built from segments reaches for it: a site
+ * spelling `toNamespacedPath(join(…))` by hand reds here, because re-pairing
+ * the two steps at a call site is what the shared idiom exists to stop. A
+ * path that arrives whole — a caller's dir, a resolved manifest, a value a
+ * layout accessor already returned — has no segments to join, and
+ * `toNamespacedPath` over it is the whole fold; `toNamespacedPath(<anything
+ * but a join>)` therefore passes, and is the form most of `src/` already
+ * carries.
+ *
+ * **Whose fold it is.** Which arguments of a call are paths, and who
+ * composed them, is the called symbol's own contract, not "argument 0, the
+ * caller's" everywhere: `statLoud` and `existsLoud` (`src/fsProbe.ts`) stat
+ * the path they are handed and say so, while `isDirectoryOrAbsent` names its
+ * subject first and namespaces each step of the variadic descent after it.
+ * The scan reads that contract per symbol ({@link PATH_CONTRACTS}), so a
+ * subject label is never mistaken for a path and a descent's paths are never
+ * charged to the caller.
  */
 
 /**
- * The modules whose named exports reach disk. `fsProbe` is one of them: it
+ * The engine's loud existence probe, by module stem. Both uses below are the
+ * one fact: a module importing from it reaches disk (so those calls are
+ * scanned), and the probe's own module is where the path a caller composed
+ * is finally spent (so its calls are not scanned again).
+ */
+const PROBE_STEM = "fsProbe";
+
+/**
+ * The modules whose named exports reach disk. The probe is one of them: it
  * stats the path it is handed and declares the join its caller's
  * (`src/fsProbe.ts`), so a call on a bare join there is the same defect as a
  * `node:fs` one.
  */
-const FS_MODULE = /^(?:node:)?fs(?:\/promises)?$|(?:^|\/)fsProbe\.js$/;
+const FS_MODULE = new RegExp(
+  `^(?:node:)?fs(?:/promises)?$|(?:^|/)${PROBE_STEM}\\.js$`,
+);
 
 /**
- * The fs calls whose *second* argument is a path as well — node:fs's copy,
- * move and link family, where destination and source are both on disk.
- * Every other fs call takes its only path first, and a second argument that
- * is content (`writeFile`'s body) or options (`mkdir`'s `{ recursive }`) is
- * not a path and is not scanned.
+ * The probe's own source, judged as nobody's caller. Its `statSync` *is* the
+ * call every scanned path is composed for, and the contract it declares is
+ * that the caller already folded (`src/fsProbe.ts`) — so demanding a fold
+ * there is the scan asking the delegate to redo what it delegates. Its
+ * imports are still read, so an fs symbol it imports and never calls is
+ * still reported.
  */
-const SECOND_PATH_ARG = new Set([
-  "copyFile",
-  "copyFileSync",
-  "cp",
-  "cpSync",
-  "rename",
-  "renameSync",
-  "link",
-  "linkSync",
-  "symlink",
-  "symlinkSync",
+const PROBE_SOURCE = new RegExp(`(?:^|/)${PROBE_STEM}\\.ts$`);
+
+/** Which arguments of one fs call carry a path, and who composed them. */
+interface PathContract {
+  /** The argument positions holding a path, given the call's arity. */
+  positions: (arity: number) => number[];
+  /**
+   * `true` when the callee folds each path it is handed, so the call site
+   * owes nothing: the argument is read as a path and not judged.
+   */
+  calleeFolds: boolean;
+}
+
+/** Argument 0, composed by the caller — every fs call not named below. */
+const CALLER_FOLDS_FIRST: PathContract = {
+  positions: () => [0],
+  calleeFolds: false,
+};
+
+/**
+ * The calls whose path arguments are not "the first one, the caller's".
+ *
+ * `node:fs`'s copy, move and link family takes a destination as well as a
+ * source, both on disk. Every other `node:fs` call takes its only path
+ * first, and a second argument that is content (`writeFile`'s body) or
+ * options (`mkdir`'s `{ recursive }`) is not a path and is not scanned.
+ *
+ * `isDirectoryOrAbsent` (`src/fsProbe.ts`) is the variadic one: argument 0
+ * is the noun phrase its refusal names, and every argument after it is a
+ * step of a descent the probe namespaces itself, because it owns the whole
+ * walk rather than a path a caller composed.
+ */
+const PATH_CONTRACTS = new Map<string, PathContract>([
+  ...[
+    "copyFile",
+    "copyFileSync",
+    "cp",
+    "cpSync",
+    "rename",
+    "renameSync",
+    "link",
+    "linkSync",
+    "symlink",
+    "symlinkSync",
+  ].map<[string, PathContract]>((fn) => [
+    fn,
+    { positions: () => [0, 1], calleeFolds: false },
+  ]),
+  [
+    "isDirectoryOrAbsent",
+    {
+      positions: (arity) =>
+        Array.from({ length: Math.max(arity - 1, 0) }, (_, i) => i + 1),
+      calleeFolds: true,
+    },
+  ],
 ]);
 
 /** How many bindings deep a path expression may be resolved before giving up. */
 const MAX_HOPS = 8;
 
-/** One fs call site whose path argument was not composed through `namespacedJoin`. */
+/** One fs call site whose path argument was not composed. */
 export interface BareFsCall {
   /** The imported fs symbol called, as the module binds it locally. */
   fn: string;
-  /** Which argument is the path that did not compose — 0 or 1. */
+  /** Which argument is the path that did not compose. */
   position: number;
   /** That argument's text, string bodies blanked — for the failure message. */
   argument: string;
@@ -190,8 +260,11 @@ function arrowBody(expression: string): string {
 }
 
 /**
- * Whether `expression` reaches `namespacedJoin`, following module-local
- * bindings.
+ * Whether `expression` is a composed path, following module-local bindings.
+ *
+ * `namespacedJoin(…)` composes; `toNamespacedPath(…)` composes over anything
+ * that is not itself a `join`, which is the header's rule at the rung the
+ * scan can hold it.
  *
  * A path argument is routinely a name rather than the composition itself —
  * `const path = onDisk(stateRoot)` over a `const onDisk = (root) =>
@@ -205,13 +278,17 @@ function arrowBody(expression: string): string {
  * scan reads expressions, not control flow — so such a call site wraps at
  * the call instead.
  */
-function composesThroughNamespacedJoin(
+function isComposed(
   masked: string,
   expression: string,
   seen: Set<string> = new Set(),
 ): boolean {
   const text = arrowBody(expression.trim());
   if (text.startsWith("namespacedJoin(")) return true;
+  if (text.startsWith("toNamespacedPath(")) {
+    const inner = splitArguments(text, text.indexOf("("))[0] ?? "";
+    return !/^\s*join\s*\(/.test(inner);
+  }
   if (seen.size >= MAX_HOPS) return false;
 
   const head = /^([A-Za-z_$][\w$]*)\s*(\(|$)/.exec(text);
@@ -227,7 +304,7 @@ function composesThroughNamespacedJoin(
 
   const next = new Set([...seen, name]);
   return bindings.every((b) =>
-    composesThroughNamespacedJoin(masked, masked.slice(b.index! + b[0].length), next),
+    isComposed(masked, masked.slice(b.index! + b[0].length), next),
   );
 }
 
@@ -255,33 +332,43 @@ function splitArguments(masked: string, open: number): string[] {
 
 /** What one module's scan found. */
 export interface FsCallScan {
+  /** The module scanned, from the repo root — the failure message's subject. */
+  module: string;
   /** The fs symbols the module imports, in import order. */
   symbols: string[];
-  /** How many path arguments were judged — the scan's own vacuity count. */
+  /** How many path arguments this module owed a fold on — its vacuity count. */
   judged: number;
-  /** The judged arguments that were not composed through `namespacedJoin`. */
+  /**
+   * How many path arguments were read at a call whose callee folds them
+   * ({@link PATH_CONTRACTS}) — read, never charged to this module.
+   */
+  delegated: number;
+  /** The judged arguments that were not composed. */
   bare: BareFsCall[];
   /** Imported fs symbols the module never calls — an import the scan cannot judge. */
   uncalled: string[];
 }
 
 /**
- * Every fs call in `source`, with the path arguments that were not composed
- * through `namespacedJoin`. An empty `bare` over a non-zero `judged` means
- * the module holds the idiom throughout; `judged` is zero exactly when the
- * module imports no fs, which is why callers pin it rather than reading the
- * empty list as a verdict (`.claude/rules/engineering.md`, *A green verdict
- * is proven non-vacuous*).
+ * Every fs call in `module`'s `source`, with the path arguments its own call
+ * sites owed a fold on and did not compose. An empty `bare` over a non-zero
+ * `judged` means the module holds the idiom throughout; `judged` is zero
+ * when the module imports no fs, and when every path it passes is one a
+ * callee folds, which is why callers pin it rather than reading the empty
+ * list as a verdict (`.claude/rules/engineering.md`, *A green verdict is
+ * proven non-vacuous*).
  *
  * Member calls (`api.readFile(…)`) are not call sites of the imported symbol
  * and are skipped.
  */
-export function scanFsCalls(source: string): FsCallScan {
+export function scanFsCalls(module: string, source: string): FsCallScan {
   const masked = maskNonCode(source);
   const symbols = fsSymbols(source);
+  const isProbe = PROBE_SOURCE.test(module);
   const bare: BareFsCall[] = [];
   const uncalled: string[] = [];
   let judged = 0;
+  let delegated = 0;
 
   for (const fn of symbols) {
     const calls = [...masked.matchAll(new RegExp(`(?<![.\\w$])${fn}\\s*\\(`, "g"))];
@@ -289,14 +376,20 @@ export function scanFsCalls(source: string): FsCallScan {
       uncalled.push(fn);
       continue;
     }
+    if (isProbe) continue;
+    const contract = PATH_CONTRACTS.get(fn) ?? CALLER_FOLDS_FIRST;
     for (const call of calls) {
       const open = call.index! + call[0].length - 1;
       const args = splitArguments(masked, open);
-      for (const position of SECOND_PATH_ARG.has(fn) ? [0, 1] : [0]) {
+      for (const position of contract.positions(args.length)) {
         const argument = args[position];
         if (argument === undefined) continue;
+        if (contract.calleeFolds) {
+          delegated++;
+          continue;
+        }
         judged++;
-        if (composesThroughNamespacedJoin(masked, argument)) continue;
+        if (isComposed(masked, argument)) continue;
         bare.push({
           fn,
           position,
@@ -306,10 +399,10 @@ export function scanFsCalls(source: string): FsCallScan {
       }
     }
   }
-  return { symbols, judged, bare, uncalled };
+  return { module, symbols, judged, delegated, bare, uncalled };
 }
 
-/** A `BareFsCall` as one line of a failure message. */
-export function describeBareCall(call: BareFsCall, where: string): string {
-  return `${where}:${call.line} — ${call.fn}() path argument ${call.position}, \`${call.argument}\`, is not built through namespacedJoin`;
+/** A `BareFsCall` as one line of a failure message, named by its module. */
+export function describeBareCall(scan: FsCallScan, call: BareFsCall): string {
+  return `${scan.module}:${call.line} — ${call.fn}() path argument ${call.position}, \`${call.argument}\`, is not composed for win32's path limit`;
 }

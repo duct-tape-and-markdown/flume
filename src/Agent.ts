@@ -9,8 +9,8 @@
 
 import { mkdir } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
-import { basename, join } from "node:path";
-import { fsStamp } from "./paths.js";
+import { basename, toNamespacedPath } from "node:path";
+import { fsStamp, namespacedJoin } from "./paths.js";
 import { spawnProcessTree, terminateProcessTree } from "./processTree.js";
 import { isWin32ShimSpawnFailure } from "./spawnShim.js";
 
@@ -415,9 +415,9 @@ export function withSessionCapture(
   return {
     name: `${agent.name}+capture`,
     async invoke(inv) {
-      await mkdir(opts.dir, { recursive: true });
+      await mkdir(toNamespacedPath(opts.dir), { recursive: true });
       const name = opts.filename?.(inv) ?? defaultCaptureFilename(inv);
-      const stream = createWriteStream(join(opts.dir, name), {
+      const stream = createWriteStream(namespacedJoin(opts.dir, name), {
         encoding: "utf8",
       });
       const wrapped: AgentInvocation = {

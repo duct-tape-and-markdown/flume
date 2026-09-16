@@ -19,7 +19,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, toNamespacedPath } from "node:path";
 
 import { existsLoud } from "./fsProbe.js";
 
@@ -44,7 +44,7 @@ export function resolvePackageJson(fromDir: string): string {
   const tried = PACKAGE_JSON_HOPS.map((hop) =>
     resolve(fromDir, hop, "package.json"),
   );
-  const found = tried.find((candidate) => existsLoud(candidate));
+  const found = tried.find((candidate) => existsLoud(toNamespacedPath(candidate)));
   if (found === undefined) {
     throw new Error(
       `flume: no package.json at any of ${tried.join(", ")} — ` +
@@ -70,7 +70,7 @@ interface SelfPackage {
  */
 export function readSelfPackage(fromDir: string): SelfPackage {
   const pkgPath = resolvePackageJson(fromDir);
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<
+  const pkg = JSON.parse(readFileSync(toNamespacedPath(pkgPath), "utf8")) as Record<
     string,
     unknown
   >;

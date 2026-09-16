@@ -16,7 +16,7 @@ import { execFile } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { Baton } from "./Baton.js";
@@ -152,11 +152,18 @@ function jobDirPathspec(name: string): string {
  * The merge is the same detection either way, and a second spelling is how
  * one caller comes to duplicate a line the other deduped
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * `path` is folded here rather than by its callers: both adopters hand over a
+ * root the consumer chose and this function is the only thing that touches
+ * disk under it, so the fold has one home
+ * (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks
+ * fs calls with no long component*).
  */
 export async function mergeIgnoreLines(
   path: string,
   lines: readonly string[],
 ): Promise<string[]> {
+  const file = toNamespacedPath(path);
   // Absent (`ENOENT`) is the empty file: nothing authored, nothing to merge
   // into. Any other read failure rethrows rather than reading as empty — an
   // unreadable `.gitignore` treated as "" would be rewritten with the merged
@@ -164,7 +171,7 @@ export async function mergeIgnoreLines(
   // preserve (`.claude/rules/engineering.md`, "Loud or nothing").
   let existing: string;
   try {
-    existing = await readFile(path, "utf8");
+    existing = await readFile(file, "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
     existing = "";
@@ -174,7 +181,7 @@ export async function mergeIgnoreLines(
   if (missing.length === 0) return [];
   const base =
     existing.length === 0 || existing.endsWith("\n") ? existing : existing + "\n";
-  await writeFile(path, base + missing.join("\n") + "\n", "utf8");
+  await writeFile(file, base + missing.join("\n") + "\n", "utf8");
   return missing;
 }
 

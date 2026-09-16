@@ -36,8 +36,11 @@ import { toNamespacedPath } from "node:path";
  * {@link isDirectoryOrAbsent} runs and what a caller needing a cross-host
  * absence reaches for.
  *
- * Callers pass a `namespacedJoin`ed path (`src/paths.ts`) — win32 MAX_PATH is
- * the caller's join, not this probe's.
+ * The fold for win32's total-path limit is the caller's, not this probe's:
+ * `namespacedJoin` (`src/paths.ts`) where the caller has segments to join,
+ * `toNamespacedPath` where the path arrived whole. Unlike
+ * {@link isDirectoryOrAbsent}, this call owns no walk and so composes
+ * nothing.
  */
 export function statLoud(path: string): Stats | undefined {
   try {
@@ -58,8 +61,11 @@ export function statLoud(path: string): Stats | undefined {
  * split `readPendingLoose` and `countFrictionFiles` (`src/job.ts`) give a
  * read, and the same win32 bound {@link statLoud} declares.
  *
- * Callers pass a `namespacedJoin`ed path (`src/paths.ts`) — win32 MAX_PATH is
- * the caller's join, not this probe's.
+ * The fold for win32's total-path limit is the caller's, not this probe's:
+ * `namespacedJoin` (`src/paths.ts`) where the caller has segments to join,
+ * `toNamespacedPath` where the path arrived whole. Unlike
+ * {@link isDirectoryOrAbsent}, this call owns no walk and so composes
+ * nothing.
  */
 export function existsLoud(path: string): boolean {
   return statLoud(path) !== undefined;

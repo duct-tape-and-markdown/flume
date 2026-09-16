@@ -11,7 +11,7 @@
  * return may carry `agent` to override the default `claudeCode()`.
  */
 
-import { resolve, join, dirname } from "node:path";
+import { resolve, join, dirname, toNamespacedPath } from "node:path";
 import {
   mkdirSync,
   readdirSync,
@@ -540,7 +540,7 @@ async function main(): Promise<number> {
     // never conditioned on whether a supervisor happens to be live right
     // now (that liveness-conditioned phrasing is `status`'s stop-flag line).
     const stopPath = stopFlagPath(flumeDir);
-    mkdirSync(flumeDir, { recursive: true });
+    mkdirSync(toNamespacedPath(flumeDir), { recursive: true });
     writeFileSync(namespacedJoin(stopPath), "");
     console.log(
       `[flume] wrote ${stopPath}: a live supervisor finishes its in-flight ` +
@@ -1153,7 +1153,7 @@ async function main(): Promise<number> {
     process.on("exit", dropLock);
     process.on("SIGINT", () => void releaseAndExit(130));
     process.on("SIGTERM", () => void releaseAndExit(143));
-    mkdirSync(flumeDir, { recursive: true });
+    mkdirSync(toNamespacedPath(flumeDir), { recursive: true });
     const priorPid = await liveLoopPid(flumeDir);
     if (priorPid !== null) {
       console.error(
@@ -1317,7 +1317,7 @@ export function isInvokedDirectly(argv1: string | undefined): boolean {
   if (argv1 === undefined) return false;
   let argv1Url: string;
   try {
-    argv1Url = pathToFileURL(realpathSync(argv1)).href;
+    argv1Url = pathToFileURL(realpathSync(toNamespacedPath(argv1))).href;
   } catch {
     argv1Url = pathToFileURL(argv1).href;
   }

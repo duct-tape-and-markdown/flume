@@ -30,6 +30,7 @@
 
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { toNamespacedPath } from "node:path";
 
 import type { Phase } from "./Phase.js";
 import { entryWriteScope } from "./paths.js";
@@ -493,7 +494,7 @@ export interface RenderOptions {
  * what is enforced, then what failed last time, then the work.
  */
 export async function renderPrompt(opts: RenderOptions): Promise<string> {
-  const raw = await readFile(opts.promptFile, "utf8");
+  const raw = await readFile(toNamespacedPath(opts.promptFile), "utf8");
   // FLUME_DIR is reserved and dispatcher-authoritative: merge it last so a
   // chain-supplied arg of the same name cannot shadow the resolved root.
   const args = {
