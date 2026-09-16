@@ -328,6 +328,12 @@ posture sweep's domain. The package's prompts are markdown files under
 covered by the package's `files` allowlist; each phase the package constructs
 names its prompt by the absolute path resolved from the package's own location.
 
+The three layers and their two borders — what each owns, how the layer
+outside extends it, the test that places a thing, and which way a finding
+travels — are stated once for a consumer's reading in `docs/LAYERS.md`; this
+page and `.claude/rules/engine-boundary.md` are its sources, and it restates
+neither, it points.
+
 ## What this repo is
 
 This repo's own `.flume/` is the package's reference consumer: `chain.ts` is the

@@ -467,6 +467,8 @@ follows enough usage signal to commit under semver.
 
 ## Pointers
 
+- [`docs/LAYERS.md`](docs/LAYERS.md) — the three layers and their borders:
+  who owns what, how each is extended from outside, where a finding goes.
 - [`docs/INTENT.md`](docs/INTENT.md) — design rationale: the spine, what
   stays prose, what becomes JSON, non-goals.
 - [`docs/MIGRATING-0.16.md`](docs/MIGRATING-0.16.md) — upgrade note for a
