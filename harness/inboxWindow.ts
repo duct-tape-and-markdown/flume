@@ -1,7 +1,8 @@
 /**
  * The inbox slice's window (`spec/harness.md`, *The phases*): the record
  * queues, the build refusals still standing against entries the queue
- * carries, and the declared CI lanes.
+ * carries, the declared CI lanes, and the derive cursor this drain may
+ * advance through what it routed.
  *
  * The first two legs are there because there are two ways work reaches this
  * slice from inside the loop — someone left a file, or a build wave walled —
@@ -9,7 +10,9 @@
  * finding is never read; without the refusal leg a parked entry stays
  * pickable, plan yields to build, and build re-parks into the same wall. The
  * lanes are the third source, and the only one whose evidence sits off this
- * disk (`ciLane.ts`).
+ * disk (`ciLane.ts`). The derive cursor is no source at all — nothing about
+ * it wakes this slice; it is what a drained record lets this tick *close*
+ * (`spec/harness.md`, *Plan state as declared state*).
  *
  * **A signal is not unrouted work.** Those two legs read the same disk and
  * answer differently to a queue that still has work in it: the record leg
@@ -29,7 +32,9 @@ import { namespacedJoin, slugify } from "../src/paths.js";
 import type { PriorAttempt } from "../src/Prompt.js";
 
 import { laneLeg } from "./ciLane.js";
+import { cursorRange } from "./cursorWindow.js";
 import { INBOX_PHASE } from "./declaration.js";
+import { touches } from "./gitRange.js";
 import { PLAN_RESOLVES_MERGE, PLAN_RESOLVES_NO_COMMIT } from "./handoff.js";
 import { RECORD_MAX_BYTES, recordFiles, recordsPending } from "./records.js";
 import {
@@ -83,6 +88,7 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       RECORDS: renderRecords(ctx.flumeDir),
       BUILD_RECORDS: renderBuildRecords(ctx),
       CI_LANES: lanes.render(ctx.flumeDir),
+      DERIVE_CURSOR: renderDeriveCursor(ctx, options),
     }),
     dataKeys: SLICE_DATA_KEYS[INBOX_PHASE],
   };
@@ -217,4 +223,61 @@ function renderBuildRecords(ctx: WindowContext): string {
     lines.push(JSON.stringify(record, null, 2));
   }
   return lines.join("\n");
+}
+
+/**
+ * The derive cursor and the spec-locus commits standing past it, oldest
+ * first — the shas this drain may advance `derivedThrough` through, and
+ * nothing else.
+ *
+ * **Named here, never rediscovered by the tick.** A record that routes a
+ * spec commit's derivation leaves that commit derived, and a drain told only
+ * "advance the cursor" would resolve a sha itself and stamp over whatever
+ * landed while it worked. The candidates are listed instead, so the advance
+ * is a choice among facts the window already read — the same discipline the
+ * bootstrap tip and the derive window's `may advance to` line carry
+ * (`.claude/rules/posture-sweep.md`, *The stamp*). Which of them a record
+ * actually claimed is the drain's judgement, and the prompt bounds it to a
+ * leading run.
+ *
+ * Listed without their diffs: this slice does not derive them. The drain
+ * reads a commit here only to recognise the one its routed record was about,
+ * and rendering the patches would be the derive window's material in a slice
+ * that will not read it.
+ *
+ * **Absent when nothing consults the cursor.** A consumer that did not
+ * enable the derive slice has a `derivedThrough` no window is drawn past, so
+ * there is no tick to save and no listing worth a `git log` per drain —
+ * said, rather than rendered empty, since an empty listing reads as a quiet
+ * tree.
+ */
+function renderDeriveCursor(
+  ctx: WindowContext,
+  options: PlanSliceWindowsOptions,
+): string {
+  if (!options.declaration.slices.enabled.includes("plan-derive")) {
+    return (
+      "(the derive slice is not enabled here, so `derivedThrough` is a " +
+      "cursor no window is drawn past; advance nothing.)"
+    );
+  }
+  const locus = options.declaration.specLocus;
+  return cursorRange("derivedThrough", ctx, {
+    absent: () =>
+      "(no plan state yet, so there is no `derivedThrough` to advance; the " +
+      "derive slice stamps the first one. Advance nothing.)",
+    render: (cursor, all) => {
+      const inLocus = all.filter((commit) => touches(commit, locus));
+      const lines = [
+        `=== \`derivedThrough\` is at ${cursor}; ${inLocus.length} spec-locus ` +
+          `commit(s) stand past it, oldest first ===`,
+      ];
+      if (inLocus.length === 0) {
+        lines.push("(nothing past the cursor; advance nothing.)");
+        return lines.join("\n");
+      }
+      lines.push(...inLocus.map((commit) => `${commit.sha} ${commit.subject}`));
+      return lines.join("\n");
+    },
+  });
 }

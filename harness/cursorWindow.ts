@@ -3,9 +3,11 @@
  * spelled reason there are none to read.
  *
  * The derive and sweep slices differ only in which cursor they are drawn past,
- * which globs they are drawn over, and what they make of the commits they get
- * — so the three states a cursor can be in are decided once here rather than
- * twice beside them (`.claude/rules/engineering.md`, *A module is one job*).
+ * which globs they are drawn over, and what they make of the commits they get;
+ * the inbox slice differs further, reading a cursor it is not drawn past but
+ * may advance — so the three states a cursor can be in are decided once here
+ * rather than three times beside them (`.claude/rules/engineering.md`, *A
+ * module is one job*).
  *
  * **The cursors are fields, never prose.** `derivedThrough` and `sweptThrough`
  * arrive through {@link readPlanState}; nothing here regexes a sha out of a
@@ -46,11 +48,43 @@ type CursorField = {
 
 /**
  * The commits past this window's cursor, handed to `render`, or the refusal
- * that stands in for them.
+ * that stands in for them — with `absent` deciding what a state root carrying
+ * no artifact yet opens over.
+ *
+ * The absent leg is the one of the three states a reader can legitimately
+ * differ on: a slice drawn past a cursor opens over the whole corpus
+ * ({@link cursorWindow}), while a slice that only *may* advance one has
+ * nothing to advance and says so. The other two — a cursor naming no commit,
+ * a tree git will not read — are the same refusal for every reader, so they
+ * are decided here rather than beside each caller
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+export function cursorRange(
+  field: CursorField,
+  ctx: WindowContext,
+  legs: {
+    readonly absent: () => string;
+    readonly render: (cursor: string, commits: RangeCommit[]) => string;
+  },
+): string {
+  return bounded(field, ctx, () => {
+    const state = readPlanState(ctx.flumeDir);
+    if (state === undefined) return legs.absent();
+    const cursor = state[field];
+    if (!resolvesInTree(ctx.cwd, cursor)) {
+      return unresolvedCursor(field, cursor, ctx.flumeDir);
+    }
+    return legs.render(cursor, commitsPast(ctx.cwd, cursor));
+  });
+}
+
+/**
+ * The window a slice drawn past this cursor opens: {@link cursorRange} with
+ * the bootstrap corpus as its absent leg.
  *
  * `globs` is what the window looks at, and it is declared rather than assumed:
- * the bootstrap listing below is drawn from it, and `render` narrows the same
- * list by the engine's own `matchesAny`. One dialect, so git is never handed a
+ * the bootstrap listing is drawn from it, and `render` narrows the same list
+ * by the engine's own `matchesAny`. One dialect, so git is never handed a
  * second reading of the declaration.
  */
 export function cursorWindow(
@@ -59,14 +93,9 @@ export function cursorWindow(
   ctx: WindowContext,
   render: (cursor: string, commits: RangeCommit[]) => string,
 ): string {
-  return bounded(field, ctx, () => {
-    const state = readPlanState(ctx.flumeDir);
-    if (state === undefined) return bootstrap(field, ctx, globs);
-    const cursor = state[field];
-    if (!resolvesInTree(ctx.cwd, cursor)) {
-      return unresolvedCursor(field, cursor, ctx.flumeDir);
-    }
-    return render(cursor, commitsPast(ctx.cwd, cursor));
+  return cursorRange(field, ctx, {
+    absent: () => bootstrap(field, ctx, globs),
+    render,
   });
 }
 

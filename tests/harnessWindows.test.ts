@@ -921,6 +921,73 @@ it("the rendered records block names the byte count of a record over the cap", (
   expect(rendered).toContain(body);
 });
 
+/**
+ * The fourth leg of the inbox window, and the only one that is not a findings
+ * source: a drain that routed a spec commit's derivation may close that
+ * commit out of the derive slice's window, so it has to be told which commits
+ * those are (`spec/harness.md`, *Plan state as declared state*).
+ *
+ * The candidates are named by the window rather than resolved by the tick,
+ * which is why this asserts the shas rather than merely that a block exists —
+ * a block naming no sha would leave the drain to find one itself, which is
+ * the stamp discipline this leg is here to keep
+ * (`.claude/rules/posture-sweep.md`, *The stamp*).
+ *
+ * Its controls are the two states with nothing to name: a consumer that
+ * enabled no derive slice, and a state root with no cursor written yet.
+ * Each spells its case rather than rendering an empty listing, which would
+ * read as a quiet tree.
+ */
+it("the inbox slice's rendered window names the derive cursor", () => {
+  const cursor = commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
+  writePlanState(stateRoot(), planState());
+  // Past the cursor: one commit inside the declared locus and one outside it,
+  // so the listing is a claim about the locus and not about the range.
+  const inLocus = commit(
+    { "spec/loop.md": "# Loop\n\nAmended.\n" },
+    "spec: amend the loop",
+  );
+  const outsideLocus = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+
+  const inbox = windows()[INBOX_PHASE];
+  const args = inbox.args({ cwd: repo, flumeDir: stateRoot() });
+
+  // Declared as data like every other key this window returns: the block
+  // carries commit subjects the package did not author.
+  expect(inbox.dataKeys).toContain("DERIVE_CURSOR");
+  expect(Object.keys(args).sort()).toEqual([...inbox.dataKeys].sort());
+
+  const rendered = args["DERIVE_CURSOR"]!;
+  expect(rendered).toContain(
+    "=== `derivedThrough` is at " +
+      `${cursor}; 1 spec-locus commit(s) stand past it, oldest first ===`,
+  );
+  // The candidate the drain may advance to, named with the subject that lets
+  // a routed record be recognised as its derivation.
+  expect(rendered).toContain(`${inLocus} spec: amend the loop`);
+  // And the commit outside the locus is no candidate: advancing to it would
+  // step the cursor over a spec commit nobody derived.
+  expect(rendered).not.toContain(outsideLocus);
+
+  // Control one: nothing consults `derivedThrough` here, so no sha is offered
+  // and no `git log` is paid for.
+  const noDerive = windows({ slices: { enabled: [INBOX_PHASE] } })[INBOX_PHASE];
+  const withoutDerive = noDerive.args({ cwd: repo, flumeDir: stateRoot() })[
+    "DERIVE_CURSOR"
+  ]!;
+  expect(withoutDerive).toContain("the derive slice is not enabled");
+  expect(withoutDerive).not.toContain(cursor);
+  expect(withoutDerive).not.toContain(inLocus);
+
+  // Control two: a state root with no artifact yet has no cursor to advance,
+  // and says so rather than listing a corpus this slice would never read.
+  rmSync(join(stateRoot(), "plan"), { recursive: true, force: true });
+  const cold = inbox.args({ cwd: repo, flumeDir: stateRoot() })["DERIVE_CURSOR"]!;
+  expect(cold).toContain("no plan state yet");
+  expect(cold).not.toContain(cursor);
+  expect(cold).not.toContain(inLocus);
+});
+
 it("a state root with no plan state opens every window over the whole declared corpus", () => {
   commit(
     { "spec/loop.md": "# Loop\n", "src/a.ts": "export const a = 1;\n" },

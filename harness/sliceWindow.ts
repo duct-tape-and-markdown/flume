@@ -91,7 +91,7 @@ export interface WindowContext extends TickFacts {
  * restated beside its source*).
  */
 export const SLICE_DATA_KEYS = {
-  [INBOX_PHASE]: ["RECORDS", "BUILD_RECORDS", "CI_LANES"],
+  [INBOX_PHASE]: ["RECORDS", "BUILD_RECORDS", "CI_LANES", "DERIVE_CURSOR"],
   "plan-derive": ["SPEC_WINDOW"],
   "plan-sweep": ["SWEEP_WINDOW"],
 } as const satisfies Record<PlanSlice, readonly string[]>;
@@ -107,9 +107,10 @@ export type SliceArgs<S extends PlanSlice> = Record<
  * the prompt arguments that slice's own prompt names.
  *
  * `args` returns a map rather than a single string because the inbox slice's
- * prompt names three — the records queue, the standing build refusals and the
- * CI lanes are separate blocks in it, and collapsing them into one arg would
- * make the prompt's sections ones the agent has to split by eye.
+ * prompt names several — the records queue, the standing build refusals, the
+ * CI lanes and the derive cursor are separate blocks in it, and collapsing
+ * them into one arg would make the prompt's sections ones the agent has to
+ * split by eye.
  */
 export interface PlanSliceWindow extends HandoffSlice {
   readonly name: PlanSlice;
