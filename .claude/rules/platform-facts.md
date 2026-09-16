@@ -327,6 +327,16 @@ denies on every host and survives a root-run test; where no structural
 substitute exists, the case declares its host and skips on win32 with the
 reason stated, never silently.
 
+## win32 spawns no shebang script
+
+A shebang script is not an executable form on win32: no loader reads the
+`#!` line, and libuv resolves an extensionless spawn target by appending
+`.exe`, so a fixture-authored script is found and then refused, or not found
+at all. A case whose subject is the spawn of such a script declares posix
+(`chmod denies nothing on win32` above covers the exec bit; this covers the
+loader). A `.cmd` substitute is a different subject, since cmd.exe re-parses
+the argv, so it is not the same case ported.
+
 ## `tmpdir()` can return an 8.3 short path git never spells
 
 On win32 `os.tmpdir()` may hand back the DOS short form

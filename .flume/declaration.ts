@@ -6,9 +6,9 @@
  * handoff — comes from `harness/`; this file states only the environment.
  */
 
-import { vitestRunner, type Declaration } from "../harness/index.ts";
+import { vitestRunner, type DeclarationInput } from "../harness/index.ts";
 
-export const declaration: Declaration = {
+export const declaration: DeclarationInput = {
   // Where a `per` cite may point: the engine contract and the rule pages.
   specLocus: ["spec/**", ".claude/rules/**"],
 
@@ -101,7 +101,15 @@ export const declaration: Declaration = {
   // the POSIX job carries the integration lane and the publish-acceptance
   // steps, which no tick runs and nothing else reads.
   ci: [
-    { name: "windows", workflow: "ci.yml", job: "windows" },
+    {
+      name: "windows",
+      workflow: "ci.yml",
+      job: "windows",
+      // vitest prints one line per failing case; the capture is the title.
+      // `posix` declares no reader: its job also runs steps that fail without
+      // a title, and an empty set over a real red would read as drained.
+      titles: /^\s*FAIL\s+\S+ > (.+)$/gm,
+    },
     { name: "posix", workflow: "ci.yml", job: "ci" },
   ],
 
