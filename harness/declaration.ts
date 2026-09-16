@@ -39,10 +39,12 @@ const globs = z.array(z.string().min(1)).min(1);
  * The shell a declared command gate runs under where the declaration names
  * none — the one every POSIX host resolves.
  *
- * Exported because the fallback is the schema's fact and the gate
- * construction is where it applies: one spelling of the value, read by the
- * reader rather than re-decided there (`.claude/rules/engineering.md`,
- * *Derived state is computed, never restated beside its source*).
+ * The schema below takes it as `shell`'s default, so the value is folded at
+ * the parse and every reader of a parsed declaration holds a shell string
+ * rather than a fallback each command site re-decides
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*). Exported so a case naming the default names
+ * this constant rather than respelling it.
  */
 export const DEFAULT_SHELL = "sh";
 
@@ -374,7 +376,10 @@ export const DeclarationSchema = strict({
   /**
    * The shell a `shell` or `script` gate's command line runs under, spawned
    * as `<shell> -c <command>` in the gate's own tree. Absent means
-   * {@link DEFAULT_SHELL}.
+   * {@link DEFAULT_SHELL}, folded here at the parse, so a reader holding a
+   * parsed declaration reads the shell the spec's row states rather than
+   * nothing. A consumer annotating {@link DeclarationInput} still omits it:
+   * the default is on the parse's output, not on its input.
    *
    * Declared rather than fixed because which shells a host resolves is the
    * consumer's environment, not the package's: on win32 `sh` resolves from
@@ -384,16 +389,11 @@ export const DeclarationSchema = strict({
    * fallback is still mechanism — a command gate cannot be spawned without
    * some shell — so absence resolves rather than refuses.
    *
-   * Optional rather than `.default()`: a defaulted field is present on the
-   * parse's output, so declaring it that way would make every consumer
-   * annotating {@link Declaration} spell a shell to typecheck. The fallback
-   * is applied once, where the gate is constructed (`declaredGates.ts`).
-   *
    * Whether the named shell is one *this* host resolves is not a claim a
    * string can carry, so the chain factory probes it at load and refuses
    * naming the gate (`declaredGates.ts`).
    */
-  shell: z.string().min(1).optional(),
+  shell: z.string().min(1).default(DEFAULT_SHELL),
   /**
    * Model per phase, extra agent arguments, and whether the tick inherits
    * the user's own MCP servers; absent means the package's default.

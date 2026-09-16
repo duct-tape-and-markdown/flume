@@ -19,6 +19,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
+import { DEFAULT_SHELL } from "../harness/declaration.ts";
 import {
   DeclarationSchema,
   parseDeclaration,
@@ -325,10 +326,24 @@ describe("the harness declaration schema", () => {
     // Absent, the package resolves a cite's section by heading text.
     expect(parsed.resolver).toBeUndefined();
     expect(parsed.scopeWritesToEntry).toBe(false);
-    // Absent on the parse's output too: a command gate cannot be spawned
-    // without some shell, and the fallback lands where one is constructed
-    // rather than here (`DEFAULT_SHELL`, `harness/declaration.ts`).
-    expect(parsed.shell).toBeUndefined();
+    // Resolved on the parse's output: a command gate cannot be spawned
+    // without some shell, so the schema folds the default here rather than
+    // leaving each command site a fallback of its own — the case below.
+    expect(parsed.shell).toBe(DEFAULT_SHELL);
+  });
+
+  it("a declaration naming no shell parses to the package's default shell", () => {
+    const declared = fullDeclaration();
+    // Non-vacuity: the fixture names a shell of its own, and it is not the
+    // default — so what the parse reads below is the schema's fold and not
+    // the fixture's value surviving the delete.
+    expect(declared.shell).toBe("bash");
+    expect(declared.shell).not.toBe(DEFAULT_SHELL);
+    delete declared.shell;
+
+    const parsed = parseDeclaration(declared);
+
+    expect(parsed.shell).toBe(DEFAULT_SHELL);
   });
 
   it("a declaration omitting its handoff parses, and handoff reads undefined", () => {

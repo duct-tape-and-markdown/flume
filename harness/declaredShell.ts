@@ -1,13 +1,14 @@
 /**
  * The shell a command line a consumer wrote is spawned under
- * (`spec/harness.md`, *What a consumer declares*) — the fallback when the
- * declaration names none, the invocation form every such line takes, and the
- * load-time refusal of a shell this host will not run.
+ * (`spec/harness.md`, *What a consumer declares*) — the invocation form
+ * every such line takes, and the load-time refusal of a shell this host will
+ * not run. Which shell that is was settled at the parse, where an absent
+ * `shell` took the schema's default (`declaration.ts`).
  *
  * **One mechanism, every declared line.** A `shell` gate's command, a
  * `script` gate's committed path (`declaredGates.ts`) and a `setup.restore`
  * (`chain.ts`) are the same thing said in three places: text the consumer
- * wrote, run by the package in a tree of the package's choosing. The three
+ * wrote, run by the package in a tree of the package's choosing. The two
  * decisions they share are made here once, so a command site cannot be the
  * one left spawning under a name of its own
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
@@ -18,7 +19,6 @@
 
 import type { FlumeApi } from "../src/flumeApi.js";
 
-import { DEFAULT_SHELL } from "./declaration.js";
 import { captureSync, detailOf } from "./exec.js";
 
 /**
@@ -34,12 +34,9 @@ export function shellArgs(line: string): string[] {
 }
 
 /**
- * The shell `line` runs under — the declaration's where it named one, else
- * {@link DEFAULT_SHELL} — refused here when this host will not run it.
- *
- * The fallback lands at this one site rather than at each caller, so a
- * caller can pass the declaration's field through as it was declared,
- * absent included.
+ * The shell `line` runs under — the parsed declaration's, which is the
+ * package's default where the consumer named none (`DEFAULT_SHELL`,
+ * `harness/declaration.ts`) — refused here when this host will not run it.
  *
  * Probed by running the shell exactly as the caller will — `<shell> -c` over
  * a command that does nothing — so what is proven is the invocation the
@@ -60,12 +57,7 @@ export function shellArgs(line: string): string[] {
  * consumer with several command gates and a restore beside them is told
  * which line it wrote is the one with nothing to run it.
  */
-export function runnableShell(
-  api: FlumeApi,
-  declared: string | undefined,
-  site: string,
-): string {
-  const shell = declared ?? DEFAULT_SHELL;
+export function runnableShell(api: FlumeApi, shell: string, site: string): string {
   try {
     captureSync(shell, shellArgs("exit 0"), { cwd: api.paths.repoRoot });
   } catch (err) {

@@ -65,14 +65,14 @@ function registry(api: FlumeApi): Record<string, (when: GatePhase) => Gate> {
  * script's own shebang, and both read the same gate facts from their
  * environment ({@link gateFacts}).
  *
- * `shell` is the declaration's, passed through as it was declared — absent
- * included, which `declaredShell.ts` answers with the package's default for
- * every declared command line alike.
+ * `shell` is the parsed declaration's, which is the package's default where
+ * the consumer named none — the parse folds that once, for every declared
+ * command line alike (`declaration.ts`).
  */
 export function constructGate(
   api: FlumeApi,
   declared: GateDeclaration,
-  shell: string | undefined,
+  shell: string,
 ): Gate {
   switch (declared.kind) {
     case "registry": {
@@ -152,7 +152,7 @@ function gateFacts(ctx: GateContext): Record<string, string> {
  */
 function shellCommand(
   api: FlumeApi,
-  shell: string | undefined,
+  shell: string,
   command: string,
   when: GatePhase,
 ): Gate {
