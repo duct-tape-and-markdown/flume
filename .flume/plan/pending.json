@@ -1,5 +1,76 @@
 [
   {
+    "tag": "SPAWN-WRAPPER-DECLARES-ITS-OUTPUT-CAP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "the shared `exec` declares its output cap, and an overrun is named where the status is read"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the two cases the cap and its refusal turn on"
+        },
+        {
+          "path": "tests/build-changelog.test.ts",
+          "description": "the oversized-range case's comment shrinks to a pointer at the declared cap"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the suite's one spawn wrapper inherits node's 1 MiB execFile cap undeclared, and reports an overrun through `exitStatusOf`'s no-exit-status arm — a cause no overrun has",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "the shared wrapper declares its output cap at one home, sized off the spawn sites in `src/`; an overrun refuses by naming the cap, never as a child that never ran.",
+    "tests": [
+      "the shared spawn wrapper captures a child's stdout past node's default execFile cap",
+      "a child whose output exceeds the wrapper's declared cap refuses by naming the cap"
+    ],
+    "pins": [],
+    "notes": "From the CHANGELOG-DRAFT note. Every `src/` spawn site declares a cap (16/4 MiB; the changelog script, `Infinity`); the test harness's shared `exec` alone inherits 1 MiB, for `runNodeStreams` and `gitOut` both. Latent — this repo's draft is ~343 KB — but it already shaped a fixture: the oversized-range case keeps its draft small on purpose, and that comment is the prose this shrinks. An overrun's `code` is a string, so `exitStatusOf` reads it as a spawn failure."
+  },
+  {
+    "tag": "CITATIONS-FOLLOW-THE-JOBS-THAT-MOVED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/paths.ts",
+          "description": "`priorAttemptsDir`'s doc comment names the module that re-exports it"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the friction-line and stop-flag cites name the modules that decide on them"
+        },
+        {
+          "path": "tests/chain.test.ts",
+          "description": "the identity case's title names the modules that export what it compares"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "four citations name `src/Dispatcher.ts` as the home of jobs it never held — `priorAttemptsDir`, `frictionCountLine`, the supervisor's per-iteration check, `slugify`/`priorAttemptPath`",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "each of the four names the module that declares the job — `src/priorAttempts.ts`, `src/friction.ts`, `src/loopSupervisor.ts`, and `src/paths.ts` + `src/priorAttempts.ts` — and the suite is otherwise unchanged.",
+    "tests": [],
+    "pins": [],
+    "notes": "Verified on disk this tick: `src/paths.ts:431`, `tests/cli.test.ts:1020` and `:4056`, `tests/chain.test.ts:61`'s title. All pre-existing, none stranded by the dispatcher split. The citation pin resolves tokens, never meaning, so all four stay green; whether that bound moves is parked. `tests/cli.test.ts:990` names the same file for `claudeCode()` and reads as naming the fall-through rather than the home — left alone."
+  },
+  {
     "tag": "ONE-ATTEMPT-LEG-AND-ONE-BATCH-SELECTION",
     "gate": {
       "kind": "open"
