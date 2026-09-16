@@ -42,8 +42,8 @@ export const EMPTY_RUN: RunResult = {
  *
  * Its lanes are the single unsplit one, the shape a real runner must carry:
  * a runner constructed with no running lane is refused at construction
- * (`harness/vitestRunner.ts`), so a stand-in declaring none would be a shape
- * no consumer's runner can have.
+ * (`resolveLanes`, `harness/runner.ts`), so a stand-in declaring none would
+ * be a shape no consumer's runner can have.
  */
 export const stubRunner: Runner = {
   run: () => Promise.resolve(EMPTY_RUN),

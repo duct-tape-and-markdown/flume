@@ -10,9 +10,11 @@
  * the judge reconstruct a statement it could have been told
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
  *
- * A consumer with cargo, dotnet, or a shell script declares its own factory
- * over these three operations; `vitestRunner.ts` is the one the package
- * ships.
+ * A consumer with cargo or dotnet declares its own factory over these three
+ * operations; the package ships two — `vitestRunner.ts` for a vitest suite,
+ * and `scriptRunner.ts` for a consumer whose proof is a validator it can run
+ * as one command. The one invariant every runner's lanes must hold is
+ * enforced here, beside the type that states it.
  */
 
 import type { FlumeApi } from "../src/flumeApi.js";
@@ -39,6 +41,37 @@ export interface Lane {
    * carries it — a runner constructed with none or several refuses.
    */
   readonly runs: boolean;
+}
+
+/** The lane a plain, unsplit project has: everything, nothing excluded. */
+const DEFAULT_LANE: Lane = { name: "default", excludes: [], runs: true };
+
+/**
+ * A shipped runner's declared lanes, defaulted to the single unsplit lane and
+ * held to the invariant {@link Lane.runs} states — a consumer whose suite
+ * splits declares both lanes rather than inheriting one implementation's.
+ *
+ * Here rather than at each shipped runner because the invariant is the
+ * interface's, not vitest's: a second copy of it is a second place the
+ * refusal can drift (`.claude/rules/engineering.md`, *A module is one job*).
+ * `label` is the caller's own name, so the refusal reads as raised by the
+ * factory the consumer called. Raised at construction, where a declaration
+ * module reds before a chain ever loads.
+ */
+export function resolveLanes(
+  label: string,
+  lanes: readonly Lane[] | undefined,
+): readonly Lane[] {
+  const resolved = lanes ?? [DEFAULT_LANE];
+  const running = resolved.filter((l) => l.runs);
+  if (running.length !== 1) {
+    throw new Error(
+      `${label}: exactly one lane must carry \`runs\`, got ${running.length} of ` +
+        `${resolved.length} (${resolved.map((l) => l.name).join(", ") || "no lanes"}). ` +
+        `The judge runs one lane; which one cannot be guessed.`,
+    );
+  }
+  return resolved;
 }
 
 /** Whether one named line was carried by a passing test, and where. */

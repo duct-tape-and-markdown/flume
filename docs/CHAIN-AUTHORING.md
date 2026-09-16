@@ -125,9 +125,10 @@ The harness declaration's four required fields are `specLocus` (the path
 globs a `per` cite may point into), `fence` (build's `writablePaths`, and per
 plan slice what that slice may write beyond the package's own plan
 artifacts), `runner` (a factory for the test runner the judge drives —
-`vitestRunner()` ships in the package; cargo, dotnet or a script is your own
-`RunnerFactory` over `Runner`'s operations, which is adoption's largest
-single piece and is priced under *What adoption costs* below), and `slices` (which plan slices run,
+`vitestRunner()` and `scriptRunner()` both ship in the package; cargo, dotnet
+or a tool neither one reaches is your own `RunnerFactory` over `Runner`'s
+operations, which is adoption's largest single piece and is priced under
+*What adoption costs* below), and `slices` (which plan slices run,
 and the sweep's domain). Optional: `channelPaths`, `scopeWritesToEntry` (off
 by default, and the package takes no side), `resolver`, `handoff` per phase,
 `gates` per phase and `when`, `agents`, `supervisor` (the engine's policy
@@ -174,17 +175,28 @@ relocated root at chain load, because every mechanic it wires addresses a path
 some commit holds.
 
 **The runner is the largest single piece**, and the only one whose size
-depends on your stack rather than on the package. A vitest suite declares
-`runner: vitestRunner()` and pays nothing further. Anything else — cargo,
-dotnet, a shell script — authors a `RunnerFactory`: `(ctx) => Runner`, called
-once at chain load, over `run`, `runAtBase` and `lanes`. The work is not the
-signatures, it is what they return.
+depends on your stack rather than on the package. Two stacks pay a
+declaration and nothing further. A vitest suite declares
+`runner: vitestRunner()`. A consumer whose proof is a validator it can run as
+one command declares `runner: scriptRunner({ command })`: the package runs
+that command once per operation in the tree under judgment with the named
+lines as its arguments, and reads one verdict line per name off its stdout —
+the name, whether a passing check carried it, and the file that did. Exit
+status is not the verdict; the lines are. What a verdict line looks like is
+on `scriptRunner`'s own hover text, which is where it is spelled.
+
+Anything else — cargo, dotnet, a tool that answers to no such command —
+authors a `RunnerFactory`: `(ctx) => Runner`, called once at chain load, over
+`run`, `runAtBase` and `lanes`. The work is not the signatures, it is what
+they return.
 
 - `run` reports structured results and never an exit code: a passed count for
   the judge's vacuity check, per requested line whether one passing test
   carried it and in which files, and per failure the file it was attributed to.
   A tool that cannot name tests and attribute failures machine-readably needs
-  an adapter written before it can be declared at all.
+  an adapter written before it can be declared at all — and where that adapter
+  can be one command printing verdict lines, `scriptRunner()` is it, already
+  written.
 - `runAtBase` lays the working-tree bytes of the judged files over a detached
   checkout of a base sha and runs the same names there — a provisioned
   checkout, and in a compiled language a build, per judged entry. That
@@ -194,7 +206,9 @@ signatures, it is what they return.
 
 `Runner`, `RunnerFactory`, `RunnerContext`, `RunResult`, `NamedResult`,
 `TestFailure` and `Lane` are exported from `@dtmd/flume/harness`, and
-`vitestRunner()` is a working implementation of `Runner` to read against.
+`vitestRunner()` and `scriptRunner()` are two working implementations of
+`Runner` to read against — one over a tool's report, one over a command's
+stdout.
 `runner` is a required field, so there is no adopting now and porting the
 runner later.
 

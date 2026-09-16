@@ -21,6 +21,8 @@ export {
   type VitestRunnerOptions,
 } from "./vitestRunner.js";
 
+export { scriptRunner, type ScriptRunnerOptions } from "./scriptRunner.js";
+
 export {
   judgeNamedLines,
   type JudgeOutcome,

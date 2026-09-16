@@ -6,29 +6,28 @@
  * its base checkout needs — the tree at a sha, and a way to provision that
  * tree's dependencies — are the chain load's to hand out, and both are read
  * off the context this factory is called with rather than re-derived beside
- * a consumer's declaration. The checkout itself is the engine's
- * (`api.git.checkoutAt`), so nothing here adds or removes a worktree.
+ * a consumer's declaration. The checkout itself is the engine's, planted by
+ * the sequence every shipped runner shares (`baseTree`, `harness/toolRun.ts`),
+ * so nothing here adds or removes a worktree.
  *
- * Its reading half is pure over vitest's own `--reporter=json` output, so a
- * test drives the real reporter through the real reader rather than through
- * a hand-authored report (`.claude/rules/engineering.md`, *A seam gate reads
- * what the real writer wrote*). Its spawning half reuses the engine's git,
- * probe and spawn mechanism rather than re-deriving it beside `src/`.
+ * What is this module's own is the **reading** half: pure over vitest's own
+ * `--reporter=json` output, so a test drives the real reporter through the
+ * real reader rather than through a hand-authored report
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
  *
  * Nothing here interprets: a run that produced no report throws at the point
  * of detection, and every other observation leaves as a fact on `RunResult`
  * for a judge to rule on.
  */
 
-import { copyFile, mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import { existsLoud } from "../src/fsProbe.js";
 import { gitPath, namespacedJoin } from "../src/paths.js";
-import { execFileWithShimRetry } from "../src/spawnShim.js";
 
-import { MAX_OUTPUT_BYTES } from "./exec.js";
+import { resolveLanes } from "./runner.js";
 import type {
   Lane,
   NamedResult,
@@ -38,9 +37,18 @@ import type {
   RunnerFactory,
   TestFailure,
 } from "./runner.js";
+import { baseTree, captureRun } from "./toolRun.js";
 
-/** The lane a plain, unsplit vitest project has: everything, nothing excluded. */
-const DEFAULT_LANE: Lane = { name: "default", excludes: [], runs: true };
+/**
+ * One run of vitest in `cwd`, through the spawn every shipped runner makes
+ * (`captureRun`, `harness/toolRun.ts`): a non-zero exit is vitest's ordinary
+ * way of saying "tests failed" and its report is still on stdout.
+ */
+const capture = (
+  invocation: VitestInvocation,
+  extra: readonly string[],
+  cwd: string,
+): Promise<string> => captureRun(invocation.command, [...invocation.args, ...extra], cwd);
 
 /** How the runner reaches vitest from one tree. */
 export interface VitestInvocation {
@@ -197,31 +205,6 @@ function readRun(output: string, names: readonly string[], root: string): RunRes
 }
 
 /**
- * Spawn and capture. A non-zero exit is vitest's ordinary way of saying
- * "tests failed" and its report is still on stdout, so the exit status is
- * read only to tell that case from a spawn that never started — where
- * `code` is an errno string and there is no report to hand back.
- */
-async function capture(
-  invocation: VitestInvocation,
-  extra: readonly string[],
-  cwd: string,
-): Promise<string> {
-  try {
-    const { stdout } = await execFileWithShimRetry(
-      invocation.command,
-      [...invocation.args, ...extra],
-      { cwd, maxBuffer: MAX_OUTPUT_BYTES },
-    );
-    return stdout;
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & { stdout?: string };
-    if (typeof e.code === "number" && typeof e.stdout === "string") return e.stdout;
-    throw err;
-  }
-}
-
-/**
  * Declare the vitest runner. Every field of `options` is optional, and the
  * defaults describe the unsplit single-lane project — a consumer whose suite
  * splits states its own lanes rather than inheriting one implementation's.
@@ -233,15 +216,7 @@ async function capture(
  * rather than deferred into the factory call.
  */
 export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
-  const lanes = options.lanes ?? [DEFAULT_LANE];
-  const running = lanes.filter((l) => l.runs);
-  if (running.length !== 1) {
-    throw new Error(
-      `vitestRunner: exactly one lane must carry \`runs\`, got ${running.length} of ` +
-        `${lanes.length} (${lanes.map((l) => l.name).join(", ") || "no lanes"}). ` +
-        `The judge runs one lane; which one cannot be guessed.`,
-    );
-  }
+  const lanes = resolveLanes("vitestRunner", options.lanes);
   const invoke = options.invoke ?? resolveVitest;
 
   return ({ api, provision }: RunnerContext): Runner => {
@@ -254,50 +229,10 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
       },
 
       async runAtBase(names, files, baseSha, cwd) {
-        if (files.length === 0) {
-          throw new Error(
-            "vitestRunner.runAtBase: no files to lay over the base. A base run " +
-              "with no selection runs the whole suite there, which judges the " +
-              "wrong thing and costs a suite.",
-          );
-        }
-        // Read the selection out of the caller's tree before asking for
-        // anything: a file that is not there makes the run unjudgeable, and
-        // refusing after a checkout was planted spends a `git worktree add`
-        // to reach the same error.
-        const sources = files.map((f) => {
-          const from = resolve(cwd, f);
-          if (!existsLoud(namespacedJoin(from))) {
-            throw new Error(`vitestRunner.runAtBase: ${f} is not in the tree at ${cwd}`);
-          }
-          return { rel: f, from };
-        });
-        // The tree at `baseSha` is the engine's to hand out
-        // (`spec/chain.md`, *What a gate receives*): it decides where the
-        // checkout is planted — the state root's worktree base, an
-        // operator's relocation and the chain's declared base alike — and
-        // reclaims it when the gate this run is driven inside returns,
-        // whether that gate ruled or threw. A runner that added its own
-        // worktree would be restating a placement rule the engine owns and
-        // carrying a second lifetime for it (`.claude/rules/engineering.md`,
-        // *A fact the engine holds is reported, never rediscovered*).
-        const worktree = await api.git.checkoutAt({
-          repoRoot: cwd,
-          flumeDir: api.paths.flumeDir,
-          sha: baseSha,
-        });
-        for (const { rel, from } of sources) {
-          await mkdir(namespacedJoin(dirname(join(worktree, rel))), {
-            recursive: true,
-          });
-          await copyFile(namespacedJoin(from), namespacedJoin(worktree, rel));
-        }
-        // A checkout of a git ref has no installed dependencies. The chain's
-        // own reduction of the declared `setup` provisions it, so the base
-        // tree is provisioned exactly the way a build worktree is — one
-        // implementation of that, handed over, rather than a second one here
-        // that installs at a root the consumer never installs at.
-        await provision(worktree);
+        const worktree = await baseTree(
+          { api, provision },
+          { label: "vitestRunner.runAtBase", files, baseSha, cwd },
+        );
         const output = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
         return readRun(output, names, worktree);
       },

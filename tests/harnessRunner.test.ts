@@ -27,7 +27,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,6 +36,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { harnessChain } from "../harness/chain.ts";
 import {
   judgeNamedLines,
+  scriptRunner,
   vitestRunner,
   type Lane,
   type RunResult,
@@ -49,7 +50,7 @@ import { withGateCheckouts } from "../src/worktrees.ts";
 import { filesUnder, relPath } from "./helpers/repoProgram.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, exec, gitOutSync } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
@@ -141,6 +142,51 @@ const inGateScope = <T>(
     body,
   );
 
+/**
+ * A real `FlumeApi` over a fixture repo, with one member replaced: neither
+ * fixture here commits a lockfile, so the engine's own installer would refuse
+ * it. Everything a factory reads — the state root, and the installer it
+ * provisions a base checkout with — arrives through this and nowhere else.
+ */
+const apiOver = (
+  repo: string,
+  flumeDir: string,
+  install: (tree: string) => Promise<void>,
+): FlumeApi => ({
+  ...buildFlumeApi({ repoRoot: repo, configDir: flumeDir, flumeDir }),
+  setupWorktree: install,
+});
+
+/**
+ * The context a declared runner factory is called with, taken from the real
+ * chain factory over a real declaration — so the provisioning a base checkout
+ * gets here is the one this consumer's build worktrees get, never one
+ * composed beside it.
+ */
+const contextFrom = (
+  over: FlumeApi,
+  setup?: { directories: string[]; restore?: string },
+): RunnerContext => {
+  let seen: RunnerContext | undefined;
+  harnessChain({
+    api: over,
+    declaration: {
+      ...DECLARATION,
+      runner: (received: RunnerContext) => {
+        seen = received;
+        // The captured declaration's runner is never driven; the capture is
+        // the whole point of this factory.
+        return stubRunner;
+      },
+      ...(setup === undefined ? {} : { setup }),
+    },
+  });
+  if (seen === undefined) {
+    throw new Error("the chain factory never called the declared runner factory");
+  }
+  return seen;
+};
+
 describe("the vitest runner", () => {
   let fixture: string;
   let flumeDir: string;
@@ -178,48 +224,9 @@ describe("the vitest runner", () => {
     await symlink(join(REPO_ROOT, "node_modules"), join(tree, "node_modules"), "dir");
   };
 
-  /**
-   * A real `FlumeApi` over the fixture, with one member replaced: the
-   * fixture commits no lockfile, so the engine's own installer would refuse
-   * it. Everything the factory reads — the state root, and the installer it
-   * provisions a base checkout with — arrives through this and nowhere else.
-   */
-  const apiWithInstaller = (
-    install: (tree: string) => Promise<void>,
-  ): FlumeApi => ({
-    ...buildFlumeApi({ repoRoot: fixture, configDir: flumeDir, flumeDir }),
-    setupWorktree: install,
-  });
-
-  /**
-   * The context a declared runner factory is called with, taken from the
-   * real chain factory over a real declaration — so the provisioning a base
-   * checkout gets here is the one this consumer's build worktrees get, never
-   * one composed beside it.
-   */
-  const contextFrom = (
-    over: FlumeApi,
-    setup?: { directories: string[]; restore?: string },
-  ): RunnerContext => {
-    let seen: RunnerContext | undefined;
-    harnessChain({
-      api: over,
-      declaration: {
-        ...DECLARATION,
-        runner: (received: RunnerContext) => {
-          seen = received;
-          // The captured declaration's runner is never driven; the
-          // capture is the whole point of this factory.
-          return stubRunner;
-        },
-        ...(setup === undefined ? {} : { setup }),
-      },
-    });
-    if (seen === undefined) {
-      throw new Error("the chain factory never called the declared runner factory");
-    }
-    return seen;
-  };
+  /** {@link apiOver} bound to this fixture. */
+  const apiWithInstaller = (install: (tree: string) => Promise<void>): FlumeApi =>
+    apiOver(fixture, flumeDir, install);
 
   /**
    * One base run through a freshly-declared factory over a declaration with
@@ -569,6 +576,300 @@ describe("the vitest runner", () => {
     })(ctx);
     await expect(silent.run(["anything"], fixture)).rejects.toThrow(/wrote no JSON report/);
   }, SPAWN_BUDGET_MS);
+});
+
+/**
+ * The validator a consumer declares to `scriptRunner`: one command, run in
+ * whatever tree it is pointed at, printing one verdict line per name it was
+ * handed.
+ *
+ * It is a real program rather than a canned string, because the seam under
+ * test is exactly the one a fixture would re-author: a reader driven over
+ * stdout the tester wrote pins the tester's idea of the encoding, not a
+ * validator's (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*). This one decides from the tree it is running in — the
+ * checks its `checks/widget.checks` declares, against the source that tree
+ * holds — so which tree ran it is observable from the verdicts alone.
+ *
+ * It also writes what every run it made saw: the tree it ran in, and the
+ * arguments it was handed. And it exits non-zero when a check it ran did not
+ * pass, the way a validator does, which is the status the verdict lines are
+ * read in spite of.
+ */
+const VALIDATOR = `import { appendFileSync, readFileSync } from "node:fs";
+
+const argv = process.argv.slice(1);
+const log = argv[1];
+const names = argv.slice(2);
+appendFileSync(log, JSON.stringify({ cwd: process.cwd(), argv }) + "\\n");
+
+const listed = readFileSync("checks/widget.checks", "utf8").split("\\n").filter(Boolean);
+const source = readFileSync("src/widget.ts", "utf8");
+
+// The validator's own output, on the stream the verdict lines share.
+console.log("checked " + listed.length + " declared check(s) in " + process.cwd());
+
+let failed = 0;
+for (const name of names) {
+  const carried = listed.includes(name) && source.includes(name.split(" ").pop());
+  if (!carried) failed += 1;
+  process.stdout.write(
+    carried
+      ? "flume\\tpass\\tchecks/widget.checks\\t" + name + "\\n"
+      : "flume\\tfail\\t\\t" + name + "\\n",
+  );
+}
+process.exit(failed === 0 ? 0 : 1);
+`;
+
+/**
+ * A second validator, committed at the base and changed in the working tree,
+ * whose whole verdict is which copy of itself ran. Declared by a path rather
+ * than by an absolute one, it is how the tree under judgment's own copy is
+ * told from the caller's.
+ */
+const verdictScript = (verdict: "pass" | "fail"): string =>
+  `#!/bin/sh\nfor name in "$@"; do\n  printf 'flume\\t${verdict}\\t${verdict === "pass" ? "checks/widget.checks" : ""}\\t%s\\n' "$name"\ndone\n`;
+
+/** A check the merged tree declares and the base does not, carried by either source. */
+const CARRIED = "the source names widget";
+/** A check the merged tree declares, carried only where the source says merged. */
+const MERGED_ONLY = "the source says merged";
+/** A check no tree declares — the shape of a line nothing carried. */
+const UNLISTED = "the source says nothing";
+
+describe("the script runner", () => {
+  let fixture: string;
+  let flumeDir: string;
+  let baseSha: string;
+  /** Where every run the validator made is recorded, outside the tree it judges. */
+  let logPath: string;
+  let logDir: string;
+  /** The declared command's arguments ahead of the named lines. */
+  let args: string[];
+  let ctx: RunnerContext;
+  let runner: Runner;
+
+  /** One entry per run the validator made, in the order it made them. */
+  const runsLogged = async (): Promise<{ cwd: string; argv: string[] }[]> =>
+    (await readFile(logPath, "utf8"))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { cwd: string; argv: string[] });
+
+  const resetLog = async (): Promise<void> => {
+    await writeFile(logPath, "");
+  };
+
+  /** The base run every case below drives, inside the scope that owns its checkout. */
+  const atBase = (names: readonly string[]): Promise<RunResult> =>
+    inGateScope(() =>
+      runner.runAtBase(names, ["checks/widget.checks"], baseSha, fixture),
+    );
+
+  beforeAll(async () => {
+    fixture = await mkTempDir("flume-script-runner-");
+    logDir = await mkTempDir("flume-script-runner-log-");
+    logPath = join(logDir, "runs.jsonl");
+    await resetLog();
+    flumeDir = join(fixture, ".flume");
+    git(fixture, ["init", "-q"]);
+    git(fixture, ["config", "user.email", "t@example.com"]);
+    git(fixture, ["config", "user.name", "t"]);
+    git(fixture, ["config", "commit.gpgsign", "false"]);
+
+    await put(fixture, "package.json", `{ "name": "fixture", "private": true, "type": "module" }\n`);
+    await put(fixture, "checks/run.mjs", VALIDATOR);
+    await put(fixture, "checks/verdict.sh", verdictScript("pass"));
+    await chmod(join(fixture, "checks/verdict.sh"), 0o755);
+    // The base declares a check nobody asks about: a name carried at the base
+    // could then only have come from the merged bytes laid down there.
+    await put(fixture, "checks/widget.checks", "the base lists this check\n");
+    await put(fixture, "src/widget.ts", `export const widget = "base";\n`);
+    git(fixture, ["add", "-A"]);
+    git(fixture, ["commit", "-q", "-m", "base"]);
+    baseSha = git(fixture, ["rev-parse", "HEAD"]);
+
+    await put(fixture, "checks/widget.checks", `${CARRIED}\n${MERGED_ONLY}\n`);
+    await put(fixture, "checks/verdict.sh", verdictScript("fail"));
+    await put(fixture, "src/widget.ts", `export const widget = "merged";\n`);
+    git(fixture, ["add", "-A"]);
+    git(fixture, ["commit", "-q", "-m", "merged"]);
+
+    args = [join(fixture, "checks", "run.mjs"), logPath];
+    // The base checkout this consumer's runs are judged in is provisioned
+    // through the api, as every shipped runner's is (`baseTree`,
+    // `harness/toolRun.ts`) — the fixture installs nothing, its validator
+    // being plain node.
+    ctx = contextFrom(apiOver(fixture, flumeDir, async () => {}));
+    runner = scriptRunner({ command: process.execPath, args })(ctx);
+  });
+
+  afterAll(async () => {
+    if (fixture) await rm(fixture, { recursive: true, force: true });
+    if (logDir) await rm(logDir, { recursive: true, force: true });
+  });
+
+  it("runs its command once per operation in the tree under judgment", async () => {
+    await resetLog();
+
+    const merged = await runner.run([CARRIED, MERGED_ONLY], fixture);
+    const base = await atBase([CARRIED, MERGED_ONLY]);
+    const logged = await runsLogged();
+
+    // Vacuity: both operations reached the command and it answered both names.
+    expect(merged.names).toHaveLength(2);
+    expect(base.names).toHaveLength(2);
+
+    // Once per operation — not once per name, and not once per file.
+    expect(logged).toHaveLength(2);
+
+    // And each in the tree that operation judges: the caller's for `run`, and
+    // for `runAtBase` the engine-planted checkout under the state root's
+    // worktree base, which the runner never spells itself.
+    expect(logged[0]!.cwd).toBe(fixture);
+    expect(dirname(logged[1]!.cwd)).toBe(worktreesBase(flumeDir));
+
+    // The verdicts say the same thing the paths do: the base run's checks came
+    // from the merged bytes laid over it, and its source came from the base.
+    expect(base.names.map((n) => n.carried)).toEqual([true, false]);
+    expect(merged.names.map((n) => n.carried)).toEqual([true, true]);
+  });
+
+  it("passes the named lines as the command's arguments", async () => {
+    await resetLog();
+    const names = [CARRIED, MERGED_ONLY, UNLISTED];
+
+    await runner.run(names, fixture);
+    await atBase(names);
+    const logged = await runsLogged();
+
+    // Vacuity: both runs happened, so both argv below are ones a run was
+    // actually driven with.
+    expect(logged).toHaveLength(2);
+
+    for (const run of logged) {
+      // The declared arguments, then every name verbatim and in order. The
+      // same argv in both operations: the tree differs, never the question.
+      expect(run.argv).toEqual([...args, ...names]);
+    }
+  });
+
+  it("reads one verdict line per name from the command's stdout", async () => {
+    const r = await runner.run([CARRIED, MERGED_ONLY, UNLISTED], fixture);
+
+    // Vacuity: the verdict set is read off a validator that carried something.
+    expect(r.passed).toBe(2);
+
+    // One answer per name, in the order they were asked about — the name, that
+    // a passing check carried it, and the file that did. The validator's own
+    // output on the same stream is no part of it.
+    expect(r.names).toEqual([
+      { name: CARRIED, carried: true, files: ["checks/widget.checks"] },
+      { name: MERGED_ONLY, carried: true, files: ["checks/widget.checks"] },
+      { name: UNLISTED, carried: false, files: [] },
+    ]);
+  });
+
+  it("a non-zero exit carrying a complete verdict set is not a failure", async () => {
+    // The same command the runner drives, driven here for its exit status
+    // alone: this validator exits non-zero when a check it ran did not pass,
+    // which asking about a name no tree declares makes it do.
+    const status = await exec(process.execPath, [...args, UNLISTED], {
+      cwd: fixture,
+    }).then(
+      () => 0,
+      (err: NodeJS.ErrnoException) => err.code,
+    );
+    expect(status).toBe(1);
+
+    const r = await runner.run([UNLISTED], fixture);
+
+    // The lines are the verdict: the run reports what the validator said about
+    // the name, and reports no failure of its own over the status.
+    expect(r.names).toEqual([{ name: UNLISTED, carried: false, files: [] }]);
+    expect(r.ok).toBe(true);
+    expect(r.failures).toEqual([]);
+  });
+
+  it("refuses stdout that is not one well-formed verdict line per requested name", async () => {
+    // Hand-authored output, which a refusal case is entitled to: no real
+    // validator produces the malformed stream a reader's refusal is about
+    // (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+    // wrote*, on scope).
+    const printing = (line: string): Runner =>
+      scriptRunner({
+        command: process.execPath,
+        args: ["-e", `process.stdout.write(${JSON.stringify(line)})`],
+      })(ctx);
+
+    // A name with no line of its own is not a name nothing carried.
+    await expect(printing("nothing to say\n").run([CARRIED], fixture)).rejects.toThrow(
+      /wrote no verdict line for 1 of 1/,
+    );
+    // A line about something nobody asked about.
+    await expect(
+      printing(`flume\tpass\tchecks/widget.checks\tsome other check\n`).run(
+        [CARRIED],
+        fixture,
+      ),
+    ).rejects.toThrow(/nobody asked about/);
+    // One name, two answers.
+    await expect(
+      printing(
+        `flume\tpass\tchecks/widget.checks\t${CARRIED}\nflume\tfail\t\t${CARRIED}\n`,
+      ).run([CARRIED], fixture),
+    ).rejects.toThrow(/two verdict lines/);
+    // A verdict the encoding does not spell.
+    await expect(
+      printing(`flume\tmaybe\t\t${CARRIED}\n`).run([CARRIED], fixture),
+    ).rejects.toThrow(/where a verdict line says/);
+    // A pass with no file to lay over the base.
+    await expect(
+      printing(`flume\tpass\t\t${CARRIED}\n`).run([CARRIED], fixture),
+    ).rejects.toThrow(/where a run-relative file goes/);
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "resolves a command carrying a path separator against the tree it runs in",
+    async () => {
+      // A shebang script, so the case declares its host: win32 spawns no such
+      // file, and a structural substitute would stop being the subject
+      // (`.claude/rules/platform-facts.md`, *Node refuses to spawn a `.cmd`
+      // shim without a shell*).
+      const local = scriptRunner({ command: "checks/verdict.sh" })(ctx);
+
+      // The working tree's copy answers here, and the base checkout's copy
+      // there — the two disagree about every name by construction, and the
+      // laid-over selection is the checks file rather than the script.
+      expect((await local.run([CARRIED], fixture)).names[0]!.carried).toBe(false);
+
+      const base = await inGateScope(() =>
+        local.runAtBase([CARRIED], ["checks/widget.checks"], baseSha, fixture),
+      );
+      expect(base.names[0]!.carried).toBe(true);
+    },
+  );
+
+  it("reports its lanes and refuses a set naming no running lane", () => {
+    const declared: Lane[] = [
+      { name: "fast", excludes: ["checks/slow/**"], runs: true },
+      { name: "slow", excludes: ["checks/fast/**"], runs: false },
+    ];
+    expect(scriptRunner({ command: "check", lanes: declared })(ctx).lanes).toEqual(declared);
+
+    // Unsplit by default, as every shipped runner is: one lane, nothing
+    // excluded.
+    expect(scriptRunner({ command: "check" })(ctx).lanes).toEqual([
+      { name: "default", excludes: [], runs: true },
+    ]);
+
+    // And the invariant is the interface's, so it reads the same here as it
+    // does from the vitest factory — under this factory's own name.
+    expect(() => scriptRunner({ command: "check", lanes: [] })).toThrow(
+      /scriptRunner: exactly one lane must carry `runs`, got 0 of 0 \(no lanes\)/,
+    );
+  });
 });
 
 /**
