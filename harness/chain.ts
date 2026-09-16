@@ -340,6 +340,12 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // runs: every slice's window is a fact of disk a sibling's handoff can
     // produce, so nothing here is handoff-unwakeable.
     humanOnly: [],
+    // Whole, and unread: which strings an environment asserts is the
+    // consumer's fact, and the engine's only use of one is matching it
+    // against a `requiresCapability` entry's gate. Declared-but-empty
+    // reaches the engine as declared — a load-time probe that found nothing
+    // asserting none is a fact, not an omission.
+    ...(declaration.capabilities ? { capabilities: declaration.capabilities } : {}),
     ...(policy ? { supervisorPolicy: policy } : {}),
   };
 }

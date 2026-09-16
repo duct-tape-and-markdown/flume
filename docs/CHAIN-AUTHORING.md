@@ -134,7 +134,10 @@ by default, and the package takes no side), `resolver`, `handoff` per phase,
 `gates` per phase and `when`, `shell` (the shell a `shell` or `script` gate's
 command runs under, `sh` where the declaration is silent), `agents`,
 `supervisor` (the engine's policy passed through whole), `setup`, `slots`
-(prompt text — an autonomy dial, domain context; never a directive), and `ci`
+(prompt text — an autonomy dial, domain context; never a directive),
+`capabilities` (the environment facts this repository asserts, passed through
+whole to `Chain.capabilities`, so a `requiresCapability` entry naming one the
+declaration does not assert stays unpickable; absent asserts none), and `ci`
 (the CI lanes the inbox slice reads as findings sources beside the records —
 each a workflow file, a job name, and the lane name its findings carry).
 

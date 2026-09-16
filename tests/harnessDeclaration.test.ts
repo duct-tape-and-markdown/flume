@@ -100,6 +100,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
     },
   },
   slots: { autonomy: "ship without asking", domain: "an AI-derivation harness" },
+  capabilities: ["network", "docker"],
   ci: [
     { name: "windows", workflow: "ci.yml", job: "test (windows-latest)" },
     { name: "linux", workflow: "ci.yml", job: "test (ubuntu-latest)" },
@@ -155,7 +156,7 @@ describe("the harness declaration schema", () => {
     expect(Object.keys(declared).sort()).toEqual(
       Object.keys(DeclarationSchema.shape).sort(),
     );
-    expect(Object.keys(declared)).toHaveLength(15);
+    expect(Object.keys(declared)).toHaveLength(16);
 
     const parsed: Declaration = parseDeclaration(declared);
 
@@ -184,6 +185,7 @@ describe("the harness declaration schema", () => {
     expect(parsed.slices.enabled).toContain("plan-sweep");
     expect(parsed.slices.sweep?.domain).toEqual(["src/**", "harness/**"]);
     expect(parsed.slots?.autonomy).toBe("ship without asking");
+    expect(parsed.capabilities).toEqual(["network", "docker"]);
     expect(parsed.ci?.[0]).toEqual({
       name: "windows",
       workflow: "ci.yml",
@@ -209,6 +211,16 @@ describe("the harness declaration schema", () => {
     expect(parsed.supervisor?.maxParallel).toBe(4);
     expect(parsed.supervisor?.killGraceMs).toBe(15_000);
     expect(parsed.supervisor?.partitionIgnore).toEqual(["pnpm-lock.yaml"]);
+  });
+
+  it("a capabilities list a load-time probe returned empty parses", () => {
+    // The other list-valued fields refuse empty; this one admits it, because
+    // a declaration is a module and this list is routinely a probe's return.
+    // A probe that found nothing asserting nothing is the environment
+    // reporting, not a declaration with a hole in it.
+    const parsed = parseDeclaration({ ...fullDeclaration(), capabilities: [] });
+
+    expect(parsed.capabilities).toEqual([]);
   });
 
   it("a quarantineScope value outside the engine's two is refused", () => {

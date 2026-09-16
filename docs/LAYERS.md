@@ -63,6 +63,8 @@ place for a value the harness does not choose:
 - **the runner** — a factory over the judge's interface; vitest and script
   runners ship, anything else is declared;
 - **jobs** — a named fence and spec locus per unit of work in one checkout;
+- **capabilities** — the environment facts a repository asserts, which decide
+  whether a capability-gated entry is pickable;
 - **setup**, **agents**, **supervisor**, **ci**, and the findings sources the
   inbox slice drains;
 - **the handoff** — overridable by declaration, for a consumer whose wake

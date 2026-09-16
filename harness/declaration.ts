@@ -406,6 +406,25 @@ export const DeclarationSchema = strict({
     domain: z.string().min(1).optional(),
   }).optional(),
   /**
+   * The environment facts this repository asserts, passed through whole to
+   * `Chain.capabilities`: an entry whose gate is `requiresCapability` is
+   * pickable only where the chain names that capability, and `flume status`
+   * names one held back. Absent asserts none, which is what a consumer with
+   * no environment-gated work declares.
+   *
+   * Empty is admitted rather than refused, unlike the other list-valued
+   * fields. A declaration is a TypeScript module, so this list is routinely
+   * the return of a load-time probe — a daemon health check, a binary on
+   * PATH — and a probe finding nothing is the environment reporting
+   * correctly, not a declaration with a hole in it. Refusing it would fail
+   * the load exactly where the gate is doing its job.
+   *
+   * Passed through whole: what a capability string means is the consumer's
+   * and its queue's, and the engine only ever matches it against an entry's
+   * gate, so the package neither reads nor normalizes the strings.
+   */
+  capabilities: z.array(z.string().min(1)).optional(),
+  /**
    * The CI lanes the inbox slice reads as findings sources beside the
    * records. Optional — a consumer with no forge, or one whose CI it does
    * not want drained into the queue, declares nothing and the slice reads

@@ -528,6 +528,29 @@ it("the factory passes the declared supervisor policy to the chain whole", () =>
   expect(chainFor(withoutPolicy).supervisorPolicy).toBeUndefined();
 });
 
+it("a declared capabilities list reaches Chain.capabilities whole", () => {
+  // The shared fixture declares none, so this case states its own list —
+  // which is also what keeps the absence pin below reading the fixture
+  // rather than a field this case deleted from it.
+  const capabilities = ["network", "docker-daemon"];
+
+  expect(chainFor({ ...DECLARATION, capabilities }).capabilities).toEqual(
+    capabilities,
+  );
+});
+
+it("a declaration naming no capabilities leaves Chain.capabilities unasserted", () => {
+  // Non-vacuity: the fixture is the declaration that names no capabilities,
+  // so a fixture that grew the field would make the assertion below hold for
+  // the wrong reason.
+  expect(DECLARATION).not.toHaveProperty("capabilities");
+
+  // Undeclared stays undeclared rather than becoming an empty assertion: a
+  // `requiresCapability` entry is held back either way, but only an absent
+  // field says the chain never spoke on it.
+  expect(chainFor().capabilities).toBeUndefined();
+});
+
 it("every placeholder the package's prompts name is supplied by the phase the factory returns for it", async () => {
   const chain = chainFor();
   expect(chain.phases.length).toBeGreaterThan(0);
