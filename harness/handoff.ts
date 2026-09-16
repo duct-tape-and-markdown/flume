@@ -37,7 +37,7 @@
 
 import { writeFileSync } from "node:fs";
 
-import type { MergeOutcome } from "../src/Dispatcher.js";
+import type { MergeOutcome } from "../src/tickVerdict.js";
 import { namespacedJoin, stopFlagPath } from "../src/paths.js";
 import type { Phase, TickResult } from "../src/Phase.js";
 import type { NoCommitMode } from "../src/Prompt.js";

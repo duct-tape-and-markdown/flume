@@ -16,13 +16,12 @@ import { promisify } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
+import type { TickOutcome } from "../src/Dispatcher.ts";
+import { EX_TERMINAL_MISCONFIG, EX_MOUNT_DEAD } from "../src/exitCodes.ts";
 import {
-  EX_TERMINAL_MISCONFIG,
-  EX_MOUNT_DEAD,
   tickVerdictsLogPath,
-  type TickOutcome,
   type TickVerdict,
-} from "../src/Dispatcher.ts";
+} from "../src/tickVerdict.ts";
 import { FAILURE_STAGES } from "../src/loopSupervisor.ts";
 import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import {
@@ -308,7 +307,7 @@ async function makeJobRepo(branch: string): Promise<{
 
 /**
  * A minimal, otherwise-valid `TickVerdict` — `writeTickVerdict`'s own shape
- * (`src/Dispatcher.ts`), constructed by hand here since `flume log` reads
+ * (`src/tickVerdict.ts`), constructed by hand here since `flume log` reads
  * `tick-verdicts.jsonl` directly rather than driving a real tick to produce
  * one (a real tick's plumbing is exercised in Dispatcher.test.ts; this suite
  * holds the CLI read-side alone).
@@ -331,7 +330,7 @@ function makeVerdict(
 }
 
 /**
- * Write the verdict history `readTickVerdicts` (`src/Dispatcher.ts`) reads,
+ * Write the verdict history `readTickVerdicts` (`src/tickVerdict.ts`) reads,
  * oldest first, top to bottom. The path comes from the engine's exported
  * {@link tickVerdictsLogPath}, never a filename spelled here: a fixture that
  * re-derives the name reads as a log the CLI never opens the moment the

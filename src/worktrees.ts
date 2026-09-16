@@ -27,7 +27,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import { dirname, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
-import type { Logger } from "./Dispatcher.js";
+import type { Logger } from "./log.js";
 import { harvestFriction } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
 import * as git from "./git.js";

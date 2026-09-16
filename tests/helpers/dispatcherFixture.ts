@@ -15,7 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import type { Logger, TickVerdict } from "../../src/Dispatcher.ts";
+import type { Logger } from "../../src/log.ts";
+import type { TickVerdict } from "../../src/tickVerdict.ts";
 import { RUNTIME_IGNORES } from "../../src/job.ts";
 
 import { mkTempDir } from "./subprocess.ts";

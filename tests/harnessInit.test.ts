@@ -63,7 +63,7 @@ const HARNESS_INDEX = fileURLToPath(new URL("../harness/index.ts", import.meta.u
 const ENGINE_INDEX = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 
 /** The engine's real chain loader, for the probe that drives it in-process. */
-const DISPATCHER = new URL("../src/Dispatcher.ts", import.meta.url).href;
+const CHAIN_LOAD = new URL("../src/chainLoad.ts", import.meta.url).href;
 
 let repoRoot: string;
 
@@ -766,7 +766,7 @@ it("the chain.ts init writes loads through the engine's chain loader as a valid 
   const probe = join(repoRoot, "load-chain.mjs");
   await writeFile(
     probe,
-    `import { loadChainModule } from ${JSON.stringify(DISPATCHER)};\n` +
+    `import { loadChainModule } from ${JSON.stringify(CHAIN_LOAD)};\n` +
       `const configDir = ${JSON.stringify(configDir)};\n` +
       `const { chain } = await loadChainModule({\n` +
       `  repoRoot: ${JSON.stringify(repoRoot)},\n` +

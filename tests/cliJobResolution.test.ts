@@ -615,7 +615,7 @@ function jobEnvProbeChainSrc(phaseName: string): string {
  * CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH — a chain whose factory (not a phase
  * agent) records `process.env.FLUME_DIR` to `<cwd>/observed-flume-dir.json`
  * at load time. `job new` invokes the factory synchronously
- * (`loadChainModule`, `src/Dispatcher.ts`) before the job dir it creates
+ * (`loadChainModule`, `src/chainLoad.ts`) before the job dir it creates
  * exists, so the probe writes beside the repo root rather than under the
  * still-nonexistent job dir.
  */

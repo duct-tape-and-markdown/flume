@@ -28,7 +28,7 @@
  * rather than proceeding.
  */
 
-import { CjsContextLoadError, diskChainLoader } from "./Dispatcher.js";
+import { CjsContextLoadError, diskChainLoader } from "./chainLoad.js";
 import type { Chain } from "./Phase.js";
 import type { FlumePaths } from "./flumeApi.js";
 
@@ -39,7 +39,7 @@ import type { FlumePaths } from "./flumeApi.js";
  *
  * Exit 2 is the usage code, consistent with the rest of the CLI's usage
  * refusals — this is a nameable fix on the host repo, not a dead mount.
- * Detection stays `loadChainModule`'s (`src/Dispatcher.ts`): a load failure
+ * Detection stays `loadChainModule`'s (`src/chainLoad.ts`): a load failure
  * that is not that signature is never shadowed here, it falls through to the
  * caller unchanged.
  */

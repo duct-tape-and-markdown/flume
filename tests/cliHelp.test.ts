@@ -22,7 +22,8 @@ import {
   FAILURE_STAGES,
 } from "../src/loopSupervisor.ts";
 import type { SuperviseResult } from "../src/loopSupervisor.ts";
-import type { TickOutcome, TickVerdict } from "../src/Dispatcher.ts";
+import type { TickOutcome } from "../src/Dispatcher.ts";
+import type { TickVerdict } from "../src/tickVerdict.ts";
 import type { TickResult } from "../src/Phase.ts";
 import {
   SPAWN_BUDGET_MS,

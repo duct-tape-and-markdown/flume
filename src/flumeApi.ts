@@ -30,13 +30,9 @@ import {
   writablePathsGate,
   pendingGate,
 } from "./builtinGates.js";
-import {
-  CjsContextLoadError,
-  computeStateRootRel,
-  PendingParseFailure,
-  readTickVerdicts,
-  readLatestVerdictsSync,
-} from "./Dispatcher.js";
+import { CjsContextLoadError } from "./chainLoad.js";
+import { computeStateRootRel, PendingParseFailure } from "./Dispatcher.js";
+import { readTickVerdicts, readLatestVerdictsSync } from "./tickVerdict.js";
 import {
   readFileAtRef,
   showNameOnly,
@@ -279,13 +275,14 @@ export interface FlumeApi {
 
 /**
  * Build the API object. A **function**, not a module-level constant, and
- * that is load-bearing: `src/index.ts` initializes `builtinGates` before
- * `Dispatcher`, and `builtinGates` imports `Dispatcher` (the documented
- * intentional cycle). A top-level object literal here would read
- * `builtinGates`' exports while that module is still mid-initialization and
- * throw on the temporal dead zone. Reading them inside a call defers every
+ * that is load-bearing: this module sits inside the documented intentional
+ * cycle — `chainLoad` imports `buildFlumeApi` to apply the factory, and this
+ * module imports `CjsContextLoadError` back out of `chainLoad`, which
+ * `builtinGates` also reaches. A top-level object literal here would read a
+ * sibling's exports while that module is still mid-initialization and throw
+ * on the temporal dead zone. Reading them inside a call defers every
  * property access until all modules have finished — the same
- * function-body-only discipline the existing cycle already mandates.
+ * function-body-only discipline every leg of that cycle mandates.
  */
 export function buildFlumeApi(paths: FlumePaths): FlumeApi {
   return {

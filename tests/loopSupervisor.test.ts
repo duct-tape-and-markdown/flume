@@ -16,13 +16,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { FAILURE_STAGES, superviseLoop } from "../src/loopSupervisor.ts";
 import type { FailureStage } from "../src/loopSupervisor.ts";
-import {
-  tickVerdictPath,
-  EX_MOUNT_DEAD,
-  EX_TERMINAL_MISCONFIG,
-  type Logger,
-  type TickVerdict,
-} from "../src/Dispatcher.ts";
+import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
+import type { Logger } from "../src/log.ts";
+import { tickVerdictPath, type TickVerdict } from "../src/tickVerdict.ts";
 import { slugify } from "../src/paths.ts";
 import { Baton } from "../src/Baton.ts";
 import { loopExitCode } from "../src/cliVerdict.ts";
@@ -37,7 +33,7 @@ import {
 
 /**
  * The `tag`/`quarantineKey` pair a real tick's stage-failure record carries
- * (`StageFailureEntry`, `src/Dispatcher.ts`). Hand-authored here because the
+ * (`StageFailureEntry`, `src/tickVerdict.ts`). Hand-authored here because the
  * `superviseLoop` suites write `tick-verdict.json` directly rather than
  * running a wave — the supervisor treats the key as opaque, so any
  * well-formed value exercises it. The engine-side formula is pinned instead

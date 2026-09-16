@@ -4,12 +4,9 @@
  * when verified on disk this tick").
  */
 
-import {
-  EX_TERMINAL_MISCONFIG,
-  EX_MOUNT_DEAD,
-  type TickOutcome,
-  type TickVerdict,
-} from "./Dispatcher.js";
+import { type TickOutcome } from "./Dispatcher.js";
+import { EX_TERMINAL_MISCONFIG, EX_MOUNT_DEAD } from "./exitCodes.js";
+import { type TickVerdict } from "./tickVerdict.js";
 import type { SuperviseResult } from "./loopSupervisor.js";
 import type { CurrentRef } from "./git.js";
 

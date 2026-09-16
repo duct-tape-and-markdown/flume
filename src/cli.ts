@@ -41,20 +41,21 @@ import {
   readPendingLoose,
   JobUsageError,
 } from "./job.js";
+import { diskChainLoader } from "./chainLoad.js";
 import {
   Dispatcher,
-  diskChainLoader,
-  clearTickVerdict,
-  writeTickVerdict,
-  readTickVerdicts,
-  readMergingMarkers,
   RenderUnresolvedError,
   RenderUsageError,
   type RenderResolution,
   type TickOutcome,
-  EX_MOUNT_DEAD,
-  EX_TERMINAL_MISCONFIG,
 } from "./Dispatcher.js";
+import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
+import { readMergingMarkers } from "./mergingMarkers.js";
+import {
+  clearTickVerdict,
+  readTickVerdicts,
+  writeTickVerdict,
+} from "./tickVerdict.js";
 import { frictionCountLine } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
@@ -1248,7 +1249,7 @@ async function main(): Promise<number> {
     //
     // The listing's own non-ENOENT failure is classified here, not left to
     // escape: `readMergingMarkers` rethrows anything but absence
-    // (src/Dispatcher.ts), and uncaught the throw reached `main().catch` as a
+    // (src/mergingMarkers.ts), and uncaught the throw reached `main().catch` as a
     // raw stack and an exit 1 — indistinguishable from a harness error, when
     // it is the same unreadable-state refusal every other stat failure in
     // this file maps (`.claude/rules/platform-facts.md`, "Exit codes come

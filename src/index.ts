@@ -110,26 +110,29 @@ export {
 
 export {
   Dispatcher,
-  consoleLogger,
-  readTickVerdicts,
-  readLatestVerdictsSync,
-  type ChainModule,
-  type ChainFactory,
   type DispatcherOptions,
-  // The two stage-failure records `TickVerdict`/`TickOutcome` list beside
-  // `ProvisionFailure`: a chain routing a quarantine decision off one needs
-  // to name what it is holding.
-  type GateFailure,
-  type Logger,
-  type MergeFailure,
-  type ProvisionFailure,
   type RenderRequest,
   type RenderResolution,
   type TerminalMisconfiguration,
   type TickOutcome,
+} from "./Dispatcher.js";
+
+export { type ChainModule, type ChainFactory } from "./chainLoad.js";
+
+export { consoleLogger, type Logger } from "./log.js";
+
+export {
+  readTickVerdicts,
+  readLatestVerdictsSync,
+  // The two stage-failure records `TickVerdict`/`TickOutcome` list beside
+  // `ProvisionFailure`: a chain routing a quarantine decision off one needs
+  // to name what it is holding.
+  type GateFailure,
+  type MergeFailure,
+  type ProvisionFailure,
   type TickVerdict,
   type ReportedGateResult,
   type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
   type MergeOutcome,
-} from "./Dispatcher.js";
+} from "./tickVerdict.js";

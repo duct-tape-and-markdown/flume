@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { chainLoadGate } from "../src/builtinGates.ts";
-import { loadChainModule } from "../src/Dispatcher.ts";
+import { loadChainModule } from "../src/chainLoad.ts";
 import type { GateContext } from "../src/Gate.ts";
 import { JobUsageError, jobNew, RUNTIME_IGNORES } from "../src/job.ts";
 import type { Phase } from "../src/Phase.ts";

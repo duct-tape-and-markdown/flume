@@ -27,7 +27,7 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Logger } from "../src/Dispatcher.ts";
+import type { Logger } from "../src/log.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 import type { Chain, Phase, WorktreeSetupContext } from "../src/Phase.ts";
 import { slugify, worktreesBase } from "../src/paths.ts";

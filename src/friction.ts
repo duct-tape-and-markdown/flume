@@ -22,7 +22,7 @@ import { copyFile, mkdir, readdir, rename, rm } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { join } from "node:path";
 
-import type { Logger } from "./Dispatcher.js";
+import type { Logger } from "./log.js";
 import * as git from "./git.js";
 import { countFrictionFiles } from "./job.js";
 import {

@@ -3,24 +3,21 @@
  *
  * Split out of `src/Dispatcher.ts` (`.claude/rules/posture-sweep.md`, "A
  * violation counts only when verified on disk this tick"): the supervisor
- * spawns child ticks and reads their on-disk leavings, so it depends on the
- * dispatcher's surface one way only and shares none of the `buildFlumeApi`
- * cycle constraint that keeps chain loading and tick execution colocated
- * there.
+ * spawns child ticks and reads their on-disk leavings — a verdict
+ * (`src/tickVerdict.ts`), an exit code (`src/exitCodes.ts`) — so it depends
+ * on the dispatcher's surface one way only.
  */
 
 import { Baton } from "./Baton.js";
+import { diskChainLoader } from "./chainLoad.js";
+import { type TerminalMisconfiguration } from "./Dispatcher.js";
+import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
+import { consoleLogger, type Logger } from "./log.js";
 import {
-  consoleLogger,
-  diskChainLoader,
   readTickVerdict,
-  EX_MOUNT_DEAD,
-  EX_TERMINAL_MISCONFIG,
-  type Logger,
   type StageFailureEntry,
-  type TerminalMisconfiguration,
   type TickVerdict,
-} from "./Dispatcher.js";
+} from "./tickVerdict.js";
 import { frictionCountLine } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
 import { defaultStateRoot, namespacedJoin, stopFlagPath } from "./paths.js";

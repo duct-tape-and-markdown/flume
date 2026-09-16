@@ -11,12 +11,10 @@ import { join, relative, toNamespacedPath } from "node:path";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
 import type { Phase } from "./Phase.js";
-// Intentional cycle: Dispatcher imports `writablePathsGate` from here.
-// Both sides reference the imported symbol only inside function bodies, never
-// at module top-level, so ESM live bindings resolve cleanly. `chainLoadGate`
-// validates through the exact load path the runtime uses so the gate's
-// verdict can never disagree with what the next tick's resolution would do.
-import { loadChainModule } from "./Dispatcher.js";
+// `chainLoadGate` validates through the exact load path the runtime uses, so
+// the gate's verdict can never disagree with what the next tick's resolution
+// would do.
+import { loadChainModule } from "./chainLoad.js";
 import * as git from "./git.js";
 import {
   chainModulePath,

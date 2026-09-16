@@ -48,7 +48,7 @@ import {
   STATE_ROOT_NAMES,
 } from "../src/paths.ts";
 import { NAME_MAX } from "../src/PendingSchema.ts";
-import { loadChainModule } from "../src/Dispatcher.ts";
+import { loadChainModule } from "../src/chainLoad.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { SPAWN_BUDGET_MS, gitOut, runCli } from "./helpers/subprocess.ts";
 
@@ -620,7 +620,7 @@ describe("flume job new — real CLI on a scratch repo", () => {
 });
 
 /**
- * `loadChainModule` (src/Dispatcher.ts) is the one chain.ts existence check
+ * `loadChainModule` (src/chainLoad.ts) is the one chain.ts existence check
  * every load caller reaches through, and `jobNew` probes that same path one
  * line ahead of its own call into it. The two disagreed: jobNew's
  * `existsLoud` (src/fsProbe.ts) splits ENOENT from every other stat failure,

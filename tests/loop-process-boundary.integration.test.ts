@@ -19,7 +19,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
-import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/Dispatcher.ts";
+import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import {
   CLI,
   TSX_CLI,

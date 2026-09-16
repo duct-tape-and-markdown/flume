@@ -80,7 +80,7 @@ export function gitPath(path: string): string {
  * Shared escape-check for a declared state-root-relative path
  * (`Chain.friction` — `validateFrictionDeclaration`, `src/friction.ts`;
  * `Chain.pendingPath` — `validatePendingPathDeclaration`,
- * `src/Dispatcher.ts`): must be relative, and must still resolve inside the
+ * `src/chainLoad.ts`): must be relative, and must still resolve inside the
  * root it is joined to.
  *
  * Base-independent: it resolves the declared path against an arbitrary
@@ -468,7 +468,8 @@ export function renderedPromptsDir(flumeDir: string): string {
  *
  * `declared` is `Chain.worktreesBase` already **evaluated** — a chain
  * declares how to compute a base, not a path, and the engine runs that
- * computation once per chain load (`src/Dispatcher.ts`) and carries the
+ * computation once per chain load (`resolveWorktreesBaseDeclaration`,
+ * `src/chainLoad.ts`) and carries the
  * string from there. An operator's env var still outranks it: the chain is
  * committed, the host is not. Empty is no declaration, the same reading an
  * empty override gets — `resolve("")` is cwd, which would scatter worktrees
@@ -493,8 +494,8 @@ export function worktreesBase(flumeDir: string, declared?: string): string {
  * run` start is a merge a crash interrupted and the run refuses.
  *
  * Same split as {@link tickVerdictPath}: this module owns the name so the
- * CLI's startup refusal can reach it without importing the dispatcher, and
- * `src/Dispatcher.ts` owns what the file carries and when.
+ * CLI's startup refusal can reach it without importing the marker's reader,
+ * and `src/mergingMarkers.ts` owns what the file carries and when.
  */
 export function mergingDir(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.merging);
@@ -530,16 +531,16 @@ export function stopFlagPath(flumeDir: string): string {
 /**
  * The latest tick's verdict alone, overwritten every real `flume tick` and
  * removed by `clearTickVerdict` before that tick's own work begins.
- * Re-exported from `src/Dispatcher.ts`, which owns what the file carries and
+ * Re-exported from `src/tickVerdict.ts`, which owns what the file carries and
  * when — this module owns only the name, so the job `.gitignore` seed can
- * reach it without importing the dispatcher.
+ * reach it without importing the verdict's I/O.
  */
 export function tickVerdictPath(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.tickVerdict);
 }
 
 /**
- * The append-only verdict history `readTickVerdicts` (`src/Dispatcher.ts`)
+ * The append-only verdict history `readTickVerdicts` (`src/tickVerdict.ts`)
  * reads back for a chain's recent-tick rendering. Same split as
  * {@link tickVerdictPath}: the name here, the semantics there.
  */
@@ -581,7 +582,7 @@ export const CHAIN_MODULE_NAME = "chain.ts";
  * The chain a config dir carries — `<configDir>/chain.ts`, absolute
  * (spec/chain.md "Chain residency").
  *
- * **The one derivation.** `loadChainModule` (`src/Dispatcher.ts`) resolves
+ * **The one derivation.** `loadChainModule` (`src/chainLoad.ts`) resolves
  * the file it imports from here; `jobNew`'s chain precondition (`src/job.ts`)
  * probes the same path before it creates a job that could never `run`; and
  * `chainLoadGate` (`src/builtinGates.ts`) keys its touched-path check on

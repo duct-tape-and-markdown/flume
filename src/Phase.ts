@@ -11,7 +11,7 @@ import type {
   MergeOutcome,
   ProvisionFailure,
   ReportedGateResult,
-} from "./Dispatcher.js";
+} from "./tickVerdict.js";
 import type { FlumePaths } from "./flumeApi.js";
 import type { Gate } from "./Gate.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";

@@ -20,7 +20,7 @@ import { join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { Baton } from "./Baton.js";
-import { loadChainModule } from "./Dispatcher.js";
+import { loadChainModule } from "./chainLoad.js";
 import { existsLoud } from "./fsProbe.js";
 import { literalPathspecEnv, pinLongPaths } from "./git.js";
 import {

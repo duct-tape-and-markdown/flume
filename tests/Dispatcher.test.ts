@@ -20,23 +20,27 @@ vi.mock("tsx/esm/api", async (importOriginal) => {
 import { tsImport } from "tsx/esm/api";
 import {
   CjsContextLoadError,
+  loadChainModule,
+  type ChainModule,
+} from "../src/chainLoad.ts";
+import {
   PendingParseFailure as realPendingParseFailure,
   Dispatcher,
-  loadChainModule,
-  readMergingMarkers,
+  quarantineKey,
+  computeStateRootRel,
+  type DispatcherOptions,
+} from "../src/Dispatcher.ts";
+import type { Logger } from "../src/log.ts";
+import { readMergingMarkers } from "../src/mergingMarkers.ts";
+import {
   writeTickVerdict,
   clearTickVerdict,
   readTickVerdicts,
   readLatestVerdictsSync,
-  quarantineKey,
-  computeStateRootRel,
   tickVerdictPath,
   tickVerdictsLogPath,
-  type ChainModule,
-  type DispatcherOptions,
-  type Logger,
   type TickVerdict,
-} from "../src/Dispatcher.ts";
+} from "../src/tickVerdict.ts";
 import { frictionCountLine } from "../src/friction.ts";
 import { readWorktreeRegistry, worktreeDirName } from "../src/worktrees.ts";
 import { mergingDir, slugify, worktreesBase } from "../src/paths.ts";

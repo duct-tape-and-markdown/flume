@@ -22,7 +22,7 @@ import { dirname, join, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { bound, headTailBound, tailBound } from "./bounds.js";
-import type { Logger } from "./Dispatcher.js";
+import type { Logger } from "./log.js";
 import { existsLoud, isDirectoryOrAbsent } from "./fsProbe.js";
 import * as git from "./git.js";
 import { priorAttemptsDir, slugify } from "./paths.js";

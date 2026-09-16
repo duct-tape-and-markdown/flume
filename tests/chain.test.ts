@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { loadChainModule } from "../src/Dispatcher.ts";
+import { loadChainModule } from "../src/chainLoad.ts";
 import { slugify } from "../src/paths.ts";
 import { priorAttemptPath } from "../src/priorAttempts.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";

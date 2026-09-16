@@ -57,7 +57,7 @@ describe("CJS-context host refusal across the chain-loading CLI surfaces (JOBRUN
   /**
    * A host repo whose own package.json declares `type: commonjs`, carrying a
    * chain.ts with a real `import` statement — the tsx 4.21 signature
-   * (`src/Dispatcher.ts`, `CjsContextLoadError`).
+   * (`src/chainLoad.ts`, `CjsContextLoadError`).
    */
   async function withCjsHost(
     run: (dir: string) => Promise<void>,
