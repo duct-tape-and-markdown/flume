@@ -1,189 +1,8 @@
 [
   {
-    "tag": "FLUME-HELP-IS-THE-SAME-ANSWER",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "the top-level short-circuit takes the bare verb beside the two flags"
-        },
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "the bare verb's answer, against the flag's"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`flume help` exits 64 with `unknown command: help` — the first verb a new operator types",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "acceptance": "`flume help` prints what `flume --help` prints and exits 0, short-circuiting before any chain load or baton read.",
-    "tests": [
-      "flume help prints the same usage as flume --help and exits 0"
-    ],
-    "pins": [],
-    "notes": "Pilot's first command after adoption. src/cli.ts:221 short-circuits `--help`/`-h` alone; the bare verb falls through to the unknown-command refusal at :1373. The text stays src/cliHelp.ts's — this is one arm on the dispatch, not a second usage string."
-  },
-  {
-    "tag": "THE-0.16-NOTE-LEADS-WITH-THE-MANIFEST-STEP",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/MIGRATING-0.16.md",
-          "description": "the upgrade path opens with the state-root manifest; the porting table's runner row prices what it asks for"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the same pricing where the runner is declared"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the 0.16 note's upgrade path says nothing about the state-root manifest, and its porting table prices a non-vitest runner as one table cell",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Adoption and upgrade"
-    },
-    "acceptance": "the note's upgrade steps open with adding `.flume/package.json` (`\"type\": \"module\"`) ahead of any other step, and the docs say where the runner is declared that a non-vitest consumer authors a RunnerFactory over run/runAtBase/lanes — adoption's largest single piece.",
-    "tests": [],
-    "pins": [],
-    "notes": "Two pilot findings in one file: an existing consumer is one node patch from a dead chain (`platform-facts.md`), and the adoption table's runner row (docs/MIGRATING-0.16.md:341) read as a one-liner to a consumer whose stack is not node. Blocked on the init entry so the step names a manifest init writes."
-  },
-  {
-    "tag": "EVERY-TEST-EXEC-RUNS-UNDER-THE-DECLARED-CAP",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/subprocess.ts",
-          "description": "the capped exec wrapper stops being module-private"
-        },
-        {
-          "path": "tests/subprocessHelper.test.ts",
-          "description": "the scan holding tests/ to the one wrapper, beside the cases already pinning the cap"
-        },
-        {
-          "path": "tests/helpers/dispatcherFixture.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/Gate.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/worktrees.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/friction.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/builtinGates.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/bin.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/build-changelog.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/cliRender.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/cliJobResolution.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/cliJobVerbs.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/cliVerdict.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/harnessPackaging.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/tip-claim.integration.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/loop-process-boundary.integration.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/job.integration.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        },
-        {
-          "path": "tests/examples.integration.test.ts",
-          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "25 hand-rolled `promisify(execFile)` wrappers across 22 tests/ files run on node's 1 MiB default while the capped wrapper has one home and stays private",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A module is one job"
-    },
-    "acceptance": "the capped exec wrapper is the one tests/ spawns through, and a scan reds a bare promisify(execFile) written anywhere else — so an overrun can no longer arrive as a child that never ran.",
-    "tests": [
-      "no file under tests/ promisifies execFile outside the module that declares the output cap"
-    ],
-    "pins": [],
-    "notes": "From SPAWN-WRAPPER-DECLARES-ITS-OUTPUT-CAP's note; re-measured this tick at 26 sites over 23 files, one of them the home. Latent today — every site spawns git or node with small output — but an overrun rejects with an errno where an exit status would be, which exitStatusOf reads as a child that never ran. Blocked on the split so the wrappers route to their final home."
-  },
-  {
     "tag": "EVERY-TEST-SYNC-SPAWN-RUNS-UNDER-THE-DECLARED-CAP",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "EVERY-TEST-EXEC-RUNS-UNDER-THE-DECLARED-CAP"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -274,7 +93,15 @@
       "every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.ts cites names a page the working tree holds"
     ],
     "pins": [],
-    "notes": "Ruled at 29e3df4c, option 1: one tree list per arm. bin/*.js and scripts/*.mjs are outside the tsconfig, so this arm reads them at the scopeless createSourceFile tier; the {trees, files} domain in tests/helpers/spawnCaps.ts is the shape to copy for .flume/chain.ts. Measured 51 comment-borne page names in the widened trees, 9 of them examples/ narrating a consumer's repo (state.md, notes/journal.md, .flume/prompts/*) — that class already has three entries in external-vocabulary.json."
+    "notes": "Ruled at 29e3df4c, option 1: one tree list per arm. bin/*.js and scripts/*.mjs are outside the tsconfig, so this arm reads them at the scopeless createSourceFile tier; the {trees, files} domain in tests/helpers/spawnCaps.ts is the shape to copy for .flume/chain.ts. Measured 51 comment-borne page names in the widened trees, 9 of them examples/ narrating a consumer's repo (state.md, notes/journal.md, .flume/prompts/*) — that class already has three entries in external-vocabulary.json.",
+    "observedFiles": [
+      ".flume/plan/notes/THE-PAGE-NAME-ARM-READS-EVERY-SWEEP-TREE.md",
+      "tests/commentCitations.test.ts",
+      "tests/helpers/commentCitations.ts",
+      "tests/helpers/external-vocabulary.json",
+      "tests/helpers/repoProgram.ts",
+      "tests/helpers/spawnCaps.ts"
+    ]
   },
   {
     "tag": "SELECTION-AND-ATTEMPT-LEAVE-THE-DISPATCHER",
