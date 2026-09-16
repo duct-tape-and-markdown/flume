@@ -126,7 +126,7 @@ globs a `per` cite may point into), `fence` (build's `writablePaths`, and per
 plan slice what that slice may write beyond the package's own plan
 artifacts), `runner` (a factory for the test runner the judge drives —
 `vitestRunner()` ships in the package; cargo, dotnet or a script is your own
-`RunnerFactory` over the same three operations, which is adoption's largest
+`RunnerFactory` over `Runner`'s operations, which is adoption's largest
 single piece and is priced under *What adoption costs* below), and `slices` (which plan slices run,
 and the sweep's domain). Optional: `channelPaths`, `scopeWritesToEntry` (off
 by default, and the package takes no side), `resolver`, `handoff` per phase,
@@ -178,7 +178,7 @@ depends on your stack rather than on the package. A vitest suite declares
 `runner: vitestRunner()` and pays nothing further. Anything else — cargo,
 dotnet, a shell script — authors a `RunnerFactory`: `(ctx) => Runner`, called
 once at chain load, over `run`, `runAtBase` and `lanes`. The work is not the
-three signatures, it is what they return.
+signatures, it is what they return.
 
 - `run` reports structured results and never an exit code: a passed count for
   the judge's vacuity check, per requested line whether one passing test
@@ -194,7 +194,7 @@ three signatures, it is what they return.
 
 `Runner`, `RunnerFactory`, `RunnerContext`, `RunResult`, `NamedResult`,
 `TestFailure` and `Lane` are exported from `@dtmd/flume/harness`, and
-`vitestRunner()` is a working implementation of all three to read against.
+`vitestRunner()` is a working implementation of `Runner` to read against.
 `runner` is a required field, so there is no adopting now and porting the
 runner later.
 
