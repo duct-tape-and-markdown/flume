@@ -1,41 +1,5 @@
 [
   {
-    "tag": "ONE-CHAIN-APPLICATION-PER-TICK-PROCESS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "the tick branch reads the grace off the one application the process already makes"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the agent bounds it resolved are a fact it hands out rather than keeps"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the counting-factory case"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume tick applies the chain factory twice — once for the grace its signal handler announces, once inside tick() — and respells agentBounds' own default fold beside it",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A fact the engine holds is reported, never rediscovered"
-    },
-    "acceptance": "a flume tick process applies the chain factory once, and the grace its signal handler names comes from the engine's own bounds derivation rather than a second `?? DEFAULT_KILL_GRACE_MS` spelled beside it.",
-    "tests": [
-      "a bare flume tick applies the chain factory once for the process"
-    ],
-    "pins": [],
-    "notes": "From A-SIGNALLED-RELEASE-ANNOUNCES-ITS-WAIT. src/cli.ts:1062 resolves a second time; the Dispatcher is constructed with configDir alone (cli.ts:839) so it builds its own loader, making the 'one load per process' the comment at cli.ts:807 claims already false. agentBounds (Dispatcher.ts:4029) holds the fact and reports it nowhere. The loop parent's own pair (cli.ts:1310 plus superviseLoop's) is run-scoped, not per-tick — left out of scope."
-  },
-  {
     "tag": "DISPATCHER-HOMES-ITS-FIVE-FRONT-JOBS",
     "gate": {
       "kind": "open"
