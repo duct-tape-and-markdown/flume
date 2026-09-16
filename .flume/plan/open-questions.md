@@ -21,11 +21,15 @@ Each wants a sentence in `spec/harness.md` — no knob in any of them.
 
 ### 1. Derive re-reads a spec commit the inbox drain already routed
 
-Ten plan-derive ticks in loop 33 judged "already queued — cursor advances
-alone" (d246140, 6f63f64, 95cef8f, cb19a4e, 9fdc468, 7ef5bb9, …). Each
-followed an inbox tick that drained a record naming the very spec commit
-derive then re-read. Two plan ticks per interactive ruling, one of which
-does the work.
+Eleven plan-derive ticks judged "already queued — cursor advances alone"
+(d246140, 6f63f64, 95cef8f, cb19a4e, 9fdc468, 7ef5bb9, …, and the tick that
+wrote this line). Each followed an inbox tick that drained a record naming
+the very spec commit derive then re-read. Two plan ticks per interactive
+ruling, one of which does the work. The eleventh is the cleanest instance
+yet: b0be5dc9 drained the pilot records naming 9af54562 and ea8d3519, and
+both spec commits' every hunk was already an entry when derive opened
+them — (b)'s check found nothing to find, over a delta a human had just
+routed by hand.
 
 - **(a)** The inbox drain advances `derivedThrough` through a spec commit a
   drained record cited and routed; derive runs only for spec deltas no
