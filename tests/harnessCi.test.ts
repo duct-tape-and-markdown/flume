@@ -46,6 +46,8 @@ import {
   parseDeclaration,
   planSliceWindows,
   writePlanState,
+  type DeclarationInput,
+  type PlanStateWrite,
 } from "../harness/index.ts";
 
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
@@ -105,6 +107,13 @@ const runner = () => ({
 const SECOND_LANE = { name: "posix", workflow: "ci.yml", job: "windows" } as const;
 
 /**
+ * A lane as a consumer declares one — read off the declaration's own input
+ * side, so a case declaring a title reader is declaring the field a consumer
+ * would rather than a shape this file invented for it.
+ */
+type DeclaredLane = NonNullable<DeclarationInput["ci"]>[number];
+
+/**
  * A declaration naming `lanes`, through the package's own schema — the lanes
  * a leg reads are the ones a consumer could actually declare.
  *
@@ -112,9 +121,7 @@ const SECOND_LANE = { name: "posix", workflow: "ci.yml", job: "windows" } as con
  * answers by question rather than by workflow, so a second lane is a second
  * full read of the same fixture, which is what a per-lane count needs.
  */
-const declarationFor = (
-  lanes: readonly (typeof LANE | typeof SECOND_LANE)[] = [LANE],
-) =>
+const declarationFor = (lanes: readonly DeclaredLane[] = [LANE]) =>
   parseDeclaration({
     specLocus: ["spec/**"],
     fence: { build: ["src/**"] },
@@ -130,10 +137,7 @@ const declarationFor = (
  * knob the leg already carries, so a case can provoke the trim without
  * minting a thousand-line fixture to reach the default.
  */
-function lane(
-  budget?: number,
-  lanes: readonly (typeof LANE | typeof SECOND_LANE)[] = [LANE],
-): LaneLeg {
+function lane(budget?: number, lanes: readonly DeclaredLane[] = [LANE]): LaneLeg {
   return laneLeg({
     lanes: declarationFor(lanes).ci,
     repoRoot: repo,
@@ -163,7 +167,9 @@ const laneLive = (): boolean => lane().live(stateRoot());
  * wrote*). The cursors are this repository's own tip, which is the only sha
  * the schema's object-name shape accepts here.
  */
-function stampLanes(drainedRuns: Record<string, string>): void {
+function stampLanes(
+  drainedRuns: NonNullable<PlanStateWrite["drainedRuns"]>,
+): void {
   const tip = git("rev-parse", "HEAD").trim();
   writePlanState(stateRoot(), {
     derivedThrough: tip,
@@ -718,6 +724,202 @@ it("the lane leg does not report live when the forge CLI cannot read the lane", 
  */
 const FAILING_LOG = "FAIL tests/paths.test.ts > a long path is refused by name\n";
 
+// --- the lane's declared title reader, and the stamp it writes ---
+
+/** Two failing titles, as one runner's grammar states them in a job log. */
+const TITLE_A = "tests/paths.test.ts > a long path is refused by name";
+const TITLE_B = "tests/git.test.ts > a pathspec is spelled literally";
+
+/**
+ * Both titles in the alphabet a set is written in: sorted, which is the
+ * order `TITLE_B` and `TITLE_A` fall in and never the order a log states
+ * them. A stamp names this set however the run's log happened to print it.
+ */
+const BOTH_TITLES = [TITLE_B, TITLE_A];
+
+/** An older run of the same lane — what a stamp holds before this one. */
+const OLDER_RUN = "17420000000";
+
+/**
+ * A failing job's log stating `titles`, framed as the forge frames one.
+ *
+ * Framed rather than bare, because what a declared reader is handed is the
+ * shed log and that is exactly what the cases below assert: a reader states
+ * its own runner's grammar and is never made to know the forge's.
+ */
+const logStating = (...titles: readonly string[]): string =>
+  [
+    framed("pnpm test"),
+    ...titles.map((title) => framed(`FAIL ${title}`)),
+    framed(`${titles.length} failed | 40 passed`),
+    "",
+  ].join("\n");
+
+/** The grammar those fixtures state, as a consumer would declare it. */
+const FAIL_LINE = /^FAIL (.+)$/m;
+
+/** The same grammar as a function, for the reader's other declared shape. */
+const readsFailLines = (log: string): string[] =>
+  [...log.matchAll(/^FAIL (.+)$/gm)].map((match) => match[1] ?? "");
+
+/** The lane with a reader over it. */
+const reading = (titles: DeclaredLane["titles"]): DeclaredLane => ({
+  ...LANE,
+  ...(titles === undefined ? {} : { titles }),
+});
+
+/** The stamp value a block names for a run and a title set. */
+const stampValue = (run: string, titles: readonly string[]): string =>
+  JSON.stringify({ run, titles });
+
+/** The stamp value the rendered block told this tick to write. */
+function stampNamed(rendered: string): string {
+  const at = /drainedRuns\.[^`]+` at `([^`]+)`/.exec(rendered);
+  if (at?.[1] === undefined) {
+    throw new Error(`the block names no stamp:\n${rendered}`);
+  }
+  return at[1];
+}
+
+it("a lane's declared title reader gives the liveness leg its failing-title set", () => {
+  const seen: string[] = [];
+  const reader = (log: string): string[] => {
+    seen.push(log);
+    return readsFailLines(log);
+  };
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: logStating(TITLE_A, TITLE_B),
+  });
+  // A run past the stamp, stamped with the very titles this run states: the
+  // only thing that can settle this lane is the reader's own answer.
+  stampLanes({ [LANE.name]: { run: OLDER_RUN, titles: [TITLE_A, TITLE_B] } });
+
+  expect(lane(undefined, [reading(reader)]).live(stateRoot())).toBe(false);
+
+  // Vacuity: the reader really ran, exactly once, and the liveness leg is
+  // what ran it — the log it was handed came off the selection path.
+  expect(seen.length).toBe(1);
+  expect(calls().some((call) => call.includes("--log-failed"))).toBe(true);
+
+  // And it was handed the job's shed log: its own runner's lines, with the
+  // forge's per-line framing already off them.
+  expect(seen[0]).toContain(`FAIL ${TITLE_A}`);
+  expect(seen[0]).toContain(`FAIL ${TITLE_B}`);
+  expect(seen[0]).not.toContain(`${LANE.job}\t`);
+
+  // The set is the reader's, not a grammar the package holds: the same lane
+  // whose reader answers something else on the same log is live.
+  expect(
+    lane(undefined, [reading(() => ["a title this run never stated"])]).live(
+      stateRoot(),
+    ),
+  ).toBe(true);
+}, SPAWN_BUDGET_MS);
+
+it("a drained-run stamp carries the failing titles the reader gave it", () => {
+  // Stated in the log in the other order, so the stamp below is a set the
+  // reading canonicalized rather than the log's own line order.
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: logStating(TITLE_B, TITLE_A),
+  });
+  stampLanes({});
+
+  const rendered = lane(undefined, [reading(FAIL_LINE)]).render(stateRoot());
+
+  // Vacuity: a red lane really was read and really woke this slice, so the
+  // stamp below is the one this tick was told to write.
+  expect(rendered).toContain("FAILING");
+  expect(rendered).toContain("Woke this slice:");
+  expect(stampNamed(rendered)).toBe(stampValue(String(RUN.databaseId), BOTH_TITLES));
+
+  // And the value is one the artifact takes: written through the package's
+  // own writer, the lane it names stops being live — the render, the schema
+  // and the wake read one stamp (`.claude/rules/engineering.md`, *A seam
+  // gate reads what the real writer wrote*).
+  const named = JSON.parse(stampNamed(rendered)) as NonNullable<
+    PlanStateWrite["drainedRuns"]
+  >[string];
+  stampLanes({ [LANE.name]: named });
+  expect(lane(undefined, [reading(FAIL_LINE)]).live(stateRoot())).toBe(false);
+}, SPAWN_BUDGET_MS);
+
+it("a failing run whose title set matches the lane's stamp does not make the inbox slice live", () => {
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: logStating(TITLE_A, TITLE_B),
+  });
+  stampLanes({ [LANE.name]: { run: OLDER_RUN, titles: [TITLE_B, TITLE_A] } });
+
+  expect(lane(undefined, [reading(FAIL_LINE)]).live(stateRoot())).toBe(false);
+
+  // Vacuity: the run really is past the stamp — the same fixture under a
+  // lane with no reader wakes on it — so what closed this lane is the title
+  // set and not the run identity.
+  expect(lane().live(stateRoot())).toBe(true);
+  expect(lane(undefined, [reading(FAIL_LINE)]).render(stateRoot())).toContain(
+    "FAILING",
+  );
+
+  // And the tick that ran anyway is told to advance the stamp to this run,
+  // so a red that persists unchanged stops being re-read forever.
+  const rendered = lane(undefined, [reading(FAIL_LINE)]).render(stateRoot());
+  expect(rendered).toContain("Not what woke this slice");
+  expect(stampNamed(rendered)).toBe(stampValue(String(RUN.databaseId), BOTH_TITLES));
+}, SPAWN_BUDGET_MS);
+
+it("a failing run whose title set differs from the lane's stamp makes the inbox slice live", () => {
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: logStating(TITLE_A, TITLE_B),
+  });
+  // One of the two titles stamped: this run states a failure the stamp does
+  // not carry, which is a finding nothing has filed.
+  stampLanes({ [LANE.name]: { run: OLDER_RUN, titles: [TITLE_A] } });
+
+  expect(lane(undefined, [reading(FAIL_LINE)]).live(stateRoot())).toBe(true);
+
+  // Vacuity: the same lane against a stamp carrying both titles is closed,
+  // so the wake above is the differing set and not the run alone.
+  stampLanes({ [LANE.name]: { run: OLDER_RUN, titles: [TITLE_A, TITLE_B] } });
+  expect(lane(undefined, [reading(FAIL_LINE)]).live(stateRoot())).toBe(false);
+}, SPAWN_BUDGET_MS);
+
+it("a lane declaring no title reader makes the inbox slice live once per failing run", () => {
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: logStating(TITLE_A, TITLE_B),
+  });
+  // Stamped at an older run carrying the very titles this run states. A lane
+  // that declared a reader would be closed by that set; this one declares
+  // none, so the run alone decides and the new run wakes it.
+  stampLanes({ [LANE.name]: { run: OLDER_RUN, titles: [TITLE_A, TITLE_B] } });
+
+  expect(lane().live(stateRoot())).toBe(true);
+
+  // Once per run, not once per tick: stamped at this run, the same red lane
+  // is closed however its titles read.
+  stampLanes({ [LANE.name]: { run: String(RUN.databaseId), titles: [] } });
+  expect(lane().live(stateRoot())).toBe(false);
+
+  // And neither verdict bought a log: a lane with no reader answers the
+  // question off the run's identity and its job's conclusion alone.
+  expect(calls().some((call) => call.includes("--log-failed"))).toBe(false);
+
+  // Vacuity: the titles were there to be read. The same fixture under a lane
+  // that *does* declare a reader is closed by them at the older stamp, which
+  // is the wake this lane took anyway.
+  stampLanes({ [LANE.name]: { run: OLDER_RUN, titles: BOTH_TITLES } });
+  expect(lane().live(stateRoot())).toBe(true);
+  expect(lane(undefined, [reading(FAIL_LINE)]).live(stateRoot())).toBe(false);
+}, SPAWN_BUDGET_MS);
+
 it("the lane block names the lane whose undrained failing run made the slice live", () => {
   plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
   // Stamped at an older run of the same lane, so this lane is undrained by the
@@ -779,7 +981,9 @@ it("the unread block over the run a lane woke on names the stamp that closes tha
 
   // The stamp named with the run it closes — not the bare field name the wake
   // marker already carries with no run beside it.
-  expect(rendered).toContain(`drainedRuns.${LANE.name}\` at \`${RUN.databaseId}\``);
+  expect(rendered).toContain(
+    `drainedRuns.${LANE.name}\` at \`${stampValue(String(RUN.databaseId), [])}\``,
+  );
 }, SPAWN_BUDGET_MS);
 
 it("a lane stamped at the run whose log the forge refused no longer reports live", () => {

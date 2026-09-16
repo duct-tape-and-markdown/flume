@@ -26,6 +26,7 @@ import { z } from "zod";
 import type { GatePhase } from "../src/Gate.js";
 import type { Chain } from "../src/Phase.js";
 
+import type { CiTitleReader } from "./ci.js";
 import type { SectionResolver } from "./citeResolver.js";
 import type { Handoff } from "./handoff.js";
 import { parseOrThrow, strict } from "./refusal.js";
@@ -262,18 +263,45 @@ const Slices = strict({
 });
 
 /**
+ * A lane's title reader — the fourth declared value with behavior, and the
+ * one the package could not have supplied: what a failing title looks like
+ * is the consumer's runner's grammar, not the package's
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * Checked as a pattern or a function and nothing more, for the resolver's
+ * reason: what a reader answers over one log is the lane reader's contract
+ * (`ci.ts`, {@link CiTitleReader}), and the only thing that could check it
+ * here is running it against a log this schema has never seen.
+ */
+const TitleReaderValue = z.custom<CiTitleReader>(
+  (value): boolean => typeof value === "function" || value instanceof RegExp,
+  {
+    error:
+      "must be a pattern, or a function over the failing job's log, " +
+      "answering the failing titles that log states (spec/harness.md, CI " +
+      "lanes as a findings source)",
+  },
+);
+
+/**
  * One CI lane the inbox slice reads as a findings source
  * (`spec/harness.md`, *CI lanes as a findings source*): the workflow file
- * and job name that locate a run on the forge, and the lane name the
- * findings that run yields are filed under.
+ * and job name that locate a run on the forge, the lane name the findings
+ * that run yields are filed under, and how a failing run's titles read.
  *
- * All three are required because all three are consumed: a lane missing its
- * workflow or job names no run to read, and one missing its name yields
- * findings with no key — the slice keys a finding by lane name and title, so
- * an unnamed lane is a finding that can never be recognized as already
- * filed. Strict, so a consumer who spells the job component by some other
- * name is told rather than silently left with a lane the slice cannot
+ * The first three are required because all three are consumed: a lane
+ * missing its workflow or job names no run to read, and one missing its name
+ * yields findings with no key — the slice keys a finding by lane name and
+ * title, so an unnamed lane is a finding that can never be recognized as
+ * already filed. Strict, so a consumer who spells the job component by some
+ * other name is told rather than silently left with a lane the slice cannot
  * locate.
+ *
+ * `titles` is optional, and its absence is a stated position rather than a
+ * hole: a lane declaring no reader wakes the slice once per failing run,
+ * which is what a lane has always done. A lane declaring one wakes on a
+ * changed failing-title set instead, so a red that persists unchanged across
+ * runs stops re-waking it.
  *
  * Not the runner's `Lane`, despite the word: that is a partition of the
  * consumer's *test suite*, read off `Runner.lanes` and consumed by the
@@ -287,6 +315,11 @@ const CiLane = strict({
   workflow: z.string().min(1),
   /** The job within that workflow whose run the slice reads. */
   job: z.string().min(1),
+  /**
+   * How this lane's failing titles read out of a failing job's log — a
+   * pattern or a function, stating the grammar this consumer's runner emits.
+   */
+  titles: TitleReaderValue.optional(),
 });
 
 /**

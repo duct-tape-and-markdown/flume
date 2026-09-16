@@ -78,6 +78,38 @@ const Rotation = z.discriminatedUnion("kind", [
 const runName = z.string().min(1);
 
 /**
+ * One lane's drained-run stamp: the run the slice drained that lane at, and
+ * the failing titles the lane's declared reader gave that run
+ * (`spec/harness.md`, *CI lanes as a findings source*). The titles ride the
+ * stamp because the wake compares them against the run's current set — a
+ * stamp holding the run alone can only say "a different run", so a red that
+ * persists across runs wakes the slice again on failures it already filed.
+ *
+ * **A bare run identity is the same stamp with no titles.** Every artifact
+ * written before this field carried a set spells it that way, and so does a
+ * lane whose reader never ran — the log the forge withheld, a lane declaring
+ * no reader. Read here rather than repaired by a migration, and read into
+ * the one shape every consumer of this field sees: a reader picking the
+ * spelling apart at each call site is the second implementation this arm
+ * exists to prevent.
+ *
+ * Titles are required on the object spelling, empty where there are none.
+ * Vacuous-by-design is spelled, never inherited from a field left out.
+ */
+const DrainedRun = z.union(
+  [
+    runName.transform((run) => ({ run, titles: [] as string[] })),
+    strict({ run: runName, titles: z.array(z.string().min(1)) }),
+  ],
+  {
+    error:
+      "must be the run identity the forge reported, or { run, titles } " +
+      "carrying that identity and the failing titles the lane's declared " +
+      "reader gave it",
+  },
+);
+
+/**
  * The facts, as `spec/harness.md`, *Plan state as declared state* names
  * them. The cursors and the rotation are required: a present artifact
  * missing one is a slice that wrote away another slice's window, and reading
@@ -92,10 +124,12 @@ export const PlanStateSchema = strict({
   rotation: Rotation,
   /**
    * The per-lane drained-run stamp: per declared CI lane, the run the inbox
-   * slice drained it at (`spec/harness.md`, *CI lanes as a findings
+   * slice drained it at and the failing titles that run stated
+   * ({@link DrainedRun}, `spec/harness.md`, *CI lanes as a findings
    * source*). A lane whose latest completed run failed is live exactly while
-   * that run is not the one stamped here, so without this field the slice
-   * re-drains one red run every tick.
+   * that run is past the one stamped here — and, where the lane declares a
+   * title reader, while the run's titles differ from the stamped set — so
+   * without this field the slice re-drains one red run every tick.
    *
    * **The one absence this artifact reads as a state.** The map is optional
    * and a lane missing from it reads as never drained — which is honest
@@ -107,11 +141,23 @@ export const PlanStateSchema = strict({
    * one — a cursor has no such history, which is why it has no such
    * exemption.
    */
-  drainedRuns: z.record(z.string().min(1), runName).optional(),
+  drainedRuns: z.record(z.string().min(1), DrainedRun).optional(),
 });
 
 /** The plan state as a slice reads it. */
 export type PlanState = z.infer<typeof PlanStateSchema>;
+
+/**
+ * The plan state as a writer hands one in — the schema's **input** side, and
+ * what {@link writePlanState} accepts.
+ *
+ * Not {@link PlanState}: a lane stamp reads in two spellings and out in one
+ * ({@link DrainedRun}), so the output side names only the spelling the
+ * schema normalizes to. A writer holding the other one — a script advancing
+ * a stamp it read off an older artifact — would otherwise have to fold it by
+ * hand to hand it back to the writer that already folds it.
+ */
+export type PlanStateWrite = z.input<typeof PlanStateSchema>;
 
 /**
  * The host's form of the path the package composed — every fs call in this
@@ -179,8 +225,13 @@ export function readPlanState(stateRoot: string): PlanState | undefined {
  * Two-space JSON with a trailing newline, because an agent edits this file
  * as often as this function writes it, and a one-line artifact makes every
  * cursor advance a whole-file diff.
+ *
+ * What lands on disk is what the parse *read*, not what the caller spelled:
+ * a lane stamp handed in as a bare run identity is written in the one
+ * spelling every reader of this artifact sees, so nothing this package wrote
+ * carries a shape a later reader has to fold again.
  */
-export function writePlanState(stateRoot: string, state: PlanState): void {
+export function writePlanState(stateRoot: string, state: PlanStateWrite): void {
   const path = onDisk(stateRoot);
   const checked = parseOrThrow(PlanStateSchema, state, `plan state at ${path}`);
 

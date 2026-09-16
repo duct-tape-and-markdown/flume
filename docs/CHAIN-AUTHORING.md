@@ -139,7 +139,11 @@ command runs under, `sh` where the declaration is silent), `agents`,
 whole to `Chain.capabilities`, so a `requiresCapability` entry naming one the
 declaration does not assert stays unpickable; absent asserts none), and `ci`
 (the CI lanes the inbox slice reads as findings sources beside the records —
-each a workflow file, a job name, and the lane name its findings carry).
+each a workflow file, a job name, the lane name its findings carry, and
+optionally `titles`: a pattern or a function over the failing job's log
+answering the titles that log states, which the slice stamps beside the run
+so a red that persists unchanged stops re-waking it; a lane declaring none
+wakes the slice once per failing run).
 
 It is a TypeScript module rather than JSON because three of those fields are
 values with behavior. An unknown field, or a required one missing, refuses

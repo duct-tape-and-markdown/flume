@@ -55,6 +55,8 @@ export {
   type HarnessChainOptions,
 } from "./chain.js";
 
+export { type CiTitleReader } from "./ci.js";
+
 export {
   DeclarationSchema,
   parseDeclaration,
@@ -102,6 +104,7 @@ export {
   readPlanState,
   writePlanState,
   type PlanState,
+  type PlanStateWrite,
 } from "./planState.js";
 
 export {

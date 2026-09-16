@@ -58,10 +58,19 @@ const planState = (): PlanState => ({
 /** The host form of the package's slash-joined path — how a case reads disk. */
 const onDisk = (): string => normalize(planStatePath(stateRoot));
 
-/** The refusal message a malformed artifact on disk produces, as a string. */
-async function refusalFor(bytes: string): Promise<string> {
+/**
+ * An artifact laid down by hand, where what is under test is a spelling the
+ * package's own writer cannot produce — a malformed one, or one a released
+ * version wrote before a field took its current shape.
+ */
+async function writeArtifact(bytes: string): Promise<void> {
   await mkdir(dirname(onDisk()), { recursive: true });
   await writeFile(onDisk(), bytes);
+}
+
+/** The refusal message a malformed artifact on disk produces, as a string. */
+async function refusalFor(bytes: string): Promise<string> {
+  await writeArtifact(bytes);
   try {
     readPlanState(stateRoot);
   } catch (error) {
@@ -188,7 +197,10 @@ it("an absent plan state artifact reads as no cursor rather than throwing", asyn
 });
 
 it("the plan state accessor round-trips a per-lane drained-run stamp", async () => {
-  const drainedRuns = { windows: "17420993001", posix: "17420993002" };
+  const drainedRuns = {
+    windows: { run: "17420993001", titles: ["paths.test.ts > a long path"] },
+    posix: { run: "17420993002", titles: [] },
+  };
   writePlanState(stateRoot, { ...planState(), drainedRuns });
 
   expect(readPlanState(stateRoot)?.drainedRuns).toEqual(drainedRuns);
@@ -204,11 +216,11 @@ it("the plan state accessor round-trips a per-lane drained-run stamp", async () 
   // still-red second lane from reading as drained.
   writePlanState(stateRoot, {
     ...planState(),
-    drainedRuns: { ...drainedRuns, windows: "17421004417" },
+    drainedRuns: { ...drainedRuns, windows: { run: "17421004417", titles: [] } },
   });
   expect(readPlanState(stateRoot)?.drainedRuns).toEqual({
-    windows: "17421004417",
-    posix: "17420993002",
+    windows: { run: "17421004417", titles: [] },
+    posix: { run: "17420993002", titles: [] },
   });
 
   // And the stamps ride beside the cursors rather than through them: writing
@@ -241,10 +253,74 @@ it("a plan state artifact carrying no lane stamp reads as no lane drained", asyn
   // And a stamp is a claim about its own lane alone: one lane drained leaves
   // every lane missing from the map reading as never drained, which is what
   // makes a lane declared after the last drain live on its first red run.
-  writePlanState(stateRoot, { ...planState(), drainedRuns: { posix: "17420993002" } });
+  writePlanState(stateRoot, {
+    ...planState(),
+    drainedRuns: { posix: { run: "17420993002", titles: [] } },
+  });
   const read = readPlanState(stateRoot);
   expect(read?.drainedRuns?.["windows"]).toBeUndefined();
-  expect(read?.drainedRuns?.["posix"]).toBe("17420993002");
+  expect(read?.drainedRuns?.["posix"]?.run).toBe("17420993002");
+});
+
+it("a drained-run stamp already on disk as a bare run identity reads as that run with no titles", async () => {
+  // Hand-authored on purpose, and the one place in this file that is right:
+  // the writer below normalizes, so no run of it can put this spelling on
+  // disk — while every artifact written before a stamp carried a title set,
+  // and every plan tick that spelled one by hand, holds exactly this.
+  await writeArtifact(
+    JSON.stringify({ ...planState(), drainedRuns: { windows: "17420993001" } }),
+  );
+
+  const bare = readPlanState(stateRoot)?.drainedRuns?.["windows"];
+  expect(bare).toEqual({ run: "17420993001", titles: [] });
+
+  // Vacuity: the same artifact spelled the other way reads the same run, so
+  // the arm above is a second spelling of one stamp rather than a shape a
+  // reader has to tell apart (`harness/planState.ts`, `DrainedRun`).
+  writePlanState(stateRoot, {
+    ...planState(),
+    drainedRuns: { windows: { run: "17420993001", titles: [] } },
+  });
+  expect(readPlanState(stateRoot)?.drainedRuns?.["windows"]).toEqual(bare);
+
+  // And the writer hands back the one spelling every reader of this artifact
+  // sees: a bare identity written through it lands as the stamp it means.
+  writePlanState(stateRoot, { ...planState(), drainedRuns: { windows: "17421004417" } });
+  const raw = JSON.parse(await readFile(onDisk(), "utf8")) as {
+    drainedRuns: Record<string, unknown>;
+  };
+  expect(raw.drainedRuns["windows"]).toEqual({ run: "17421004417", titles: [] });
+});
+
+it("a drained-run stamp whose titles are not a list of titles is refused, naming the field", async () => {
+  // The stamp's own half: a run with a title set is one value, and a set
+  // that is not one would read as a lane drained at titles nothing stated.
+  const listed = await refusalFor(
+    JSON.stringify({
+      ...planState(),
+      drainedRuns: { windows: { run: "17420993001", titles: "a title" } },
+    }),
+  );
+  expect(listed).toContain("drainedRuns.windows");
+  expect(listed).not.toContain("unknown field");
+
+  // An empty title is not a title: a stamp carrying one would compare equal
+  // to nothing a reader can report.
+  const blank = await refusalFor(
+    JSON.stringify({
+      ...planState(),
+      drainedRuns: { windows: { run: "17420993001", titles: [""] } },
+    }),
+  );
+  expect(blank).toContain("drainedRuns.windows");
+
+  // And the set is spelled, never inherited: a stamp naming a run and no
+  // titles at all is refused rather than read as the empty set, which is
+  // what the bare identity above already spells.
+  const missing = await refusalFor(
+    JSON.stringify({ ...planState(), drainedRuns: { windows: { run: "17420993001" } } }),
+  );
+  expect(missing).toContain("drainedRuns.windows");
 });
 
 it("a plan state artifact whose lane stamp is malformed is refused, naming the field", async () => {

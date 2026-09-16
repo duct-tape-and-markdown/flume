@@ -9,9 +9,11 @@
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*): the run's
  * identity, the declared job's conclusion, and — when that conclusion is a
  * failure — the log the forge kept for it. No test title is parsed out of
- * that log here. The titles are findings, and taking a finding out of
- * material the package did not author is the slice's agent's job, exactly as
- * it is for a record's prose.
+ * that log by a grammar this module authored: where a lane declares a title
+ * reader it is the consumer's ({@link CiTitleReader}), stating what its own
+ * runner emits, and where a lane declares none the titles stay what they
+ * have always been — findings the slice's agent lifts out of the log,
+ * exactly as it lifts one out of a record's prose.
  *
  * **What the forge wrote around the log is the forge's, and comes off.** The
  * per-line frame keyed by the declared job's name, the ANSI a test runner
@@ -60,6 +62,32 @@ import { captureSync, detailOf } from "./exec.js";
  * by the other.
  */
 type CiLane = NonNullable<Declaration["ci"]>[number];
+
+/**
+ * A lane's title reader, as the consumer declares it (`spec/harness.md`, *CI
+ * lanes as a findings source*): a pattern, or a function, over the failing
+ * job's log, answering the failing titles that log states.
+ *
+ * **The consumer's, because the grammar is its runner's.** By the time a log
+ * reaches a reader the forge's own decoration is off it and everything left
+ * is prose some test runner wrote. A reader this package authored would be
+ * the package reconstructing a statement it never agreed to, one reworded
+ * progress line from meaning something else
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*); a consumer
+ * whose runner prints `FAIL <file> > <title>` states that, and the package
+ * holds it to nothing else.
+ *
+ * A pattern answers its matches — the first capture group where it declares
+ * one, the whole match otherwise — read over the log entire and over every
+ * match, whatever flags it carries: {@link everyMatch} re-spells it, so
+ * neither the global flag nor the match position left behind by a consumer's
+ * own earlier use of the value decides how much of the log is read.
+ *
+ * Declaring none is a stated position, not a gap: the lane then wakes the
+ * slice once per failing run, and its titles stay findings the slice's agent
+ * lifts out of the log itself.
+ */
+export type CiTitleReader = RegExp | ((log: string) => readonly string[]);
 
 /**
  * The forge CLI a lane is read through. The package's opinion, like the
@@ -256,6 +284,17 @@ export type CiLaneReading =
        * off it, then tail-trimmed to the budget.
        */
       readonly log: string;
+      /**
+       * The failing titles the lane's declared reader took out of that log,
+       * as a canonical set ({@link titleSet}) — absent where the lane
+       * declares no reader, which is the state the wake reads as "this lane
+       * states no titles", never as "this lane states none".
+       *
+       * Read over the whole shed log rather than over {@link log}: the
+       * budget bounds what a *prompt* carries, and a title set that moved
+       * with it would make a lane's wake depend on a rendering knob.
+       */
+      readonly titles?: readonly string[];
     })
   | Extract<CiLaneStatus, { kind: "green" }>
   | (Extract<CiLaneStatus, { kind: "unread" }> & {
@@ -271,7 +310,7 @@ interface CiRepoOptions {
   readonly repoRoot: string;
 }
 
-/** What {@link withCiLaneMaterial} needs to read one tick's lane material. */
+/** What {@link ciLaneReading} needs to read one tick's lane material. */
 interface CiReadOptions extends CiRepoOptions {
   /**
    * How many lines of a failing job's log one lane carries. The tail is
@@ -304,20 +343,121 @@ export function readCiLaneStatuses(
 }
 
 /**
- * The same statuses with each failing lane's job log layered on.
+ * One status with the failing job's log layered on, and the titles the
+ * lane's declared reader took out of it.
  *
- * Takes statuses rather than lanes, and that is the whole point: the two
+ * Takes a status rather than a lane, and that is the whole point: the two
  * depths are one derivation, so a caller that already read the cheap half for
- * a liveness verdict pays for the material on top of *those* readings rather
+ * a liveness verdict pays for the material on top of *that* reading rather
  * than buying a second walk that could name a different run
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
  * beside its source*).
+ *
+ * One status at a time rather than the whole list, because the two callers
+ * want different subsets of it: a render reads every lane, while a liveness
+ * verdict reads only the lanes whose stamp it cannot settle without titles
+ * (`ciLane.ts`). Mapping a list here would have made the cheaper caller buy
+ * every lane's log.
  */
-export function withCiLaneMaterial(
-  statuses: readonly CiLaneStatus[],
+export function ciLaneReading(
+  status: CiLaneStatus,
   options: CiReadOptions,
-): CiLaneReading[] {
-  return statuses.map((status) => withMaterial(status, options));
+): CiLaneReading {
+  if (status.kind !== "failing") return status;
+  try {
+    const lines = shed(
+      forge(options.repoRoot, [
+        "run",
+        "view",
+        "--job",
+        String(status.jobId),
+        "--log-failed",
+      ]),
+      status.lane.job,
+    );
+    const titles = readTitles(status.lane, lines.join("\n"));
+    const log = tail(lines, options.logLines);
+    return titles === undefined ? { ...status, log } : { ...status, log, titles };
+  } catch (err) {
+    return {
+      kind: "unread",
+      lane: status.lane,
+      reason: readFailure(err),
+      over: { branch: status.branch, run: status.run },
+    };
+  }
+}
+
+/**
+ * The failing titles the lane's own reader takes out of a shed log, or
+ * `undefined` where the lane declared no reader ({@link CiTitleReader}).
+ *
+ * A reader that throws is not caught here: it runs inside
+ * {@link ciLaneReading}'s own try, so a reader that cannot read the log this
+ * run produced degrades the lane to unread over that run — said out loud in
+ * the render, with the run named — rather than silently yielding the empty
+ * set, which the wake would read as "this run states no failures"
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function readTitles(lane: CiLane, log: string): string[] | undefined {
+  const reader = lane.titles;
+  if (reader === undefined) return undefined;
+  if (typeof reader === "function") return titleSet(reader(log));
+  return titleSet(
+    [...log.matchAll(everyMatch(reader))].map((match) => match[1] ?? match[0]),
+  );
+}
+
+/**
+ * A declared pattern re-spelled to read the whole log: global, from the top.
+ *
+ * Rebuilt rather than used as handed over, and unconditionally. A match-all
+ * read refuses a pattern without the global flag outright, and resumes from
+ * the match position a consumer's own earlier use of the value left on it —
+ * so a lane's title set would otherwise depend on what else that repository
+ * did with its own regex literal before the tick read it.
+ */
+const everyMatch = (pattern: RegExp): RegExp =>
+  new RegExp(
+    pattern.source,
+    pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`,
+  );
+
+/**
+ * A title set in its one spelling: each title trimmed, the blanks dropped,
+ * the rest deduplicated and sorted.
+ *
+ * The wake turns on whether two *sets* differ, and a runner that shards or
+ * parallelizes reports one run's failures in another run's order — compared
+ * as written, a lane that changed nothing would read as changed on every
+ * run. One canonicalizer, so the reader's set and the stamp's are compared
+ * in the same alphabet and a stamp is written in it.
+ */
+function titleSet(titles: Iterable<string>): string[] {
+  const seen = new Set<string>();
+  for (const title of titles) {
+    const trimmed = title.trim();
+    if (trimmed !== "") seen.add(trimmed);
+  }
+  return [...seen].sort();
+}
+
+/**
+ * Whether two title sets name the same failures, however either was spelled.
+ *
+ * Exported because the comparison is the wake's (`ciLane.ts`) and the
+ * alphabet is this module's: a caller folding a stamp's titles by hand would
+ * be a second spelling of {@link titleSet} that is free to disagree with the
+ * one a stamp was written in (`.claude/rules/engineering.md`, *The fix lands
+ * at the mechanism*).
+ */
+export function sameTitleSet(
+  a: Iterable<string>,
+  b: Iterable<string>,
+): boolean {
+  const left = titleSet(a);
+  const right = titleSet(b);
+  return left.length === right.length && left.every((t, i) => t === right[i]);
 }
 
 /**
@@ -417,40 +557,6 @@ function readLaneStatus(
     return { kind: "failing", lane, branch, run, jobId: job.databaseId };
   } catch (err) {
     return unread(readFailure(err));
-  }
-}
-
-/**
- * One status with the failing job's log fetched and trimmed, or the same
- * lane unread when the forge could not be asked for it.
- */
-function withMaterial(
-  status: CiLaneStatus,
-  options: CiReadOptions,
-): CiLaneReading {
-  if (status.kind !== "failing") return status;
-  try {
-    const log = tail(
-      shed(
-        forge(options.repoRoot, [
-          "run",
-          "view",
-          "--job",
-          String(status.jobId),
-          "--log-failed",
-        ]),
-        status.lane.job,
-      ),
-      options.logLines,
-    );
-    return { ...status, log };
-  } catch (err) {
-    return {
-      kind: "unread",
-      lane: status.lane,
-      reason: readFailure(err),
-      over: { branch: status.branch, run: status.run },
-    };
   }
 }
 

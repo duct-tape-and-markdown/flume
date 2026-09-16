@@ -23,6 +23,7 @@ import {
   type Declaration,
 } from "../harness/index.ts";
 import type {
+  CiTitleReader,
   Handoff,
   RunnerFactory,
   SectionResolver,
@@ -381,13 +382,17 @@ describe("the harness declaration schema", () => {
   it("a declaration carrying a ci lane with its workflow, job and lane name parses", () => {
     const declared = fullDeclaration();
     // Vacuity guard on "with its workflow, job and lane name": the three
-    // components are read off the lane's own schema, so a component the
-    // schema gains and this case never names fails here rather than passing
-    // over two of three.
+    // components are read off the lane's own schema — every field of it that
+    // a lane cannot leave out — so a required component the schema gains and
+    // this case never names fails here rather than passing over two of
+    // three.
     const lane = { name: "windows", workflow: "ci.yml", job: "test (windows)" };
-    expect(Object.keys(lane).sort()).toEqual(
-      Object.keys(DeclarationSchema.shape.ci.unwrap().element.shape).sort(),
-    );
+    const required = Object.entries(
+      DeclarationSchema.shape.ci.unwrap().element.shape,
+    )
+      .filter(([, field]) => !field.safeParse(undefined).success)
+      .map(([component]) => component);
+    expect(Object.keys(lane).sort()).toEqual(required.sort());
     declared["ci"] = [lane];
 
     const parsed = parseDeclaration(declared);
@@ -396,6 +401,39 @@ describe("the harness declaration schema", () => {
     // The lane rides beside the rest of the declaration rather than
     // displacing it.
     expect(parsed.slices.enabled).toContain("plan-inbox");
+  });
+
+  it("a ci lane declares its title reader as a pattern or as a function", () => {
+    // Both shapes, because both are what the package promises a consumer:
+    // the grammar a runner emits is as readily a regex literal as a function
+    // over the log, and a schema admitting one would make the other a
+    // wrapper every consumer writes.
+    const pattern: CiTitleReader = /^FAIL (.+)$/m;
+    const fn: CiTitleReader = (log) => log.split("\n").filter((line) => line !== "");
+
+    for (const titles of [pattern, fn]) {
+      const declared = fullDeclaration();
+      declared["ci"] = [{ name: "windows", workflow: "ci.yml", job: "test", titles }];
+      expect(parseDeclaration(declared).ci?.[0]?.titles).toBe(titles);
+    }
+
+    // Declared nothing, and the field is absent rather than defaulted: a
+    // lane with no reader wakes once per failing run, which is a stated
+    // position the package does not fill in for a consumer.
+    const silent = fullDeclaration();
+    silent["ci"] = [{ name: "windows", workflow: "ci.yml", job: "test" }];
+    expect(parseDeclaration(silent).ci?.[0]?.titles).toBeUndefined();
+
+    // And a value that is neither refuses by name: a string naming a grammar
+    // is a grammar the package would have to parse, which is the whole
+    // reason the reader is the consumer's.
+    const wrong = fullDeclaration();
+    wrong["ci"] = [
+      { name: "windows", workflow: "ci.yml", job: "test", titles: "^FAIL (.+)$" },
+    ];
+    const message = refusalFor(wrong);
+    expect(message).toContain("ci.0.titles");
+    expect(message).toContain("pattern");
   });
 
   it("a declaration whose ci lane omits its job refuses the load naming the field", () => {
