@@ -39,8 +39,16 @@ it("the plan fence admits every artifact the package's own accessors address", (
   // Each artifact at the spelling its reader or writer composes, never one
   // spelled here: the queue through the engine's resolver every consumer of
   // it uses, the rest through the accessors the slices and gates call.
+  //
+  // The resolver answers host-native by declaration — a queue path is read
+  // off disk, not handed to git — so its answer arrives here in the host's
+  // alphabet and a fence glob is compared in git's. The fold is the engine's
+  // own `gitPath` applied at this case, the one side that needs the
+  // conversion; `queuePath` would be the fence's own accessor, which is the
+  // fence agreeing with itself rather than with the resolver it is fenced
+  // against.
   const artifacts = [
-    resolvePendingPath(STATE_ROOT),
+    gitPath(resolvePendingPath(STATE_ROOT)),
     planStatePath(STATE_ROOT),
     questionsPath(STATE_ROOT),
     notePath(STATE_ROOT, "SOME-ENTRY"),
