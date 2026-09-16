@@ -72,6 +72,15 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * the leading dot that arm refuses, which is how prose spells a member
  * access whose receiver it elided.
  *
+ * Last of all are the titles, which the scan reads off the parse rather than
+ * out of any comment: a page the tree holds, a page it does not, one whose
+ * fence has to come off before the name is there to read, and the placeholder
+ * the page-name arm refuses in a comment too. Each carries a backticked
+ * identifier beside it, because the title arm must judge the page and leave
+ * the identifier alone — a title is a literal, so an identifier written in one
+ * is a token of the tree by having been written, and judging it would answer
+ * the citation out of the citation.
+ *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
  */
@@ -170,6 +179,16 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// segment refuses: \`.opts.maxDepth\` is a member access whose receiver`,
     `// the prose elided, not a dotfile.`,
     `export const FENCED_PAGES = 8;`,
+    ``,
+    `// The titles below are cited off the parse, not out of this comment.`,
+    `declare const describe: (title: string, body: () => void) => void;`,
+    `declare const it: (title: string, body: () => void) => void;`,
+    ``,
+    `describe("a title citing docs/guide.md, a page this tree holds", () => {`,
+    `  it("a title citing docs/vanished.md beside \`vanishedInTitle\`", () => {});`,
+    `  it("a title whose fenced \`release-notes.md\` is a page, \`Vanished\` not", () => {});`,
+    `  it("a title citing <area>/notes.md, which names no one file", () => {});`,
+    `});`,
     ``,
   ].join("\n"),
 };
@@ -578,6 +597,60 @@ it("the citation scan judges no tail an unfenced page name's line break left beh
   expect(fixtureScan.resolved.map((s) => s.text)).not.toContain("guide.md");
 });
 
+// --- the title, which carries the page-name arm alone --------------------
+
+it("the citation scan judges an unbackticked *.md page name a describe or it title carries", () => {
+  // Vacuity guard: all four titles were read off the parse — the describe and
+  // its three nested its — before any verdict is read off them. A collector
+  // that reached none of them would report a clean tree over zero titles.
+  expect(fixtureScan.titled.map(formatCitation)).toEqual([
+    "lib/surface.ts:78 a title citing docs/guide.md, a page this tree holds",
+    "lib/surface.ts:79 a title citing docs/vanished.md beside `vanishedInTitle`",
+    "lib/surface.ts:80 a title whose fenced `release-notes.md` is a page, `Vanished` not",
+    "lib/surface.ts:81 a title citing <area>/notes.md, which names no one file",
+  ]);
+
+  // The page names those titles carry, by the arm that reads them unfenced in
+  // a comment: the placeholder in the fourth title is refused on the same
+  // charset, so it is judged by nothing and can never be a standing finding.
+  expect(fixtureScan.titles.scanned.map(formatCitation)).toEqual([
+    "lib/surface.ts:78 docs/guide.md",
+    "lib/surface.ts:79 docs/vanished.md",
+    "lib/surface.ts:80 release-notes.md",
+  ]);
+
+  // Judged in both directions against the working tree and nothing else: the
+  // page this tree holds resolves and the one it does not dangles. Unjudged,
+  // renaming the page would leave every title citing it standing.
+  expect(fixtureScan.titles.findings.map(formatCitation)).toEqual([
+    "lib/surface.ts:79 docs/vanished.md",
+  ]);
+});
+
+it("the citation scan judges a title's page name and not a backticked identifier beside it", () => {
+  // Vacuity guard: the two titles were read whole, backticks and all, so the
+  // verdict below is the title arm discriminating and not a reader that never
+  // saw the names. And the identifier arm is live on this same fixture — it
+  // flags `vanishedHelper` out of a comment — so leaving these alone is a
+  // scope, not an omission.
+  const titles = fixtureScan.titled.map((site) => site.text);
+  expect(titles.some((text) => text.includes("`vanishedInTitle`"))).toBe(true);
+  expect(titles.some((text) => text.includes("`Vanished`"))).toBe(true);
+  expect(fixtureScan.findings.map((s) => s.text)).toContain("vanishedHelper");
+
+  // The fence comes off — a title reaches no fenced arm, so a backtick there
+  // is decoration the way a paren is — and what is under it is judged only
+  // when it is a page. `Vanished` and `vanishedInTitle` name nothing this tree
+  // holds, so admitting either would show up as a finding rather than quietly.
+  const judged = fixtureScan.titles.scanned.map((s) => s.text);
+  expect(judged).toContain("release-notes.md");
+  expect(judged).not.toContain("Vanished");
+  expect(judged).not.toContain("vanishedInTitle");
+  expect(fixtureScan.titles.findings.map((s) => s.text)).toEqual([
+    "docs/vanished.md",
+  ]);
+});
+
 // --- the pin -------------------------------------------------------------
 
 /**
@@ -716,4 +789,31 @@ it("the repo citation pin refuses any citation broken across a comment line", ()
   // pins above stay green over it however the name it cites is renamed.
   // Rewrap the span.
   expect(repoScan.wraps.findings.map(formatCitation)).toEqual([]);
+});
+
+it("every *.md page name a src/, harness/ or tests/ title carries names a file the working tree holds", () => {
+  // Vacuity guard: the titles were read in quantity and the page names among
+  // them are judged in quantity, before the emptiness below is read off
+  // either. A collector that stopped matching this suite's runner vocabulary
+  // would otherwise report a clean tree over zero titles, and a subject rule
+  // that stopped admitting page names over zero citations.
+  expect(repoScan.titled.length).toBeGreaterThan(1500);
+  expect(repoScan.titles.scanned.length).toBeGreaterThan(80);
+
+  // Judged in the direction that matters: each family these titles cite
+  // resolves against the working tree, so renaming any of those pages reds the
+  // title citing it as it already reds the comment beside it.
+  const cited = new Set(repoScan.titles.scanned.map((s) => s.text));
+  for (const page of [
+    ".claude/rules/engineering.md",
+    "spec/loop.md",
+    "docs/CLI.md",
+  ]) {
+    expect(`${page} -> ${cited.has(page)}`).toBe(`${page} -> true`);
+  }
+
+  // A title is a literal, so a page name written in one is answered by the
+  // working tree or by nothing at all: a page the repo moved leaves the title
+  // citing it here rather than standing. Spell the page's directory.
+  expect(repoScan.titles.findings.map(formatCitation)).toEqual([]);
 });

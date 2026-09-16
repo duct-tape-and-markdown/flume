@@ -3743,7 +3743,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 });
 
-describe("cli.ts — loop.pid win32 MAX_PATH fix (platform-facts.md)", () => {
+describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.md)", () => {
   // toNamespacedPath is a no-op on POSIX, so any roundtrip test of loop.pid
   // behavior passes identically whether cli.ts routes through namespacedJoin
   // or a bare join. Pin the source shape directly, mirroring

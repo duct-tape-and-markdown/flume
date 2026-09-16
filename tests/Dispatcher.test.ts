@@ -3301,7 +3301,7 @@ describe("Dispatcher — relocated pendingPath existence probe", () => {
   });
 });
 
-describe('Dispatcher fanout — commitMessage override (engine-boundary.md "Capability vs convention")', () => {
+describe('Dispatcher fanout — commitMessage override (.claude/rules/engine-boundary.md "Capability vs convention")', () => {
   it("a commitMessage override lands verbatim on the ledger ship commit, receiving the shipped tags", async () => {
     await writePending(fx.repo, [makeEntry("SHIP-MSG", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -6478,7 +6478,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     ]);
   });
 
-  it("an in-worktree afterCommit gate revert derives the footprint from runAfterCommitGates' own gate-loop capture, not a second git show (engineering.md 'the fix lands at the mechanism')", async () => {
+  it("an in-worktree afterCommit gate revert derives the footprint from runAfterCommitGates' own gate-loop capture, not a second git show (.claude/rules/engineering.md 'the fix lands at the mechanism')", async () => {
     // Same FOOT-STRAY shape as the footprint test above, but pinned on the
     // git call count: runAfterCommitGates already shells out to `git diff
     // --name-only` once per entry to build the whole-span touchedPaths every
@@ -6736,7 +6736,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
     expect(await readPendingFromDisk(fx.repo)).toEqual([]);
   });
 
-  it("an agent whose final message says it parked still ships when no predicate is declared — the engine reads no prose (engine-boundary.md \"Told, not inferred\")", async () => {
+  it("an agent whose final message says it parked still ships when no predicate is declared — the engine reads no prose (.claude/rules/engine-boundary.md \"Told, not inferred\")", async () => {
     // Fails on the pre-fix tree: a retired prose detector matched
     // /\bpark(?:ed|ing)?\b/i against this message and classified a genuine
     // ship as channel-only, so the entry never left the queue. The instructed workflow produces exactly
@@ -11819,7 +11819,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
 // reset-surviving on-disk snapshot.
 
 describe("Dispatcher — plan-tick prose durability", () => {
-  it("gate-reverted plan tick: state.md/open-questions.md findings recoverable on disk w/o session logs; cleared on a later clean ship", async () => {
+  it("gate-reverted plan tick: the reverted commit's prose is recoverable on disk w/o session logs; cleared on a later clean ship", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("plan");
 

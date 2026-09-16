@@ -170,7 +170,7 @@ describe("superviseLoop — tip-moved counts as errored", () => {
  * (`existsLoud`, src/fsProbe.ts), the disposition `baton.hibernating()`'s
  * `readdirSync` one line below already takes.
  */
-describe('superviseLoop — an unstattable stop flag is loud (engineering.md "Loud or nothing")', () => {
+describe('superviseLoop — an unstattable stop flag is loud (.claude/rules/engineering.md "Loud or nothing")', () => {
   it("the supervisor's per-iteration stop check throws on a non-ENOENT stop-flag stat instead of ticking on", async () => {
     const flumeDir = join(fx.repo, ".flume");
     await mkdir(flumeDir, { recursive: true });

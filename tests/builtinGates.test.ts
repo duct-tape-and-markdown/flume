@@ -250,7 +250,7 @@ describe("pendingGate — lazy fence read (targetFence populated after construct
   });
 });
 
-describe("pendingGate — fence pre-check reads declared files, not observedFiles (engineering.md § The fix lands at the mechanism)", () => {
+describe("pendingGate — fence pre-check reads declared files, not observedFiles (.claude/rules/engineering.md § The fix lands at the mechanism)", () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -286,7 +286,7 @@ describe("pendingGate — fence pre-check reads declared files, not observedFile
   });
 });
 
-describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, engine-boundary.md § Capability vs convention)", () => {
+describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, .claude/rules/engine-boundary.md § Capability vs convention)", () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -494,7 +494,7 @@ describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
   });
 });
 
-describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, engineering.md 'A seam gate reads what the real writer wrote')", () => {
+describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, .claude/rules/engineering.md 'A seam gate reads what the real writer wrote')", () => {
   // Every other pendingGate test in this file builds its GateContext by
   // hand, with flumeDir *nested under* repoRoot (`ctx()`'s default) — the
   // afterMerge/no-worktree shape. That is not the shape

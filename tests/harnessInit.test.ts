@@ -241,7 +241,7 @@ it("the queue flume-harness init writes parses as an empty pending queue", async
   expect(parsed.entries).toEqual([]);
 });
 
-it("flume-harness init writes PROTOCOL.md from the package's own template", async () => {
+it("flume-harness init writes the state root's protocol page from harness/templates/PROTOCOL.md", async () => {
   const template = await readFile(protocolTemplatePath(), "utf8");
 
   // Non-vacuity, and the premise of the identity below: the shipped template

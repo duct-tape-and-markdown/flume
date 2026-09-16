@@ -2233,7 +2233,7 @@ describe("backlog-groomer-chain.ts — the reason is one line", () => {
     expect(refused.errors.map((e) => e.path)).toContain("reason");
   });
 
-  it("a newline in a reason never reaches the groomer's SHIPPED.md", async () => {
+  it("a newline in a reason never reaches the groomer's shipped ledger", async () => {
     const repo = mkdtempSync(join(tmpdir(), "groomer-reason-"));
     try {
       // A real repo, because the groomer commits what it wrote: without one

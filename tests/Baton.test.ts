@@ -169,7 +169,7 @@ describe("Baton — missing directory", () => {
   });
 });
 
-describe("Baton — win32 MAX_PATH fix (platform-facts.md)", () => {
+describe("Baton — win32 MAX_PATH fix (.claude/rules/platform-facts.md)", () => {
   // toNamespacedPath is a no-op on POSIX, so the roundtrip tests above pass
   // identically whether Baton routes through namespacedJoin or a bare join.
   // Pin the source shape directly, per PendingSchema.test.ts's precedent for

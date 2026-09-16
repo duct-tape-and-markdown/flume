@@ -701,7 +701,7 @@ describe("chain.ts existence probe — jobNew and loadChainModule agree", () => 
   });
 });
 
-describe('jobNew/jobRm — commitMessage override (engine-boundary.md "Capability vs convention")', () => {
+describe('jobNew/jobRm — commitMessage override (.claude/rules/engine-boundary.md "Capability vs convention")', () => {
   it("a commitMessage override lands verbatim on jobNew's seed commit, receiving the job name", async () => {
     const repo = await makeRepo();
     try {

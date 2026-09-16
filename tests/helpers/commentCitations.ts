@@ -43,6 +43,16 @@
  * one rule, in either alphabet, rather than a shape the wrap gets its own
  * spelling for.
  *
+ * A test's title is the same carve-out reaching a second place a citation
+ * sits, and it carries the page-name arm alone. A title is a string literal,
+ * and a literal is itself a resolution arm, so an identifier written in one
+ * would resolve against itself and the verdict would be a tautology; a page
+ * name is answered by the working tree, which no title can write into. So the
+ * title arm judges `*.md` names and nothing else, and resolves them on disk
+ * and nowhere else. Backticks come off first: a title has no fenced arm to
+ * route them through, so a backtick around a page name there is decoration
+ * the way a paren is.
+ *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
@@ -126,6 +136,22 @@ export interface CitationScan extends Scan<CitationSite> {
    * renaming of what it cites can ever red.
    */
   readonly wraps: Scan<WrappedCitation>;
+  /**
+   * Every `describe`/`it`/`test` title those modules carry, `text` being the
+   * title verbatim — what a vacuity pin over the verdict below reads, since a
+   * title collector that stopped matching would report a clean tree over zero
+   * titles.
+   */
+  readonly titled: readonly CitationSite[];
+  /**
+   * The third verdict, over a third judged set: the `*.md` page names those
+   * titles carry, and among them the ones the working tree cannot answer.
+   *
+   * Judged by the page-name arm alone and resolved on disk alone — a title is
+   * a string literal, so every other arm would answer the citation out of the
+   * citation itself.
+   */
+  readonly titles: Scan<CitationSite>;
 }
 
 /**
@@ -268,6 +294,88 @@ const isSubject = (text: string): boolean => {
     ? !ALL_CAPS.test(text)
     : INTERNAL_CAPITAL.test(text);
 };
+
+/** The call heads a test title sits behind, in this suite's runner. */
+const TITLE_CALLEES: ReadonlySet<string> = new Set(["describe", "it", "test"]);
+
+/**
+ * The head identifier a call is made through, past whatever the runner's
+ * vocabulary hangs off it: `it.each(rows)(title)` and `describe.each\`t\`(title)`
+ * are both titled calls, and the head is what says so.
+ */
+const calleeHead = (expression: ts.Expression): string | undefined => {
+  let node: ts.Expression = expression;
+  for (;;) {
+    if (ts.isTaggedTemplateExpression(node)) {
+      node = node.tag;
+      continue;
+    }
+    if (
+      ts.isPropertyAccessExpression(node) ||
+      ts.isElementAccessExpression(node) ||
+      ts.isCallExpression(node) ||
+      ts.isParenthesizedExpression(node)
+    ) {
+      node = node.expression;
+      continue;
+    }
+    return ts.isIdentifier(node) ? node.text : undefined;
+  }
+};
+
+/**
+ * Every test title in a file, read off the parse and in source order: the
+ * first argument of a titled call, when that argument is a literal the author
+ * wrote whole. A title assembled at runtime — a concatenation, a template
+ * with a substitution — is not one spelling anything can be resolved against,
+ * and is left out rather than judged on the half the source happens to hold.
+ */
+const titleSites = (sf: ts.SourceFile, module: string): CitationSite[] => {
+  const found: CitationSite[] = [];
+  const walk = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const head = calleeHead(node.expression);
+      const title = node.arguments[0];
+      if (
+        head !== undefined &&
+        TITLE_CALLEES.has(head) &&
+        title &&
+        ts.isStringLiteralLike(title)
+      ) {
+        found.push({
+          module,
+          line: sf.getLineAndCharacterOfPosition(title.getStart(sf)).line + 1,
+          text: title.text,
+        });
+      }
+    }
+    ts.forEachChild(node, walk);
+  };
+  ts.forEachChild(sf, walk);
+  return found;
+};
+
+/**
+ * The backtick a title puts around a name. A title reaches no fenced arm —
+ * the carve-out gives it the page-name arm alone — so a backtick there is
+ * decoration the way a paren is. Blanked rather than deleted, so two names a
+ * single backtick separates never join into one token.
+ */
+const TITLE_FENCE = /`/g;
+
+/**
+ * The `*.md` page names one title carries, read by the arm that reads them
+ * unfenced in a comment — the same regex, the same left-edge trim, the same
+ * subject rule — so a page name is judged the same wherever an author wrote
+ * it. The line is the title's own: a name inside a literal has no line of its
+ * own to cite.
+ */
+const titlePages = (site: CitationSite): CitationSite[] =>
+  [...site.text.replace(TITLE_FENCE, " ").matchAll(BARE_PAGE)].map((match) => ({
+    module: site.module,
+    line: site.line,
+    text: match[0].replace(OPENING_PUNCTUATION, ""),
+  }));
 
 /**
  * Every comment in a file, once.
@@ -533,7 +641,7 @@ const commentSpans = (
 
 /**
  * Scan a program's comments for citations naming nothing the judged trees
- * hold.
+ * hold, and its test titles for page names the working tree cannot answer.
  *
  * A citation resolves when **every** one of its dotted segments is a token
  * those trees hold: a name the checker resolves to a symbol anywhere in them
@@ -590,7 +698,9 @@ export const scanCommentCitations = (
   const bare: CitationSite[] = [];
   const wrapped: WrappedCitation[] = [];
   const scanned: CitationSite[] = [];
+  const titled: CitationSite[] = [];
   for (const sf of sources) {
+    titled.push(...titleSites(sf, relPath(root, resolve(sf.fileName))));
     const spans = commentSpans(sf, relPath(root, resolve(sf.fileName)));
     backticked.push(...spans.closed);
     bare.push(...spans.bare);
@@ -616,6 +726,14 @@ export const scanCommentCitations = (
       .split(".")
       .every((segment) => KEYWORDS.has(segment) || tokens.has(segment));
 
+  // The page names the titles carry, judged by the page-name arm alone. The
+  // token set is not consulted: a title is a string literal, so a name written
+  // in one is a token of the tree by having been written, and every verdict
+  // read through `tokens` would answer the citation out of the citation.
+  const titlePageNames = titled
+    .flatMap(titlePages)
+    .filter((site) => isPathSubject(site.text));
+
   return {
     modules: [...modules],
     backticked,
@@ -625,6 +743,11 @@ export const scanCommentCitations = (
       // The wrap is read by the same rule as the judged set, with the break
       // closed: what the author spelled before markdown put a space in it.
       findings: wrapped.filter((site) => isSubject(site.closed)),
+    },
+    titled,
+    titles: {
+      scanned: titlePageNames,
+      findings: titlePageNames.filter((site) => !onDisk(site.text)),
     },
     scanned,
     resolved: scanned.filter((site) => resolves(site.text)),

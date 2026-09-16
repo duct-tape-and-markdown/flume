@@ -782,7 +782,7 @@ describe("parsePendingLoose — chain-less informational reads", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("has exactly one production call site — job.ts's read-only job-listing (PendingSchema.ts:324-329)", () => {
+  it("has exactly one production call site — job.ts's read-only job-listing", () => {
     const callSites = looseCallSites();
 
     expect(callSites).toHaveLength(1);
@@ -1019,7 +1019,7 @@ describe("renderSchemaForPrompt", () => {
     expect(line).not.toMatch(/\bRESOLVED\b/);
   });
 
-  it("the retire hint advertises a path only, never a non-path alternative (engineering.md § A seam gate reads what the real writer wrote)", () => {
+  it("the retire hint advertises a path only, never a non-path alternative (.claude/rules/engineering.md § A seam gate reads what the real writer wrote)", () => {
     const rendered = renderSchemaForPrompt();
     const retireLine = rendered
       .split("\n")
@@ -1416,7 +1416,7 @@ describe("parsePending — observedFiles survives the round-trip", () => {
   });
 });
 
-describe("declaredPaths vs touchedPaths (engineering.md § The fix lands at the mechanism)", () => {
+describe("declaredPaths vs touchedPaths (.claude/rules/engineering.md § The fix lands at the mechanism)", () => {
   it("declaredPaths answers files.new+edit+retire only; touchedPaths additionally folds in observedFiles", () => {
     const entry = roundTrip({
       ...baseEntry,

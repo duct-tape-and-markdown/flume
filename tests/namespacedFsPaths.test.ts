@@ -125,7 +125,7 @@ function pinTree(
   });
 }
 
-describe("src/ — win32 MAX_PATH fix (platform-facts.md)", () => {
+describe("src/ — win32 MAX_PATH fix (.claude/rules/platform-facts.md)", () => {
   pinTree("src", {
     vacuity: "the src/ scan reads modules, fs importers among them, and path arguments in those",
     composed: "every fs call in src/ is made on a composed path",
@@ -133,7 +133,7 @@ describe("src/ — win32 MAX_PATH fix (platform-facts.md)", () => {
   });
 });
 
-describe("harness/ — win32 MAX_PATH fix (platform-facts.md)", () => {
+describe("harness/ — win32 MAX_PATH fix (.claude/rules/platform-facts.md)", () => {
   pinTree("harness", {
     vacuity:
       "the harness/ scan reads modules, fs importers among them, and path arguments in those",

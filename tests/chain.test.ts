@@ -65,7 +65,7 @@ describe("buildFlumeApi().slugify / .priorAttemptPath (spec/loop.md 'Prior-outco
   });
 });
 
-describe("buildFlumeApi().gitPath (engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
+describe("buildFlumeApi().gitPath (.claude/rules/engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
   it("buildFlumeApi().gitPath is the engine's own gitPath, by reference", () => {
     const api = buildFlumeApi(REPO_PATHS);
     expect(api.gitPath).toBe(gitPath);
@@ -83,7 +83,7 @@ describe("buildFlumeApi().gitPath (engineering.md 'A fact the engine holds is re
  * engine holds is reported, never rediscovered*). Driven through the real
  * `buildFlumeApi`, the seam a chain factory is handed.
  */
-describe("buildFlumeApi().paths.stateRootRel (engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
+describe("buildFlumeApi().paths.stateRootRel (.claude/rules/engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
   it("buildFlumeApi reports the state root's repo-relative offset on api.paths.stateRootRel", () => {
     // The default root, and a `--job` root two levels down: an offset that
     // is not the `.flume` literal is what says the value is computed from
