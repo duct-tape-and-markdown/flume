@@ -3,17 +3,16 @@
 > **Dated record.** Describes the 0.15.0 → 0.16.0 upgrade as it stood at the
 > cut, not flume as it ships now.
 
-**This note does not cover 0.15.** The previous note in the series is
-[`MIGRATING-0.14.md`](MIGRATING-0.14.md), which walks `0.13.0` → `0.14.0`;
-`0.15.0` shipped breaking changes with no note of its own. If your pin is
-below `0.15.0`, work `MIGRATING-0.14.md` and the notes behind it first, then
-read `0.15.0`'s `### Breaking` section in
-[`../CHANGELOG.md`](../CHANGELOG.md) before treating this note as
-the whole upgrade — the sections below describe the `0.15.0` → `0.16.0` step
-and nothing earlier. The break most likely to survive a jump unnoticed is
-0.15's `voluntary-bail` → `clean-exit` rename, which no typecheck catches in
-a chain that reads the mode as a bare string; § 3 shows the read that turns
-it into a compile error.
+**This note covers `0.15.0` → `0.16.0` and nothing earlier.** The previous
+note in the series is [`MIGRATING-0.15.md`](MIGRATING-0.15.md), which walks
+`0.14.0` → `0.15.0`; before it, [`MIGRATING-0.14.md`](MIGRATING-0.14.md)
+(`0.13.0` → `0.14.0`) and the notes behind it. If your pin is below
+`0.15.0`, work those first and return here — the sections below describe the
+`0.15.0` → `0.16.0` step alone, and nothing on this page substitutes for
+them. The break most likely to survive a jump unnoticed is 0.15's
+`voluntary-bail` → `clean-exit` rename, which no typecheck catches in a
+chain that reads the mode as a bare string; `MIGRATING-0.15.md` § 1.1 hunts
+it, and § 3 below shows the read that turns it into a compile error.
 
 From **0.15.0**. Five breaking changes, every one of them a rename or a
 default the engine now takes — no chain restructuring, no new required
@@ -622,5 +621,5 @@ version bump will not carry forward.
 - [`CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md) — the full shape of every chain
   surface named above.
 - [`CLI.md`](CLI.md) — `flume log`, `flume check`, `flume job`.
-- [`MIGRATING-0.14.md`](MIGRATING-0.14.md) — the previous note in this series.
-  What lies between the two is named at the head of this page.
+- [`MIGRATING-0.15.md`](MIGRATING-0.15.md) — the previous note in this series,
+  from `0.14.0`, and where its `clean-exit` rename is hunted in full.

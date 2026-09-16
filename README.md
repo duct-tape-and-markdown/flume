@@ -475,10 +475,14 @@ follows enough usage signal to commit under semver.
   chain on `0.15.0`: five renames and engine-taken defaults, plus the opt-in
   port onto the harness package. Each section opens with the `grep` that
   says whether it applies to your chain.
-- [`docs/MIGRATING-0.14.md`](docs/MIGRATING-0.14.md) — the note behind it,
-  for a chain on `0.13.0`: one break (the queue path moves onto the chain)
-  and the hand-carried blocks `0.14.0` lets you delete. Earlier notes —
-  `0.11`, `0.12`, `0.13` — are linked from the release they cut in
+- [`docs/MIGRATING-0.15.md`](docs/MIGRATING-0.15.md) — the note behind it,
+  for a chain on `0.14.0`: four breaks, led by the `voluntary-bail` →
+  `clean-exit` rename a typecheck does not catch, plus the engine facts
+  `0.15.0` now reports so your chain can stop rebuilding them.
+- [`docs/MIGRATING-0.14.md`](docs/MIGRATING-0.14.md) — and the note behind
+  *that*, for a chain on `0.13.0`: one break (the queue path moves onto the
+  chain) and the hand-carried blocks `0.14.0` lets you delete. Earlier notes
+  — `0.11`, `0.12`, `0.13` — are linked from the release they cut in
   [`CHANGELOG.md`](CHANGELOG.md).
 - [`docs/MIGRATING-0.10.md`](docs/MIGRATING-0.10.md) — upgrade checklist for
   any chain on `0.2.x`, `0.6.x`, or `0.9.0` moving onto

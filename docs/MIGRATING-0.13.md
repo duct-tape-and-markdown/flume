@@ -12,11 +12,12 @@ first and return here — § 1 below is the whole of the `0.12` → `0.13` step
 and none of what precedes it.
 
 It does not cover what comes after either: the next note in the series is
-[`MIGRATING-0.14.md`](MIGRATING-0.14.md) (`0.13.0` → `0.14.0`), and then
-[`MIGRATING-0.16.md`](MIGRATING-0.16.md), which picks up at `0.15.0` →
-`0.16.0`. `0.15.0` ships breaking changes with no note of its own, so
-jumping past `0.14` means reading that release's `### Breaking` section in
-[`../CHANGELOG.md`](../CHANGELOG.md) as well.
+[`MIGRATING-0.14.md`](MIGRATING-0.14.md) (`0.13.0` → `0.14.0`), then
+[`MIGRATING-0.15.md`](MIGRATING-0.15.md) (`0.14.0` → `0.15.0`) and
+[`MIGRATING-0.16.md`](MIGRATING-0.16.md) (`0.15.0` → `0.16.0`). Each minor
+above this one has a page of its own, so a jump past `0.14` is a matter of
+working the pages in order rather than reading `### Breaking` sections out of
+[`../CHANGELOG.md`](../CHANGELOG.md) by hand.
 
 From **0.12.0**: **one** breaking change, in `pending.json`, not in the chain
 factory. A `0.12` chain loads on `0.13` unmodified; it is the queue beside it

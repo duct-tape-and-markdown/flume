@@ -167,7 +167,10 @@ was given, why a gate passed without running, which entry a wave dropped.
 This tag puts those on the surfaces a chain already reads, closes an
 existence-check class where a present-but-unreachable path read as an absent
 one, and removes the last inference the engine made on a chain's behalf.
-One hundred twenty-three entries.
+One hundred twenty-three entries. Chain authors: read
+[`docs/MIGRATING-0.15.md`](docs/MIGRATING-0.15.md) — its § 1 is the one break
+a typecheck does not catch, the `voluntary-bail` → `clean-exit` rename, and
+§ 5 is the hand-carried blocks this tag lets you delete.
 
 ### Breaking
 

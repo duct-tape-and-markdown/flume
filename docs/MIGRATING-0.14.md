@@ -12,11 +12,11 @@ note in the series is [`MIGRATING-0.13.md`](MIGRATING-0.13.md) (`0.12.0` →
 return here — `0.13`'s § 1 is a `pending.json` rewrite the first tick after
 the bump refuses without, and nothing on this page substitutes for it.
 
-It does not cover what comes after either: `0.15.0` ships breaking changes
-with no note of its own, and [`MIGRATING-0.16.md`](MIGRATING-0.16.md) picks
-the series back up at `0.15.0` → `0.16.0`. Jumping past `0.14` means reading
-`0.15.0`'s `### Breaking` section in [`../CHANGELOG.md`](../CHANGELOG.md) as
-well.
+It does not cover what comes after either: the next note in the series is
+[`MIGRATING-0.15.md`](MIGRATING-0.15.md) (`0.14.0` → `0.15.0`), then
+[`MIGRATING-0.16.md`](MIGRATING-0.16.md) (`0.15.0` → `0.16.0`). Every minor
+above this one has a page, so nothing between them has to be read off
+[`../CHANGELOG.md`](../CHANGELOG.md) by hand.
 
 From **0.13.0**: **one** breaking change, and it is a single option passed to
 a single gate. Everything else 0.14 ships is additive — § 2 is the roots and
@@ -302,5 +302,4 @@ engine default stands between you and it.
   surface named above.
 - [`CLI.md`](CLI.md) — `flume check`, `flume status`, `flume job`.
 - [`MIGRATING-0.13.md`](MIGRATING-0.13.md) — the previous note in this series.
-- [`MIGRATING-0.16.md`](MIGRATING-0.16.md) — the next one, from `0.15.0`.
-  What lies between the two is named at the head of this page.
+- [`MIGRATING-0.15.md`](MIGRATING-0.15.md) — the next one, from `0.14.0`.

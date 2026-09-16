@@ -981,6 +981,22 @@ function releasedMinors(changelog: string): string[] {
   return [...seen];
 }
 
+/**
+ * The minors that owe a migration note: those whose release section carries a
+ * `### Breaking` subheading (`spec/cli.md`, *Versioning policy*). Read off the
+ * same release headings `releasedMinors` reads, so curating a cut moves this
+ * verdict with no edit here — a patch that shipped a break puts its own minor
+ * in the set, and a minor that broke nothing is never owed a page.
+ */
+function breakingMinors(changelog: string): string[] {
+  const seen = new Set<string>();
+  for (const section of changelog.split(/^## (?=\[)/m).slice(1)) {
+    const m = /^\[(\d+)\.(\d+)\.\d+\]/.exec(section);
+    if (m !== null && /^### Breaking\b/m.test(section)) seen.add(`${m[1]}.${m[2]}`);
+  }
+  return [...seen];
+}
+
 function minorRank(minor: string): number {
   const [major = "0", rest = "0"] = minor.split(".");
   return Number(major) * 1000 + Number(rest);
@@ -1019,13 +1035,21 @@ function namesMinor(prose: string, minor: string): boolean {
 }
 
 /**
- * The other half of the upgrade half (`spec/cli.md`, *Versioning policy*): a
- * migration note opens by naming the minors it does not cover, so a consumer
- * jumping more than one version reads the earlier `### Breaking` sections
- * before concluding they are done. The note series is sparse — a minor may
- * ship breaks and no note — so a reader who finds the note for the version
- * they are moving *to* has no way to learn what sits behind it except from
- * the note itself.
+ * Both halves of the upgrade half (`spec/cli.md`, *Versioning policy*).
+ *
+ * **Coverage** is the first and the populated one: every minor whose release
+ * section carries a `### Breaking` subheading has a note under `docs/`. It is
+ * judged from the series' earliest note upward — a break cut before anyone
+ * wrote the first page is behind the series, not missing from it.
+ *
+ * **The notice** is the second: a note opens by naming the minors it does not
+ * cover, so a consumer jumping more than one version reads the earlier
+ * `### Breaking` sections before concluding they are done. Its subject is
+ * whatever coverage legitimately leaves behind — a minor that broke nothing
+ * is owed no page, and the next note up is then the only place a reader
+ * learns what sits behind it. With coverage total, that subject is empty, and
+ * the empty set is spelled below rather than inherited
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
  *
  * The gap is derived, never listed here (`.claude/rules/engineering.md`,
  * *Derived state is computed*): the note set comes off the tree, the
@@ -1038,7 +1062,7 @@ function namesMinor(prose: string, minor: string): boolean {
  * point at the changelog. A minor named anywhere else in the head is the
  * note's own step ("From **0.15.0**"), which is the opposite claim.
  */
-it("every docs/MIGRATING note names the minors it does not cover ahead of its first section", async () => {
+it("every minor that shipped a break has a docs/MIGRATING note, and a note skipping one names it ahead of its first section", async () => {
   // The scanners, each over an input naming versions in the voices it has to
   // tell apart.
   expect(noteMinor("docs/MIGRATING-0.16.md")).toBe("0.16");
@@ -1053,6 +1077,16 @@ it("every docs/MIGRATING note names the minors it does not cover ahead of its fi
     ["0.13", "0.14", "0.15"],
   );
   expect(skippedMinors("0.10", ["0.10", "0.12"], ["0.8", "0.9", "0.10"])).toEqual([]);
+  // A release section with no `### Breaking` owes no page; a patch that broke
+  // something puts its own minor in the set.
+  expect(
+    breakingMinors(
+      "# Changelog\n\n## [Unreleased]\n\n### Breaking\n\n- pending\n\n" +
+        "## [1.2.1]\n\n### Breaking\n\n- a break\n\n" +
+        "## [1.2.0]\n\n### Added\n\n- no break\n\n" +
+        "## [0.9.0]\n\n### Breaking\n\n- another\n",
+    ),
+  ).toEqual(["1.2", "0.9"]);
   // A pointer below the first section heading is out of the head, and a head
   // paragraph that points nowhere is not the notice.
   expect(
@@ -1066,7 +1100,8 @@ it("every docs/MIGRATING note names the minors it does not cover ahead of its fi
   const prose = "pins below `0.15.0` on 0.16";
   expect(["0.1", "0.15", "0.16"].filter((m) => namesMinor(prose, m))).toEqual(["0.15", "0.16"]);
 
-  const released = releasedMinors(await readFile(join(REPO_ROOT, "CHANGELOG.md"), "utf8"));
+  const changelog = await readFile(join(REPO_ROOT, "CHANGELOG.md"), "utf8");
+  const released = releasedMinors(changelog);
   expect(released.length).toBeGreaterThan(0);
 
   const notes = (await filesUnder(join(REPO_ROOT, "docs"), "docs")).flatMap((page) => {
@@ -1076,14 +1111,19 @@ it("every docs/MIGRATING note names the minors it does not cover ahead of its fi
   expect(notes.length).toBeGreaterThan(0);
   const series = notes.map(({ minor }) => minor);
 
+  // Coverage, over the minors that owe a page: every one of them from the
+  // series' earliest note upward has a note of its own. Populated — the
+  // judged set is those minors, not the notes — so this arm cannot pass over
+  // nothing, and it is what makes the notice arm below legitimately empty.
+  const earliest = Math.min(...series.map(minorRank));
+  const owed = breakingMinors(changelog).filter((m) => minorRank(m) >= earliest);
+  expect(owed.length).toBeGreaterThan(0);
+  expect(owed.filter((m) => !series.includes(m))).toEqual([]);
+
   const spanning = notes.flatMap(({ page, minor }) => {
     const skipped = skippedMinors(minor, series, released);
     return skipped.length === 0 ? [] : [{ page, skipped }];
   });
-  // Non-vacuity: every note sitting one minor above its predecessor skips
-  // nothing, and the loop below would judge no page at all.
-  expect(spanning.length).toBeGreaterThan(0);
-
   for (const { page, skipped } of spanning) {
     const body = await readFile(join(REPO_ROOT, ...page.split("/")), "utf8");
     const notice = changelogParagraphs(pageHead(body)).join("\n\n");
@@ -1092,4 +1132,10 @@ it("every docs/MIGRATING note names the minors it does not cover ahead of its fi
       named: skipped,
     });
   }
+  // …and there were none to judge. The series runs contiguously from its
+  // earliest note, so no note skips a released minor and the loop above had
+  // no subject. Spelled, never inherited: a minor cut with no breaks and no
+  // page repopulates this set, and the equality is the cue to name it here
+  // deliberately rather than to discover the loop had been idle for releases.
+  expect(spanning).toEqual([]);
 });
