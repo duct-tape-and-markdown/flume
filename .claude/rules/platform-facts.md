@@ -91,20 +91,27 @@ path itself. This one is the general Node fs limit, which it does fix.
 
 ## `realpathSync` keeps the `\\?\` prefix only where nothing resolved
 
-Node's JS `realpathSync` builds its answer from the argument it was handed: a
-namespaced path comes back namespaced when no component was a link, and comes
-back as `readlink`'s un-prefixed target when one was. Two answers over one
-file differ by the prefix alone, decided only by how that file was installed —
-a junction- or symlink-based install (pnpm's linked store) and a plain copy
-spell the same file two ways. `realpathSync.native` (libuv) strips the prefix
-unconditionally.
+Node's JS `realpathSync` builds its answer from the argument it was handed.
+Where it answers, a namespaced path comes back namespaced when no component
+was a link, and as `readlink`'s un-prefixed target when one was — two answers
+over one file differing by the prefix alone, decided only by how that file was
+installed (pnpm's linked store against a plain copy). `realpathSync.native`
+(libuv) strips the prefix unconditionally.
 
-So a namespaced answer that is **compared** rather than handed back to an fs
-call is folded out of the namespaced alphabet first — `plainPath`
-(`src/paths.ts`) is the idiom, `namespacedJoin`'s inverse — on every leg of
-the comparison, the throwing one included. The fold is unconditional: no posix
-path or posix `realpathSync` answer can begin with the prefix, so nothing is
-gated on the platform.
+Through node 22 it does not answer at all on win32: it lstats the root it
+splits off its argument before walking, reads `\\?\C:\…`'s leading `\\` as a
+UNC root, hands that root to the binding unstripped, and throws on every
+namespaced drive path. Node 24 strips the prefix for that one probe; it is not
+backported, and `engines` admits 22. So a namespaced path goes to
+`realpathSync.native`, never the JS form.
+
+A namespaced answer that is **compared** rather than handed back to an fs call
+is folded out of the namespaced alphabet first — `plainPath` (`src/paths.ts`)
+is the idiom, `namespacedJoin`'s inverse — on every leg of the comparison. With
+the native call the answer's fold is a no-op, and `plainPath` is load-bearing
+on the throwing leg alone. The fold is unconditional: no posix path or posix
+`realpathSync` answer can begin with the prefix, so nothing is gated on the
+platform.
 
 ## Filesystem `NAME_MAX` is 255, and scaffolding eats into it
 
