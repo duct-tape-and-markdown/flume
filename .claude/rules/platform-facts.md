@@ -89,6 +89,24 @@ This is **not** the `git worktree add` limit above. That one is git's own
 ~200-char refusal, which `toNamespacedPath` cannot reach because git builds the
 path itself. This one is the general Node fs limit, which it does fix.
 
+## Node caps a captured child stream at 1 MiB, and reports the overrun as a spawn failure
+
+`execFile`, `exec`, and their sync forms keep at most `maxBuffer` bytes of a
+child's stdout and of its stderr — 1 MiB each unless the call says otherwise.
+On overrun node kills the child with `SIGTERM` and reports it where an exit
+status would be, never as a truncation anything downstream can see:
+
+- the async forms reject with `code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"`, a
+  string where a numeric exit code would sit, and the captured output is cut
+  at the cap;
+- the sync forms throw `ENOBUFS` with `status: null` and `signal: "SIGTERM"`,
+  the shape of a child that never exited.
+
+Either way a large-but-correct run reads as a child that failed to run or
+was signalled. Every spawn site declares its cap; a site that inherits the
+default has chosen 1 MiB silently, and `git log` over an unreleased range has
+exceeded it. The cap's size is the site's decision and stays there.
+
 ## `realpathSync` keeps the `\\?\` prefix only where nothing resolved
 
 Node's JS `realpathSync` builds its answer from the argument it was handed.
