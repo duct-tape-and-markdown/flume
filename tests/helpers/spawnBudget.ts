@@ -1,10 +1,10 @@
 /**
  * Either lane's spawn scan: which of its cases and hooks start a process,
  * which of the files holding them declare the shared budget
- * (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`), which of the sites
- * override that declaration with a ceiling of their own, and which of them
- * await a wall-clock timer between the spawn and the assertion downstream
- * of it.
+ * (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`), which registrars under
+ * such a declaration override it with a ceiling of their own, and which of the
+ * spawning sites await a wall-clock timer between the spawn and the assertion
+ * downstream of it.
  *
  * A source scan rather than a runtime probe, because both properties are what
  * a site *declares*: a budget observable only once a case has already run long
@@ -723,39 +723,49 @@ export interface SpawnScanRequest {
 }
 
 /**
- * The lane's spawning cases and hooks, judged twice over the one set
- * (`repoProgram.ts`, {@link Scan}: a second verdict over the same judged set
- * is a second finding list beside `findings`).
- *
- * `findings` are the sites awaiting a wall-clock timer between the spawn and
- * the assertion. `ceilings` are the sites carrying a ceiling of their own
- * beside the budget their file declares — the number restated per registrar,
- * which the per-file verdict cannot see, because a file declaring the budget
- * correctly is green there however many of its cases then override it.
- */
-export interface SiteScan extends Scan<SpawnSite> {
-  readonly ceilings: readonly SpawnSite[];
-}
-
-/**
- * Two judged sets, so two scans rather than two finding lists
+ * Three judged sets, so three scans rather than extra finding lists
  * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*:
  * a vacuity pin reads the `scanned` of whichever verdict it guards).
  *
  * `sites` judges every case and hook of the lane that starts a process, for
- * the wall-clock timer some await between the spawn and the assertion, and
- * for the ceiling some carry of their own. `files` judges the lane files
- * those sites sit in, for the budget — which is declared once per file, so
- * the file is the unit a missing declaration is reported at.
+ * the wall-clock timer some await between the spawn and the assertion.
+ * `files` judges the lane files those sites sit in, for the budget — which is
+ * declared once per file, so the file is the unit a missing declaration is
+ * reported at. `registrars` judges every case and hook a *declaring* file
+ * holds, spawning or not, for the ceiling some carry of their own.
+ *
+ * The last set is wider than the first on purpose. A file-scope `vi.setConfig`
+ * reaches every registrar the file holds, and vitest resolves a registrar's
+ * own timeout argument last, so a number on a case that spawns nothing
+ * overrides the declaration exactly as one on a case that spawns does — and
+ * the file verdict cannot see either, because a file naming the budget
+ * correctly is green there however many of its registrars then restate it.
+ * Declaring is the opt-in: a file that never declared a budget is under no
+ * rule here, and the number it restates is its own business.
  */
 export interface SpawnScan {
-  readonly sites: SiteScan;
+  readonly sites: Scan<SpawnSite>;
   readonly files: Scan<SpawnFile>;
+  readonly registrars: Scan<SpawnSite>;
+}
+
+/**
+ * One registrar as the walk below reads it, before either verdict selects it:
+ * the site, and whether its body reaches a process startup. The flag lives
+ * here rather than on {@link SpawnSite} because it is the selector, not a
+ * property of a site — every site the spawn verdicts see has it set, and the
+ * ceiling verdict does not read it at all.
+ */
+interface Registrar {
+  readonly site: SpawnSite;
+  readonly spawns: boolean;
 }
 
 /**
  * Every case and hook the request's lane holds that starts a process, folded
- * to the files that hold them with the budget each file declares.
+ * to the files that hold them with the budget each file declares — and, for
+ * each file that declares one, every registrar it holds whether it spawns or
+ * not (see {@link SpawnScan}).
  */
 export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> {
   const rule = await laneRule(request.lane);
@@ -763,6 +773,7 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
   const budgets = new Set(harnessBudgets().keys());
   const sites: SpawnSite[] = [];
   const files: SpawnFile[] = [];
+  const registrars: SpawnSite[] = [];
 
   for (const path of filesUnder(rule, request.dir)) {
     const src = parse(path);
@@ -775,6 +786,7 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
     const timers = reachingNames(src, TIMERS);
     const named = new Set([...budgets].filter((n) => imported.has(n)));
 
+    const own: Registrar[] = [];
     const visit = (node: ts.Node): void => {
       // The registrar call is the outer one: `it.each(table)(title, fn)` is a
       // call whose callee is itself a call, and only the outer half carries a
@@ -795,21 +807,15 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
         if (kind) {
           // Everything but the title: a case's body, a hook's body, and a
           // bare function identifier standing in for either.
-          const refs = new Set(
-            node.arguments
-              .filter((a) => !ts.isStringLiteralLike(a))
-              .flatMap((a) => [...referenced(a)]),
-          );
-          if ([...spawns].some((n) => refs.has(n))) {
-            const line =
-              src.getLineAndCharacterOfPosition(node.getStart()).line + 1;
-            const first = node.arguments[0];
-            const awaited = new Set(
-              node.arguments
-                .filter((a) => !ts.isStringLiteralLike(a))
-                .flatMap((a) => [...awaitedNames(a)]),
-            );
-            sites.push({
+          const body = node.arguments.filter((a) => !ts.isStringLiteralLike(a));
+          const refs = new Set(body.flatMap((a) => [...referenced(a)]));
+          const line =
+            src.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+          const first = node.arguments[0];
+          const awaited = new Set(body.flatMap((a) => [...awaitedNames(a)]));
+          own.push({
+            spawns: [...spawns].some((n) => refs.has(n)),
+            site: {
               module,
               line,
               title:
@@ -819,37 +825,45 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
               kind,
               awaitedTimer: [...timers].find((n) => awaited.has(n)) ?? null,
               ownCeiling: ownCeiling(node, named),
-            });
-          }
+            },
+          });
         }
       }
       ts.forEachChild(node, visit);
     };
-    const before = sites.length;
     visit(src);
-    const own = sites.slice(before);
-    const first = own[0];
-    if (first) {
-      const declared = declaredFileBudget(src, named);
+    const declared = declaredFileBudget(src, named);
+
+    const spawning = own.filter((r) => r.spawns).map((r) => r.site);
+    sites.push(...spawning);
+    const first = spawning[0];
+    if (first)
       files.push({
         module,
         line: first.line,
-        sites: own,
+        sites: spawning,
         arms: declared?.arms ?? { testTimeout: null, hookTimeout: null },
         declaredAt: declared?.line ?? null,
       });
-    }
+
+    // The ceiling verdict's subject is the *declaration*, not the spawn: a
+    // file-scope `vi.setConfig` reaches every registrar under it, so every
+    // registrar under it can override it.
+    if (declared) registrars.push(...own.map((r) => r.site));
   }
 
   return {
     sites: {
       scanned: sites,
       findings: sites.filter((site) => site.awaitedTimer !== null),
-      ceilings: sites.filter((site) => site.ownCeiling !== null),
     },
     files: {
       scanned: files,
       findings: files.filter((file) => budgetDefect(file) !== null),
+    },
+    registrars: {
+      scanned: registrars,
+      findings: registrars.filter((site) => site.ownCeiling !== null),
     },
   };
 }

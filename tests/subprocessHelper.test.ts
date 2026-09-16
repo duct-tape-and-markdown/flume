@@ -495,25 +495,40 @@ it("every default-lane file that spawns a process declares the shared spawn budg
  * it they are a ceiling nobody measured — seven at 180_000 and 240_000 over
  * cases that run in about a second.
  *
+ * **Every** registrar a declaring file holds, not only the spawning ones.
+ * `vi.setConfig` is a file-scope statement: it reaches the case that mocks a
+ * filesystem exactly as it reaches the case that boots the CLI, so a number on
+ * either one overrides it the same way. Reading only the spawning half left 25
+ * of them standing across `tests/Gate.test.ts` and `tests/harnessRunner.test.ts`
+ * with nothing red — the hole this arm's subject closes.
+ *
+ * Declaring is the opt-in, and it is what keeps this off files that never
+ * asked: a file with no file-scope budget is judged by the verdict above, on
+ * its spawns, and its own numbers are its own business.
+ *
  * So the number has one home, and a registrar argument is not it. A site
  * that *names* the harness budget is not a restatement and passes; what
- * cannot ship is a case quietly choosing its own.
+ * cannot ship is a registrar quietly choosing its own.
  */
-it("no spawning site in the default lane carries a numeric timeout beside the budget its file declares", async () => {
-  const { sites } = await scanSpawns({ lane: "default" });
+it("a file declaring the spawn budget carries no numeric timeout on any registrar it holds", async () => {
+  const { registrars, sites } = await scanSpawns({ lane: "default" });
 
-  // Vacuity: the lane was walked and its spawning registrars found, so the
-  // empty verdict below is a scan that judged them rather than one that read
-  // nothing. That the arm fires at all is pinned over a fixture written to be
-  // caught, below.
+  // Vacuity, on this verdict's own subject: the declaring files were walked
+  // and the registrars under them collected, so the empty verdict below is a
+  // scan that judged them rather than one that read nothing. Wider than the
+  // spawning half by construction — every spawning site in a declaring file is
+  // one of these — so the comparison pins the widening rather than restating
+  // the count. That the arm fires at all is pinned over a fixture written to
+  // be caught, below.
   expect(sites.scanned.length).toBeGreaterThan(0);
+  expect(registrars.scanned.length).toBeGreaterThan(sites.scanned.length);
 
   expect(
-    sites.ceilings.map((s) => `${s.module}:${s.line} — ${s.ownCeiling}`),
+    registrars.findings.map((s) => `${s.module}:${s.line} — ${s.ownCeiling}`),
     `these registrars carry a timeout of their own, which vitest resolves ` +
-      `over the file-scope \`vi.setConfig\` budget: drop the argument so the ` +
-      `site inherits \`SPAWN_BUDGET_MS\` (tests/helpers/subprocess.ts), which ` +
-      `is the lane's one number`,
+      `over the file-scope \`vi.setConfig\` budget their file declares: drop ` +
+      `the argument so the registrar inherits \`SPAWN_BUDGET_MS\` ` +
+      `(tests/helpers/subprocess.ts), which is the lane's one number`,
   ).toEqual([]);
 });
 
@@ -821,23 +836,31 @@ it("a same-named function elsewhere in the file does not hide a spawning case fr
 });
 
 /**
- * The per-site arm's own sensitivity, over a fixture that declares the budget
- * correctly at file scope and then overrides it four registrars later.
+ * The per-registrar arm's own sensitivity, over a fixture that declares the
+ * budget correctly at file scope and then overrides it six registrars later.
  *
- * Four shapes, because the arm answers each differently and only the whole
+ * Six shapes, because the arm answers each differently and only the whole
  * list says which is which: a positional literal on a case, a positional
  * literal on a hook (`beforeEach(fn, timeout)` is the only spelling a hook
- * has), the options-object `timeout` key, and a registrar naming the harness
- * budget. The last one passes — naming the lane's constant is the number
- * staying in its one home, not a restatement of it — and it is the arm's
- * only negative that a numeric filter could not fake.
+ * has), the options-object `timeout` key, a registrar naming the harness
+ * budget, a literal on a case that spawns nothing, and a case that spawns
+ * nothing and carries no argument. The budget-naming registrar passes —
+ * naming the lane's constant is the number staying in its one home, not a
+ * restatement of it — and it is the arm's only negative that a numeric filter
+ * could not fake.
+ *
+ * The two non-spawning cases are the widening's own sensitivity, and they are
+ * a pair for the same reason: the one with a literal is reported, so the arm
+ * is not reading the spawn set; the one without is absent, so it is not
+ * reporting every registrar it walks. `sites` staying at four beside them says
+ * the spawn verdict did not widen with the ceiling verdict.
  *
  * Read off the argument rather than from vitest's own order: the fixture
  * spells the options form as `(name, options, fn)` and the positional form as
  * `(name, fn, timeout)`, both of which vitest accepts, and the scan reports
  * the same ceiling for either.
  */
-it("the spawn scan reports a numeric timeout literal on a spawning registrar", async () => {
+it("the spawn scan reports a numeric timeout literal on a registrar under a file-scope declaration, spawning or not", async () => {
   const FIXTURE = [
     `import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";`,
     ``,
@@ -859,33 +882,98 @@ it("the spawn scan reports a numeric timeout literal on a spawning registrar", a
     `  await exec("git", ["status"], { cwd: dir });`,
     `}, SPAWN_BUDGET_MS);`,
     ``,
+    `it("restates the number while spawning nothing", () => {`,
+    `  expect(1).toBe(1);`,
+    `}, 20_000);`,
+    ``,
+    `it("spawns nothing and restates nothing", () => {`,
+    `  expect(1).toBe(1);`,
+    `});`,
+    ``,
   ].join("\n");
 
   const dir = await mkdtemp(join(tmpdir(), "flume-budget-ceiling-"));
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
-    const { sites, files } = await scanSpawns({ lane: "default", dir });
+    const { registrars, sites, files } = await scanSpawns({
+      lane: "default",
+      dir,
+    });
 
-    // Vacuity: all four registrars are in the judged set, so the verdict
-    // below is three of four rather than a scan that read one.
+    // Vacuity: all six registrars are in the ceiling verdict's judged set, so
+    // the verdict below is four of six rather than a scan that read one — and
+    // the four spawning ones are what the spawn verdict still sees, so the
+    // widening is this arm's and not the whole scan's.
+    expect(registrars.scanned.length).toBe(6);
     expect(sites.scanned.length).toBe(4);
 
-    // The whole list, so the registrar that names the budget is pinned by its
-    // absence — and the hook is pinned as reported, which no case-only arm
-    // would have covered.
+    // The whole list, so the registrar that names the budget and the
+    // non-spawning case with no argument are both pinned by their absence —
+    // and the hook is pinned as reported, which no case-only arm would have
+    // covered.
     expect(
-      sites.ceilings.map((s) => `${s.kind}: ${s.title} — ${s.ownCeiling}`),
+      registrars.findings.map((s) => `${s.kind}: ${s.title} — ${s.ownCeiling}`),
     ).toEqual([
       expect.stringMatching(/^hook: beforeEach at .* — 30_000$/),
       "case: restates the number positionally — 20_000",
       "case: restates it under the options key — 20_000",
+      "case: restates the number while spawning nothing — 20_000",
     ]);
 
     // And the file-scope verdict is clean over the same fixture: the two arms
-    // are independent, so a correctly declaring file cannot absorb a site's
-    // own ceiling and a site's clean argument cannot excuse a missing
-    // declaration.
+    // are independent, so a correctly declaring file cannot absorb a
+    // registrar's own ceiling and a registrar's clean argument cannot excuse a
+    // missing declaration.
     expect(files.scanned.map((f) => budgetDefect(f))).toEqual([null]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The opt-in that bounds the arm above, asserted on its own rather than
+ * inherited (`.claude/rules/engineering.md`, *A green verdict is proven
+ * non-vacuous*: vacuous-by-design is spelled, never inherited).
+ *
+ * A file with no file-scope `vi.setConfig` has restated nothing — it named no
+ * budget for a registrar to override, and vitest's own default is what its
+ * registrars sit under. It is judged by the file verdict instead, on the
+ * declaration it is missing; widening the ceiling rule onto it would put every
+ * non-declaring file in the lane under a rule it never opted into.
+ */
+it("the spawn scan judges no registrar in a file that declares no file-scope budget", async () => {
+  const FIXTURE = [
+    `it("restates a number while spawning", async () => {`,
+    `  await exec("git", ["status"], { cwd: dir });`,
+    `}, 20_000);`,
+    ``,
+    `it("restates a number while spawning nothing", () => {`,
+    `  expect(1).toBe(1);`,
+    `}, 20_000);`,
+    ``,
+  ].join("\n");
+
+  const dir = await mkdtemp(join(tmpdir(), "flume-budget-undeclared-"));
+  try {
+    await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+    const { registrars, sites, files } = await scanSpawns({
+      lane: "default",
+      dir,
+    });
+
+    // Vacuity: the file was read and both numbers are on disk — the spawning
+    // case is in the spawn verdict's set carrying its own ceiling, so the
+    // empty set below is the opt-in doing work rather than a scan that read
+    // nothing.
+    expect(sites.scanned.map((site) => site.ownCeiling)).toEqual(["20_000"]);
+
+    expect(registrars.scanned).toEqual([]);
+    expect(registrars.findings).toEqual([]);
+
+    // What does judge it: the declaration it never made.
+    expect(files.findings.map((f) => budgetDefect(f))).toEqual([
+      "declares no file-scope `vi.setConfig` budget",
+    ]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
