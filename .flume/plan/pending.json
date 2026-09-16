@@ -64,6 +64,40 @@
     "notes": "Reported by the CLI-ENTRY-CHECK-RESOLVES-A-NAMESPACED-ROOT note, reproduced by reading `callSites` (tests/helpers/namespacedFsScan.ts): the lookbehind excludes a member receiver only, so a type-position `name(` matches. No site in src/ or harness/ carries the shape today, so the live cost is the inflated vacuity subject the file's own header names; the false red arrives with the first one."
   },
   {
+    "tag": "NAMESPACED-REALPATH-SCAN-REFUSES-THE-JS-FORM",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/namespacedFsScan.ts",
+          "description": "a composed path handed to a bare `realpathSync` is a defect the scan reports; the `.native` head stays green"
+        },
+        {
+          "path": "tests/namespacedFsPaths.test.ts",
+          "description": "the refusal case, and the two JS-form fixtures re-spelled so each keeps the axis it exists to decide"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the namespaced-fs scan admits `realpathSync(toNamespacedPath(x))`, the one shape node 22 throws on over win32 — the page now says never the JS form",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "`realpathSync` keeps the `\\\\?\\` prefix only where nothing resolved"
+    },
+    "acceptance": "the scan reads a composed path at a bare `realpathSync` as a defect and only the `.native` head as green, and `src/` and `harness/` pass under it.",
+    "tests": [
+      "the namespaced-fs scan refuses a composed path handed to node's JS realpathSync"
+    ],
+    "pins": [
+      "no src/ or harness/ call hands a composed path to node's JS realpathSync"
+    ],
+    "notes": "Derived from 8761d813: through node 22 the JS form throws on every namespaced drive path on win32, `engines` is >=22 and CI runs 22, so the shape is live-broken, not hypothetical. `FOLDED_SOURCE` is that shape and a test titled *admits* it today; `NATIVE_FOLDED_SOURCE` beside it is the green spelling. `ESCAPING_SOURCE`'s axis is the answer's reader — keep it decidable off the JS form. src/cli.ts is already native."
+  },
+  {
     "tag": "DISPATCHER-HOMES-ITS-FIVE-FRONT-JOBS",
     "gate": {
       "kind": "open"
