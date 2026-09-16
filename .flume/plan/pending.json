@@ -1,69 +1,5 @@
 [
   {
-    "tag": "ENTRY-CHECK-DEGRADED-LEG-NAMES-ITS-CAUSE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "the degraded leg reports what it caught, still without throwing out of the module-level call"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the junction case asserts on the report, and its fixture root is folded at creation"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`onDiskIdentity`'s catch leg discards the error that sent it there, so the windows junction red names which spelling won and never why the resolving leg declined",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "acceptance": "a resolving-leg failure is readable beside the folded answer, so the windows lane's junction red names the error `realpathSync.native` threw rather than a second spelling; `flume` still imports on a host where that leg throws.",
-    "tests": [
-      "the CLI entry check's degraded leg reports the error that sent it there"
-    ],
-    "pins": [],
-    "notes": "Windows run 35048101999: onDiskIdentity(junctioned) answered its raw input, so the resolving leg threw and the catch named nothing. Suspect: the fixture root. mkdtemp(join(tmpdir())) on the runner yields C:\\Users\\RUNNER~1\\..., an 8.3 alias the bare realpathSync two lines above resolves and the namespaced native call is handed unfolded. Folding that one root rides here; the tree-wide pass is EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER."
-  },
-  {
-    "tag": "SCAN-READS-A-TYPE-POSITION-AS-A-CALL-SITE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/namespacedFsScan.ts",
-          "description": "`callSites` stops matching a name in a type position"
-        },
-        {
-          "path": "tests/namespacedFsPaths.test.ts",
-          "description": "the case pinning the scan's own reading of a call"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`callSites`'s regex matches a method signature inside a type literal, so a `name(` in a type position joins `judged` as an fs call site",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "acceptance": "the scan's judged count over `src/` and `harness/` counts call sites alone — a module carrying `{ readFileSync(k: string): string }` in a type position contributes none, and the tree verdicts are unchanged.",
-    "tests": [
-      "a method signature in a type literal is not read as an fs call site"
-    ],
-    "pins": [],
-    "notes": "Reported by the CLI-ENTRY-CHECK-RESOLVES-A-NAMESPACED-ROOT note, reproduced by reading `callSites` (tests/helpers/namespacedFsScan.ts): the lookbehind excludes a member receiver only, so a type-position `name(` matches. No site in src/ or harness/ carries the shape today, so the live cost is the inflated vacuity subject the file's own header names; the false red arrives with the first one."
-  },
-  {
     "tag": "NAMESPACED-REALPATH-SCAN-REFUSES-THE-JS-FORM",
     "gate": {
       "kind": "open"
@@ -576,38 +512,9 @@
     "notes": "From FIXTURE-AND-GIT-SPELL-ONE-PATH-THE-SAME-WAY's note: six lane reds came from this class, three reproducible off-win32 with `TMPDIR` pointed at a symlink. 163 sites over 39 files; 15 are `mkdtempSync` and want a sync sibling beside `mkTempDir`, whose doc comment is the only thing holding the property today. Blocked on the helper split so the 39 files are routed at the maker's final home once, not twice."
   },
   {
-    "tag": "ENTRY-CHECK-SECOND-SPELLING-DECLARES-ITS-DIVERGENCE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "scripts/build-changelog.mjs",
-          "description": "the direct-invocation guard states why it diverges from the entry check it cites"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`scripts/build-changelog.mjs`'s direct-invocation guard re-spells the check `src/cli.ts` owns — its own try/catch, no namespacing, no fold — and declares no divergence",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "acceptance": "the script's guard names why its depth is right — a human-run `.mjs` the namespaced alphabet never reaches, no `\\\\?\\` argument to fold — so a reader meets a declared divergence rather than a second spelling of one rule.",
-    "tests": [],
-    "pins": [],
-    "notes": "Accepted as debt in 9fdc4686 and 95c60fa2; this is the third body, so it files once (`.claude/rules/posture-sweep.md`, *Routing*). The `.mjs` boundary makes importing `onDiskIdentity` more than the one-line move it looks like, and the guard is correct as written — the declaration is the fix, not the bridge. If build finds the bridge cheap, take it instead."
-  },
-  {
     "tag": "NODE22-THROW-SHRINKS-TO-ITS-PAGE",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "ENTRY-CHECK-DEGRADED-LEG-NAMES-ITS-CAUSE"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
