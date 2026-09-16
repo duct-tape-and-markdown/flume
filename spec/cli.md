@@ -142,6 +142,10 @@ In printed order:
    friction count when `Chain.friction` is declared and its dir holds files,
    and one line per pending entry blocked on a `requiresCapability` the chain
    has not asserted.
+7. **The live run's spend so far** — when a supervisor is live, agent usage
+   totalled by phase from the verdict rows written since it started; absent a
+   live supervisor, nothing extra. The number that decides whether a loop
+   keeps running is read where the operator looks first.
 
 It never prints a commit. `git log -1` already answers that; a HEAD sha
 restated beside git is precisely the shape `engineering.md`'s *derived state is

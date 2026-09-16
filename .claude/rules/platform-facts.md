@@ -111,6 +111,21 @@ does not. A node patch upgrade is enough to cross the boundary, so an
 existing consumer is one upgrade from a dead chain until the manifest is in
 place.
 
+## `npm install` resolves every manifest range from the registry, whatever the install supplies
+
+`npm install <tarball>` still resolves each range the manifest names against
+the registry before it reconciles `node_modules`. A manifest naming
+`@dtmd/flume@^X.Y.Z` on a release-cut commit — that version tagged, not yet
+published — makes any later `npm install` in that directory exit `ETARGET`
+on a lookup unrelated to what it was asked to install. Measured against the
+packed 0.16.0 while shipping the adoption smoke.
+
+So a step that installs a pack into a consumer whose manifest names the
+package's own unpublished version cannot install anything else afterward.
+Give the pack a consumer directory of its own, with the tarball as the only
+handoff between steps; the install order within one step is that step's to
+declare at its site.
+
 ## Node caps a captured child stream at 1 MiB, and reports the overrun as a spawn failure
 
 `execFile`, `exec`, and their sync forms keep at most `maxBuffer` bytes of a

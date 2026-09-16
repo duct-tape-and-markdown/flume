@@ -685,7 +685,9 @@ that leg writes no verdict at all (see *The tick verdict*).
 - **Otherwise non-zero iff at least one tick errored AND zero entries shipped.**
   "Settled with nothing to do" stays 0. Partial success — ships landed despite some
   tick errors — stays 0, with the errors named in the completion summary so they never
-  vanish into a silent green exit.
+  vanish into a silent green exit. The completion summary also totals the
+  run's agent usage by phase from the verdict rows the ticks wrote, so what a
+  run cost is read where its outcome is.
 - **The consecutive-failure abort is unconditionally 1**, regardless of how much the
   run shipped before hitting the wall (below).
 - **Tick-level agent failures do not halt the run.** A plain non-zero child exit is

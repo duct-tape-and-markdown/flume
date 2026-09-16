@@ -30,6 +30,14 @@ one job each, selected by the first live window — and `build`, fanout, one
 entry per worktree. A consumer enables or disables slices; it does not
 re-author them.
 
+A slice is made live by unrouted work, never by a signal alone. While
+`<pending-now>` carries a pickable entry, a build note that is an observation
+waits, and the drain rides the next plan tick that runs for its own reasons —
+the sweep's rule, extended to the inbox; a note that is a **park** makes the
+inbox slice live at once, because build must not re-pick an entry whose park
+stands. A tick that runs and files nothing is the shape this paragraph exists
+to refuse.
+
 
 ### The prompts and their discipline
 
@@ -91,8 +99,11 @@ no completed run for the tip yet — renders as unread and says so, never as
 green.
 
 A lane makes the inbox slice live exactly when its latest completed run for
-the tip's branch failed and that run is past the stamp the slice last wrote
-for the lane; the slice stamps the run it woke on, drained or unread, as it
+the tip's branch failed, that run is past the stamp the slice last wrote for
+the lane, and its failing-title set differs from the set the stamp carries;
+the stamp is the run and its failing titles, so a red that persists unchanged
+advances the stamp at the next tick that runs anyway and wakes nothing. The
+slice stamps the run it woke on, drained or unread, as it
 stamps a cursor. So a red lane wakes the slice once per run and never every
 tick, a green run needs no drain, and a lane whose status the slice cannot
 read makes it live for nothing — unread renders only when the slice is live
@@ -104,11 +115,27 @@ every push and a failure that persists reports again. A stamp is never an
 operator's to clear.
 
 
+### Declared findings sources
+
+A findings source is anything the loop must route or re-buy every tick, and
+the declaration names each: the inbox directory, a CI lane (above), and the
+friction channel (`spec/chain.md`, *`Chain.friction` — the declared friction
+channel*). The inbox slice reads a declared friction directory as it reads
+the inbox — one record per file, routed and then removed the way a record is
+drained — so a consumer never carries a prompt paragraph for routing its own
+notes; a paragraph every consumer would repeat is a surface the package owes
+(`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+
 ### Plan state as declared state
 
 The derive and sweep cursors, the continuation signal, and the per-lane
-drained-run stamp are fields the package reads through its own accessor,
-never a line regexed out of prose. Absence is read three ways, on purpose: a
+drained-run stamp — the run and the failing titles it reported — are fields
+the package reads through its own accessor,
+never a line regexed out of prose. The inbox drain advances the derive cursor
+through a spec commit whose derivation it routed from a drained record, so
+derive runs only over spec deltas no record claimed; a derive tick that finds
+every section already queued and moves the cursor alone is the cost that rule
+removes. Absence is read three ways, on purpose: a
 missing plan state renders as no state yet and a missing questions file as
 none open, because both are the package's to bootstrap; a missing queue refuses
 the render, because a slice re-deriving a queue it could not read would write
@@ -121,7 +148,13 @@ defect.
 Reads the engine's reported pickable set and
 no-commit facts, and writes exactly one thing: the stop flag, after a shipped
 entry marked contract-touching, so the next run starts on the contract it
-changed. A consumer overrides it by declaration, not by copying it.
+changed. It never hands build an entry whose latest prior attempt is a clean
+exit at the current HEAD — the same dispatch against an unchanged world is
+the same outcome — read from the mode and the anchor the engine reports on
+the record, never from a heuristic of the package's own. If the pickable set
+cannot carry a per-entry refusal a chain declares, that is a missing engine
+capability, and the harness is its first declarer. A consumer overrides the
+handoff by declaration, not by copying it.
 
 
 ### Committed-path discipline
