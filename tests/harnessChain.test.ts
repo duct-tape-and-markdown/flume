@@ -1130,3 +1130,63 @@ it("FLUME_LANDED_ON_SHA is absent from an afterCommit gate's environment", async
   expect(seen).toEqual(expectedFacts(ctx));
   expect("FLUME_LANDED_ON_SHA" in seen).toBe(false);
 });
+
+/**
+ * The page a chain author reads before any hover text states which facts a
+ * declared gate's command can reach, so it is pinned for what it says against
+ * the mechanism it describes (`.claude/rules/engineering.md`, *Narration is
+ * the ladder's bottom rung*, the `docs/` carve-out). The real writer is the
+ * gate's own spawn, read through the real consumer above — a seventh fact, a
+ * dropped one, or a renamed one parts the table from the environment and reds
+ * here (*A seam gate reads what the real writer wrote*).
+ *
+ * The bullet bodies below the table stay unpinned: what a variable *means* is
+ * prose, and reading it against a doc comment would be prose against prose.
+ */
+it("docs/CHAIN-AUTHORING.md names exactly the FLUME_ variables a declared gate's child is handed", async () => {
+  const gate = declaredGate(
+    { kind: "shell", command: REPORT_FLUME_ENV, when: "afterMerge" },
+    REPORT_FLUME_ENV,
+  );
+
+  // `afterMerge` over a span that touched something: the stage and the span
+  // that carry every fact at once, so the page is read against the full set
+  // rather than against whichever variables this context happened to fill.
+  const { ctx, seen } = await flumeEnvSeenBy(gate, {
+    touchedPaths: ["src/widget.ts"],
+    landedOnSha: "c".repeat(40),
+  });
+  expect(ctx.stateRootRel).toBeDefined();
+
+  const doc = await readFile(
+    new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
+    "utf8",
+  );
+  // The section, heading line through the line before the next heading of any
+  // level.
+  const start = doc.search(/^#### What a declared command gate's child reads$/m);
+  expect(start, "the page carries the gate-fact section").toBeGreaterThanOrEqual(0);
+  const body = doc.indexOf("\n", start) + 1;
+  const next = doc.slice(body).search(/^#{1,6} /m);
+  const section = next === -1 ? doc.slice(start) : doc.slice(start, body + next);
+
+  // The span is the one it claims to be before a set is read off it: a heading
+  // match that captured the wrong section would compare an empty table against
+  // the environment and report every fact missing.
+  expect(section).toContain("runs through `sh -c`");
+
+  /** The table's subjects: one row each, led by the variable in its first cell. */
+  const tabled = [...section.matchAll(/^\| `(FLUME_[A-Z_]+)` \|/gm)].map((row) => row[1]!);
+
+  // Vacuity pin (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*): a child that never started would report nothing, and a
+  // table read off a mis-cut span would hold nothing — either way two empty
+  // sets agree. One anchor apiece rather than a second copy of the list.
+  expect(Object.keys(seen).length).toBeGreaterThan(1);
+  expect(tabled.length).toBeGreaterThan(1);
+
+  expect(
+    [...tabled].sort(),
+    "docs/CHAIN-AUTHORING.md tables exactly the facts a declared gate's child is handed",
+  ).toEqual(Object.keys(seen).sort());
+});
