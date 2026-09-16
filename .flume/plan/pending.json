@@ -86,7 +86,7 @@
     "acceptance": "a `v*` tag push publishes the tagged tree under the repository's `NPM_TOKEN`, skips when that version already resolves on the registry, and then installs the published tarball from the registry and runs the shim — red on its lane when the registry does not resolve the tag.",
     "tests": [],
     "pins": [],
-    "notes": "From the inbox ruling (2026-09-16). The operator has set the `NPM_TOKEN` repo secret from the credential `.env` holds, verified live. The workflow's first live run is the 0.16.0 cut. CLAUDE.md keeps the manual recipe as fallback only — not build's to edit. No tests[]: the lane is yaml no suite reads, and the registry leg needs a network the suite has no business taking."
+    "notes": "Ratified by spec(cli) 8016586b; filed the tick before off the inbox ruling that edit closed. The operator has set the `NPM_TOKEN` repo secret from the credential `.env` holds, verified live. The workflow's first live run is the 0.16.0 cut. CLAUDE.md keeps the manual recipe as fallback only — not build's to edit. No tests[]: the lane is yaml no suite reads, and the registry leg needs a network the suite has no business taking."
   },
   {
     "tag": "A-COMMENT-PAGE-NAME-RESOLVES-ON-DISK",
