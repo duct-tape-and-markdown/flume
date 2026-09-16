@@ -499,6 +499,16 @@ confines side effects to disk inside `cwd`.
   input as the tick read it. Without it a gate reading trunk claims reverts
   a tick for a note that post-dates it, and the chain rebuilds the base from
   a worktree path convention the engine never promised.
+- **`landedOnSha`** — under `afterMerge`, the trunk tip the gated span landed
+  onto: the lower end of the range `touchedPaths` is diffed over, and the
+  trunk as this entry found it before its own commits were carried across.
+  Absent under `afterCommit`, where no trunk is involved and `baseSha` is the
+  whole story. It is how a per-entry cumulative gate on trunk — one that
+  measures a set before and after this entry and refuses growth — reads the
+  right *before*: `baseSha` is what the tick *saw* when it branched, and every
+  sibling in a fanout wave shares it, so a gate measured against it inherits
+  every sibling's landing; `HEAD^` is right only while a span lands as one
+  commit. Set on every dispatcher-built `afterMerge` context.
 - **`entry`** — the pending entry the gated span was provisioned for, as the
   wave selected it; set at both stages under fanout, absent on a singleton
   tick, which carries no entry. It is how a chain gate holds a commit to the

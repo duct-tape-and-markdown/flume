@@ -213,7 +213,13 @@ case. `flume job new` seeds a job's root from the package's skeleton — the
 factory declares `seedDir` — so a consumer keeps neither a second schema nor
 a per-job file. What else varies between efforts — gates, agents, setup —
 varies per checkout, where a fresh declaration already resolves; measured
-across one bay, that is where all of it varied.
+across one bay, that is where all of it varied. A job's fence is refused at
+chain load where a glob can match the package's own artifacts — the queue,
+the plan state, a record, a note — under any state root but the job's own,
+naming the glob and the root: a sibling's queue is its own plan slice's to
+derive, and a build tick writing it is the hand edit no state of the queue
+needs (*The gates the discipline needs*). A consumer's own file under
+another job's root is admitted; where a bay keeps its product is the bay's.
 
 | Field | What it decides |
 | --- | --- |
@@ -224,7 +230,7 @@ across one bay, that is where all of it varied.
 | `runner` | A factory, `({ api, provision }) => Runner`, for the test runner the judge drives — see *The runner interface*. The package calls it at chain load with the chain's own `FlumeApi` and the declared `setup` as a provisioning function, so a runner constructs neither by hand. |
 | `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
-| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the state root and its repo-relative offset, the touched paths — so a gate that needs the pre-entry trunk reads `FLUME_BASE_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
+| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the trunk the span landed onto (`FLUME_LANDED_ON_SHA`, `afterMerge` only), the state root and its repo-relative offset, the touched paths — so a gate that measures trunk before and after this entry reads `FLUME_LANDED_ON_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong, and a gate that needs what the tick saw reads `FLUME_BASE_SHA`. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
 | `agents` | Model per phase, extra agent arguments, and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. |
