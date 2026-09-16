@@ -31,7 +31,9 @@ ls "$(git rev-parse --show-toplevel)"/.flume/plan/open-questions.md       # § 3
 you take the upgrade, not about what your chain says. § 2 applies only to a
 chain, script, or monitor that reads either guard file itself. § 3 applies to
 a consumer of the harness package whose state root still carries the page —
-adjust the path if your state root is not `.flume`.
+adjust the path if your state root is not `.flume`. § 4 applies to every
+consumer of that package and needs nothing done up front; read it if anything
+you wrote reads a build tick's park.
 
 ## 1. Stop every running loop before you upgrade a shared state root
 
@@ -144,3 +146,35 @@ creates it.
 the page is retired in the release after this one. A page still on disk then
 is a file no plan phase can touch, and the questions it holds are invisible
 to every slice.
+
+## 4. A build tick parks by writing under `plan/notes/parked/`
+
+**Affects** a consumer of the harness package (`@dtmd/flume/harness`). The
+engine is not involved: `shipped` is a chain-side predicate either way
+([`CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md)).
+
+**What changed.** A park used to be read off the *shape* of a build commit —
+the entry's note at `plan/notes/<TAG>.md` and no other path. It is now read
+off **where** the note sits: a tick that cannot ship its entry writes
+`plan/notes/parked/<TAG>.md`, and that path in the commit is the park,
+whatever else the commit touched. A note at `plan/notes/<TAG>.md` is an
+observation for the next plan tick, and its entry leaves the queue as
+shipped.
+
+Two behaviors follow. A refusal that could not help leaving a file behind —
+a half-finished edit, a test it had to touch to reach the wall — is still a
+refusal, where before it shipped the entry with the work undone. And a tick
+with something to tell plan and nothing to refuse no longer has to strip its
+commit to say so.
+
+**What to do.** Nothing up front. The package's build fence and entry
+channel admit both directories, the build prompt names both paths, the
+records gate admits either under the tick's own tag, and the drain lists a
+park with every other record. Two things are worth checking: anything of
+yours that reads `plan/notes/` — an ignore rule, a dashboard, a script —
+sees a `parked/` subdirectory in it now; and a note left on disk by a park
+taken before the upgrade sits at `plan/notes/<TAG>.md`, where the drain now
+reads it as an observation. Its entry is still in the queue — a park keeps
+it there and nothing re-picks it out — so the only cost is a misread kind
+at the drain. Move such a note down a directory before the next plan tick,
+or say what it was in that tick's commit body.

@@ -12,7 +12,7 @@
  * the plan artifacts' paths and the fence that is their list in `layout.ts`.
  * What is decided here is only what a `Phase` object needs that none of them
  * can answer alone: which of those fences each phase carries, which prompt
- * it addresses, which of them a park is, and the order the gates sit in.
+ * it addresses, which commit is a park, and the order the gates sit in.
  *
  * **The declaration is parsed here, not by the consumer.** The whole of
  * adoption is one declaration module and the hop that applies this factory
@@ -62,7 +62,7 @@ import { harnessGates, type GateEngine } from "./gates.js";
 import { resolveHandoff } from "./handoff.js";
 import { SESSIONS_REL } from "./ignores.js";
 import { namedLinesGate } from "./judgeGate.js";
-import { noteGlob, notePath, planArtifacts } from "./layout.js";
+import { noteGlobs, parkedNotePath, planArtifacts } from "./layout.js";
 import {
   BUILD_PROMPT_DATA_KEYS,
   SHARED_PROMPT_DATA_KEYS,
@@ -172,8 +172,8 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     repoRoot: api.paths.repoRoot,
   });
 
-  /** The one note a build tick may write, as a fence glob. */
-  const notes = noteGlob(stateRoot);
+  /** The notes a build tick may write, as fence globs — one per kind. */
+  const notes = noteGlobs(stateRoot);
 
   /**
    * The artifacts the package's plan slices own, whatever a consumer
@@ -282,19 +282,23 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   };
 
   /**
-   * Whether this commit is a park: the entry's own note and nothing else.
+   * Whether this commit is a park: the entry's own note, written under the
+   * parked directory (`spec/harness.md`, *Records as one file each* —
+   * location is kind).
    *
    * The package's vocabulary, not the engine's — the engine reports that a
    * commit landed and which paths it touched, and what that *means* is the
-   * chain's (`.claude/rules/engine-boundary.md`, *Told, not inferred*). The
-   * shape is the build prompt's other half: a tick that cannot ship its
-   * entry as written commits the note alone, and this reads exactly that
-   * back. A tests-only commit is a ship; only the note is a park.
+   * chain's (`.claude/rules/engine-boundary.md`, *Told, not inferred*). What
+   * it reads is **where** the tick wrote, and nothing about the shape of the
+   * path list around it: a refusal that could not help leaving a half-edited
+   * file behind is still a refusal, and a commit carrying an observation note
+   * beside its work is a tick that shipped and had something to say. Told,
+   * either way, rather than inferred from how much the commit touched.
    */
   const isPark = (entry: PendingEntry, touched: readonly string[]): boolean =>
-    touched.length === 1 && touched[0] === notePath(stateRoot, entry.tag);
+    touched.includes(parkedNotePath(stateRoot, entry.tag));
 
-  const buildWritablePaths = unique([...declaration.fence.build, notes]);
+  const buildWritablePaths = unique([...declaration.fence.build, ...notes]);
 
   const build: Phase = {
     name: BUILD_PHASE,
@@ -302,20 +306,25 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     promptPath: promptPath(BUILD_PHASE),
     concurrency: "fanout",
     agent: agentFor(BUILD_PHASE),
-    // The consumer's fence plus the package's own channel. The note is the
+    // The consumer's fence plus the package's own channel. The notes are the
     // package's, not the consumer's work, so a declaration that had to list
-    // it would be the verbatim copy every consumer carries.
+    // them would be the verbatim copy every consumer carries.
     writablePaths: buildWritablePaths,
-    // Same glob again as a channel, on a scoped tick only: there the write
-    // allowance narrows to the entry's declared files, which never name a
-    // note, so without it the park the prompt promises would revert. On an
-    // unscoped tick the fence above already admits the note, and the engine
+    // The same globs again as a channel, on a scoped tick only: there the
+    // write allowance narrows to the entry's declared files, which never name
+    // a note, so without them the park the prompt promises would revert. Both
+    // kinds, because a tick that could write an observation but not a park
+    // would have the refusal reverted by the fence meant to carry it. On an
+    // unscoped tick the fence above already admits them, and the engine
     // refuses a channel declared where nothing consults it
     // (`spec/pending.md`, *The entry-scoped write guard is opt-in*).
     ...(declaration.scopeWritesToEntry
       ? {
           scopeWritesToEntry: true,
-          entryChannelPaths: unique([...(declaration.channelPaths ?? []), notes]),
+          entryChannelPaths: unique([
+            ...(declaration.channelPaths ?? []),
+            ...notes,
+          ]),
         }
       : {}),
     gates: gatesFor({ writablePaths: buildWritablePaths }, BUILD_PHASE, [

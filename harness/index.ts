@@ -93,8 +93,11 @@ export {
 } from "./citeResolver.js";
 
 export {
+  noteGlobs,
   notePath,
+  notePaths,
   notesDir,
+  parkedNotePath,
   planStatePath,
   recordDirs,
 } from "./layout.js";

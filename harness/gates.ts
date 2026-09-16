@@ -52,7 +52,12 @@ import type { Phase } from "../src/Phase.js";
 import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js";
 import { BUILD_PHASE, type Declaration } from "./declaration.js";
 import { entryExtension, PerSchema } from "./entryExtension.js";
-import { notePath, planStatePath, recordDirs, underStateRoot } from "./layout.js";
+import {
+  notePaths,
+  planStatePath,
+  recordGlobs,
+  underStateRoot,
+} from "./layout.js";
 import { PlanStateSchema } from "./planState.js";
 import { parseOrThrow } from "./refusal.js";
 
@@ -260,7 +265,8 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
 /**
  * Records are one file each (`spec/harness.md`, *Records as one file each*),
  * and the two rules that are not layout hold at the commit: a build tick
- * touches only the note its own tag names, and a plan slice drains records
+ * touches only a note its own tag names — either kind, since the kind is the
+ * directory and the chain is what reads it — and a plan slice drains records
  * rather than writing one. A written record opens with a title line.
  *
  * **The byte cap is not this gate's** (`spec/harness.md`, *The gates the
@@ -296,12 +302,13 @@ function recordsGate(engine: GateEngine): Gate {
       // below are built from it straight (`computeStateRootRel`,
       // `src/paths.ts`).
       const stateRoot = ctx.stateRootRel;
-      // Trailing separator per directory, so `inbox` cannot prefix-match
-      // `inbox-archive`.
-      const dirs = recordDirs(stateRoot).map((dir) => `${dir}/`);
-      const touched = ctx.touchedPaths.filter((path) =>
-        dirs.some((dir) => path.startsWith(dir)),
-      );
+      // What a record *is*, off the layout's own globs rather than a prefix
+      // rule spelled here: the matcher's `*` stops at the separator, so
+      // `inbox` cannot claim `inbox-archive`, and the notes directory cannot
+      // claim the parked one nested inside it — which is the distinction the
+      // park predicate then reads (`recordGlobs`, `layout.ts`).
+      const globs = recordGlobs(stateRoot);
+      const touched = ctx.touchedPaths.filter((path) => matchesAny(path, globs));
       if (touched.length === 0) {
         return {
           ok: true,
@@ -311,14 +318,18 @@ function recordsGate(engine: GateEngine): Gate {
       }
 
       const isBuild = ctx.phaseName === BUILD_PHASE;
+      // The tick's own two notes, one per kind: which of them it wrote is the
+      // park verdict and the chain's to read (`chain.ts`), so what this holds
+      // is only that whichever it wrote carries *its* tag.
+      const entry = ctx.entry;
       const own =
-        isBuild && ctx.entry ? notePath(stateRoot, ctx.entry.tag) : undefined;
+        isBuild && entry ? notePaths(stateRoot, entry.tag) : undefined;
       const problems: string[] = [];
       let written = 0;
       for (const path of touched) {
-        if (isBuild && path !== own) {
+        if (isBuild && !own?.includes(path)) {
           problems.push(
-            `${path}: a build tick touches only ${own ?? "its own note (no entry on this tick)"}`,
+            `${path}: a build tick touches only ${own?.join(" or ") ?? "its own note (no entry on this tick)"}`,
           );
           continue;
         }

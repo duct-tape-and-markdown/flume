@@ -63,8 +63,11 @@ project's:
 - **Inbox** — `{{STATE_ROOT}}/inbox/<YYYY-MM-DD>-<slug>.md`, from whoever
   observes something in the field.
 - **Build notes** — `{{STATE_ROOT}}/plan/notes/<TAG>.md`, from the build tick
-  assigned that entry and no other. A commit whose only path is the note is a
-  **park**: the entry cannot ship as written and stays in the queue.
+  assigned that entry and no other: an observation for the next plan tick,
+  written by a tick that shipped.
+- **Build parks** — `{{STATE_ROOT}}/plan/notes/parked/<TAG>.md`, the same note
+  one directory down. **The directory is the signal**: the entry cannot ship
+  as written and stays in the queue, whatever else that commit touched.
 
 ## Disk vs git log
 

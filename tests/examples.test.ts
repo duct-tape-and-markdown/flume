@@ -689,7 +689,8 @@ describe("examples/prompts — the spans read the injected state root", () => {
    * The unreadable case is the wrong kind in place — a directory where a
    * `cat` span opens a file, a file where the listing span opens a
    * directory. A permission-denied would read the same on posix and be a
-   * no-op on win32 (`.flume/plan/open-questions.md`, the windows lane), so
+   * no-op on win32 (`.claude/rules/platform-facts.md`, *`chmod` denies
+   * nothing on win32*), so
    * it is not the case a portable suite can drive.
    */
   it("the example plan template's artifact spans fail the render when an artifact is present but unreadable", async () => {

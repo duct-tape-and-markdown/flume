@@ -16,8 +16,12 @@ import { expect, it } from "vitest";
 import {
   QUESTION_EXT,
   legacyQuestionsPath,
-  noteGlob,
+  noteGlobs,
   notePath,
+  notePaths,
+  notesDir,
+  parkedNotePath,
+  parkedNotesDir,
   planArtifacts,
   planStatePath,
   questionGlob,
@@ -56,6 +60,7 @@ it("the plan fence admits every artifact the package's own accessors address", (
     `${questionsDir(STATE_ROOT)}/a-parked-fork${QUESTION_EXT}`,
     legacyQuestionsPath(STATE_ROOT),
     notePath(STATE_ROOT, "SOME-ENTRY"),
+    parkedNotePath(STATE_ROOT, "SOME-ENTRY"),
     ...recordDirs(STATE_ROOT).map((dir) => `${dir}/2026-09-15-a-finding.md`),
   ];
 
@@ -145,14 +150,56 @@ it("a path under a state root is git-alphabet whatever alphabet its tail arrived
     `${STATE_ROOT}/plan/pending.json`,
   );
 
-  // And build's glob names the directory its notes go in, so the fence and
-  // the path a parking tick writes cannot end up under different directories.
-  const note = notePath(STATE_ROOT, "SOME-ENTRY");
-  expect(matchesAny(note, [noteGlob(STATE_ROOT)])).toBe(true);
-  // The glob is that directory's alone: a note spelled a directory up is not
-  // the path the records gate looks for, so the arm above is the two agreeing
-  // rather than a glob that admits anything named for the tag.
+  // And build's globs name the directories its notes go in, so the fence and
+  // the paths a tick writes cannot end up under different directories.
+  const globs = noteGlobs(STATE_ROOT);
+  for (const note of [
+    notePath(STATE_ROOT, "SOME-ENTRY"),
+    parkedNotePath(STATE_ROOT, "SOME-ENTRY"),
+  ]) {
+    expect({ note, fenced: matchesAny(note, globs) }).toEqual({
+      note,
+      fenced: true,
+    });
+  }
+  // Each glob is its own directory's alone: a note spelled a directory up is
+  // not the path the records gate looks for, and — the two directories being
+  // nested — the observation glob does not reach the parked note, which is
+  // the whole distinction the park predicate reads.
+  expect(matchesAny(`${STATE_ROOT}/plan/SOME-ENTRY.md`, globs)).toBe(false);
   expect(
-    matchesAny(`${STATE_ROOT}/plan/SOME-ENTRY.md`, [noteGlob(STATE_ROOT)]),
+    matchesAny(parkedNotePath(STATE_ROOT, "SOME-ENTRY"), [
+      `${notesDir(STATE_ROOT)}/*.md`,
+    ]),
   ).toBe(false);
+});
+
+it("a build note's kind is the directory it sits in", () => {
+  // The spelling the spec states (`spec/harness.md`, *Records as one file
+  // each*: a note that parks its entry lives under `notes/parked/`), pinned
+  // here against the accessors every reader composes with — the fence, the
+  // records gate, the build prompt and the park predicate all address a note
+  // through one of these three.
+  expect(notesDir(STATE_ROOT)).toBe(`${STATE_ROOT}/plan/notes`);
+  expect(parkedNotesDir(STATE_ROOT)).toBe(`${STATE_ROOT}/plan/notes/parked`);
+  expect(parkedNotePath(STATE_ROOT, "SOME-ENTRY")).toBe(
+    `${STATE_ROOT}/plan/notes/parked/SOME-ENTRY.md`,
+  );
+
+  // Same tag, same extension, one segment apart: nothing but the directory
+  // tells the two apart, which is what makes the location the kind.
+  expect(parkedNotePath(STATE_ROOT, "SOME-ENTRY")).not.toBe(
+    notePath(STATE_ROOT, "SOME-ENTRY"),
+  );
+  expect(notePaths(STATE_ROOT, "SOME-ENTRY")).toEqual([
+    notePath(STATE_ROOT, "SOME-ENTRY"),
+    parkedNotePath(STATE_ROOT, "SOME-ENTRY"),
+  ]);
+
+  // And both directories are record directories, so the drain lists a park
+  // the way it lists every other record and the plan fence admits its
+  // deletion.
+  const dirs = recordDirs(STATE_ROOT);
+  expect(dirs).toContain(notesDir(STATE_ROOT));
+  expect(dirs).toContain(parkedNotesDir(STATE_ROOT));
 });

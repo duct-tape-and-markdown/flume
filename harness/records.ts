@@ -9,8 +9,8 @@
  * the whole reason these are paths at all, and it is why the directories
  * they sit in are named once, in `layout.ts`, beside every other plan
  * artifact — the records gate deciding whether a commit's touched path is a
- * record, the build fence admitting the note glob, and the build prompt
- * telling a tick where to write all read them from there
+ * record, the build fence admitting a note of either kind, and the build
+ * prompt telling a tick where to write all read them from there
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*). This module is the fourth reader: the
  * listing and the liveness predicate below.
@@ -53,9 +53,15 @@ export const RECORD_MAX_BYTES = 1200;
 
 /**
  * Every record waiting under `stateRoot`, as **host-native paths** in queue
- * order: the directories in the order {@link RECORD_DIR_NAMES} lists them,
- * each directory's files sorted by name — an inbox record's name leads with
- * its date, so the order is oldest first.
+ * order: the directories in the order {@link RECORD_DIR_NAMES} lists them —
+ * the inbox, build's observations, then build's parks — each directory's
+ * files sorted by name, and an inbox record's name leads with its date, so
+ * the order is oldest first.
+ *
+ * A directory nested inside another contributes only its own records: the
+ * listing filters on the record extension, so the parked directory's *name*
+ * is not a record of the directory above it, and its files are named once,
+ * under the directory they sit in.
  *
  * `stateRoot` here is the absolute one, and these paths are read, rendered
  * and compared as filesystem paths rather than handed to git, so they are

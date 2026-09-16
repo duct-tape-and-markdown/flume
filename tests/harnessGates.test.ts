@@ -26,8 +26,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   RECORD_MAX_BYTES,
   harnessGates,
+  noteGlobs,
   notePath,
-  notesDir,
+  parkedNotePath,
   parseDeclaration,
   planStatePath,
   recordDirs,
@@ -89,7 +90,7 @@ const NESTED = { segments: ["jobs", "alpha", ".flume"] };
 const runnerFactory: RunnerFactory = () => stubRunner;
 
 /** Build's fence, and so the queue's target fence. `docs/**` is outside it. */
-const BUILD_FENCE = ["src/**", "tests/**", `${notesDir(STATE_ROOT)}/*.md`];
+const BUILD_FENCE = ["src/**", "tests/**", ...noteGlobs(STATE_ROOT)];
 
 /**
  * A declaration a consumer could have written, through the package's own
@@ -384,6 +385,43 @@ it("the records gate matches a touched record under a nested state root, reading
   );
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain(own);
+});
+
+it("the records gate refuses a parked note written under another tick's tag", async () => {
+  const entry = assigned("MINE");
+  const own = parkedNotePath(STATE_ROOT, "MINE");
+
+  // The tick's own park is a record this gate admits like any other: which of
+  // its two notes a tick wrote is the park verdict, and that is the chain's to
+  // read (`harness/chain.ts`), never this gate's to judge.
+  await write(own, "# why it could not ship\n\nThe premise is gone.\n");
+  const span = commitAll("build: park into my own note");
+  // Non-vacuity: git named the parked note, so the verdict below is the gate
+  // reading a record and not an empty span skipping past.
+  expect(span.touchedPaths).toContain(own);
+  const admitted = await records(span, { phaseName: "build", entry });
+  expect(admitted).toMatchObject({ ok: true });
+  expect(admitted.skipped).toBeUndefined();
+  expect(admitted.message).toContain("1 record(s) touched, 1 written");
+
+  // Another tick's park, in the same directory and differing only in the tag:
+  // two ticks writing one file is what this gate stands between, and the
+  // parked directory is no exception to it.
+  await write(
+    parkedNotePath(STATE_ROOT, "OTHER"),
+    "# not mine\n\nAnother tag's park.\n",
+  );
+  const refused = await records(
+    commitAll("build: write another tag's park"),
+    { phaseName: "build", entry },
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain(parkedNotePath(STATE_ROOT, "OTHER"));
+  // And the refusal names both notes this tick may write, so a tick that
+  // wrote the wrong tag is told where its own two are.
+  expect(refused.details).toContain(own);
+  expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
 });
 
 it("the records gate refuses a record whose first line is not a title", async () => {

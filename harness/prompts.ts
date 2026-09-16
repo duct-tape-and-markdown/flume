@@ -52,6 +52,7 @@ import { PHASES, type Declaration } from "./declaration.js";
 import { PerSchema } from "./entryExtension.js";
 import {
   notePath,
+  parkedNotePath,
   planStatePath,
   questionsDir,
   recordDirs,
@@ -272,7 +273,8 @@ export interface BuildTickContext {
 
 /**
  * Every key {@link buildPromptArgs} returns — the entry as the queue holds
- * it, its cite's path, section and section text, and the note path.
+ * it, its cite's path, section and section text, and the two note paths, one
+ * per kind (`layout.ts`).
  *
  * Data, every one of them, and the two that most need saying so: an entry's
  * own prose and a cited spec section are content the package did not author,
@@ -286,6 +288,7 @@ export const BUILD_PROMPT_DATA_KEYS = [
   "PER_SECTION",
   "PER_SECTION_TEXT",
   "NOTE_PATH",
+  "PARK_NOTE_PATH",
 ] as const;
 
 /** One argument build's prompt is rendered with for a tick. */
@@ -314,10 +317,16 @@ export interface BuildPromptArgsInput {
  * nothing*). The throw reaches the dispatcher before the agent is invoked,
  * which is where a mis-cited entry is cheapest to see.
  *
- * **The note path is repo-relative**, as the records gate keys it: the prompt
- * tells the agent which path to write, and the agent writes inside its own
- * worktree, where an absolute path resolved from the state root would target
- * the trunk checkout's copy instead.
+ * **The note paths are repo-relative**, as the records gate keys them: the
+ * prompt tells the agent which path to write, and the agent writes inside its
+ * own worktree, where an absolute path resolved from the state root would
+ * target the trunk checkout's copy instead.
+ *
+ * **Both kinds are named, because the kind is the path** (`spec/harness.md`,
+ * *Records as one file each*). A tick says whether it shipped or parked by
+ * which of the two it wrote, and the park predicate reads exactly that back
+ * (`chain.ts`) — so a prompt naming only one would leave the other for the
+ * agent to compose, at a spelling nothing downstream looks for.
  */
 export function buildPromptArgs(
   input: BuildPromptArgsInput,
@@ -347,6 +356,7 @@ export function buildPromptArgs(
     PER_SECTION: cite.section,
     PER_SECTION_TEXT: verdict.text,
     NOTE_PATH: notePath(noteRoot(ctx), entry.tag),
+    PARK_NOTE_PATH: parkedNotePath(noteRoot(ctx), entry.tag),
   };
 }
 
@@ -374,9 +384,9 @@ function inTree(cwd: string): (path: string) => string | null {
  * The state root as the repository addresses it — a **git path**,
  * forward-slashed — or a refusal.
  *
- * A state root outside the repo tree has no path in any commit, so the note
- * the prompt would name is one the records gate cannot admit and the park
- * shape cannot be read back from — the channel build's prompt promises is not
+ * A state root outside the repo tree has no path in any commit, so the notes
+ * the prompt would name are ones the records gate cannot admit and the park
+ * predicate cannot read back — the channel build's prompt promises is not
  * there. The engine reports that case as an absent `stateRootRel`; refused
  * here rather than rendered as a path that silently writes nowhere the tick's
  * commit reaches (*Loud or nothing*).

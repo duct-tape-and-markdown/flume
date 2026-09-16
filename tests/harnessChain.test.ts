@@ -37,7 +37,12 @@ import {
 import { defaultHandoff, type Handoff } from "../harness/handoff.ts";
 import { consumerIgnores } from "../harness/ignores.ts";
 import { promptPath, type PromptName } from "../harness/prompts.ts";
-import { notesDir } from "../harness/layout.ts";
+import {
+  noteGlobs,
+  notePath,
+  parkedNotePath,
+  parkedNotesDir,
+} from "../harness/layout.ts";
 import type { RunnerContext, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
 import type { ClaudeCodeOptions } from "../src/Agent.ts";
@@ -421,7 +426,7 @@ it("a plan slice the declaration does not enable is absent from the returned cha
 
 it("the returned build phase is fanout and carries the declaration's fence", () => {
   const build = phaseNamed(chainFor(), BUILD_PHASE);
-  const noteGlob = `${notesDir(STATE_ROOT)}/*.md`;
+  const globs = noteGlobs(STATE_ROOT);
 
   // Non-vacuity: the declared fence is what the containment below is read
   // against, so an empty one would assert nothing.
@@ -434,16 +439,32 @@ it("the returned build phase is fanout and carries the declaration's fence", () 
       fenced: true,
     });
   }
-  // Beside the consumer's fence, the package's own channel: the note a tick
-  // parks into is the package's path, never a glob every consumer copies.
-  expect(build.writablePaths).toContain(noteGlob);
+  // Beside the consumer's fence, the package's own channel: the notes a tick
+  // writes are the package's paths, never globs every consumer copies — and
+  // both kinds ride it, because which one a tick wrote is what says whether
+  // it parked (`spec/harness.md`, *Records as one file each*).
+  //
+  // Non-vacuity: one glob per kind, so the containment below covers every
+  // home a note has rather than whichever one came first.
+  expect(globs.length).toBe(2);
+  for (const glob of globs) {
+    expect({ glob, fenced: build.writablePaths.includes(glob) }).toEqual({
+      glob,
+      fenced: true,
+    });
+  }
   // The channel is declared only where a tick consults it — a scoped tick,
   // whose allowance narrows to the entry's files. On an unscoped phase a
   // declared channel is dead, and the engine refuses the chain at load.
   expect(build.entryChannelPaths).toBeUndefined();
   const scoped = phaseNamed(chainFor({ ...DECLARATION, scopeWritesToEntry: true }), BUILD_PHASE);
   expect(scoped.scopeWritesToEntry).toBe(true);
-  expect(scoped.entryChannelPaths).toContain(noteGlob);
+  for (const glob of globs) {
+    expect({ glob, channelled: scoped.entryChannelPaths?.includes(glob) }).toEqual({
+      glob,
+      channelled: true,
+    });
+  }
 
   // And the fence is build's alone — a plan slice writes plan artifacts and
   // whatever that slice declared, never build's paths.
@@ -477,15 +498,23 @@ it("the build fence and the park predicate name one note path under a nested sta
     }),
     BUILD_PHASE,
   );
-  const parked = entry("SOME-ENTRY");
-  const note = `${notesDir(rel)}/${parked.tag}.md`;
+  const assigned = entry("SOME-ENTRY");
+  const park = parkedNotePath(rel, assigned.tag);
 
-  // The glob that admits the note a tick parks into...
-  expect(build.writablePaths).toContain(`${notesDir(rel)}/*.md`);
-  // ...and the predicate that reads one back, on the path git would name.
-  expect(build.shipped?.(shipContext(parked, [note]))).toBe(false);
-  // A tests-only commit is a ship; only the note alone is a park.
-  expect(build.shipped?.(shipContext(parked, [note, "src/index.ts"]))).toBe(true);
+  // The globs that admit the notes a tick writes, both kinds...
+  for (const glob of noteGlobs(rel)) {
+    expect({ glob, fenced: build.writablePaths.includes(glob) }).toEqual({
+      glob,
+      fenced: true,
+    });
+  }
+  // ...and the predicate that reads a park back, on the path git would name.
+  expect(build.shipped?.(shipContext(assigned, [park]))).toBe(false);
+  // The kind is the directory: an observation under the same nested root, one
+  // segment up, ships.
+  expect(
+    build.shipped?.(shipContext(assigned, [notePath(rel, assigned.tag)])),
+  ).toBe(true);
 
   // And the queue the plan slices fence is under the same root, in the same
   // alphabet — composed with `node:path`, so it is the one path here that
@@ -498,6 +527,64 @@ it("the build fence and the park predicate name one note path under a nested sta
     "plan-derive",
   );
   expect(derive.writablePaths).toContain(`${rel}/plan/pending.json`);
+});
+
+it("a note under the parked directory parks its entry", () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+  const park = parkedNotePath(STATE_ROOT, assigned.tag);
+
+  // The path really is under the parked directory — the one fact the verdict
+  // below is about, read off the accessor the build prompt names to the agent
+  // rather than assumed from the call.
+  expect(park.startsWith(`${parkedNotesDir(STATE_ROOT)}/`)).toBe(true);
+  // Non-vacuity: the tick's own fence admits it, so this is a commit a tick
+  // could have written rather than one that would have reverted first.
+  expect(build.writablePaths).toContain(`${parkedNotesDir(STATE_ROOT)}/*.md`);
+
+  expect(build.shipped?.(shipContext(assigned, [park]))).toBe(false);
+});
+
+it("a note beside the parked directory ships its entry", () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+  const observation = notePath(STATE_ROOT, assigned.tag);
+
+  // The same tag, the same extension, one directory apart — so the verdict
+  // below is the location's doing and nothing else's. A tick with something
+  // to tell plan and nothing to refuse writes here, and its entry leaves the
+  // queue however little else the commit changed.
+  expect(observation).not.toBe(parkedNotePath(STATE_ROOT, assigned.tag));
+  expect(observation).not.toContain(`${parkedNotesDir(STATE_ROOT)}/`);
+
+  expect(build.shipped?.(shipContext(assigned, [observation]))).toBe(true);
+  expect(
+    build.shipped?.(shipContext(assigned, [observation, "src/index.ts"])),
+  ).toBe(true);
+});
+
+it("a commit writing a parked note and the entry's work is still a park", () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+  const park = parkedNotePath(STATE_ROOT, assigned.tag);
+
+  // Vacuity guard: the same commit without the parked note ships, so the
+  // verdicts below are that note's presence and not a predicate stuck on one
+  // answer.
+  expect(build.shipped?.(shipContext(assigned, ["src/index.ts"]))).toBe(true);
+
+  // A refusal that could not help leaving work behind — a half-finished edit,
+  // a test it had to touch to reach the wall — is still a refusal: the
+  // predicate reads where the tick wrote, never the shape of the path list
+  // around it.
+  expect(build.shipped?.(shipContext(assigned, ["src/index.ts", park]))).toBe(
+    false,
+  );
+  expect(
+    build.shipped?.(
+      shipContext(assigned, [park, notePath(STATE_ROOT, assigned.tag)]),
+    ),
+  ).toBe(false);
 });
 
 it("each returned phase names its prompt by an absolute path the package ships", () => {

@@ -12028,9 +12028,8 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
 
 // Plan is a singleton phase. When its pending.json fails the chain-local
 // pendingParseGate, the whole commit is `git reset --hard`-ed away — the
-// `.flume/plan/open-questions.md` prose in that same commit dies with it,
-// recoverable, before the durable snapshot, only by a human reading session
-// logs. The contract mandates the findings stay recoverable without session
+// plan prose in that same commit dies with it, recoverable, before the
+// durable snapshot, only by a human reading session logs. The contract mandates the findings stay recoverable without session
 // logs. This asserts the chosen mechanism: a verbatim, durable,
 // reset-surviving on-disk snapshot.
 

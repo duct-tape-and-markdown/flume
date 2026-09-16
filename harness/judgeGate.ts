@@ -61,7 +61,7 @@ export function namedLinesGate(runner: Runner, isPark: ParkPredicate): Gate {
       if (isPark(entry, ctx.touchedPaths)) {
         return {
           ok: true,
-          message: `${entry.tag}: parked — the note alone`,
+          message: `${entry.tag}: parked — a note under the parked directory`,
           skipped: "a park attempts none of the entry's named lines",
         };
       }

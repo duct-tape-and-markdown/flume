@@ -1,7 +1,7 @@
 /**
  * Where every plan artifact sits under a state root — the queue, the plan
- * state, the questions directory, the record queues and build's note — and the
- * fence that is their list (`spec/harness.md`, *Committed-path discipline*:
+ * state, the questions directory, the record queues and build's two notes —
+ * and the fence that is their list (`spec/harness.md`, *Committed-path discipline*:
  * every mechanic the package wires addresses a path some commit holds).
  *
  * **One home, because five surfaces address one layout.** The chain factory
@@ -86,19 +86,41 @@ export const QUESTION_EXT = ".md";
  */
 const LEGACY_QUESTIONS_REL = "plan/open-questions.md";
 
-/** The build-note directory's name under a state root. */
+/** Where a build tick's observation to plan sits under a state root. */
 const NOTES_REL = "plan/notes";
+
+/**
+ * Where a build tick's **park** sits — one segment below the observations,
+ * because a note that parks its entry says so by where it sits and by
+ * nothing else (`spec/harness.md`, *Records as one file each*: location is
+ * kind). The two share a parent so that one ignore rule, one listing and one
+ * operator's `ls` still reach every note a build wave wrote.
+ */
+const PARKED_NOTES_REL = `${NOTES_REL}/parked`;
+
+/**
+ * Both homes a build note has, in the order a listing names them:
+ * observations, then parks. The one spelling of the pair — {@link noteGlobs}
+ * and {@link notePaths} compose from here, and {@link RECORD_DIR_NAMES}
+ * carries it — so a third home added here reaches the fence, the listing and
+ * the gate together rather than one at a time.
+ */
+const NOTE_DIR_RELS = [NOTES_REL, PARKED_NOTES_REL] as const;
 
 /**
  * The record directories' names under a state root, in the order
  * `.flume/PROTOCOL.md`, *Records: one file each* lists them: findings from
- * the field, then notes from build ticks. The one spelling — {@link
- * recordDirs}, {@link notesDir} and {@link recordFiles} each compose from
- * here, in this order, rather than each walking its own list. They differ
- * only in the separator they join with, never in which directories exist or
- * in what order they are named.
+ * the field, then build ticks' notes, one directory per kind. The one
+ * spelling — {@link recordDirs}, {@link recordGlobs} and {@link recordFiles}
+ * each compose from here, in this order, rather than each walking its own
+ * list. They differ only in the separator they join with, never in which
+ * directories exist or in what order they are named.
+ *
+ * The parked directory rides it like any other: a park is a record, so the
+ * drain lists it, the plan fence admits its deletion, and the records gate
+ * holds it to the same two rules.
  */
-export const RECORD_DIR_NAMES = ["inbox", NOTES_REL] as const;
+export const RECORD_DIR_NAMES = ["inbox", ...NOTE_DIR_RELS] as const;
 
 /**
  * The extension a record carries. A record is markdown a human reads; a
@@ -172,31 +194,56 @@ export function legacyQuestionsPath(stateRoot: string): string {
 
 /**
  * Every record directory under `stateRoot` — the form a git path, a diff-tree
- * line and a fence glob are all in. A caller matching commit paths wants a
- * trailing separator on each so `inbox` cannot prefix `inbox-archive`.
+ * line and a fence glob are all in. What a caller matching commit paths wants
+ * is {@link recordGlobs}, never a prefix test over these.
  */
 export function recordDirs(stateRoot: string): string[] {
   return RECORD_DIR_NAMES.map((name) => underStateRoot(stateRoot, name));
 }
 
 /**
- * Where build notes live — `<stateRoot>/plan/notes`. The fence glob build's
- * phase declares is {@link noteGlob}, so the fence and {@link notePath}
- * cannot name different directories.
+ * Every record under `stateRoot` as a fence glob, one per record directory —
+ * and the one test of whether a commit's touched path *is* a record.
+ *
+ * Two readers, one derivation: the plan fence below, and the records gate
+ * asking which of a commit's paths it has to judge (`gates.ts`). A prefix
+ * test spelled at either would read a file under an `inbox-archive` sibling
+ * as an inbox record, and — one record directory sitting inside another —
+ * would read a note under the parked directory as a record of the directory
+ * above it, which is the one distinction the layout exists to carry. The
+ * matcher's `*` stops at the separator, so each glob claims exactly its own
+ * directory's own records.
+ */
+export function recordGlobs(stateRoot: string): string[] {
+  return recordDirs(stateRoot).map((dir) => `${dir}/${RECORD_GLOB}`);
+}
+
+/**
+ * Where a build tick's observation to plan lives — `<stateRoot>/plan/notes`.
+ * The fence globs build's phase declares are {@link noteGlobs}, so the fence
+ * and the paths below cannot name different directories.
  */
 export function notesDir(stateRoot: string): string {
   return underStateRoot(stateRoot, NOTES_REL);
 }
 
 /**
- * The one file a build tick assigned `tag` may write: its note, under
+ * Where a build tick's park lives — the directory under {@link notesDir} that
+ * *is* the park signal.
+ */
+export function parkedNotesDir(stateRoot: string): string {
+  return underStateRoot(stateRoot, PARKED_NOTES_REL);
+}
+
+/**
+ * The note a build tick assigned `tag` writes when it has something for the
+ * next plan tick and shipped its entry anyway: an observation, under
  * {@link notesDir}.
  *
- * Three readers, one derivation — the records gate refusing a note under
- * another tick's tag, the build prompt naming the path a tick writes to, and
- * the park predicate reading back a commit whose only path is this. A second
- * spelling anywhere is a tick that writes where the gate does not look, or a
- * park the chain does not recognize and ships with the work undone.
+ * Two readers, one derivation — the records gate admitting a note under this
+ * tick's own tag, and the build prompt naming the path a tick writes to. A
+ * second spelling anywhere is a tick that writes where the gate does not
+ * look.
  *
  * `tag` is interpolated as given: the engine bounds and validates a tag at
  * the queue's schema gate, and re-deriving that check here would be the same
@@ -207,11 +254,43 @@ export function notePath(stateRoot: string, tag: string): string {
 }
 
 /**
- * Build's note directory as a fence glob — the one path a build tick's fence
- * adds to whatever the consumer declared.
+ * The note a build tick assigned `tag` writes when it cannot ship the entry:
+ * its park, under {@link parkedNotesDir}.
+ *
+ * The same three readers as its sibling plus the one that makes it a park:
+ * the park predicate reads exactly this path back out of a commit's touched
+ * paths (`chain.ts`), so where a tick wrote is the whole statement and the
+ * rest of the commit's shape is not read at all. A second spelling here is a
+ * park the chain does not recognize, and an entry that leaves the queue with
+ * the work undone.
  */
-export function noteGlob(stateRoot: string): string {
-  return `${notesDir(stateRoot)}/${RECORD_GLOB}`;
+export function parkedNotePath(stateRoot: string, tag: string): string {
+  return `${parkedNotesDir(stateRoot)}/${tag}${RECORD_EXT}`;
+}
+
+/**
+ * Both notes a build tick assigned `tag` may write, in the order
+ * {@link RECORD_DIR_NAMES} names their directories — what the records gate
+ * admits from that tick, since which of the two it wrote is the park verdict
+ * and not the gate's business.
+ */
+export function notePaths(stateRoot: string, tag: string): string[] {
+  return NOTE_DIR_RELS.map(
+    (rel) => `${underStateRoot(stateRoot, rel)}/${tag}${RECORD_EXT}`,
+  );
+}
+
+/**
+ * Build's note directories as fence globs, one per kind — the paths a build
+ * tick's fence adds to whatever the consumer declared.
+ *
+ * Both, always: a tick that could write an observation but not a park would
+ * have its refusal reverted by the very fence that was meant to carry it.
+ */
+export function noteGlobs(stateRoot: string): string[] {
+  return NOTE_DIR_RELS.map(
+    (rel) => `${underStateRoot(stateRoot, rel)}/${RECORD_GLOB}`,
+  );
 }
 
 /**
@@ -233,6 +312,6 @@ export function planArtifacts(stateRoot: string): string[] {
     planStatePath(stateRoot),
     questionGlob(stateRoot),
     legacyQuestionsPath(stateRoot),
-    ...recordDirs(stateRoot).map((dir) => `${dir}/${RECORD_GLOB}`),
+    ...recordGlobs(stateRoot),
   ];
 }
