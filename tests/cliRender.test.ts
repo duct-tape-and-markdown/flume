@@ -85,7 +85,8 @@ interface RenderRepo {
 
 /**
  * A git repo carrying the chain above, its prompt file, and a committed
- * queue. Committed, not merely written: `Dispatcher.readPending` reads the
+ * queue. Committed, not merely written: `readPending`
+ * (`src/pendingLedger.ts`) reads the
  * ledger at HEAD, and that read is one of the things the verb must not
  * re-derive its own way.
  */

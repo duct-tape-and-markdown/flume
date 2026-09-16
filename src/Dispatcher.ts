@@ -17,8 +17,9 @@
  * (`src/singletonTick.ts`) and the wave leg (`src/waveTick.ts`), which read
  * what this class resolved through one context (`src/tickLeg.ts`).
  *
- * What a tick reads and writes, each in the file its name is: which entries
- * of the queue it may pick and the batch a wave carries off it
+ * What a tick reads and writes, each in the file its name is: the pending
+ * ledger's own reads and the wave's rewrite of it (`src/pendingLedger.ts`),
+ * which entries of the queue it may pick and the batch a wave carries off it
  * (`src/selection.ts`), the one agent attempt both concurrencies make and the
  * `shouldRun` consult that precedes it (`src/tickAttempt.ts`), the single
  * call site a declared gate runs through (`src/gateRun.ts`), the facts
@@ -31,12 +32,11 @@
  * carries (`src/exitCodes.ts`).
  *
  * What stays here is the orchestration around those: the baton read, the
- * chain load, the dispatch to a leg, the verdict each leg reports in, the
- * queue's own reads, and the preview (`render`) of the tick that would run.
+ * chain load, the dispatch to a leg, the verdict each leg reports in, and the
+ * preview (`render`) of the tick that would run.
  */
 
-import { readFile } from "node:fs/promises";
-import { relative, isAbsolute, sep } from "node:path";
+import { relative } from "node:path";
 
 import type { Agent } from "./Agent.js";
 import { Baton } from "./Baton.js";
@@ -48,18 +48,18 @@ import {
 } from "./chainLoad.js";
 import type { FlumePaths } from "./flumeApi.js";
 import type { GateRunScope } from "./gateRun.js";
-import { existsLoud } from "./fsProbe.js";
 import { consoleLogger, type Logger } from "./log.js";
 import {
+  escapesRoot,
   gitPath,
   defaultStateRoot,
-  namespacedJoin,
   phasePromptPath,
   resolvePendingPath,
 } from "./paths.js";
+import { readPending, type PendingLedgerContext } from "./pendingLedger.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { PriorAttemptStore } from "./priorAttempts.js";
-import { parsePending, PendingParseFailure } from "./PendingSchema.js";
+import { PendingParseFailure } from "./PendingSchema.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { Chain, TickContext, TickResult } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
@@ -111,23 +111,24 @@ export type { ChainFactory } from "./chainLoad.js";
  * Computed once, from the two roots that never change after construction,
  * and shared by every `GateContext.stateRootRel` and by `harvestFriction`'s
  * own worktree-mirror check (`src/friction.ts`; spec/chain.md "What a gate
- * receives"). Two
- * further consumers call it with a different second root, each a path whose
- * escape status decides whether a worktree holds a mirror of it:
- * `isPendingRelocated` passes `pendingPath` — a descendant of the state root
- * (`resolvePendingPath`, `src/paths.ts`) whose escape status against
- * `repoRoot` always matches `flumeDir`'s own — and the `afterCommit`
- * gate-context build passes `configDir`, rebasing it onto the worktree only
- * when it resolves inside the repo. None re-derives the check
- * (`.claude/rules/engineering.md` "The fix lands at the mechanism").
+ * receives"). One further consumer calls it with a different second root, a
+ * path whose escape status decides whether a worktree holds a mirror of it:
+ * the `afterCommit` gate-context build passes `configDir`, rebasing it onto
+ * the worktree only when it resolves inside the repo. The ledger's own
+ * relocation check (`isPendingRelocated`, `src/pendingLedger.ts`) asks the
+ * escape half of the same question about `pendingPath` — a descendant of the
+ * state root (`resolvePendingPath`, `src/paths.ts`) whose escape status
+ * against `repoRoot` always matches `flumeDir`'s own — and reaches it through
+ * the `escapesRoot` (`src/paths.ts`) this function reads it from. Neither
+ * re-derives the check (`.claude/rules/engineering.md` "The fix lands at the
+ * mechanism").
  */
 export function computeStateRootRel(
   repoRoot: string,
   flumeDir: string,
 ): string | undefined {
-  const rel = relative(repoRoot, flumeDir);
-  const outside = rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
-  return outside ? undefined : gitPath(rel);
+  if (escapesRoot(repoRoot, flumeDir)) return undefined;
+  return gitPath(relative(repoRoot, flumeDir));
 }
 
 /**
@@ -617,42 +618,58 @@ export class Dispatcher {
   }
 
   /**
-   * What either leg of a tick reads off this dispatcher
-   * ({@link TickLegContext}, `src/tickLeg.ts`): the roots the tick resolved,
-   * the stores it records through, the two inner contexts above, and the
-   * queue reads and batch arithmetic this class owns.
+   * What the pending ledger's reads and its one rewrite
+   * (`src/pendingLedger.ts`) take from this dispatcher: the repo root, the
+   * ledger path and entry extension this tick's chain resolved, the logger,
+   * and the two knobs the rewrite's commit takes.
    *
-   * Composed on read for the same reason {@link worktreeCtx} is — it carries
-   * the two contexts whose last fields the per-tick chain load supplies — and
-   * the four callables are bound to `this` rather than copied, so a leg
-   * cannot answer "what is pickable" differently from the preview that shows
-   * the same wave (`.claude/rules/engineering.md`, *Derived state is
-   * computed, never restated beside its source*).
+   * Composed on read for the same reason {@link worktreeCtx} is — two of its
+   * fields are rebound by the per-tick chain load, after this object would
+   * have been frozen — so neither the preview's read nor a leg's can run
+   * against a ledger path resolved for a different chain.
    */
-  private get legCtx(): TickLegContext {
+  private get ledgerCtx(): PendingLedgerContext {
     return {
       repoRoot: this.opts.repoRoot,
-      configDir: this.opts.configDir,
-      flumeDir: this.flumeDir,
-      stateRootRel: this.stateRootRel,
       pendingPath: this.pendingPath,
-      attempts: this.attempts,
-      attemptCtx: this.attemptCtx,
-      worktreeCtx: this.worktreeCtx,
-      gateScope: this.gateScope,
+      entryExtension: this.entryExtension,
       log: this.log,
       ...(this.opts.ownTipClaimPid !== undefined
         ? { ownTipClaimPid: this.opts.ownTipClaimPid }
         : {}),
-      ...(this.opts.quarantinedSlugs !== undefined
-        ? { quarantinedSlugs: this.opts.quarantinedSlugs }
-        : {}),
       ...(this.opts.commitMessage !== undefined
         ? { commitMessage: this.opts.commitMessage }
         : {}),
-      readPending: () => this.readPending(),
-      readPendingTolerant: () => this.readPendingTolerant(),
-      isPendingRelocated: () => this.isPendingRelocated(),
+    };
+  }
+
+  /**
+   * What either leg of a tick reads off this dispatcher
+   * ({@link TickLegContext}, `src/tickLeg.ts`): the roots the tick resolved,
+   * the stores it records through, the two inner contexts above, the ledger
+   * context a leg hands to the queue's own readers, and the batch arithmetic
+   * this class owns.
+   *
+   * Composed on read for the same reason {@link worktreeCtx} is — it carries
+   * the three contexts whose last fields the per-tick chain load supplies —
+   * and `selection` is bound to `this` rather than copied, so a leg cannot
+   * answer "what is pickable" differently from the preview that shows the
+   * same wave (`.claude/rules/engineering.md`, *Derived state is computed,
+   * never restated beside its source*).
+   */
+  private get legCtx(): TickLegContext {
+    return {
+      ...this.ledgerCtx,
+      configDir: this.opts.configDir,
+      flumeDir: this.flumeDir,
+      stateRootRel: this.stateRootRel,
+      attempts: this.attempts,
+      attemptCtx: this.attemptCtx,
+      worktreeCtx: this.worktreeCtx,
+      gateScope: this.gateScope,
+      ...(this.opts.quarantinedSlugs !== undefined
+        ? { quarantinedSlugs: this.opts.quarantinedSlugs }
+        : {}),
       selection: (chain, pending, isForkResolved) =>
         this.selection(chain, pending, isForkResolved),
     };
@@ -765,9 +782,10 @@ export class Dispatcher {
     // read as `entryExtension` and `pendingPath` below, and what
     // `agentKillGraceMs` reports to a caller that has no chain of its own.
     this.bounds = resolveAgentBounds(chain.supervisorPolicy, this.tickTimeoutMs);
-    // Pending parses compose core + the chain's declared entry extension
-    // remembered here because readPending runs downstream of the
-    // one place the chain is loaded.
+    // Pending parses compose core + the chain's declared entry extension —
+    // remembered here because every ledger read (`src/pendingLedger.ts`) runs
+    // downstream of the one place the chain is loaded, and reads it off the
+    // context this class composes.
     this.entryExtension = chain.entryExtension;
     // spec/pending.md "The pending queue": Chain.pendingPath replaces the
     // constructor-fixed default — resolved once per tick, after chain load,
@@ -955,7 +973,8 @@ export class Dispatcher {
    * The prompt one tick would be handed, resolved without invoking anything —
    * `flume render`'s whole body (spec/cli.md, *Subcommand surface*).
    *
-   * Every step below is the tick's own: `chainLoader`, `readPending`,
+   * Every step below is the tick's own: `chainLoader`, `readPending`
+   * (`src/pendingLedger.ts`),
    * `pickableEntries`, `partitionByFileOverlap`, `attempts.readAll`,
    * `phasePromptPath`, `renderPrompt`. The verb this replaces re-derived
    * three of them beside the dispatcher and disagreed with it on all three
@@ -982,7 +1001,7 @@ export class Dispatcher {
     const chainModule = await this.chainLoader();
     const chain = chainModule.chain;
     // The same two per-tick rebinds `tick()` takes off a freshly-loaded
-    // chain, for the same two readers: `readPending`'s parse and its path.
+    // chain, for the same two readers: the ledger read's parse and its path.
     this.entryExtension = chain.entryExtension;
     this.pendingPath = resolvePendingPath(this.flumeDir, chain.pendingPath);
 
@@ -1000,7 +1019,7 @@ export class Dispatcher {
       );
     }
 
-    const pending = await this.readPending();
+    const pending = await readPending(this.ledgerCtx);
     const isForkResolved =
       (chainModule.forkResolver ?? this.opts.forkResolver)?.(
         this.opts.repoRoot,
@@ -1119,123 +1138,6 @@ export class Dispatcher {
     await sweepStaleWorktrees(this.worktreeCtx);
   }
 
-  /**
-   * Strict reader: throws {@link PendingParseFailure} on a parse error rather
-   * than degrading to `[]`. Used at every read this dispatcher acts on — the
-   * singleton/fanout decide-reads and `commitPendingUpdate`'s rewrite read
-   * (.claude/rules/engineering.md "Loud or nothing": a decision or a rewrite
-   * must never derive from an input that failed to resolve).
-   * `readPendingTolerant` below is the one declared exception, for the two
-   * report-only reads.
-   *
-   * spec/pending.md "Dispatch reads come from the tip, not the tree":
-   * resolves the committed `HEAD` tip (`git.readFileAtRef`), never the
-   * working tree — a mid-wave merge, an engine revert, or an operator's
-   * staged edit can each leave the tree ahead of or behind the branch, and a
-   * dispatch decision must never act on state no commit owns. An out-of-tree
-   * `pendingPath` (a relocated state root) has no tip to read — invisible to
-   * git by construction (`commitPendingUpdate`, `src/waveTick.ts`), so it
-   * stays the one disk-reading case here, alongside `readPendingTolerant`.
-   */
-  private async readPending(): Promise<PendingEntry[]> {
-    if (this.isPendingRelocated()) {
-      // win32 MAX_PATH: a relocated pendingPath sits under an arbitrary
-      // state root. namespacedJoin (src/paths.ts) is the shared idiom.
-      // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts)
-      // throws on any other stat failure rather than reporting absence, so a
-      // ledger that is present but unreachable — a symlink loop, a
-      // permission-denied parent on the state root — refuses here instead of
-      // dispatching this tick over an empty queue.
-      if (!existsLoud(namespacedJoin(this.pendingPath))) return [];
-      const raw = await readFile(namespacedJoin(this.pendingPath), "utf8");
-      const r = parsePending(raw, this.entryExtension);
-      if (!r.ok) throw new PendingParseFailure(r.errors);
-      return r.entries;
-    }
-    const rel = relative(this.opts.repoRoot, this.pendingPath);
-    const raw = await git.readFileAtRef(this.opts.repoRoot, "HEAD", rel);
-    if (raw === null) return [];
-    const r = parsePending(raw, this.entryExtension);
-    if (!r.ok) throw new PendingParseFailure(r.errors);
-    return r.entries;
-  }
-
-  /**
-   * Whether `pendingPath` sits outside `repoRoot` — an out-of-tree state
-   * root's ledger, invisible to git by construction. Shared by
-   * `readPending`'s tip-vs-disk choice and `commitPendingUpdate`'s
-   * commit-vs-disk-only choice (`src/waveTick.ts`): one relocation check,
-   * not two independently re-derived ones. Delegates to `computeStateRootRel`'s own escape check
-   * rather than re-deriving it (`.claude/rules/engineering.md` "The fix
-   * lands at the mechanism").
-   */
-  private isPendingRelocated(): boolean {
-    return (
-      computeStateRootRel(this.opts.repoRoot, this.pendingPath) === undefined
-    );
-  }
-
-  /**
-   * Tolerant twin of `readPending()`, kept only for `TickResult.pendingAfter`
-   * — an informational re-read taken after this tick's own strict decide- or
-   * rewrite-read already ran (and, for the fanout wave, after any shipped
-   * work already landed on trunk). A parse failure here means something
-   * outside this tick corrupted the file in the gap between that strict read
-   * and now; degrading to `[]` is bounded because `pendingAfter` — and the
-   * `TickResult.pickableAfter` derived from it — feeds only the handoff's
-   * advisory read of what is pickable next, never a rewrite or a work
-   * decision (.claude/rules/engineering.md "Loud or nothing": the
-   * degraded-but-proceeding path, declared and cited at its two call sites).
-   *
-   * Every way this read can fail degrades the same declared way — announced,
-   * then `[]`. It cannot refuse the way `readPending` does: it runs after the
-   * tick's work has already landed, so a throw here would lose the
-   * `TickResult` that describes it. The tolerance is in this reader, never in
-   * the probe: `existsLoud` (src/fsProbe.ts) still splits absent from
-   * unreachable, and the catches below turn that refusal — and any failure
-   * of the read past it — into the warn a silent `existsSync` `false` would
-   * have skipped.
-   */
-  private async readPendingTolerant(): Promise<PendingEntry[]> {
-    // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
-    try {
-      if (!existsLoud(namespacedJoin(this.pendingPath))) return [];
-    } catch (err) {
-      // Present but unreachable — a symlink loop, a permission-denied
-      // parent. `readPending`'s strict twin refuses on exactly this; here it
-      // is announced and treated as empty, so a drained-looking
-      // `pendingAfter` is never the first anyone hears of it.
-      this.log.warn(
-        `[flume] pending.json could not be stat'd (${
-          (err as Error).message
-        }); treating as empty`,
-      );
-      return [];
-    }
-    let raw: string;
-    try {
-      raw = await readFile(namespacedJoin(this.pendingPath), "utf8");
-    } catch (err) {
-      // Stattable but unreadable — a directory at the path, a mode denying
-      // the file itself, a delete racing the probe above. Same declared
-      // degrade as the stat and parse branches: announced, then `[]`, never
-      // a throw that would take this tick's `TickResult` with it.
-      this.log.warn(
-        `[flume] pending.json could not be read (${
-          (err as Error).message
-        }); treating as empty`,
-      );
-      return [];
-    }
-    const r = parsePending(raw, this.entryExtension);
-    if (!r.ok) {
-      this.log.warn(
-        `[flume] pending.json failed to parse (${r.errors.length} errors); treating as empty`,
-      );
-      return [];
-    }
-    return r.entries;
-  }
 }
 
 // ---------- module-private utilities ----------

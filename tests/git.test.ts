@@ -334,7 +334,8 @@ function lines(stdout: string): string[] {
 
 /**
  * spec/pending.md "Dispatch reads come from the tip, not the tree" —
- * `Dispatcher.readPending`'s tip-read primitive.
+ * the tip-read primitive `readPending` (`src/pendingLedger.ts`) resolves
+ * a dispatch read through.
  */
 describe("readFileAtRef (spec/pending.md 'Dispatch reads come from the tip, not the tree')", () => {
   it("returns a committed file's content at the given ref", async () => {

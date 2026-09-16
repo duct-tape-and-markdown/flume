@@ -3,8 +3,8 @@
  * `tick()`'s chain load and its verdict — the batch it selects off the
  * queue, the worktree it provisions per entry, the per-entry attempts it
  * runs in parallel, the merge markers it stakes, the serial cherry-pick and
- * afterMerge stage that carries each span onto trunk, and the pending-ledger
- * rewrite that retires what shipped.
+ * afterMerge stage that carries each span onto trunk, and the call to the
+ * pending-ledger rewrite (`src/pendingLedger.ts`) that retires what shipped.
  *
  * Its sibling is `src/singletonTick.ts` — the same provisioning, attempt and
  * afterMerge machinery over a wave of one — and the orchestration around
@@ -12,8 +12,7 @@
  * dispatched it arrives as a {@link TickLegContext} (`src/tickLeg.ts`).
  */
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 
 import type { Agent } from "./Agent.js";
 import { bound } from "./bounds.js";
@@ -21,12 +20,16 @@ import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
 import type { MergingMarker } from "./mergingMarkers.js";
 import {
-  matchesAny,
   mergingDir,
   mergingMarkerPath,
   namespacedJoin,
   slugify,
 } from "./paths.js";
+import {
+  commitPendingUpdate,
+  readPending,
+  readPendingTolerant,
+} from "./pendingLedger.js";
 import {
   entryExtensionPayload,
   PendingParseFailure,
@@ -111,18 +114,19 @@ type EntryAttempt = AttemptOutcome & {
 
 /**
  * Thrown in place of a plain {@link PendingParseFailure} when
- * `commitPendingUpdate`'s rewrite read hits one inside `runFanout` — the
- * ledger-rewrite drift `spec/loop.md` ("The tick verdict") names: by this
- * point the wave's cherry-picks and afterMerge gates already landed
- * `shippedTags` on trunk, so the verdict recording them must survive the
- * throw rather than vanish with it. `tick()`'s `PendingParseFailure` catch
- * checks for this subclass and folds `verdict` into the failed outcome it
- * returns; a plain `PendingParseFailure` from a decide-read (no agent ran,
- * nothing shipped) carries none, same as before. Exported no further than
- * `tick()`'s own catch: unlike `PendingParseFailure` itself (part of the
- * gate-authoring API surface, `src/flumeApi.ts`) this is the one internal leg
- * of that failure class, absent from `src/index.ts` and never something a
- * chain's gate needs to distinguish.
+ * `commitPendingUpdate`'s rewrite read (`src/pendingLedger.ts`) hits one
+ * inside `runFanout` — the ledger-rewrite drift `spec/loop.md` ("The tick
+ * verdict") names: by this point the wave's cherry-picks and afterMerge
+ * gates already landed `shippedTags` on trunk, so the verdict recording
+ * them must survive the throw rather than vanish with it. `tick()`'s
+ * `PendingParseFailure` catch checks for this subclass and folds `verdict`
+ * into the failed outcome it returns; a plain `PendingParseFailure` from a
+ * decide-read (no agent ran, nothing shipped) carries none, same as before.
+ * Exported no further than `tick()`'s own catch: unlike
+ * `PendingParseFailure` itself (part of the gate-authoring API surface,
+ * `src/flumeApi.ts`) this is the one internal leg of that failure class,
+ * absent from `src/index.ts` and never something a chain's gate needs to
+ * distinguish.
  */
 export class WaveLedgerParseFailure extends PendingParseFailure {
   readonly verdict: TickVerdict;
@@ -170,7 +174,7 @@ export async function runFanout(
 ): Promise<PhaseTickOutcome> {
   const repoRoot = leg.repoRoot;
   const preHead = await git.revParse(repoRoot);
-  const pending = await leg.readPending();
+  const pending = await readPending(leg);
   // spec/loop.md "No false signal": this queue read is the one place the
   // engine learns a tag has left the queue, so it is where records keyed
   // by a departed tag are retired — before selection, so nothing this
@@ -365,9 +369,9 @@ export async function runFanout(
   const mergeGateResults: ReportedGateResult[] = [];
   // Each provisioned entry's cherry-pick/merge fate, for this
   // wave's TickVerdict — the sole capture of what happened to each entry,
-  // footprint included. `commitPendingUpdate` below reads a wave's
-  // merge-failure footprints straight off these records (the same ones
-  // `tick()` persists as `verdict.mergeOutcomes`) rather than a second,
+  // footprint included. `commitPendingUpdate` (`src/pendingLedger.ts`) reads
+  // a wave's merge-failure footprints straight off these records (the same
+  // ones `tick()` persists as `verdict.mergeOutcomes`) rather than a second,
   // independently-maintained observed-files map. An afterCommit
   // gate-revert or a plain no-commit entry never reaches cherry-pick, so
   // it gets an outcome here only when it carried a captured footprint.
@@ -431,7 +435,7 @@ export async function runFanout(
     if (!r.committed) {
       // An in-worktree afterCommit gate revert never reaches
       // cherry-pick, so it never touches trunk on its own — record its
-      // captured footprint here so commitPendingUpdate below lands it on
+      // captured footprint here so the ledger rewrite lands it on
       // trunk instead of it living only in the gitignored prior-attempt
       // record.
       if (r.footprint && r.footprint.length > 0) {
@@ -747,7 +751,7 @@ export async function runFanout(
     });
   }
 
-  // Computed here — ahead of `commitPendingUpdate` below — rather than
+  // Computed here — ahead of the `commitPendingUpdate` call below — rather than
   // after cleanup where the original single use lived, so a
   // `WaveLedgerParseFailure` thrown out of that call can report the same
   // gate results and committed-shape a clean completion would (read from
@@ -952,7 +956,7 @@ export async function runFanout(
     };
   });
 
-  const pendingAfterWave = await leg.readPendingTolerant();
+  const pendingAfterWave = await readPendingTolerant(leg);
   return {
     result: {
       phaseName: phase.name,
@@ -1109,140 +1113,4 @@ async function clearMergingMarkers(
       force: true,
     });
   }
-}
-
-/**
- * spec/loop.md "Tip verify", "Harness-driven commits carry no expected-tip
- * bookkeeping": no sha comparison — `liveForeignClaimPid`, checked fresh
- * immediately before this function's own harness-driven `commitPaths` call,
- * the wave's other tip-verify site beside `cherryPickRange` (`runFanout`,
- * above). Checked before `writeFile`: a refusal here leaves pending.json
- * untouched on disk rather than a write with no commit behind it. No live
- * claim means the rewrite recommits on whatever tip is current — its
- * content derives from the wave's own outcomes, never from a recorded tip.
- */
-async function commitPendingUpdate(
-  leg: TickLegContext,
-  shippedTags: string[],
-  mergeOutcomes: readonly TickVerdictMergeOutcome[],
-  partitionIgnore: string[],
-): Promise<{ sha: string; tipMoved: boolean }> {
-  // Footprint content sources from the wave's own TickVerdict
-  // record (mergeOutcomes) rather than a separately maintained map — a
-  // view over the same facts `tick()` persists, not a second capture.
-  // spec/pending.md "Fanout partition — disjoint touched paths": the
-  // footprint recorder filters through the same partitionIgnore list the
-  // partition itself reads `touchedPaths` through, so observedFiles never
-  // grows with a path the partition would drop anyway.
-  // A tagless row is a singleton phase's own span, which keys no ledger
-  // entry and never reaches this rewrite — skipped by the same predicate
-  // that skips a footprintless row.
-  const observed = new Map(
-    mergeOutcomes.flatMap((m) =>
-      m.entryTag && m.footprint && m.footprint.length > 0
-        ? [
-            [
-              m.entryTag,
-              m.footprint.filter((p) => !matchesAny(p, partitionIgnore)),
-            ] as [string, string[]],
-          ]
-        : [],
-    ),
-  );
-  const shipped = new Set(shippedTags);
-  // Re-read pending.json fresh, right before deriving the rewrite —
-  // NOT the tick-start snapshot the caller read before provisioning
-  // worktrees and running agents. A fanout wave's fanned-out agent runs
-  // and serial cherry-picks can take long enough for another process
-  // (a concurrent tick, a hand fix) to land its own commit to
-  // pending.json on trunk in the meantime; deriving from the stale
-  // snapshot would blindly overwrite that concurrent write with
-  // whatever this wave saw at tick start — silently resurrecting
-  // retired fields or reverting fixes in entries this wave never
-  // touched. Sourcing the rewrite from the current on-disk state at
-  // write time means this wave only ever removes the tags it shipped
-  // and touches observedFiles/blockedBy for tags it knows about.
-  const current = await leg.readPending();
-  // A blockedBy gate naming a tag this wave shipped is resolved HERE,
-  // mechanically: this wave just merged and gated that tag, so
-  // "did the blocker land" needs no plan tick — the next wave forms
-  // without a plan interim. Judgment gates (parked) stay plan's. A
-  // multi-parent blockedBy drains one landed tag at a time: the gate
-  // only flips to open once every named parent has shipped.
-  const after = current
-    .filter((e) => !shipped.has(e.tag))
-    .map((e) => {
-      if (e.gate.kind !== "blockedBy") return e;
-      const remainingTags = e.gate.tags.filter((tag) => !shipped.has(tag));
-      if (remainingTags.length === e.gate.tags.length) return e;
-      return remainingTags.length === 0
-        ? { ...e, gate: { kind: "open" as const } }
-        : { ...e, gate: { kind: "blockedBy" as const, tags: remainingTags } };
-    })
-    .map((e) => {
-      const obs = observed.get(e.tag);
-      if (!obs || obs.length === 0) return e;
-      const merged = [...new Set([...(e.observedFiles ?? []), ...obs])];
-      return { ...e, observedFiles: merged };
-    });
-  const serialized = JSON.stringify(after, null, 2) + "\n";
-  // A footprint-only update can be a no-op (same collision, same paths,
-  // second time around) — committing an unchanged file fails, so skip.
-  // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
-  const existing = await readFile(
-    namespacedJoin(leg.pendingPath),
-    "utf8",
-  ).catch(() => "");
-  if (serialized === existing) {
-    return { sha: await git.revParse(leg.repoRoot), tipMoved: false };
-  }
-  // A relocated flumeDir puts pendingPath outside the repo, where staging
-  // it would fatal — after the entries already merged. An out-of-tree dock
-  // is invisible to git by construction, so no chore commit is wanted: the
-  // disk write alone carries the auto-unblock and observedFiles forward —
-  // computed before the tip check below, which only guards the git-commit
-  // path this dock never takes.
-  const relocated = leg.isPendingRelocated();
-
-  if (!relocated) {
-    // spec/loop.md "Tip verify", re-checked fresh immediately before this
-    // method's own commit — the wave's other harness-driven commit besides
-    // `cherryPickRange`. Checked before `writeFile`: a refusal here leaves
-    // pending.json untouched on disk, never a write with no commit behind
-    // it. Shipped entries this wave already cherry-picked stay shipped
-    // regardless — only the ledger update itself is refused.
-    const foreignClaim = await liveForeignClaimPid(
-      leg.repoRoot,
-      leg.ownTipClaimPid,
-    );
-    if (foreignClaim !== null) {
-      return {
-        sha: await git.revParse(leg.repoRoot),
-        tipMoved: true,
-      };
-    }
-  }
-
-  // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
-  await mkdir(namespacedJoin(dirname(leg.pendingPath)), {
-    recursive: true,
-  });
-  await writeFile(namespacedJoin(leg.pendingPath), serialized, "utf8");
-  if (relocated) {
-    return { sha: await git.revParse(leg.repoRoot), tipMoved: false };
-  }
-  // Scoped to pending.json — `git add -A` would sweep up untracked worktree
-  // metadata and unrelated user changes into the harness's chore commit.
-  const footprintTags = [...observed.keys()];
-  const message =
-    leg.commitMessage?.(shippedTags, footprintTags) ??
-    (shippedTags.length > 0
-      ? `chore(flume): ship ${shippedTags.join(", ")}`
-      : `chore(flume): record merge-failure footprints for ${footprintTags.join(", ")}`);
-  const sha = await git.commitPaths({
-    cwd: leg.repoRoot,
-    message,
-    paths: [leg.pendingPath],
-  });
-  return { sha, tipMoved: false };
 }

@@ -12,13 +12,16 @@
  * around both is `src/Dispatcher.ts`.
  *
  * Everything it reads off the tick that dispatched it arrives as a
- * {@link TickLegContext} (`src/tickLeg.ts`) — no field is re-derived here.
+ * {@link TickLegContext} (`src/tickLeg.ts`) — no field is re-derived here,
+ * and its two queue reads are the ledger's own (`src/pendingLedger.ts`),
+ * taken with that context.
  */
 
 import type { Agent } from "./Agent.js";
 import { bound } from "./bounds.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
+import { readPending, readPendingTolerant } from "./pendingLedger.js";
 import type { Chain, Phase, TickContext, TickResult } from "./Phase.js";
 import type { NoCommitMode } from "./Prompt.js";
 import { buildGateRevert, priorAttemptRef } from "./priorAttempts.js";
@@ -52,7 +55,7 @@ export async function runSingleton(
 ): Promise<PhaseTickOutcome> {
   const repoRoot = leg.repoRoot;
   const preHead = await git.revParse(repoRoot);
-  const pending = await leg.readPending();
+  const pending = await readPending(leg);
   // spec/chain.md "What a hook receives": the same selection verdict
   // `runFanout` computes for its own batch, so a singleton `shouldRun` and
   // the next fanout tick cannot disagree.
@@ -466,7 +469,7 @@ export async function runSingleton(
     leg.worktreeCtx,
   );
 
-  const pendingAfterSingleton = await leg.readPendingTolerant();
+  const pendingAfterSingleton = await readPendingTolerant(leg);
   return {
     result: {
       phaseName: phase.name,

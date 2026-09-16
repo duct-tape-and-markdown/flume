@@ -77,6 +77,25 @@ export function gitPath(path: string): string {
 }
 
 /**
+ * Whether `path` lands outside `root` — the one spelling of "escapes", asked
+ * of two already-resolved absolute paths.
+ *
+ * `relative` answers with a `..` lead when the target climbs out of the root
+ * and with an absolute path when the two share no root at all (a different
+ * win32 drive), and those two shapes are the whole verdict. Here rather than
+ * at each asker because three reach it — the declared-field check below, the
+ * state root's own escape verdict (`computeStateRootRel`, `src/Dispatcher.ts`)
+ * and the ledger's relocation check (`isPendingRelocated`,
+ * `src/pendingLedger.ts`) — and a fourth spelling is how two of them come to
+ * disagree about what leaving a root means (`.claude/rules/engineering.md`,
+ * *The fix lands at the mechanism*).
+ */
+export function escapesRoot(root: string, path: string): boolean {
+  const rel = relative(root, path);
+  return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+}
+
+/**
  * Shared escape-check for a declared state-root-relative path
  * (`Chain.friction` — `validateFrictionDeclaration`, `src/friction.ts`;
  * `Chain.pendingPath` — `validatePendingPathDeclaration`,
@@ -107,11 +126,7 @@ export function assertStateRootRelative(
     );
   }
   const sentinelRoot = resolve("__flume_state_root__");
-  const resolved = resolve(sentinelRoot, value);
-  const rel = relative(sentinelRoot, resolved);
-  const escapesRoot =
-    rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
-  if (escapesRoot) {
+  if (escapesRoot(sentinelRoot, resolve(sentinelRoot, value))) {
     throw new Error(
       `chain declares ${fieldName} '${value}' which resolves outside the state root; ` +
         `Chain.${fieldName} must be a state-root-relative ${shapeHint}`,

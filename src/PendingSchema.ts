@@ -470,8 +470,9 @@ function issuesToParseErrors(issues: z.core.$ZodIssue[]): ParseError[] {
 
 /**
  * The throwing form of a {@link parsePending} refusal, for the reads that act
- * on the result rather than report it: `Dispatcher.readPending` (the reads
- * that decide pickable work, and the wave's ledger rewrite) raises it when
+ * on the result rather than report it: `readPending` (`src/pendingLedger.ts`
+ * — the reads that decide pickable work, and the wave's ledger rewrite)
+ * raises it when
  * `pending.json` exists but fails to parse. Per
  * .claude/rules/engineering.md "Loud or nothing": a queue that never resolved
  * must not read as an empty one, and nothing downstream may derive a decision
