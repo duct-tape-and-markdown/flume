@@ -104,13 +104,12 @@ jobs:
         # ESM (.mts) consumer is the strict, faithful resolution mode for
         # this ESM-only package — exercises the exports `types` condition.
         # Takes the tarball scripts/smoke-install.mjs left in the --scratch
-        # root above, and a consumer of its own. Not the smoke's consumer:
-        # that one has been adopted, so its manifest declares @dtmd/flume at
-        # a caret range and every `npm install` there resolves that range
-        # from the registry — which on a release-cut commit names a version
-        # not published yet, failing this gate on a lookup that has nothing
-        # to do with the types it checks. The tarball is the handoff between
-        # the two steps; the manifest is not.
+        # root above, and a consumer directory of its own — never the smoke's
+        # adopted consumer, whose manifest names this package
+        # (.claude/rules/platform-facts.md, "`npm install` resolves every
+        # manifest range from the registry, whatever the install supplies").
+        # The tarball is the handoff between the two steps; the manifest is
+        # not.
         # The tarball still installs AFTER typescript: every `npm install`
         # reconciles node_modules against package.json and would prune the
         # --no-save'd package.
