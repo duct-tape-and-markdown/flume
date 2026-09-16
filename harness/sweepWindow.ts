@@ -31,6 +31,7 @@ import { readPlanState } from "./planState.js";
 import {
   SLICE_DATA_KEYS,
   budgetOf,
+  queueResolved,
   type PlanSliceWindow,
   type PlanSliceWindowsOptions,
   type SliceArgs,
@@ -47,13 +48,21 @@ import {
  * An open rotation then holds it live on its own: a rotation is open exactly
  * while a frontier it already drew has neighborhoods left in it, and closing
  * one is the slice's own job.
+ *
+ * Ahead of even the yield: a queue that did not parse shuts this window, so
+ * the tick goes to the slice whose rewrite is the repair rather than to a
+ * sweep that would file its findings into a queue derived from nothing
+ * (`queueResolved`, `sliceWindow.ts`). Nothing is lost by it — the cursor and
+ * the rotation are plan state, untouched by a tick the sweep did not take.
  */
 export function sweepWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
   const { domain, posturePages } = sweepInputs(options.declaration);
   const frontier = [...domain, ...posturePages];
   return {
     name: "plan-sweep",
-    live: ({ flumeDir, pickable }) => {
+    live: (inputs) => {
+      if (!queueResolved(inputs)) return false;
+      const { flumeDir, pickable } = inputs;
       if (pickable) return false;
       const state = readPlanState(flumeDir);
       if (state === undefined) return true;

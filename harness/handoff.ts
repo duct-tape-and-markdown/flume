@@ -39,6 +39,7 @@ import { writeFileSync } from "node:fs";
 
 import type { MergeOutcome } from "../src/tickVerdict.js";
 import { namespacedJoin, stopFlagPath } from "../src/paths.js";
+import type { QueueParseFailure } from "../src/PendingSchema.js";
 import type { Phase, TickResult } from "../src/Phase.js";
 import type { NoCommitMode } from "../src/Prompt.js";
 
@@ -59,17 +60,37 @@ export type Handoff = Phase["handoff"];
 
 /**
  * What a slice's liveness predicate is handed: the tick's own reported state
- * root, and whether the engine reports anything pickable.
+ * root, whether the engine reports anything pickable, and whether the queue
+ * this tick read resolved at all.
  *
- * Both are read off the `TickResult`, so a predicate never reaches for a cwd
- * or re-derives pickability. A slice wanting more than this is a fact the
- * ladder should be handed, not one the predicate should go find.
+ * All three are read off the `TickResult`, so a predicate never reaches for a
+ * cwd, re-derives pickability, or re-parses the queue. A slice wanting more
+ * than this is a fact the ladder should be handed, not one the predicate
+ * should go find (`.claude/rules/engineering.md`, *A fact the engine holds is
+ * reported, never rediscovered*).
  */
 export interface SliceWindow {
   /** The tick's resolved state root — `TickResult.flumeDir`. */
   readonly flumeDir: string;
   /** Whether `TickResult.pickableAfter` named anything. */
   readonly pickable: boolean;
+  /**
+   * The queue's own parse failure — `TickResult.queueParseFailure`, absent on
+   * every tick whose queue resolved.
+   *
+   * Present, nothing is pickable *because nothing resolved*, so `pickable`
+   * above is `false` for a reason no slice can tell from a drained queue
+   * without this field. Every slice the package ships declares the queue
+   * writable, so every one of them is a phase the engine will run over an
+   * unparseable queue (`spec/pending.md`, *Queue reads are strict*) — which
+   * makes "did it resolve" the first question each liveness leg asks, not a
+   * detail one of them happens to notice.
+   *
+   * Optional rather than required, like `TickFacts`' own fields
+   * (`sliceWindow.ts`): a hand-built window that omits it reads as a queue
+   * that resolved, which is the answer that leaves the ladder where it was.
+   */
+  readonly queueParseFailure?: QueueParseFailure | undefined;
 }
 
 /**
@@ -258,9 +279,20 @@ export function defaultHandoff(slices: readonly HandoffSlice[]): Handoff {
   return (result: TickResult): string[] => {
     stopAfterContractTouchingShip(result);
 
+    // The parse failure is the decide-read's fact, so a tick that *repaired*
+    // the queue still reports it and the ladder names the inbox once more.
+    // That costs one declined tick — the next tick's `shouldRun` reads a
+    // queue that now resolves, says no before anything is provisioned, and
+    // its own handoff routes on from there. The alternative is a ladder
+    // guessing from `pickableAfter` whether a repair landed, which is the
+    // inference this module does not make (`.claude/rules/engine-boundary.md`,
+    // *Told, not inferred*).
     const window: SliceWindow = {
       flumeDir: result.flumeDir,
       pickable: result.pickableAfter.length > 0,
+      ...(result.queueParseFailure
+        ? { queueParseFailure: result.queueParseFailure }
+        : {}),
     };
 
     if (result.phaseName === BUILD_PHASE) {

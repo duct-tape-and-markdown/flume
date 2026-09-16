@@ -16,6 +16,10 @@
 {{DERIVE_CURSOR}}
 </derive-cursor>
 
+<queue-parse-failure>
+{{QUEUE_PARSE_FAILURE}}
+</queue-parse-failure>
+
 <pending-now>
 !`cat "{{PENDING_PATH}}"`
 </pending-now>
@@ -35,6 +39,8 @@ discipline: {{DISCIPLINE}}
 {{DOMAIN}}
 
 # TASK
+
+**A queue that did not parse is this tick's whole job, ahead of everything below.** `<queue-parse-failure>` says the queue resolved, or names the file and every error the parse reported. When it names errors, the queue you were handed is empty *because nothing resolved* — never because it drained — and `<pending-now>` carries the bytes that failed. Repair them: rewrite the queue from those bytes, keeping every entry that survives the read intact and fixing only what the errors name, and route nothing else this tick beyond what the repair needs. Never write `[]`, and never drop an entry you merely could not parse — reconstruct it from the bytes, or leave it and say in the body that it is unreadable. Name the failure and what you recovered in the commit body. Your rewrite is the only repair there is: no other slice runs until the queue reads.
 
 Drain the records. Each file in `<records>` is one record: a finding someone left in the inbox queue, or a note a build tick left under the notes queue — an observation for you, or a park (the entry could not ship inside its fence; widen its `files`, split it, or answer what it parked). Route every record, then `git rm` its file. The record queues are queues, not logs; never create a record yourself — the records gate refuses a plan commit that does.
 

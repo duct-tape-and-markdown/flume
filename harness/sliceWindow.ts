@@ -65,8 +65,16 @@ export interface SliceInputs extends SliceWindow, TickFacts {}
  * is the tick's provisioned worktree, so git reads the tree the agent is
  * about to work in rather than whatever a sibling wave left at the repo
  * root.
+ *
+ * The queue's parse failure is `Pick`ed off {@link SliceWindow} rather than
+ * declared again here: both readers are handed the same engine fact — the
+ * liveness leg off `TickResult`, the render off `TickContext` — and two
+ * spellings of one field is the copy that drifts (`.claude/rules/engineering.md`,
+ * *Derived state is computed, never restated beside its source*).
  */
-export interface WindowContext extends TickFacts {
+export interface WindowContext
+  extends TickFacts,
+    Pick<SliceWindow, "queueParseFailure"> {
   /** The tick's working tree — `TickContext.cwd`. */
   readonly cwd: string;
   /** The tick's resolved state root — `TickContext.flumeDir`. */
@@ -91,7 +99,13 @@ export interface WindowContext extends TickFacts {
  * restated beside its source*).
  */
 export const SLICE_DATA_KEYS = {
-  [INBOX_PHASE]: ["RECORDS", "BUILD_RECORDS", "CI_LANES", "DERIVE_CURSOR"],
+  [INBOX_PHASE]: [
+    "QUEUE_PARSE_FAILURE",
+    "RECORDS",
+    "BUILD_RECORDS",
+    "CI_LANES",
+    "DERIVE_CURSOR",
+  ],
   "plan-derive": ["SPEC_WINDOW"],
   "plan-sweep": ["SWEEP_WINDOW"],
 } as const satisfies Record<PlanSlice, readonly string[]>;
@@ -146,3 +160,25 @@ export interface PlanSliceWindowsOptions {
 /** The tick's line budget, defaulting to the package's own value. */
 export const budgetOf = (options: PlanSliceWindowsOptions): number =>
   options.budget ?? WINDOW_LINE_BUDGET;
+
+/**
+ * Whether the queue this tick read resolved — the leg every slice but the
+ * inbox's opens behind.
+ *
+ * Every slice the package builds declares the queue writable, so the engine's
+ * carve-out runs any of them over an unparseable queue with an empty `pending`
+ * and the failure as a fact (`spec/pending.md`, *Queue reads are strict*). For
+ * a slice whose output is a derived queue that is the worst possible input:
+ * "derive from nothing" and "derive from a drained queue" render identically,
+ * and the rewrite would land as a queue with every entry dropped. Shut, the
+ * slice leaves the tick to the inbox, whose window opens on exactly this fact
+ * and whose rewrite is the repair (`inboxWindow.ts`; `spec/harness.md`, *The
+ * gates the discipline needs*: no state of the queue needs a hand edit).
+ *
+ * One home for the question rather than the same comparison at each window:
+ * the answer is the engine's fact, and a slice added later gets it by calling
+ * this rather than by remembering to (`.claude/rules/engineering.md`, *The fix
+ * lands at the mechanism*).
+ */
+export const queueResolved = (inputs: SliceInputs): boolean =>
+  inputs.queueParseFailure === undefined;

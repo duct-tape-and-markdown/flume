@@ -1,10 +1,20 @@
 /**
- * The inbox slice's window (`spec/harness.md`, *The phases*): the record
- * queues, the build refusals still standing against entries the queue
- * carries, the declared CI lanes, and the derive cursor this drain may
- * advance through what it routed.
+ * The inbox slice's window (`spec/harness.md`, *The phases*): the queue's own
+ * parse failure, the record queues, the build refusals still standing against
+ * entries the queue carries, the declared CI lanes, and the derive cursor this
+ * drain may advance through what it routed.
  *
- * The first two legs are there because there are two ways work reaches this
+ * **The parse failure comes first, and it is the one leg that is not a
+ * findings source.** A queue that did not resolve leaves the whole loop with
+ * nothing pickable and no slice able to derive over it, and the engine hands
+ * the failure to exactly the phases whose fence admits the ledger
+ * (`spec/pending.md`, *Queue reads are strict*). This slice is where that
+ * lands: its window opens on the fact, its prompt renders it as the drain's
+ * input, and its rewrite is the repair — which is what makes an unparseable
+ * queue a tick to spend rather than a hand edit an operator has to learn
+ * (`spec/harness.md`, *The gates the discipline needs*).
+ *
+ * The next two legs are there because there are two ways work reaches this
  * slice from inside the loop — someone left a file, or a build wave walled —
  * and either alone leaves a loop: without the record leg an operator's
  * finding is never read; without the refusal leg a parked entry stays
@@ -40,6 +50,7 @@ import { RECORD_MAX_BYTES, recordFiles, recordsPending } from "./records.js";
 import {
   SLICE_DATA_KEYS,
   budgetOf,
+  queueResolved,
   type PlanSliceWindow,
   type PlanSliceWindowsOptions,
   type SliceArgs,
@@ -49,6 +60,14 @@ import {
 
 /**
  * The inbox slice's window.
+ *
+ * **The parse-failure leg yields to nothing.** It is asked first because it is
+ * the cheapest — a field on the tick's own facts, no disk and no forge — and
+ * because there is nothing for it to yield to: over a queue that did not
+ * resolve the engine reports an empty `pending`, so nothing is pickable, and
+ * every sibling slice is shut behind the same fact (`queueResolved`,
+ * `sliceWindow.ts`). This slice is the only one left that can run, which is
+ * the point of it.
  *
  * **The record leg yields to pickable work; the refusal leg does not**
  * (`spec/harness.md`, *The phases*). A waiting record is a signal, and while
@@ -81,10 +100,12 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
   return {
     name: INBOX_PHASE,
     live: (inputs) =>
+      !queueResolved(inputs) ||
       (!inputs.pickable && recordsPending(inputs.flumeDir)) ||
       standingRefusals(inputs).length > 0 ||
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
+      QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
       RECORDS: renderRecords(ctx.flumeDir),
       BUILD_RECORDS: renderBuildRecords(ctx),
       CI_LANES: lanes.render(ctx.flumeDir),
@@ -144,6 +165,43 @@ function standingRefusals(ctx: TickFacts): PriorAttempt[] {
       queued.has(record.keyedAs) &&
       PLAN_RESOLVES_STANDING[record.mode],
   );
+}
+
+/**
+ * The queue's parse failure as the drain's input, or the line that says the
+ * queue resolved.
+ *
+ * The prompt already carries the queue's raw bytes, so what this block adds is
+ * the *verdict on them*: which file did not resolve, and what the parse said.
+ * Without it the tick is handed an empty queue and a file that looks like a
+ * queue, with nothing to tell "nothing resolved" from "nothing is left"
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * The errors are rendered as the engine's own JSON, for the reason the
+ * standing records below are: they are a bounded, engine-owned shape, and a
+ * per-error sentence here would be a second vocabulary for fields this package
+ * does not own, stranded by the first one the engine renames
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*).
+ *
+ * The resolved case is **said, never rendered empty**: an empty block reads as
+ * a queue with no errors in it, which is the same text a tick that failed to
+ * render the fact would produce.
+ */
+function renderQueueParseFailure(ctx: WindowContext): string {
+  const failure = ctx.queueParseFailure;
+  if (failure === undefined) {
+    return (
+      "(the queue parsed; `<pending-now>` below is the queue this tick " +
+      "rewrites, and it is empty only if it is drained.)"
+    );
+  }
+  return [
+    `=== ${failure.path} did not parse (${failure.errors.length} error(s)) ` +
+      `— this tick was handed an empty queue because nothing resolved, not ` +
+      `because the queue is drained ===`,
+    JSON.stringify(failure.errors, null, 2),
+  ].join("\n");
 }
 
 /**

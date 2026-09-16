@@ -44,7 +44,10 @@ import {
   type PlanSlice,
 } from "../harness/declaration.ts";
 import type { FanoutEntryOutcome, TickResult } from "../src/Phase.ts";
-import type { PendingEntry } from "../src/PendingSchema.ts";
+import type {
+  PendingEntry,
+  QueueParseFailure,
+} from "../src/PendingSchema.ts";
 import {
   PRIOR_ATTEMPT_MODES,
   type PriorAttempt,
@@ -1089,4 +1092,152 @@ it("the inbox window spells the empty CI lane case when the declaration names no
   expect(inbox.dataKeys).toContain("CI_LANES");
   expect(Object.keys(args).sort()).toEqual([...inbox.dataKeys].sort());
   expect(args["CI_LANES"]).toBe("(no CI lanes declared)");
+});
+
+/**
+ * The queue's own parse failure, the one window leg that is not a findings
+ * source (`spec/harness.md`, *The gates the discipline needs*: no state of the
+ * queue needs a hand edit).
+ *
+ * The engine runs a phase whose fence admits the ledger over an unparseable
+ * queue with `pending: []` and the failure as a tick fact
+ * (`readPendingForDecision`, `src/pendingLedger.ts`), and every slice this
+ * package builds declares that fence. So the fact is what tells the slice that
+ * repairs the queue from the two that would derive it away, and the arms below
+ * are all written over one queue state that differs by that field alone.
+ */
+
+/** The engine's own decide-read fact, as `readPendingForDecision` reports one. */
+const parseFailure = (): QueueParseFailure => ({
+  path: ".flume/plan/pending.json",
+  errors: [{ index: 1, path: "tag", message: "Invalid input: expected string" }],
+});
+
+it("a queue that fails to parse makes the inbox slice live", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const inbox = windows()[INBOX_PHASE];
+
+  // Vacuity and control in one: no record waits, no refusal stands and the
+  // declaration names no lane, so the window is shut over the same state root
+  // — and `pickable` is false in both arms, because a tick over an unparseable
+  // queue has nothing pickable by construction. What separates them is the
+  // fact alone, which is the claim: an empty queue that never resolved is not
+  // a drained one.
+  expect(recordsPending(stateRoot())).toBe(false);
+  const resolved = inbox.live({ flumeDir: stateRoot(), pickable: false });
+  const failed = inbox.live({
+    flumeDir: stateRoot(),
+    pickable: false,
+    queueParseFailure: parseFailure(),
+  });
+
+  expect({ resolved, failed }).toEqual({ resolved: false, failed: true });
+});
+
+it("the inbox render carries the queue's parse failure as the drain's input", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const failure = parseFailure();
+
+  // Non-vacuity: the fact really carries an error, so the block below is
+  // rendered over something.
+  expect(failure.errors.length).toBeGreaterThan(0);
+
+  const failed = windows()[INBOX_PHASE].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+    pending: [],
+    queueParseFailure: failure,
+  }).QUEUE_PARSE_FAILURE;
+
+  // The file that did not resolve, and the engine's own error shape verbatim
+  // — the drain is told what to repair, not merely that something is wrong.
+  expect(failed).toContain(failure.path);
+  expect(failed).toContain(`${failure.errors.length} error(s)`);
+  expect(failed).toContain(`"message": "${failure.errors[0]!.message}"`);
+  expect(failed).toContain(`"path": "${failure.errors[0]!.path}"`);
+
+  // The control, over the same empty `pending`: a queue that resolved says so
+  // rather than rendering an empty block, which is the text a tick that failed
+  // to render the fact would produce.
+  const healthy = windows()[INBOX_PHASE].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+    pending: [],
+  }).QUEUE_PARSE_FAILURE;
+  expect(healthy).toContain("the queue parsed");
+  expect(healthy).not.toContain(failure.path);
+});
+
+/**
+ * The other half of the same fact: the two slices whose output *is* a derived
+ * queue shut over one that did not parse, so the tick reaches the slice whose
+ * rewrite is the repair rather than landing a queue with every entry dropped.
+ */
+it("the derive and sweep slices shut over a queue that did not parse", () => {
+  const cursor = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), {
+    derivedThrough: cursor,
+    sweptThrough: cursor,
+    rotation: { kind: "closed" },
+  });
+  // Past both cursors: the spec locus for derive, the sweep domain for sweep.
+  commit(
+    { "spec/loop.md": "# Loop\n", "src/b.ts": "export const b = 2;\n" },
+    "spec: the loop, and a build commit beside it",
+  );
+  const built = windows();
+
+  const live = (queueParseFailure?: QueueParseFailure) => ({
+    derive: built["plan-derive"].live({
+      flumeDir: stateRoot(),
+      pickable: false,
+      ...(queueParseFailure ? { queueParseFailure } : {}),
+    }),
+    sweep: built["plan-sweep"].live({
+      flumeDir: stateRoot(),
+      pickable: false,
+      ...(queueParseFailure ? { queueParseFailure } : {}),
+    }),
+  });
+
+  // Control: both windows really are open over this tree, so the shut verdict
+  // below is the fact's doing and not an empty frontier's.
+  expect({ open: live(), overFailure: live(parseFailure()) }).toEqual({
+    open: { derive: true, sweep: true },
+    overFailure: { derive: false, sweep: false },
+  });
+});
+
+/**
+ * The ladder over the real windows: without this the loop hibernates on a
+ * queue that never resolved, because a parse failure reports nothing pickable
+ * and every other leg reads a quiet disk.
+ */
+it("the default handoff names the inbox slice over a queue that did not parse", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writePlanState(stateRoot(), planState());
+  const handoff = defaultHandoff(
+    planSliceWindows({ declaration: declaration(), repoRoot: repo }),
+  );
+
+  const base: TickResult = {
+    phaseName: BUILD_PHASE,
+    committed: false,
+    gateResults: [],
+    pendingAfter: [],
+    pickableAfter: [],
+    flumeDir: stateRoot(),
+    configDir: stateRoot(),
+    shippedTags: [],
+    revertedTags: [],
+  };
+
+  // Vacuity: the same tick with a queue that resolved hibernates, so "inbox"
+  // below is the parse failure's routing and not the ladder's only option.
+  expect({
+    resolved: handoff(base),
+    failed: handoff({ ...base, queueParseFailure: parseFailure() }),
+  }).toEqual({ resolved: [], failed: [INBOX_PHASE] });
 });

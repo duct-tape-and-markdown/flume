@@ -25,6 +25,7 @@ import { readPlanState } from "./planState.js";
 import {
   SLICE_DATA_KEYS,
   budgetOf,
+  queueResolved,
   type PlanSliceWindow,
   type PlanSliceWindowsOptions,
   type SliceArgs,
@@ -38,6 +39,14 @@ import {
  * landed alongside are listed but never make the window live — a build commit
  * is not a spec change, and waking derive on one would spend a tick to
  * re-stamp the cursor.
+ *
+ * Behind one prior fact: a queue that did not parse shuts this window
+ * (`queueResolved`, `sliceWindow.ts`). This slice's whole output is a rewritten
+ * queue, and over an unparseable one the engine hands it an empty `pending` —
+ * so a derive that ran would write a queue with every standing entry dropped,
+ * and the cursor it stamped would say those sections were derived. The tick
+ * goes to the inbox instead, whose rewrite is the repair; the cursor is plan
+ * state and waits.
  */
 export function deriveWindow(
   options: PlanSliceWindowsOptions,
@@ -45,8 +54,9 @@ export function deriveWindow(
   const locus = options.declaration.specLocus;
   return {
     name: "plan-derive",
-    live: ({ flumeDir }) => {
-      const cursor = readPlanState(flumeDir)?.derivedThrough;
+    live: (inputs) => {
+      if (!queueResolved(inputs)) return false;
+      const cursor = readPlanState(inputs.flumeDir)?.derivedThrough;
       if (cursor === undefined) return true;
       return touchedPast(options.repoRoot, cursor, locus);
     },

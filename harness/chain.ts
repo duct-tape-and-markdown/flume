@@ -265,6 +265,14 @@ export function harnessChain(options: HarnessChainOptions): Chain {
           pickable: (ctx.pickable ?? []).length > 0,
           pending: ctx.pending,
           priorAttempts: ctx.priorAttempts,
+          // The engine's carve-out runs every slice here over an unparseable
+          // queue, because each declares the ledger writable — so this is the
+          // fact that tells the one slice which can repair it from the two
+          // which would rewrite it away (`spec/pending.md`, *Queue reads are
+          // strict*).
+          ...(ctx.queueParseFailure
+            ? { queueParseFailure: ctx.queueParseFailure }
+            : {}),
         }),
       handoff: handoffFor(name),
       ...(setup ? { setupWorktree: setup } : {}),
