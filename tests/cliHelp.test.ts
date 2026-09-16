@@ -33,6 +33,7 @@ import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import type { TickOutcome } from "../src/Dispatcher.ts";
 import type { TickVerdict } from "../src/tickVerdict.ts";
 import type { TickResult } from "../src/Phase.ts";
+import { sectionOf } from "./helpers/docSections.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
 import {
   SPAWN_BUDGET_MS,
@@ -363,14 +364,6 @@ function namedExitCodes(section: string): number[] {
   return ascending(codes);
 }
 
-/** One `## `-delimited section of the page, heading included. */
-function docSection(doc: string, heading: string): string {
-  const start = doc.indexOf(heading);
-  expect(start).toBeGreaterThan(-1);
-  const next = doc.indexOf("\n## ", start + 1);
-  return next === -1 ? doc.slice(start) : doc.slice(start, next);
-}
-
 /** `docs/CLI.md` as the working tree holds it. */
 async function readCliDoc(): Promise<string> {
   return readFile(
@@ -403,7 +396,7 @@ describe("docs/CLI.md's flume tick section against tickExitCode's derived range 
       "tickExitCode",
     );
 
-    const section = docSection(await readCliDoc(), "## `flume tick`");
+    const section = sectionOf(await readCliDoc(), "## `flume tick`");
     expect(section.length).toBeGreaterThan(0);
 
     // Exactly the range, in both directions: a code the verb gained and the
@@ -432,7 +425,7 @@ describe("docs/CLI.md's loop sections against loopExitCode's derived range (CLI-
    * the same check: exactly the range, in both directions, plus the reader
    * discrimination that claim rests on.
    */
-  async function expectSectionNamesTheLoopRange(heading: string): Promise<void> {
+  async function expectSectionNamesTheLoopRange(heading: RegExp): Promise<void> {
     const { returned, spanned } = driveLoopExitCodes();
     // Non-vacuity: a collapsed result space, or a range that collapsed,
     // agrees with prose that names almost anything.
@@ -444,7 +437,7 @@ describe("docs/CLI.md's loop sections against loopExitCode's derived range (CLI-
       "loopExitCode",
     );
 
-    const section = docSection(await readCliDoc(), heading);
+    const section = sectionOf(await readCliDoc(), heading);
     expect(section.length).toBeGreaterThan(0);
 
     const named = namedExitCodes(section);
@@ -459,11 +452,11 @@ describe("docs/CLI.md's loop sections against loopExitCode's derived range (CLI-
   }
 
   it("docs/CLI.md's flume loop section names every exit code the real loop range produces", async () => {
-    await expectSectionNamesTheLoopRange("## `flume loop");
+    await expectSectionNamesTheLoopRange(/^## `flume loop\b/);
   });
 
   it("docs/CLI.md's flume job run section names every exit code the real loop range produces", async () => {
-    await expectSectionNamesTheLoopRange("## `flume job run");
+    await expectSectionNamesTheLoopRange(/^## `flume job run\b/);
   });
 });
 
@@ -626,14 +619,8 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
   }, SPAWN_BUDGET_MS);
 
   it("docs/CLI.md's flume check section names the no-fanout skip", async () => {
-    const doc = await readFile(
-      fileURLToPath(new URL("../docs/CLI.md", import.meta.url)),
-      "utf8",
-    );
-    const start = doc.indexOf("## `flume check`");
-    expect(start).toBeGreaterThan(-1);
-    const next = doc.indexOf("\n## ", start + 1);
-    const section = next === -1 ? doc.slice(start) : doc.slice(start, next);
+    const section = sectionOf(await readCliDoc(), "## `flume check`");
+    expect(section.length).toBeGreaterThan(0);
     expect(section.replace(/\s+/g, " ")).toContain(clause);
   });
 });

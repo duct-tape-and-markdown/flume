@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec, runNodeStreams } from "./helpers/subprocess.ts";
 
@@ -69,22 +70,12 @@ async function runChangelog(
   return { out: stdout, err: stderr, code };
 }
 
-/**
- * The slice of a rendered draft the named subheading owns: from the heading
- * down to the next heading of any level, or to the end. Entry bodies are
- * indented two spaces, so a `#` inside one never reads as a heading.
- */
-function subsection(out: string, heading: string): string {
-  const start = out.indexOf(heading);
-  if (start === -1) return "";
-  const rest = out.slice(start + heading.length);
-  const next = rest.search(/^#{1,6} /m);
-  return next === -1 ? rest : rest.slice(0, next);
-}
-
-const breakingSubsection = (out: string) => subsection(out, "### Breaking");
+// The slice of a rendered draft each subheading owns — the cutter is the
+// suite's one (`tests/helpers/docSections.ts`). Entry bodies are indented two
+// spaces, so a `#` inside one never reads as a heading.
+const breakingSubsection = (out: string) => sectionOf(out, "### Breaking");
 const uncategorizedSubsection = (out: string) =>
-  subsection(out, "### Uncategorized");
+  sectionOf(out, "### Uncategorized");
 
 let repo: string;
 

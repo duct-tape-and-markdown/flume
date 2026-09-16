@@ -52,6 +52,7 @@ import type {
 } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";
+import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
@@ -1171,13 +1172,7 @@ it("docs/CHAIN-AUTHORING.md names exactly the FLUME_ variables a declared gate's
     new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
     "utf8",
   );
-  // The section, heading line through the line before the next heading of any
-  // level.
-  const start = doc.search(/^#### What a declared command gate's child reads$/m);
-  expect(start, "the page carries the gate-fact section").toBeGreaterThanOrEqual(0);
-  const body = doc.indexOf("\n", start) + 1;
-  const next = doc.slice(body).search(/^#{1,6} /m);
-  const section = next === -1 ? doc.slice(start) : doc.slice(start, body + next);
+  const section = sectionOf(doc, /^#### What a declared command gate's child reads$/m);
 
   // The span is the one it claims to be before a set is read off it: a heading
   // match that captured the wrong section would compare an empty table against

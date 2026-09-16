@@ -29,6 +29,7 @@ import { consumerIgnores } from "../harness/ignores.ts";
 import { harnessInit, protocolTemplatePath } from "../harness/init.ts";
 import { PROMPT_NAMES, promptPath } from "../harness/prompts.ts";
 import { resolvePackageJson } from "../src/selfPackage.ts";
+import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
@@ -84,21 +85,6 @@ async function prerequisiteClaim(): Promise<string> {
 
 /** The README heading the adoption command has to lead. */
 const QUICKSTART_HEADING = "## Quickstart";
-
-/**
- * One `##` section of a markdown page, from its heading to the next `##`
- * one — its own `###` subsections included, since a verb demoted into one is
- * still inside the section a reader is in. An absent heading yields the
- * empty string, which every case below refuses before asserting anything
- * over it.
- */
-function sectionOf(page: string, heading: string): string {
-  const lines = page.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trimEnd() === heading);
-  if (start === -1) return "";
-  const end = lines.findIndex((line, i) => i > start && /^## /.test(line));
-  return lines.slice(start, end === -1 ? undefined : end).join("\n");
-}
 
 /** The README's Quickstart section. */
 async function quickstartSection(): Promise<string> {

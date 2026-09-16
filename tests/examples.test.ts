@@ -49,6 +49,7 @@ import {
   type FlumePaths,
 } from "../src/flumeApi.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
+import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { REPO_ROOT } from "./helpers/repoProgram.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
@@ -1960,14 +1961,6 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
  * type rather than the inline literal it is today.
  */
 describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the block", () => {
-  /** The section, heading line through the line before the next `## `. */
-  const sectionOf = (doc: string, heading: RegExp): string => {
-    const start = doc.search(heading);
-    expect(start, `\`${heading.source}\` matches a heading`).toBeGreaterThanOrEqual(0);
-    const next = doc.indexOf("\n## ", start + 1);
-    return doc.slice(start, next === -1 ? doc.length : next);
-  };
-
   /**
    * Every property of `Chain["supervisorPolicy"]`, resolved by a checker.
    *
@@ -2061,15 +2054,6 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
  * record of one release's port, a divergence declared at its own site.
  */
 describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () => {
-  /** The section, heading line through the line before the next heading of any level. */
-  const sectionOf = (doc: string, heading: RegExp): string => {
-    const start = doc.search(heading);
-    expect(start, `\`${heading.source}\` matches a heading`).toBeGreaterThanOrEqual(0);
-    const body = doc.indexOf("\n", start) + 1;
-    const next = doc.slice(body).search(/^#{1,6} /m);
-    return next === -1 ? doc.slice(start) : doc.slice(start, body + next);
-  };
-
   /**
    * Every member of `Runner` (`harness/runner.ts`), resolved by a checker
    * over that module alone — no lib, no resolution, no `@types`, for the
@@ -2158,15 +2142,6 @@ describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () =
  * port, not the standing surface.
  */
 describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () => {
-  /** The section, heading line through the line before the next heading of any level. */
-  const sectionOf = (doc: string, heading: RegExp): string => {
-    const start = doc.search(heading);
-    expect(start, `\`${heading.source}\` matches a heading`).toBeGreaterThanOrEqual(0);
-    const body = doc.indexOf("\n", start) + 1;
-    const next = doc.slice(body).search(/^#{1,6} /m);
-    return next === -1 ? doc.slice(start) : doc.slice(start, body + next);
-  };
-
   /**
    * Every member of `GateContext` (`src/Gate.ts`), resolved by a checker over
    * that module alone — no lib, no resolution, no `@types`, the sibling
