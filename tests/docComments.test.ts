@@ -24,19 +24,28 @@ const srcText = (module: string): string =>
   );
 
 /**
- * The doc comment block immediately preceding `field`'s declaration. The
- * body pattern cannot cross a comment terminator, so the match is the
- * adjacent block, never an earlier one swallowed by a lazy span.
+ * The doc comment block immediately preceding whatever `decl` (a regex
+ * source) matches. The body pattern cannot cross a comment terminator, so
+ * the match is the adjacent block, never an earlier one swallowed by a lazy
+ * span.
  */
-const docCommentFor = (source: string, field: string): string => {
+const docCommentBefore = (
+  source: string,
+  decl: string,
+  label: string,
+): string => {
   const body = source.match(
-    new RegExp(String.raw`/\*\*((?:[^*]|\*(?!/))*)\*/\s*${field}\??:`),
+    new RegExp(String.raw`/\*\*((?:[^*]|\*(?!/))*)\*/\s*${decl}`),
   )?.[1];
   if (body === undefined) {
-    throw new Error(`no doc comment precedes \`${field}\``);
+    throw new Error(`no doc comment precedes ${label}`);
   }
   return body;
 };
+
+/** The doc comment block immediately preceding `field`'s declaration. */
+const docCommentFor = (source: string, field: string): string =>
+  docCommentBefore(source, String.raw`${field}\??:`, `\`${field}\``);
 
 it("the shipped `forkResolver` and `entryChannelPaths` doc comments name no term in the shared chain-vocabulary list", () => {
   const docs = {
@@ -52,6 +61,38 @@ it("the shipped `forkResolver` and `entryChannelPaths` doc comments name no term
   for (const [field, doc] of Object.entries(docs)) {
     expectNoChainVocabulary(doc, `\`${field}\` doc`);
   }
+});
+
+/**
+ * `GatePhase` ships from `src/index.ts`, so its lead-in block is the first
+ * hover text a chain author reads about gate placement — one rung above
+ * `docs/CHAIN-AUTHORING.md`, which states the same thing. A singleton tick
+ * cherry-picks its span onto the trunk and runs `afterMerge` there like a
+ * wave of one (`spec/worktrees.md`, "Singleton runs in a worktree"), so a
+ * lead-in scoping the placement to fanout denies a placement the engine
+ * offers, and the author declines it before reaching the page.
+ *
+ * The subject is the lead-in block itself, not a rendered artifact that
+ * happens to contain it: every sentence in the block is about when a
+ * placement runs, so fanout vocabulary there can only be the scoping this
+ * pin forbids. The per-member blocks below it are free to name fanout —
+ * that is where what a failure costs a wave belongs.
+ */
+it("the `GatePhase` lead-in comment does not scope `afterMerge` to a fanout phase", () => {
+  const leadIn = docCommentBefore(
+    srcText("Gate.ts"),
+    String.raw`export type GatePhase\s*=`,
+    "`GatePhase`",
+  );
+
+  // Vacuity guard: the block still states both placements and where the
+  // merged one runs before the absence is asserted over it — an absence over
+  // a vanished subject is a false green.
+  expect(leadIn).toContain("`afterCommit`");
+  expect(leadIn).toContain("`afterMerge`");
+  expect(leadIn).toContain("trunk");
+
+  expect(leadIn).not.toMatch(/\bfan-?out\b|\bwave\b/i);
 });
 
 /**

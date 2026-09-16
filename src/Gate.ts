@@ -12,7 +12,9 @@ import type { PendingEntry } from "./PendingSchema.js";
 /**
  * When in the tick lifecycle a gate runs. `afterCommit` is the common case
  * (validate the agent's commit on its worktree branch); `afterMerge` runs
- * on the trunk after a fanout phase's wave lands.
+ * on the trunk once the tick's span has been cherry-picked onto it. Both
+ * placements are open to both concurrencies — see each member below for
+ * what a failure costs.
  */
 export type GatePhase =
   /**
