@@ -38,7 +38,6 @@ import { fileURLToPath } from "node:url";
 import { existsLoud } from "../src/fsProbe.js";
 import { mergeIgnoreLines } from "../src/job.js";
 import {
-  gitPath,
   namespacedJoin,
   resolvePendingPath,
   STATE_ROOT_DIRNAME,
@@ -47,6 +46,7 @@ import { readSelfPackage } from "../src/selfPackage.js";
 
 import { detailOf } from "./exec.js";
 import { consumerIgnores } from "./ignores.js";
+import { queuePath } from "./layout.js";
 
 /** The directory holding this module, in whichever layout it is running from. */
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -372,13 +372,14 @@ export async function harnessInit(
   // dispatcher, `flume check` and `flume status` all reach the queue through
   // it, and a second spelling would seed a file none of them read
   // (`.claude/rules/engineering.md`, *Derived state is computed, never
-  // restated beside its source*). It composes with `node:path`, so the
-  // reported line folds back into git's alphabet the way `harness/chain.ts`
-  // does for the same value.
+  // restated beside its source*). That resolver answers host-native, which is
+  // what the fs calls want; the line this reports is a repo path, so it comes
+  // from the layout that states the queue's git spelling for every consumer
+  // of it (`queuePath`, `harness/layout.ts`).
   const pendingAbs = resolvePendingPath(stateRootAbs);
   await mkdir(namespacedJoin(dirname(pendingAbs)), { recursive: true });
   await writeFile(namespacedJoin(pendingAbs), EMPTY_QUEUE, "utf8");
-  written.push(gitPath(resolvePendingPath(stateRoot)));
+  written.push(queuePath(stateRoot));
 
   // Derived from the engine's own path record, never hand-listed
   // (`ignores.ts`), and merged rather than replacing: a repository's

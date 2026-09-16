@@ -47,7 +47,7 @@
  * adds later is dropped without this module being touched.
  *
  * Paths are **relative to a state root the caller supplies** and
- * slash-joined, as everything else the package addresses is (`records.ts`):
+ * slash-joined, as everything else the package addresses is (`layout.ts`):
  * these are git paths, and the package hardcodes no consumer's state root.
  *
  * This module is the set alone. Writing it into a consumer's `.gitignore` —

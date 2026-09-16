@@ -84,8 +84,14 @@ export {
 } from "./citeResolver.js";
 
 export {
-  PlanStateSchema,
+  notePath,
+  notesDir,
   planStatePath,
+  recordDirs,
+} from "./layout.js";
+
+export {
+  PlanStateSchema,
   readPlanState,
   writePlanState,
   type PlanState,
@@ -114,9 +120,6 @@ export {
 
 export {
   RECORD_MAX_BYTES,
-  notePath,
-  notesDir,
-  recordDirs,
   recordFiles,
   recordsPending,
 } from "./records.js";

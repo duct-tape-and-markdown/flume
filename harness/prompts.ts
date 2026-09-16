@@ -31,7 +31,7 @@
  * it may write — are the shipped build prompt's own placeholders, composed
  * from the tick's `TickContext` and read from the surfaces that own them: the
  * cite through the resolver the `per` gate drives, the note path through
- * `records.ts`. A slice's window is a scan with a liveness predicate on the
+ * `layout.ts`. A slice's window is a scan with a liveness predicate on the
  * other end of it, which is `sliceWindow.ts`'s subject and its windows', not
  * this module's.
  */
@@ -50,8 +50,13 @@ import { NO_COMMIT_MODES } from "../src/Prompt.js";
 import { resolveCiteSync } from "./citeResolver.js";
 import { PHASES, type Declaration } from "./declaration.js";
 import { PerSchema } from "./entryExtension.js";
-import { planStatePath } from "./planState.js";
-import { RECORD_MAX_BYTES, notePath, recordDirs } from "./records.js";
+import {
+  notePath,
+  planStatePath,
+  questionsPath,
+  recordDirs,
+} from "./layout.js";
+import { RECORD_MAX_BYTES } from "./records.js";
 
 /**
  * The discipline page the plan slices point at. Not a phase's prompt: no
@@ -90,22 +95,6 @@ export const PROMPT_NAMES = [...PHASES, DISCIPLINE] as const;
 
 /** One prompt the package ships. */
 export type PromptName = (typeof PROMPT_NAMES)[number];
-
-/**
- * The open-questions artifact under a state root, slash-joined like every
- * other path the package composes.
- *
- * Spelled here because nothing else owns it: the queue's path is the
- * engine's (`resolvePendingPath`), the plan state's is `planState.ts`'s and
- * the record queues' are `records.ts`'s. Two readers share this one —
- * the slice prompts rendered below, and the fence the chain factory hands
- * every plan slice. A second spelling anywhere is a slice writing a question
- * where the next slice does not look, or a fence that reverts the commit
- * carrying it.
- */
-export function questionsPath(stateRoot: string): string {
-  return `${stateRoot}/plan/open-questions.md`;
-}
 
 /**
  * Where a prompt lives on disk — absolute, resolved from this module rather

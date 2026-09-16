@@ -37,7 +37,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { relative } from "node:path";
 
 import type { PendingGateOptions } from "../src/builtinGates.js";
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
@@ -49,7 +49,7 @@ import type { Phase } from "../src/Phase.js";
 import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js";
 import { BUILD_PHASE, type Declaration } from "./declaration.js";
 import { entryExtension, PerSchema } from "./entryExtension.js";
-import { notePath, recordDirs } from "./records.js";
+import { notePath, recordDirs, underStateRoot } from "./layout.js";
 
 /**
  * The engine values the package's gates run through, named by the shape they
@@ -119,7 +119,9 @@ const short = (sha: string): string => sha.slice(0, 7);
 /**
  * The queue's path relative to the state root — read off the two resolved
  * values the engine hands every gate, never a second spelling of
- * `plan/pending.json`, which a chain is free to relocate.
+ * `plan/pending.json`, which a chain is free to relocate. Host-native, being
+ * `relative`'s answer: the caller that hands it to git folds it
+ * (`underStateRoot`, `layout.ts`).
  */
 const queueRel = (ctx: GateContext): string =>
   relative(ctx.flumeDir, ctx.pendingPath);
@@ -146,7 +148,7 @@ async function queueAtCommit(
   return engine.git.readFileAtRef(
     ctx.repoRoot,
     ctx.commitSha,
-    join(ctx.stateRootRel, queueRel(ctx)),
+    underStateRoot(ctx.stateRootRel, queueRel(ctx)),
   );
 }
 
@@ -253,7 +255,7 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
  * entry and the drain that reads it names the overrun
  * (`renderRecords`, `harness/inboxWindow.ts`).
  *
- * The layout itself is composed from `records.ts`, never re-spelled: a
+ * The layout itself is composed from `layout.ts`, never re-spelled: a
  * directory renamed there moves this gate with it rather than leaving it
  * guarding a path nobody writes.
  *

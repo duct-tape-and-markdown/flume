@@ -1,37 +1,29 @@
 /**
- * The record conventions the harness package's inbox slice drains
- * (`spec/harness.md`, *Records as one file each*) — where a record lives,
- * what a build note is called, how big a record may be, and whether the
- * record window is open right now.
+ * The record queue as disk holds it (`spec/harness.md`, *Records as one file
+ * each*) — what a record may weigh, what is waiting to be drained under a
+ * state root, and whether the inbox slice's record window is open right now.
  *
  * A record is one file, never a section appended to a shared document: git
  * merges by line position, so two ticks appending to one file conflict
  * whatever the syntax, and two ticks creating two files never do. That is
- * the whole reason these are paths at all, and it is why they are named
- * here once. Four surfaces read them — the records gate deciding whether a
- * commit's touched path is a record and whether it is the tick's own, the
- * build fence admitting the note glob, the build prompt telling a tick where
- * to write, and the inbox slice's liveness predicate — and a copy in any of
- * them is a rename away from a gate that guards a file nobody writes
+ * the whole reason these are paths at all, and it is why the directories
+ * they sit in are named once, in `layout.ts`, beside every other plan
+ * artifact — the records gate deciding whether a commit's touched path is a
+ * record, the build fence admitting the note glob, and the build prompt
+ * telling a tick where to write all read them from there
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
- * restated beside its source*).
+ * restated beside its source*). This module is the fourth reader: the
+ * listing and the liveness predicate below.
  *
- * Every path here is **relative to a state root the caller supplies**,
- * because the same layout is addressed two ways: repo-relative (`.flume`)
- * where a git path or a fence glob is wanted, and absolute (the engine's
- * `flumeDir`) where disk is read. The package hardcodes neither — a
- * consumer's state root is wherever its declaration sits.
+ * **That listing answers host-native**, unlike the names it composes from.
+ * {@link recordFiles} and {@link recordsPending} take the absolute state
+ * root and read disk, so they join through `node:path` (`spec/cli.md`,
+ * *win32 is a supported host*, path discipline) rather than taking a
+ * git-alphabet directory from `layout.ts` and converting it.
  *
- * **Which alphabet a leg answers in follows from which of the two it is
- * for.** {@link recordDirs}, {@link notesDir} and {@link notePath} name what
- * git and the fence name — a diff-tree line, a pathspec, a glob — so they
- * slash-join on every host. {@link recordFiles} and {@link recordsPending}
- * take the absolute state root and read disk, so they compose through
- * `node:path` (`spec/cli.md`, *win32 is a supported host*, path discipline).
- *
- * This module is the layout alone. What a record must *contain* — the title
- * line, whose tag it may carry, that a plan slice drains rather than writes
- * — belongs to the gate that reads these paths.
+ * What a record must *contain* — the title line, whose tag it may carry,
+ * that a plan slice drains rather than writes — belongs to the gate that
+ * reads these paths.
  */
 
 import { readdirSync } from "node:fs";
@@ -39,26 +31,7 @@ import { join } from "node:path";
 
 import { namespacedJoin } from "../src/paths.js";
 
-/** The build-note directory's name under a state root. */
-const NOTES_REL = "plan/notes";
-
-/**
- * The record directories' names under a state root, in the order
- * `.flume/PROTOCOL.md`, *Records: one file each* lists them: findings from
- * the field, then notes from build ticks. The one spelling — {@link
- * recordDirs}, {@link notesDir} and {@link recordFiles} each compose from
- * here, in this order, rather than each walking its own list. They differ
- * only in the separator they join with, never in which directories exist or
- * in what order they are named.
- */
-const RECORD_DIR_NAMES = ["inbox", NOTES_REL] as const;
-
-/**
- * The extension a record carries. A record is markdown a human reads; a
- * `.gitkeep` or an editor's swap file in a record directory is not a record
- * and must not hold the inbox window open.
- */
-const RECORD_EXT = ".md";
+import { RECORD_DIR_NAMES, RECORD_EXT } from "./layout.js";
 
 /**
  * The cap a record fits, in bytes — what was observed, where, and why it
@@ -79,43 +52,6 @@ const RECORD_EXT = ".md";
 export const RECORD_MAX_BYTES = 1200;
 
 /**
- * Every record directory under `stateRoot`, slash-joined — the form a git
- * path, a diff-tree line and a fence glob are all in. A caller matching
- * commit paths wants a trailing separator on each so `inbox` cannot prefix
- * `inbox-archive`.
- */
-export function recordDirs(stateRoot: string): string[] {
-  return RECORD_DIR_NAMES.map((name) => `${stateRoot}/${name}`);
-}
-
-/**
- * Where build notes live — `<stateRoot>/plan/notes`, slash-joined. The fence
- * glob build's phase declares is this plus `/*.md`, so the fence and {@link
- * notePath} cannot name different directories.
- */
-export function notesDir(stateRoot: string): string {
-  return `${stateRoot}/${NOTES_REL}`;
-}
-
-/**
- * The one file a build tick assigned `tag` may write: its note, under
- * {@link notesDir}.
- *
- * Three readers, one derivation — the records gate refusing a note under
- * another tick's tag, the build prompt naming the path a tick writes to, and
- * the park predicate reading back a commit whose only path is this. A second
- * spelling anywhere is a tick that writes where the gate does not look, or a
- * park the chain does not recognize and ships with the work undone.
- *
- * `tag` is interpolated as given: the engine bounds and validates a tag at
- * the queue's schema gate, and re-deriving that check here would be the same
- * guard in two places.
- */
-export function notePath(stateRoot: string, tag: string): string {
-  return `${notesDir(stateRoot)}/${tag}${RECORD_EXT}`;
-}
-
-/**
  * Every record waiting under `stateRoot`, as **host-native paths** in queue
  * order: the directories in the order {@link RECORD_DIR_NAMES} lists them,
  * each directory's files sorted by name — an inbox record's name leads with
@@ -123,11 +59,11 @@ export function notePath(stateRoot: string, tag: string): string {
  *
  * `stateRoot` here is the absolute one, and these paths are read, rendered
  * and compared as filesystem paths rather than handed to git, so they are
- * composed with `node:path` rather than slash-joined like {@link
- * recordDirs} beside them. A separator appended to an absolute win32 root
- * yields a path fs accepts and nothing else equals: the window would name
- * every record at a spelling no `join`-built path — the one its own reader
- * and every consumer compose — matches.
+ * composed with `node:path` rather than slash-joined like {@link recordDirs}
+ * is. A separator appended to an absolute win32 root yields a path fs accepts
+ * and nothing else equals: the window would name every record at a spelling
+ * no `join`-built path — the one its own reader and every consumer compose —
+ * matches.
  *
  * The listing itself goes through `namespacedJoin`, since a record sits
  * under a chain-declared state root and a note's name is an entry's tag

@@ -33,11 +33,10 @@ import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
 import { PHASES, PLAN_SLICES } from "../harness/declaration.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
 import { harnessInit } from "../harness/init.ts";
-import { planStatePath } from "../harness/planState.ts";
+import { planStatePath, questionsPath } from "../harness/layout.ts";
 import {
   PROMPT_NAMES,
   promptPath,
-  questionsPath,
   sharedPromptArgs,
   type PromptName,
   type SharedPromptArg,
@@ -273,8 +272,8 @@ it("every plan slice the package declares points its reader at the discipline pa
 /**
  * The artifacts the slice prompts' spans read, each addressed through the
  * module that owns its path rather than through a layout spelled here: the
- * queue's is the engine's, the plan state's is `planState.ts`'s, the
- * questions file's is `prompts.ts`'s. A sentinel rides each body so a case
+ * queue's absolute form is the engine's resolver, and the plan state's and
+ * the questions file's are `layout.ts`'s, with every other plan artifact's. A sentinel rides each body so a case
  * asserts the bytes *arrived*, not merely that the render did not throw — a
  * span whose guard mis-fired would render its placeholder over a readable
  * artifact and look identical from the outside.

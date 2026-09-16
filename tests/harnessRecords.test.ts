@@ -1,7 +1,9 @@
 /**
- * The harness package's record layout (`spec/harness.md`, *Records as one
- * file each*): where a record lives under a state root, what a build note is
- * called, and whether the inbox slice's window is open.
+ * The harness package's record queue (`spec/harness.md`, *Records as one
+ * file each*): what is waiting under a state root, and whether the inbox
+ * slice's window is open over it. Where a record *sits* is the plan-artifact
+ * layout's (`tests/harnessLayout.test.ts`); the cases here read those
+ * directories off it and ask disk.
  *
  * The window cases run over a real state root on disk rather than a mocked
  * `fs`: `recordsPending` is a claim about what a directory listing says, and
@@ -44,9 +46,10 @@ afterEach(async () => {
 
 /**
  * The fs form of a path the package composed in git's alphabet. `recordDirs`,
- * `notesDir` and `notePath` slash-join, because what they name is a diff-tree
- * line, a pathspec or a fence glob; `resolve` normalizes that to the host's
- * separator so these cases read disk the same way on win32.
+ * `notesDir` and `notePath` (`harness/layout.ts`) slash-join, because what
+ * they name is a diff-tree line, a pathspec or a fence glob; `resolve`
+ * normalizes that to the host's separator so these cases read disk the same
+ * way on win32.
  *
  * `recordFiles` needs no such conversion — it reads disk, so it already
  * answers host-native — and the case below is the pin on that difference.

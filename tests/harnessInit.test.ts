@@ -39,7 +39,8 @@ import {
 import { entryExtension } from "../harness/entryExtension.ts";
 import { HELP_JOB, HELP_TOP, isSubcommand } from "../src/cliHelp.ts";
 import { parsePending } from "../src/PendingSchema.ts";
-import { gitPath, resolvePendingPath } from "../src/paths.ts";
+import { queuePath } from "../harness/layout.ts";
+import { resolvePendingPath } from "../src/paths.ts";
 import {
   SPAWN_BUDGET_MS,
   TSX_CLI,
@@ -195,7 +196,9 @@ it("flume-harness init writes the state root and its derived ignore lines", asyn
  *
  * Addressed through the engine's own `resolvePendingPath` rather than a
  * layout spelled by the tester: a queue seeded at a path the dispatcher does
- * not resolve reds here instead of at a consumer's first tick.
+ * not resolve reds here instead of at a consumer's first tick, and the
+ * reported line through the package's own `queuePath` (`harness/layout.ts`),
+ * which is the one home the fence reads it from too.
  */
 it("flume-harness init seeds an empty queue in the state root", async () => {
   const result = await harnessInit({ repoRoot });
@@ -208,9 +211,7 @@ it("flume-harness init seeds an empty queue in the state root", async () => {
   // so a queue on disk that no line names is a file their first commit drops.
   // The expectation is the same derivation the writer reports through, in
   // git's alphabet, since that is what the rest of the list is in.
-  expect(result.written).toContain(
-    gitPath(resolvePendingPath(result.stateRoot)),
-  );
+  expect(result.written).toContain(queuePath(result.stateRoot));
 });
 
 /**

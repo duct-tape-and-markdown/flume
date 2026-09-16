@@ -8,10 +8,11 @@
  * a home and its own tests — the gate set in `gates.ts`, the consumer's
  * declared gates in `declaredGates.ts`, the judge's gate in `judgeGate.ts`,
  * the ladder in `handoff.ts`, the windows in `windows.ts`, the args in
- * `prompts.ts`, the fields in `entryExtension.ts`, the ruling in `judge.ts`.
+ * `prompts.ts`, the fields in `entryExtension.ts`, the ruling in `judge.ts`,
+ * the plan artifacts' paths and the fence that is their list in `layout.ts`.
  * What is decided here is only what a `Phase` object needs that none of them
- * can answer alone: which fence each phase carries, which prompt it
- * addresses, which of them a park is, and the order the gates sit in.
+ * can answer alone: which of those fences each phase carries, which prompt
+ * it addresses, which of them a park is, and the order the gates sit in.
  *
  * **The declaration is parsed here, not by the consumer.** The whole of
  * adoption is one declaration module and the hop that applies this factory
@@ -42,7 +43,6 @@ import { resolve } from "node:path";
 import type { Agent } from "../src/Agent.js";
 import type { FlumeApi } from "../src/flumeApi.js";
 import type { Gate } from "../src/Gate.js";
-import { gitPath, resolvePendingPath } from "../src/paths.js";
 import type { EntryExtension, PendingEntry } from "../src/PendingSchema.js";
 import type { Chain, Phase, TickContext } from "../src/Phase.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
@@ -60,16 +60,14 @@ import { harnessGates, type GateEngine } from "./gates.js";
 import { resolveHandoff } from "./handoff.js";
 import { SESSIONS_REL } from "./ignores.js";
 import { namedLinesGate } from "./judgeGate.js";
-import { planStatePath } from "./planState.js";
+import { noteGlob, notePath, planArtifacts } from "./layout.js";
 import {
   BUILD_PROMPT_DATA_KEYS,
   SHARED_PROMPT_DATA_KEYS,
   buildPromptArgs,
   promptPath,
-  questionsPath,
   sharedPromptArgs,
 } from "./prompts.js";
-import { notePath, notesDir, recordDirs } from "./records.js";
 import type { PlanSliceWindow } from "./sliceWindow.js";
 import { planSliceWindows } from "./windows.js";
 
@@ -172,28 +170,19 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   });
 
   /** The one note a build tick may write, as a fence glob. */
-  const noteGlob = `${notesDir(stateRoot)}/*.md`;
+  const notes = noteGlob(stateRoot);
 
   /**
    * The artifacts the package's plan slices own, whatever a consumer
-   * declared — composed from the modules that own each path rather than
-   * spelled here, so a layout rename moves the fence with it.
+   * declared — taken whole from the layout that states where each sits
+   * (`layout.ts`) rather than assembled here, so an artifact added there
+   * joins this fence with it.
    *
-   * The record queues ride it because a slice drains a record by deleting
-   * its file; the records gate is what refuses a slice that writes one
-   * instead.
-   *
-   * The queue alone is converted here: `resolvePendingPath` composes with
-   * `node:path`, so it re-dialects the git-alphabet root the engine reported.
-   * Every other path here is slash-joined by the module that owns it and
-   * arrives in git's alphabet from {@link repoRelativeStateRoot}.
+   * Every path in it is in git's alphabet, which is the one the fence and a
+   * commit's touched paths are compared in, and which the root arrives in
+   * from {@link repoRelativeStateRoot}.
    */
-  const planArtifacts = [
-    gitPath(resolvePendingPath(stateRoot)),
-    planStatePath(stateRoot),
-    questionsPath(stateRoot),
-    ...recordDirs(stateRoot).map((dir) => `${dir}/*.md`),
-  ];
+  const artifacts = planArtifacts(stateRoot);
 
   const agentFor = agentFactory(api, declaration);
   const setup = worktreeSetup(declaration, provision);
@@ -244,7 +233,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   const planPhase = (window: PlanSliceWindow): Phase => {
     const name: PlanSlice = window.name;
     const writablePaths = unique([
-      ...planArtifacts,
+      ...artifacts,
       ...(declaration.fence[name] ?? []),
     ]);
     return {
@@ -294,7 +283,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   const isPark = (entry: PendingEntry, touched: readonly string[]): boolean =>
     touched.length === 1 && touched[0] === notePath(stateRoot, entry.tag);
 
-  const buildWritablePaths = unique([...declaration.fence.build, noteGlob]);
+  const buildWritablePaths = unique([...declaration.fence.build, notes]);
 
   const build: Phase = {
     name: BUILD_PHASE,
@@ -315,7 +304,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     ...(declaration.scopeWritesToEntry
       ? {
           scopeWritesToEntry: true,
-          entryChannelPaths: unique([...(declaration.channelPaths ?? []), noteGlob]),
+          entryChannelPaths: unique([...(declaration.channelPaths ?? []), notes]),
         }
       : {}),
     gates: gatesFor({ writablePaths: buildWritablePaths }, BUILD_PHASE, [

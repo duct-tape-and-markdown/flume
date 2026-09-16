@@ -21,8 +21,8 @@
  * agent writes it, a schema gates it, and the next tick reads fields rather
  * than impressions.
  *
- * Paths here are **relative to a state root the caller supplies**, as
- * everything else the package addresses is (`records.ts`) — the package
+ * Where the artifact sits is `layout.ts`'s, with every other plan artifact's
+ * path — relative to a state root the caller supplies, since the package
  * hardcodes no consumer's state root.
  *
  * This module is the artifact alone: which cursor arms which slice, and what
@@ -36,10 +36,8 @@ import { z } from "zod";
 
 import { namespacedJoin } from "../src/paths.js";
 
+import { planStatePath } from "./layout.js";
 import { parseOrThrow, strict } from "./refusal.js";
-
-/** Where the artifact sits under a state root. */
-const PLAN_STATE_REL = "plan/state.json";
 
 /**
  * A git object name, abbreviated or full. Shape-checked because the package
@@ -114,16 +112,6 @@ export const PlanStateSchema = strict({
 
 /** The plan state as a slice reads it. */
 export type PlanState = z.infer<typeof PlanStateSchema>;
-
-/**
- * Where the plan state artifact lives under `stateRoot`, slash-joined — the
- * form a git path and a fence glob are both in. One spelling, so the fence
- * admitting the artifact and the accessor reading it cannot name different
- * files.
- */
-export function planStatePath(stateRoot: string): string {
-  return `${stateRoot}/${PLAN_STATE_REL}`;
-}
 
 /**
  * The host's form of the path the package composed — every fs call in this

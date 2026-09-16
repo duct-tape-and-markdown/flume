@@ -14,7 +14,7 @@
  *
  * The declaration is parsed through the package's own schema rather than cast
  * into shape, so no case can wire a gate to a fence a consumer could not have
- * written. Record paths are composed from `records.ts` — nothing here spells
+ * written. Record paths are composed from `layout.ts` — nothing here spells
  * `plan/notes` — so a layout rename moves these cases with it.
  */
 

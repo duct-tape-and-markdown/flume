@@ -29,7 +29,8 @@ import {
   tipOf,
   type RangeCommit,
 } from "./gitRange.js";
-import { planStatePath, readPlanState, type PlanState } from "./planState.js";
+import { planStatePath } from "./layout.js";
+import { readPlanState, type PlanState } from "./planState.js";
 import type { WindowContext } from "./sliceWindow.js";
 
 /**
