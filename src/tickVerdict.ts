@@ -384,6 +384,79 @@ export interface TickVerdictInvocation extends AgentUsage {
 }
 
 /**
+ * Every {@link AgentUsage} fact that is a number, and so summable across
+ * rows. Derived from the shape rather than listed beside it: a usage field
+ * added there joins this union, and {@link totalAgentUsage}'s return literal
+ * stops compiling until it is summed too.
+ */
+type SummableUsageKey = {
+  [K in keyof AgentUsage]-?: NonNullable<AgentUsage[K]> extends number
+    ? K
+    : never;
+}[keyof AgentUsage];
+
+/**
+ * A set of {@link TickVerdictInvocation} rows summed — what some span of
+ * agent runs reported, in the units the rows report them in. Every field is
+ * a total rather than an optional fact: a row that omitted one contributed
+ * zero to it, and an empty set totals zero across the board.
+ *
+ * `model` is absent by construction ({@link SummableUsageKey}) — a model id
+ * does not add, and naming "the" model of a mixed set would invent a fact no
+ * row states, the same reason a row omits it when the invocation named more
+ * than one.
+ */
+export type AgentUsageTotals = Record<SummableUsageKey, number> & {
+  /** How many rows were summed — one per agent run. */
+  invocations: number;
+};
+
+/**
+ * Sum `rows` into `into` — an empty total by default — and return the new
+ * total. Pure, and accumulating: a caller folding a run's ticks together
+ * hands back the total it already holds, so there is one adder rather than a
+ * second one beside it for the across-ticks case.
+ *
+ * Beside the rows it reads: the fields summed here are
+ * {@link TickVerdictInvocation}'s, so a decode that starts reporting one
+ * more of them is totalled here or reported nowhere.
+ */
+export function totalAgentUsage(
+  rows: readonly TickVerdictInvocation[],
+  into: AgentUsageTotals = {
+    invocations: 0,
+    turns: 0,
+    durationMs: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    costUsd: 0,
+  },
+): AgentUsageTotals {
+  const sum = (
+    read: (row: TickVerdictInvocation) => number | undefined,
+    base: number,
+  ): number => rows.reduce((total, row) => total + (read(row) ?? 0), base);
+  return {
+    invocations: into.invocations + rows.length,
+    turns: sum((r) => r.turns, into.turns),
+    durationMs: sum((r) => r.durationMs, into.durationMs),
+    inputTokens: sum((r) => r.inputTokens, into.inputTokens),
+    outputTokens: sum((r) => r.outputTokens, into.outputTokens),
+    cacheCreationInputTokens: sum(
+      (r) => r.cacheCreationInputTokens,
+      into.cacheCreationInputTokens,
+    ),
+    cacheReadInputTokens: sum(
+      (r) => r.cacheReadInputTokens,
+      into.cacheReadInputTokens,
+    ),
+    costUsd: sum((r) => r.costUsd, into.costUsd),
+  };
+}
+
+/**
  * The one facts artifact every tick that actually runs a phase writes —
  * phase, entry tag(s), committed/no-commit class, gate results, shipped
  * tags, and (fanout) each provisioned entry's cherry-pick/merge fate. The

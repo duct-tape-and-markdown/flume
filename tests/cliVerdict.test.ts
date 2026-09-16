@@ -101,6 +101,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       hibernated: true,
       shippedTags: ["SHIPPED-ENTRY"],
       erroredTicks: ["build: no commit (gate-revert) → hibernate"],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(0);
     expect(loopCompletionSummary(result)).toContain("SHIPPED-ENTRY");
@@ -113,6 +114,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       hibernated: true,
       shippedTags: [],
       erroredTicks: ["plan: no commit (clean-exit) → hibernate"],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(1);
     expect(loopCompletionSummary(result)).toContain("clean-exit");
@@ -135,6 +137,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
         "tick process exited 1 with no verdict written to disk",
         "tick process exited 1 with no verdict written to disk",
       ],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(1);
     expect(loopCompletionSummary(result)).toContain("3 tick(s) errored");
@@ -146,6 +149,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       hibernated: true,
       shippedTags: [],
       erroredTicks: [],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(0);
     expect(loopCompletionSummary(result)).toBeUndefined();
@@ -158,6 +162,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       terminal: { kind: "orphaned-awake", phases: ["ghost"] },
       shippedTags: [],
       erroredTicks: [],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(EX_TERMINAL_MISCONFIG);
   });
@@ -169,6 +174,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       mountDead: true,
       shippedTags: [],
       erroredTicks: [],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(EX_MOUNT_DEAD);
   });
@@ -187,6 +193,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       },
       shippedTags: ["SHIPPED-BEFORE-THE-WALL"],
       erroredTicks: [],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(1);
     expect(loopCompletionSummary(result)).toContain(
@@ -207,6 +214,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       },
       shippedTags: [],
       erroredTicks: [],
+      agentUsageByPhase: [],
     };
     expect(loopCompletionSummary(result)).toContain("2 consecutive ticks");
     expect(loopCompletionSummary(result)).not.toContain("3 consecutive ticks");
@@ -227,6 +235,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
         repeatedFailure: { stage, signature: "SIG-" + stage, count: 3 },
         shippedTags: [],
         erroredTicks: [],
+        agentUsageByPhase: [],
       });
       expect(summary).toContain(`${stage}-stage failure`);
       expect(summary).toContain("SIG-" + stage);
@@ -245,6 +254,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       stoppedByFlag: true,
       shippedTags: [],
       erroredTicks: [],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(0);
     expect(loopCompletionSummary(result)).toContain("stop flag");
@@ -257,6 +267,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       stoppedByFlag: true,
       shippedTags: [],
       erroredTicks: ["build: no commit (gate-revert) → hibernate"],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(1);
     const summary = loopCompletionSummary(result);
@@ -271,6 +282,7 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
       stoppedByFlag: true,
       shippedTags: ["SHIPPED-ENTRY"],
       erroredTicks: [],
+      agentUsageByPhase: [],
     };
     expect(loopExitCode(result)).toBe(0);
     expect(loopCompletionSummary(result)).toContain("stop flag");

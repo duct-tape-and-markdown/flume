@@ -7,7 +7,7 @@
 import { type TickOutcome } from "./Dispatcher.js";
 import { EX_TERMINAL_MISCONFIG, EX_MOUNT_DEAD } from "./exitCodes.js";
 import { type TickVerdict } from "./tickVerdict.js";
-import type { SuperviseResult } from "./loopSupervisor.js";
+import type { PhaseAgentUsage, SuperviseResult } from "./loopSupervisor.js";
 import type { CurrentRef } from "./git.js";
 
 /**
@@ -68,10 +68,15 @@ export function describeRefFailure(
  * `flume loop` / `job run`'s completion summary line naming surfaced tick
  * errors, an abort on the consecutive-failure backstop (named by the stage
  * `superviseLoop` reported it against — provision, merge or gate — never
- * fixed to one of the three), and (spec/loop.md
- * "Graceful stop") a stop-flag-ended run — undefined when the run had none of
+ * fixed to one of the three), (spec/loop.md
+ * "Graceful stop") a stop-flag-ended run, and what the run spent on agents,
+ * by phase — undefined when the run had none of
  * these. Printed even on a 0 exit (partial success, or a graceful stop): none
- * of these facts may vanish into a green exit silently.
+ * of these facts may vanish into a green exit silently, and what a run cost
+ * is read where its outcome is rather than by re-reading the verdict log.
+ *
+ * The spend is last: an error or an abort is what an operator reads first,
+ * and the totals are context for it.
  */
 export function loopCompletionSummary(
   result: SuperviseResult,
@@ -99,8 +104,30 @@ export function loopCompletionSummary(
         result.erroredTicks.join(" | "),
     );
   }
+  if (result.agentUsageByPhase.length > 0) {
+    const spend = result.agentUsageByPhase.map(phaseUsageSegment).join("; ");
+    parts.push(`agent usage: ${spend}`);
+  }
   if (parts.length === 0) return undefined;
   return `[flume] ${parts.join(" | ")}`;
+}
+
+/**
+ * One phase's totals as the completion summary spells them. Every total the
+ * supervisor carries is named: a count the engine summed and then declined to
+ * print is a fact it holds and does not report. Raw counts rather than
+ * abbreviated ones — the line is read by CI as often as by a person, and a
+ * rounded token count is not a number anything can add up.
+ */
+function phaseUsageSegment(usage: PhaseAgentUsage): string {
+  return (
+    `${usage.phase} ×${usage.invocations} ` +
+    `(${usage.turns} turns, ${(usage.durationMs / 1000).toFixed(1)}s, ` +
+    `${usage.inputTokens} in / ${usage.outputTokens} out tokens, ` +
+    `${usage.cacheCreationInputTokens} cache-write / ` +
+    `${usage.cacheReadInputTokens} cache-read, ` +
+    `$${usage.costUsd.toFixed(4)})`
+  );
 }
 
 /**

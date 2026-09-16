@@ -18,10 +18,14 @@ import { FAILURE_STAGES, superviseLoop } from "../src/loopSupervisor.ts";
 import type { FailureStage } from "../src/loopSupervisor.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import type { Logger } from "../src/log.ts";
-import { tickVerdictPath, type TickVerdict } from "../src/tickVerdict.ts";
+import {
+  tickVerdictPath,
+  type TickVerdict,
+  type TickVerdictInvocation,
+} from "../src/tickVerdict.ts";
 import { slugify } from "../src/paths.ts";
 import { Baton } from "../src/Baton.ts";
-import { loopExitCode } from "../src/cliVerdict.ts";
+import { loopCompletionSummary, loopExitCode } from "../src/cliVerdict.ts";
 import { denyDirectory } from "./helpers/denial.ts";
 import {
   makeFixture,
@@ -1779,5 +1783,192 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
     expect(res.repeatedFailure?.count).toBe(3);
     expect(res.repeatedFailure?.signature).toBe(SIGNATURE);
     expect(res.repeatedFailure?.signature.startsWith("merge:")).toBe(false);
+  });
+});
+
+
+/**
+ * spec/loop.md "Exit codes — the run never lies to CI": what a run cost is
+ * read where its outcome is. The rows already exist — every agent invocation
+ * leaves one on its tick's verdict — so the run-level total is a fold over
+ * this run's verdicts, never a re-read of the verdict log's history.
+ *
+ * An agreement gate in the same shape as the exit-code suites: the real
+ * `superviseLoop` accumulates and the real `loopCompletionSummary`
+ * (`src/cliVerdict.ts`) renders what it accumulated, so a one-sided change to
+ * either cannot ship green (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*).
+ */
+describe("superviseLoop — the run's agent spend, by phase", () => {
+  /**
+   * One usage row as a real tick writes it. `promptPath` and
+   * `uncommittedTracked` are the row's non-usage fields, present on every
+   * row by contract; the usage facts themselves are absent per field when
+   * the agent did not report them, which is what the sparse row below
+   * exercises.
+   */
+  const usageRow = (
+    over: Partial<TickVerdictInvocation>,
+  ): TickVerdictInvocation => ({
+    promptPath: "prompts/tick.md",
+    uncommittedTracked: [],
+    ...over,
+  });
+
+  it("the completion summary totals the run's agent usage by phase", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+    const verdictPath = tickVerdictPath(join(fx.repo, ".flume"));
+
+    // Three ticks across two phases: a singleton plan tick, a build wave
+    // whose two provisioned entries each left a row, and a second build tick
+    // whose row reports only what its agent happened to report — so the
+    // build total proves both across-rows and across-ticks accumulation, and
+    // an absent field adding zero rather than poisoning the sum.
+    const ticks: TickVerdict[] = [
+      verdictFixture({
+        phaseName: "plan",
+        invocations: [
+          usageRow({
+            turns: 2,
+            durationMs: 1500,
+            inputTokens: 100,
+            outputTokens: 10,
+            cacheCreationInputTokens: 5,
+            cacheReadInputTokens: 50,
+            costUsd: 0.25,
+          }),
+        ],
+      }),
+      verdictFixture({
+        phaseName: "build",
+        invocations: [
+          usageRow({
+            entryTag: "ENTRY-ONE",
+            turns: 3,
+            durationMs: 2000,
+            inputTokens: 200,
+            outputTokens: 20,
+            cacheCreationInputTokens: 6,
+            cacheReadInputTokens: 60,
+            costUsd: 0.5,
+          }),
+          usageRow({
+            entryTag: "ENTRY-TWO",
+            turns: 4,
+            durationMs: 2500,
+            inputTokens: 300,
+            outputTokens: 30,
+            cacheCreationInputTokens: 7,
+            cacheReadInputTokens: 70,
+            costUsd: 0.75,
+          }),
+        ],
+      }),
+      verdictFixture({
+        phaseName: "build",
+        invocations: [
+          usageRow({ entryTag: "ENTRY-THREE", inputTokens: 400, costUsd: 1 }),
+        ],
+      }),
+    ];
+    // The subject is populated: a run folding zero rows would agree with
+    // almost any total below.
+    expect(ticks.flatMap((v) => v.invocations)).toHaveLength(4);
+
+    let call = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      const verdict = ticks[call++]!;
+      await writeFile(verdictPath, JSON.stringify(verdict), "utf8");
+      if (call === ticks.length) baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: silent,
+    });
+
+    expect(res.ticks).toBe(3);
+    // Per phase, in the order each phase first invoked an agent — the build
+    // row is its three invocations summed across two ticks.
+    expect(res.agentUsageByPhase).toEqual([
+      {
+        phase: "plan",
+        invocations: 1,
+        turns: 2,
+        durationMs: 1500,
+        inputTokens: 100,
+        outputTokens: 10,
+        cacheCreationInputTokens: 5,
+        cacheReadInputTokens: 50,
+        costUsd: 0.25,
+      },
+      {
+        phase: "build",
+        invocations: 3,
+        turns: 7,
+        durationMs: 4500,
+        inputTokens: 900,
+        outputTokens: 50,
+        cacheCreationInputTokens: 13,
+        cacheReadInputTokens: 130,
+        costUsd: 2.25,
+      },
+    ]);
+    // ...and the line the operator reads is those totals, whole: the run
+    // errored nothing and stopped on hibernation, so the spend is all the
+    // summary has to say.
+    expect(loopCompletionSummary(res)).toBe(
+      "[flume] agent usage: " +
+        "plan ×1 (2 turns, 1.5s, 100 in / 10 out tokens, " +
+        "5 cache-write / 50 cache-read, $0.2500); " +
+        "build ×3 (7 turns, 4.5s, 900 in / 50 out tokens, " +
+        "13 cache-write / 130 cache-read, $2.2500)",
+    );
+  });
+
+  /**
+   * Vacuous-by-design is spelled, never inherited
+   * (`.claude/rules/engineering.md`, *A green verdict is proven
+   * non-vacuous*): a tick that invoked no agent leaves no row, and the phase
+   * is then absent from the totals rather than present at zero spend. The
+   * run below still errors, so the summary renders — the assertion is that
+   * the rendered line carries the error and nothing else, not that no line
+   * was written at all.
+   */
+  it("a run whose ticks left no usage row totals nothing in the completion summary", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+    const verdictPath = tickVerdictPath(join(fx.repo, ".flume"));
+
+    const verdict = verdictFixture({
+      committed: false,
+      noCommit: "gate-revert",
+      invocations: [],
+      summary: "build: no commit (gate-revert) → hibernate",
+    });
+    expect(verdict.invocations).toHaveLength(0);
+
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      await writeFile(verdictPath, JSON.stringify(verdict), "utf8");
+      baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log: silent,
+    });
+
+    expect(res.ticks).toBe(1);
+    expect(res.agentUsageByPhase).toEqual([]);
+    expect(loopCompletionSummary(res)).toBe(
+      "[flume] 1 tick(s) errored: build: no commit (gate-revert) → hibernate",
+    );
   });
 });

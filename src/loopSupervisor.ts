@@ -15,6 +15,8 @@ import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
 import { consoleLogger, type Logger } from "./log.js";
 import {
   readTickVerdict,
+  totalAgentUsage,
+  type AgentUsageTotals,
   type StageFailureEntry,
   type TickVerdict,
 } from "./tickVerdict.js";
@@ -149,6 +151,16 @@ export const FAILURE_STAGES = ["provision", "merge", "gate"] as const;
  */
 export type FailureStage = (typeof FAILURE_STAGES)[number];
 
+/**
+ * One phase's share of a run's agent spend: every usage row the run's ticks
+ * of that phase wrote, summed. `phase` is the verdict's own `phaseName`
+ * ({@link TickVerdict}) — the supervisor groups by what the tick reported,
+ * never by what it spawned.
+ */
+export interface PhaseAgentUsage extends AgentUsageTotals {
+  phase: string;
+}
+
 /** Outcome of a supervised loop: how many child ticks ran and why it stopped. */
 export interface SuperviseResult {
   ticks: number;
@@ -185,6 +197,21 @@ export interface SuperviseResult {
    * summary names these so they never vanish into a silent green exit.
    */
   erroredTicks: string[];
+  /**
+   * What this run spent on agents, one entry per phase whose ticks invoked
+   * one, in the order each phase first did — summed from the usage rows the
+   * children wrote to their verdicts (spec/loop.md "Every agent invocation
+   * leaves a usage row"), which is the only place the counts cross the
+   * child→supervisor boundary. Empty when no tick this run invoked an agent
+   * at all: a phase that never ran is absent rather than present at zero, so
+   * "nothing was spent" and "nothing ran" read the same because they are.
+   * `flume loop`'s completion summary names these, so what a run cost is
+   * read where its outcome is.
+   *
+   * This run's rows alone — never the verdict log's history, which spans
+   * runs the caller never asked about.
+   */
+  agentUsageByPhase: PhaseAgentUsage[];
   /**
    * Set when the run aborted because the same stage-tagged signature
    * repeated on `abortThreshold` ({@link DEFAULT_ABORT_THRESHOLD} by
@@ -269,6 +296,13 @@ export async function superviseLoop(
   let ticks = 0;
   const shippedTags = new Set<string>();
   const erroredTicks: string[] = [];
+  // This run's agent spend, keyed by the phase name the verdict reported and
+  // insertion-ordered by when each phase first invoked one. Accumulated the
+  // same way `shippedTags` is, and for the same reason: the rows cross the
+  // child boundary one tick at a time, and what the summary owes an operator
+  // is the run's total. A phase appears only once it has a row, so the map
+  // never carries a zero-spend entry for a phase that never ran.
+  const agentUsageByPhase = new Map<string, AgentUsageTotals>();
   // Run-scoped quarantine (`quarantineKey` (`src/selection.ts`) values —
   // `slug@hash` of the entry as the failing tick read it) plus the
   // consecutive-identical-signature streak for the abort backstop. Both reset
@@ -293,14 +327,29 @@ export async function superviseLoop(
   // off a half-tick's leavings). `runTick` has already terminated and reaped
   // the in-flight child by the time the second check runs, so the returned
   // result is the whole tree's — the caller may release what it held.
+  // Every exit below carries the same run-level totals and differs only in
+  // why the run stopped, so the totals are spelled once here rather than
+  // re-listed at each `return` — a total added to the result reaches all
+  // seven exits, never the six a hand-copied literal remembered
+  // (`.claude/rules/engineering.md`, *A module is one job*).
+  const settled = (
+    stop: Omit<
+      SuperviseResult,
+      "ticks" | "shippedTags" | "erroredTicks" | "agentUsageByPhase"
+    >,
+  ): SuperviseResult => ({
+    ticks,
+    shippedTags: [...shippedTags],
+    erroredTicks,
+    agentUsageByPhase: [...agentUsageByPhase].map(([phase, totals]) => ({
+      phase,
+      ...totals,
+    })),
+    ...stop,
+  });
   const stoppedBySignal = (): SuperviseResult => {
     log.info(`[flume] signalled; stopping after ${ticks} tick(s)`);
-    return {
-      ticks,
-      hibernated: false,
-      shippedTags: [...shippedTags],
-      erroredTicks,
-    };
+    return settled({ hibernated: false });
   };
   for (let i = 0; i < maxTicks; i++) {
     if (stopSignal.aborted) return stoppedBySignal();
@@ -343,6 +392,19 @@ export async function superviseLoop(
     let countedAsErrored = false;
     if (verdict) {
       for (const tag of verdict.shippedTags) shippedTags.add(tag);
+      // Guarded on a non-empty row list rather than folded unconditionally:
+      // `totalAgentUsage` over zero rows is a no-op on the numbers, but
+      // seeding the map would put a phase that invoked nothing this run into
+      // the summary at zero spend.
+      if (verdict.invocations.length > 0) {
+        agentUsageByPhase.set(
+          verdict.phaseName,
+          totalAgentUsage(
+            verdict.invocations,
+            agentUsageByPhase.get(verdict.phaseName),
+          ),
+        );
+      }
       const verdictProvisionFailures = verdict.provisionFailures ?? [];
       const verdictMergeFailures = verdict.mergeFailures ?? [];
       const shipHookThrew = verdict.mergeOutcomes.filter(
@@ -459,13 +521,7 @@ export async function superviseLoop(
           `after ${ticks} tick(s) instead of burning the remaining ticks ` +
           `against the same wall.`,
       );
-      return {
-        ticks,
-        hibernated: false,
-        repeatedFailure: abort,
-        shippedTags: [...shippedTags],
-        erroredTicks,
-      };
+      return settled({ hibernated: false, repeatedFailure: abort });
     }
 
     if (exitCode === EX_TERMINAL_MISCONFIG) {
@@ -483,13 +539,10 @@ export async function superviseLoop(
           `stopping after ${ticks} tick(s). Inspect, then ` +
           `\`flume sleep <phase>\` or fix the chain.`,
       );
-      return {
-        ticks,
+      return settled({
         hibernated: false,
         terminal: { kind: "orphaned-awake", phases },
-        shippedTags: [...shippedTags],
-        erroredTicks,
-      };
+      });
     }
     if (exitCode === EX_MOUNT_DEAD) {
       // Mount-dead fail-fast: the child could not resolve a chain
@@ -503,13 +556,7 @@ export async function superviseLoop(
           `remaining ticks against the same failure. Inspect and restore ` +
           `the chain (or its state root), then re-run.`,
       );
-      return {
-        ticks,
-        hibernated: false,
-        mountDead: true,
-        shippedTags: [...shippedTags],
-        erroredTicks,
-      };
+      return settled({ hibernated: false, mountDead: true });
     }
     if (exitCode !== 0) {
       log.warn(
@@ -551,13 +598,10 @@ export async function superviseLoop(
     if (existsLoud(namespacedJoin(stopFlagPath(flumeDir)))) {
       log.info(`[flume] stop flag present; ending run after ${ticks} tick(s)`);
       await logFrictionSummary();
-      return {
-        ticks,
+      return settled({
         hibernated: baton.hibernating(),
         stoppedByFlag: true,
-        shippedTags: [...shippedTags],
-        erroredTicks,
-      };
+      });
     }
     // Disk is truth: the child tick slept its phase and woke successors (or
     // didn't). No awake flags ⇒ hibernation. A failed tick does no baton
@@ -566,22 +610,12 @@ export async function superviseLoop(
     if (baton.hibernating()) {
       log.info(`[flume] hibernating after ${ticks} tick(s)`);
       await logFrictionSummary();
-      return {
-        ticks,
-        hibernated: true,
-        shippedTags: [...shippedTags],
-        erroredTicks,
-      };
+      return settled({ hibernated: true });
     }
   }
   log.info(`[flume] reached --max ${maxTicks}; stopping`);
   await logFrictionSummary();
-  return {
-    ticks,
-    hibernated: false,
-    shippedTags: [...shippedTags],
-    erroredTicks,
-  };
+  return settled({ hibernated: false });
 }
 
 /**

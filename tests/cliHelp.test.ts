@@ -193,6 +193,22 @@ const SUPERVISE_RESULT_SPACE: {
   mountDead: [ABSENT, false, true],
   shippedTags: [[], ["SHIPPED-ONE"]],
   erroredTicks: [[], ["tick 1: gate-revert"]],
+  agentUsageByPhase: [
+    [],
+    [
+      {
+        phase: "build",
+        invocations: 1,
+        turns: 4,
+        durationMs: 1000,
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheCreationInputTokens: 30,
+        cacheReadInputTokens: 40,
+        costUsd: 0.5,
+      },
+    ],
+  ],
   repeatedFailure: [
     ABSENT,
     { stage: "provision", signature: "boom", count: 3 },
@@ -649,6 +665,7 @@ describe("flume loop --help — the abort backstop's stage vocabulary against lo
         repeatedFailure: { stage, signature: "SIG", count: 3 },
         shippedTags: [],
         erroredTicks: [],
+        agentUsageByPhase: [],
       });
       // The phrase the real writer emits for this stage...
       expect(summary).toContain(`${stage}-stage`);
