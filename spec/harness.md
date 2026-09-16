@@ -162,19 +162,15 @@ drained — so a consumer never carries a prompt paragraph for routing its own
 notes; a paragraph every consumer would repeat is a surface the package owes
 (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
 
-A **declared script** is the fourth source: a command the inbox slice runs at
-the tip before it renders, whose stdout is one JSON object per line,
-`{ name, body }` — the record's file name and its bytes, stated rather than
-parsed out of prose — each materialized as a record file and drained like
-the rest, so the drain is the drain the package already runs and the
-agreement pin has a real writer to drive. The slice stamps a script's output
-as it stamps a lane's run — the set of record names it drained — and re-files
-only a record it has not seen since the stamp, so a standing set that is
-stable across ticks costs its first drain and nothing after; the delta is the
-package's to compute, never the script's to carry. A measurement a consumer
-takes every tick (a census of what the tree holds against what the register
-claims) is the consumer's to compute and the package's to route; it never
-rides a prompt slot, which is text, and it never becomes a prompt paragraph.
+A measurement a consumer takes every tick — a census of what the tree holds
+against what its own records claim — is the consumer's to compute and the
+package's to route, and it routes as records: written into the inbox
+directory before the tick, drained by the drain the package already runs. It
+never rides a prompt slot, which is text, and it never becomes a prompt
+paragraph. The package declares no source that runs a consumer's command,
+because a mechanism with no consumer is surface someone must excavate later
+(`.claude/rules/engineering.md`, *An export earns its consumer*); a second
+case for one is the evidence that rules it in.
 
 ### Plan state as declared state
 
@@ -233,26 +229,16 @@ runner, the resolver, and a handoff override) — validated by the package's str
 load; an unknown field or a missing required
 one refuses the load naming the field and the valid set.
 
-**One declaration, and a job is a named fence with its own brief and
-queue.** A repository running one loop declares once. A bay declares once
-too, and names its jobs in the same declaration: `jobs`, a map from job name
-to the two things that vary per unit of work inside one checkout — the spec
-locus it derives from and the fence it builds under, with a `slots` override
-where a brief wants its own context. The engine's job partition
-(`spec/jobs.md`) gives each job its state root, queue and records; the chain
-is loaded with that root, so the factory applies the named job's locus and
-fence over the shared declaration, and the repo-level values are the one-job
-case. `flume job new` seeds a job's root from the package's skeleton — the
-factory declares `seedDir` — so a consumer keeps neither a second schema nor
-a per-job file. What else varies between efforts — gates, agents, setup —
-varies per checkout, where a fresh declaration already resolves; measured
-across one bay, that is where all of it varied. A job's fence is refused at
-chain load where a glob can match the package's own artifacts — the queue,
-the plan state, a record, a note — under any state root but the job's own,
-naming the glob and the root: a sibling's queue is its own plan slice's to
-derive, and a build tick writing it is the hand edit no state of the queue
-needs (*The gates the discipline needs*). A consumer's own file under
-another job's root is admitted; where a bay keeps its product is the bay's.
+**One declaration, one effort, one checkout.** A repository running a loop
+declares once. A repository running several efforts at once gives each one a
+checkout of its own, with its own declaration in it — the operator's act
+(`git worktree add`), never a partition the package offers. A checkout is
+already the unit everything else keys by: the tip a claim is taken on, the
+install a `setup` provisions, the fence a build commits under. Splitting an
+effort below it buys separate files while leaving execution serialized on
+the shared tip, so what varies between efforts — the locus, the fence, the
+gates, the agents, the setup — varies per checkout, where a fresh
+declaration already resolves.
 
 | Field | What it decides |
 | --- | --- |
@@ -270,10 +256,8 @@ another job's root is admitted; where a bay keeps its product is the bay's.
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |
 | `slots` | Prompt slots the package renders into its prompts: an autonomy dial, domain context. Text only; a slot cannot add a directive the package's discipline already states. |
 | `capabilities` | The capabilities this repository asserts, passed through whole to `Chain.capabilities`; an entry that requires one the declaration does not assert is unpickable, and `flume status` names it. Optional; absent asserts none. |
-| `jobs` | Named jobs for a bay, each a `specLocus` and a `fence` (and optional `slots` and `capabilities`, added to the shared set) applied over the shared declaration when the chain runs under that job's state root — see *What a consumer declares*. Absent means one job, the repo-level values. |
 | `ci` | CI lanes the inbox slice reads as findings sources — each a workflow file, a job name, the lane name its findings carry, and optionally a title reader (a pattern or a function over the run's log) that gives the liveness rule its failing-title set — see *CI lanes as a findings source*. Optional. |
 | `friction` | The friction directory, state-root-relative, passed through to `Chain.friction` and read by the inbox slice as a findings source — see *Declared findings sources*. Optional; absent disables the channel. |
-| `findings` | Declared scripts the inbox slice runs at the tip before it renders, each a name and a command; stdout is one JSON object per line, `{ name, body }`, materialized as record files and drained like the rest — see *Declared findings sources*. Optional. |
 
 Nothing in the declaration names an engine artifact path, a verdict field, or a
 prior-attempt mode. Those are the engine's to report and the package's to read.

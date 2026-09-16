@@ -2,7 +2,7 @@
 
 The pending queue is the contract between a producer phase and a consumer phase: a JSON array
 at `<flumeDir>/<Chain.pendingPath>`, each element one unit of work. `Chain.pendingPath` is a
-state-root-relative file path, the `seedDir`/`friction` idiom, defaulting to `plan/pending.json`
+state-root-relative file path, the `friction` idiom, defaulting to `plan/pending.json`
 — a default the engine keeps because its own mechanics read the file and a tick cannot run
 without one (`.claude/rules/engine-boundary.md`, *Surface, not prescription*). Every engine read
 of the queue — fanout selection, the post-tick re-read, `flume status`, `flume check`, and
@@ -394,8 +394,7 @@ disk write alone carries the auto-unblock and footprints forward.
 The ledger commit's message is caller-overridable (`DispatcherOptions.commitMessage`, called with
 the tags this wave shipped and the tags whose footprints it recorded) — the
 `chore(flume): ship <tags>` / `chore(flume): record merge-failure footprints for <tags>` wording
-is a chain's convention, not the engine's, the same split `spec/jobs.md` states for the seed
-commit.
+is a chain's convention, not the engine's.
 
 ## `pendingGate` — validation and fence pre-check as an opt-in builtin
 
@@ -419,7 +418,7 @@ therefore reverts every such tick. This is the opposite policy from `chainLoadGa
 (see spec/chain.md), which skips-as-pass when the commit did not touch its artifact.
 
 The fence is read fresh on every run, never hoisted to construction, so a declaration-driven
-phase (writable paths backed by a per-job declaration read after the gate is built) is checked
+phase (writable paths backed by a declaration read after the gate is built) is checked
 against its current value. The queue path is `Chain.pendingPath` (*The pending queue*, above);
 `pendingGate` takes no path of its own, so the gate and the dispatcher cannot check two files.
 `opts.fenceWhen?: (entry) => boolean` selects which entries are fence-checked, defaulting to all

@@ -17,8 +17,8 @@ and never creates or deletes a ref outside `flume/**`. Fanout is where both halv
 condition are exercised — these are the details:
 
 - `git worktree add -B <branch> <path> <fromRef>`, where `branch`
-  is `flume/<namespace>/<slug>` when a namespace is set and `flume/<slug>` otherwise
-  (`createWorktree`), and `fromRef` is the tip the tick started on.
+  is `flume/<slug>` (`createWorktree`), and `fromRef` is the tip the tick
+  started on.
 - `git branch -D <branch>` at teardown.
 - The per-entry commits are `cherry-pick`ed onto that same tip, in batch order —
   the other half of the same carve-out, declared in `spec/loop.md`.
@@ -29,7 +29,7 @@ engine ships, and it exists solely because `git worktree add` requires a branch 
 
 ## Singleton runs in a worktree
 
-A singleton tick provisions one worktree — branch `flume/[<namespace>/]<phase>` from
+A singleton tick provisions one worktree — branch `flume/<phase>` from
 the tip the tick started on — invokes its agent there, and carries the span back
 through the same cherry-pick + `afterMerge` machinery a wave of one uses.
 `setupWorktree`/`teardownWorktree` run; the write fence, prior-attempt records, and
@@ -54,7 +54,7 @@ longer watches a singleton tick's scratch state evolve in their own working tree
 only its merged result. A chain whose singleton phase is too light to justify an
 install expresses that in its own hook, not in engine policy.
 
-## Placement — the worktree base and the job namespace
+## Placement — the worktree base
 
 The base directory is `FLUME_WORKTREES_DIR` when set (resolved absolute), else
 `<flumeDir>/worktrees` (`createWorktree`). The default tracks the state root,
@@ -78,7 +78,7 @@ roots — so a chain that wants worktrees outside the checkout says so once, wit
 an environment variable set before the engine's own module loads.
 
 **The base must be flume-exclusive.** Before `worktree add`, `createWorktree` clears the
-computed `<base>/[<namespace>/]<dirName>` path only when git's own worktree registry names it
+computed `<base>/<dirName>` path only when git's own worktree registry names it
 as a worktree of this repo — `git worktree remove --force` first (`removeWorktree`), a
 recursive filesystem delete as the fallback. An occupant the registry does not name, or a
 registry that cannot be read, refuses the tick naming the path and provisions nothing;
@@ -87,14 +87,13 @@ their own under the base is no longer lost, but it stalls provisioning loudly th
 an entry's bounded directory name matches — a weaker promise than deletion was, not a
 retracted one.
 
-Both the branch name and the directory path carry the job namespace when one is set. The path
-must, not just the branch: under a shared `FLUME_WORKTREES_DIR` two jobs with identical tag
-slugs would otherwise collide on `<base>/<dirName>`, and the stale-directory cleanup that runs
-before `worktree add` would remove the other job's live worktree.
-
-The namespace is a `DispatcherOptions.namespace` value the CLI resolves from `--job` /
-`FLUME_JOB` and passes in. The dispatcher never sniffs it back out of
-`flumeDir` — job resolution has one authority (`spec/jobs.md`).
+The engine mints no namespace beneath the base. Two efforts are two checkouts
+(`spec/jobs.md`, *The checkout is the unit of isolation*), each with its own
+state root and therefore its own base, so identical tag slugs in two efforts
+address two directories already. Under a `FLUME_WORKTREES_DIR` the operator
+deliberately shares between checkouts they collide, and the registry check
+above refuses the tick naming the path rather than removing the occupant —
+loud, and the operator's to resolve by not sharing the base.
 
 ## Worktree directory names are length-bounded
 
@@ -141,8 +140,9 @@ the wave continues with the rest, with `provisioned` and `worktrees` kept index-
 everything downstream. The run-scoped quarantine and consecutive-failure abort built on top of
 that are `spec/loop.md`.
 
-Cross-*job* contention on the same metadata dir is a different matter, and is accepted rather
-than serialized — see `spec/jobs.md`.
+Contention on the same metadata dir between two checkouts of one repository is a
+different matter, and is accepted rather than serialized: a race fails a git
+command, which fails a tick and not the repository.
 
 ## `setupWorktree` and `teardownWorktree` — the chain's provisioning hooks
 
@@ -359,7 +359,7 @@ provisioned again — an abandoned entry that then left the queue leaked its wor
 and branch indefinitely. The sweep closes that gap (`spec/loop.md`, *Crash equals
 stop*) at the only moment it is safe to.
 
-- **When:** `flume loop` and `flume job run` sweep once at start, after the tip
+- **When:** `flume loop` sweeps once at start, after the tip
   claim is acquired and before the first tick. Holding the claim is the guard: one
   flume writer per ref (`spec/loop.md`) means no live sibling — loop or bare tick,
   both claim-holders now — owns anything under this state root's base. A bare
@@ -368,13 +368,15 @@ stop*) at the only moment it is safe to.
 - **Scope is the engine's own residue, exactly.** Every directory under the worktree
   base that git's worktree registry names as this repo's (`FLUME_WORKTREES_DIR` or `<flumeDir>/worktrees` — *Placement*, above),
   removed through the same `removeWorktree` + win32-fallback path teardown uses;
-  then `git worktree prune`; then every branch under this instance's own
-  `flume/[<namespace>/]…` grammar. The base is declared flume-exclusive
-  (*Placement*) and the branch grammar is engine-owned (`spec/loop.md`, the
-  navigation carve-out), so nothing an operator created is reachable. The namespace
-  bound matters under a shared `FLUME_WORKTREES_DIR`: the sweep removes only its
-  own job's directories and branches, by the same namespace that keeps live jobs
-  from colliding there.
+  then `git worktree prune`; then the branches those directories were checked
+  out on. **The branch leg is bound by the same registry the directory leg
+  reads**, never by the `flume/…` name alone: two checkouts of one repository
+  hold different tips, so both claims are grantable and both sweeps run against
+  one shared ref namespace, and a name-matched reap would delete a sibling's
+  branch whose worktree it never provisioned. The base is declared
+  flume-exclusive (*Placement*) and the branch grammar is engine-owned
+  (`spec/loop.md`, the navigation carve-out), so nothing an operator created is
+  reachable.
 - **Loud on failure, silent on empty.** An empty base is the normal case and prints
   nothing; a worktree registry that cannot be read removes nothing and warns saying so,
   never printing the silence a clean base does. A directory that cannot be removed (held handle, EBUSY) is a warning
