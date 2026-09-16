@@ -25,7 +25,9 @@
  * merely follows a name with, and a parenthetical carrying a path plus an
  * aside — the section cite `` (`spec/loop.md`, *Section*) `` among them — are
  * context, and drawing a home out of either would red a comment that claimed
- * none.
+ * none. Nor is a home a page: a tight-closed pair whose path is a `*.md` name
+ * draws none either, because no declaration lives in a page, so a home like
+ * that would red every name cited at it. Both spans keep the arms they have.
  *
  * A `*.md` page name is a citation backticked or not, because a filename is
  * never a sentence: the extension is the whole claim, so no surrounding prose
@@ -663,6 +665,12 @@ const commentSpans = (
       if (!isIdentifierSubject(name.site.text)) continue;
       if (!home.site.text.includes("/") || !isPathSubject(home.site.text))
         continue;
+      // A page is not a home: no declaration lives in one, so a pair drawn
+      // here would resolve a name against a file that declares nothing and
+      // red every time. The two spans fall back to the arms they already
+      // have — the name against the trees at large, the page against the
+      // working tree.
+      if (isPageName(home.site.text)) continue;
       const gap = joinWrapped(joined.slice(name.end, home.start), " ").trim();
       if (gap !== PAIR_OPEN) continue;
       if (joined.slice(home.end, home.end + 1) !== PAIR_CLOSE) continue;

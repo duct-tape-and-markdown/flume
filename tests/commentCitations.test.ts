@@ -95,7 +95,9 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * never declared. Beside them the two spellings no pair is drawn from — a
  * path a sentence merely follows a name with, and a parenthetical the path
  * opens without closing — on those same two names, so the refusal is visible
- * as a refusal.
+ * as a refusal. Last of the pairs is the one the path closes tight and the
+ * pair rule still declines, because that path names a page: the same two
+ * names again, over a page the tree holds and one it does not.
  *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
@@ -113,6 +115,7 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     include: ["lib/**/*"],
   }),
   "docs/guide.md": "# a page a comment cites without fencing it\n",
+  "docs/paired.md": "# the page a comment closes a name's parenthetical with\n",
   "guide.md": "# the root-level page a broken cite's tail answers instead\n",
   "release-notes.md": "# the root-level page a fenced cite names by hyphen\n",
   "lib/dataShapes.ts": [
@@ -226,6 +229,13 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// aside behind it) claims no home either.`,
     `export const CONTEXT = 10;`,
     ``,
+    `// A page is no home: \`Holder\` (\`docs/paired.md\`) closes the parenthetical`,
+    `// tight, and still claims nothing — no declaration lives in a page, so the`,
+    `// name keeps the trees at large and the page keeps the working tree.`,
+    `// \`WeakMap\` (\`docs/absent.md\`) is that shape over a page this tree does`,
+    `// not hold, which reds as the page it is rather than as a home.`,
+    `export const PAGED = 11;`,
+    ``,
   ].join("\n"),
 };
 
@@ -280,7 +290,9 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "WeakMap",
     "blockedBy",
     "dataShapes.ts",
+    "docs/absent.md",
     "docs/guide.md",
+    "docs/paired.md",
     "docs/retired.md",
     "docs/vanished.md",
     "docs/withdrawn.md",
@@ -309,6 +321,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:85 docs/withdrawn.md",
     "lib/surface.ts:91 Holder",
     "lib/surface.ts:93 WeakMap",
+    "lib/surface.ts:107 docs/absent.md",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
@@ -321,6 +334,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "blockedBy",
     "dataShapes.ts",
     "docs/guide.md",
+    "docs/paired.md",
     "lib/dataShapes.ts",
     "lib/retired.ts",
     "release-notes.md",
@@ -373,6 +387,7 @@ it("the citation scan judges a leading-capital citation whose name carries no in
     "lib/surface.ts:31 Vanished",
     "lib/surface.ts:91 Holder",
     "lib/surface.ts:97 Holder",
+    "lib/surface.ts:104 Holder",
   ]);
 
   expect(fixtureScan.resolved.map((s) => s.text)).toContain("Holder");
@@ -708,6 +723,37 @@ it("a repo-relative path a comment names on its own is read as context, never as
   const resolved = fixtureScan.resolved.map(formatCitation);
   expect(resolved).toContain("lib/surface.ts:97 Holder");
   expect(resolved).toContain("lib/surface.ts:100 WeakMap");
+});
+
+it("an identifier a comment pairs with a .md page resolves repo-wide rather than inside that page", () => {
+  // Vacuity guard: both spans of both parentheticals were judged, and the
+  // pair arm is live on these same two names a few lines up, where it reds
+  // both at a home. So the verdict below is the page-home refusal rather
+  // than a reader that never saw the citations or a pair arm gone quiet.
+  const judged = fixtureScan.scanned.map(formatCitation);
+  expect(judged).toContain("lib/surface.ts:104 Holder");
+  expect(judged).toContain("lib/surface.ts:104 docs/paired.md");
+  expect(judged).toContain("lib/surface.ts:107 WeakMap");
+  expect(judged).toContain("lib/surface.ts:107 docs/absent.md");
+  const pairedFindings = fixtureScan.findings.map(formatCitation);
+  expect(pairedFindings).toContain("lib/surface.ts:91 Holder");
+  expect(pairedFindings).toContain("lib/surface.ts:93 WeakMap");
+
+  // No pair is drawn from either, though the path closes the parenthetical
+  // tight: a page declares nothing, so a home read out of one would red every
+  // name cited at it.
+  expect(fixtureScan.pairs.map((site) => site.line)).not.toContain(104);
+  expect(fixtureScan.pairs.map((site) => site.line)).not.toContain(107);
+
+  // So both spans keep the arms they already have: the names resolve against
+  // the trees at large — `WeakMap` is declared in no module of this tree at
+  // all, which is what the home arm reds it for — and the pages are answered
+  // by the working tree, one holding and one not.
+  const resolved = fixtureScan.resolved.map(formatCitation);
+  expect(resolved).toContain("lib/surface.ts:104 Holder");
+  expect(resolved).toContain("lib/surface.ts:107 WeakMap");
+  expect(resolved).toContain("lib/surface.ts:104 docs/paired.md");
+  expect(pairedFindings).toContain("lib/surface.ts:107 docs/absent.md");
 });
 
 // --- the title, which carries the page-name arm alone --------------------
