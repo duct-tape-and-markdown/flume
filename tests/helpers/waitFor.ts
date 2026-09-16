@@ -20,6 +20,8 @@
 
 import { readFileSync } from "node:fs";
 
+import { parsePidClaim, type PidClaim } from "../../src/pidClaim.ts";
+
 /**
  * How long a wait may run before it refuses. Sized as a ceiling over the
  * slowest thing this lane waits on — a `node`+`tsx` startup reaching its first
@@ -86,4 +88,22 @@ export function fileWithContent(path: string): string | undefined {
     throw err;
   }
   return text.length > 0 ? text : undefined;
+}
+
+/**
+ * The same probe, decoded: the holder a guard file names, once the file holds
+ * a claim the engine's own reader accepts. `undefined` until then — absent,
+ * empty, or a write caught mid-flight with no usable pid yet.
+ *
+ * The decode is `parsePidClaim`'s (`src/pidClaim.ts`), never a split spelled
+ * here: a guard file states the holder's pid on the first line and the claim
+ * instant on the second, and a call site reading it with `Number()` over the
+ * whole file gets `NaN` and signals nothing
+ * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+ * wrote" — the real writer is the CLI under test, the real reader is this).
+ */
+export function pidClaimIn(path: string): PidClaim | undefined {
+  const text = fileWithContent(path);
+  if (text === undefined) return undefined;
+  return parsePidClaim(text) ?? undefined;
 }

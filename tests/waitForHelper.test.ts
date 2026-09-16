@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
+import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -93,6 +93,31 @@ it("fileWithContent reads an absent file and a created-but-empty one alike as no
 
     await writeFile(path, "4242", "utf8");
     expect(fileWithContent(path)).toBe("4242");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it("pidClaimIn decodes a guard file's holder through the engine's own reader, and reads a file with no usable pid as not-yet", async () => {
+  const dir = await mkTempDir("flume-waitfor-claim-");
+  try {
+    const path = join(dir, "loop.pid");
+    expect(pidClaimIn(path)).toBeUndefined();
+
+    // Present, and stating nothing a caller could signal: still not-yet, so a
+    // wait on this probe never hands a call site a `NaN` to kill.
+    await writeFile(path, "not a pid\n", "utf8");
+    expect(pidClaimIn(path)).toBeUndefined();
+
+    // The shape a guard writes: pid first, claim instant second. The pid is
+    // the first line's, not the whole file's.
+    const at = "2026-09-16T10:11:12.000Z";
+    await writeFile(path, `4242\n${at}\n`, "utf8");
+    expect(pidClaimIn(path)).toEqual({ pid: 4242, atMs: Date.parse(at) });
+
+    // And a single-line file still names its holder.
+    await writeFile(path, "4242", "utf8");
+    expect(pidClaimIn(path)).toEqual({ pid: 4242 });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -31,6 +31,11 @@ Adopting it is opt-in and orthogonal to the five breaks: § 6 is for consumers
 who want it. A hand-written chain that does §§ 1–5 keeps working and owes
 nothing to § 6.
 
+The next note is [`MIGRATING-0.17.md`](MIGRATING-0.17.md) (`0.16.x` →
+`0.17.0`), whose one break is on disk rather than in the API: the loop lock
+and the tip claim each gain a second line, which matters to a fleet running
+two versions against one state root.
+
 Note that **a caret range on a `0.x` version pins the minor** — `^0.15.0`
 resolves within `0.15.x` and will never pick up `0.16.0` on its own. Change
 the pin explicitly.

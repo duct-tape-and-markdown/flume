@@ -126,6 +126,7 @@ import {
   trackedModifications,
   TipClaimHeldError,
 } from "../src/git.ts";
+import { parsePidClaim } from "../src/pidClaim.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -1144,7 +1145,40 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
 
     expect(claim.path).toBe(expectedPath);
     expect(existsSync(claim.path)).toBe(true);
-    expect(await readFile(claim.path, "utf8")).toBe(String(process.pid));
+    expect(parsePidClaim(await readFile(claim.path, "utf8"))?.pid).toBe(
+      process.pid,
+    );
+
+    claim.release();
+  });
+
+  /**
+   * The claim's contents, as the real writer wrote them and the real reader
+   * decodes them (`.claude/rules/engineering.md`, *A seam gate reads what the
+   * real writer wrote*): `acquireTipClaim` runs and `parsePidClaim`
+   * (`src/pidClaim.ts`) — the decode every liveness probe over this file goes
+   * through — reads back what it left.
+   *
+   * Line order is the compatibility claim, so it is asserted against the raw
+   * text too: the pid is what every reader has always taken off line one, and
+   * the instant rides underneath it where a reader after liveness never looks.
+   */
+  it("the tip claim records the pid on the first line and the claim instant on the second", async () => {
+    const refPath = await resolveRefPath(repo);
+    const before = Date.now();
+
+    const claim = await acquireTipClaim(repo, refPath);
+
+    const raw = await readFile(claim.path, "utf8");
+    const [pidLine, atLine] = raw.split("\n");
+    expect(pidLine).toBe(String(process.pid));
+    expect(atLine).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    const decoded = parsePidClaim(raw);
+    expect(decoded?.pid).toBe(process.pid);
+    // The instant is this acquisition's, bounded by the wall clock either
+    // side of the call — not a zero, not the epoch, not a file mtime.
+    expect(decoded?.atMs).toBeGreaterThanOrEqual(before - 1_000);
+    expect(decoded?.atMs).toBeLessThanOrEqual(Date.now() + 1_000);
 
     claim.release();
   });
@@ -1160,7 +1194,9 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
     );
 
     // The refused attempt never disturbed the live holder's claim file.
-    expect(await readFile(first.path, "utf8")).toBe(String(process.pid));
+    expect(parsePidClaim(await readFile(first.path, "utf8"))?.pid).toBe(
+      process.pid,
+    );
 
     first.release();
   });
@@ -1183,7 +1219,9 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
     expect(claim.path).toBe(claimPath);
     // The dead holder's pid was overwritten by this call's own — proof the
     // stale claim was reclaimed rather than refused.
-    expect(await readFile(claimPath, "utf8")).toBe(String(process.pid));
+    expect(parsePidClaim(await readFile(claimPath, "utf8"))?.pid).toBe(
+      process.pid,
+    );
 
     claim.release();
   }, SPAWN_BUDGET_MS);

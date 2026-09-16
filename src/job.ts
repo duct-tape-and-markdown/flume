@@ -38,6 +38,7 @@ import {
   STATE_ROOT_NAMES,
 } from "./paths.js";
 import { parsePendingLoose } from "./PendingSchema.js";
+import { parsePidClaim, type PidClaim } from "./pidClaim.js";
 import type { ParseResult } from "./PendingSchema.js";
 
 const exec = promisify(execFile);
@@ -401,11 +402,15 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
 }
 
 /**
- * The pid recorded in `<dir>/loop.pid`, when it names a live process — `null`
- * for no pidfile, an unparsable one, or a dead/not-ours pid (stale; callers
- * reclaim silently). Same liveness probe as the loop lock. Exported for reuse
- * (`flume status`'s supervisor-liveness probe) rather than a second
- * implementation of the same pid-liveness check.
+ * What `<dir>/loop.pid` states about its holder, when that holder is a live
+ * process — `null` for no pidfile, an unparsable one, or a dead/not-ours pid
+ * (stale; callers reclaim silently). Same liveness probe as the loop lock.
+ *
+ * The statement is `parsePidClaim`'s (`src/pidClaim.ts`): the pid off the
+ * first line, the claim instant off the second where the holder stated one.
+ * `flume status` reads the whole claim — it reports the holder *and* bounds
+ * the run's spend by the instant — so one read answers both rather than a
+ * liveness probe beside a second read of the same file.
  *
  * Absent (`ENOENT`) is the only no-pidfile reading; any other read failure
  * (permission denied, a path too long for the platform, …) throws
@@ -413,7 +418,7 @@ export async function jobRun(opts: JobRunOptions): Promise<void> {
  * unreadable pidfile would report a live loop as dead, which is exactly the
  * reading `jobRm`'s refusal and the `flume loop` lock claim exist to prevent.
  */
-export async function liveLoopPid(dir: string): Promise<number | null> {
+export async function liveLoopClaim(dir: string): Promise<PidClaim | null> {
   // win32 MAX_PATH: dir is a job/state root that can nest deep; namespacedJoin
   // (src/paths.ts) is the shared idiom.
   const pidPath = namespacedJoin(loopLockPath(dir));
@@ -424,14 +429,24 @@ export async function liveLoopPid(dir: string): Promise<number | null> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;
   }
-  const pid = Number(raw.trim());
-  if (!Number.isFinite(pid) || pid <= 0) return null;
+  const claim = parsePidClaim(raw);
+  if (claim === null) return null;
   try {
-    process.kill(pid, 0);
-    return pid;
+    process.kill(claim.pid, 0);
+    return claim;
   } catch {
     return null;
   }
+}
+
+/**
+ * The live holder's pid alone — {@link liveLoopClaim} for a caller that needs
+ * only liveness. Exported for reuse (`flume loop`'s lock claim, `jobRm`'s
+ * refusal) rather than a second implementation of the same pid-liveness
+ * check.
+ */
+export async function liveLoopPid(dir: string): Promise<number | null> {
+  return (await liveLoopClaim(dir))?.pid ?? null;
 }
 
 interface JobRmOptions {

@@ -635,10 +635,14 @@ export interface TickVerdict {
   /**
    * ISO timestamp alongside {@link headSha}, written when the verdict was
    * built. Load-bearing for one reader: `flume status` bounds the live run's
-   * spend to the rows this field dates at or after the instant that run
-   * claimed `loop.pid` (spec/cli.md, "`flume status` owes exactly this"), so
-   * a row is in a run's window by what it says rather than by where it sits
-   * in the log. Ambient context to every other reader.
+   * spend to the rows this field dates at or after the instant that run's
+   * `loop.pid` *states* it took the lock — the supervisor's own second line,
+   * never the lock file's mtime (spec/cli.md, "`flume status` owes exactly
+   * this"; spec/loop.md, "The loop lock and the tip claim"). Both ends of
+   * that comparison are therefore a statement its writer made, so a row is
+   * in a run's window by what the two say rather than by where the row sits
+   * in the log or by what a backup tool last touched. Ambient context to
+   * every other reader.
    */
   at: string;
 }

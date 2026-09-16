@@ -30,6 +30,7 @@ import {
   jobRun,
   jobStatus,
   JobUsageError,
+  liveLoopClaim,
   liveLoopPid,
   readPendingLoose,
   RUNTIME_IGNORES,
@@ -45,6 +46,7 @@ import {
 } from "../src/paths.ts";
 import { NAME_MAX } from "../src/PendingSchema.ts";
 import { loadChainModule } from "../src/chainLoad.ts";
+import { renderPidClaim } from "../src/pidClaim.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec, gitOut, runCli } from "./helpers/subprocess.ts";
@@ -1779,6 +1781,73 @@ describe("jobStatus — enumeration units", () => {
  * than a mistyped path (`.claude/rules/engineering.md`, "A green verdict is
  * proven non-vacuous").
  */
+/**
+ * The loop lock's statement, through the readers that key on it. `flume loop`
+ * writes the holder's pid on the first line and the instant it took the lock
+ * on the second (spec/loop.md, "The loop lock and the tip claim"), and the
+ * fixture below is the writer's own rendering rather than that shape spelled
+ * again here (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*).
+ *
+ * Which line each reader takes is the whole compatibility claim: liveness
+ * reads line one, where every reader has always looked, so the second line
+ * costs a pid-only caller nothing.
+ */
+describe("liveLoopClaim / liveLoopPid — the loop lock's two-line statement", () => {
+  it("a two-line loop lock still reports its holder live", async () => {
+    const base = await mkTempDir("flume-loop-claim-");
+    const root = join(base, "state");
+    try {
+      await mkdir(root, { recursive: true });
+      // The vitest worker plays the live supervisor — its pid is alive for
+      // the duration of the call, the convention every liveness test here
+      // uses.
+      const at = new Date(Date.now() - 60_000);
+      await writeFile(
+        loopLockPath(root),
+        renderPidClaim(process.pid, at),
+        "utf8",
+      );
+
+      // Non-vacuity: the subject really is a two-line lock. Read as one line,
+      // every assertion below would be about a file the fix never changed.
+      const raw = await readFile(loopLockPath(root), "utf8");
+      expect(raw.split("\n").filter((l) => l !== "")).toHaveLength(2);
+      expect(Number(raw)).toBeNaN();
+
+      // Liveness takes the first line, so the holder reads live exactly as it
+      // did when the file held a bare pid and nothing else.
+      expect(await liveLoopPid(root)).toBe(process.pid);
+      // ...and the instant rides back with it, for the one reader that needs
+      // the run's start.
+      expect(await liveLoopClaim(root)).toEqual({
+        pid: process.pid,
+        atMs: at.getTime(),
+      });
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  it("a loop lock stating no instant still names its holder", async () => {
+    const base = await mkTempDir("flume-loop-claim-bare-");
+    const root = join(base, "state");
+    try {
+      await mkdir(root, { recursive: true });
+      // What a flume before 0.17 left behind: a pid and nothing else. The pid
+      // still decides liveness — refusing it over a missing second line
+      // would reclaim a live supervisor's state root
+      // (`docs/MIGRATING-0.17.md`).
+      await writeFile(loopLockPath(root), String(process.pid), "utf8");
+
+      expect(await liveLoopPid(root)).toBe(process.pid);
+      expect(await liveLoopClaim(root)).toEqual({ pid: process.pid });
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NARROW-ENOENT)", () => {
   it("liveLoopPid rethrows a non-ENOENT stat failure instead of reading the pidfile as absent", async () => {
     const base = await mkTempDir("flume-job-pid-");

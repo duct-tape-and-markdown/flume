@@ -20,10 +20,11 @@ import { describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
+import { parsePidClaim } from "../src/pidClaim.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { CLI, TSX_CLI, exec, runCli } from "./helpers/subprocess.ts";
-import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
+import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 
 /**
  * Scratch git repo on a chosen branch. The engine has no opinion on branch
@@ -270,15 +271,15 @@ describe("flume loop/tick — tip claim wiring", () => {
         // proves the handler this case tests is installed: it precedes the
         // acquisition that wrote the file.
         const claimPath = await headClaimPath(repo.dir);
-        const recordedPid = await waitFor(
+        const recorded = await waitFor(
           `the bare tick's tip claim at ${claimPath}`,
-          () => fileWithContent(claimPath),
+          () => pidClaimIn(claimPath),
         );
 
         const exited = new Promise<void>((resolveExit) => {
           child.on("exit", () => resolveExit());
         });
-        process.kill(Number(recordedPid), "SIGTERM");
+        process.kill(recorded.pid, "SIGTERM");
         await exited;
 
         if (process.platform === "win32") {
@@ -286,7 +287,7 @@ describe("flume loop/tick — tip claim wiring", () => {
           // cross-platform guarantee is stale-reclaim, so the claim survives
           // naming a now-dead holder.
           expect(existsSync(claimPath)).toBe(true);
-          expect(await readFile(claimPath, "utf8")).toBe(recordedPid);
+          expect(parsePidClaim(await readFile(claimPath, "utf8"))).toEqual(recorded);
 
           const status = await runCli(repo.dir, ["status"]);
           expect(status.code).toBe(0);
@@ -367,15 +368,15 @@ describe("flume loop/tick — tip claim wiring", () => {
         // pid into both files — read the real holder back off disk and
         // signal that process directly, matching what an operator's
         // SIGTERM/taskkill targets in production (no tsx wrapper there).
-        const recordedPid = await waitFor(
+        const recorded = await waitFor(
           `the loop supervisor's tip claim at ${claimPath}`,
-          () => fileWithContent(claimPath),
+          () => pidClaimIn(claimPath),
         );
 
         const exited = new Promise<void>((resolveExit) => {
           child.on("exit", () => resolveExit());
         });
-        process.kill(Number(recordedPid), "SIGTERM");
+        process.kill(recorded.pid, "SIGTERM");
         await exited;
 
         if (process.platform === "win32") {
@@ -390,7 +391,7 @@ describe("flume loop/tick — tip claim wiring", () => {
           // it rather than refusing.
           expect(existsSync(claimPath)).toBe(true);
           expect(existsSync(pidPath)).toBe(true);
-          expect(await readFile(claimPath, "utf8")).toBe(recordedPid);
+          expect(parsePidClaim(await readFile(claimPath, "utf8"))).toEqual(recorded);
 
           const status = await runCli(repo.dir, ["status"]);
           expect(status.code).toBe(0);

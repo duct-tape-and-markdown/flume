@@ -96,8 +96,10 @@ friction count (declared Chain.friction dir holding notes) and one line per
 pending entry gated on a capability the chain hasn't asserted, then, when a
 supervisor is live, what that run has spent on agents so far ("agent usage
 this run: <phase> ×N (...)", one entry per phase whose ticks invoked an
-agent since the run claimed loop.pid; no live supervisor — or a live run
-that has invoked none yet — prints nothing extra). Observational
+agent at or after the instant loop.pid states the run took the lock; no live
+supervisor — a live run that has invoked none yet, or one whose lock states
+no instant (written by flume before 0.17) — prints nothing extra).
+Observational
 — no side effects, no agent invocation.
 
 Exit codes:

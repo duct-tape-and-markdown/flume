@@ -12,6 +12,7 @@ import { promisify } from "node:util";
 
 import { existsLoud } from "./fsProbe.js";
 import { gitPath } from "./paths.js";
+import { parsePidClaim, renderPidClaim } from "./pidClaim.js";
 
 const exec = promisify(execFile);
 
@@ -646,7 +647,10 @@ export function tipClaimPath(commonDir: string, refPath: string): string {
  * (stale; callers reclaim silently). Same liveness probe as the loop lock
  * (`liveLoopPid`, src/job.ts) — a sibling primitive rather than a shared call
  * site, since the two guard different resources (a ref vs. a state root)
- * under different keying.
+ * under different keying. What the two *do* share is the statement they read:
+ * `parsePidClaim` (`src/pidClaim.ts`), which takes the pid off the first
+ * line, so a claim carrying its instant on the second reads here exactly as
+ * a bare pid did.
  *
  * Absent is the only silent reading (`existsLoud`, src/fsProbe.ts). A claim
  * file that is present but unstattable is not an unclaimed tip: read as one,
@@ -658,13 +662,13 @@ export async function liveTipClaimPid(
   claimPath: string,
 ): Promise<number | null> {
   if (!existsLoud(toNamespacedPath(claimPath))) return null;
-  const pid = Number(
-    (await readFile(toNamespacedPath(claimPath), "utf8")).trim(),
+  const claim = parsePidClaim(
+    await readFile(toNamespacedPath(claimPath), "utf8"),
   );
-  if (!Number.isFinite(pid) || pid <= 0) return null;
+  if (claim === null) return null;
   try {
-    process.kill(pid, 0);
-    return pid;
+    process.kill(claim.pid, 0);
+    return claim.pid;
   } catch {
     return null;
   }
@@ -693,10 +697,12 @@ interface TipClaim {
 /**
  * Acquire the advisory per-ref tip claim: one flume writer per tip.
  * Exclusive-create (`wx`) the claim file at
- * `<git-common-dir>/flume/tip-claims/<refPath>`. On `EEXIST`, probe the
- * recorded pid with the same liveness check as the loop lock: live → refuse
- * ({@link TipClaimHeldError}, naming the holder); dead → reclaim (unlink,
- * retry the exclusive create).
+ * `<git-common-dir>/flume/tip-claims/<refPath>`. The file states the holder's
+ * pid on the first line and the instant of this call on the second — the same
+ * shape `loop.pid` carries (`renderPidClaim`, `src/pidClaim.ts`). On
+ * `EEXIST`, probe the recorded pid with the same liveness check as the loop
+ * lock: live → refuse ({@link TipClaimHeldError}, naming the holder); dead →
+ * reclaim (unlink, retry the exclusive create).
  */
 export async function acquireTipClaim(
   cwd: string,
@@ -707,9 +713,11 @@ export async function acquireTipClaim(
   await mkdir(toNamespacedPath(dirname(claimPath)), { recursive: true });
   for (;;) {
     try {
-      await writeFile(toNamespacedPath(claimPath), String(process.pid), {
-        flag: "wx",
-      });
+      await writeFile(
+        toNamespacedPath(claimPath),
+        renderPidClaim(process.pid, new Date()),
+        { flag: "wx" },
+      );
       break;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;

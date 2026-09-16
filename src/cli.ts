@@ -40,11 +40,13 @@ import {
   ensureRuntimeIgnores,
   frictionIgnoreEntry,
   jobRun,
+  liveLoopClaim,
   liveLoopPid,
   readPendingLoose,
   JobUsageError,
 } from "./job.js";
 import { diskChainLoader } from "./chainLoad.js";
+import { renderPidClaim, type PidClaim } from "./pidClaim.js";
 import {
   Dispatcher,
   RenderUnresolvedError,
@@ -61,7 +63,7 @@ import {
   writeTickVerdict,
 } from "./tickVerdict.js";
 import { frictionCountLine } from "./friction.js";
-import { existsLoud, statLoud } from "./fsProbe.js";
+import { existsLoud } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
@@ -445,23 +447,23 @@ async function main(): Promise<number> {
     // incident's "hibernating" reading left the operator to infer
     // relaunch-safety instead of being told it. No pidfile: silent, leaving
     // the output as it read before this line existed.
-    // Absent is the only silent reading: `statLoud` (src/fsProbe.ts) refuses
+    // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) refuses
     // a `loop.pid` that is present but unstattable (a symlink loop, a
     // permission-denied parent) rather than reading it as absent and printing
     // no supervisor line over a possibly-live loop
     // (`.claude/rules/engineering.md`, "Loud or nothing").
     //
-    // Whole `Stats` rather than the boolean face of the same probe, because a
-    // live holder's `loop.pid` is also *when* this run began: the supervisor
-    // writes the file once, as it claims the state root, and never rewrites
-    // it, so its mtime is the window the spend line at the end of this
-    // listing is bounded by. One probe answers both, and the pidfile's
-    // contents stay the holder's pid and nothing else (spec/loop.md, "The
-    // loop lock and the tip claim").
-    let supervisor: { pid: number; startedAtMs: number } | undefined;
-    let loopLockStat: Stats | undefined;
+    // The whole claim, not just the holder's pid: a live holder's `loop.pid`
+    // also states *when* this run began, on its second line, and that instant
+    // is the window the spend line at the end of this listing is bounded by
+    // (spec/loop.md, "The loop lock and the tip claim"). Read from the
+    // supervisor's own statement rather than from the file's mtime, which no
+    // writer contracts and which a restore, a backup tool, or a stray `touch`
+    // moves under a running loop. One read answers both.
+    let supervisor: PidClaim | undefined;
+    let loopLockPresent: boolean;
     try {
-      loopLockStat = statLoud(namespacedJoin(loopLockPath(flumeDir)));
+      loopLockPresent = existsLoud(namespacedJoin(loopLockPath(flumeDir)));
     } catch (err) {
       // The stat error carries the offending path itself; the name here comes
       // from the accessor's own table, never a second spelling of "loop.pid".
@@ -470,12 +472,12 @@ async function main(): Promise<number> {
       );
       return EX_IOERR;
     }
-    if (loopLockStat !== undefined) {
-      const pid = await liveLoopPid(flumeDir);
-      if (pid !== null) supervisor = { pid, startedAtMs: loopLockStat.mtimeMs };
+    if (loopLockPresent) {
+      const claim = await liveLoopClaim(flumeDir);
+      if (claim !== null) supervisor = claim;
       console.log(
-        pid !== null
-          ? `supervisor pid ${pid} live`
+        claim !== null
+          ? `supervisor pid ${claim.pid} live`
           : "loop.pid present, process dead — stale",
       );
     }
@@ -603,8 +605,23 @@ async function main(): Promise<number> {
     // the line is `agentUsageLine`'s (`src/cliVerdict.ts`) — the same two the
     // loop-end summary prints from, so the run's cost reads alike wherever it
     // is read.
-    if (supervisor) {
-      const startedAtMs = supervisor.startedAtMs;
+    //
+    // A lock stating no instant — written by a flume before 0.17, or rolled
+    // by hand — bounds nothing, and this line is withheld rather than
+    // totalled over an unbounded log: the run's spend and every earlier run's
+    // would read as one number with nothing to say they had been merged.
+    // Declared degradation, and it says so on stderr
+    // (`.claude/rules/engineering.md`, "Loud or nothing";
+    // `docs/MIGRATING-0.17.md`).
+    const startedAtMs = supervisor?.atMs;
+    if (supervisor !== undefined && startedAtMs === undefined) {
+      console.error(
+        `[flume] status: ${STATE_ROOT_NAMES.loopLock} states no claim ` +
+          "instant (written by flume before 0.17?) — withholding this run's " +
+          "agent spend rather than totalling another run's with it",
+      );
+    }
+    if (startedAtMs !== undefined) {
       const spend = totalAgentUsageByPhase(
         (await readTickVerdicts(flumeDir)).filter(
           (v) => Date.parse(v.at) >= startedAtMs,
@@ -1341,7 +1358,11 @@ async function main(): Promise<number> {
       );
       return 1;
     }
-    writeFileSync(lockPath, String(process.pid));
+    // Pid first, claim instant second: every liveness reader takes the first
+    // line, and `flume status` bounds this run's spend by the second rather
+    // than by a file mtime nothing contracts (`renderPidClaim`,
+    // `src/pidClaim.ts`).
+    writeFileSync(lockPath, renderPidClaim(process.pid, new Date()));
     lockHeld = true;
     // Advisory per-ref tip claim — one flume writer per tip, the resource
     // multiple jobs under one checkout actually contend on. Guards a different

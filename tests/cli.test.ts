@@ -16,6 +16,7 @@ import {
   mkdir,
   readFile,
   rm,
+  stat,
   symlink,
   utimes,
   writeFile,
@@ -52,6 +53,7 @@ import {
   resolvePendingPath,
 } from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
+import { renderPidClaim } from "../src/pidClaim.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import {
   writeTickVerdict,
@@ -59,7 +61,7 @@ import {
   type TickVerdictInvocation,
 } from "../src/tickVerdict.ts";
 import { denyDirectory } from "./helpers/denial.ts";
-import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
+import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { HERMETIC_ENV_STRIP_KEYS, hermeticEnv } from "./helpers/gitEnv.ts";
 import {
@@ -1816,11 +1818,19 @@ describe("flume status — tip claim line (spec/cli.md \"flume status owes exact
  * wrote*). What each case authors is the fixture's *facts* — which phase
  * spent what, and when — never the file's shape.
  *
- * The run's window is the lock's own mtime, so each case back-dates
- * `loop.pid` and dates its rows against that instant instead of racing the
- * wall clock the CLI reads.
+ * The run's window is the instant `loop.pid` *states*, so each case claims the
+ * lock at a back-dated instant and dates its rows against that instead of
+ * racing the wall clock the CLI reads.
  */
 describe("flume status — the live run's spend (spec/cli.md \"flume status owes exactly this\", line 7)", () => {
+  /**
+   * How far before its stated claim instant each fixture's `loop.pid` is
+   * back-dated. Wide enough to cover the stale row a case plants ahead of the
+   * run, so a window read off the mtime takes that row in and the fold's
+   * total changes — the two readings cannot agree by accident here.
+   */
+  const MTIME_BACKDATE_MS = 120_000;
+
   /** One agent run's usage row, the fields the totals are summed from. */
   function invocation(usage: Partial<TickVerdictInvocation>): TickVerdictInvocation {
     return {
@@ -1913,11 +1923,19 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
     return { dir, runStart };
   }
 
-  /** Record `pid` in `loop.pid` as of `at` — the run's claim instant. */
+  /**
+   * Record `pid` in `loop.pid` as having claimed the lock at `at`, through
+   * the supervisor's own renderer rather than a second spelling of the lock's
+   * shape here. The file's mtime is pushed the *other* way — well before the
+   * stated instant — so a reader that went back to the mtime widens the
+   * window instead of narrowing it, and every case below reds rather than
+   * passing on a coincidence.
+   */
   async function claim(dir: string, pid: number, at: number): Promise<void> {
     const pidPath = join(dir, ".flume", "loop.pid");
-    await writeFile(pidPath, String(pid), "utf8");
-    await utimes(pidPath, new Date(at), new Date(at));
+    await writeFile(pidPath, renderPidClaim(pid, new Date(at)), "utf8");
+    const mtime = new Date(at - MTIME_BACKDATE_MS);
+    await utimes(pidPath, mtime, mtime);
   }
 
   /**
@@ -1956,6 +1974,74 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
       // claim is another run's money.
       expect(line).not.toContain("previous-run");
       expect(line).not.toContain("999");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  /**
+   * Which instant bounds the window — the claim the supervisor stated, never
+   * the lock file's mtime. Nothing contracts that mtime: an archive restore,
+   * a backup tool, a `touch`, or a copy of the state root moves it under a
+   * live run, and the window moves with it.
+   *
+   * The fixture's lock states `runStart` and carries an mtime two minutes
+   * earlier, on the far side of the stale row. One reading folds the previous
+   * run's money into this one's; the other does not. The case asserts which.
+   */
+  it("flume status bounds the live run's spend to the instant the lock states", async () => {
+    const { dir, runStart } = await fixture(
+      "flume-status-spend-stated-",
+      process.pid,
+    );
+    try {
+      // Non-vacuity, and the whole point of the case: the two candidate
+      // instants really do disagree, and the stale row sits between them.
+      const { mtimeMs } = await stat(join(dir, ".flume", "loop.pid"));
+      expect(mtimeMs).toBeLessThan(runStart - 60_000);
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(0);
+      const lines = spendLines(r.out);
+      expect(lines).toHaveLength(1);
+      const line = lines[0] ?? "";
+      // Dated after the stated claim: this run's.
+      expect(line).toContain("plan ×1");
+      expect(line).toContain("build ×2");
+      // Dated before it, and after the mtime: the previous run's money, which
+      // an mtime-bounded window would have folded in here.
+      expect(line).not.toContain("previous-run");
+      expect(line).not.toContain("999");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  /**
+   * The lock a flume before 0.17 wrote states no instant, so there is no
+   * window — and a live run's spend is withheld with a word on stderr rather
+   * than totalled over every run the log holds (`docs/MIGRATING-0.17.md`).
+   */
+  it("flume status withholds the spend line over a lock that states no claim instant, and says so", async () => {
+    const { dir } = await fixture("flume-status-spend-bare-", process.pid);
+    try {
+      // What the pre-0.17 supervisor left: the pid, and nothing under it.
+      await writeFile(
+        join(dir, ".flume", "loop.pid"),
+        String(process.pid),
+        "utf8",
+      );
+
+      const r = await runCli(dir, ["status"]);
+
+      // Liveness is unaffected — the pid is still on the first line.
+      expect(r.code).toBe(0);
+      expect(r.out).toContain(`supervisor pid ${process.pid} live`);
+      // Withheld, and named: never a total over an unbounded log, never
+      // silence either (`.claude/rules/engineering.md`, "Loud or nothing").
+      expect(spendLines(r.out)).toEqual([]);
+      expect(r.out).toContain("states no claim instant");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -2268,6 +2354,12 @@ async function signalledLoopRun(opts: {
    */
   parkedPid: number;
   supervisorPid: number;
+  /**
+   * `loop.pid`'s contents, verbatim, read while the supervisor still held it
+   * — the statement a real live `flume loop` wrote, for an arm judging what
+   * the lock says rather than what it releases.
+   */
+  lockStatement: string;
   grandchildPid: number | undefined;
   loopPidPath: string;
   claimPath: string;
@@ -2349,13 +2441,17 @@ async function signalledLoopRun(opts: {
     // process that took the locks is not the one this suite spawned, and a
     // teardown that only knows the handle leaves the supervisor standing.
     const supervisorPid = record(
-      Number(
+      (
         await waitFor(
           `the loop supervisor's pid at ${loopPidPath}`,
-          () => fileWithContent(loopPidPath),
-        ),
-      ),
+          () => pidClaimIn(loopPidPath),
+        )
+      ).pid,
     );
+    // Captured under the live supervisor: past this function the run is
+    // signalled and the file is gone, so an arm about the lock's contents
+    // has nothing left to read.
+    const lockStatement = readFileSync(loopPidPath, "utf8");
     // Non-vacuity: the subject of every assertion below must be a live
     // *other* process at the moment the signal lands, or a case reading
     // "nothing of the tree is alive" — or "the wedged child is still there" —
@@ -2371,6 +2467,7 @@ async function signalledLoopRun(opts: {
     return {
       parkedPid,
       supervisorPid,
+      lockStatement,
       grandchildPid,
       loopPidPath,
       claimPath: tipClaimPath(await gitCommonDir(repo.dir), "refs/heads/main"),
@@ -2419,6 +2516,56 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
   afterEach(() => {
     for (const pid of signalledPids.splice(0)) killIfAlive(pid);
   });
+
+  /**
+   * What the lock *says*, beside the arms below about what it releases. The
+   * statement is the real supervisor's own — a live `flume loop`, mid-tick,
+   * read off disk before anything signalled it — so nothing here re-authors
+   * the writer's vocabulary (`.claude/rules/engineering.md`, *A seam gate
+   * reads what the real writer wrote*).
+   *
+   * Line one is the compatibility claim and line two is the new fact: every
+   * liveness reader takes the pid where it has always been, and the one
+   * reader that needs the run's start reads an instant the supervisor stated
+   * rather than the file's mtime, which no writer contracts.
+   */
+  it(
+    "the loop lock records the pid on the first line and the claim instant on the second",
+    async () => {
+      const before = Date.now();
+      const run = await signalledLoopRun({});
+      try {
+        const [pidLine, atLine, ...rest] = run.lockStatement.split("\n");
+
+        // Line one, and the pid is the *whole* of it: a reader taking the
+        // file entire no longer gets a number, which is the break this shape
+        // costs across versions (`docs/MIGRATING-0.17.md`).
+        expect(pidLine).toBe(String(run.supervisorPid));
+        expect(Number(run.lockStatement)).toBeNaN();
+
+        // Line two: an instant, round-tripping as ISO-8601, dated inside this
+        // run's own window rather than at the epoch or at a default 0.
+        expect(atLine).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+        const atMs = Date.parse(atLine ?? "");
+        expect(atMs).toBeGreaterThanOrEqual(before - 1_000);
+        expect(atMs).toBeLessThanOrEqual(Date.now() + 1_000);
+
+        // Two lines and a trailing newline — nothing further for a reader to
+        // take a third fact from.
+        expect(rest).toEqual([""]);
+
+        // Non-vacuity, and what makes line one's pid the supervisor's rather
+        // than a number this suite parsed out of a file and compared to
+        // itself: the driver signalled exactly that pid, and the run it
+        // spawned ended. A first line naming anything else leaves the parked
+        // tick running and this wait blows the case's budget.
+        await run.exited;
+      } finally {
+        await run.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
 
   it.skipIf(process.platform === "win32")(
     "a signalled `flume loop` leaves no tick child alive against the state root whose claim it released",
@@ -2757,12 +2904,12 @@ async function signalledBareTickRun(opts: {
       "refs/heads/main",
     );
     const tickPid = record(
-      Number(
+      (
         await waitFor(
           `the bare tick to record its pid in the tip claim at ${claimPath}`,
-          () => fileWithContent(claimPath),
-        ),
-      ),
+          () => pidClaimIn(claimPath),
+        )
+      ).pid,
     );
     // The event every arm turns on: an agent parked mid-invocation, past the
     // tick's claim and past its signal handlers. The script writes this last,
@@ -4226,8 +4373,8 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
   // accessor being wrapped, not on a filename spelled here.
   const src = readFileSync(CLI_SRC_PATH, "utf8");
 
-  it("builds the status-check loop-lock path (statLoud) through namespacedJoin", () => {
-    expect(src).toMatch(/statLoud\(namespacedJoin\(loopLockPath\(flumeDir\)\)\)/);
+  it("builds the status-check loop-lock path (existsLoud) through namespacedJoin", () => {
+    expect(src).toMatch(/existsLoud\(namespacedJoin\(loopLockPath\(flumeDir\)\)\)/);
   });
 
   it("builds the loop-lock path (lockPath) through namespacedJoin, and writeFileSync/unlinkSync both read it from lockPath", () => {

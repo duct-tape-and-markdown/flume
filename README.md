@@ -471,6 +471,11 @@ follows enough usage signal to commit under semver.
   who owns what, how each is extended from outside, where a finding goes.
 - [`docs/INTENT.md`](docs/INTENT.md) — design rationale: the spine, what
   stays prose, what becomes JSON, non-goals.
+- [`docs/MIGRATING-0.17.md`](docs/MIGRATING-0.17.md) — upgrade note for a
+  chain on `0.16.x`: no API change, one on-disk one. The loop lock and the
+  tip claim each state the holder's pid on the first line and the instant it
+  took the guard on the second, so a mixed-version fleet against one state
+  root is the step to plan for.
 - [`docs/MIGRATING-0.16.md`](docs/MIGRATING-0.16.md) — upgrade note for a
   chain on `0.15.0`: five renames and engine-taken defaults, plus the opt-in
   port onto the harness package. Each section opens with the `grep` that

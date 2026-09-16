@@ -21,7 +21,7 @@ import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { CLI, TSX_CLI, exec, gitOut, runCli } from "./helpers/subprocess.ts";
-import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
+import { pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 
 /**
  * A chain.ts that declares one singleton phase `<name>` and exports a no-op
@@ -486,9 +486,9 @@ describe(
         // than on existence closes `writeFile`'s create-then-write window, and
         // the wait's own refusal names the claim, so no bare `existsSync`
         // assertion stands between the spawn and the comparison below.
-        const recordedPid = await waitFor(
+        const recorded = await waitFor(
           `the loop supervisor's tip claim at ${claimPath}`,
-          () => fileWithContent(claimPath),
+          () => pidClaimIn(claimPath),
         );
 
         const exitCode = await new Promise<number | null>((resolveExit) => {
@@ -511,7 +511,7 @@ describe(
         // the same claim file (EEXIST), probed the still-live supervisor,
         // and refused the tick outright — `observed-tip-claim.json` would
         // never have been written and this run would have exited non-zero.
-        expect(observed.FLUME_TIP_CLAIM_HELD).toBe(recordedPid);
+        expect(observed.FLUME_TIP_CLAIM_HELD).toBe(String(recorded.pid));
       },
       30_000,
     );
