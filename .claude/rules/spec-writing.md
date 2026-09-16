@@ -25,9 +25,14 @@ A sentence may not name:
 
 - A `src/` file path, or a line number. Where a symbol lives is layout, and
   layout is build's lane.
-- An internal helper, or the call order between internal functions. If the
-  sentence needs one to make sense, it is describing the implementation,
-  and the claim wants restating as the behavior the implementation produces.
+- An internal helper's **home**, or the call order between internal
+  functions. A qualified name — `Type.member`, a path-and-symbol pair —
+  claims where a symbol lives, and homes are build's lane; the next
+  extraction falsifies it. A bare name is shorthand for the behavior that
+  symbol produces and survives any move that keeps the name, so it may
+  stand. If the sentence needs the home to make sense, it is describing the
+  implementation, and the claim wants restating as the behavior the
+  implementation produces.
 - A test title or a fixture. Tests pin the spec; the spec does not cite them.
 
 **The test:** could build move, rename, or restructure this without changing

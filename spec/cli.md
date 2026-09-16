@@ -83,9 +83,10 @@ Every subcommand answers `--help` / `-h` with usage and its exit codes, and
 that short-circuits before any side effect — chain load, baton mutation, agent
 invocation. `flume --help` lists all subcommands, and `flume help` is the
 same answer, since it is the first thing a new operator types; `flume help
-<subcommand>` is that subcommand's `--help`, and an unknown name there is
-usage-shaped (exit 2) like a trailing positional anywhere else, never
-silently dropped; `flume --version` / `-v`
+<subcommand>` and `flume --help <subcommand>` are both that subcommand's
+`--help` — one decider serves every spelling of help for a name — and an
+unknown name in either is usage-shaped (exit 2) like a trailing positional
+anywhere else, never silently dropped; `flume --version` / `-v`
 prints the package version, read from flume's own `package.json` at
 `../package.json` relative to the running module — the same relative position
 in a source checkout and in the published tarball. Both top-level flags
@@ -146,7 +147,8 @@ In printed order:
    and one line per pending entry blocked on a `requiresCapability` the chain
    has not asserted.
 7. **The live run's spend so far** — when a supervisor is live, agent usage
-   totalled by phase from the verdict rows written since it started; absent a
+   totalled by phase from the verdict rows written since the instant the lock
+   states it started; absent a
    live supervisor, nothing extra. The number that decides whether a loop
    keeps running is read where the operator looks first.
 

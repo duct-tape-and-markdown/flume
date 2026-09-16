@@ -453,6 +453,13 @@ engine cannot force a chain's reads, only its own.
 the wave-end rewrite read — each resolved from the tip (above). A decision or a rewrite must
 never derive from an input that failed to resolve.
 
+The one phase the strict read must not stop is the one that rewrites the queue. A phase
+whose declared writable paths include the queue path runs over an unparseable queue with
+the parse failure handed to it as a tick fact — the failure is its input and its rewrite is
+the repair — while a phase that cannot write the queue is refused as above. No state of the
+queue needs a hand edit (`spec/harness.md`, *The gates the discipline needs*); a refusal that
+also stops the queue's writer is the defect that section names.
+
 `readPendingTolerant` is the one declared exception, used only for the informational
 `TickResult.pendingAfter` re-read taken after the strict read already ran and after shipped work
 already landed. A failure there means something outside the tick corrupted the file in between;

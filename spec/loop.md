@@ -109,8 +109,12 @@ move between tips.
 Two guards over two different resources. Both stand; neither substitutes for the
 other.
 
-- **Loop lock — one supervisor per state root.** `flume loop` writes its pid to
-  `<flumeDir>/loop.pid`. A second loop against the same state root is refused while
+- **Loop lock — one supervisor per state root.** `flume loop` writes to
+  `<flumeDir>/loop.pid` its pid on the first line and the instant it took the
+  lock on the second, so a reader that needs the run's start reads a statement
+  the supervisor made rather than the file's mtime, which nothing contracts;
+  a reader that needs only liveness reads the first line, where every earlier
+  reader looked. A second loop against the same state root is refused while
   the recorded pid is alive; a stale pidfile (dead pid) is reclaimed silently. The
   lock lives under `flumeDir`, not the repo — the state root is what races, and a
   relocated dock carries its lock with it.
@@ -125,7 +129,8 @@ other.
     same liveness check as the loop lock — live → refuse, naming the holder
     (`tip refs/heads/X claimed by pid N (<path>)`), exit 1; dead → reclaim (unlink,
     retry the create, re-probing rather than assuming this call won the race).
-  - *Contents:* the holder's pid, nothing else — consistent with `loop.pid`.
+  - *Contents:* the holder's pid on the first line and the claim instant on
+    the second — the same shape as `loop.pid`.
   - *Release:* the same `exit`/`SIGINT`/`SIGTERM` handlers that drop the loop lock,
     and before they drop it they take down the in-flight tick and everything it
     spawned. On POSIX the tick child runs in its own process group and the agent
@@ -672,7 +677,8 @@ for the pending-parse leg when the refusal came from a decide-read — but
 rewrite read, which runs *after* a wave's cherry-picks have merged. A fanout tick can
 therefore exit 69 having run N agents and landed their work on trunk, with only the
 ledger rewrite refusing rather than deriving a rewrite from a parse it never trusted.
-Either way a fresh process reads the same unparseable file until a human fixes it, and
+Either way a fresh process reads the same unparseable file until the queue's declared
+writer runs over it (`spec/pending.md`, *Queue reads are strict*), and
 that leg writes no verdict at all (see *The tick verdict*).
 
 `flume loop` (and `job run`):

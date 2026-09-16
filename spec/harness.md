@@ -92,6 +92,11 @@ against it, never a procedure a consumer learns.
 
 The inbox and build-note conventions of
 `.flume/PROTOCOL.md`, *Records: one file each*, drained by the inbox slice.
+A question leaves the questions file by being answered: the record that
+closes it carries the ruling and names what the ruling changed, and the
+questions file never carries a ruling of its own — so nothing is lost when a
+question is re-filed, because the answer lives in the commit that closed it
+and in the page it changed, never in the question.
 
 
 ### CI lanes as a findings source
@@ -141,10 +146,14 @@ the tip before it renders, whose stdout is one JSON object per line,
 `{ name, body }` — the record's file name and its bytes, stated rather than
 parsed out of prose — each materialized as a record file and drained like
 the rest, so the drain is the drain the package already runs and the
-agreement pin has a real writer to drive. A measurement a consumer takes every
-tick (a census of what the tree holds against what the register claims) is
-the consumer's to compute and the package's to route; it never rides a prompt
-slot, which is text, and it never becomes a prompt paragraph.
+agreement pin has a real writer to drive. The slice stamps a script's output
+as it stamps a lane's run — the set of record names it drained — and re-files
+only a record it has not seen since the stamp, so a standing set that is
+stable across ticks costs its first drain and nothing after; the delta is the
+package's to compute, never the script's to carry. A measurement a consumer
+takes every tick (a census of what the tree holds against what the register
+claims) is the consumer's to compute and the package's to route; it never
+rides a prompt slot, which is text, and it never becomes a prompt paragraph.
 
 ### Plan state as declared state
 
@@ -233,7 +242,7 @@ another job's root is admitted; where a bay keeps its product is the bay's.
 | `runner` | A factory, `({ api, provision }) => Runner`, for the test runner the judge drives — see *The runner interface*. The package calls it at chain load with the chain's own `FlumeApi` and the declared `setup` as a provisioning function, so a runner constructs neither by hand. |
 | `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
-| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the trunk the span landed onto (`FLUME_LANDED_ON_SHA`, `afterMerge` only), the state root and its repo-relative offset, the touched paths — so a gate that measures trunk before and after this entry reads `FLUME_LANDED_ON_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong, and a gate that needs what the tick saw reads `FLUME_BASE_SHA`. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
+| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree, under the shell the declaration names (`shell`, default `sh`) — chain load refuses a shell the host does not resolve, naming the gate, since a win32 host resolves `sh` from one launch shell and not another — with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the trunk the span landed onto (`FLUME_LANDED_ON_SHA`, `afterMerge` only), the state root and its repo-relative offset, the touched paths — so a gate that measures trunk before and after this entry reads `FLUME_LANDED_ON_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong, and a gate that needs what the tick saw reads `FLUME_BASE_SHA`. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
 | `agents` | Model per phase, extra agent arguments, and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. |
@@ -279,9 +288,13 @@ consumer whose install is not at the repo root judges its base the same way it
 builds. It also ships a **script runner** factory for a consumer whose proof
 is a validator rather than a test tool: a declared command the package runs
 once per operation in the tree under judgment, the named lines as its
-arguments, reading one verdict line per name from its stdout — the name,
-whether a passing check carried it, and the file that did. Exit status is not
-the verdict; the lines are. Every consumer outside the JS test ecosystem was
+arguments, reading its report through a reader the declaration names. The
+default reader takes one verdict line per name from stdout — the name,
+whether a passing check carried it, and the file that did; a validator that
+emits one document declares a reader over that document, a function in the
+declaration since the runner is a value with behavior, so the consumer's
+wrapper is the package's reader and never a script beside the script. Exit
+status is not the verdict; the report is. Every consumer outside the JS test ecosystem was
 writing that same script, so it lives beside the vitest one and the runner
 row prices honestly. A consumer with cargo, dotnet, or a script declares its own against the
 same three operations.
