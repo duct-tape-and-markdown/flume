@@ -583,5 +583,37 @@
       "docs/CHAIN-AUTHORING.md's adoption section names Runner's operation set in one place"
     ],
     "notes": "Same defect the three counts had, one rung down: a list rather than a count, so the count deletion left it. The bullet regex the pin walks does not reach the lead-in sentence. Either the inline list goes or the reader widens — build's call, but one copy is the target shape."
+  },
+  {
+    "tag": "THE-PACKAGE-INVENTORY-NAMES-EVERY-DISCIPLINE-GATE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the inventory's gate item names the whole discipline set"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "the page read against the set the factory builds; the module header over five gates"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the adoption page's package inventory names three of the five discipline gates and nothing reads it, so the pending and derive-cursor gates refuse a consumer's commit unannounced",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "docs/CHAIN-AUTHORING.md's package inventory names every gate the package's own set holds, read against that set by the suite rather than kept in step by hand.",
+    "tests": [
+      "docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds"
+    ],
+    "pins": [],
+    "notes": "From build's note on A-CURSOR-GATE-BOUNDS-THE-DERIVE-CURSORS-ADVANCE, which added the fifth. The set is `records`, `clean-tree`, `pending-gate`, `per cites resolve`, `derive cursor`; the page names three. tests/harnessGates.test.ts already builds the real set through `gates()` at its ordering case, so the check reads the writer's own output; its module header still says \"four\". MIGRATING-0.16 is era-scoped and stays."
   }
 ]
