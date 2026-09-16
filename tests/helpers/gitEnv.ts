@@ -85,6 +85,9 @@ const GIT_AUTO_GC_OFF: readonly [key: string, value: string] = ["gc.auto", "0"];
  * reaching git as a clobbered sequence: git would reject the value we wrote
  * over, and the suite would read a git failure with no cause
  * (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * Held in `tests/gitEnv.test.ts` — the sequence arithmetic here, and the
+ * `gc.auto` a real git resolves inside a fixture the suite created.
  */
 export function pinGitAutoGcOff(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const [key, value] = GIT_AUTO_GC_OFF;

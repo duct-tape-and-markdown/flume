@@ -212,6 +212,9 @@ export function refuseLeakedStateRoots(
  * which is `tests/helpers/vitestSetup.ts`, rather than per suite, because the
  * writer is unknown — a guard only the CLI suites installed would watch every
  * file except the one that leaks.
+ *
+ * Held in `tests/fixtureRoots.test.ts`, beside the fold: both are the one
+ * rooting decision, so both are read in the one suite.
  */
 export function installStateRootLeakGuard(
   fixtureParent: string = tmpdir(),
