@@ -454,9 +454,10 @@ Standing consequences:
   semver.
 - Each public-API breaking change lands under a `### Breaking` subheading in
   `CHANGELOG.md`.
-- A migration note opens by naming the minors it does not cover, so a
-  consumer jumping more than one version reads the earlier `### Breaking`
-  sections before concluding they are done.
+- Every minor whose changelog carries a `### Breaking` section has a
+  migration note under `docs/`, walking each break with before and after; a
+  note opens by naming any earlier minor it does not cover, so a consumer
+  jumping more than one version reads that one first.
 - The mined draft closes `### Breaking` with a `### Uncategorized` subheading over every
   non-breaking entry, so the draft leads with breaks as the curated changelog does, and
   the second heading is the curating human's cue for what is still unsorted. A

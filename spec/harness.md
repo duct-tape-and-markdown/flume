@@ -57,7 +57,12 @@ The fields the package's discipline reads — a summary, a `per` cite, an
 acceptance criterion, the `tests[]` and `pins[]` lines the judge proves, a note
 to plan, and the contract-touching flag the default handoff stops on — with
 their caps and hints, held by the package's schema rather than by a roster
-here. A consumer may add fields; it may not remove the package's.
+here. A consumer may add fields; it may not remove the package's. A consumer's
+field is the same object the package's are — the engine's entry extension, a
+schema beside a hint — and the package renders its hint into the plan prompt
+through the same renderer as its own, so a consumer's parser and the prompt
+that fills it cannot drift either; a consumer never carries a prompt paragraph
+for a field it declared.
 
 
 ### The judges
@@ -183,6 +188,17 @@ runner, the resolver, and a handoff override) — validated by the package's str
 load; an unknown field or a missing required
 one refuses the load naming the field and the valid set.
 
+**The declaration is a value, and the unit it configures is whatever the
+consumer's `chain.ts` hands the factory.** A repository running one loop
+hands it the module beside the state root, which is the skeleton init writes.
+A bay of jobs (`spec/jobs.md`) hands it one declaration per job: the chain is
+loaded once per job with that job's state root as `api.paths.flumeDir`, so it
+reads the job's declaration from there — a JSON file through
+`parseDeclaration`, the same strict schema — and every field that varies per
+job (gates, agents, setup, fence, slots) varies in that file. Nothing in the
+package assumes one declaration per repository; init's skeleton is the
+one-job case of the same shape.
+
 | Field | What it decides |
 | --- | --- |
 | `specLocus` | Where a `per` cite may point: a list of path globs (this repo: `spec/**`, `.claude/rules/**`). The `per` gate resolves against it. |
@@ -195,7 +211,7 @@ one refuses the load naming the field and the valid set.
 | `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
 | `agents` | Model per phase, extra agent arguments, and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
-| `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. |
+| `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. |
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |
 | `slots` | Prompt slots the package renders into its prompts: an autonomy dial, domain context. Text only; a slot cannot add a directive the package's discipline already states. |
 | `ci` | CI lanes the inbox slice reads as findings sources — each a workflow file, a job name, and the lane name its findings carry — see *CI lanes as a findings source*. Optional. |
