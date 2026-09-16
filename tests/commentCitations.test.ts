@@ -26,10 +26,13 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import {
   type CitationScan,
   type CitationSite,
+  type PageCitationScan,
   formatCitation,
   scanCommentCitations,
+  scanPageCitations,
 } from "./helpers/commentCitations.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { modulesUnder, type ScanDomain } from "./helpers/repoProgram.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -237,13 +240,82 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `export const PAGED = 11;`,
     ``,
   ].join("\n"),
+  "docs/carried.md": "# the page a tree outside the tsconfig cites\n",
+  "tools/render.mjs": [
+    `// A tree no tsconfig of this fixture reaches, so the program tier reads`,
+    `// it as holding nothing. Fenced: \`docs/carried.md\` names a file this`,
+    `// tree holds and \`docs/mislaid.md\` names none. Unfenced the same way:`,
+    `// docs/carried.md again, and docs/strayed.md never.`,
+    `export const RENDER = 1;`,
+    ``,
+    `// Judged by nothing here, because this arm carries the page rule alone:`,
+    `// \`vanishedInTools\` is an identifier no declaration of this fixture`,
+    `// holds, and <area>/notes.md carries a placeholder the charset refuses.`,
+    `export const NARROW = 2;`,
+    ``,
+    `// A page name the break splits is reported as the wrap, never judged as`,
+    `// the tail: this comment cites docs/`,
+    `// carried.md, whose tail no page of this tree answers.`,
+    `export const SPLIT_HERE = 3;`,
+    ``,
+  ].join("\n"),
+  "cfg/chain.ts": [
+    `// The named-file arm, reached without descending its directory:`,
+    `// \`docs/carried.md\` resolves and docs/forsaken.md does not.`,
+    `export const CHAIN = 1;`,
+    ``,
+  ].join("\n"),
+  "cfg/worktrees/copy.ts": [
+    `// A whole copy of the repo the named-file arm must not descend into:`,
+    `// docs/undescended.md would be a finding if it did.`,
+    `export const COPY = 1;`,
+    ``,
+  ].join("\n"),
 };
+
+/**
+ * What the page-name arm adds to the three trees the program reaches: the
+ * rest of the sweep domain (`.claude/rules/posture-sweep.md`, *The pages are
+ * the authority as they read this tick*), plus the chain this repo runs every
+ * tick.
+ *
+ * `bin/` and `scripts/` sit in no tsconfig this repo has, and `.flume/` also
+ * holds the worktree checkouts a tick runs in (`spec/worktrees.md`) — whole
+ * copies of this repo a tree walk would descend into and judge again — so the
+ * chain is named as a file rather than swept as a tree.
+ *
+ * The two domains are exclusive by construction, and `SWEEP_DOMAIN` below is
+ * what keeps them from drifting apart: a tree in neither is a tree whose page
+ * names nothing judges.
+ */
+const PAGE_ARM_DOMAIN: ScanDomain = {
+  trees: ["bin", "examples", "scripts"],
+  files: [".flume/chain.ts"],
+};
+
+/**
+ * Every tree the sweep domain names, as the posture page reads it this tick.
+ * The union of the two scans' modules is asserted to cover it, so a tree
+ * added to the sweep and to neither scan reds here rather than going unjudged.
+ */
+const SWEEP_DOMAIN: readonly string[] = [
+  "src/",
+  "harness/",
+  "tests/",
+  "bin/",
+  "examples/",
+  "scripts/",
+];
 
 let fixtureRoot = "";
 /** The one scan of that tree — every case below reads the same verdict. */
 let fixtureScan: CitationScan;
 /** The one scan of this repo — both pins below read the same verdict. */
 let repoScan: CitationScan;
+/** The one page-arm scan of that fixture's trees no tsconfig reaches. */
+let fixturePageScan: PageCitationScan;
+/** The one page-arm scan of this repo's widened domain. */
+let repoPageScan: PageCitationScan;
 
 beforeAll(async () => {
   fixtureRoot = await mkTempDir("flume-citation-scan-");
@@ -261,6 +333,14 @@ beforeAll(async () => {
     root: REPO_ROOT,
     programConfig: "tsconfig.json",
     trees: ["src/", "harness/", "tests/"],
+  });
+  fixturePageScan = scanPageCitations({
+    root: fixtureRoot,
+    domain: { trees: ["tools"], files: ["cfg/chain.ts"] },
+  });
+  repoPageScan = scanPageCitations({
+    root: REPO_ROOT,
+    domain: PAGE_ARM_DOMAIN,
   });
 });
 
@@ -847,6 +927,109 @@ it("a comment's page name is answered by the working tree, never by a string lit
   expect(pages.filter((site) => !fenced.has(site)).length).toBeGreaterThan(400);
 });
 
+// --- the page-name arm, over the trees no program reaches ----------------
+
+it("the page-name scan judges a page a comment cites in a tree no tsconfig reaches", () => {
+  // Vacuity guard: the walk reached the tree's module and the named file, and
+  // stopped at the named file rather than descending its directory — a walk
+  // that descended would carry the module one level under it, and the page
+  // name that module cites would join the verdict below.
+  expect([...fixturePageScan.modules].sort()).toEqual([
+    "cfg/chain.ts",
+    "tools/render.mjs",
+  ]);
+
+  // Both fencings were collected, so the verdict below is read over a
+  // populated set in each alphabet rather than over the one an author happened
+  // to reach for.
+  expect(fixturePageScan.backticked.map(formatCitation)).toEqual([
+    "cfg/chain.ts:2 docs/carried.md",
+    "tools/render.mjs:2 docs/carried.md",
+    "tools/render.mjs:3 docs/mislaid.md",
+  ]);
+  expect(fixturePageScan.bare.map(formatCitation)).toEqual([
+    "cfg/chain.ts:2 docs/forsaken.md",
+    "tools/render.mjs:4 docs/carried.md",
+    "tools/render.mjs:4 docs/strayed.md",
+  ]);
+
+  // Judged in both directions and against the working tree alone: the page
+  // this fixture holds resolves, and the three it does not dangle — in a tree
+  // and in a named file the program-backed scan reads neither of.
+  expect(fixturePageScan.resolved.map((site) => site.text)).toEqual([
+    "docs/carried.md",
+    "docs/carried.md",
+    "docs/carried.md",
+  ]);
+  expect(fixturePageScan.findings.map(formatCitation)).toEqual([
+    "cfg/chain.ts:2 docs/forsaken.md",
+    "tools/render.mjs:3 docs/mislaid.md",
+    "tools/render.mjs:4 docs/strayed.md",
+  ]);
+});
+
+it("the page-name scan judges neither an identifier nor a placeholder a comment in those trees carries", () => {
+  // Vacuity guard: the module carrying both was read, and the page names
+  // beside them in that same comment run are judged — so the refusal below is
+  // this arm's scope and not a reader that never saw the file.
+  expect(fixturePageScan.modules).toContain("tools/render.mjs");
+  expect(fixturePageScan.scanned.map((site) => site.text)).toContain(
+    "docs/mislaid.md",
+  );
+
+  // An identifier has no token set to answer it here — this arm reads no
+  // program — and a placeholder names no one file, so admitting either would
+  // show up as a standing finding rather than passing quietly.
+  const judged = fixturePageScan.scanned.map((site) => site.text);
+  expect(judged).not.toContain("vanishedInTools");
+  expect(judged).not.toContain("<area>/notes.md");
+  const findings = fixturePageScan.findings.map((site) => site.text);
+  expect(findings).not.toContain("vanishedInTools");
+  expect(findings).not.toContain("<area>/notes.md");
+});
+
+it("the page-name scan reports a page name a comment line broke rather than judging its tail", () => {
+  // Vacuity guard: the wrap was read, and read as the author spelled it before
+  // markdown put a space in it — so the verdict below is the wrap arm and not
+  // a reader that missed the break.
+  expect(
+    fixturePageScan.wraps.scanned.map((site) => `${formatCitation(site)} | ${site.closed}`),
+  ).toEqual(["tools/render.mjs:13 docs/ carried.md | docs/carried.md"]);
+
+  // The break is a defect at the comment: the space it inserts is no character
+  // a page name admits, so the citation falls out of the judged set whatever
+  // it named. Reported, so it cannot do that quietly.
+  expect(fixturePageScan.wraps.findings.map(formatCitation)).toEqual([
+    "tools/render.mjs:13 docs/ carried.md",
+  ]);
+
+  // And the tail is not a citation of its own — judged, a root-level page of
+  // that basename would answer a name the author never wrote.
+  expect(fixturePageScan.scanned.map((site) => site.line)).not.toContain(14);
+});
+
+it("the page-name scan refuses a domain naming a tree or a file the repo no longer holds", () => {
+  // Vacuity guard: the same walk over the real domain resolves modules, so the
+  // refusals below are the domain check firing rather than a walk that reads
+  // nothing whatever it is handed.
+  expect(modulesUnder(fixtureRoot, { trees: ["tools"] }).length).toBeGreaterThan(
+    0,
+  );
+
+  // Both halves refuse rather than shrink: a domain that collapsed quietly
+  // would report every page name in it as none and leave the pin below green
+  // over nothing.
+  expect(() =>
+    scanPageCitations({ root: fixtureRoot, domain: { trees: ["retired"] } }),
+  ).toThrow(/no source module under retired/);
+  expect(() =>
+    scanPageCitations({
+      root: fixtureRoot,
+      domain: { trees: ["tools"], files: ["cfg/retired.ts"] },
+    }),
+  ).toThrow(/no source module at cfg\/retired\.ts/);
+});
+
 // --- the pin -------------------------------------------------------------
 
 /**
@@ -866,6 +1049,12 @@ it("a comment's page name is answered by the working tree, never by a string lit
  * carve-out's three trees do not include. A member of a fixture this suite
  * authors as source *text* is spelled in no declaration the program holds.
  * Both are cited on purpose and neither is a token the checker can answer.
+ *
+ * One list for both scans below, because an exclusion is a claim about the
+ * name rather than about the reader that met it: a page an example chain
+ * writes only into a consumer's repo is external whether a `tests/` comment
+ * or the example itself is the one citing it. So each entry's non-vacuity is
+ * read over the union of the two judged sets.
  *
  * The reason rides the entry rather than the list, because an exclusion is
  * the one place the verdict is overridden by hand: a name added without one
@@ -910,7 +1099,10 @@ it("every backticked identifier in a src/, harness/ or tests/ comment names a de
   // Each exclusion is non-vacuous in the other direction: a name the trees
   // stopped citing is a hole widened for nothing, and reds here rather than
   // sitting in the list unread.
-  const judged = scan.scanned.map((s) => s.text);
+  const judged = [
+    ...scan.scanned.map((s) => s.text),
+    ...repoPageScan.scanned.map((s) => s.text),
+  ];
   const excluded = [...EXTERNAL_VOCABULARY.keys()];
   expect(excluded.length).toBeGreaterThan(0);
   for (const name of excluded) {
@@ -1019,4 +1211,71 @@ it("every *.md page name a src/, harness/ or tests/ title carries names a file t
   // working tree or by nothing at all: a page the repo moved leaves the title
   // citing it here rather than standing. Spell the page's directory.
   expect(repoScan.titles.findings.map(formatCitation)).toEqual([]);
+});
+
+it("every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.ts cites names a page the working tree holds", () => {
+  // Vacuity guard, in the alphabet the domain is written in: every tree and
+  // the named file resolved to modules the scan read. A `trees` entry that
+  // stopped matching would report a clean verdict over a tree it never opened
+  // — and the walk refuses an empty tree, so this is the positive half.
+  for (const tree of ["bin/", "examples/", "scripts/"]) {
+    expect(`${tree} -> ${repoPageScan.modules.some((m) => m.startsWith(tree))}`)
+      .toBe(`${tree} -> true`);
+  }
+  expect(repoPageScan.modules).toContain(".flume/chain.ts");
+
+  // And nothing the sweep domain names is judged by neither scan. The two
+  // domains are exclusive, so this union is what keeps a tree from falling
+  // between them as either list is edited.
+  const read = [...repoScan.modules, ...repoPageScan.modules];
+  for (const tree of SWEEP_DOMAIN) {
+    expect(`${tree} -> ${read.some((m) => m.startsWith(tree))}`).toBe(
+      `${tree} -> true`,
+    );
+  }
+
+  // The judged set is populated in both fencings before any verdict is read
+  // off it: these comments cite pages backticked and bare, and a subject rule
+  // that stopped admitting either would leave the emptiness below green over
+  // half the citations.
+  expect(repoPageScan.scanned.length).toBeGreaterThan(40);
+  expect(repoPageScan.backticked.length).toBeGreaterThan(20);
+  expect(repoPageScan.bare.length).toBeGreaterThan(10);
+  expect(repoPageScan.resolved.length).toBeGreaterThan(0);
+
+  // Judged in the direction that matters: each family these comments cite
+  // resolves against the working tree, so renaming any of those pages reds
+  // here as it already reds a `src/` comment citing the same page.
+  const resolved = new Set(repoPageScan.resolved.map((s) => s.text));
+  for (const page of [
+    "CHANGELOG.md",
+    "spec/cli.md",
+    "docs/CHAIN-AUTHORING.md",
+    ".claude/rules/engineering.md",
+  ]) {
+    expect(`${page} -> ${resolved.has(page)}`).toBe(`${page} -> true`);
+  }
+
+  // These trees break no comment span at all today, so the wrap verdict is
+  // read over zero — spelled here rather than inherited, with the arm shown
+  // discriminating over the fixture above
+  // (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+  expect(repoPageScan.wraps.scanned).toEqual([]);
+  expect(repoPageScan.wraps.findings).toEqual([]);
+
+  // The verdict. What remains is the vocabulary an example chain writes only
+  // into a consumer's repo, excused by name and by reason in the list above.
+  const excluded = [...EXTERNAL_VOCABULARY.keys()];
+  expect(
+    repoPageScan.findings
+      .filter((site) => !excluded.includes(site.text))
+      .map(formatCitation),
+  ).toEqual([]);
+
+  // And that override is live rather than decorative: page names in these
+  // trees do reach it, so a name dropped from the list reds here instead of
+  // passing unnoticed.
+  expect(
+    repoPageScan.findings.filter((site) => excluded.includes(site.text)).length,
+  ).toBeGreaterThan(0);
 });

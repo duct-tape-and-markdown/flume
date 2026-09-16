@@ -41,6 +41,13 @@
  * is reported into, because a tail is a page name the author never wrote and a
  * root-level page answers it whenever the break falls at a directory boundary.
  *
+ * Because the working tree is all a page name needs, that arm reaches further
+ * than the rest: `scanPageCitations` below reads it over its own domain —
+ * every tree the sweep domain names and the chain this repo runs — at a
+ * scopeless parse, where no tsconfig covers `bin/` or `scripts/` and no
+ * checker is wanted. Same reader, same fencings, same subject rule, same
+ * resolution; what that scan drops is every citation a declaration answers.
+ *
  * A page name is resolved on disk and nowhere else, whichever fence carried
  * it. Every other citation shape reads the judged trees first, and a page
  * name is the one citation those trees routinely hold as *data* — a fixture
@@ -80,18 +87,20 @@
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import ts from "typescript";
 
 import {
   eachToken,
+  modulesUnder,
   relPath,
   repoProgram,
   sourcesOf,
   type ProgramScanRequest,
   type Scan,
+  type ScanDomain,
   type ScanSite,
 } from "./repoProgram.ts";
 
@@ -742,6 +751,17 @@ const commentSpans = (
 };
 
 /**
+ * Whether the working tree holds a file at a citation's repo-relative path —
+ * the one arm a page name is answered by, at either tier below.
+ *
+ * The path is looked up whole: `resolve` folds the posix separators the
+ * citation is written with into the host's, and the result never leaves this
+ * predicate, so nothing downstream sees a path in two alphabets.
+ */
+const holdsFile = (root: string, text: string): boolean =>
+  existsSync(resolve(root, text));
+
+/**
  * Scan a program's comments for citations naming nothing the judged trees
  * hold, and its test titles for page names the working tree cannot answer.
  *
@@ -846,10 +866,7 @@ export const scanCommentCitations = (
   }
 
   // The working tree is the other thing the repo holds a citation's name in.
-  // A file is looked up whole — `resolve` folds the posix separators the
-  // citation is written with into the host's, and the result never leaves
-  // this predicate, so nothing downstream sees a path in two alphabets.
-  const onDisk = (text: string): boolean => existsSync(resolve(root, text));
+  const onDisk = (text: string): boolean => holdsFile(root, text);
 
   // The page-name arm short-circuits the token set rather than sitting behind
   // it, for the reason the header states: a literal answering a page name is
@@ -917,3 +934,121 @@ export const scanCommentCitations = (
 /** `module:line text`, the form a failure message cites a finding in. */
 export const formatCitation = (site: CitationSite): string =>
   `${site.module}:${site.line} ${site.text}`;
+
+/**
+ * What the page-name arm reads, and the root it reads against. Its own domain
+ * rather than the program scan's `trees`: the carve-out scopes the identifier
+ * and path arms to the code a declaration can answer, and scopes a page name
+ * to every tree the sweep domain names, because a filename is answered by the
+ * working tree and needs no program at all.
+ */
+export interface PageCitationScanRequest {
+  /** Absolute path to the scanned root. */
+  readonly root: string;
+  /** The trees and named files whose comments carry the judged page names. */
+  readonly domain: ScanDomain;
+}
+
+/**
+ * The page names one domain's comments carry, and the ones the working tree
+ * cannot answer.
+ *
+ * `backticked` and `bare` are the two fencings, reported rather than left in
+ * the scan's head: a vacuity pin that read only the judged total could not
+ * tell a collector that stopped reading one fencing from a domain that never
+ * used it.
+ */
+export interface PageCitationScan extends Scan<CitationSite> {
+  /** Every module read, repo-relative and posix-separated, in path order. */
+  readonly modules: readonly string[];
+  /** The judged names their author fenced. */
+  readonly backticked: readonly CitationSite[];
+  /** The judged names their author left bare. */
+  readonly bare: readonly CitationSite[];
+  /** The judged names the working tree holds. */
+  readonly resolved: readonly CitationSite[];
+  /**
+   * The citations a comment line broke, and among them the ones whose closed
+   * spelling is a page name. The break puts a space in the token, so the name
+   * falls out of the judged set whatever it cited — reported here so it
+   * cannot do that quietly (`.claude/rules/engineering.md`, *Loud or
+   * nothing*).
+   */
+  readonly wraps: Scan<WrappedCitation>;
+}
+
+/**
+ * One module of the widened domain, parsed with no scope around it.
+ *
+ * The tier is this arm's own choice and the reason is here rather than in the
+ * shared base: `bin/` and `scripts/` sit in no tsconfig this repo has, so a
+ * program-backed read would report them as holding nothing. It costs the
+ * checker, which this arm never consults — a page name is answered by the
+ * working tree alone — so the two halves agree on what they give up.
+ *
+ * Parents are set, because the comment reader walks to the leaves to reach
+ * every trivia range.
+ */
+const parseScopeless = (path: string): ts.SourceFile =>
+  ts.createSourceFile(
+    path,
+    readFileSync(path, "utf8"),
+    ts.ScriptTarget.ESNext,
+    true,
+    /\.(?:m|c)?js$/.test(path) ? ts.ScriptKind.JS : ts.ScriptKind.TS,
+  );
+
+/**
+ * Scan a domain's comments for `*.md` page names the working tree cannot
+ * answer.
+ *
+ * The same comment reader, the same fencings, the same subject rule and the
+ * same on-disk resolution the program-backed scan runs — one mechanism, so a
+ * page name is judged identically wherever its author wrote it and a
+ * placeholder spelling is refused on the same charset. What this arm drops is
+ * every citation a declaration answers: a domain reaching trees the program
+ * does not resolve has no token set to judge an identifier against, and
+ * judging one against a partial set would red a name the repo holds.
+ *
+ * Test titles are the program scan's alone. A title is a suite's shape, and
+ * the trees this arm adds hold no suite — an arm collected here would be a
+ * verdict over zero titles wearing a green (`.claude/rules/engineering.md`,
+ * *A green verdict is proven non-vacuous*).
+ */
+export const scanPageCitations = (
+  request: PageCitationScanRequest,
+): PageCitationScan => {
+  const root = resolve(request.root);
+  const modules: string[] = [];
+  const backticked: CitationSite[] = [];
+  const bare: CitationSite[] = [];
+  const wrapped: WrappedCitation[] = [];
+  const scanned: CitationSite[] = [];
+
+  for (const path of modulesUnder(root, request.domain)) {
+    const module = relPath(root, path);
+    modules.push(module);
+    const spans = commentSpans(parseScopeless(path), module);
+    const fenced = spans.closed.filter((site) => isPageName(site.text));
+    const unfenced = spans.bare.filter((site) => isPageName(site.text));
+    backticked.push(...fenced);
+    bare.push(...unfenced);
+    wrapped.push(...spans.wrapped);
+    scanned.push(...[...fenced, ...unfenced].sort((a, b) => a.line - b.line));
+  }
+
+  const answered = (site: CitationSite): boolean => holdsFile(root, site.text);
+
+  return {
+    modules,
+    backticked,
+    bare,
+    wraps: {
+      scanned: wrapped,
+      findings: wrapped.filter((site) => isPageName(site.closed)),
+    },
+    scanned,
+    resolved: scanned.filter(answered),
+    findings: scanned.filter((site) => !answered(site)),
+  };
+};

@@ -1,8 +1,9 @@
 /**
  * The base this suite's source scanners are visitors over: the tsconfig
  * parse, the repo-relative fold, the program and checker a scan resolves
- * through, the source selection, the token walk, the directory walk, and the
- * site and verdict vocabulary every scan reports in.
+ * through, the source selection both off the program and off disk, the token
+ * walk, the directory walk, and the site and verdict vocabulary every scan
+ * reports in.
  *
  * One job — *what the scanners share* — rather than a scanner of its own
  * (`.claude/rules/engineering.md`, *A module is one job*). Three siblings
@@ -20,7 +21,7 @@
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -206,4 +207,86 @@ export const filesUnder = (
       out.push(path);
   }
   return out;
+};
+
+/**
+ * The extensions a module of this repo is written in. Wider than the program
+ * tier reads, because a domain walked off disk reaches the trees no tsconfig
+ * includes — `bin/*.js`, `scripts/*.mjs` — and a scan narrowed to `.ts` would
+ * report those trees as holding nothing.
+ */
+const SOURCE_SUFFIXES: readonly string[] = [
+  ".ts",
+  ".mts",
+  ".cts",
+  ".js",
+  ".mjs",
+  ".cjs",
+];
+
+/** Emitted types declare nothing a source scan reads. */
+const EXCLUDED_SUFFIXES: readonly string[] = [".d.ts"];
+
+/**
+ * What a scan reads when it is not drawn from a program: trees walked whole,
+ * and files named one by one for a directory whose other contents are not
+ * source of this repo's.
+ *
+ * `files` is omitted by a caller whose domain is trees alone. A named file is
+ * how a directory is reached without descending it — `.flume/` also holds the
+ * worktree checkouts a tick runs in (`spec/worktrees.md`), whole copies of
+ * this repo a tree walk would judge again.
+ */
+export interface ScanDomain {
+  /** Repo-relative posix prefixes, each walked to any depth. */
+  readonly trees: readonly string[];
+  /** Repo-relative posix paths, each read on its own. */
+  readonly files?: readonly string[];
+}
+
+/**
+ * Every module a domain resolves to, absolute and in a stable order.
+ *
+ * Both halves refuse rather than shrink: a tree holding no source module and
+ * a named file the tree no longer has are each an error here, because a
+ * domain that quietly collapsed would report every absence verdict green for
+ * having read nothing (`.claude/rules/engineering.md`, *A green verdict is
+ * proven non-vacuous*).
+ */
+export const modulesUnder = (
+  root: string,
+  domain: ScanDomain,
+): readonly string[] => {
+  const found = new Set<string>();
+  for (const tree of domain.trees) {
+    const dir = join(root, ...tree.split("/"));
+    // Absent and empty are one verdict, and it is the scan's own: an ENOENT
+    // out of the walk names a directory rather than the domain entry that
+    // asked for it, which is the fact a reader of the failure needs.
+    if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory())
+      throw new Error(
+        `no source module under ${tree}: the scan would judge that tree as holding none`,
+      );
+    const before = found.size;
+    for (const suffix of SOURCE_SUFFIXES)
+      for (const path of filesUnder({
+        root: dir,
+        suffix,
+        excluded: EXCLUDED_SUFFIXES,
+      }))
+        found.add(path);
+    if (found.size === before)
+      throw new Error(
+        `no source module under ${tree}: the scan would judge that tree as holding none`,
+      );
+  }
+  for (const file of domain.files ?? []) {
+    const path = join(root, ...file.split("/"));
+    if (!statSync(path, { throwIfNoEntry: false })?.isFile())
+      throw new Error(
+        `no source module at ${file}: the scan would judge that file as holding none`,
+      );
+    found.add(path);
+  }
+  return [...found].sort((a, b) => a.localeCompare(b));
 };
