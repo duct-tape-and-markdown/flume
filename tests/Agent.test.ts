@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile, rm } from "node:fs/promises";
 import { join, sep } from "node:path";
 
 vi.mock("node:child_process", () => ({
@@ -26,6 +25,8 @@ import {
   type Agent,
   type ClaudeCodeOptions,
 } from "../src/Agent.ts";
+
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
 const spawnMock = vi.mocked(spawn);
 
@@ -535,7 +536,7 @@ describe("claudeCode — an aborted invocation takes its tree down", () => {
 
 describe("withSessionCapture", () => {
   it("tees stdout chunks to the configured capture file and still forwards to outer onStdout", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-capture-"));
+    const dir = await mkTempDir("flume-capture-");
     try {
       const fake: Agent = {
         name: "fake",
@@ -576,7 +577,7 @@ describe("withSessionCapture", () => {
   });
 
   it("creates the capture directory if it does not exist", async () => {
-    const root = await mkdtemp(join(tmpdir(), "flume-capture-root-"));
+    const root = await mkTempDir("flume-capture-root-");
     const dir = join(root, "nested", "deeper");
     try {
       const fake: Agent = {
@@ -600,7 +601,7 @@ describe("withSessionCapture", () => {
   });
 
   it("does not collide when two invocations with distinct cwds default the filename under a frozen clock", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-capture-fanout-"));
+    const dir = await mkTempDir("flume-capture-fanout-");
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     try {

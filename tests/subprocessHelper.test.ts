@@ -14,7 +14,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,7 +63,7 @@ const exec = promisify(execFile);
 
 describe("requireEntryPoint — an unresolvable CLI entry point refuses (SUBPROCESS-TSX-SENTINEL)", () => {
   it("refuses by name instead of returning an exit code", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-entry-point-"));
+    const dir = await mkTempDir("flume-entry-point-");
     try {
       const missing = join(dir, "node_modules", "tsx", "dist", "cli.mjs");
       expect(existsSync(missing)).toBe(false);
@@ -213,7 +213,7 @@ it("a child whose output exceeds the wrapper's declared cap refuses by naming th
 
 describe("runCli — reports the CLI's own status, not a default", () => {
   it("surfaces an exit code the CLI chose, distinct from the laundered 1", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-runcli-status-"));
+    const dir = await mkTempDir("flume-runcli-status-");
     try {
       const { out, code } = await runCli(dir, ["definitely-not-a-verb"]);
       expect(out).toContain("unknown command: definitely-not-a-verb");
@@ -238,9 +238,9 @@ describe("runCli — reports the CLI's own status, not a default", () => {
  */
 describe("the suite refuses a flume state root above its fixtures", () => {
   it("a run that creates a state root above its own fixture fails the suite and names the offender", async () => {
-    // Canonical, because the watch below is opened on the fixture's parent —
-    // `mkFixtureRoot` folds the spelling, so a raw `mkdtemp` attic and the
-    // scope derived from it would name one directory two ways.
+    // The watch below is opened on the fixture's parent, so the attic and the
+    // scope derived from it have to be one spelling of one directory — which
+    // is what every root here is made through (`tests/helpers/fixtureRoot.ts`).
     const attic = await mkTempDir("flume-leak-attic-");
     try {
       const fixture = await mkFixtureRoot("flume-leak-fixture-", attic);
@@ -292,7 +292,7 @@ describe("the suite refuses a flume state root above its fixtures", () => {
   }, SPAWN_BUDGET_MS);
 
   it("refuses before its first test when the litter is already on disk", async () => {
-    const attic = await mkdtemp(join(tmpdir(), "flume-leak-preexisting-"));
+    const attic = await mkTempDir("flume-leak-preexisting-");
     try {
       // Control: the parent's own bay is not armed yet, so the refusal below
       // is the litter's doing.
@@ -704,7 +704,7 @@ it("the spawn-budget scan reports a case that starts node under a command-string
     ``,
   ].join("\n");
 
-  const dir = await mkdtemp(join(tmpdir(), "flume-budget-command-"));
+  const dir = await mkTempDir("flume-budget-command-");
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
     const { sites } = await scanSpawns({ lane: "default", dir });
@@ -758,7 +758,7 @@ it("the spawn scan reads a git spawn as a process startup", async () => {
   ].join("\n");
   const WRAPPER = `const commit = (repo, m) => execFileSync("git", ["commit", "-m", m], { cwd: repo });`;
 
-  const dir = await mkdtemp(join(tmpdir(), "flume-budget-git-"));
+  const dir = await mkTempDir("flume-budget-git-");
   try {
     await writeFile(
       join(dir, "fixture.test.ts"),
@@ -830,7 +830,7 @@ it("the spawn scan reports a case that renders inline-exec spans without a decla
     ``,
   ].join("\n");
 
-  const dir = await mkdtemp(join(tmpdir(), "flume-budget-render-"));
+  const dir = await mkTempDir("flume-budget-render-");
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
     const { sites } = await scanSpawns({ lane: "default", dir });
@@ -890,7 +890,7 @@ it("a same-named function elsewhere in the file does not hide a spawning case fr
     ``,
   ].join("\n");
 
-  const dir = await mkdtemp(join(tmpdir(), "flume-budget-shadowed-"));
+  const dir = await mkTempDir("flume-budget-shadowed-");
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
     const { sites } = await scanSpawns({ lane: "default", dir });
@@ -964,7 +964,7 @@ it("the spawn scan reports a numeric timeout literal on a registrar under a file
     ``,
   ].join("\n");
 
-  const dir = await mkdtemp(join(tmpdir(), "flume-budget-ceiling-"));
+  const dir = await mkTempDir("flume-budget-ceiling-");
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
     const { registrars, sites, files } = await scanSpawns({
@@ -1025,7 +1025,7 @@ it("the spawn scan judges no registrar in a file that declares no file-scope bud
     ``,
   ].join("\n");
 
-  const dir = await mkdtemp(join(tmpdir(), "flume-budget-undeclared-"));
+  const dir = await mkTempDir("flume-budget-undeclared-");
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
     const { registrars, sites, files } = await scanSpawns({
@@ -1121,7 +1121,7 @@ describe("the default-lane spawn-budget scan", () => {
       "below.test.ts": fixture(BOTH, "below"),
     };
 
-    const dir = await mkdtemp(join(tmpdir(), "flume-budget-scan-"));
+    const dir = await mkTempDir("flume-budget-scan-");
     try {
       for (const [name, text] of Object.entries(files))
         await writeFile(join(dir, name), text, "utf8");
@@ -1177,7 +1177,7 @@ describe("the default-lane spawn-budget scan", () => {
   });
 
   it("each lane reads its own files and not the other lane's", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-budget-lane-"));
+    const dir = await mkTempDir("flume-budget-lane-");
     try {
       await writeFile(join(dir, "fixture.integration.test.ts"), FIXTURE, "utf8");
       const ours = await scanSpawns({ lane: "default", dir });
@@ -1339,7 +1339,7 @@ it("the timer scan reports an awaited timer in a spawning fixture case", async (
     ``,
   ].join("\n");
 
-  const dir = await mkdtemp(join(tmpdir(), "flume-sync-point-"));
+  const dir = await mkTempDir("flume-sync-point-");
   try {
     await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
     const { sites } = await scanSpawns({ lane: "default", dir });

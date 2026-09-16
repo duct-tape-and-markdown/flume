@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, runNodeStreams } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -93,7 +93,7 @@ const uncategorizedSubsection = (out: string) =>
 let repo: string;
 
 beforeEach(async () => {
-  repo = await mkdtemp(join(tmpdir(), "flume-changelog-repo-"));
+  repo = await mkTempDir("flume-changelog-repo-");
   const opts = { cwd: repo };
   await exec("git", ["init", "-q"], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);

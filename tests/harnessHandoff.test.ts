@@ -21,9 +21,7 @@
  * two real sides share.
  */
 
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync, rmSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -44,6 +42,8 @@ import type { FanoutEntryOutcome, TickResult } from "../src/Phase.ts";
 import { namespacedJoin, stopFlagPath } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { NO_COMMIT_MODES, type NoCommitMode } from "../src/Prompt.ts";
+
+import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 
 const DERIVE = "plan-derive" as const satisfies PlanSlice;
 const SWEEP = "plan-sweep" as const satisfies PlanSlice;
@@ -321,7 +321,7 @@ describe("the default handoff's stop after a contract-touching ship", () => {
   let flumeDir: string;
 
   beforeEach(() => {
-    flumeDir = mkdtempSync(join(tmpdir(), "flume-handoff-stop-"));
+    flumeDir = mkTempDirSync("flume-handoff-stop-");
   });
   afterEach(() => {
     rmSync(flumeDir, { recursive: true, force: true });

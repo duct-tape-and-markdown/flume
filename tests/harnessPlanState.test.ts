@@ -19,9 +19,8 @@
  * the schema rather than by a name this file hardcodes.
  */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, normalize } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, normalize } from "node:path";
 
 import { afterEach, beforeEach, expect, it } from "vitest";
 
@@ -33,11 +32,13 @@ import {
   type PlanState,
 } from "../harness/index.ts";
 
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
+
 /** A fresh, empty state root per case — no directories, the untouched shape. */
 let stateRoot: string;
 
 beforeEach(async () => {
-  stateRoot = await mkdtemp(join(tmpdir(), "flume-plan-state-"));
+  stateRoot = await mkTempDir("flume-plan-state-");
 });
 
 afterEach(async () => {

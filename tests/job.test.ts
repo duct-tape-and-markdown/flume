@@ -14,14 +14,12 @@ import { existsSync } from "node:fs";
 import {
   chmod,
   mkdir,
-  mkdtemp,
   readdir,
   readFile,
   rm,
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -50,6 +48,7 @@ import {
 import { NAME_MAX } from "../src/PendingSchema.ts";
 import { loadChainModule } from "../src/chainLoad.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, gitOut, runCli } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -64,7 +63,7 @@ async function makeRepo(): Promise<{
   dir: string;
   cleanup: () => Promise<void>;
 }> {
-  const dir = await mkdtemp(join(tmpdir(), "flume-job-new-"));
+  const dir = await mkTempDir("flume-job-new-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q", "-b", "main"], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -163,7 +162,7 @@ describe("validateJobName — single-segment shape, checked before dir+branch co
 
 describe("ensureRuntimeIgnores — create-or-merge", () => {
   it("creates .gitignore with exactly the runtime entries when absent", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
+    const dir = await mkTempDir("flume-ignores-");
     try {
       await ensureRuntimeIgnores(dir);
       const content = await readFile(join(dir, ".gitignore"), "utf8");
@@ -174,7 +173,7 @@ describe("ensureRuntimeIgnores — create-or-merge", () => {
   });
 
   it("is idempotent: a second run leaves the file byte-identical", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
+    const dir = await mkTempDir("flume-ignores-");
     try {
       await ensureRuntimeIgnores(dir);
       const first = await readFile(join(dir, ".gitignore"), "utf8");
@@ -186,7 +185,7 @@ describe("ensureRuntimeIgnores — create-or-merge", () => {
   });
 
   it("preserves template lines and order, appending only the missing entries", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
+    const dir = await mkTempDir("flume-ignores-");
     try {
       // Template already ignores one runtime entry and carries its own
       // chain-convention lines — merge must not duplicate or reorder.
@@ -206,7 +205,7 @@ describe("ensureRuntimeIgnores — create-or-merge", () => {
   });
 
   it("folds caller-supplied extra entries (a declared friction dir) alongside RUNTIME_IGNORES into a fresh .gitignore", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
+    const dir = await mkTempDir("flume-ignores-");
     try {
       await ensureRuntimeIgnores(dir, ["friction/"]);
       const content = await readFile(join(dir, ".gitignore"), "utf8");
@@ -217,7 +216,7 @@ describe("ensureRuntimeIgnores — create-or-merge", () => {
   });
 
   it("is idempotent with extra entries: a second run with the same extra list leaves the file byte-identical", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
+    const dir = await mkTempDir("flume-ignores-");
     try {
       await ensureRuntimeIgnores(dir, ["friction/"]);
       const first = await readFile(join(dir, ".gitignore"), "utf8");
@@ -229,7 +228,7 @@ describe("ensureRuntimeIgnores — create-or-merge", () => {
   });
 
   it("does not duplicate an extra entry already present in a template, and preserves the template verbatim", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-ignores-"));
+    const dir = await mkTempDir("flume-ignores-");
     try {
       const template = "# harness scratch\nfriction/\n";
       await writeFile(join(dir, ".gitignore"), template, "utf8");
@@ -1406,7 +1405,7 @@ function pendingEntry(tag: string): object {
 
 describe("jobStatus — enumeration units", () => {
   it("returns [] when .flume/jobs (or .flume itself) is absent, materializing nothing", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       expect(jobStatus(dir)).toEqual([]);
       expect(existsSync(join(dir, ".flume"))).toBe(false);
@@ -1420,7 +1419,7 @@ describe("jobStatus — enumeration units", () => {
 
   it("enumerates jobs sorted by name with awake phases + pending counts; skips plain files", async () => {
     // Pure filesystem convention — no git repo required to observe it.
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const jobs = join(dir, ".flume", "jobs");
 
@@ -1450,7 +1449,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("a supplied frictionDir counts files under <jobdir>/<frictionDir>, per job", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const jobs = join(dir, ".flume", "jobs");
       await mkdir(join(jobs, "alpha", "friction"), { recursive: true });
@@ -1469,7 +1468,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("frictionCount reads null (not 0) when the friction dir exists but readdir fails for a non-ENOENT reason (job-frictioncount-loud-or-nothing)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const jobs = join(dir, ".flume", "jobs");
       const frictionDir = join(jobs, "alpha", "friction");
@@ -1496,7 +1495,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("a supplied pendingPath (CHAIN-PENDINGPATH) counts entries under <jobdir>/<pendingPath>, per job, instead of the default plan/pending.json", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const jobs = join(dir, ".flume", "jobs");
       const customRel = join("custom", "queue.json");
@@ -1519,7 +1518,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("undeclared pendingPath defaults to .flume/plan/pending.json", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const jobs = join(dir, ".flume", "jobs");
       await mkdir(join(jobs, "alpha", "plan"), { recursive: true });
@@ -1535,7 +1534,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("omits frictionCount entirely when no frictionDir is supplied", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const jobs = join(dir, ".flume", "jobs");
       await mkdir(join(jobs, "alpha", "friction"), { recursive: true });
@@ -1550,7 +1549,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("is observational: a hibernating job gains no awake/ dir, no file anywhere changes", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const jobDir = join(dir, ".flume", "jobs", "quiet");
       await mkdir(jobDir, { recursive: true });
@@ -1566,7 +1565,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("reports null pending for an unparsable pending.json instead of throwing", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const jobDir = join(dir, ".flume", "jobs", "broken");
       await mkdir(join(jobDir, "plan"), { recursive: true });
@@ -1581,7 +1580,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("readPendingLoose reads an absent (ENOENT) pending.json as the empty, valid list", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const pendingPath = join(dir, "plan", "pending.json");
       expect(readPendingLoose(pendingPath)).toEqual({
@@ -1595,7 +1594,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("readPendingLoose rethrows a non-ENOENT stat/read failure instead of reading it as absent — existsSync collapses any stat error, not just ENOENT, to false (JOB-READPENDINGLOOSE-NARROW-ENOENT)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const planDir = join(dir, "plan");
       await mkdir(planDir, { recursive: true });
@@ -1626,7 +1625,7 @@ describe("jobStatus — enumeration units", () => {
   });
 
   it("jobStatus reads a non-ENOENT pending.json read failure for one job as unparsable instead of throwing, and never hides sibling jobs (job-status-nonenoent-read-hides-siblings)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     try {
       const jobs = join(dir, ".flume", "jobs");
 
@@ -1764,7 +1763,7 @@ describe("jobStatus — enumeration units", () => {
  */
 describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NARROW-ENOENT)", () => {
   it("liveLoopPid rethrows a non-ENOENT stat failure instead of reading the pidfile as absent", async () => {
-    const base = await mkdtemp(join(tmpdir(), "flume-job-pid-"));
+    const base = await mkTempDir("flume-job-pid-");
     const root = join(base, "state");
     try {
       await mkdir(root, { recursive: true });
@@ -1791,7 +1790,7 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
   });
 
   it("jobStatus reports a job whose awake dir cannot be read as a null awake, not as hibernating", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     const jobDir = join(dir, ".flume", "jobs", "sealed");
     try {
       await mkdir(join(jobDir, "awake"), { recursive: true });
@@ -1834,7 +1833,7 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
   it.runIf(process.platform !== "win32")(
     "jobStatus reads a job whose own dir is obstructed as an unreadable baton, not as hibernating",
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+      const dir = await mkTempDir("flume-job-status-");
       const jobDir = join(dir, ".flume", "jobs", "sealed");
       try {
         // The baton lives one hop away, inside the job's own dir, and is read
@@ -1866,7 +1865,7 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
   );
 
   it("jobStatus never hides sibling jobs when one job's awake dir cannot be read", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     const sealedAwake = join(dir, ".flume", "jobs", "sealed", "awake");
     try {
       const jobs = join(dir, ".flume", "jobs");
@@ -1893,7 +1892,7 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
   });
 
   it("jobStatus rethrows a non-ENOENT read failure on the jobs root instead of reporting no jobs", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-job-status-"));
+    const dir = await mkTempDir("flume-job-status-");
     const flumeDir = join(dir, ".flume");
     try {
       await mkdir(join(flumeDir, "jobs", "alpha"), { recursive: true });
@@ -1923,7 +1922,7 @@ describe("job.ts existence gates — the ENOENT/EACCES split (JOB-EXISTSSYNC-NAR
   // just stat'd, so an unreadable `.gitignore` threw there too. The narrowing
   // keeps that reading while dropping the redundant stat — this holds it.
   it.runIf(process.platform !== "win32")("ensureRuntimeIgnores rethrows a non-ENOENT read failure instead of rewriting the .gitignore it could not read", async () => {
-    const base = await mkdtemp(join(tmpdir(), "flume-job-ignores-"));
+    const base = await mkTempDir("flume-job-ignores-");
     const jobDir = join(base, "job");
     try {
       await mkdir(jobDir, { recursive: true });
@@ -1983,7 +1982,7 @@ describe.runIf(process.platform === "win32")(
   "jobStatus frictionCount — win32 total-path limit (FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT)",
   () => {
     it("resolves a real count when frictionDir nests past win32's ~260-char limit", async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-job-status-w32-"));
+      const dir = await mkTempDir("flume-job-status-w32-");
       try {
         const jobs = join(dir, ".flume", "jobs");
         // Same deep-friction shape as the Dispatcher.ts win32 suites
@@ -2033,7 +2032,7 @@ describe.runIf(process.platform === "win32")(
   "job.ts existsSync-gated checks — win32 total-path limit (JOB-EXISTSSYNC-WIN32-PATH-TOTAL-LIMIT)",
   () => {
     it("liveLoopPid resolves a live pid when dir/loop.pid nests past win32's ~260-char limit", async () => {
-      const base = await mkdtemp(join(tmpdir(), "flume-job-w32-"));
+      const base = await mkTempDir("flume-job-w32-");
       try {
         const deep = join(
           base,
@@ -2077,7 +2076,7 @@ describe.runIf(process.platform === "win32")(
     });
 
     it("jobStatus reports the awake phase when the job dir nests past win32's ~260-char limit", async () => {
-      const base = await mkdtemp(join(tmpdir(), "flume-job-w32-"));
+      const base = await mkTempDir("flume-job-w32-");
       try {
         const repoRoot = join(
           base,
@@ -2104,7 +2103,7 @@ describe.runIf(process.platform === "win32")(
       // cannot survive here (see `longJobName`), and this dir is the one the
       // two probes under test resolve their paths from. Placed outside the
       // repo so no git this verb runs ever has it in a pathspec's reach.
-      const cfgBase = await mkdtemp(join(tmpdir(), "flume-job-w32-cfg-"));
+      const cfgBase = await mkTempDir("flume-job-w32-cfg-");
       try {
         const configDir = join(
           cfgBase,

@@ -9,8 +9,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +23,7 @@ import { readFileAtRef } from "../src/git.ts";
 import { gitPath, matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 import { declaration } from "../.flume/declaration.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file's cases drive real git repositories, and a git spawn is a spawn
@@ -37,7 +37,7 @@ function git(repo: string, args: string[]): string {
 }
 
 async function initRepo(prefix: string): Promise<string> {
-  const repo = await mkdtemp(join(tmpdir(), prefix));
+  const repo = await mkTempDir(prefix);
   git(repo, ["init", "-q"]);
   git(repo, ["config", "user.email", "t@example.com"]);
   git(repo, ["config", "user.name", "t"]);

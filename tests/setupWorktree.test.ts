@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { lstat, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { lstat, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +10,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { setupWorktree } from "../src/setupWorktree.js";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -83,7 +83,7 @@ describe("setupWorktree", () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "flume-setup-worktree-"));
+    dir = await mkTempDir("flume-setup-worktree-");
     execFileMock.mockReset();
   });
 

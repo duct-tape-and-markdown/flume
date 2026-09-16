@@ -11,13 +11,11 @@ import { execFile } from "node:child_process";
 import { existsSync, lstatSync, readdirSync } from "node:fs";
 import {
   mkdir,
-  mkdtemp,
   readFile,
   rm,
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -32,7 +30,7 @@ import {
 import { Baton } from "../src/Baton.ts";
 import { EX_IOERR } from "../src/cli.ts";
 import { jobNew } from "../src/job.ts";
-import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
+import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
   SPAWN_BUDGET_MS,
@@ -413,11 +411,11 @@ describe("resolveRepoRoot — bay discovery walk-up", () => {
   // The one fixture in this suite that cannot be rooted (`mkFixtureRoot`,
   // tests/helpers/fixtureRoot.ts): its subject *is* the walk reaching the
   // filesystem root without meeting a `.flume`, so planting one would delete
-  // the behavior under test. It stays on a plain `mkdtemp` and stays
-  // vulnerable to a `.flume` littered above `tmpdir()` — a red here means the
-  // host has one, not that the fallback regressed.
+  // the behavior under test. It stays on a bare root and stays vulnerable to
+  // a `.flume` littered above the host temp dir — a red here means the host
+  // has one, not that the fallback regressed.
   it("no .flume anywhere above cwd: falls back to cwd unchanged", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-walkup-nodock-"));
+    const dir = await mkTempDir("flume-walkup-nodock-");
     try {
       const nested = join(dir, "sub");
       await mkdir(nested, { recursive: true });
@@ -978,7 +976,7 @@ describe("job resolution — real CLI", () => {
     "--job + explicit FLUME_CONFIG_DIR composes end-to-end: chain + prompt from the env dir, state in the job dir",
     async () => {
       const repo = await makeJobRepo("job/foo");
-      const cfg = await mkdtemp(join(tmpdir(), "flume-env-cfg-"));
+      const cfg = await mkTempDir("flume-env-cfg-");
       try {
         // The ONLY config anywhere is the env dir — no repo .flume chain, so
         // a pass proves the dock seam is what loaded.
@@ -1155,7 +1153,7 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
  */
 describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCESTOR-PROOF)", () => {
   it("a `.flume` planted above the fixture does not change a job verb's resolved state root", async () => {
-    const attic = await mkdtemp(join(tmpdir(), "flume-attic-job-"));
+    const attic = await mkTempDir("flume-attic-job-");
     try {
       // The litter: a bay above every fixture created under it, holding a
       // job no fixture below ever creates.

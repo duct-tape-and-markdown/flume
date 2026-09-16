@@ -11,7 +11,7 @@
 
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, win32 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -71,7 +71,6 @@ const CLI_SRC_PATH = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
  * with no view of this one.
  */
 const AGENT_SRC_PATH = fileURLToPath(new URL("../src/Agent.ts", import.meta.url));
-
 
 /**
  * `isInvokedDirectly` (`src/cli.ts`), the seam gating `main()`.
@@ -137,10 +136,9 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
   });
 
   it("the CLI entry check resolves a junctioned argv[1] to the same on-disk identity as the module's own path", async () => {
-    // Folded at creation (`mkTempDir`, not bare `mkdtemp`): the runner's
-    // `tmpdir()` is an 8.3 alias on win32 (`C:\Users\RUNNER~1\…`), and an
-    // unfolded root would hand the check a second spelling this case never
-    // meant to introduce — the junction is the only difference it is about.
+    // The junction is the only difference this case is about; the root's
+    // own spelling is folded where every fixture root is
+    // (`tests/helpers/fixtureRoot.ts`).
     const linkParent = await mkTempDir("flume-cli-junction-");
     const linkDir = join(linkParent, "src-link");
     try {
@@ -748,7 +746,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI", () => {
     "a chain declaring no supervisorPolicy: a tagged provisioning failure quarantines once, then the run is unchanged through --max (the shipped default)",
     async () => {
       const repo = await makeJobRepo("main");
-      const wtDir = await mkdtemp(join(tmpdir(), "flume-wt-collision-"));
+      const wtDir = await mkTempDir("flume-wt-collision-");
       try {
         await writeRepoConfig(repo.dir, supervisorPolicyChainSrc(undefined));
         await writeStuckEntryPending(repo.dir);
@@ -786,7 +784,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI", () => {
     'a chain declaring supervisorPolicy: { quarantineScope: "none", abortThreshold: 2 } aborts on the 2nd consecutive identical failure — the override reaches the real supervisor',
     async () => {
       const repo = await makeJobRepo("main");
-      const wtDir = await mkdtemp(join(tmpdir(), "flume-wt-collision-"));
+      const wtDir = await mkTempDir("flume-wt-collision-");
       try {
         await writeRepoConfig(
           repo.dir,
@@ -4112,7 +4110,7 @@ describe("state root layout — `flume loop` writes the lock `liveLoopPid` reads
     "the pid liveLoopPid reads mid-run is the live supervisor's own",
     async () => {
       const repo = await makeJobRepo("main");
-      const outDir = await mkdtemp(join(tmpdir(), "flume-loop-lock-read-"));
+      const outDir = await mkTempDir("flume-loop-lock-read-");
       try {
         // Outside the state root so the probe's own output can never be
         // mistaken for state the runtime wrote.
@@ -4155,7 +4153,7 @@ describe("state root layout — an undeclared Chain.pendingPath is one file for 
     "the queue at the default location is the one `flume check` validates and the one the dispatcher picks from",
     async () => {
       const repo = await makeJobRepo("main");
-      const wtDir = await mkdtemp(join(tmpdir(), "flume-queue-default-"));
+      const wtDir = await mkTempDir("flume-queue-default-");
       try {
         // A fanout phase (the sole kind that picks from pending) on a chain
         // that declares no pendingPath. Worktree provisioning is pointed at
@@ -4207,7 +4205,7 @@ describe("state root layout — an undeclared Chain.pendingPath is one file for 
  */
 describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCESTOR-PROOF)", () => {
   it("a `.flume` planted above the fixture does not change `flume status`'s verdict", async () => {
-    const attic = await mkdtemp(join(tmpdir(), "flume-attic-"));
+    const attic = await mkTempDir("flume-attic-");
     try {
       // The litter: a bay above every fixture created under it, awake on a
       // phase no fixture below ever declares.

@@ -9,8 +9,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,6 +31,7 @@ import type {
   PriorAttempt,
 } from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -44,7 +44,7 @@ const spawnMock = vi.mocked(spawn);
 let dir: string;
 
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), "flume-prompt-"));
+  dir = await mkTempDir("flume-prompt-");
   spawnMock.mockClear();
 });
 

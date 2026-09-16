@@ -20,7 +20,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
@@ -53,6 +53,7 @@ import type {
 } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
@@ -123,7 +124,7 @@ const git = (args: string[]): string =>
   execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
 
 beforeAll(async () => {
-  repo = await mkdtemp(join(tmpdir(), "flume-harness-chain-"));
+  repo = await mkTempDir("flume-harness-chain-");
   flumeDir = join(repo, STATE_ROOT);
 
   git(["init", "-q", "-b", "main"]);
@@ -964,7 +965,7 @@ it("a declared script gate hangs the committed path at the declared when, named 
 
   // And the path is the gate's own tree's, resolved there and run under its
   // own shebang — which is what makes a committed script declarable at all.
-  const tree = await mkdtemp(join(tmpdir(), "flume-harness-chain-script-"));
+  const tree = await mkTempDir("flume-harness-chain-script-");
   try {
     await mkdir(join(tree, "scripts"), { recursive: true });
     await writeFile(join(tree, script), "#!/bin/sh\ntouch ran-the-committed-script\n");

@@ -21,8 +21,7 @@
  */
 
 import { execFile, spawnSync } from "node:child_process";
-import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -30,7 +29,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { declaration } from "../.flume/declaration.ts";
-import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
+import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, runCli } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -54,7 +53,7 @@ describe.runIf(process.platform !== "win32")("bin/flume symlink walk", () => {
   let root: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "flume-bin-symlink-"));
+    root = await mkTempDir("flume-bin-symlink-");
   });
 
   afterEach(async () => {
@@ -146,7 +145,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
   let root: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "flume-bin-node-"));
+    root = await mkTempDir("flume-bin-node-");
   });
 
   afterEach(async () => {

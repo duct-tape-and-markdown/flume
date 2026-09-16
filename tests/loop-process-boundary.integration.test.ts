@@ -11,8 +11,7 @@
 
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -20,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { CLI, TSX_CLI, gitOut, runCli } from "./helpers/subprocess.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
@@ -175,7 +175,7 @@ interface Repo {
 }
 
 async function makeRepo(): Promise<Repo> {
-  const dir = await mkdtemp(join(tmpdir(), "flume-loop-boundary-"));
+  const dir = await mkTempDir("flume-loop-boundary-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q"], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -301,8 +301,8 @@ describe("process-boundary env inheritance — supervisor → child tick", () =>
       // did NOT inherit the supervisor's env it would fall back to the default
       // and never see these paths — so observing them end-to-end *is* the
       // inheritance proof, distinct from a child re-deriving the default.
-      const stateDir = await mkdtemp(join(tmpdir(), "flume-state-"));
-      const configDir = await mkdtemp(join(tmpdir(), "flume-config-"));
+      const stateDir = await mkTempDir("flume-state-");
+      const configDir = await mkTempDir("flume-config-");
 
       // chain.ts + prompt live under configDir; the agent it exports writes the
       // env it observes to `<FLUME_DIR>/observed-env.json` inside the child.

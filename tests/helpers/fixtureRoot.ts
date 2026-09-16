@@ -1,6 +1,7 @@
 /**
  * Where a fixture sits on disk: the temp root a suite composes its paths
- * from (`mkTempDir`), the root that owns its own bay (`mkFixtureRoot`), and
+ * from (`mkTempDir`, `mkTempDirSync`), the root that owns its own bay
+ * (`mkFixtureRoot`), and
  * the suite-wide refusal that keeps a state root from appearing above either
  * (`installStateRootLeakGuard`, wired through `vitest.config.ts`).
  *
@@ -15,7 +16,7 @@
  * a suite of its own.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -26,23 +27,12 @@ import { afterEach, beforeAll, expect } from "vitest";
  * A fresh temp directory under `parent`, named by the spelling the host
  * reports for it: `mkdtemp`, folded through `realpath`.
  *
- * `tmpdir()` answers the path the environment was configured with, not the
- * one the filesystem canonicalizes it to — `/var/folders/…` for macOS's
- * `/private/var/folders/…`, `C:\Users\RUNNER~1\…` for the Windows runner's
- * `C:\Users\runneradmin\…`, `/tmp` wherever it is a link. Git never carries
- * that spelling forward: it resolves a working directory to its physical path
- * before it reports one, so a fixture rooted at the raw `mkdtemp` result makes
- * every assertion comparing a `join`-composed path against something git
- * emitted — a worktree registry entry, a `rev-parse --show-toplevel`, a
- * name-only line — read two spellings of one directory. The comparison is
- * correct by accident on a host whose temp dir is already canonical and wrong
- * everywhere else, which is the fixture answering for the real writer in the
- * tester's own vocabulary (`.claude/rules/engineering.md`, *A seam gate reads
- * what the real writer wrote*).
- *
- * Folded once, at creation, rather than at each comparison: a `realpath` per
- * assertion is the same fact restated at every site that composes a path from
- * the root, and the site that forgets is the one that reds.
+ * The fold is the point, and `tests/fixtureRoots.test.ts` is where it is
+ * held — the case driving a fixture through a link the suite plants, and the
+ * scan that makes this function the suite's only maker of a temp root. Spend
+ * it once, at creation: a fold per comparison is the same fact restated at
+ * every site composing a path from the root, and the site that forgets is
+ * the one that reds.
  */
 export async function mkTempDir(
   prefix: string,
@@ -52,13 +42,35 @@ export async function mkTempDir(
 }
 
 /**
- * A fresh temp fixture directory that **owns its own bay** — `mkdtemp`, plus
- * an empty `.flume` planted at the root.
+ * {@link mkTempDir} for a caller that cannot await — same directory, same
+ * fold, same guarantee.
+ *
+ * `realpathSync.native`, never the bare `realpathSync`: node's JS walk
+ * rebuilds its answer out of the components it was handed, so it resolves a
+ * link and leaves win32's 8.3 alias exactly as it found it — and the alias is
+ * the spelling the runner's temp dir arrives in
+ * (`.claude/rules/platform-facts.md`, *`tmpdir()` can return an 8.3 short
+ * path git never spells*). Only the libuv form asks the OS for the name it
+ * holds, which is the name git will report
+ * (`.claude/rules/platform-facts.md`, *`realpathSync` keeps the `\\?\`
+ * prefix only where nothing resolved*) — and is the binding `mkTempDir`
+ * already reaches, `node:fs/promises`'s `realpath` being native too.
+ */
+export function mkTempDirSync(
+  prefix: string,
+  parent: string = tmpdir(),
+): string {
+  return realpathSync.native(mkdtempSync(join(parent, prefix)));
+}
+
+/**
+ * A fresh temp fixture directory that **owns its own bay** — a
+ * {@link mkTempDir} root, plus an empty `.flume` planted at it.
  *
  * Bay discovery walks up from cwd to the nearest `.flume` and only falls back
  * to cwd at the filesystem root (spec/cli.md, "Bay discovery walks up to the
- * nearest `.flume`"). A fixture rooted at `mkdtemp(tmpdir(), …)` therefore
- * resolves through `/tmp`'s ancestors: any `.flume` a crashed run, another
+ * nearest `.flume`"). A fixture rooted straight under the host temp dir
+ * therefore resolves through `/tmp`'s ancestors: any `.flume` a crashed run, another
  * suite, or an unrelated process leaves at `/tmp` — or above it — captures
  * every fixture below and silently retargets `repoRoot`, every state-dir
  * resolution, and every `job` verb at the litter. The suite then asserts a
@@ -74,7 +86,7 @@ export async function mkTempDir(
  * `parent` exists for the tests that plant the ancestor litter deliberately —
  * they need a fixture underneath a directory they control. Fixtures that are
  * never a CLI cwd (a scratch output dir, a worktree base handed over by env)
- * do not need rooting and keep plain `mkdtemp`.
+ * do not need rooting and stay on {@link mkTempDir}.
  *
  * The root itself is `mkTempDir`'s, so the bay and everything composed from
  * it are spelled the way git spells them.

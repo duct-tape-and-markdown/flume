@@ -29,8 +29,7 @@
  * plan tick writes the cite a refusal exists to catch.
  */
 
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -56,6 +55,7 @@ import { computeStateRootRel } from "../src/Dispatcher.ts";
 import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -127,7 +127,7 @@ let repoRoot: string;
 let cwd: string;
 
 beforeAll(async () => {
-  repoRoot = await mkdtemp(join(tmpdir(), "flume-build-args-"));
+  repoRoot = await mkTempDir("flume-build-args-");
   cwd = join(repoRoot, ".flume", "worktrees", "HARNESS-BUILD-PROMPT-ARGS");
   await mkdir(join(cwd, "spec"), { recursive: true });
   await writeFile(join(cwd, "spec", "harness.md"), SPEC);

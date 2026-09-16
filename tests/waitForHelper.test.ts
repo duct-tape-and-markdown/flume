@@ -12,12 +12,12 @@
  * temp file, because its subject is the filesystem.
  */
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, expect, it, vi } from "vitest";
 
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
 
 afterEach(() => {
@@ -81,7 +81,7 @@ it("the wait helper rejects naming what it waited for when its deadline passes",
 });
 
 it("fileWithContent reads an absent file and a created-but-empty one alike as not-yet, and the content once written", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "flume-waitfor-"));
+  const dir = await mkTempDir("flume-waitfor-");
   try {
     const path = join(dir, "claim");
     expect(fileWithContent(path)).toBeUndefined();

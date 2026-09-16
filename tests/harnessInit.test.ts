@@ -22,8 +22,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -41,6 +40,7 @@ import { HELP_JOB, HELP_TOP, isSubcommand } from "../src/cliHelp.ts";
 import { parsePending } from "../src/PendingSchema.ts";
 import { queuePath } from "../harness/layout.ts";
 import { resolvePendingPath } from "../src/paths.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   SPAWN_BUDGET_MS,
   TSX_CLI,
@@ -68,9 +68,9 @@ const CHAIN_LOAD = new URL("../src/chainLoad.ts", import.meta.url).href;
 let repoRoot: string;
 
 beforeEach(async () => {
-  // Plain `mkdtemp`, not `mkFixtureRoot`: the fixture's bay is the subject
-  // here, and init refuses a state root that is already present.
-  repoRoot = await mkdtemp(join(tmpdir(), "flume-harness-init-"));
+  // A bare root, not `mkFixtureRoot`: the fixture's bay is the subject here,
+  // and init refuses a state root that is already present.
+  repoRoot = await mkTempDir("flume-harness-init-");
 });
 
 afterEach(async () => {
@@ -250,7 +250,7 @@ it("flume-harness init writes the state root's protocol page from harness/templa
   expect(template).toContain("{{STATE_ROOT}}");
 
   const defaulted = await harnessInit({ repoRoot });
-  const other = await mkdtemp(join(tmpdir(), "flume-harness-init-alt-"));
+  const other = await mkTempDir("flume-harness-init-alt-");
   try {
     const relocated = await harnessInit({ repoRoot: other, stateRoot: ".harness" });
 

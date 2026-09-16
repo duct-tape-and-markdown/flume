@@ -27,13 +27,11 @@ import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -47,6 +45,7 @@ import {
   writePlanState,
 } from "../harness/index.ts";
 
+import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -64,8 +63,8 @@ let originalPath: string | undefined;
 let stagedDirs: string[];
 
 beforeEach(() => {
-  repo = mkdtempSync(join(tmpdir(), "flume-ci-"));
-  binDir = mkdtempSync(join(tmpdir(), "flume-ci-bin-"));
+  repo = mkTempDirSync("flume-ci-");
+  binDir = mkTempDirSync("flume-ci-bin-");
   stagedDirs = [];
   originalPath = process.env["PATH"];
   git("init", "-q", "-b", "main");
@@ -886,7 +885,7 @@ it("the inbox window's CI lane block is the lane leg's own render", () => {
  * PATH that still carried this directory would answer from it.
  */
 function stageHostForge(): string {
-  const dir = mkdtempSync(join(tmpdir(), "flume-ci-host-"));
+  const dir = mkTempDirSync("flume-ci-host-");
   stagedDirs.push(dir);
   if (process.platform === "win32") {
     writeFileSync(

@@ -1,11 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
+import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import {
   describeBareCall,
   fsImports,
@@ -18,7 +18,7 @@ let repoRoot: string;
 let flumeDir: string;
 
 beforeEach(() => {
-  repoRoot = mkdtempSync(join(tmpdir(), "flume-baton-"));
+  repoRoot = mkTempDirSync("flume-baton-");
   flumeDir = join(repoRoot, ".flume");
 });
 
@@ -145,7 +145,7 @@ describe.runIf(process.platform !== "win32")("Baton — an unstattable awake fla
 
 describe("Baton — missing directory", () => {
   it("constructor creates `<flumeDir>/awake` when neither exists", () => {
-    const fresh = mkdtempSync(join(tmpdir(), "flume-baton-fresh-"));
+    const fresh = mkTempDirSync("flume-baton-fresh-");
     try {
       expect(existsSync(join(fresh, ".flume"))).toBe(false);
 

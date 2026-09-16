@@ -23,8 +23,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -53,6 +52,7 @@ import {
   type PriorAttemptMode,
 } from "../src/Prompt.ts";
 import { slugify } from "../src/paths.ts";
+import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file's cases drive real git repositories, and a git spawn is a spawn
@@ -65,7 +65,7 @@ vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 let repo: string;
 
 beforeEach(() => {
-  repo = mkdtempSync(join(tmpdir(), "flume-windows-"));
+  repo = mkTempDirSync("flume-windows-");
   git("init", "-q", "-b", "main");
   git("config", "user.email", "windows@example.test");
   git("config", "user.name", "Windows Fixture");
@@ -621,7 +621,7 @@ it("a window render refuses by name when git fails for a reason other than an un
   // lists the tree and consults no cursor at all. The failure below is
   // therefore git's own, not the unresolvable-cursor refusal under a second
   // name.
-  const notATree = mkdtempSync(join(tmpdir(), "flume-windows-nogit-"));
+  const notATree = mkTempDirSync("flume-windows-nogit-");
 
   // What git says about that directory, read here rather than written by
   // hand: the assertion below is then that git's sentence reached the

@@ -17,8 +17,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,6 +29,7 @@ import {
   formatCitation,
   scanCommentCitations,
 } from "./helpers/commentCitations.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -236,7 +236,7 @@ let fixtureScan: CitationScan;
 let repoScan: CitationScan;
 
 beforeAll(async () => {
-  fixtureRoot = await mkdtemp(join(tmpdir(), "flume-citation-scan-"));
+  fixtureRoot = await mkTempDir("flume-citation-scan-");
   for (const [rel, body] of Object.entries(FIXTURE_FILES)) {
     const path = join(fixtureRoot, rel);
     await mkdir(dirname(path), { recursive: true });

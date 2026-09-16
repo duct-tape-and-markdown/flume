@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,6 +34,8 @@ import {
   slugify as indexSlugify,
   stopFlagPath as indexStopFlagPath,
 } from "../src/index.ts";
+
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
 // The win32 MAX_PATH idiom (`toNamespacedPath(join(...))`) is pinned by
 // source scan in tests/Baton.test.ts, not here: `namespacedJoin` *is* that
@@ -616,7 +617,7 @@ describe("the chain module's path has one derivation", () => {
   let configDir: string;
 
   beforeEach(async () => {
-    repo = await mkdtemp(join(tmpdir(), "flume-chain-module-path-"));
+    repo = await mkTempDir("flume-chain-module-path-");
     configDir = join(repo, ".flume");
     await mkdir(configDir, { recursive: true });
   });

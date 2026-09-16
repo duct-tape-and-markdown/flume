@@ -5,8 +5,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -14,6 +13,7 @@ import { promisify } from "node:util";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { denyDirectory } from "./helpers/denial.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
   SPAWN_BUDGET_MS,
@@ -62,7 +62,7 @@ describe("CJS-context host refusal across the chain-loading CLI surfaces (JOBRUN
   async function withCjsHost(
     run: (dir: string) => Promise<void>,
   ): Promise<void> {
-    const dir = await mkdtemp(join(tmpdir(), "flume-cjs-host-"));
+    const dir = await mkTempDir("flume-cjs-host-");
     try {
       await writeFile(
         join(dir, "package.json"),
@@ -146,7 +146,7 @@ async function makeJobRepo(branch: string): Promise<{
   dir: string;
   cleanup: () => Promise<void>;
 }> {
-  const dir = await mkdtemp(join(tmpdir(), "flume-job-"));
+  const dir = await mkTempDir("flume-job-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q", "-b", branch], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -468,7 +468,7 @@ describe("flume job status — bay discovery walk-up (real CLI)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("no .flume anywhere above cwd: keeps cwd-as-root, a fresh undocked repo prints 'no jobs' rather than erroring", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "flume-walkup-undocked-"));
+    const dir = await mkTempDir("flume-walkup-undocked-");
     try {
       const r = await runCli(dir, ["job", "status"]);
       expect(r.code).toBe(0);

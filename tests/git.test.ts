@@ -3,14 +3,12 @@ import { existsSync } from "node:fs";
 import {
   chmod,
   mkdir,
-  mkdtemp,
   readFile,
   rm,
   symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { basename, dirname, join, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
@@ -129,6 +127,7 @@ import {
 } from "../src/git.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -152,7 +151,7 @@ async function resolveRefPath(cwd: string): Promise<string> {
 let repo: string;
 
 beforeEach(async () => {
-  repo = await mkdtemp(join(tmpdir(), "flume-git-"));
+  repo = await mkTempDir("flume-git-");
   const opts = { cwd: repo };
   await exec("git", ["init", "-q"], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -217,7 +216,7 @@ describe("currentRefPath", () => {
   });
 
   it("reports kind not-a-repository for a cwd outside any git working tree", async () => {
-    const outside = await mkdtemp(join(tmpdir(), "flume-non-repo-"));
+    const outside = await mkTempDir("flume-non-repo-");
     try {
       const ref = await currentRefPath(outside);
       expect(ref).toEqual({ kind: "not-a-repository" });
@@ -231,7 +230,7 @@ describe("currentRefPath", () => {
     // shape node:child_process reports for a missing git binary — real
     // spawn failure, not a mocked stand-in.
     const missing = join(
-      await mkdtemp(join(tmpdir(), "flume-missing-")),
+      await mkTempDir("flume-missing-"),
       "gone",
     );
     const ref = await currentRefPath(missing);

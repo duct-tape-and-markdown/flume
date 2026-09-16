@@ -19,8 +19,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -32,6 +31,7 @@ import { consumerIgnores } from "../harness/ignores.ts";
 import { harnessInit, protocolTemplatePath } from "../harness/init.ts";
 import { PROMPT_NAMES, promptPath } from "../harness/prompts.ts";
 import { resolvePackageJson } from "../src/selfPackage.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
   SPAWN_BUDGET_MS,
@@ -322,7 +322,7 @@ function entryPathsOf(pkg: Manifest): string[] {
 }
 
 beforeAll(async () => {
-  scratch = await mkdtemp(join(tmpdir(), "flume-packaging-"));
+  scratch = await mkTempDir("flume-packaging-");
   pkgDir = join(scratch, "pkg");
   await mkdir(pkgDir, { recursive: true });
 

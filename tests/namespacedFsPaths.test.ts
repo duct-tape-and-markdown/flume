@@ -57,8 +57,7 @@
  */
 
 import { readFileSync, readdirSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join, toNamespacedPath } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,6 +70,7 @@ import {
   type PlanState,
 } from "../harness/index.ts";
 
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   describeBareCall,
   describeEscape,
@@ -600,7 +600,7 @@ afterEach(async () => {
 });
 
 async function deepStateRoot(): Promise<string> {
-  const base = await mkdtemp(join(tmpdir(), "flume-deep-"));
+  const base = await mkTempDir("flume-deep-");
   deepRoot = base;
   let root = base;
   // Each segment is well under NAME_MAX; only the total is out of bounds,

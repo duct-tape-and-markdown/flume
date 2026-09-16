@@ -25,13 +25,11 @@ import { execFile } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -53,6 +51,7 @@ import {
   type FlumePaths,
 } from "../src/flumeApi.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
+import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { REPO_ROOT } from "./helpers/repoProgram.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
@@ -376,7 +375,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
    * `<spec-corpus>` span now refuses without.
    */
   async function seedTickCwd(prefix: string, withCorpus: boolean): Promise<string> {
-    const dir = mkdtempSync(join(tmpdir(), prefix));
+    const dir = mkTempDirSync(prefix);
     scratch.push(dir);
     writeFileSync(join(dir, "README.md"), "scratch\n");
     if (withCorpus) {
@@ -443,7 +442,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
 
   /** A state root carrying every artifact the templates' spans read. */
   function seedStateRoot(prefix: string): string {
-    const root = mkdtempSync(join(tmpdir(), prefix));
+    const root = mkTempDirSync(prefix);
     scratch.push(root);
     for (const artifact of ARTIFACTS) {
       const at = artifact.at(root);
@@ -526,14 +525,14 @@ describe("examples/prompts — the spans read the injected state root", () => {
   }
 
   it("every example prompt's spans read their artifacts under a state root path carrying a space", async () => {
-    const root = mkdtempSync(join(tmpdir(), "flume example prompts space-"));
+    const root = mkTempDirSync("flume example prompts space-");
     expect(root).toContain(" ");
 
     await everyPromptReadsItsArtifactsUnder(root);
   }, SPAWN_BUDGET_MS);
 
   it("every example prompt's spans read their artifacts under a state root path carrying a backslash", async () => {
-    const base = mkdtempSync(join(tmpdir(), "flume-example-prompts-backslash-"));
+    const base = mkTempDirSync("flume-example-prompts-backslash-");
     scratch.push(base);
     // On win32 the separator *is* the backslash, so every state root there is
     // this case. Elsewhere a backslash is an ordinary filename byte, and the
@@ -743,7 +742,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
    */
   it("the example plan template's artifact spans render their empty placeholders when the artifacts are absent", async () => {
     const { file, phase } = planTemplate();
-    const root = mkdtempSync(join(tmpdir(), "flume-example-prompts-cold-root-"));
+    const root = mkTempDirSync("flume-example-prompts-cold-root-");
     scratch.push(root);
     for (const artifact of ARTIFACTS) {
       expect(existsSync(opened(artifact, root).path)).toBe(false);
@@ -1051,7 +1050,7 @@ describe("cascade-chain.ts — the plan ladder", () => {
   const finding = (): string => join(flumeDir, "inbox", "2026-09-11-report.md");
 
   beforeEach(() => {
-    flumeDir = join(mkdtempSync(join(tmpdir(), "cascade-ladder-")), ".flume");
+    flumeDir = join(mkTempDirSync("cascade-ladder-"), ".flume");
     mkdirSync(join(flumeDir, "inbox"), { recursive: true });
   });
 
@@ -2154,7 +2153,7 @@ describe("backlog-groomer-chain.ts — where the session capture lands", () => {
     const fx = await makeFixture();
     // A relocated state root is expected to live outside the working tree
     // (spec/chain.md, same section), so this one is a sibling temp dir.
-    const relocated = mkdtempSync(join(tmpdir(), "flume-relocated-"));
+    const relocated = mkTempDirSync("flume-relocated-");
     try {
       await seedBacklog(fx.repo);
 
@@ -2234,7 +2233,7 @@ describe("backlog-groomer-chain.ts — the reason is one line", () => {
   });
 
   it("a newline in a reason never reaches the groomer's shipped ledger", async () => {
-    const repo = mkdtempSync(join(tmpdir(), "groomer-reason-"));
+    const repo = mkTempDirSync("groomer-reason-");
     try {
       // A real repo, because the groomer commits what it wrote: without one
       // an unbounded `reason` fails at `git add` *after* forging the ledger

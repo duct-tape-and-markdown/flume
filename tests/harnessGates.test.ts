@@ -19,8 +19,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -42,6 +41,7 @@ import { readFileAtRef, statusRecords } from "../src/git.ts";
 import { matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
@@ -223,7 +223,7 @@ const records = (
 ): Promise<GateResult> => named("records").run(ctxFor(span, over));
 
 beforeEach(async () => {
-  repo = await mkdtemp(join(tmpdir(), "flume-harness-gates-"));
+  repo = await mkTempDir("flume-harness-gates-");
   git(repo, ["init", "-q"]);
   git(repo, ["config", "user.email", "t@example.com"]);
   git(repo, ["config", "user.name", "t"]);

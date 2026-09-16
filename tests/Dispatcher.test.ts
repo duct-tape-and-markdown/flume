@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, lstatSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -2875,7 +2875,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
   });
 
   it("FLUME_WORKTREES_DIR set → worktree lands under resolve(override), default base never materializes", async () => {
-    const container = await mkdtemp(join(tmpdir(), "flume-wt-override-"));
+    const container = await mkTempDir("flume-wt-override-");
     try {
       // Absolute override — its own resolve() fixed point, so asserting
       // placement under it asserts the resolved base verbatim.
@@ -2966,7 +2966,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
   // path proves that.
   it("a chain-declared worktreesBase places the tick's worktree", async () => {
     delete process.env.FLUME_WORKTREES_DIR;
-    const container = await mkdtemp(join(tmpdir(), "flume-wt-declared-"));
+    const container = await mkTempDir("flume-wt-declared-");
     try {
       const flumeDir = join(fx.repo, ".flume");
       // A function of the roots, not a committed path literal: the chain
@@ -3025,7 +3025,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
   });
 
   it("FLUME_WORKTREES_DIR outranks a chain-declared base", async () => {
-    const container = await mkdtemp(join(tmpdir(), "flume-wt-rank-"));
+    const container = await mkTempDir("flume-wt-rank-");
     try {
       const override = join(container, "operator-base");
       const declared = join(container, "chain-base");
@@ -3113,7 +3113,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
  */
 describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the chore commit", () => {
   it("merges the entry to trunk, updates pending at the relocated path, no chore commit, no git fatal", async () => {
-    const dock = await mkdtemp(join(tmpdir(), "flume-dock-"));
+    const dock = await mkTempDir("flume-dock-");
     try {
       const pendingPath = join(dock, "plan", "pending.json");
       await mkdir(dirname(pendingPath), { recursive: true });
@@ -3197,7 +3197,7 @@ describe(
     }
 
     it("agrees with computeStateRootRel on a relocated (out-of-tree) pendingPath", async () => {
-      const dock = await mkdtemp(join(tmpdir(), "flume-dock-agree-"));
+      const dock = await mkTempDir("flume-dock-agree-");
       try {
         const dispatcher = new Dispatcher({
           chainLoader: staticLoader({ phases: [], humanOnly: [] }),
@@ -3243,7 +3243,7 @@ describe(
  */
 describe("Dispatcher — relocated pendingPath existence probe", () => {
   it("readPending throws when a relocated pendingPath is present but unstattable", async () => {
-    const dock = await mkdtemp(join(tmpdir(), "flume-dock-unstattable-"));
+    const dock = await mkTempDir("flume-dock-unstattable-");
     try {
       const pendingPath = join(dock, "plan", "pending.json");
       await mkdir(dirname(pendingPath), { recursive: true });
@@ -3277,7 +3277,7 @@ describe("Dispatcher — relocated pendingPath existence probe", () => {
   });
 
   it("an absent relocated pendingPath still reads as an empty queue, not a refusal", async () => {
-    const dock = await mkdtemp(join(tmpdir(), "flume-dock-absent-"));
+    const dock = await mkTempDir("flume-dock-absent-");
     try {
       // Nothing written under `dock` at all — ENOENT is the one stat failure
       // the probe is allowed to read as absence, and the tick must still
@@ -4408,8 +4408,8 @@ describe("Dispatcher fanout — job-scoped branch namespace", () => {
   });
 
   it("two state roots with identical tags fan out onto disjoint branches", async () => {
-    const dockA = await mkdtemp(join(tmpdir(), "flume-ns-a-"));
-    const dockB = await mkdtemp(join(tmpdir(), "flume-ns-b-"));
+    const dockA = await mkTempDir("flume-ns-a-");
+    const dockB = await mkTempDir("flume-ns-b-");
     try {
       const seed = async (dock: string, editPath: string) => {
         const pendingPath = join(dock, "plan", "pending.json");
@@ -4509,7 +4509,7 @@ describe("Dispatcher fanout — job-scoped worktree paths", () => {
   });
 
   it("namespace + FLUME_WORKTREES_DIR → worktree at <base>/<namespace>/<slug>; teardown cleans it", async () => {
-    const container = await mkdtemp(join(tmpdir(), "flume-nspath-"));
+    const container = await mkTempDir("flume-nspath-");
     try {
       const base = join(container, "wt-base");
       process.env.FLUME_WORKTREES_DIR = base;
@@ -4552,9 +4552,9 @@ describe("Dispatcher fanout — job-scoped worktree paths", () => {
   });
 
   it("two namespaces, shared base, identical tag → disjoint paths; neither run rm's the other's live worktree", async () => {
-    const container = await mkdtemp(join(tmpdir(), "flume-nspath-shared-"));
-    const dockA = await mkdtemp(join(tmpdir(), "flume-nspath-a-"));
-    const dockB = await mkdtemp(join(tmpdir(), "flume-nspath-b-"));
+    const container = await mkTempDir("flume-nspath-shared-");
+    const dockA = await mkTempDir("flume-nspath-a-");
+    const dockB = await mkTempDir("flume-nspath-b-");
     try {
       const base = join(container, "wt-base");
       process.env.FLUME_WORKTREES_DIR = base;
@@ -4658,7 +4658,7 @@ describe("Dispatcher fanout — job-scoped worktree paths", () => {
   });
 
   it("no namespace → legacy <base>/<slug> (bare .flume harnesses unchanged)", async () => {
-    const container = await mkdtemp(join(tmpdir(), "flume-nspath-legacy-"));
+    const container = await mkTempDir("flume-nspath-legacy-");
     try {
       const base = join(container, "wt-base");
       process.env.FLUME_WORKTREES_DIR = base;
@@ -5005,7 +5005,7 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
  */
 describe("readMergingMarkers — the merging dir's absent-vs-unreachable split", () => {
   it("readMergingMarkers reads an absent merging dir as no interrupted merge", async () => {
-    const flumeDir = await mkdtemp(join(tmpdir(), "flume-mm-absent-"));
+    const flumeDir = await mkTempDir("flume-mm-absent-");
     try {
       expect(existsSync(mergingDir(flumeDir))).toBe(false);
       expect(await readMergingMarkers(flumeDir)).toEqual([]);
@@ -5015,7 +5015,7 @@ describe("readMergingMarkers — the merging dir's absent-vs-unreachable split",
   });
 
   it("readMergingMarkers throws when the merging dir cannot be read for a reason other than absence", async () => {
-    const flumeDir = await mkdtemp(join(tmpdir(), "flume-mm-sealed-"));
+    const flumeDir = await mkTempDir("flume-mm-sealed-");
     const dir = mergingDir(flumeDir);
     try {
       await mkdir(dir, { recursive: true });
@@ -5060,7 +5060,7 @@ describe("readMergingMarkers — the merging dir's absent-vs-unreachable split",
   });
 
   it("readMergingMarkers refuses an obstructed merging dir with a reading of its own, naming the path that is not a directory", async () => {
-    const root = await mkdtemp(join(tmpdir(), "flume-mm-obstructed-"));
+    const root = await mkTempDir("flume-mm-obstructed-");
     const flumeDir = join(root, ".flume");
     const dir = mergingDir(flumeDir);
     try {
@@ -7798,7 +7798,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
     // selection, but bypasses loadChainModule — the stock-CLI bridge.
     // This exercises the real extraction: a chain.ts that *exports*
     // forkResolver must have it picked up on disk, exactly as `agent` is.
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-forkresolver-"));
+    const cfg = await mkTempDir("flume-cfg-forkresolver-");
     try {
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
       await writeFile(
@@ -12190,7 +12190,7 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => 
     // between the two independent commits), the verdict's own `at`
     // (wall-clock at the moment each `dispatcher.tick()` call built its
     // verdict), and TickResult.flumeDir/configDir (each `runOnce` call gets
-    // its own fresh `mkdtemp` fixture) — blank those out before comparing the
+    // its own fresh temp fixture) — blank those out before comparing the
     // rest byte-for-byte.
     const normalize = (o: unknown) =>
       JSON.parse(
@@ -12567,7 +12567,7 @@ describe("Dispatcher — per-tick chain re-resolution", () => {
   // in-process, with no subprocess.
 
   it("constructs with only configDir → resolves the on-disk chain.ts", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-ondisk-"));
+    const cfg = await mkTempDir("flume-cfg-ondisk-");
     try {
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
       await writeFile(
@@ -12632,8 +12632,8 @@ describe(
     }
 
     it("a relocated state root reaches the factory: the chain writes its per-run artifact under api.paths.flumeDir", async () => {
-      const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-apipaths-"));
-      const stateRoot = await mkdtemp(join(tmpdir(), "flume-state-apipaths-"));
+      const cfg = await mkTempDir("flume-cfg-apipaths-");
+      const stateRoot = await mkTempDir("flume-state-apipaths-");
       try {
         // Pairwise-distinct roots are what gives the assertion teeth: with
         // repoRoot === configDir === flumeDir, a chain that ignored
@@ -12691,8 +12691,8 @@ describe(
     });
 
     it("an undeclared flumeDir reaches the factory already defaulted to <repoRoot>/.flume, not undefined", async () => {
-      const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-apipaths-default-"));
-      const scratch = await mkdtemp(join(tmpdir(), "flume-rec-apipaths-"));
+      const cfg = await mkTempDir("flume-cfg-apipaths-default-");
+      const scratch = await mkTempDir("flume-rec-apipaths-");
       try {
         const recordPath = join(scratch, "paths.json");
         await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
@@ -13526,7 +13526,7 @@ describe("Dispatcher — GateContext.stateRootRel (GATE-CONTEXT-STATE-ROOT-REL, 
   });
 
   it("fanout tick: stateRootRel is undefined when flumeDir is relocated outside repoRoot", async () => {
-    const dock = await mkdtemp(join(tmpdir(), "flume-dock-staterootrel-"));
+    const dock = await mkTempDir("flume-dock-staterootrel-");
     try {
       const pendingPath = join(dock, "plan", "pending.json");
       await mkdir(dirname(pendingPath), { recursive: true });
@@ -13667,7 +13667,7 @@ describe("Dispatcher — TickContext.stateRootRel (TICKCONTEXT-STATE-ROOT-REL, s
   });
 
   it("fanout: TickContext.stateRootRel is undefined when flumeDir is relocated outside repoRoot", async () => {
-    const dock = await mkdtemp(join(tmpdir(), "flume-dock-tcsrr-"));
+    const dock = await mkTempDir("flume-dock-tcsrr-");
     try {
       const pendingPath = join(dock, "plan", "pending.json");
       await mkdir(dirname(pendingPath), { recursive: true });
@@ -13943,7 +13943,7 @@ describe("Dispatcher — GateContext.touchedPaths (GATECONTEXT-TOUCHED-PATHS-DED
 
 describe("Dispatcher — Chain.friction load-time validation", () => {
   it("rejects an absolute-path friction declaration with a usage-shaped error", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-abs-"));
+    const cfg = await mkTempDir("flume-cfg-friction-abs-");
     try {
       const abs = resolve(tmpdir(), "flume-friction-abs-target");
       await writeMinimalChain(cfg, { friction: abs });
@@ -13965,7 +13965,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
   // reference equality distinguishes "the engine handed me its gate" from
   // "I resolved a gate that looks like it".
   it("hands the chain factory the identity-same engine objects the dispatcher holds", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-api-identity-"));
+    const cfg = await mkTempDir("flume-cfg-api-identity-");
     try {
       await mkdir(cfg, { recursive: true });
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
@@ -13997,7 +13997,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
   // field that survives `loadChainModule`'s return, unlike an ad hoc key)
   // so the test can compare against the engine's own exports by reference.
   it("hands the chain factory the identity-same error classes the engine throws", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-api-errors-"));
+    const cfg = await mkTempDir("flume-cfg-api-errors-");
     try {
       await mkdir(cfg, { recursive: true });
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
@@ -14027,7 +14027,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
   // `readTickVerdicts` is the one that claim doesn't name explicitly but the
   // same rule covers (FLUMEAPI-READTICKVERDICTS-MISSING).
   it("hands the chain factory the identity-same readTickVerdicts the engine exports", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-api-readtickverdicts-"));
+    const cfg = await mkTempDir("flume-cfg-api-readtickverdicts-");
     try {
       await mkdir(cfg, { recursive: true });
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
@@ -14050,7 +14050,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
   });
 
   it("refuses a default export that is not a function, naming the migration", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-nonfactory-"));
+    const cfg = await mkTempDir("flume-cfg-nonfactory-");
     try {
       await mkdir(cfg, { recursive: true });
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
@@ -14073,7 +14073,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
   });
 
   it("rejects a friction declaration that resolves outside the state root", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-escape-"));
+    const cfg = await mkTempDir("flume-cfg-friction-escape-");
     try {
       await writeMinimalChain(cfg, { friction: "../escaped-friction" });
 
@@ -14086,7 +14086,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
   });
 
   it("accepts a valid state-root-relative friction declaration", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-valid-"));
+    const cfg = await mkTempDir("flume-cfg-friction-valid-");
     try {
       await writeMinimalChain(cfg, { friction: "friction" });
 
@@ -14099,7 +14099,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
   });
 
   it("treats an undeclared friction field as a strict no-op — chain loads unaffected", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-friction-undeclared-"));
+    const cfg = await mkTempDir("flume-cfg-friction-undeclared-");
     try {
       await writeMinimalChain(cfg);
 
@@ -14125,7 +14125,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
  */
 describe("Dispatcher — Chain.pendingPath load-time validation (spec/pending.md 'The pending queue')", () => {
   it("the chain load refuses a pendingPath declared as an absolute path", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-pendingpath-abs-"));
+    const cfg = await mkTempDir("flume-cfg-pendingpath-abs-");
     try {
       const abs = resolve(tmpdir(), "flume-pendingpath-abs-target", "pending.json");
       await writeMinimalChain(cfg, { pendingPath: abs });
@@ -14139,7 +14139,7 @@ describe("Dispatcher — Chain.pendingPath load-time validation (spec/pending.md
   });
 
   it("the chain load refuses a pendingPath that resolves outside the state root", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-pendingpath-escape-"));
+    const cfg = await mkTempDir("flume-cfg-pendingpath-escape-");
     try {
       await writeMinimalChain(cfg, {
         pendingPath: "../escaped/pending.json",
@@ -14156,7 +14156,7 @@ describe("Dispatcher — Chain.pendingPath load-time validation (spec/pending.md
 
 describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL)", () => {
   it("refuses entryChannelPaths declared without scopeWritesToEntry: true, naming the field", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-deaddecl-channel-"));
+    const cfg = await mkTempDir("flume-cfg-deaddecl-channel-");
     try {
       await mkdir(cfg, { recursive: true });
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
@@ -14178,7 +14178,7 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
   });
 
   it("loads an afterMerge gate on a concurrency: singleton phase — no longer a dead declaration (spec/worktrees.md 'Singleton runs in a worktree')", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-deaddecl-aftermerge-"));
+    const cfg = await mkTempDir("flume-cfg-deaddecl-aftermerge-");
     try {
       await mkdir(cfg, { recursive: true });
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
@@ -14202,7 +14202,7 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
   });
 
   it("still loads the two live shapes: entryChannelPaths on a scoped phase, and an afterMerge gate on a fanout phase", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-deaddecl-live-"));
+    const cfg = await mkTempDir("flume-cfg-deaddecl-live-");
     try {
       await mkdir(cfg, { recursive: true });
       await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
@@ -14249,7 +14249,7 @@ describe("Dispatcher — CJS-context host chain-load refusal", () => {
   }
 
   it("tsx 4.21 signature — a CJS-context package.json plus a real import statement throws CjsContextLoadError naming the fix", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-cjs-import-"));
+    const cfg = await mkTempDir("flume-cfg-cjs-import-");
     try {
       // Explicit "commonjs" (not merely absent "type") is what actually
       // routes tsx into its CJS-fallback parse path — verified by hand
@@ -14274,7 +14274,7 @@ describe("Dispatcher — CJS-context host chain-load refusal", () => {
   });
 
   it("tsx 4.23 signature — ERR_MODULE_NOT_FOUND with a percent-encoded ?namespace= query throws CjsContextLoadError naming the fix", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-cjs-namespace-"));
+    const cfg = await mkTempDir("flume-cfg-cjs-namespace-");
     try {
       await writeCfg(cfg, `export default {};\n`);
       const namespaceErr = Object.assign(
@@ -14296,7 +14296,7 @@ describe("Dispatcher — CJS-context host chain-load refusal", () => {
   });
 
   it("a genuinely missing dependency (plain ERR_MODULE_NOT_FOUND, no namespace-query artifact) passes through unchanged", async () => {
-    const cfg = await mkdtemp(join(tmpdir(), "flume-cfg-cjs-genuine-"));
+    const cfg = await mkTempDir("flume-cfg-cjs-genuine-");
     try {
       await writeCfg(
         cfg,
@@ -14531,7 +14531,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
   });
 
   it("a relocated state root has no worktree-local mirror to harvest from — no-op", async () => {
-    const dock = await mkdtemp(join(tmpdir(), "flume-dock-friction-"));
+    const dock = await mkTempDir("flume-dock-friction-");
     try {
       const pendingPath = join(dock, "plan", "pending.json");
       await mkdir(dirname(pendingPath), { recursive: true });
@@ -15423,7 +15423,7 @@ describe.runIf(process.platform === "win32")(
     });
 
     it("frictionCountLine resolves a real count when chain.friction nests past win32's ~260-char limit (FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT)", async () => {
-      const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-w32-"));
+      const stateRoot = await mkTempDir("flume-fcl-w32-");
       try {
         // Same deep-friction shape as WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT
         // / HARVESTFRICTION-WIN32-PATH-TOTAL-LIMIT above: join(stateRoot,
@@ -15800,7 +15800,7 @@ describe.runIf(process.platform === "win32")(
   "Dispatcher — loadChainModule/pendingPath win32 total-path limit (DISPATCHER-NAMESPACEDJOIN-WIN32-PATH-TOTAL-LIMIT)",
   () => {
     it("loadChainModule doesn't misread an existing chain.ts as absent when its resolved path exceeds win32's ~260-char limit", async () => {
-      const base = await mkdtemp(join(tmpdir(), "flume-chain-w32-"));
+      const base = await mkTempDir("flume-chain-w32-");
       try {
         const cfg = join(
           base,
@@ -15822,7 +15822,7 @@ describe.runIf(process.platform === "win32")(
     });
 
     it("readPending/readPendingTolerant/commitPendingUpdate don't misread an existing or writable pending.json as absent when pendingPath exceeds win32's ~260-char limit", async () => {
-      const dock = await mkdtemp(join(tmpdir(), "flume-dock-w32-"));
+      const dock = await mkTempDir("flume-dock-w32-");
       // An operator override outranks the chain's declared base
       // (`worktreesBase`, src/paths.ts), and the base below is load-bearing
       // here — clear it for the duration so the declaration governs.
@@ -16569,7 +16569,7 @@ describe('phase.promptPath resolves against configDir (spec/chain.md "Chain resi
 
   beforeEach(async () => {
     fx = await makeFixture();
-    pkg = await mkdtemp(join(tmpdir(), "flume-prompt-pkg-"));
+    pkg = await mkTempDir("flume-prompt-pkg-");
     shipped = join(pkg, "prompts", "shipped.md");
     await mkdir(dirname(shipped), { recursive: true });
     await writeFile(shipped, "shipped-by-the-package\n", "utf8");

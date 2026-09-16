@@ -13,8 +13,7 @@
 
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -22,6 +21,7 @@ import { describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { CLI, TSX_CLI, runCli } from "./helpers/subprocess.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
@@ -38,7 +38,7 @@ async function makeJobRepo(branch: string): Promise<{
   dir: string;
   cleanup: () => Promise<void>;
 }> {
-  const dir = await mkdtemp(join(tmpdir(), "flume-job-"));
+  const dir = await mkTempDir("flume-job-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q", "-b", branch], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -189,7 +189,7 @@ describe("flume loop/tick — tip claim wiring", () => {
     "two loops from two worktrees on different branches: both run (keyed per-ref, not per-checkout)",
     async () => {
       const repo = await makeJobRepo("main");
-      const wtParent = await mkdtemp(join(tmpdir(), "flume-tip-claim-wt-"));
+      const wtParent = await mkTempDir("flume-tip-claim-wt-");
       const wtDir = join(wtParent, "wt");
       try {
         await exec("git", ["worktree", "add", "-b", "other", wtDir], {
@@ -472,7 +472,7 @@ describe("flume loop/tick — tip claim wiring", () => {
     // detached" even when the caller was never in a repository at all.
     'flume tick outside a git repository reports that, not "HEAD is detached"',
     async () => {
-      const dir = await mkdtemp(join(tmpdir(), "flume-non-repo-"));
+      const dir = await mkTempDir("flume-non-repo-");
       try {
         const r = await runCli(dir, ["tick"]);
 

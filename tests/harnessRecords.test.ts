@@ -18,8 +18,7 @@
  * these cases rather than silently skipped by them.
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { afterEach, beforeEach, expect, it } from "vitest";
@@ -33,11 +32,13 @@ import {
   recordsPending,
 } from "../harness/index.ts";
 
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
+
 /** A fresh, empty state root per case — no directories, the untouched shape. */
 let stateRoot: string;
 
 beforeEach(async () => {
-  stateRoot = await mkdtemp(join(tmpdir(), "flume-records-"));
+  stateRoot = await mkTempDir("flume-records-");
 });
 
 afterEach(async () => {

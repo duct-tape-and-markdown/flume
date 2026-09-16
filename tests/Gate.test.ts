@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -24,6 +23,7 @@ import {
   pendingGate,
 } from "../src/builtinGates.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -189,7 +189,7 @@ describe.runIf(process.platform === "win32")(
     let originalPath: string | undefined;
 
     beforeEach(async () => {
-      shimDir = await mkdtemp(join(tmpdir(), "flume-shim-"));
+      shimDir = await mkTempDir("flume-shim-");
       await writeFile(
         join(shimDir, "flume-shim-fixture.cmd"),
         "@echo off\r\necho shim-ok %1\r\n",
@@ -240,7 +240,7 @@ describe.runIf(process.platform === "win32")(
 );
 
 async function createBootstrappedRepo(prefix = "flume-gate-"): Promise<string> {
-  const repo = await mkdtemp(join(tmpdir(), prefix));
+  const repo = await mkTempDir(prefix);
   const opts = { cwd: repo };
   await exec("git", ["init", "-q"], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -709,7 +709,7 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
     // `git show --name-only` here, that exec would reject and the gate's
     // run() promise would reject too — a clean resolve below is only
     // possible because the gate trusted ctx.touchedPaths instead.
-    notARepo = await mkdtemp(join(tmpdir(), "flume-gate-notrepo-"));
+    notARepo = await mkTempDir("flume-gate-notrepo-");
   });
 
   afterEach(async () => {
@@ -796,7 +796,7 @@ describe("GateContext — the fields every gate context states", () => {
 
   /** Type-check one `GateContext` literal against the real `src/Gate.ts`. */
   async function diagnose(fields: string): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), "flume-gatectx-type-"));
+    const dir = await mkTempDir("flume-gatectx-type-");
     try {
       const file = join(dir, "fixture.ts");
       await writeFile(

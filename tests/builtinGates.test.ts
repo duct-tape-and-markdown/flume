@@ -21,8 +21,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -61,6 +60,7 @@ import type {
   PkgManagerGate,
 } from "../src/index.ts";
 
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -101,7 +101,7 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
 // (PENDING-GATE-STALE-TIP-READ), so its tests need a real repo and a real
 // commit sha rather than a bare temp dir.
 async function createBootstrappedRepo(prefix: string): Promise<string> {
-  const repo = await mkdtemp(join(tmpdir(), prefix));
+  const repo = await mkTempDir(prefix);
   const opts = { cwd: repo };
   await exec("git", ["init", "-q"], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -467,9 +467,7 @@ describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
   });
 
   it("reads a relocated flumeDir (pendingPath outside repoRoot) from disk, unchanged", async () => {
-    const outside = await mkdtemp(
-      join(tmpdir(), "flume-pendinggate-relocated-"),
-    );
+    const outside = await mkTempDir("flume-pendinggate-relocated-");
     try {
       const pendingDir = join(outside, "plan");
       await mkdir(pendingDir, { recursive: true });
@@ -658,7 +656,7 @@ describe("tscGate / vitestGate / eslintGate — pnpm cmd override (BUILTINGATES-
  * case drive the real tsc without its verdict being the repo's typecheck.
  */
 async function makeTsProject(source: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "flume-tsc-project-"));
+  const dir = await mkTempDir("flume-tsc-project-");
   await writeFile(
     join(dir, "tsconfig.json"),
     JSON.stringify({
@@ -816,7 +814,7 @@ describe.runIf(process.platform === "win32")(
     let originalPath: string | undefined;
 
     beforeEach(async () => {
-      shimDir = await mkdtemp(join(tmpdir(), "flume-pnpm-shim-"));
+      shimDir = await mkTempDir("flume-pnpm-shim-");
       await writeFile(
         join(shimDir, "pnpm.cmd"),
         "@echo off\r\necho pnpm-shim %*\r\n",

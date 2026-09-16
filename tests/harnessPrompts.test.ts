@@ -17,13 +17,11 @@
 import { existsSync } from "node:fs";
 import {
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,6 +46,7 @@ import {
   NO_COMMIT_MODES,
   renderPrompt,
 } from "../src/Prompt.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -72,7 +71,7 @@ let stateRoot: string;
 let declaration: Declaration;
 
 beforeAll(async () => {
-  stateRoot = await mkdtemp(join(tmpdir(), "flume-prompts-"));
+  stateRoot = await mkTempDir("flume-prompts-");
   await mkdir(join(stateRoot, "plan"), { recursive: true });
   await writeFile(
     join(stateRoot, "plan", "pending.json"),
@@ -422,14 +421,14 @@ async function everyPromptReadsItsArtifactsUnder(root: string): Promise<void> {
 }
 
 it("every package prompt's spans read their artifacts under a state root path carrying a space", async () => {
-  const root = await mkdtemp(join(tmpdir(), "flume prompts space-"));
+  const root = await mkTempDir("flume prompts space-");
   expect(root).toContain(" ");
 
   await everyPromptReadsItsArtifactsUnder(root);
 }, SPAWN_BUDGET_MS);
 
 it("every package prompt's spans read their artifacts under a state root path carrying a backslash", async () => {
-  const base = await mkdtemp(join(tmpdir(), "flume-prompts-backslash-"));
+  const base = await mkTempDir("flume-prompts-backslash-");
   // On win32 the separator *is* the backslash — every state root there is
   // this case, which is where the defect was measured. Elsewhere a backslash
   // is an ordinary filename byte, and the same byte reaches `sh`.
@@ -465,7 +464,7 @@ const UNGUARDED = ARTIFACTS.filter((a) => a.placeholder === undefined);
 
 /** A scratch state root, torn down with the rest at the end of the file. */
 async function scratchRoot(prefix: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), prefix));
+  const root = await mkTempDir(prefix);
   oddRoots.push(root);
   return root;
 }

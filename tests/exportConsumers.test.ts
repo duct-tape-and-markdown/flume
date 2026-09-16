@@ -29,8 +29,7 @@
  * of the verdict.
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -45,6 +44,7 @@ import {
   type PositionKind,
   type UnnamableType,
 } from "./helpers/exportGraph.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
 /**
  * Which part of the walk a finding came from. The scan says whether the
@@ -248,7 +248,7 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
 let fixtureRoot = "";
 
 beforeAll(async () => {
-  fixtureRoot = await mkdtemp(join(tmpdir(), "flume-export-scan-"));
+  fixtureRoot = await mkTempDir("flume-export-scan-");
   for (const [rel, body] of Object.entries(FIXTURE_FILES)) {
     const path = join(fixtureRoot, rel);
     await mkdir(dirname(path), { recursive: true });

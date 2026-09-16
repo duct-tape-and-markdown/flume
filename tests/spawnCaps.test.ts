@@ -15,12 +15,12 @@
  * testing a second implementation of the verdict.
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   formatSpawnCapSite,
   scanSpawnCaps,
@@ -149,7 +149,7 @@ let fixtureRoot = "";
 let fixture: SpawnCapScan;
 
 beforeAll(async () => {
-  fixtureRoot = await mkdtemp(join(tmpdir(), "flume-spawn-caps-"));
+  fixtureRoot = await mkTempDir("flume-spawn-caps-");
   for (const [module, source] of Object.entries(CASES)) {
     const segments = module.split("/");
     const path = join(fixtureRoot, ...segments);
@@ -177,7 +177,7 @@ it("the scan judges a forwarder's callers and skips what captures nothing", () =
 });
 
 it("the scan refuses a child_process import it cannot read", async () => {
-  const root = await mkdtemp(join(tmpdir(), "flume-spawn-caps-opaque-"));
+  const root = await mkTempDir("flume-spawn-caps-opaque-");
   try {
     await mkdir(join(root, "src"), { recursive: true });
     await writeFile(
@@ -199,7 +199,7 @@ it("the scan refuses a child_process import it cannot read", async () => {
 });
 
 it("the scan refuses a tree holding no module at all", async () => {
-  const root = await mkdtemp(join(tmpdir(), "flume-spawn-caps-empty-"));
+  const root = await mkTempDir("flume-spawn-caps-empty-");
   try {
     await mkdir(join(root, "src"), { recursive: true });
     expect(() => scanSpawnCaps(root, { trees: ["src"] })).toThrow(
@@ -211,7 +211,7 @@ it("the scan refuses a tree holding no module at all", async () => {
 });
 
 it("the scan refuses a named file that is not on disk", async () => {
-  const root = await mkdtemp(join(tmpdir(), "flume-spawn-caps-gone-"));
+  const root = await mkTempDir("flume-spawn-caps-gone-");
   try {
     await mkdir(join(root, "src"), { recursive: true });
     await writeFile(

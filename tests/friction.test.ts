@@ -18,8 +18,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -30,6 +29,7 @@ import { parsePending, TAG_MAX_LENGTH } from "../src/PendingSchema.ts";
 import type { Chain } from "../src/Phase.ts";
 import { denyDirectory } from "./helpers/denial.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -79,7 +79,7 @@ describe("friction — harvest and count across the one declared dir", () => {
     // A primary state root of its own, distinct from the worktree's mirror:
     // the write side resolves chain.friction against this, the read side
     // below against the same value, and nothing else can make them agree.
-    const primaryRoot = await mkdtemp(join(tmpdir(), "flume-friction-primary-"));
+    const primaryRoot = await mkTempDir("flume-friction-primary-");
     try {
       await harvestFriction(chain, fx.repo, "HARVEST-A", {
         flumeDir: primaryRoot,
@@ -114,7 +114,7 @@ describe("friction — harvest and count across the one declared dir", () => {
     await mkdir(mirrorDir, { recursive: true });
     await writeFile(join(mirrorDir, "note.md"), "undeclared channel\n");
 
-    const primaryRoot = await mkdtemp(join(tmpdir(), "flume-friction-undecl-"));
+    const primaryRoot = await mkTempDir("flume-friction-undecl-");
     try {
       await harvestFriction(chain, fx.repo, "HARVEST-B", {
         flumeDir: primaryRoot,
@@ -133,7 +133,7 @@ describe("friction — harvest and count across the one declared dir", () => {
 
 describe("frictionCountLine — EACCES/ENOENT split (dispatcher-frictioncountline-loud-or-nothing)", () => {
   it("reads 'friction: unreadable' (not silence) when the declared dir exists but readdir fails for a non-ENOENT reason (dispatcher-frictioncountline-loud-or-nothing)", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-unreadable-"));
+    const stateRoot = await mkTempDir("flume-fcl-unreadable-");
     try {
       const frictionDir = join(stateRoot, "friction");
       await mkdir(frictionDir, { recursive: true });
@@ -162,7 +162,7 @@ describe("frictionCountLine — EACCES/ENOENT split (dispatcher-frictioncountlin
   });
 
   it("still reads undefined when the declared dir is absent (ENOENT) — baseline unchanged (dispatcher-frictioncountline-loud-or-nothing)", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "flume-fcl-absent-"));
+    const stateRoot = await mkTempDir("flume-fcl-absent-");
     try {
       const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
       expect(await frictionCountLine(stateRoot, chain)).toBeUndefined();
@@ -241,7 +241,7 @@ describe("friction harvest — the destination filename clears NAME_MAX at the s
     // holds the note, so a delivery below is a move and not an empty dir.
     expect(await readdir(mirrorDir)).toEqual([sourceName]);
 
-    const primaryRoot = await mkdtemp(join(tmpdir(), "flume-friction-namemax-"));
+    const primaryRoot = await mkTempDir("flume-friction-namemax-");
     try {
       const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
       await harvestFriction(chain, fx.repo, longestTag, {
@@ -274,7 +274,7 @@ describe("friction harvest — the destination filename clears NAME_MAX at the s
     const sourceName = "friction-1.md";
     const first = "attempt one: the gate is unreachable\n";
     const second = "attempt two: still unreachable\n";
-    const primaryRoot = await mkdtemp(join(tmpdir(), "flume-friction-retry-"));
+    const primaryRoot = await mkTempDir("flume-friction-retry-");
     try {
       const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
       const ctx = {

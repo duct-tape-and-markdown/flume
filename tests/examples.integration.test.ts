@@ -18,8 +18,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -33,6 +32,8 @@ import { Baton } from "../src/Baton.ts";
 import { Dispatcher } from "../src/Dispatcher.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
+
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
 const exec = promisify(execFile);
 
@@ -70,7 +71,7 @@ function buildChainFor(repoRoot: string): { paths: FlumePaths; chain: Chain } {
 
 /** Scratch git repo on `main` with one seed commit. */
 async function makeRepo(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
-  const dir = await mkdtemp(join(tmpdir(), "flume-examples-"));
+  const dir = await mkTempDir("flume-examples-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q", "-b", "main"], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);

@@ -15,13 +15,13 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
+import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { gitOut, runCli } from "./helpers/subprocess.ts";
 
 const exec = promisify(execFile);
@@ -31,7 +31,7 @@ async function makeRepo(): Promise<{
   dir: string;
   cleanup: () => Promise<void>;
 }> {
-  const dir = await mkdtemp(join(tmpdir(), "flume-job-run-"));
+  const dir = await mkTempDir("flume-job-run-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q", "-b", "main"], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
