@@ -1,25 +1,58 @@
 [
   {
-    "tag": "A-LANE-STAMP-CARRIES-THE-FAILING-TITLES-IT-WOKE-ON",
+    "tag": "THE-DECLARED-SHELL-CASES-DECLARE-THE-HOST-THEY-NEED",
     "gate": {
-      "kind": "parked",
-      "reason": "decision on where a lane's current failing-title set comes from — open-questions, 'Where does a lane's failing-title set come from?'"
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
         {
-          "path": "harness/planState.ts",
-          "description": "a drained-run stamp is the run and the failing titles it reported"
-        },
+          "path": "tests/harnessChain.test.ts",
+          "description": "the recording-shell fixture and the default-shell assertion, made host-honest"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "three declared-shell cases red on the win32 lane: a shebang fixture win32 cannot spawn, and an assertion reading the host's own resolution of `sh`",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "`chmod` denies nothing on win32"
+    },
+    "acceptance": "the windows lane runs the three declared-shell cases green or skips each with its host stated, never silently, and the posix lane's verdicts are unchanged.",
+    "tests": [],
+    "pins": [],
+    "notes": "Windows lane, run 35156732271. `recordingShell` writes an extensionless `#!/bin/sh` file and chmods it +x — neither carries on win32; and `an undeclared shell runs a command gate under sh` asserts `$0` is `sh` where git's sh reports `/usr/bin/bash`. No line is judgeable: all three are green on every posix judge, so the lane is the verdict. A new platform fact here is the human's to write."
+  },
+  {
+    "tag": "A-LANE-STAMP-CARRIES-THE-FAILING-TITLES-IT-WOKE-ON",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
         {
-          "path": "harness/ciLane.ts",
-          "description": "the wake compares title sets, not run identity alone"
+          "path": "harness/declaration.ts",
+          "description": "the `ci` row's title reader — a pattern or a function over the run's log"
         },
         {
           "path": "harness/ci.ts",
-          "description": "the failing titles reach the stamp the slice writes"
+          "description": "the declared reader gives a failing run its title set"
+        },
+        {
+          "path": "harness/ciLane.ts",
+          "description": "the wake compares title sets where a reader is declared"
+        },
+        {
+          "path": "harness/planState.ts",
+          "description": "a drained-run stamp is the run and the titles the reader gave it"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the reader field and both its shapes"
         },
         {
           "path": "tests/harnessPlanState.test.ts",
@@ -37,14 +70,198 @@
       "path": "spec/harness.md",
       "section": "CI lanes as a findings source"
     },
-    "acceptance": "the drained-run stamp is the run and the failing titles it reported, and a later failing run whose title set matches the stamp advances the stamp at the next tick that runs anyway without waking the slice.",
+    "acceptance": "a lane declares a title reader, the drained-run stamp carries the run and the titles that reader gave it, a later failing run whose title set matches the stamp advances it at the next tick without waking the slice, and a lane declaring none wakes once per failing run.",
     "tests": [
-      "a drained-run stamp carries the failing titles the run reported",
-      "a failing run whose title set matches the stamp does not make the inbox slice live",
-      "a failing run whose title set differs from the stamp makes the inbox slice live"
+      "a lane's declared title reader gives the liveness leg its failing-title set",
+      "a drained-run stamp carries the failing titles the reader gave it",
+      "a failing run whose title set matches the lane's stamp does not make the inbox slice live",
+      "a failing run whose title set differs from the lane's stamp makes the inbox slice live",
+      "a lane declaring no title reader makes the inbox slice live once per failing run"
     ],
     "pins": [],
-    "notes": "Parked on build's report: the entry's premise was wrong. Nothing under `harness/` or `src/` harvests a test title, and the lane reader refuses the harvest by name — a finding out of material the package did not author is the agent's. The stamp shape and render are mechanical; the liveness leg needs the current run's title set, which no surface produces."
+    "notes": "Unparked on the ruling, arm (a): the consumer states the grammar its runner emits, so the package parses no prose it did not author. The cost the lane leg's own memo doc argues against by name: liveness must now fetch a failing job's log where a reader is declared — memoize the material beside the statuses rather than reading the forge twice. A bare-string stamp already on disk reads as the run with no titles."
+  },
+  {
+    "tag": "A-CURSOR-GATE-BOUNDS-THE-DERIVE-CURSORS-ADVANCE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/gates.ts",
+          "description": "the fifth discipline gate, on the plan phases"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "the two refusals, the carry-forward, and the untouched-artifact skip"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "nothing refuses a plan commit that steps the derive cursor to a sha no window named, and the wrong advance is silent — the derive slice simply never opens on the commits stepped over",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The gates the discipline needs"
+    },
+    "acceptance": "a plan commit whose `derivedThrough` is not an ancestor of the tip, or not a descendant of its pre-commit value, is refused naming both shas; one that carries the cursor forward passes, and one that touched no plan state is skipped.",
+    "tests": [
+      "the cursor gate refuses a plan commit whose derive cursor is not an ancestor of the tip",
+      "the cursor gate refuses a plan commit whose derive cursor is not a descendant of its pre-commit value",
+      "the cursor gate passes a plan commit that carries its derive cursor forward unchanged",
+      "the cursor gate reports a commit that touched no plan state as skipped"
+    ],
+    "pins": [],
+    "notes": "Ruling arm (a). Two `merge-base --is-ancestor` calls over values the commit already carries: the pre-commit value is the plan state at the commit's parent, the tip is the gated commit. The leading-run half of the bound stays judgement and stays prose. Plan phases only — build writes no cursor."
+  },
+  {
+    "tag": "AN-OPEN-QUESTION-IS-ONE-FILE-PRESENT-WHILE-OPEN",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/layout.ts",
+          "description": "the questions directory and its glob, in place of the single page"
+        },
+        {
+          "path": "harness/prompts.ts",
+          "description": "the questions slot renders the directory's files"
+        },
+        {
+          "path": "harness/prompts/plan-inbox.md",
+          "description": "the span lists the directory instead of grepping `^## `"
+        },
+        {
+          "path": "harness/prompts/plan-derive.md",
+          "description": "same span"
+        },
+        {
+          "path": "harness/prompts/plan-sweep.md",
+          "description": "same span"
+        },
+        {
+          "path": "harness/init.ts",
+          "description": "adoption seeds the directory as it seeds the rest"
+        },
+        {
+          "path": "tests/harnessLayout.test.ts",
+          "description": "the path and the fence"
+        },
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "the render, and the absent-directory placeholder"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "open questions are one page every slice greps `^## ` out of, so a question's status is read from a word and no two sessions can add one without conflicting",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Records as one file each"
+    },
+    "acceptance": "open questions are one file each under the plan's `questions/` directory, present while open and deleted when answered; every slice's questions span lists that directory, and no slice reads a heading or a status word.",
+    "tests": [
+      "a plan slice's questions span lists one file per open question",
+      "an absent questions directory renders the slices' none-open placeholder",
+      "the plan fence admits a file under the questions directory"
+    ],
+    "pins": [],
+    "notes": "Ruling: presence is state. The `^## ` grep is spelled in all three slice prompts today. `.flume/plan/open-questions.md` is outside build's fence, so the layout change must leave that path inside the plan fence until a drain has migrated and removed it — otherwise the file strands where no phase can reach it. One question is open in it as of this tick."
+  },
+  {
+    "tag": "A-PARKED-NOTE-IS-ITS-OWN-DIRECTORY",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/layout.ts",
+          "description": "the parked note's directory, path and glob, beside the record directories"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "the park predicate reads the note's location; the fence and the channel admit it"
+        },
+        {
+          "path": "harness/gates.ts",
+          "description": "the records gate's arm over the parked directory"
+        },
+        {
+          "path": "harness/records.ts",
+          "description": "the listing reaches the parked directory"
+        },
+        {
+          "path": "harness/prompts/build.md",
+          "description": "where a park is written, and where an observation is"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "the gate's arm over both directories"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the park predicate over the location"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a park is read off the shape of the commit that wrote it — the entry's note and nothing else — so a park that also touched a file is a ship, and a note's kind lives in its prose",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Records as one file each"
+    },
+    "acceptance": "a build note that parks its entry lives under `notes/parked/` and an observation beside it does not, the park predicate reads that location rather than the commit's path list, and the records gate holds both directories.",
+    "tests": [
+      "a note under the parked directory parks its entry",
+      "a note beside the parked directory ships its entry",
+      "a commit writing a parked note and the entry's work is still a park",
+      "the records gate refuses a parked note written under another tick's tag"
+    ],
+    "pins": [],
+    "notes": "Ruling: location is kind. `isPark` (harness/chain.ts) is the path-list read, and both `namedLinesGate` and `shipped` consume it. The record listing and the plan fence both compose from `RECORD_DIR_NAMES`, so the parked directory joins there rather than at each reader."
+  },
+  {
+    "tag": "THE-SETUP-RESTORE-TAKES-THE-DECLARED-SHELL",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/chain.ts",
+          "description": "the declared restore spawns through the declared shell, as a declared gate does"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the declared and the default shell over a restore"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a declared command gate runs under the declaration's shell while `setup.restore` beside it still spawns through a hardcoded `sh -c` — the win32 exposure the gate closed, left standing",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "`setup.restore` spawns through the declaration's `shell` on the same terms a declared command gate does, and an undeclared shell leaves it running under `sh`.",
+    "tests": [
+      "a declared shell runs the setup restore"
+    ],
+    "pins": [
+      "an undeclared shell runs the setup restore under sh"
+    ],
+    "notes": "Named by build's note on A-DECLARED-COMMAND-GATE-NAMES-ITS-SHELL as the sibling it left standing. `spec/harness.md`'s `setup` row names no shell, so the cite is the shared-mechanism rule rather than the row. `requireRunnableShell` (harness/declaredGates.ts) already refuses an unresolvable shell at load — one probe, both callers."
   },
   {
     "tag": "THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY",
@@ -368,6 +585,76 @@
     ],
     "pins": [],
     "notes": "Read from the mode and the anchor the engine reports on the record — PriorAttempt's `mode` and `headSha` (src/Prompt.ts) — never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change."
+  },
+  {
+    "tag": "THE-HELP-FLAG-ANSWERS-FOR-A-NAME-IN-EVERY-SPELLING",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "the third spelling — the answer and the unknown-name refusal"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "the help surface names all three spellings"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`flume -h <name>` answers that subcommand's usage today and nothing pins it, so narrowing the one decider back to two spellings would ship green",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Subcommand surface"
+    },
+    "acceptance": "`flume -h <name>` is pinned for both the answer and the unknown-name refusal, and docs/CLI.md names it beside the other two spellings.",
+    "tests": [],
+    "pins": [
+      "flume -h status prints the status subcommand's usage",
+      "flume -h with an unknown name exits 2 with usage"
+    ],
+    "notes": "Build's note parked this as a decision; the cited section already decides it — \"one decider serves every spelling of help for a name\" covers `-h <name>`, and the arm is spelling-blind today, echoing the spelling typed in its refusal. So the property holds and gains its check, and no spec edit is owed."
+  },
+  {
+    "tag": "THE-DOCS-DECLARATION-LISTS-ARE-PINNED-AGAINST-THE-SCHEMA",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "both pages read against DeclarationSchema.shape"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "whatever field the pin finds missing"
+        },
+        {
+          "path": "docs/LAYERS.md",
+          "description": "same"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "two docs pages list the declaration's fields by hand and neither is read against `DeclarationSchema.shape`, so a field the docs never gain is caught by nothing",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "docs/CHAIN-AUTHORING.md's and docs/LAYERS.md's declaration field lists are read against `DeclarationSchema.shape` by the suite, and both name every field the schema declares.",
+    "tests": [],
+    "pins": [
+      "docs/CHAIN-AUTHORING.md names every field DeclarationSchema declares",
+      "docs/LAYERS.md names every field DeclarationSchema declares"
+    ],
+    "notes": "From build's note on THE-DECLARATION-ASSERTS-ITS-CAPABILITIES. `tests/harnessDeclaration.test.ts` pins the fixture against the schema; nothing reads the pages. The carve-out that makes a docs page pinnable is the cited section's: a page stating what a shipped interface does is read against that interface. `jobs`, `friction` and `findings` all land into these lists."
   },
   {
     "tag": "THE-ADOPTION-PAGE-NAMES-THE-OPERATIONS-ONCE",
