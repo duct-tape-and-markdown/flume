@@ -474,8 +474,11 @@ follows enough usage signal to commit under semver.
 - [`docs/MIGRATING-0.16.md`](docs/MIGRATING-0.16.md) — upgrade note for a
   chain on `0.15.0`: five renames and engine-taken defaults, plus the opt-in
   port onto the harness package. Each section opens with the `grep` that
-  says whether it applies to your chain. Earlier notes — `0.11`, `0.12`,
-  `0.13` — are linked from the release they cut in
+  says whether it applies to your chain.
+- [`docs/MIGRATING-0.14.md`](docs/MIGRATING-0.14.md) — the note behind it,
+  for a chain on `0.13.0`: one break (the queue path moves onto the chain)
+  and the hand-carried blocks `0.14.0` lets you delete. Earlier notes —
+  `0.11`, `0.12`, `0.13` — are linked from the release they cut in
   [`CHANGELOG.md`](CHANGELOG.md).
 - [`docs/MIGRATING-0.10.md`](docs/MIGRATING-0.10.md) — upgrade checklist for
   any chain on `0.2.x`, `0.6.x`, or `0.9.0` moving onto

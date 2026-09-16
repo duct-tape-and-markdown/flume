@@ -11,11 +11,12 @@ on `0.2.x`, `0.6.x`, or `0.9.0`. If your pin is below `0.12.0`, work those
 first and return here — § 1 below is the whole of the `0.12` → `0.13` step
 and none of what precedes it.
 
-It does not cover what comes after either: `0.14.0` and `0.15.0` ship
-breaking changes with no note of their own, and
-[`MIGRATING-0.16.md`](MIGRATING-0.16.md) picks the series back up at
-`0.15.0` → `0.16.0`. Jumping past `0.13` means reading those two releases'
-`### Breaking` sections in [`../CHANGELOG.md`](../CHANGELOG.md) as well.
+It does not cover what comes after either: the next note in the series is
+[`MIGRATING-0.14.md`](MIGRATING-0.14.md) (`0.13.0` → `0.14.0`), and then
+[`MIGRATING-0.16.md`](MIGRATING-0.16.md), which picks up at `0.15.0` →
+`0.16.0`. `0.15.0` ships breaking changes with no note of its own, so
+jumping past `0.14` means reading that release's `### Breaking` section in
+[`../CHANGELOG.md`](../CHANGELOG.md) as well.
 
 From **0.12.0**: **one** breaking change, in `pending.json`, not in the chain
 factory. A `0.12` chain loads on `0.13` unmodified; it is the queue beside it
@@ -229,5 +230,4 @@ surface for your runner, not a behavior change.
   surface named above.
 - [`CLI.md`](CLI.md) — `flume check`'s exit codes, `flume status`, `flume job`.
 - [`MIGRATING-0.12.md`](MIGRATING-0.12.md) — the previous note in this series.
-- [`MIGRATING-0.16.md`](MIGRATING-0.16.md) — the next one, from `0.15.0`.
-  What lies between the two is named at the head of this page.
+- [`MIGRATING-0.14.md`](MIGRATING-0.14.md) — the next one, from `0.13.0`.

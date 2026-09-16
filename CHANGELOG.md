@@ -315,6 +315,9 @@ dispatcher's pickability verdict to decide whether to wake. Both are engine
 facts. This tag puts them on the surfaces a chain already reads, closes the
 livelocks the rebuilt copies caused, and hardens the merge path against the
 one field-traced data-loss window (temper, 0.13.0). Twenty-two entries.
+Chain authors: read [`docs/MIGRATING-0.14.md`](docs/MIGRATING-0.14.md) — its
+§ 1 is the one break, a `pendingGate` option that moves onto the chain, and
+§ 2 is the hand-carried blocks this tag lets you delete.
 
 ### Breaking
 
