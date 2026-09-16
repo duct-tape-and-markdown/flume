@@ -195,9 +195,9 @@ describe("worktrees — one lifecycle over one directory tree", () => {
  * spell `FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")` for themselves.
  * They agreed only because the two spellings happened to match: a sweep
  * basing on the default while creation honored the override reads an empty
- * base, removes nothing, and then fails every `git branch -D` against
- * worktrees still standing where creation actually put them (field-traced
- * four times).
+ * base and removes nothing, leaving every abandoned worktree — and the
+ * branch each was checked out on, which is the only key the branch leg has —
+ * standing where creation actually put them (field-traced four times).
  *
  * Agreement between two copies is not checkable by running them — they agree
  * in every tree where the bug has not been introduced yet. What is checkable
@@ -422,7 +422,7 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
  *
  * Driven off the real `buildFlumeApi()` against a real repo, with the real
  * `createWorktree` as the writer whose output the read has to name: a stubbed
- * registry would agree with a hand-authored path set and prove nothing about
+ * registry would agree with a hand-authored path map and prove nothing about
  * what git actually registers (`.claude/rules/engineering.md`, *A seam gate
  * reads what the real writer wrote*).
  */
@@ -466,6 +466,61 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     return stdout.trim();
   }
 
+  /**
+   * The branch half of the same report. The startup sweep's branch leg reaps
+   * what its directory leg removed, so the pairing git already printed beside
+   * each path is a fact the engine decodes once and hands out, rather than one
+   * a caller rebuilds from a ref glob over a namespace two checkouts share
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   */
+  it("the worktree registry reports the branch each worktree is checked out on", async () => {
+    const api = apiFor();
+    const ctx = contextFor();
+    // The real writer for the attached arm: whatever branch spelling
+    // `createWorktree` composes is the one the read has to name back.
+    const wt = await createWorktree("BRANCH-REPORTED", await head(), ctx);
+    // And the detached arm, the shape a gate's `checkoutAt` plants: git names
+    // no branch for it, so neither may the registry.
+    const detached = join(worktreesBase(join(fx.repo, ".flume")), "detached");
+    await mkdir(dirname(detached), { recursive: true });
+    await exec("git", ["worktree", "add", "--detach", detached, "HEAD"], {
+      cwd: fx.repo,
+    });
+
+    const registry = await api.git.readWorktreeRegistry(fx.repo);
+    expect(registry.read).toBe(true);
+    if (!registry.read) throw new Error("unreachable: asserted above");
+
+    // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is proven
+    // non-vacuous"): every path git names arrived, read off git's own list —
+    // so the branch verdicts below are judged over a populated report rather
+    // than over a record the decode dropped.
+    const registered = await registeredWorktrees(fx.repo);
+    expect(registered.length).toBe(3);
+    expect(registry.worktrees.size).toBe(registered.length);
+
+    // The branch the real writer named, in the short spelling
+    // `git.deleteBranch` takes — not the `refs/heads/…` ref git prints.
+    expect(registry.worktrees.get(resolve(wt.path))).toBe(wt.branch);
+    expect(wt.branch).toBe(`flume/${slugify("BRANCH-REPORTED")}`);
+
+    // Detached: registered, and carrying no branch. The two facts are
+    // separate — "git names no branch here" must not read as "git does not
+    // name this path".
+    expect(registry.worktrees.has(resolve(detached))).toBe(true);
+    expect(registry.worktrees.get(resolve(detached))).toBeUndefined();
+
+    // The primary checkout's own branch is reported too: this is git's list,
+    // and which of its rows a caller owns is the caller's to decide.
+    const { stdout: onBranch } = await exec(
+      "git",
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      { cwd: fx.repo },
+    );
+    expect(registry.worktrees.get(resolve(fx.repo))).toBe(onBranch.trim());
+  });
+
   it("FlumeApi reports the worktrees git registers for the repo", async () => {
     const api = apiFor();
     // The same probe the harness judges an occupied path on, not a second
@@ -486,13 +541,13 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     // entry — or to none — could not report green here.
     const registered = await registeredWorktrees(fx.repo);
     expect(registered.length).toBe(3);
-    expect(registry.paths.size).toBe(registered.length);
+    expect(registry.worktrees.size).toBe(registered.length);
 
     // Both provisioned arms, by the paths the real writer returned — and the
     // primary checkout, which git names and the engine does not filter out.
-    expect(registry.paths.has(resolve(one.path))).toBe(true);
-    expect(registry.paths.has(resolve(two.path))).toBe(true);
-    expect(registry.paths.has(resolve(fx.repo))).toBe(true);
+    expect(registry.worktrees.has(resolve(one.path))).toBe(true);
+    expect(registry.worktrees.has(resolve(two.path))).toBe(true);
+    expect(registry.worktrees.has(resolve(fx.repo))).toBe(true);
 
     // A torn-down arm leaves the list, so a reaper that deletes what the
     // registry no longer names frees exactly the dead one's handle.
@@ -505,8 +560,8 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     const after = await api.git.readWorktreeRegistry(fx.repo);
     expect(after.read).toBe(true);
     if (!after.read) throw new Error("unreachable: asserted above");
-    expect(after.paths.has(resolve(one.path))).toBe(false);
-    expect(after.paths.has(resolve(two.path))).toBe(true);
+    expect(after.worktrees.has(resolve(one.path))).toBe(false);
+    expect(after.worktrees.has(resolve(two.path))).toBe(true);
   });
 
   it("an unreadable worktree registry reports the failure rather than an empty set", async () => {
@@ -519,7 +574,7 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     const readable = await api.git.readWorktreeRegistry(fx.repo);
     expect(readable.read).toBe(true);
     if (!readable.read) throw new Error("unreachable: asserted above");
-    expect(readable.paths.has(resolve(wt.path))).toBe(true);
+    expect(readable.worktrees.has(resolve(wt.path))).toBe(true);
 
     // A repo root git cannot run in. An absent worktree is the claim a reaper
     // frees a handle on, so "could not ask" must not wear that claim's shape.
@@ -530,9 +585,9 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     expect(blind.read).toBe(false);
     if (blind.read) throw new Error("unreachable: asserted above");
     expect(blind.reason.length).toBeGreaterThan(0);
-    // The failing branch carries no path set at all, so a consumer cannot
+    // The failing branch carries no worktree map at all, so a consumer cannot
     // reach for one and read absence out of a failure.
-    expect(blind).not.toHaveProperty("paths");
+    expect(blind).not.toHaveProperty("worktrees");
   });
 
   /**
@@ -575,13 +630,13 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
 
       // Exactly what git named, path for path: nothing dropped, nothing
       // invented.
-      expect([...registry.paths].sort()).toEqual([...registered].sort());
-      expect(registry.paths.has(resolve(odd))).toBe(true);
+      expect([...registry.worktrees.keys()].sort()).toEqual([...registered].sort());
+      expect(registry.worktrees.has(resolve(odd))).toBe(true);
       // The spelling a newline-separated read leaves behind. Every caller
       // judges membership by exact match, so this prefix standing in for the
       // real path is an occupied path refused as git-unowned and residue the
       // sweep declines to remove.
-      expect(registry.paths.has(resolve(odd.split("\n")[0]!))).toBe(false);
+      expect(registry.worktrees.has(resolve(odd.split("\n")[0]!))).toBe(false);
     },
   );
 
@@ -601,11 +656,119 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
       expect(registry.read).toBe(true);
       if (!registry.read) throw new Error("unreachable: asserted above");
 
-      expect([...registry.paths].sort()).toEqual([...registered].sort());
-      expect(registry.paths.has(resolve(odd))).toBe(true);
+      expect([...registry.worktrees.keys()].sort()).toEqual([...registered].sort());
+      expect(registry.worktrees.has(resolve(odd))).toBe(true);
       // The trimmed spelling names a directory that does not exist, and no
       // caller's path ever matches it.
-      expect(registry.paths.has(resolve(odd.trimEnd()))).toBe(false);
+      expect(registry.worktrees.has(resolve(odd.trimEnd()))).toBe(false);
     },
   );
+});
+
+/**
+ * The startup sweep's branch leg, bound by the registry the directory leg
+ * reads (`spec/worktrees.md`, "Startup sweep — a dead wave's residue is
+ * removed at the next start"). The leg used to reap by name — every
+ * `flume/…` ref the instance's own glob matched — which is neither half of
+ * what the sweep owns: two checkouts of one repository are both grantable a
+ * tip claim and sweep against one shared ref namespace, so a name match
+ * reaches a live branch this base never held, while residue whose branch is
+ * spelled outside the glob is left standing.
+ *
+ * Both legs run against a real repo through the real `sweepStaleWorktrees`,
+ * with `git worktree add` as the writer whose pairing the sweep has to read
+ * back (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*): a hand-authored registry would agree with whatever the
+ * sweep believed.
+ */
+describe("worktrees — the startup sweep reaps the branches its own directories held", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  /** A context over the fixture repo under `namespace`, and its sweep base. */
+  function contextFor(namespace: string | undefined): {
+    ctx: WorktreeContext;
+    base: string;
+  } {
+    const flumeDir = join(fx.repo, ".flume");
+    return {
+      ctx: {
+        repoRoot: fx.repo,
+        flumeDir,
+        stateRootRel: ".flume",
+        namespace,
+        log: silent,
+      },
+      base: worktreesBase(flumeDir),
+    };
+  }
+
+  /** Residue a killed tick left: a registered worktree at `path`, on `branch`. */
+  async function plantResidue(path: string, branch: string): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
+    await exec("git", ["worktree", "add", "-B", branch, path, "HEAD"], {
+      cwd: fx.repo,
+    });
+  }
+
+  it("the startup sweep deletes the branch a worktree it removed was checked out on", async () => {
+    // A namespaced instance whose residue is checked out on an
+    // *un*namespaced branch — what a job that declared its namespace after
+    // the tick that died leaves behind, and what any renamed namespace
+    // leaves behind. The directory is squarely this job's: it sits under
+    // this instance's own sweep base, and git registers it.
+    const { ctx, base } = contextFor("alpha");
+    const residue = join(base, "alpha", "orphan");
+    await plantResidue(residue, "flume/orphan");
+
+    // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is proven
+    // non-vacuous"): the directory is really registered and the branch really
+    // stands going in, so both absences below are removals.
+    expect(await registeredWorktrees(fx.repo)).toContain(residue);
+    expect(await flumeBranches(fx.repo)).toEqual(["flume/orphan"]);
+
+    await sweepStaleWorktrees(ctx);
+
+    expect(existsSync(residue)).toBe(false);
+    expect(await registeredWorktrees(fx.repo)).not.toContain(residue);
+    // Reaped by the pairing git reported, not by a glob the branch's spelling
+    // happens to satisfy.
+    expect(await flumeBranches(fx.repo)).toEqual([]);
+  });
+
+  it("the startup sweep leaves a flume branch no worktree under its base was checked out on standing", async () => {
+    const { ctx, base } = contextFor(undefined);
+    // This instance's own residue — what the sweep is here for.
+    const residue = join(base, "orphan");
+    await plantResidue(residue, "flume/orphan");
+    // And a branch in the same ref namespace that no directory under this
+    // base holds: a sibling checkout of this one repository provisioned it
+    // under a base this instance cannot see, and both hold a tip claim of
+    // their own. Nothing here removed a worktree for it, so nothing here may
+    // remove it.
+    await exec("git", ["branch", "flume/sibling-checkout", "HEAD"], {
+      cwd: fx.repo,
+    });
+
+    // Vacuity pin: both branches stand going in, and the one the sweep owns
+    // is really registered — so the survival below is judged beside a reap
+    // that actually happened.
+    expect(await flumeBranches(fx.repo)).toEqual([
+      "flume/orphan",
+      "flume/sibling-checkout",
+    ]);
+    expect(await registeredWorktrees(fx.repo)).toContain(residue);
+
+    await sweepStaleWorktrees(ctx);
+
+    expect(existsSync(residue)).toBe(false);
+    expect(await flumeBranches(fx.repo)).toEqual(["flume/sibling-checkout"]);
+  });
 });

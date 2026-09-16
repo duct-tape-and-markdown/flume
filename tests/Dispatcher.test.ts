@@ -205,7 +205,9 @@ async function registeredWorktrees(): Promise<string[]> {
   if (!registry.read) {
     throw new Error(`worktree registry unreadable: ${registry.reason}`);
   }
-  return [...registry.paths].filter((p) => p !== resolve(fx.repo)).sort();
+  return [...registry.worktrees.keys()]
+    .filter((p) => p !== resolve(fx.repo))
+    .sort();
 }
 
 async function writeAndCommit(
@@ -3534,9 +3536,10 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
   // spec/worktrees.md "Placement": *the base is resolved once* — creation
   // and the sweep read one resolution, the chain's declaration included.
   // The failure this pins is the one field-traced four times: a sweep that
-  // bases on the default reads an empty directory, removes nothing, and then
-  // fails every `git branch -D` against worktrees still standing at the real
-  // base. Residue is planted by hand rather than by a prior tick because
+  // bases on the default reads an empty directory and removes nothing,
+  // leaving every worktree still standing at the real base — and, since the
+  // branch leg reaps only what the directory leg removed, every branch those
+  // worktrees hold. Residue is planted by hand rather than by a prior tick because
   // what the sweep exists for is a run that died before teardown.
   it("the startup sweep reads the chain-declared base", async () => {
     const savedOverride = process.env.FLUME_WORKTREES_DIR;
@@ -3731,10 +3734,10 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     // Never aborted — the directory is left exactly as it was, not
     // half-cleaned, and the call returned rather than throwing.
     expect(existsSync(wtPath)).toBe(true);
-    // Deliberately narrowed to the "survived removal" message: the branch
-    // stays checked out in the surviving worktree, so `deleteBranch` also
-    // warns — that's a real, separate, expected failure, not a duplicate of
-    // the single wave-level survival report this asserts.
+    // Deliberately narrowed to the "survived removal" message: it is the one
+    // report a surviving directory earns. Its branch is not reaped at all —
+    // the leg reaps what the directory leg removed, and this directory stands
+    // with the ref still checked out in it.
     const survivalWarnings = warnings.filter(
       (w) => w.includes(wtPath) && w.includes("survived removal"),
     );

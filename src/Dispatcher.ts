@@ -1105,8 +1105,9 @@ export class Dispatcher {
   async sweepStaleWorktrees(): Promise<void> {
     // The sweep runs before the first tick, so nothing has loaded a chain
     // into this process yet — and the base it sweeps has to be the base the
-    // ticks create under, or it reads an empty directory and then fails
-    // every `git branch -D` against worktrees still standing elsewhere
+    // ticks create under, or it reads an empty directory and leaves every
+    // abandoned worktree, and the branch each was checked out on, standing
+    // where creation put them
     // (spec/worktrees.md, *Placement*: the base is resolved once). Hence the
     // load here rather than a value the caller passes: the declaration is
     // the engine's to evaluate, at one spelling shared with `tick`.

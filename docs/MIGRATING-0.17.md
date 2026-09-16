@@ -9,12 +9,13 @@ due whether or not you take this upgrade is its § 0, the `package.json`
 beside your `chain.ts`, without which an ESM-only package stops loading under
 `tsx` on node 22.23 and later.
 
-From **0.16.x**. **Two breaking changes, and neither is in the API.** No type
-moves, no field is renamed, and a chain that compiles against `0.16` compiles
-against `0.17` untouched. What changed is the on-disk format of two files the
-engine writes to guard a running loop — so that break is between *versions
-sharing a state root*, not between your chain and the package — and, for a
-consumer of the harness package, where its plan slices keep open questions.
+From **0.16.x**. **Three breaking changes, and one of them is in the API** —
+one field on one result type, which the compiler catches for you (§ 5); no
+type moves and nothing else is renamed. The other two are the on-disk format
+of two files the engine writes to guard a running loop — so that break is
+between *versions sharing a state root*, not between your chain and the
+package — and, for a consumer of the harness package, where its plan slices
+keep open questions.
 
 Note that **a caret range on a `0.x` version pins the minor** — `^0.16.0`
 resolves within `0.16.x` and will never pick up `0.17.0` on its own. Change
@@ -25,6 +26,7 @@ the pin explicitly.
 ```sh
 grep -rn "loop\.pid\|tip-claims" --include='*.ts' --include='*.mjs' .   # § 2
 ls "$(git rev-parse --show-toplevel)"/.flume/plan/open-questions.md       # § 3
+grep -rn "readWorktreeRegistry\|WorktreeRegistry" --include='*.ts' .     # § 5
 ```
 
 § 1 applies to every consumer and has no symbol to grep for: it is about how
@@ -33,7 +35,9 @@ chain, script, or monitor that reads either guard file itself. § 3 applies to
 a consumer of the harness package whose state root still carries the page —
 adjust the path if your state root is not `.flume`. § 4 applies to every
 consumer of that package and needs nothing done up front; read it if anything
-you wrote reads a build tick's park.
+you wrote reads a build tick's park. § 5 applies to a chain that asks the
+engine which worktrees git registers — your typecheck names those call sites
+whether or not the grep does.
 
 ## 1. Stop every running loop before you upgrade a shared state root
 
@@ -178,3 +182,39 @@ reads it as an observation. Its entry is still in the queue — a park keeps
 it there and nothing re-picks it out — so the only cost is a misread kind
 at the drain. Move such a note down a directory before the next plan tick,
 or say what it was in that tick's commit body.
+
+## 5. `readWorktreeRegistry` reports a map of worktrees, not a set of paths
+
+**Affects** a chain that calls `api.git.readWorktreeRegistry` or names the
+`WorktreeRegistry` type — most often one reclaiming a per-worktree resource a
+killed tick never released
+([`CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md)). The compiler catches every call
+site; nothing fails silently.
+
+Before:
+
+```ts
+if (registry.paths.has(resolve(worktreePath))) continue; // still live
+```
+
+After:
+
+```ts
+if (registry.worktrees.has(resolve(worktreePath))) continue; // still live
+```
+
+**What changed.** The read branch is now `{ read: true, worktrees }`, a
+`ReadonlyMap` keyed by the same absolute, resolved paths the set held — so
+membership is still `has`, and `[...registry.paths]` becomes
+`[...registry.worktrees.keys()]`. Each value is the branch that worktree is
+checked out on, in the short form `git branch -D` takes, and `undefined` for
+a detached checkout. The failure branch, `{ read: false, reason }`, is
+untouched.
+
+**Why.** The startup sweep used to delete `flume/**` branches by name, which
+is not the same set as the residue it removed: two checkouts of one
+repository sweep against one shared ref namespace, so a name match reached a
+live branch the sweep never provisioned. The sweep now reaps exactly the
+branches the directories it removed were checked out on, and that pairing is
+git's own fact — reported here rather than left for each caller to rebuild
+from a ref glob.

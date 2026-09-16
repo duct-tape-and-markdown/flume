@@ -218,7 +218,7 @@ describe("the vitest runner", () => {
     if (!registry.read) {
       throw new Error(`worktree registry unreadable: ${registry.reason}`);
     }
-    return [...registry.paths].filter((p) => p !== resolve(repo));
+    return [...registry.worktrees.keys()].filter((p) => p !== resolve(repo));
   };
 
   /** `node_modules` for a tree that has none of its own. */

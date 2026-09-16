@@ -1170,8 +1170,9 @@ sweep (a TTL, a startup cleanup pass).
 ### Reaping what a killed tick never released
 
 That sweep asks **git**, not the filesystem. `flume.git.readWorktreeRegistry`
-hands back every path git currently registers as a worktree of the repo — the
-same probe the harness itself judges an occupied worktree path on:
+hands back every worktree git currently registers for the repo, each path
+mapped to the branch it is checked out on — the same probe the harness itself
+judges an occupied worktree path on:
 
 ```ts
 // setupWorktree filed each handle under the absolute `worktreePath` it was
@@ -1186,7 +1187,7 @@ async function reapOrphans(repoRoot: string): Promise<void> {
     return;
   }
   for (const [worktreePath, db] of allocated) {
-    if (registry.paths.has(resolve(worktreePath))) continue; // still live
+    if (registry.worktrees.has(resolve(worktreePath))) continue; // still live
     await dropScratchDb(db);
     allocated.delete(worktreePath);
   }
@@ -1197,7 +1198,7 @@ Two properties the return type carries, and the reason to take this over a
 `readdir` of the worktree base:
 
 - **Unreadable is not empty.** The result is
-  `{ read: true, paths }` or `{ read: false, reason }`, never an empty set
+  `{ read: true, worktrees }` or `{ read: false, reason }`, never an empty map
   standing in for a failed `git` call — so a reaper cannot free a live arm's
   handle because git happened not to answer.
 - **A directory listing answers a different question.** The base moves
@@ -1206,9 +1207,17 @@ Two properties the return type carries, and the reason to take this over a
   still has a directory. None of those are distinguishable by name; all of them
   are by the registry.
 
-`paths` holds absolute, resolved spellings, and it is git's own list — the
-**primary checkout is in it** too. Which of those paths are yours to reap is
-your chain's to decide; the engine reports the fact and stops there.
+`worktrees` is keyed by absolute, resolved spellings, and it is git's own
+list — the **primary checkout is in it** too. Each value is the branch that
+worktree is checked out on, short-form (`flume/<slug>`, the spelling `git
+branch -D` takes), and `undefined` for a detached checkout. Which of those
+worktrees are yours to reap is your chain's to decide; the engine reports the
+fact and stops there.
+
+The engine's own startup sweep reads that pairing rather than a branch glob:
+it deletes exactly the branches the worktree directories it removed were
+checked out on, so a `flume/**` branch a sibling checkout of the same
+repository holds is left standing.
 
 ### Where worktrees live: `FLUME_WORKTREES_DIR`, `Chain.worktreesBase`
 

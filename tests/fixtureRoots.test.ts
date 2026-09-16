@@ -96,7 +96,7 @@ describe("a temp fixture root speaks git's spelling of itself", () => {
         if (!registry.read) {
           throw new Error(`worktree registry unreadable: ${registry.reason}`);
         }
-        expect([...registry.paths]).toContain(fx.repo);
+        expect([...registry.worktrees.keys()]).toContain(fx.repo);
       } finally {
         await fx.cleanup();
       }

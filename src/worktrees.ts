@@ -102,15 +102,40 @@ export function worktreeDirName(tag: string): string {
 
 /**
  * What `git worktree list --porcelain` said, reported as a fact rather than
- * as a set: `read: false` is "the registry could not be read", which is not
+ * as a map: `read: false` is "the registry could not be read", which is not
  * the claim "git registers no worktree at that path" and must never collapse
  * into it (`.claude/rules/engineering.md`, *Loud or nothing*). A caller about
  * to destroy a directory on the strength of an absence has to be able to tell
  * the two apart.
+ *
+ * `worktrees` keys every registered path — membership is `has`, as it was
+ * when this carried a set — and values the branch that path is checked out
+ * on, `undefined` for a detached one ({@link checkoutAt}'s gate tree is the
+ * engine's own). One container rather than a path set beside a branch map:
+ * the pairing is what git printed, and two copies of one record is the
+ * restatement a caller reconciles by hand
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ *
+ * The branch is named in the short spelling every other branch on this
+ * surface is — `flume/<slug>`, what {@link createWorktree} returns and what
+ * `git.deleteBranch` (`src/git.ts`) takes — not the `refs/heads/…` ref git
+ * prints it as.
  */
 export type WorktreeRegistry =
-  | { read: true; paths: Set<string> }
+  | { read: true; worktrees: ReadonlyMap<string, string | undefined> }
   | { read: false; reason: string };
+
+/** The porcelain field naming a record's worktree path. */
+const WORKTREE_FIELD = "worktree ";
+
+/**
+ * The porcelain field naming the branch a record is checked out on, through
+ * the `refs/heads/` prefix git always spells it with — so the short name is
+ * what lies past this prefix, with no second decode to disagree with it. A
+ * detached record carries `detached` instead and matches nothing here.
+ */
+const BRANCH_FIELD = "branch refs/heads/";
 
 /**
  * The one probe of git's worktree registry, reached by every caller that
@@ -130,17 +155,20 @@ export type WorktreeRegistry =
  * container directory and residue whose registration git already pruned all
  * read the same there.
  *
- * Every path git names is reported, the primary checkout included: this is
- * git's list, not a list of the engine's own residue. Which of those paths a
- * caller owns is the caller's to decide.
+ * Every path git names is reported with the branch git names beside it, the
+ * primary checkout included: this is git's list, not a list of the engine's
+ * own residue. Which of those worktrees a caller owns is the caller's to
+ * decide — the startup sweep's branch leg owns exactly the ones whose
+ * directories it removed, and it reads the pairing here rather than reaping
+ * by branch name, which would name a sibling checkout's live branch too.
  *
- * Paths are resolved absolute before they enter the set: git prints its own
+ * Paths are resolved absolute before they enter the map: git prints its own
  * absolute spelling, which need not match a caller's character for character.
  *
  * `-z` is the form that can carry those paths: `--porcelain` alone separates
  * its fields by newline and never escapes the path, so a worktree whose path
  * holds a newline arrives split across two records and a trailing-space path
- * arrives trimmed — each a *different* path silently entering the set in
+ * arrives trimmed — each a *different* path silently entering the map in
  * place of the one git named (`.claude/rules/engineering.md`, *Loud or
  * nothing*), and every caller here judges membership by exact match: an
  * occupied path the mangled spelling misses is refused as a directory git
@@ -165,13 +193,21 @@ export async function readWorktreeRegistry(
   } catch (err) {
     return { read: false, reason: (err as Error).message };
   }
-  const paths = new Set<string>();
+  const worktrees = new Map<string, string | undefined>();
+  // One record per worktree, `worktree <path>` first and its remaining
+  // fields after, so the path most recently seen is the one a `branch` field
+  // belongs to. A `branch` field ahead of any record is a shape git does not
+  // print and pairs with nothing.
+  let current: string | undefined;
   for (const field of stdout.split("\0")) {
-    if (field.startsWith("worktree ")) {
-      paths.add(resolve(field.slice("worktree ".length)));
+    if (field.startsWith(WORKTREE_FIELD)) {
+      current = resolve(field.slice(WORKTREE_FIELD.length));
+      worktrees.set(current, undefined);
+    } else if (current !== undefined && field.startsWith(BRANCH_FIELD)) {
+      worktrees.set(current, field.slice(BRANCH_FIELD.length));
     }
   }
-  return { read: true, paths };
+  return { read: true, worktrees };
 }
 
 /**
@@ -405,7 +441,7 @@ export async function createWorktree(
         `worktree path is occupied and the git worktree registry could not be read (${registry.reason}); refusing to remove a directory git may not own: ${path}`,
       );
     }
-    if (!registry.paths.has(resolve(path))) {
+    if (!registry.worktrees.has(resolve(path))) {
       throw new Error(
         `worktree path is occupied by a directory git does not register as a worktree of ${ctx.repoRoot}; refusing to remove it — clear it by hand if it is flume residue: ${path}`,
       );
@@ -509,12 +545,21 @@ export async function teardownWorktreeInstance(
  * win32-fallback (the same path teardown uses) — a sibling's container
  * directory was never itself registered as a worktree, only the paths
  * nested inside it are, so it is left untouched. Then a final `git
- * worktree prune`; then every branch matching this instance's own
- * `flume/[<namespace>/]…` grammar. Branch matching uses `for-each-ref`'s
- * one-level glob (`flume/*` matches `flume/foo`, never `flume/ns/foo`)
- * rather than `branch --list`'s pattern, whose `*` crosses `/` — the
- * non-namespaced case must not sweep a namespaced sibling job's branches
- * sharing the same repo.
+ * worktree prune`; then the branches those removed directories were checked
+ * out on.
+ *
+ * **The branch leg is bound by the same registry the directory leg reads**,
+ * never by the `flume/…` name alone. Two checkouts of one repository hold
+ * different tips, so both are grantable a tip claim and both sweeps run
+ * against one shared ref namespace: a reap keyed on the name would delete a
+ * sibling checkout's live branch this sweep never provisioned, its worktree
+ * sitting under a base this sweep cannot even see. The pairing is git's own —
+ * {@link readWorktreeRegistry} reports the branch beside the path — so the
+ * leg reaps exactly what it just removed, and a directory that survived
+ * removal keeps its branch (the ref is still checked out there, and deleting
+ * it is not this sweep's call). What that costs is a branch whose directory
+ * git had already pruned the registration for: nothing pairs it, so it stays
+ * for an operator, the same trade the directory leg takes above.
  *
  * Never throws: an unreadable or absent base, an unreadable registry, a
  * surviving worktree directory (locked handle, EBUSY), a prune failure, or a
@@ -567,18 +612,28 @@ export async function sweepStaleWorktrees(
   }
 
   const survivingPaths: string[] = [];
+  // The branches the removed directories were checked out on — collected as
+  // each removal succeeds, so the leg below reaps what this sweep just took
+  // down and nothing else. A detached tree (a gate's `checkoutAt` residue)
+  // pairs with no branch and contributes none.
+  const reapable: string[] = [];
   if (registry.read) {
     for (const name of entries) {
       const path = join(sweepBase, name);
-      if (!registry.paths.has(resolve(path))) {
+      const resolved = resolve(path);
+      if (!registry.worktrees.has(resolved)) {
         // Not a worktree git knows about — most commonly a sibling
         // namespaced job's container directory. Not this job's residue;
         // leave it untouched.
         continue;
       }
+      const branch = registry.worktrees.get(resolved);
       try {
         await git.removeWorktree(repoRoot, path);
+        if (branch !== undefined) reapable.push(branch);
       } catch {
+        // The directory stands, and the branch is still checked out in it:
+        // neither is this sweep's to reclaim now.
         survivingPaths.push(path);
       }
     }
@@ -591,30 +646,10 @@ export async function sweepStaleWorktrees(
     );
   }
 
-  const branchPattern = ctx.namespace
-    ? `flume/${ctx.namespace}/*`
-    : "flume/*";
-  let branches: string[] = [];
-  try {
-    const { stdout } = await execFileP(
-      "git",
-      [
-        "for-each-ref",
-        "--format=%(refname:short)",
-        `refs/heads/${branchPattern}`,
-      ],
-      { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 },
-    );
-    branches = stdout
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-  } catch (err) {
-    ctx.log.warn(
-      `[flume] startup sweep: could not list ${branchPattern} branches: ${(err as Error).message}`,
-    );
-  }
-  for (const branch of branches) {
+  // Run after the prune, not before: `git branch -D` refuses a branch git
+  // still has registered against a worktree, and `--force` removal leaves
+  // that registration behind for the prune above to clear.
+  for (const branch of reapable) {
     try {
       await git.deleteBranch(repoRoot, branch);
     } catch (err) {
