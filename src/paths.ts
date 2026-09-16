@@ -262,8 +262,8 @@ export function queueFenceViolations(
  * so a worktree and the record keyed for the same entry cannot disagree.
  *
  * `tag` itself is length-bounded at the schema gate (`PendingSchema.ts`
- * `TAG_MAX_LENGTH`), derived from the dispatcher's own
- * tightest raw-tag consumer, `writeRevertNote`'s
+ * `TAG_MAX_LENGTH`), derived from the tick's tightest raw-tag consumer —
+ * `writeRevertNote` (`src/tickAttempt.ts`) and its
  * `` `${stamp}--${entry.tag}--reverted.md` `` — so the branch name and the
  * prior-attempt key, which are this slug and nothing else, are bounded by
  * construction. A component that composes the slug (or the raw tag) with a

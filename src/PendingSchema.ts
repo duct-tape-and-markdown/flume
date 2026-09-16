@@ -79,11 +79,11 @@ export const NAME_MAX = 255;
 
 /**
  * The raw-tag length the schema admits: {@link NAME_MAX} less the fixed
- * filename scaffolding of the revert note (Dispatcher.ts `writeRevertNote`,
- * `<stamp>--<tag>--reverted.md`), which is the tightest consumer that
- * composes a name from a raw tag and *nothing else variable* — so the bound
- * can hold it by construction. That arithmetic lives at the writer
- * (Dispatcher.ts), not restated here. Pinned against the real writer by
+ * filename scaffolding of the revert note — `<stamp>--<tag>--reverted.md`,
+ * written by `writeRevertNote` (`src/tickAttempt.ts`) — which is the
+ * tightest consumer that composes a name from a raw tag and *nothing else
+ * variable*, so the bound can hold it by construction. That arithmetic lives
+ * at the writer, not restated here. Pinned against the real writer by
  * tests/Dispatcher.test.ts, "revert note to the friction channel": a
  * gate-revert on the longest tag this module accepts asserts the real
  * filename lands on disk within NAME_MAX.
