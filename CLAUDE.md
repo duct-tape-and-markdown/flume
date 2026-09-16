@@ -39,11 +39,17 @@ Project conventions for the chain live in `.flume/PROTOCOL.md`.
 
 Mine the draft (`node scripts/build-changelog.mjs`), curate into CHANGELOG,
 bump `package.json`, `pnpm run smoke:install`, commit `chore(release): cut
-X.Y.Z`, tag `vX.Y.Z`, push with the tag. **npm auth: the token lives in
-`.env` (gitignored) as `NPM_TOKEN` — never ask the operator for it.**
-Publish: `. ./.env && env "npm_config_//registry.npmjs.org/:_authToken=$NPM_TOKEN" npm publish --access public`
-— `npm`, not `pnpm`: pnpm ignores the env-var auth form and falls through to
-`~/.npmrc`, surfacing as a 404 on the PUT (measured, 0.14.0 cut).
+X.Y.Z`, tag `vX.Y.Z`, push with the tag. **The tag push publishes** — the
+release workflow under `.github/workflows/` publishes under the repo's
+`NPM_TOKEN` secret and smokes the registry install (`spec/cli.md`,
+*Versioning policy*); watch that run, and the cut is done when it is green.
+**Manual fallback only:** the same token lives in `.env` (gitignored) as
+`NPM_TOKEN` — never ask the operator for it — and
+`. ./.env && env "npm_config_//registry.npmjs.org/:_authToken=$NPM_TOKEN" npm publish --access public`
+publishes by hand. `npm`, not `pnpm`: pnpm ignores the env-var auth form and
+falls through to `~/.npmrc`, surfacing as a 404 on the PUT (measured, 0.14.0
+cut). The repo secret and the `.env` token are the same credential; rotate
+both together.
 
 ## Quality Standard
 

@@ -449,7 +449,14 @@ Standing consequences:
   non-breaking entry, so the draft leads with breaks as the curated changelog does, and
   the second heading is the curating human's cue for what is still unsorted. A
   subheading renders only over a non-empty bucket; an empty one has no cue to give.
-- The version bump and `npm publish` are human-performed at cut time.
+- The version bump, the changelog curation, the release commit, and the tag are
+  human-performed at cut time. The push of a `v*` tag publishes: a CI job
+  publishes the tagged tree to the registry under the repository's `NPM_TOKEN`
+  secret, skips when that version already resolves there, and then installs
+  the published tarball from the registry and runs the shim — the install
+  acceptance the local smoke performs against a pack, pointed at the registry.
+  A tag the registry does not resolve after that job is red on its lane, never
+  a day's silent lag.
 
 The changelog is a **release artifact mined from git history at the cut**, not
 a per-commit obligation, and no gate enforces it. A per-commit presence check
