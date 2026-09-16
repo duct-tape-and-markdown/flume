@@ -65,6 +65,14 @@ const ENGINE_INDEX = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 /** The engine's real chain loader, for the probe that drives it in-process. */
 const CHAIN_LOAD = new URL("../src/chainLoad.ts", import.meta.url).href;
 
+/**
+ * The harness package's own command line — the module `bin/flume-harness.js`
+ * executes, run here the way that shim runs it: as an entry point, with an
+ * argv of its own. The argv half is only reachable as a process, so the
+ * cases that judge it start one.
+ */
+const HARNESS_CLI = fileURLToPath(new URL("../harness/cli.ts", import.meta.url));
+
 let repoRoot: string;
 
 beforeEach(async () => {
@@ -239,6 +247,47 @@ it("the queue flume-harness init writes parses as an empty pending queue", async
     errors: [],
   });
   expect(parsed.entries).toEqual([]);
+});
+
+/**
+ * The module scope the two `.ts` files beside it load in (`spec/harness.md`,
+ * *Adoption and upgrade*). The loader reads `chain.ts` in the mode the
+ * *nearest* manifest declares and the package is ESM-only, so a consumer
+ * whose own manifest says nothing loads the chain as CommonJS — and the
+ * chain init wrote then fails to resolve the package it imports on every
+ * node 22 (`.claude/rules/platform-facts.md`, *A CommonJS-scoped `chain.ts`
+ * stops loading the ESM-only package at node 22.23*).
+ *
+ * Both halves are pinned, because nearest-manifest is a directory walk: what
+ * the file declares, and that it sits in the directory the chain does. A
+ * manifest one directory off is one the loader never reads, and node 24
+ * resolves the chain either way — which is how this reached a consumer.
+ */
+it("flume-harness init writes a state-root package.json declaring type module", async () => {
+  const result = await harnessInit({ repoRoot });
+
+  // Reported like every other file init writes: `written` is the list a
+  // consumer commits their adoption from, so a manifest no line names is a
+  // file that first commit drops — and every later clone loads the chain as
+  // CommonJS again.
+  const manifestRel = `${result.stateRoot}/package.json`;
+  expect(result.written).toContain(manifestRel);
+
+  const raw = await readFile(join(repoRoot, result.stateRoot, "package.json"), "utf8");
+  // Non-vacuity: there are bytes on disk, so the parse below is a verdict on
+  // a real file rather than on an empty read.
+  expect(raw.length).toBeGreaterThan(0);
+  // And that is all of it: the file exists to scope the chain, and any other
+  // field would be the package declaring something about a repository it
+  // adopted into.
+  expect(JSON.parse(raw)).toEqual({ type: "module" });
+
+  // Beside the chain, read off the writer's own report rather than a layout
+  // spelled here — a directory identity, which is what the walk turns on.
+  const chainRel = result.written.find((path) => path.endsWith("/chain.ts"));
+  expect(chainRel).toBeTypeOf("string");
+  const dirOf = (path: string): string => path.slice(0, path.lastIndexOf("/"));
+  expect(dirOf(manifestRel)).toBe(dirOf(chainRel!));
 });
 
 it("flume-harness init writes the state root's protocol page from harness/templates/PROTOCOL.md", async () => {
@@ -573,6 +622,34 @@ it("flume-harness init reports a dependency the consumer's manifest already decl
  * behind it — `src/` never importing `harness/` — is pinned separately
  * (`tests/harnessRunner.test.ts`); this is the surface a caller sees.
  */
+/**
+ * The first command line a consumer types at a verb they have not run before
+ * (`spec/harness.md`, *Adoption and upgrade*): usage, exit 0, and nothing
+ * written. `init` takes no arguments and refuses one — so the help flag has
+ * to be answered above that refusal, or asking what the verb does is a usage
+ * error, and the next thing the consumer tries is the verb itself over a
+ * repository they have not decided to adopt yet.
+ */
+it("flume-harness init --help prints usage and exits 0 without writing a state root", async () => {
+  const help = await runNodeStreams(repoRoot, [TSX_CLI, HARNESS_CLI, "init", "--help"]);
+
+  expect({ code: help.code, stderr: help.stderr }).toEqual({ code: 0, stderr: "" });
+  expect(help.stdout).toContain("Usage: flume-harness");
+
+  // Nothing written: neither the state root the verb exists to create, nor
+  // the `.gitignore` it would have merged into.
+  expect(existsSync(join(repoRoot, DEFAULT_STATE_ROOT))).toBe(false);
+  expect(existsSync(join(repoRoot, ".gitignore"))).toBe(false);
+
+  // Non-vacuity: the same spawn one flag shorter *does* adopt this
+  // repository, so the absence above is the flag's doing rather than a child
+  // that never reached the verb — which is the shape a stdout assertion and
+  // an absence assertion agree on for free.
+  const adopted = await runNodeStreams(repoRoot, [TSX_CLI, HARNESS_CLI, "init"]);
+  expect({ code: adopted.code, stderr: adopted.stderr }).toEqual({ code: 0, stderr: "" });
+  expect(existsSync(join(repoRoot, DEFAULT_STATE_ROOT))).toBe(true);
+}, SPAWN_BUDGET_MS);
+
 it("the engine's flume bin exposes no harness verb", async () => {
   // Vacuity: the table is the engine's real one, and answers `true` for a
   // verb it does ship, before any absence is asserted over it.
@@ -747,9 +824,17 @@ it("the chain.ts init writes loads through the engine's chain loader as a valid 
   // A repository as the loader meets one: a manifest for init's dependency
   // clause to land in, and the package resolvable by the specifier the
   // written chain imports.
+  //
+  // The manifest declares no `type`, which is the shape `npm init` produces
+  // and the one a consumer reported the chain dying under: the module scope
+  // the chain loads in is then the state root's own manifest's, the one init
+  // writes beside `chain.ts`. Declaring it here instead would put the whole
+  // repository in ESM scope and this case would pass whether init wrote that
+  // manifest or not (`.claude/rules/platform-facts.md`, *A CommonJS-scoped
+  // `chain.ts` stops loading the ESM-only package at node 22.23*).
   await writeFile(
     join(repoRoot, "package.json"),
-    `${JSON.stringify({ name: "consumer", version: "0.0.0", type: "module" }, null, 2)}\n`,
+    `${JSON.stringify({ name: "consumer", version: "0.0.0" }, null, 2)}\n`,
     "utf8",
   );
   const result = await harnessInit({ repoRoot });

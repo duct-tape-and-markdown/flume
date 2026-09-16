@@ -355,10 +355,11 @@ async function declaredChainLoadVerb(): Promise<string> {
 }
 
 /**
- * `scripts/smoke-install.mjs` scaffolds a `.flume/chain.ts` under its scratch
- * consumer and drives the installed shim at it — the only exercise anywhere
- * of "the installed CLI finds a consumer's chain where the consumer wrote
- * it", and the only thing making the script's `.flume` path literal loud.
+ * `scripts/smoke-install.mjs` adopts the harness under its scratch consumer —
+ * `flume-harness init` writing the chain — and drives the installed engine
+ * shim at it: the only exercise anywhere of "the installed CLI finds a
+ * consumer's chain where adoption wrote it", and the only one that loads the
+ * chain every adopter starts from.
  * That step is a check only while the verb it runs exits non-zero on a chain
  * it cannot load; under a best-effort observational verb it answers 0 whether
  * the fixture landed where the CLI looks or not

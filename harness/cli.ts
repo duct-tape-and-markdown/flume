@@ -15,6 +15,8 @@
 
 import { relative } from "node:path";
 
+import { wantsHelp } from "../src/cliHelp.js";
+
 import { detailOf } from "./exec.js";
 import { DEFAULT_STATE_ROOT, harnessInit } from "./init.js";
 
@@ -24,9 +26,10 @@ Usage: flume-harness <command>
 
 Commands:
   init                Write the declaration skeleton, the chain.ts that
-                      applies the package's factory to it, the state root,
-                      the runtime ignore lines and PROTOCOL.md into the
-                      current directory, and declare the package in its
+                      applies the package's factory to it, the package.json
+                      scoping both as ESM, the state root, the runtime
+                      ignore lines and PROTOCOL.md into the current
+                      directory, and declare the package in its
                       package.json.
                       Refuses if ${DEFAULT_STATE_ROOT}/ is already there.
 
@@ -44,7 +47,15 @@ const EX_USAGE = 64;
 async function main(argv: readonly string[]): Promise<number> {
   const [verb, ...rest] = argv;
 
-  if (verb === undefined || verb === "-h" || verb === "--help") {
+  // Help answers wherever it is asked for — before the verb, and after it,
+  // where the no-arguments refusal below would otherwise read `--help` as an
+  // argument and refuse the one command line a first-contact caller types
+  // (`spec/harness.md`, *Adoption and upgrade*). It short-circuits above
+  // every refusal and before anything is written, as the engine CLI's own
+  // per-subcommand help does — and through the engine's detection rather
+  // than a second spelling of the flag set beside it
+  // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+  if (verb === undefined || wantsHelp(argv)) {
     process.stdout.write(HELP);
     return 0;
   }

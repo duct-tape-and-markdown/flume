@@ -103,11 +103,17 @@ jobs:
         # because attw@0.18.2 crashes (see the attw step). nodenext + an
         # ESM (.mts) consumer is the strict, faithful resolution mode for
         # this ESM-only package — exercises the exports `types` condition.
-        # Reuses the consumer dir and tarball scripts/smoke-install.mjs
-        # left in the --scratch root above, but must re-install the tarball
-        # AFTER typescript: every `npm install` reconciles node_modules
-        # against package.json, pruning the --no-save'd package the smoke
-        # step left behind.
+        # Takes the tarball scripts/smoke-install.mjs left in the --scratch
+        # root above, and a consumer of its own. Not the smoke's consumer:
+        # that one has been adopted, so its manifest declares @dtmd/flume at
+        # a caret range and every `npm install` there resolves that range
+        # from the registry — which on a release-cut commit names a version
+        # not published yet, failing this gate on a lookup that has nothing
+        # to do with the types it checks. The tarball is the handoff between
+        # the two steps; the manifest is not.
+        # The tarball still installs AFTER typescript: every `npm install`
+        # reconciles node_modules against package.json and would prune the
+        # --no-save'd package.
         run: |
           set -euo pipefail
           SCRATCH="$RUNNER_TEMP/flume-smoke"
@@ -117,7 +123,9 @@ jobs:
           # collapse into a path that is no file, so the guard reds.
           TARBALL="$(ls "$SCRATCH"/*.tgz)"
           test -f "$TARBALL"
-          cd "$SCRATCH/consumer"
+          mkdir -p "$SCRATCH/types-consumer"
+          cd "$SCRATCH/types-consumer"
+          npm init -y >/dev/null
           npm install --no-audit --no-fund -D typescript@5 >/dev/null
           npm install --no-audit --no-fund --no-save "$TARBALL" >/dev/null
           cat > tsconfig.json <<'EOF'

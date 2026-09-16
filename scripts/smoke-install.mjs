@@ -12,7 +12,8 @@
  *
  * Steps: npm pack the repo -> npm install the tarball into a scratch dir ->
  * run the shim `--version` -> resolve both `exports` subpaths from the
- * installed package -> scaffold a minimal chain-load fixture -> run the shim
+ * installed package -> adopt the harness through the `flume-harness init`
+ * shim, over the manifest `npm init` produced -> run the engine's shim
  * through a verb that refuses on a chain that does not load
  * (`CHAIN_LOAD_VERB` below). Each step prints what it ran; the first failing
  * step aborts the run and is named in the error.
@@ -102,36 +103,12 @@ function run(step, cmd, args, opts = {}) {
   return result.stdout ?? "";
 }
 
-const CHAIN_FIXTURE = `import type { Chain, ChainFactory, Phase } from "@dtmd/flume";
-
-const factory: ChainFactory = (api) => {
-  const { shellGate } = api;
-
-  const notes: Phase = {
-    name: "notes",
-    description: "install smoke test",
-    promptPath: "prompts/notes.md",
-    concurrency: "singleton",
-    writablePaths: ["notes/**"],
-    gates: [shellGate({ name: "noop", when: "afterCommit", cmd: "true", args: [] })],
-    handoff: () => [],
-  };
-
-  const chain: Chain = { phases: [notes], humanOnly: [] };
-  return { chain };
-};
-
-export default factory;
-`;
-
-const PROMPT_FIXTURE = "Append a dated line to notes/journal.md.\n";
-
 /**
- * The verb the scaffolded chain-load fixture is driven through.
+ * The verb the adopted chain is driven through.
  *
  * It has to **refuse** on a chain that does not load, or the step asserts
  * nothing: the claim is that the installed CLI reaches the `.flume/chain.ts`
- * this script writes at the literal path below, and a verb that proceeds
+ * adoption wrote, and a verb that proceeds
  * over a failed load answers 0 whether or not the fixture is where the CLI
  * looks for it. `status` — what this step used to run — takes the
  * best-effort observational load (`src/cliChainLoad.ts`): by contract it
@@ -244,13 +221,14 @@ try {
   const consumerDir = join(scratch, "consumer");
   mkdirSync(consumerDir, { recursive: true });
 
+  // The manifest `npm init` produces, and nothing done to it: it declares no
+  // `"type"`, which is the CommonJS module scope a consumer adopts under
+  // (`spec/harness.md`, *Adoption and upgrade*). This step used to patch
+  // `type=module` in, which put the whole fixture in ESM scope and hid the
+  // fact that the chain `flume-harness init` writes loaded on no node 22 at
+  // all (`.claude/rules/platform-facts.md`, *A CommonJS-scoped `chain.ts`
+  // stops loading the ESM-only package at node 22.23*).
   run("npm init", "npm", ["init", "-y"], { cwd: consumerDir });
-  // ESM consumer context: flume is ESM-only and chain.ts is loaded as ESM;
-  // without type:module the consumer's nearest package.json marks .ts as
-  // CJS and the chain load fails before touching the package under test.
-  run("npm pkg set type=module", "npm", ["pkg", "set", "type=module"], {
-    cwd: consumerDir,
-  });
   run(
     REGISTRY_SPEC ? "npm install from registry" : "npm install tarball",
     "npm",
@@ -263,8 +241,13 @@ try {
     { cwd: consumerDir },
   );
 
-  const shimName = IS_WIN ? "flume.cmd" : "flume";
-  const shimPath = join(consumerDir, "node_modules", ".bin", shimName);
+  // Both generated shims, by the same rule: npm writes a `.cmd` per bin entry
+  // on win32 and an extensionless script elsewhere, and the package ships two
+  // (`spec/cli.md`, *Distribution*).
+  const shimFor = (bin) =>
+    join(consumerDir, "node_modules", ".bin", IS_WIN ? `${bin}.cmd` : bin);
+  const shimPath = shimFor("flume");
+  const harnessShimPath = shimFor("flume-harness");
 
   const reportedVersion = run("generated shim --version", shimPath, ["--version"], {
     cwd: consumerDir,
@@ -286,14 +269,17 @@ try {
     cwd: consumerDir,
   });
 
-  console.log("[smoke-install] scaffold chain-load fixture");
+  // The chain under the load step is the one adoption writes, through the
+  // harness bin's own generated shim (`spec/harness.md`, *Adoption and
+  // upgrade*): the verb a consumer's first command line runs, over the
+  // manifest above, writing the declaration, the chain, the state root's own
+  // `package.json` and the empty queue. A hand-written fixture here proved
+  // the CLI finds *a* chain; it could never prove the one every adopter
+  // starts from loads, which is the shape that reached a consumer broken.
   run("git init", "git", ["init"], { cwd: consumerDir });
-  mkdirSync(join(consumerDir, ".flume", "prompts"), { recursive: true });
-  writeFileSync(join(consumerDir, ".flume", "chain.ts"), CHAIN_FIXTURE);
-  writeFileSync(
-    join(consumerDir, ".flume", "prompts", "notes.md"),
-    PROMPT_FIXTURE,
-  );
+  run("generated shim flume-harness init", harnessShimPath, ["init"], {
+    cwd: consumerDir,
+  });
 
   run(`generated shim ${CHAIN_LOAD_VERB}`, shimPath, [CHAIN_LOAD_VERB], {
     cwd: consumerDir,
@@ -301,7 +287,8 @@ try {
 
   console.log(
     `[smoke-install] OK — ${REGISTRY_SPEC ? `registry ${REGISTRY_SPEC}` : "pack"}, ` +
-      `install, shim --version, exports subpaths, and shim ${CHAIN_LOAD_VERB} all passed`,
+      `install, shim --version, exports subpaths, flume-harness init, and shim ` +
+      `${CHAIN_LOAD_VERB} over the chain it wrote all passed`,
   );
 } catch (err) {
   if (err instanceof SmokeStepError) {

@@ -2,7 +2,8 @@
  * `flume-harness init` — what adopting the harness package writes into a
  * repository (`spec/harness.md`, *Adoption and upgrade*): the declaration
  * skeleton, the `chain.ts` that applies the package's factory to it, the
- * state root with an empty queue in it, the ignore set, a protocol page, and
+ * manifest that scopes both as ESM, the state root with an empty queue in
+ * it, the ignore set, a protocol page, and
  * the dependency line that makes `@dtmd/flume/harness` resolve from the
  * declaration that imports it. The engine refuses a load with no
  * `<configDir>/chain.ts`, so an adoption that stopped at the declaration
@@ -78,6 +79,31 @@ const CHAIN_REL = "chain.ts";
 
 /** Where the project's own conventions sit under a state root. */
 const PROTOCOL_REL = "PROTOCOL.md";
+
+/**
+ * The manifest that sits beside {@link CHAIN_REL} — the one file deciding
+ * which module system the chain and the declaration load in.
+ */
+const MANIFEST_REL = "package.json";
+
+/**
+ * All it declares, and all it may declare: `"type": "module"`.
+ *
+ * The loader reads `chain.ts` in the mode the **nearest** manifest names, and
+ * the package is ESM-only (`spec/chain.md`). With nothing in scope saying
+ * otherwise that mode is CommonJS, and the ESM-only package the chain imports
+ * stops resolving — on every node 22 for the chain written here, and from
+ * node 22.23 for a hand-written one (`.claude/rules/platform-facts.md`, *A
+ * CommonJS-scoped `chain.ts` stops loading the ESM-only package at node
+ * 22.23*). Node 24 resolves both and hides it, which is why no lane saw this
+ * before a consumer did.
+ *
+ * Beside the chain rather than in the consumer's own manifest, and carrying
+ * nothing else: which module system a *repository* is written in is the
+ * consumer's decision, and this touches none of it. A CommonJS repository
+ * adopts the package and its chain still loads.
+ */
+const STATE_ROOT_MANIFEST = `${JSON.stringify({ type: "module" }, null, 2)}\n`;
 
 /**
  * The queue a repository starts life with: the empty JSON list the engine's
@@ -353,6 +379,9 @@ export async function harnessInit(
   await mkdir(namespacedJoin(stateRootAbs), { recursive: true });
   const written: string[] = [];
   for (const [rel, body] of [
+    // The manifest first: it is the scope the two modules under it load in,
+    // and a consumer reading the report sees what put them in it.
+    [MANIFEST_REL, STATE_ROOT_MANIFEST],
     [DECLARATION_REL, declarationSkeleton(self.name)],
     [CHAIN_REL, chainSkeleton(self.name)],
     [PROTOCOL_REL, protocol],

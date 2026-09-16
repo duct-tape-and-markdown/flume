@@ -56,6 +56,10 @@ It writes, into the current repository:
 - **`.flume/chain.ts`** — the hop the engine loads, applying the package's
   factory to that declaration. The engine refuses a load without it, and
   nothing in it is yours to tune.
+- **`.flume/package.json`** — `"type": "module"`, and nothing else: the
+  module scope the two files above load in. flume is ESM-only, and a chain
+  loaded as CommonJS stops resolving it on node 22. Your own repository's
+  manifest is untouched — a CommonJS repo adopts and its chain still loads.
 - **`.flume/plan/pending.json`** — the empty queue. Nothing else creates one,
   and a plan slice refuses over an absent queue.
 - **`.flume/PROTOCOL.md`** — the project-side conventions no declaration
