@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -19,6 +19,7 @@ import {
   entryWriteScopeUnion,
   gitPath,
   matchesAny,
+  plainPath,
   queueFenceViolations,
   resolvePendingPath,
   slugify,
@@ -39,6 +40,36 @@ import {
 // source scan in tests/Baton.test.ts, not here: `namespacedJoin` *is* that
 // expression, so any test comparing the two asserts the body against itself
 // and cannot go red. See .claude/rules/platform-facts.md, "Windows MAX_PATH".
+
+// `plainPath` is the idiom's other direction and does go red here, because
+// the alphabet it undoes is not its own: `win32.toNamespacedPath` is node's
+// real composer, answering in win32's alphabet on every host, so the
+// round-trip is read against the writer rather than against a second
+// spelling of the inverse (.claude/rules/engineering.md, "A seam gate reads
+// what the real writer wrote").
+describe("plainPath — win32's namespaced alphabet, undone", () => {
+  it("undoes win32's own toNamespacedPath over a drive path and a UNC share alike", () => {
+    const drive = String.raw`C:\pnpm-store\flume\dist\cli.js`;
+    const unc = String.raw`\\build-host\tools\flume\dist\cli.js`;
+    // The vacuity pin the round-trip rides: a composer that stopped prefixing
+    // would leave `plainPath` a no-op and both assertions below green.
+    expect(win32.toNamespacedPath(drive)).not.toBe(drive);
+    expect(win32.toNamespacedPath(unc)).not.toBe(unc);
+
+    expect(plainPath(win32.toNamespacedPath(drive))).toBe(drive);
+    expect(plainPath(win32.toNamespacedPath(unc))).toBe(unc);
+  });
+
+  it("leaves a path that is in no namespaced alphabet alone, so the fold needs no platform test", () => {
+    // Why the fold is unconditional: a posix path is rooted at `/` and a
+    // posix `realpathSync` answers absolute, so neither can carry the prefix
+    // this strips — and a name that merely contains backslashes is not one.
+    expect(plainPath("/home/dev/flume/src/cli.ts")).toBe("/home/dev/flume/src/cli.ts");
+    expect(plainPath(String.raw`/home/dev/odd\\?\name`)).toBe(
+      String.raw`/home/dev/odd\\?\name`,
+    );
+  });
+});
 
 // Mechanism pin (ENTRYWRITESCOPE-SHARED-UNION, per
 // .claude/rules/engineering.md "Derived state is computed, never restated

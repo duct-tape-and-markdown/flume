@@ -44,7 +44,8 @@
  * parses a path reads that alphabet as something else entirely
  * (`pathToFileURL` reads `\\?\C:\…` as a UNC host). So the scan follows
  * the answer outward through the call expression it is written into: another
- * fs call may read it, anything else is an escape ({@link
+ * fs call may read it, so may the fold's own terminator ({@link
+ * ALPHABET_FOLD}), anything else is an escape ({@link
  * EscapedNamespacedPath}). It follows an *expression*, never a binding
  * graph — a fold bound to a name or returned to a caller is spent wherever
  * that name is, which is the fold's own module to say and the composition
@@ -161,6 +162,20 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
     },
   ],
 ]);
+
+/**
+ * The one symbol whose job *is* win32's namespaced alphabet: `plainPath`
+ * (`src/paths.ts`) reads a path in it and answers outside it, which is where
+ * a fold riding out on an fs answer is finally spent. It is no fs call, so
+ * without this the scan would red the one site that ends the alphabet
+ * correctly and leave only the two shapes that hide it — binding the answer
+ * to a name, or not folding back at all.
+ *
+ * Read by name, exactly as `isComposed` reads the composers: this scan
+ * resolves no imports, and a module spelling its own `plainPath` is the same
+ * looseness the composition verdict already carries.
+ */
+const ALPHABET_FOLD = "plainPath";
 
 /**
  * How many hops a path may be followed before the scan gives up — bindings
@@ -423,9 +438,10 @@ function enclosingCall(
  *
  * A path-answering fs call hands the alphabet along in its own answer, so the
  * walk follows it outward; any other fs call spends the path and the walk
- * stops. An answer written into a binding, a `return`, or a statement of its
- * own leaves the expression this reader follows, and is the module's own to
- * spend (the header's *Where the answer goes*).
+ * stops, as does {@link ALPHABET_FOLD}, whose answer is no longer in it. An
+ * answer written into a binding, a `return`, or a statement of its own leaves
+ * the expression this reader follows, and is the module's own to spend (the
+ * header's *Where the answer goes*).
  */
 function readerPastFs(
   masked: string,
@@ -436,6 +452,7 @@ function readerPastFs(
   for (let hop = 0; hop < MAX_HOPS; hop++) {
     const outer = enclosingCall(masked, at);
     if (outer === undefined) return undefined;
+    if (outer.callee === ALPHABET_FOLD) return undefined;
     if (!fsSymbols.includes(outer.callee)) return outer.callee;
     const contract = PATH_CONTRACTS.get(outer.callee) ?? CALLER_FOLDS_FIRST;
     if (!contract.answersPath) return undefined;

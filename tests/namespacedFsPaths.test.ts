@@ -193,7 +193,34 @@ export function entryUrl(argv1: string): string {
 }
 `;
 
+/**
+ * The shape that ends the alphabet instead of carrying it out: the same fold,
+ * the same answer, spent at `plainPath` (`src/paths.ts`). This is what
+ * `src/cli.ts` carries, and the reader must admit it — a reader that refused
+ * it would leave only the two shapes that hide the escape, binding the answer
+ * to a name or not folding back at all.
+ */
+const FOLDED_SOURCE = `
+import { realpathSync } from "node:fs";
+import { toNamespacedPath } from "node:path";
+import { plainPath } from "./paths.js";
+
+export function entryIdentity(argv1: string): string {
+  return plainPath(realpathSync(toNamespacedPath(argv1)));
+}
+`;
+
 describe("a namespaced path never leaves its fs call", () => {
+  it("the win32 path scan admits a toNamespacedPath result spent at the fold that ends the alphabet", () => {
+    const fixture = scanFsCalls("src/fixture.ts", FOLDED_SOURCE);
+    // Same fold, same answer, one reader apart from the refusal below: the
+    // composition verdict is green over both, and only the answer's reader
+    // separates them.
+    expect(fixture.bare).toEqual([]);
+    expect(fixture.answered).toBe(1);
+    expect(fixture.escaped.map((e) => describeEscape(fixture, e))).toEqual([]);
+  });
+
   it("the win32 path scan refuses a toNamespacedPath result consumed by anything but an fs call", () => {
     // The refusal itself, on the shape that shipped it: the fold composes, so
     // the composition verdict above is green over this source — the whole
@@ -207,8 +234,9 @@ describe("a namespaced path never leaves its fs call", () => {
     ]);
 
     // And the package under that same reader. The accepted shape is not
-    // re-authored here: `src/cli.ts` spends its own answer at the comparison
-    // it derives both sides through, and is one of the calls counted below.
+    // re-authored here: `src/cli.ts` spends its own answer at `plainPath`
+    // before the comparison it derives both sides through, and is one of the
+    // calls counted below.
     const scans = [...scanTree("src"), ...scanTree("harness")];
     const answered = scans.reduce((n, scan) => n + scan.answered, 0);
     expect(answered, "path-answering fs calls on a composed path").toBeGreaterThan(0);

@@ -69,6 +69,7 @@ import {
   loopLockPath,
   mergingDir,
   namespacedJoin,
+  plainPath,
   queueFenceViolations,
   resolvePendingPath,
   STATE_ROOT_NAMES,
@@ -1377,16 +1378,18 @@ async function main(): Promise<number> {
  * absent is not this module either way, and the import must not crash over
  * it.
  *
- * The fold is spent at the call, and its answer is read by nothing that
- * parses a path: `realpathSync` speaks back in whichever alphabet win32
- * hands it, so the answer is only ever compared with another answer from
- * this same function.
+ * Both legs answer in one alphabet. The fold this function spends at
+ * `realpathSync` rides back out on its answer, and rides out *unevenly*: the
+ * prefix survives where nothing resolved and is gone where a link did, so
+ * the two sides of the comparison below would otherwise differ by the prefix
+ * alone. `plainPath` (`src/paths.ts`) is where that ends — its answer parses
+ * as the path it names, on either leg and on either platform.
  */
-function onDiskIdentity(path: string): string {
+export function onDiskIdentity(path: string): string {
   try {
-    return realpathSync(toNamespacedPath(path));
+    return plainPath(realpathSync(toNamespacedPath(path)));
   } catch {
-    return path;
+    return plainPath(path);
   }
 }
 
@@ -1397,8 +1400,9 @@ function onDiskIdentity(path: string): string {
 // process.argv[1] keeps the invoked path verbatim. Through a junction- or
 // symlink-based install (pnpm's linked store) the two never match on a raw
 // string comparison, so both sides go through {@link onDiskIdentity} and the
-// comparison is made on what it answered — one derivation, so neither side
-// can be in an alphabet the other is not.
+// comparison is made on what it answered. One derivation is not by itself one
+// alphabet — the junction the check exists for is the very thing that moves
+// one side out of it — which is why the fold is spent there rather than here.
 export function isInvokedDirectly(argv1: string | undefined): boolean {
   if (argv1 === undefined) return false;
   return onDiskIdentity(argv1) === onDiskIdentity(fileURLToPath(import.meta.url));

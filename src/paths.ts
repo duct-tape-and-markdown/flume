@@ -35,6 +35,31 @@ export function namespacedJoin(...paths: string[]): string {
 }
 
 /**
+ * The idiom's inverse: one path out of win32's namespaced alphabet and into
+ * its plain one. This is where a fold is *spent* when the answer it rode out
+ * on is compared rather than handed back to an fs call.
+ *
+ * The fold rides out on an answer because `realpathSync` builds its answer
+ * from the argument it was given: it returns the namespaced spelling
+ * unchanged when no component of the path was a link, and `readlink`'s
+ * un-prefixed target when one was. So two answers over one file differ by
+ * the prefix alone, depending only on how that file was installed — and a
+ * comparison between them, which is the whole of the CLI's entry check
+ * (`isInvokedDirectly`, `src/cli.ts`), reads one file as two.
+ *
+ * Unconditional, not gated on the platform: a posix path is rooted at `/`
+ * and a posix `realpathSync` answer is absolute, so neither can begin with
+ * the prefix this strips. The UNC arm restores the `\\` root
+ * `toNamespacedPath` replaced with `\\?\UNC\`, so the two directions compose
+ * back to where they started.
+ */
+export function plainPath(path: string): string {
+  if (path.startsWith("\\\\?\\UNC\\")) return `\\\\${path.slice("\\\\?\\UNC\\".length)}`;
+  if (path.startsWith("\\\\?\\")) return path.slice("\\\\?\\".length);
+  return path;
+}
+
+/**
  * A path the host composed, as the forward-slash form git speaks.
  *
  * git names every path with `/` on every platform, so a value that has been

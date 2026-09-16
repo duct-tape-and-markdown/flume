@@ -13,14 +13,14 @@ import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, win32 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isInvokedDirectly, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
+import { isInvokedDirectly, onDiskIdentity, EX_DATAERR, EX_IOERR } from "../src/cli.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): stopFlagPath is the chain-facing rule for `<flumeDir>/stop`,
@@ -114,6 +114,31 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
     } finally {
       await rm(linkParent, { recursive: true, force: true });
     }
+  });
+
+  it("the CLI entry check reads a namespaced realpath answer and its plain spelling as the same file", () => {
+    // The case above, reduced to the pair of values it produces on win32 —
+    // where alone it can produce them, and where this suite does not run.
+    // `realpathSync` builds its answer from the argument it was handed, so the
+    // `\\?\` prefix `toNamespacedPath` put there survives the leg that
+    // resolved no link and is gone from the leg that resolved a junction. One
+    // file, two spellings, and the two sides of the entry check land on
+    // opposite ones through a linked install.
+    //
+    // The namespaced side is spelled by win32's own `toNamespacedPath` rather
+    // than by hand here: it is the writer whose prefix the check has to read
+    // back, and `win32` answers in its alphabet on every host, which is what
+    // makes the pair reachable from this lane at all.
+    const cli = String.raw`C:\pnpm-store\flume\dist\cli.js`;
+    expect(onDiskIdentity(win32.toNamespacedPath(cli))).toBe(onDiskIdentity(cli));
+
+    // A UNC install answers the same way one prefix further out
+    // (`\\?\UNC\host\share\…`): the fold restores the `\\` root rather than
+    // eating it, so the host name is not silently re-read as a directory.
+    const share = String.raw`\\build-host\tools\flume\dist\cli.js`;
+    expect(onDiskIdentity(win32.toNamespacedPath(share))).toBe(
+      onDiskIdentity(share),
+    );
   });
 });
 
