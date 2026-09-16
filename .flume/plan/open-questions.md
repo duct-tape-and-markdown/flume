@@ -95,6 +95,24 @@ ladder's bottom rung* wants the third carve-out spelled, since `docs/` is not
 shipped in the package's `files` allowlist and so is not the `.d.ts` hover
 text the first carve-out names.
 
+**A falsified claim, found by hand rather than by a lens.**
+`docs/surveys/consumer-chains/consumer-a.md` § 3 #6 asserts `AgentUsage`
+"**has no cost field**" and `INDEX.md` § 3 calls `total_cost_usd` "the
+clearest single missing field in the survey". Both were true when written and
+are false now: `AgentUsage.costUsd` (`src/Agent.ts:118`) landed at `64c781f1`,
+lifted at the same decode as the token fields. So the survey currently tells a
+consumer to hand-scan raw stdout for a field the engine reports — (c)'s cost,
+stated concretely, and the first instance of this question's subject observed
+rather than hypothesised. Whether a survey is dated-by-construction like a
+migration note is the same fork; a survey's *coverage* column is a claim about
+live surface in a way its *observation* column is not.
+
+Correction to the recommendation above: `docs/` **is** in the package's `files`
+allowlist (`package.json`, only `docs/PRD-*.md` excluded), so these pages ship
+to every consumer. The first carve-out still does not reach them — a markdown
+page is not `.d.ts` hover text — but "not shipped" is not the reason, and the
+blast radius is larger than the parenthetical implied.
+
 ## What row does a declared findings script take, and what shape is its stdout?
 
 **PARKED.** `spec/harness.md` *Declared findings sources* ratifies a fourth

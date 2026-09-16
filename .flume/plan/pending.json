@@ -23,10 +23,6 @@
         {
           "path": "tests/helpers/repoProgram.ts",
           "description": "the scopeless read for the trees no tsconfig reaches, if the program helper is where it lands"
-        },
-        {
-          "path": "tests/helpers/spawnCaps.ts",
-          "description": "source of the {trees, files} domain shape — read it, and leave it where it is"
         }
       ],
       "retire": []
@@ -45,11 +41,11 @@
       "section": "Narration is the ladder's bottom rung"
     },
     "acceptance": "a page name is judged in every tree the sweep domain names and in .flume/chain.ts, while the identifier and path arms stay in the three trees the program reaches.",
-    "tests": [
+    "tests": [],
+    "pins": [
       "every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.ts cites names a page the working tree holds"
     ],
-    "pins": [],
-    "notes": "Ruled 29e3df4c, option 1: one tree list per arm. bin/*.js and scripts/*.mjs are outside the tsconfig, so this arm reads them at the scopeless createSourceFile tier. Copy the {trees, files} domain shape from tests/helpers/spawnCaps.ts for .flume/chain.ts — copy, never lift: a5243281 moved it out and left spawnCapModules and parse dangling there, and tsc reverted the span. Measured 51 comment-borne page names in the widened trees, 9 of them examples/ narrating a consumer's repo."
+    "notes": "Ruled 29e3df4c, option 1: one tree list per arm. bin/*.js and scripts/*.mjs are outside the tsconfig, so this arm reads them at the scopeless createSourceFile tier. a5243281 reverted on tsc: it lifted spawnCapModules and parse out of tests/helpers/spawnCaps.ts, leaving the callers at :609, :738 and :808 dangling. Copy the {trees, files} domain shape from that file; move nothing out of it. Measured 51 comment-borne page names in the widened trees, 9 of them examples/ narrating a consumer repo."
   },
   {
     "tag": "SELECTION-AND-ATTEMPT-LEAVE-THE-DISPATCHER",
