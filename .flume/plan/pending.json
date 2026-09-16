@@ -28,6 +28,35 @@
     "notes": "Run 35045533117 at 8159d2b9: a28caa4c shipped and the title still reds `expected false to be true`. Test-only, so no tests[] line is judgeable. Hypothesis to instrument: `onDiskIdentity` catches every throw, and node's JS `realpathSync` may throw on a namespaced-root walk, so both legs take the unresolved fallback spec/cli.md declares. Adjacent to EVERY-FIXTURE-ROOT-FOLDS-AT-ITS-MAKER, not the same property."
   },
   {
+    "tag": "ENTRY-CHECK-CASES-NAME-THE-LEG-THEY-EXERCISE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the two cases reaching `onDiskIdentity`'s fold are titled for the leg they take, and the unreachable leg is declared"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "both entry-check cases reaching `onDiskIdentity`'s fold take only the throwing leg — one titled with the spelling spec/cli.md just retired, one for a namespaced answer no lane produces",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "`realpathSync` keeps the `\\\\?\\` prefix only where nothing resolved"
+    },
+    "acceptance": "each entry-check case's title names the leg its body actually takes, and the non-throwing leg's unreachability off win32 is declared and cited at the site rather than implied by a title that claims it.",
+    "tests": [],
+    "pins": [
+      "a throwing realpathSync leaves the CLI entry check answering rather than crashing the import",
+      "the CLI entry check's throwing leg compares the unresolved path folded into one alphabet"
+    ],
+    "notes": "From 62bb651a. `win32.toNamespacedPath` values name no file on any lane, so tests/cli.test.ts:90 and :119 both take `onDiskIdentity`'s catch leg; :119's own comment claims win32 would produce a namespaced realpath answer there, and it would not. :90 carries the retired 'falls back to the raw comparison'. The non-throw leg's fold is pinned at `plainPath` (tests/paths.test.ts), unreachable through `onDiskIdentity` off win32. Test-only, so no tests[] line is judgeable."
+  },
+  {
     "tag": "REALPATH-FACT-SHRINKS-ITS-TWO-DOC-COMMENTS",
     "gate": {
       "kind": "open"
