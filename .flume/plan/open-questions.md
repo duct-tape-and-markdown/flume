@@ -95,3 +95,54 @@ is why this is a fork rather than a derivation. (a) keeps one decider serving
 every spelling of "help for <name>"; (b) keeps `--help`'s contract narrow. A
 sentence in *Subcommand surface* naming the flag form closes this either way,
 and that sentence is the human's: neither plan nor build writes `spec/`.
+
+## Does the supervisor state when a run started, or does `flume status` keep measuring it?
+
+**Status: PARKED** — `spec/loop.md`, *The loop lock and the tip claim*.
+
+`spec/cli.md`'s *`flume status` owes exactly this* (item 7) bounds the live
+run's spend to "the verdict rows written since it started". Nothing on disk
+states when a run started: the same page's sibling section pins `loop.pid`'s
+contents to "the holder's pid, nothing else", and the tip claim's *Contents:*
+mirrors that spelling ("consistent with `loop.pid`").
+
+So status measures it instead. `src/cli.ts:455` stats the pidfile once — the
+probe it already needs for liveness — and takes `mtimeMs` as the window start;
+`TickVerdict.at`'s doc (`src/tickVerdict.ts`) names that reader. Verified on
+disk: the supervisor exclusive-creates `loop.pid` once at claim
+(`src/cli.ts:1264`) and unlinks at release, never rewriting it, and a stale
+lock is unlinked and re-created — so within any run the mtime *is* the claim
+instant. The measurement is correct today.
+
+The gap is that mtime carries no writer contract. It is a filesystem property,
+not a statement the engine made: an archive restore, a `cp -a`, a coarse
+mtime-granularity host, or any tool that touches the state root moves or blurs
+it, and nothing refuses. `engine-boundary.md`'s *Told, not inferred* test —
+could the counterparty have said this outright? — answers yes here; the
+sanctioned exception is for a counterparty that *cannot* speak, and the
+supervisor can.
+
+**Options.**
+
+- **(a) Keep the measurement.** Declared and cited at the site, zero spec
+  churn, and one probe already serves both readings. Cost: a fact the engine
+  holds stays unstated, and its one reader is silently wrong — a spend line
+  over the wrong window, at exit code 0 — if anything ever touches the file.
+- **(b) `loop.pid` carries the pid and the claim instant.** The engine says it
+  outright. Costs two spec sentences: *Contents:* in *The loop lock and the tip
+  claim*, and the tip claim's "consistent with `loop.pid`" (which either
+  follows or is explicitly excepted). **Ordering hazard, measured:**
+  `liveLoopPid` (`src/job.ts`) reads the whole file through `Number(raw.trim())`,
+  so a `0.x` reader meeting a two-line file gets `NaN` → `null` → *stale*, and
+  reclaims a live lock. The new line must land where an old parser still reads
+  the pid, or the bump is breaking and the migration note says so.
+- **(c) A second file beside the lock carrying the instant.** Leaves both
+  *Contents:* sentences intact, but spends an artifact on one fact and a second
+  release path — and a lock and a start stamp that can disagree is a worse
+  reading than the mtime.
+
+**Recommended: (b).** It is the only option that turns the measurement into a
+statement, and the sentence it needs is one line. Take (a) deliberately if the
+mtime's fragility is judged not worth a wire change — but then the site's
+citation should say *that*, rather than reading as an interim. Either way the
+edit is the human's: neither plan nor build writes `spec/`.

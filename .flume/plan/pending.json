@@ -1,5 +1,31 @@
 [
   {
+    "tag": "THE-CLI-PAGE-STOPS-PROMISING-AN-UNCHANGED-STATUS-STDOUT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CLI.md",
+          "description": "the `flume status` section's degraded-load sentence"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the CLI page promises a failed chain load leaves status's stdout byte-unchanged, which the failure row status prints on stdout contradicts",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "`flume status` owes exactly this"
+    },
+    "acceptance": "the CLI page's `flume status` section states the load failure as a row of the listing on stdout, and carries no claim that a failed load leaves that stdout byte-unchanged.",
+    "tests": [],
+    "pins": [],
+    "notes": "Site: docs/CLI.md:28, \"because the report is on stderr, the stdout a prompt or watch loop parses stays byte-unchanged\". Item 6 of the cited section rules the opposite — the row prints \"on the same stream as the rest\" — and `src/cli.ts` console.logs it. The stderr report still happens; only the byte-unchanged promise is false. Unpinnable both ways: a `toContain` over a phrasing reds on a rewrite, a `not.toContain` is a negative over a whole page."
+  },
+  {
     "tag": "THE-ADOPTION-PAGE-PRICES-OPERATIONS-NOT-A-COUNT",
     "gate": {
       "kind": "open"
@@ -24,6 +50,34 @@
     "tests": [],
     "pins": [],
     "notes": "Sites: :129 \"over the same three operations\", :160 \"not the three signatures\", :176 \"a working implementation of all three\". Left unpinned by THE-ADOPTION-PAGE-NAMES-EVERY-RUNNER-OPERATION: the only check available is `toContain` over a phrasing, which reds on a rewrite rather than on the fact. Deleting the copy is the fix, and that entry's bullet pin then covers the section. `docs/MIGRATING-0.16.md` describes a cut release and is out of scope."
+  },
+  {
+    "tag": "THE-GATE-FACT-TABLE-IS-PINNED-TO-THE-CHILDS-ENVIRONMENT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the doc table read against the FLUME_ set the gate's child saw"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the gate-fact table in docs/CHAIN-AUTHORING.md is prose alone, so a seventh fact or a renamed one leaves a green, stale table on the page a chain author reads first",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "the table under *What a declared command gate's child reads* is read against the FLUME_ variables a real declared gate's child is handed, so an added, dropped or renamed fact reds the default lane.",
+    "tests": [],
+    "pins": [
+      "docs/CHAIN-AUTHORING.md names exactly the FLUME_ variables a declared gate's child is handed"
+    ],
+    "notes": "The section's own heading is the anchor, as the sibling doc walks use. `flumeEnvSeenBy` already spawns the real gate and returns the child's FLUME_ set, so the pin is set-equality against a value the file holds — hence this prediction over tests/examples.test.ts, where the other doc walks live. Bullet bodies stay unpinned: reading them against doc comments is prose against prose."
   },
   {
     "tag": "THE-STATE-ROOT-OFFSET-TAKES-ITS-NAMES-FILE",
