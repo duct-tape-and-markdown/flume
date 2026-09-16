@@ -367,6 +367,77 @@
     "notes": "Sizes the arm 669d630 left for the sweep. Sites: chain:36, harnessWindows:80,631, harnessGates:108, harnessChain:123, harnessCi:89,449, harnessRunner:62, bin:191. Exemptions: harnessCi:447 (`stdio: \"ignore\"`, captures nothing) and the execFileSync spellings inside fixture string literals (cli, cliJobResolution, subprocessHelper). Blocked on the async arm so the sync one extends that scan rather than growing beside it."
   },
   {
+    "tag": "A-PAGE-PATH-IS-NEVER-A-CITATION-PAIR",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "the pair arm declines a home whose path names a page, so the two spans fall back to the arms they already have"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "the case pinning that reading, beside the pair cases already there"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the citation pin's pair arm reads any slashed path as a declaration home, so a tight-closed `*.md` pair reds a citation that is correct",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "a pair whose path names a page is no pair: the identifier resolves repo-wide and the page against disk, and a case pins that reading.",
+    "tests": [
+      "an identifier a comment pairs with a .md page resolves repo-wide rather than inside that page"
+    ],
+    "pins": [],
+    "notes": "Ruled at 29e3df4c, option 1. Latent — nothing spells a tight-closed page pair today, and two sites sit a comma away: src/Prompt.ts:272 (promptArgs with spec/chain.md) and src/tickVerdict.ts:582 (Phase.handoff with spec/loop.md). The skip goes at the pair loop's home test, beside the isPathSubject check it already makes."
+  },
+  {
+    "tag": "THE-PAGE-NAME-ARM-READS-EVERY-SWEEP-TREE",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "A-PAGE-PATH-IS-NEVER-A-CITATION-PAIR"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "the page-name arm takes its own domain, read at the tier each tree allows"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "the page-name pin over the widened domain, with its vacuity guard per tree"
+        },
+        {
+          "path": "tests/helpers/external-vocabulary.json",
+          "description": "the consumer-repo page names examples/ narrates, each with its reason"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the citation pin judges page names in src/, harness/, tests/ alone, so every *.md cite in bin/, examples/, scripts/ and .flume/chain.ts is held by nothing",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "a page name is judged in every tree the sweep domain names and in .flume/chain.ts, while the identifier and path arms stay in the three trees the program reaches.",
+    "tests": [
+      "every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.ts cites names a page the working tree holds"
+    ],
+    "pins": [],
+    "notes": "Ruled at 29e3df4c, option 1: one tree list per arm. bin/*.js and scripts/*.mjs are outside the tsconfig, so this arm reads them at the scopeless createSourceFile tier; the {trees, files} domain in tests/helpers/spawnCaps.ts is the shape to copy for .flume/chain.ts. Measured 51 comment-borne page names in the widened trees, 9 of them examples/ narrating a consumer's repo (state.md, notes/journal.md, .flume/prompts/*) — that class already has three entries in external-vocabulary.json."
+  },
+  {
     "tag": "SELECTION-AND-ATTEMPT-LEAVE-THE-DISPATCHER",
     "gate": {
       "kind": "open"
@@ -450,5 +521,40 @@
     "tests": [],
     "pins": [],
     "notes": "From ONE-ATTEMPT-LEG-AND-ONE-BATCH-SELECTION's note: the two legs became separable once the attempt sequence and the batch selection were unified. Blocked on the first split so the shared callees have moved before the legs follow them."
+  },
+  {
+    "tag": "THE-SUBPROCESS-SUITE-IS-THREE-SUITES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/gitEnv.test.ts",
+          "description": "the auto-gc pin's own suite, named for the module it tests"
+        }
+      ],
+      "edit": [
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "keeps the spawn wrappers and the budget scans; the header claims the job the body then carries"
+        },
+        {
+          "path": "tests/fixtureRoots.test.ts",
+          "description": "takes the state-root leak guard, beside the rooting idiom it already owns"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "tests/subprocessHelper.test.ts is 1443 lines over three modules its own header enumerates: the spawn wrappers, the state-root leak guard, and the auto-gc pin",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "the state-root guard sits in the suite that owns the rooting idiom, the gc pin has a suite named for its module, and subprocessHelper.test.ts holds the helper it is named for alone.",
+    "tests": [],
+    "pins": [],
+    "notes": "The module move shipped at 04c4d344; its suite did not. Describes to move: the guard at :239, the gc cases at :1373 and :1400. Behavior-free — the same cases run, and tests/helpers/subprocess.ts:89 cites this file for the scan, which stays. Collides on file with the two tests/ scan entries above; the partitioner serializes them."
   }
 ]
