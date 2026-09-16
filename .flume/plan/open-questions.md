@@ -9,20 +9,33 @@ Status markers:
 
 <!-- questions below this line -->
 
-## Does the realpath platform fact cover node's async form?
+## Where do node's `maxBuffer` facts live?
 
-**Status: NEEDS AMENDMENT** — the answer looks clear; closing it is a `.claude/rules/platform-facts.md` edit no autonomous phase may make.
+**Status: NEEDS AMENDMENT** — the answer looks clear; closing it is a
+`.claude/rules/platform-facts.md` edit no autonomous phase may make.
 
-`.claude/rules/platform-facts.md`, *`realpathSync` keeps the `\\?\` prefix only where nothing resolved*, states the JS-vs-`.native` split for the sync form alone. The namespaced-path scan refuses a composed path at `realpathSync` on that authority and admits one at the bare async `realpath` — declared and cited at the site (`PATH_CONTRACTS`, `tests/helpers/namespacedFsScan.ts`). Verified this tick: no `src/` or `harness/` module imports the async form, so nothing is broken today; the first that does ships green over code that throws on win32, where no behavior test in this suite can look.
+`SPAWN_OUTPUT_CAP_BYTES` (`tests/helpers/subprocess.ts`) states two external
+toolchain facts in its doc comment and nowhere else: node caps a captured
+child stream at 1 MiB unless told otherwise, and it reports the overrun by
+killing the child and rejecting with `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`
+*where an exit status would be* — so an inherited cap surfaces through
+`exitStatusOf`'s no-exit-status arm as a child that never ran, not as a
+truncation. Neither is pinned by any test and neither is on the page.
+CLAUDE.md rules a code comment carrying a platform fact "a copy the harness
+should own instead, seen only by an agent that already opened that file", and
+the page has no `maxBuffer` section today (checked this tick).
 
-- **Widen the page** to state the fact for both spellings (`fs.realpath` carries the same `.native` head). The scan follows in one flag, and the widening touches no call site that exists — recommended.
-- **Leave it.** The refusal stays scoped to the symbol the page names, and the gap re-opens as a finding the first time an async `realpath` lands.
+The second fact is the load-bearing one: it is why the cap exists at all, and
+it is the reading a site inheriting the default would get wrong. It is also
+about to be read by more than one site —
+EVERY-TEST-EXEC-RUNS-UNDER-THE-DECLARED-CAP routes 22 files through the
+capped wrapper.
 
-## Can a citation's named home be pinned, or does the pin stay token-only?
-
-**Status: PARKED** — the bound is a ratified phrase, so only a human moves it.
-
-`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*, scopes the comment-citation pin to "the token, never its meaning". So a comment naming a file that no longer holds the symbol beside it stays green: four such sites were verified this tick and filed as CITATIONS-FOLLOW-THE-JOBS-THAT-MOVED, none of them caught by any instrument. *A module is one job* asks each split to re-home the citations it strands, and nothing checks that it did.
-
-- **Widen the phrase** so a pin may pair a backticked repo path with a backticked identifier next to it and resolve the declaration. Catches the whole class; the false-positive risk is a comment naming a file for context rather than as a home (`tests/cli.test.ts:990` is one).
-- **Leave it token-only.** The bound stays simple and the class stays prose-held, re-found by whoever reads the file next.
+- **Add one section to the page** stating both facts, and shrink the doc
+  comment to a pointer in the same commit (`engineering.md`, *Narration is
+  the ladder's bottom rung*). Recommended: the comment's sizing rationale —
+  why 16 MiB, read off `src/`'s own spawn caps — is a repo decision and stays
+  at the site; only the two node facts move.
+- **Leave it at the site.** One home today, and the page stays shorter. The
+  cost is that the next author who writes a bare `promisify(execFile)` has no
+  page to have read.

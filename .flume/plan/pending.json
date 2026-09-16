@@ -1,5 +1,78 @@
 [
   {
+    "tag": "ASYNC-REALPATH-REFUSES-A-COMPOSED-PATH",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/namespacedFsScan.ts",
+          "description": "`realpath` takes the native-only contract `realpathSync` carries; the paragraph declaring the admission shrinks to the page"
+        },
+        {
+          "path": "tests/namespacedFsPaths.test.ts",
+          "description": "the case that reds a composed path at the bare async spelling"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the scan admits a composed path at the bare async `realpath`, on a page that now states the JS-vs-native split for both spellings",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "`realpathSync` keeps the `\\\\?\\` prefix only where nothing resolved"
+    },
+    "acceptance": "a composed path reaches no JS-form realpath in the scanned trees, and the contract table stops narrating the admission it no longer makes.",
+    "tests": [
+      "a composed path handed to the bare async realpath is refused"
+    ],
+    "pins": [],
+    "notes": "The site names this flip as its own trigger (PATH_CONTRACTS, tests/helpers/namespacedFsScan.ts:144-151). No src/ or harness/ module imports the async form today, so the refusal lands ahead of its first violator. Closes the inbox ruling at 6426288."
+  },
+  {
+    "tag": "A-CITED-HOME-RESOLVES-IN-THE-FILE-IT-NAMES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "the pair arm, and the header paragraph scoping the scan to the token alone"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "the arm resolving, and the bare-path-is-context exclusion"
+        },
+        {
+          "path": "tests/friction.test.ts",
+          "description": "its pair names the file the primitive is pinned in, not the declaration home"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "its pair names the registry file for a lib global"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the citation pin resolves the token and never its home, so a comment naming a file its symbol has left stays green through a split",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "an identifier the citation pairs with a backticked repo-relative path resolves against that file, a path named on its own is read as context with no pair drawn into it, and the sites the arm reds are re-spelled at their homes.",
+    "tests": [
+      "a comment pairing an identifier with a repo-relative path reds when the declaration is not in that file",
+      "a repo-relative path a comment names on its own is read as context, never as a pair"
+    ],
+    "pins": [],
+    "notes": "Ratified at 6426288 after the parked question. Measured: 84 pair-form sites, 2 red today (tests/friction.test.ts:151, tests/harnessChain.test.ts:852). Non-repo-relative spellings (./Gate.js, prompts.ts) are not paths the path arm reads, so no pair is drawn from them. Ships before the Dispatcher splits so their stranded cites red mechanically."
+  },
+  {
     "tag": "SUBPROCESS-HELPER-IS-THREE-MODULES",
     "gate": {
       "kind": "open"
@@ -304,5 +377,209 @@
     ],
     "pins": [],
     "notes": "From FIXTURE-AND-GIT-SPELL-ONE-PATH-THE-SAME-WAY's note: six lane reds came from this class, three reproducible off-win32 with `TMPDIR` on a symlink. Measured 166 sites over 39 files; 16 are `mkdtempSync` and want a sync sibling beside `mkTempDir`, whose doc comment is all that holds the property today. The scan spells its exemptions rather than discovering them: `mkTempDir`'s own body, and a case whose subject is an unfolded spelling. Blocked on the split so the files route once."
+  },
+  {
+    "tag": "EVERY-TEST-EXEC-RUNS-UNDER-THE-DECLARED-CAP",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "SUBPROCESS-HELPER-IS-THREE-MODULES"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "the capped exec wrapper stops being module-private"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the scan holding tests/ to the one wrapper, beside the cases already pinning the cap"
+        },
+        {
+          "path": "tests/helpers/dispatcherFixture.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/job.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/worktrees.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/friction.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/bin.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/build-changelog.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/cliRender.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/cliJobResolution.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/cliJobVerbs.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/cliVerdict.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/tip-claim.integration.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/loop-process-boundary.integration.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/job.integration.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/examples.integration.test.ts",
+          "description": "its hand-rolled exec wrapper comes from the module that declares the cap"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "25 hand-rolled `promisify(execFile)` wrappers across 22 tests/ files run on node's 1 MiB default while the capped wrapper has one home and stays private",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "the capped exec wrapper is the one tests/ spawns through, and a scan reds a bare promisify(execFile) written anywhere else — so an overrun can no longer arrive as a child that never ran.",
+    "tests": [
+      "no file under tests/ promisifies execFile outside the module that declares the output cap"
+    ],
+    "pins": [],
+    "notes": "From SPAWN-WRAPPER-DECLARES-ITS-OUTPUT-CAP's note; re-measured this tick at 26 sites over 23 files, one of them the home. Latent today — every site spawns git or node with small output — but an overrun rejects with an errno where an exit status would be, which exitStatusOf reads as a child that never ran. Blocked on the split so the wrappers route to their final home."
+  },
+  {
+    "tag": "SELECTION-AND-ATTEMPT-LEAVE-THE-DISPATCHER",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "src/selection.ts",
+          "description": "which entries are pickable: pickableEntries, isPickable, gateEligible, heldByQuarantine, quarantineKey, blamedOn, and the batch selectBatch cuts"
+        },
+        {
+          "path": "src/tickAttempt.ts",
+          "description": "the one attempt sequence: prompt args, agent invocation, gate runs, the after-commit revert, and the no-commit classification"
+        }
+      ],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "keeps the class, its options and outcome types, and the disk reads it fronts; the two jobs leave"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "three cites naming the old home for isPickable and quarantineKey"
+        },
+        {
+          "path": "src/loopSupervisor.ts",
+          "description": "its quarantineKey cite"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "takes quarantineKey from its new home"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "src/Dispatcher.ts is 4034 lines over four jobs its own header enumerates; selection and the attempt sequence are two the tree gives no file to",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "selection and the attempt sequence each live in the file their name is, the class keeps the tick orchestration and the package exports it already carries, and every citation naming the old home for a job that moved is re-homed in the same commit.",
+    "tests": [],
+    "pins": [],
+    "notes": "Behavior-free: typecheck, suite, and the export and citation pins hold it. Seams measured — selectBatch touches two this-members, runAttempt destructures twelve once at its head, so each leaves as a function over a context struct. The public surface (Dispatcher, TickOutcome, computeStateRootRel, PendingParseFailure, TerminalMisconfiguration) does not move, so src/index.ts is untouched."
+  },
+  {
+    "tag": "THE-TWO-TICK-LEGS-LEAVE-THE-DISPATCHER",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "SELECTION-AND-ATTEMPT-LEAVE-THE-DISPATCHER"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "src/singletonTick.ts",
+          "description": "the singleton leg: claim, attempt, gate, commit in place"
+        },
+        {
+          "path": "src/waveTick.ts",
+          "description": "the fanout leg: per-entry attempts in worktrees, the merging markers, the tip checks, the merge and the pending update"
+        }
+      ],
+      "edit": [
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the class dispatches to the two legs and holds neither"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the two merge legs are 1285 of the Dispatcher's lines — runSingleton and runFanout — and neither has a file of its own",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "the singleton leg and the wave leg each live in the file their name is, and src/Dispatcher.ts holds the tick orchestration alone.",
+    "tests": [],
+    "pins": [],
+    "notes": "From ONE-ATTEMPT-LEG-AND-ONE-BATCH-SELECTION's note: the two legs became separable once the attempt sequence and the batch selection were unified. Blocked on the first split so the shared callees have moved before the legs follow them."
   }
 ]
