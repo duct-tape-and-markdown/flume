@@ -1,50 +1,8 @@
 [
   {
-    "tag": "THE-QUEUES-DECLARED-WRITER-RUNS-OVER-AN-UNPARSEABLE-QUEUE",
-    "gate": { "kind": "open" },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "the queue's parse failure as a tick fact on TickContext"
-        },
-        {
-          "path": "src/singletonTick.ts",
-          "description": "the decide-read's carve-out, keyed on the phase's declared writable paths"
-        },
-        {
-          "path": "src/waveTick.ts",
-          "description": "the same carve-out at the wave's decide-read"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the catch stops stating a hand edit as the remedy"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "both fates over an unparseable queue, and the reported fact"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the strict read refuses before any phase runs, so an unparseable queue stops the plan tick whose rewrite is the repair and only a hand edit clears it",
-    "per": { "path": "spec/pending.md", "section": "Queue reads are strict" },
-    "acceptance": "a phase whose declared writable paths include the queue path is invoked over an unparseable queue with the parse failure handed to it as a tick fact; a phase that cannot write the queue is refused as now.",
-    "tests": [
-      "a phase whose writable paths include the queue is invoked over an unparseable queue",
-      "a phase that cannot write the queue is refused over an unparseable one",
-      "the tick context carries the queue's parse failure as a fact"
-    ],
-    "pins": [],
-    "notes": "Keyed on the declared fence, never an inferred intent (`engine-boundary.md`, *Told, not inferred*). The fact is reported, not a verdict: what to do with it is the chain's. `src/Dispatcher.ts`'s catch states the old remedy in its own words — \"until a human fixes it\" — and `spec/loop.md` now points at the cite above instead."
-  },
-  {
     "tag": "THE-PLAN-SLICES-TAKE-A-QUEUE-PARSE-FAILURE-AS-INPUT",
     "gate": {
-      "kind": "blockedBy",
-      "tags": ["THE-QUEUES-DECLARED-WRITER-RUNS-OVER-AN-UNPARSEABLE-QUEUE"]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -70,7 +28,10 @@
       "retire": []
     },
     "summary": "the package's slices read a parsed queue only, so once the engine admits them over an unparseable one nothing makes a slice live for it or tells the agent to repair it",
-    "per": { "path": "spec/harness.md", "section": "The gates the discipline needs" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The gates the discipline needs"
+    },
     "acceptance": "a queue that fails to parse makes the plan slice live and its render carries the failure, so the next plan tick's rewrite is the repair and no queue state needs a hand edit.",
     "tests": [
       "a queue that fails to parse makes the inbox slice live",
@@ -80,60 +41,10 @@
     "notes": "The prompt already cats the raw queue bytes (`PENDING_PATH`), so the agent sees the file; what is missing is the failure stated as a fact and a liveness leg that fires on it. Blocked on the engine leg that reports the fact."
   },
   {
-    "tag": "THE-LOOP-LOCK-STATES-THE-INSTANT-IT-WAS-TAKEN",
-    "gate": { "kind": "open" },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "docs/MIGRATING-0.17.md",
-          "description": "the mixed-version reclaim hazard, named"
-        }
-      ],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "the lock writes pid then instant; status reads the run's start from that statement"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "the liveness read takes the first line"
-        },
-        {
-          "path": "src/git.ts",
-          "description": "the tip claim takes the same shape, read the same way"
-        },
-        {
-          "path": "src/tickVerdict.ts",
-          "description": "the window reader's doc names the stated instant, not an mtime"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "status over a two-line lock, and the spend window it bounds"
-        },
-        { "path": "tests/job.test.ts", "description": "the first-line pid" },
-        { "path": "tests/git.test.ts", "description": "the claim's shape" },
-        { "path": "docs/CLI.md", "description": "the lock's contents" },
-        { "path": "CHANGELOG.md", "description": "under 0.17's `### Breaking`" }
-      ],
-      "retire": []
-    },
-    "summary": "nothing states when a run started, so status measures it off loop.pid's mtime — a filesystem property no writer contracts and any archive restore or touch moves",
-    "per": { "path": "spec/loop.md", "section": "The loop lock and the tip claim" },
-    "acceptance": "the loop lock and the tip claim each carry the holder's pid on the first line and the claim instant on the second, every liveness reader takes the first line, and the live run's spend is bounded by the stated instant.",
-    "tests": [
-      "the loop lock records the pid on the first line and the claim instant on the second",
-      "the tip claim records the pid on the first line and the claim instant on the second",
-      "a two-line loop lock still reports its holder live",
-      "flume status bounds the live run's spend to the instant the lock states"
-    ],
-    "pins": [],
-    "notes": "Pid stays the first line so every same-version reader is unaffected. Breaking across versions: a 0.16 reader parses the whole file to `NaN`, reads stale, and reclaims a live lock — mixed versions on one state root. That is what the migration note names.",
-    "contractTouching": true
-  },
-  {
     "tag": "FLUME-HELP-FLAG-ANSWERS-FOR-A-SUBCOMMAND",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
@@ -154,7 +65,10 @@
       "retire": []
     },
     "summary": "`flume --help <name>` prints the top-level page and discards the name — the one place left in the CLI where argv is dropped rather than honored or refused",
-    "per": { "path": "spec/cli.md", "section": "Subcommand surface" },
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Subcommand surface"
+    },
     "acceptance": "`flume --help <subcommand>` answers that subcommand's page and an unknown name there is usage-shaped (exit 2), through the same decider the verb spelling uses.",
     "tests": [
       "flume --help status prints the status subcommand's usage",
@@ -164,48 +78,10 @@
     "notes": "The trailing-name lookup is gated on the bare verb today, so the flag arm falls through to the top-level page. One decider serves every spelling — the site's own comment already condemns the drop for the verb arm."
   },
   {
-    "tag": "A-DECLARED-COMMAND-GATE-NAMES-ITS-SHELL",
-    "gate": { "kind": "open" },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "`shell` on the declaration, default `sh`"
-        },
-        {
-          "path": "harness/declaredGates.ts",
-          "description": "a shell or script gate runs under the declared shell, and the load-time probe"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the field and its default"
-        },
-        {
-          "path": "tests/harnessGates.test.ts",
-          "description": "the declared shell reaches the child, and the refusal"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the command-gate section stops spelling `sh -c` as the package's choice"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "every declared shell and script gate spawns `sh -c`, a shell win32 resolves from one launch shell and not another, chosen by the package and named by no declaration",
-    "per": { "path": "spec/harness.md", "section": "What a consumer declares" },
-    "acceptance": "a declared `shell` runs every shell and script gate, absent means `sh`, and chain load refuses a shell the host does not resolve, naming the gate.",
-    "tests": [
-      "a declared shell runs a command gate's command",
-      "chain load refuses a shell the host does not resolve, naming the gate"
-    ],
-    "pins": ["an undeclared shell runs a command gate under sh"],
-    "notes": "Both arms of the reported fork, since a default that silently fails on a supported host is the shape *Loud or nothing* refuses. `spec/cli.md` rules win32 a supported host; the probe is at load, never at the tick that needed the gate."
-  },
-  {
     "tag": "THE-SCRIPT-RUNNER-READS-THROUGH-A-DECLARED-READER",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
@@ -226,12 +102,17 @@
       "retire": []
     },
     "summary": "the script runner reads verdict lines and nothing else, so a validator emitting one JSON document needs a wrapper script — the wrapper the runner row exists to remove",
-    "per": { "path": "spec/harness.md", "section": "The runner interface" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The runner interface"
+    },
     "acceptance": "`scriptRunner` takes a reader the declaration names over the command's whole stdout; absent, the line reader; a validator emitting one document declares a function over that document and needs no wrapper script.",
     "tests": [
       "a declared reader turns a validator's one JSON document into a verdict per name"
     ],
-    "pins": ["an undeclared reader takes one verdict line per name from stdout"],
+    "pins": [
+      "an undeclared reader takes one verdict line per name from stdout"
+    ],
     "notes": "The fixture is the agreement gate's (`engineering.md`, *A seam gate reads what the real writer wrote*): a real script emitting a real document through the real reader, beside the line fixture already there. A document whose clean run omits its drift key is the shape priced."
   },
   {
@@ -283,7 +164,9 @@
   },
   {
     "tag": "THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
@@ -300,8 +183,14 @@
           "path": "harness/inboxWindow.ts",
           "description": "a fourth-leg read of the declared friction dir, as it reads the inbox"
         },
-        { "path": "tests/harnessDeclaration.test.ts", "description": "the field" },
-        { "path": "tests/harnessChain.test.ts", "description": "the pass-through" },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the field"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the pass-through"
+        },
         {
           "path": "tests/harnessWindows.test.ts",
           "description": "the render and the liveness leg"
@@ -327,7 +216,9 @@
     "tag": "A-DECLARED-FINDINGS-SCRIPT-WRITES-RECORDS",
     "gate": {
       "kind": "blockedBy",
-      "tags": ["THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY"]
+      "tags": [
+        "THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY"
+      ]
     },
     "dependsOnForks": [],
     "files": {
@@ -377,7 +268,9 @@
   },
   {
     "tag": "THE-DECLARATION-ASSERTS-ITS-CAPABILITIES",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
@@ -390,7 +283,10 @@
           "path": "harness/chain.ts",
           "description": "pass-through to Chain.capabilities, whole"
         },
-        { "path": "tests/harnessDeclaration.test.ts", "description": "the field" },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the field"
+        },
         {
           "path": "tests/harnessChain.test.ts",
           "description": "the pass-through, declared and absent"
@@ -399,9 +295,14 @@
       "retire": []
     },
     "summary": "the harness declaration asserts no capabilities, so under the package a requiresCapability entry is unpickable forever and no declaration can change it",
-    "per": { "path": "spec/harness.md", "section": "What a consumer declares" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
     "acceptance": "a declared `capabilities` list reaches Chain.capabilities whole, and a declaration that names none asserts none.",
-    "tests": ["a declared capabilities list reaches Chain.capabilities whole"],
+    "tests": [
+      "a declared capabilities list reaches Chain.capabilities whole"
+    ],
     "pins": [
       "a declaration naming no capabilities leaves Chain.capabilities unasserted"
     ],
@@ -409,7 +310,9 @@
   },
   {
     "tag": "THE-DECLARATION-CARRIES-SETUP-SERIALIZE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
@@ -422,7 +325,10 @@
           "path": "harness/chain.ts",
           "description": "the provisioning reduction serializes the restore across a wave"
         },
-        { "path": "tests/harnessDeclaration.test.ts", "description": "the field" },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the field"
+        },
         {
           "path": "tests/harnessChain.test.ts",
           "description": "serialized and concurrent restores across a wave"
@@ -431,7 +337,10 @@
       "retire": []
     },
     "summary": "a restore whose shared cache is not safe to warm concurrently has no way to say so; every fanout wave warms every worktree at once",
-    "per": { "path": "spec/harness.md", "section": "What a consumer declares" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
     "acceptance": "`setup.serialize: true` runs the declared restore one worktree at a time across a fanout wave while the wave's other provisioning stays parallel; absent, restores run as they do now.",
     "tests": [
       "setup.serialize runs a fanout wave's restores one worktree at a time",
@@ -445,7 +354,9 @@
     "tag": "THE-DECLARATION-NAMES-ITS-JOBS",
     "gate": {
       "kind": "blockedBy",
-      "tags": ["THE-DECLARATION-ASSERTS-ITS-CAPABILITIES"]
+      "tags": [
+        "THE-DECLARATION-ASSERTS-ITS-CAPABILITIES"
+      ]
     },
     "dependsOnForks": [],
     "files": {
@@ -475,7 +386,10 @@
       "retire": []
     },
     "summary": "a bay has no way to say a job is a named fence over shared values, so each job carries a second declaration and a loader the package should own",
-    "per": { "path": "spec/harness.md", "section": "What a consumer declares" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
     "acceptance": "`jobs` maps a job name to a specLocus, a fence and optional slots and capabilities, a chain loaded under a job's state root applies that job's values over the shared declaration — capabilities added to the shared set rather than replacing it — and an absent `jobs` resolves the repo-level one-job case.",
     "tests": [
       "a chain loaded under a named job's state root takes that job's specLocus and fence",
@@ -489,7 +403,12 @@
   },
   {
     "tag": "A-JOB-FENCE-STOPS-AT-A-SIBLINGS-ARTIFACTS",
-    "gate": { "kind": "blockedBy", "tags": ["THE-DECLARATION-NAMES-ITS-JOBS"] },
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "THE-DECLARATION-NAMES-ITS-JOBS"
+      ]
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
@@ -510,7 +429,10 @@
       "retire": []
     },
     "summary": "nothing refuses a job fence whose globs reach the package's own artifacts under a sibling job's state root, so one job's build writes another job's queue",
-    "per": { "path": "spec/harness.md", "section": "What a consumer declares" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
     "acceptance": "chain load refuses a job fence glob that can match the package's queue, plan state, a record or a note under any state root but the job's own, naming the glob and the root; a consumer's own file under a sibling root still loads.",
     "tests": [
       "a job fence reaching the package's queue under a sibling job's root refuses the load",
@@ -522,7 +444,9 @@
   },
   {
     "tag": "THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
@@ -539,12 +463,18 @@
           "path": "tests/Dispatcher.test.ts",
           "description": "the set with and without a declared refusal, and the reported facts"
         },
-        { "path": "tests/chain.test.ts", "description": "the declaration surface" }
+        {
+          "path": "tests/chain.test.ts",
+          "description": "the declaration surface"
+        }
       ],
       "retire": []
     },
     "summary": "the engine's pickable set carries no per-entry refusal a chain can declare, so a chain that must decline one entry can only decline the whole phase",
-    "per": { "path": "spec/harness.md", "section": "The default `handoff`" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The default `handoff`"
+    },
     "acceptance": "a chain-declared per-entry refusal removes an entry from the reported pickable set, and the engine reports which entries it held back as a fact rather than a verdict.",
     "tests": [
       "a chain-declared per-entry refusal removes an entry from the reported pickable set",
@@ -559,7 +489,9 @@
     "tag": "THE-HANDOFF-DECLINES-A-CLEAN-EXIT-AT-THIS-HEAD",
     "gate": {
       "kind": "blockedBy",
-      "tags": ["THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL"]
+      "tags": [
+        "THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL"
+      ]
     },
     "dependsOnForks": [],
     "files": {
@@ -585,7 +517,10 @@
       "retire": []
     },
     "summary": "the default handoff re-dispatches an entry whose latest attempt was a clean exit at the current HEAD — the same dispatch against an unchanged world, for the same outcome",
-    "per": { "path": "spec/harness.md", "section": "The default `handoff`" },
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The default `handoff`"
+    },
     "acceptance": "the package declares the engine's per-entry refusal, and an entry whose latest prior attempt is a clean exit at the tick's own HEAD is not handed to build while one at an older HEAD still is.",
     "tests": [
       "an entry whose latest clean exit is at the current HEAD is not handed to build",
@@ -596,42 +531,10 @@
     "notes": "Read from the mode and the anchor the engine reports on the record — PriorAttempt's `mode` and `headSha` (src/Prompt.ts) — never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change."
   },
   {
-    "tag": "A-DOC-SECTION-CUTTER-HAS-ONE-HOME",
-    "gate": { "kind": "open" },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "tests/helpers/docSections.ts",
-          "description": "the markdown section cutter, one home"
-        }
-      ],
-      "edit": [
-        {
-          "path": "tests/examples.test.ts",
-          "description": "three local cutters give way to the import"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the inline copy gives way to the import"
-        },
-        {
-          "path": "tests/harnessPackaging.test.ts",
-          "description": "the module-level copy gives way to the import"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the \"heading line through the line before the next heading\" cutter is spelled five times across three test files, and every new doc pin copies it again",
-    "per": { "path": ".claude/rules/engineering.md", "section": "A module is one job" },
-    "acceptance": "one markdown section cutter lives under tests/helpers/ and every doc-section pin in the suite imports it; no test file spells its own.",
-    "tests": [],
-    "pins": [],
-    "notes": "Behavior-free: the typecheck and the suite hold it, and each call site keeps its own anchor assertion. Three copies in tests/examples.test.ts, one in tests/harnessPackaging.test.ts, one inline in tests/harnessChain.test.ts — the last added because it could not import one from a sibling test file."
-  },
-  {
     "tag": "THE-ADOPTION-PAGE-NAMES-THE-OPERATIONS-ONCE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
     "dependsOnForks": [],
     "files": {
       "new": [],
