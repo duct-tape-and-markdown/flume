@@ -1,5 +1,50 @@
 [
   {
+    "tag": "EVERY-SHIPPED-SPAWN-DECLARES-ITS-OUTPUT-CAP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/spawnCaps.test.ts",
+          "description": "the scan holding every capturing child_process call outside tests/ to a cap it names itself"
+        }
+      ],
+      "edit": [
+        {
+          "path": "src/setupWorktree.ts",
+          "description": "the pnpm and npm install spawns declare their cap"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "the `sh -c` spawn of a consumer's restore command declares its cap"
+        },
+        {
+          "path": "examples/backlog-groomer-chain.ts",
+          "description": "its two git spawns declare their cap"
+        },
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "the capture branch of `run` declares its cap"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "src/setupWorktree.ts, harness/chain.ts, examples/ and scripts/ capture a child's streams on node's silent 1 MiB default — six sites where an overrun reads as a child that never ran",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "Node caps a captured child stream at 1 MiB, and reports the overrun as a spawn failure"
+    },
+    "acceptance": "every capturing child_process call outside tests/ names its own maxBuffer, and a scan reds one written without it — so a large-but-correct install or restore can no longer arrive as a spawn failure.",
+    "tests": [
+      "every capturing spawn outside tests/ declares its output cap"
+    ],
+    "pins": [],
+    "notes": "Verified on disk: src/setupWorktree.ts:47,54 (`pnpm install`, `npm ci`), harness/chain.ts:410 (`sh -c` on a consumer's restore), examples/backlog-groomer-chain.ts:176-177, scripts/smoke-install.mjs:73's capture branch. Each discards what it captured, and an overrun SIGTERMs the child mid-install. Size stays each site's call. Streaming `spawn` (src/Agent.ts, src/Prompt.ts) has no maxBuffer and is no subject. tests/helpers/repoProgram.ts carries the visitors."
+  },
+  {
     "tag": "ASYNC-REALPATH-REFUSES-A-COMPOSED-PATH",
     "gate": {
       "kind": "open"
@@ -532,6 +577,69 @@
     ],
     "pins": [],
     "notes": "From SPAWN-WRAPPER-DECLARES-ITS-OUTPUT-CAP's note; re-measured this tick at 26 sites over 23 files, one of them the home. Latent today — every site spawns git or node with small output — but an overrun rejects with an errno where an exit status would be, which exitStatusOf reads as a child that never ran. Blocked on the split so the wrappers route to their final home."
+  },
+  {
+    "tag": "EVERY-TEST-SYNC-SPAWN-RUNS-UNDER-THE-DECLARED-CAP",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "EVERY-TEST-EXEC-RUNS-UNDER-THE-DECLARED-CAP"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "the capped sync wrapper beside the async one, and the git-capture helper the seven files each spell"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the async scan gains its sync arm, exemptions spelled rather than discovered"
+        },
+        {
+          "path": "tests/chain.test.ts",
+          "description": "its sync git helper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "its sync git helper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "its sync git helper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "its sync git helper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/harnessCi.test.ts",
+          "description": "its sync git helper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/harnessRunner.test.ts",
+          "description": "its sync git helper comes from the module that declares the cap"
+        },
+        {
+          "path": "tests/bin.test.ts",
+          "description": "its shim spawnSync comes from the module that declares the cap"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "9 capturing execFileSync/spawnSync sites across 7 tests/ files run on node's 1 MiB default, seven of them the same git helper spelled seven times",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "Node caps a captured child stream at 1 MiB, and reports the overrun as a spawn failure"
+    },
+    "acceptance": "every capturing sync spawn in tests/ goes through the wrapper that declares the cap, and the scan reds a bare one — its capture-free and fixture-literal exemptions spelled, not discovered.",
+    "tests": [
+      "no file under tests/ captures a sync child's output outside the module that declares the cap"
+    ],
+    "pins": [],
+    "notes": "Sizes the arm 669d630 left for the sweep. Sites: chain:36, harnessWindows:80,631, harnessGates:108, harnessChain:123, harnessCi:89,449, harnessRunner:62, bin:191. Exemptions: harnessCi:447 (`stdio: \"ignore\"`, captures nothing) and the execFileSync spellings inside fixture string literals (cli, cliJobResolution, subprocessHelper). Blocked on the async arm so the sync one extends that scan rather than growing beside it."
   },
   {
     "tag": "SELECTION-AND-ATTEMPT-LEAVE-THE-DISPATCHER",
