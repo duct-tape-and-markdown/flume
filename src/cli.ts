@@ -1367,11 +1367,12 @@ async function main(): Promise<number> {
 }
 
 /**
- * One file's on-disk identity, for the comparison below. The resolving leg
- * throws on a path that is not on disk — an argv[1] naming a file that was
- * never there — and the raw path is the honest answer then: a file that is
- * absent is not this module either way, and the import must not crash over
- * it.
+ * One file's on-disk identity, for the comparison below, beside the error
+ * the resolving leg threw when it is the degraded leg that answered. The
+ * resolving leg throws on a path that is not on disk — an argv[1] naming a
+ * file that was never there — and the raw path is the honest answer then: a
+ * file that is absent is not this module either way, and the import must not
+ * crash over it.
  *
  * That leg is libuv's `realpathSync.native`, never node's JS `realpathSync`,
  * because the JS one lstats the root it splits off its argument and a
@@ -1387,12 +1388,31 @@ async function main(): Promise<number> {
  * Both legs still fold through `plainPath` (`src/paths.ts`), the resolving
  * one and the throwing one alike, so the comparison below is made in one
  * alphabet whatever either side resolved.
+ *
+ * The degraded leg is declared here, per `.claude/rules/engineering.md`
+ * *Loud or nothing*: nothing downstream refuses on it, because a path that
+ * names no file is a legitimate argv[1] and a throw out of the module-level
+ * call below would take the import with it. What bounds it instead is that
+ * the answer is never handed back to an fs call — it is only ever compared —
+ * and that it carries what sent it there, so a comparison decided by an
+ * unresolved side reds naming the error rather than a second spelling of one
+ * file.
  */
-export function onDiskIdentity(path: string): string {
+type OnDiskIdentity = {
+  /** The folded path the comparison is made on, resolved or not. */
+  readonly identity: string;
+  /**
+   * What the resolving leg threw, when the degraded leg is the one that
+   * answered. Absent exactly when the path resolved.
+   */
+  readonly unresolved?: Error;
+};
+
+export function onDiskIdentity(path: string): OnDiskIdentity {
   try {
-    return plainPath(realpathSync.native(toNamespacedPath(path)));
-  } catch {
-    return plainPath(path);
+    return { identity: plainPath(realpathSync.native(toNamespacedPath(path))) };
+  } catch (err) {
+    return { identity: plainPath(path), unresolved: err as Error };
   }
 }
 
@@ -1405,8 +1425,9 @@ export function onDiskIdentity(path: string): string {
  * derived from another module's URL is the tester's re-derivation of the
  * writer's side rather than the writer's own
  * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
- * wrote*). A case that asserts on it reds naming the two spellings one file
- * was read as, instead of naming a boolean.
+ * wrote*). A case that asserts on it reds naming the two answers one file was
+ * read as — each spelling, and the error behind it where a side never
+ * resolved — instead of naming a boolean.
  */
 export const CLI_MODULE_IDENTITY = onDiskIdentity(fileURLToPath(import.meta.url));
 
@@ -1422,7 +1443,7 @@ export const CLI_MODULE_IDENTITY = onDiskIdentity(fileURLToPath(import.meta.url)
 // one side out of it — which is why the fold is spent there rather than here.
 export function isInvokedDirectly(argv1: string | undefined): boolean {
   if (argv1 === undefined) return false;
-  return onDiskIdentity(argv1) === CLI_MODULE_IDENTITY;
+  return onDiskIdentity(argv1).identity === CLI_MODULE_IDENTITY.identity;
 }
 
 const invokedDirectly = isInvokedDirectly(process.argv[1]);

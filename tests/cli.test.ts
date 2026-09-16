@@ -107,8 +107,41 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
     expect(isInvokedDirectly(missing)).toBe(false);
   });
 
+  it("the CLI entry check's degraded leg reports the error that sent it there", () => {
+    // The leg above, read for what it hands back rather than for whether it
+    // throws. A degraded answer that discards its cause is the same string
+    // as a resolved one, so a comparison decided by it can only ever red
+    // naming a second spelling — which is all the windows lane has reported
+    // from the junction case above. The cause rides beside the answer so
+    // that red names the reason the resolving leg declined
+    // (`.claude/rules/engineering.md`, *Loud or nothing*).
+    const missing = join(tmpdir(), "flume-cli-junction-missing", "cli.js");
+    const answered = onDiskIdentity(missing);
+
+    // The folded answer is unchanged: nothing resolved, so the path stands.
+    expect(answered.identity).toBe(missing);
+
+    // And the leg that answered says so. `ENOENT` is the code both legs of
+    // the platform split raise over an absent path — node's JS realpath and
+    // libuv's native one alike — so the assertion holds wherever this suite
+    // runs.
+    expect(answered.unresolved).toBeInstanceOf(Error);
+    expect((answered.unresolved as NodeJS.ErrnoException | undefined)?.code).toBe(
+      "ENOENT",
+    );
+
+    // The resolving leg reports nothing, so `unresolved` reads as the leg
+    // taken rather than as a field that is always populated. Without this,
+    // the assertions above would pass over a value set unconditionally.
+    expect(onDiskIdentity(CLI).unresolved).toBeUndefined();
+  });
+
   it("the CLI entry check resolves a junctioned argv[1] to the same on-disk identity as the module's own path", async () => {
-    const linkParent = await mkdtemp(join(tmpdir(), "flume-cli-junction-"));
+    // Folded at creation (`mkTempDir`, not bare `mkdtemp`): the runner's
+    // `tmpdir()` is an 8.3 alias on win32 (`C:\Users\RUNNER~1\…`), and an
+    // unfolded root would hand the check a second spelling this case never
+    // meant to introduce — the junction is the only difference it is about.
+    const linkParent = await mkTempDir("flume-cli-junction-");
     const linkDir = join(linkParent, "src-link");
     try {
       await symlink(
@@ -125,15 +158,15 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
       // not already the identity the check compares against, so what the
       // case exercises is the fold rather than a raw string match.
       expect(junctioned).not.toBe(CLI);
-      expect(junctioned).not.toBe(CLI_MODULE_IDENTITY);
+      expect(junctioned).not.toBe(CLI_MODULE_IDENTITY.identity);
       expect(realpathSync(junctioned)).toBe(realpathSync(CLI));
 
       // The seam's comparison, asserted on the two values it compares — the
       // module's side read off the module itself, which is the half a caller
-      // cannot spell without it. A red prints the two spellings one file was
-      // read as; `expect(false).toBe(true)`, which is all the windows lane
-      // has ever reported from this title, names neither of them.
-      expect(onDiskIdentity(junctioned)).toBe(CLI_MODULE_IDENTITY);
+      // cannot spell without it. A red prints the two answers one file was
+      // read as, each with the error behind it where a side never resolved;
+      // `expect(false).toBe(true)` names neither.
+      expect(onDiskIdentity(junctioned)).toEqual(CLI_MODULE_IDENTITY);
 
       expect(isInvokedDirectly(junctioned)).toBe(true);
     } finally {
@@ -171,13 +204,23 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
     expect(win32.toNamespacedPath(cli)).not.toBe(cli);
     expect(win32.toNamespacedPath(share)).not.toBe(share);
 
-    expect(onDiskIdentity(win32.toNamespacedPath(cli))).toBe(onDiskIdentity(cli));
+    // Both sides took the degraded leg, which is what the title claims: the
+    // fold under test is the one that leg spends, and a resolving answer
+    // here would be a different case wearing this one's name.
+    expect(onDiskIdentity(cli).unresolved).toBeDefined();
+    expect(onDiskIdentity(share).unresolved).toBeDefined();
+
+    // The answers are compared, never the causes: two absent paths throw two
+    // errors naming two spellings, and it is the fold that has to agree.
+    expect(onDiskIdentity(win32.toNamespacedPath(cli)).identity).toBe(
+      onDiskIdentity(cli).identity,
+    );
 
     // A UNC install answers the same way one prefix further out
     // (`\\?\UNC\host\share\…`): the fold restores the `\\` root rather than
     // eating it, so the host name is not silently re-read as a directory.
-    expect(onDiskIdentity(win32.toNamespacedPath(share))).toBe(
-      onDiskIdentity(share),
+    expect(onDiskIdentity(win32.toNamespacedPath(share)).identity).toBe(
+      onDiskIdentity(share).identity,
     );
   });
 });
