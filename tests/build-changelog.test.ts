@@ -509,11 +509,11 @@ describe("build-changelog", () => {
     // than that, so the release cut's one mining tool died `spawnSync git
     // ENOBUFS` with no draft.
     //
-    // The oversized body rides a non-`build:` commit on purpose. What must
-    // cross the limit is the *log the script reads*, not the draft it prints
-    // — a multi-megabyte stdout would only move the same ENOBUFS into this
-    // test's own spawn of the script, reddening the case for the harness's
-    // limit rather than the script's.
+    // The oversized body rides a non-`build:` commit on purpose, so what
+    // crosses the limit is the *log the script reads* rather than the draft
+    // it prints; the draft this case's own spawn captures is bounded by
+    // `SPAWN_OUTPUT_CAP_BYTES` (`tests/helpers/subprocess.ts`), which refuses
+    // by naming itself.
     const filler = `${"x".repeat(99)}\n`.repeat(15_000);
     // Vacuity: the fixture is only a test of the cap if it clears the cap.
     expect(Buffer.byteLength(filler)).toBeGreaterThan(1024 * 1024);

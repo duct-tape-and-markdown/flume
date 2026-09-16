@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CLI,
   SPAWN_BUDGET_MS,
+  SPAWN_OUTPUT_CAP_BYTES,
   TSX_CLI,
   exitStatusOf,
   mkFixtureRoot,
@@ -28,6 +29,7 @@ import {
   refusePreexistingStateRoots,
   requireEntryPoint,
   runCli,
+  runNodeStreams,
   watchStateRoots,
 } from "./helpers/subprocess.ts";
 import { filesUnder, relPath } from "./helpers/repoProgram.ts";
@@ -138,6 +140,66 @@ describe("exitStatusOf — a failure with no exit status refuses instead of repo
     expect(() => exitStatusOf(err)).toThrow(/SIGKILL/);
   });
 });
+
+// ---------- the harness's declared output cap
+// (`SPAWN_OUTPUT_CAP_BYTES`, `tests/helpers/subprocess.ts`) ----------
+
+/**
+ * Both cases drive a real child past a real cap, because an overrun is
+ * node's own construction: the rejection it builds carries an errno-shaped
+ * `code` that a hand-written fixture could only guess at, and guessing it is
+ * how the arm below could agree with itself while disagreeing with node.
+ */
+it("the shared spawn wrapper captures a child's stdout past node's default execFile cap", async () => {
+  const dir = await mkTempDir("flume-spawn-cap-");
+  try {
+    const bytes = 4 * 1024 * 1024;
+    // The fixture is only a test of the declared cap if it sits between the
+    // inherited one and the declared one.
+    expect(bytes).toBeGreaterThan(1024 * 1024);
+    expect(bytes).toBeLessThan(SPAWN_OUTPUT_CAP_BYTES);
+
+    const { stdout, stderr, code } = await runNodeStreams(dir, [
+      "-e",
+      `process.stdout.write("x".repeat(${bytes}))`,
+    ]);
+
+    expect(code).toBe(0);
+    expect(stderr).toBe("");
+    expect(Buffer.byteLength(stdout)).toBe(bytes);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, SPAWN_BUDGET_MS);
+
+it("a child whose output exceeds the wrapper's declared cap refuses by naming the cap", async () => {
+  const dir = await mkTempDir("flume-spawn-overrun-");
+  try {
+    const chunks = SPAWN_OUTPUT_CAP_BYTES / (1024 * 1024) + 1;
+    const failure = await runNodeStreams(dir, [
+      "-e",
+      `const chunk = "x".repeat(1024 * 1024);` +
+        `for (let i = 0; i < ${chunks}; i++) process.stdout.write(chunk);`,
+    ]).then(
+      (ok) => {
+        throw new Error(
+          `expected a refusal; the wrapper returned code ${ok.code} with ` +
+            `${Buffer.byteLength(ok.stdout)} bytes of stdout`,
+        );
+      },
+      (err: unknown) => err as Error,
+    );
+
+    expect(failure.message).toContain("SPAWN_OUTPUT_CAP_BYTES");
+    expect(failure.message).toContain(String(SPAWN_OUTPUT_CAP_BYTES));
+    // The arm this case is about, not the whole message: an overrun reported
+    // through the no-exit-status arm says the child never ran, which is the
+    // one thing it did do.
+    expect(failure.message).not.toContain("it never ran");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, SPAWN_BUDGET_MS);
 
 describe("runCli — reports the CLI's own status, not a default", () => {
   it("surfaces an exit code the CLI chose, distinct from the laundered 1", async () => {

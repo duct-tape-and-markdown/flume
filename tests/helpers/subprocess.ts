@@ -7,8 +7,9 @@
  * suite-wide guard that refuses a state root planted above the fixtures
  * (`installStateRootLeakGuard`, wired through `vitest.config.ts`), and the
  * one number every spawning file in the default lane declares as its budget
- * (`SPAWN_BUDGET_MS`), and the git-config pin every fixture repository runs
- * under (`pinGitAutoGcOff`, armed through the same setup file).
+ * (`SPAWN_BUDGET_MS`), the output cap every spawn here runs under
+ * (`SPAWN_OUTPUT_CAP_BYTES`), and the git-config pin every fixture repository
+ * runs under (`pinGitAutoGcOff`, armed through the same setup file).
  * Not *.test.ts, so neither vitest lane (unit or integration) collects it
  * as a suite of its own.
  */
@@ -23,7 +24,49 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeAll, expect } from "vitest";
 
-const exec = promisify(execFile);
+const execFileAsync = promisify(execFile);
+
+/**
+ * How much of one child's stdout — and of its stderr — this harness keeps.
+ *
+ * Node caps a captured stream at 1 MiB unless it is told otherwise, and it
+ * reports the overrun by killing the child mid-stream: the rejection carries
+ * an errno-shaped string where an exit status would be, so an inherited cap
+ * does not surface as a truncation anything downstream could notice — it
+ * surfaces through {@link exitStatusOf}'s no-exit-status arm, as a child that
+ * never ran. A large-but-correct run then reds under a cause it does not
+ * have, which is the accident the refusal below exists to name.
+ *
+ * Sized off the engine's own spawns rather than off any one case's fixture:
+ * every spawn site in `src/` declares a cap — 16 MiB at `src/git.ts`,
+ * `src/job.ts`, `src/worktrees.ts` and `src/builtinGates.ts`, 4 MiB at
+ * `src/Dispatcher.ts` and `src/priorAttempts.ts` — and this is the ceiling of
+ * that range, so output the engine was willing to capture from a child cannot
+ * overrun the harness that spawned the engine. The one `src/`-adjacent spawn
+ * above it reads a git log under `maxBuffer: Infinity`
+ * (`scripts/build-changelog.mjs`), and what this harness captures there is the
+ * draft that read produces, not the log itself.
+ */
+export const SPAWN_OUTPUT_CAP_BYTES = 16 * 1024 * 1024;
+
+/** Node's own `code` on the rejection it builds when a stream outruns `maxBuffer`. */
+const MAXBUFFER_CODE = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+
+/**
+ * `execFile` under {@link SPAWN_OUTPUT_CAP_BYTES}. Every spawn in this module
+ * goes through it, so the cap is declared once instead of at each call site —
+ * where a site that forgot would inherit node's default silently.
+ */
+function exec(
+  file: string,
+  args: readonly string[],
+  options: { cwd: string; env?: NodeJS.ProcessEnv },
+): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync(file, [...args], {
+    ...options,
+    maxBuffer: SPAWN_OUTPUT_CAP_BYTES,
+  });
+}
 
 /**
  * The wall-clock budget a default-lane file declares, at file scope, when any
@@ -332,15 +375,32 @@ export function installStateRootLeakGuard(
 /**
  * The exit status carried by a rejected `execFile`, or a refusal.
  *
- * `execFile` rejects for two unrelated reasons: the child ran and exited
- * non-zero (numeric `code`), or the child never produced an exit status at
- * all — spawn failure (`code` is an errno *string*) or a kill (`code` absent,
- * `signal` set). Defaulting the second case to 1 reports a status no process
- * returned, into assertions that check for exactly 1.
+ * `execFile` rejects for three unrelated reasons: the child ran and exited
+ * non-zero (numeric `code`); the child outran this harness's output cap and
+ * node killed it (`code` is {@link MAXBUFFER_CODE}); or the child never
+ * produced an exit status at all — spawn failure (`code` is an errno
+ * *string*) or a kill (`code` absent, `signal` set). Defaulting the last case
+ * to 1 reports a status no process returned, into assertions that check for
+ * exactly 1.
+ *
+ * The overrun is named apart from the others because its cause is this
+ * harness's own number rather than anything the child did wrong: read as a
+ * spawn failure it says the subject never ran, which is the one thing an
+ * overrun proves false (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 export function exitStatusOf(err: unknown): number {
   const e = err as { code?: unknown; signal?: unknown };
   if (typeof e.code === "number") return e.code;
+  if (e.code === MAXBUFFER_CODE) {
+    throw new Error(
+      `flume test harness: a child outran the ${SPAWN_OUTPUT_CAP_BYTES}-byte ` +
+        `output cap this harness declares (\`SPAWN_OUTPUT_CAP_BYTES\`, ` +
+        `tests/helpers/subprocess.ts), so node killed it mid-stream and it ` +
+        `has no exit status of its own. The child ran — this is the cap, not ` +
+        `a failed spawn. Fix: shrink what the fixture makes the child print, ` +
+        `or raise the cap at its one home. Underlying failure: ${String(err)}`,
+    );
+  }
   throw new Error(
     `flume test harness: the CLI subprocess produced no exit status ` +
       `(code=${String(e.code)}, signal=${String(e.signal)}) — it never ran, ` +
