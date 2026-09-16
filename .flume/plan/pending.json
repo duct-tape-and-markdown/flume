@@ -1,5 +1,31 @@
 [
   {
+    "tag": "THE-REVERT-NOTE-CITATION-NAMES-ITS-WRITERS-HOME",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/PendingSchema.ts",
+          "description": "the TAG_MAX_LENGTH doc comment cites the revert note's writer at its file, in the pair form the citation pin reads"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the tag bound cites `writeRevertNote` and its arithmetic at Dispatcher.ts; both moved to src/tickAttempt.ts, and the pin cannot see the spelling",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "src/PendingSchema.ts names src/tickAttempt.ts as the revert note's writer and the home of the arithmetic, spelled so the citation pin resolves the pair.",
+    "tests": [],
+    "pins": [],
+    "notes": "Stranded by the attempt-sequence split. The citation pin (tests/helpers/commentCitations.ts) reads only the backticked name-then-parenthesised-path pair; this one puts an unbackticked Dispatcher.ts ahead of the name, so the identifier resolved repo-wide and stayed green at the wrong door. Re-spelling it into the pair form is what makes the next move red."
+  },
+  {
     "tag": "THE-TWO-TICK-LEGS-LEAVE-THE-DISPATCHER",
     "gate": {
       "kind": "open"
@@ -35,6 +61,40 @@
     "notes": "From ONE-ATTEMPT-LEG-AND-ONE-BATCH-SELECTION's note: the two legs became separable once the attempt sequence and the batch selection were unified. Blocked on the first split so the shared callees have moved before the legs follow them."
   },
   {
+    "tag": "THE-DOMAIN-WALK-AND-THE-SCOPELESS-PARSE-HAVE-ONE-HOME",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/repoProgram.ts",
+          "description": "the scopeless parse joins modulesUnder as shared; the header's not-shared carve-out states the condition that moved it"
+        },
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "parseScopeless comes from the shared home"
+        },
+        {
+          "path": "tests/helpers/spawnCaps.ts",
+          "description": "spawnCapModules, parse, SpawnCapDomain and the two suffix lists give way to the shared walk, parse and ScanDomain"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the {trees, files} domain walk, the scopeless parse, the domain type and the suffix lists are each spelled twice across the scan helpers",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "tests/helpers/spawnCaps.ts walks its domain and parses through tests/helpers/repoProgram.ts, holds no second copy of either or of the domain and suffix vocabulary, and the spawn-cap verdicts are unchanged.",
+    "tests": [],
+    "pins": [],
+    "notes": "Behavior-free; the spawn-cap suites hold it. The scopeless parse now has two consumers, which is the condition repoProgram.ts's header names for keeping a tier private — so the tier moves and the header says so. spawnCapModules lacks modulesUnder's isDirectory refusal and spells its own messages; no test asserts either."
+  },
+  {
     "tag": "A-MIGRATION-NOTE-FOR-0-14",
     "gate": {
       "kind": "open"
@@ -51,6 +111,18 @@
         {
           "path": "CHANGELOG.md",
           "description": "the 0.14.0 release links its note"
+        },
+        {
+          "path": "docs/MIGRATING-0.16.md",
+          "description": "its opener and its previous-note link stop naming 0.14 as uncovered"
+        },
+        {
+          "path": "docs/MIGRATING-0.13.md",
+          "description": "its forward pointer stops naming 0.14 as noteless"
+        },
+        {
+          "path": "README.md",
+          "description": "the Pointers list enumerates the new note"
         }
       ],
       "retire": []
@@ -63,7 +135,7 @@
     "acceptance": "docs/MIGRATING-0.14.md walks every break in 0.14.0's ### Breaking section with before and after, opens by naming 0.13 as the minor it does not cover, and the 0.14.0 release in CHANGELOG.md links it.",
     "tests": [],
     "pins": [],
-    "notes": "Source is CHANGELOG.md's 0.14.0 section (85 lines, ### Breaking at :319). Blocked on the 0.13 note so the minor this one names ahead of itself resolves to a page when it is written."
+    "notes": "Source is CHANGELOG.md's 0.14.0 section (85 lines, ### Breaking at :319). Per A-MIGRATION-NOTE-FOR-0-13's note: a note is a linked list, so the neighbours and the README list move with it. Blocked on the 0.13 note so the minor this one names ahead of itself resolves to a page."
   },
   {
     "tag": "A-MIGRATION-NOTE-FOR-0-15",
@@ -85,6 +157,22 @@
         {
           "path": "CHANGELOG.md",
           "description": "the 0.15.0 release links its note"
+        },
+        {
+          "path": "docs/MIGRATING-0.16.md",
+          "description": "its opener and its previous-note link name 0.15's note"
+        },
+        {
+          "path": "docs/MIGRATING-0.13.md",
+          "description": "its forward pointer stops naming 0.15 as noteless"
+        },
+        {
+          "path": "docs/MIGRATING-0.14.md",
+          "description": "its forward pointer names this note as the next one"
+        },
+        {
+          "path": "README.md",
+          "description": "the Pointers list enumerates the new note"
         }
       ],
       "retire": []
@@ -97,7 +185,7 @@
     "acceptance": "docs/MIGRATING-0.15.md walks every break in 0.15.0's ### Breaking section with before and after, opens by naming 0.14 as the minor it does not cover, and the 0.15.0 release in CHANGELOG.md links it.",
     "tests": [],
     "pins": [],
-    "notes": "Source is CHANGELOG.md's 0.15.0 section (149 lines, ### Breaking at :172). The pilot reported this minor's break as the one their compiler did not catch, so the walk says how to find it by reading rather than by building. Blocked on the 0.14 note for the same forward-naming reason."
+    "notes": "Source is CHANGELOG.md's 0.15.0 section (149 lines, ### Breaking at :172). The pilot reported this minor's break as the one their compiler did not catch, so the walk says how to find it by reading. The series pointers move with it, as they did for 0.13. Blocked on the 0.14 note for the same forward-naming reason."
   },
   {
     "tag": "EVERY-BREAKING-MINOR-FROM-0-10-HAS-ITS-NOTE",
@@ -112,7 +200,7 @@
       "new": [
         {
           "path": "tests/migrationNotes.test.ts",
-          "description": "CHANGELOG.md's minor sections read against docs/, with the scan's floor declared and cited"
+          "description": "CHANGELOG.md's minor sections read against docs/, and each note's previous-note link against the series on disk, with the scan's floor declared and cited"
         }
       ],
       "edit": [],
@@ -126,9 +214,10 @@
     "acceptance": "a minor from 0.10 on whose changelog section carries a ### Breaking heading and has no docs/MIGRATING-<minor>.md reds the default lane, and the mined minor set is asserted non-empty before the verdict.",
     "tests": [],
     "pins": [
-      "every minor from 0.10 whose CHANGELOG.md section carries a ### Breaking heading has a migration note under docs/"
+      "every minor from 0.10 whose CHANGELOG.md section carries a ### Breaking heading has a migration note under docs/",
+      "each migration note names the previous minor's note as the previous note in the series"
     ],
-    "notes": "Promotes the Versioning-policy bullet a rung (engineering.md, Narration is the ladder's bottom rung). The floor is 0.10 because MIGRATING-0.10.md is the routing table covering 0.2.x, 0.6.x and 0.9.0 — below it there is no per-minor note by design, so the floor is declared and cited at the scan, not discovered. Blocked on the three notes: the pin is green only once they land."
+    "notes": "Promotes the Versioning-policy bullet a rung (engineering.md, Narration is the ladder's bottom rung). The floor is 0.10 because MIGRATING-0.10.md is the routing table covering 0.2.x, 0.6.x and 0.9.0 — below it no per-minor note exists by design, so the floor is declared at the scan. The series link is green today and decidable off the minors on disk. Blocked on the three notes."
   },
   {
     "tag": "A-DOTFILE-IS-NEVER-A-FRICTION-NOTE",

@@ -113,6 +113,19 @@ to every consumer. The first carve-out still does not reach them — a markdown
 page is not `.d.ts` hover text — but "not shipped" is not the reason, and the
 blast radius is larger than the parenthetical implied.
 
+**A third instance, and a lens that does read `docs/` on disk.** The
+migration notes are a linked list — each opens by naming the previous note in
+the series and closes by linking it — and nothing resolves that link, so a
+wrong or missing neighbour ships green. Unlike the two copies above, the claim
+reads against **disk** rather than against the program or against prose: the
+series order is decidable from the `MIGRATING-<minor>.md` names, which is the
+reading *Narration is the ladder's bottom rung* already licenses for a page
+name. Filed as a `pins[]` line on
+`EVERY-BREAKING-MINOR-FROM-0-10-HAS-ITS-NOTE`, whose scan already reads
+`CHANGELOG.md` against `docs/` — so the queue now carries one `docs/`-reading
+pin whichever way this question is ruled, and (a) would want a fourth arm
+naming it: a page **name** read against the tree, never a page's sentence.
+
 ## What row does a declared findings script take, and what shape is its stdout?
 
 **PARKED.** `spec/harness.md` *Declared findings sources* ratifies a fourth
@@ -148,3 +161,46 @@ what the real writer wrote*, governs. Nothing in the section says which.
 Recommended (a). Whichever is ruled, the declaration table wants the row
 spelled with it — and the friction row alongside, which the derived entry
 above ships against a table that does not yet name it.
+
+## Three `spec/` sentences name a helper the extraction moved
+
+**NEEDS AMENDMENT.** A build note reported one stale cite; three are stale on
+this tree, and the rule that governs them already forbids the shape:
+`.claude/rules/spec-writing.md`, *A claim names behavior, never location*,
+says a sentence may not name "an internal helper, or the call order between
+internal functions."
+
+- `spec/loop.md:476` — "`Dispatcher.AgentTermination` declares this
+  deliberate". Not a member of `Dispatcher` at all now: a module-private
+  `type` in `src/tickAttempt.ts`.
+- `spec/loop.md:480` — "`Dispatcher.invokeAgent` forwards it only when set".
+  A module-private function in `src/tickAttempt.ts`.
+- `spec/pending.md:49` — "`Dispatcher.writeRevertNote`". Same file, same
+  status.
+
+`Dispatcher.tick` (six sites) and `Dispatcher.readPending` still resolve, and
+`DispatcherOptions.tickTimeoutMs` is declared public surface — none of those
+is in scope here. No autonomous phase can fix these: `spec/` is the human's
+maintenance surface (`spec-plan-build.md`), so this cannot be an entry.
+
+- **(a)** Restate each sentence as the behavior it was describing, dropping
+  the helper name — what the rule's own test asks for. The termination
+  sentence becomes "with a commit in hand, how the process ended is
+  irrelevant"; the timeout sentence keeps `DispatcherOptions.tickTimeoutMs`
+  and drops the forwarder; the revert-note sentence names the artifact, not
+  its writer.
+- **(b)** Re-point the three at `src/tickAttempt.ts`. Cheapest, and
+  re-commits the shape the rule refuses — the next extraction falsifies them
+  again.
+- **(c)** Leave them and widen the citation pin's carve-out
+  (`engineering.md`, *Narration is the ladder's bottom rung*) to resolve a
+  backticked identifier in `spec/` against the trees. Makes the staleness
+  red, but the section rules that prose about the harness stays with its
+  authors, and the carve-out it grants names `src/`, `harness/`, `tests/`
+  comments only — so this is a ratified widening, not a reading.
+
+Recommended (a). It is what the rule already says, and it is the only arm
+that survives the next split. (c) is separable and worth its own ruling —
+(a) leaves nothing mechanical reading `spec/`'s identifiers, so the fourth
+instance of this arrives the same way the first three did, from a build note
+after the fact.
