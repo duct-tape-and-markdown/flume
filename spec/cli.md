@@ -6,8 +6,7 @@ environment, how it decides it was invoked as a binary at all, how the package
 is built, published, and expected to be invoked, which hosts it supports, and
 the versioning promise its public surface carries. Tick semantics, the
 supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
-`job` verbs in `spec/jobs.md`; the chain declarations the CLI reads in
-`spec/chain.md`.
+chain declarations the CLI reads in `spec/chain.md`.
 
 ## Subcommand surface
 
@@ -26,15 +25,13 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
   supervisor that spawns one fresh `flume tick` process per iteration.
 - `wake <phase>` / `sleep <phase>` — add / remove `<flumeDir>/awake/<phase>`.
 - `stop` — write `<flumeDir>/stop` and print what happens next: a live supervisor
-  finishes its in-flight tick and ends the run; the next `loop`/`job run` refuses
+  finishes its in-flight tick and ends the run; the next `loop` refuses
   until the flag is removed (`spec/loop.md`, *Graceful stop*). Idempotent — the
   flag already present prints the same statement, exits 0. The verb is
   discoverability, not a privileged channel: `touch` on the same path is equally
   the interface, and nothing distinguishes the two writers. There is deliberately
   no `unstop`/`resume` verb — removing the flag is the operator's acknowledgement,
   and an engine verb that removes it would let a script ack a stop no human saw.
-- `job new|run|rm|status` — lifecycle verbs over a job's state root
-  (`spec/jobs.md`).
 - `log [-n N] [--json]` — observational; prints the last N tick verdicts
   (default 10) from `tick-verdicts.jsonl` via `readTickVerdicts`, oldest
   first. The human form is fixed-format lines carrying only fields the
@@ -91,12 +88,11 @@ prints the package version, read from flume's own `package.json` at
 `../package.json` relative to the running module — the same relative position
 in a source checkout and in the published tarball. Both top-level flags
 short-circuit before state-dir resolution, chain load, and any side effect, so
-they answer from any cwd. Only the global `--job` extraction precedes them, and
-a `--job` carrying no value refuses first.
+they answer from any cwd, before any other extraction.
 
 Usage-shaped failures exit 2 uniformly. The category is **any argv the surface
 cannot honor as typed** — the instances below are its members, not a closed
-enumeration: unknown command or job verb; a missing `<phase>` or `<name>`; an
+enumeration: an unknown command; a missing `<phase>` or `<name>`; an
 unknown phase; **an unexpected trailing positional past what a subcommand
 consumes** (`tick`, `stop`, and `check` consume none; `wake`/`sleep` exactly
 one) — running something other than what the operator typed is the harm this
@@ -123,7 +119,7 @@ In printed order:
    nothing extra.
 3. **Stop flag** — when `<flumeDir>/stop` exists, one line naming the path and
    the consequence: with a live supervisor, that it will finish the in-flight
-   tick and end the run; without one, that the next `loop`/`job run` refuses
+   tick and end the run; without one, that the next `loop` refuses
    until the flag is removed. Absent flag prints nothing. This line exists
    because the ack ritual (`spec/loop.md`, *Graceful stop*) only works if the
    operator who forgot the flag finds it where they look first.
@@ -134,8 +130,8 @@ In printed order:
    when the chain loads, and from the default `<flumeDir>/plan/pending.json` when it
    does not: `pending: N`,
    `pending: 0` when absent, `pending: unparsable` when present but malformed —
-   the same loose read `flume job status` performs, so a corrupt queue reads
-   identically on both surfaces.
+   the same loose read every observational verb performs, so a corrupt queue
+   reads identically on every surface.
 6. **Chain-declared extras**, behind a best-effort chain load that can never
    fail status — a missing or broken chain withholds them and says so **as a
    row of this listing**, `chain: failed to load — <reason>`, printed before
@@ -162,8 +158,8 @@ Supervisor liveness is on `status` because the awake markers alone cannot
 answer the question an operator asks before relaunching. A tree whose
 supervisor is still working reads `hibernating` from the baton, and two
 supervisors against one tree is what that misreading produces. The liveness
-verdict is the one `flume loop`'s startup refusal and `flume job rm` report for
-the same pidfile — one detection, never re-derived per surface.
+verdict is the one `flume loop`'s startup refusal reports for the same
+pidfile — one detection, never re-derived per surface.
 
 The friction count line has one home: `flume status` and the loop-end
 completion summary print the same line from one source. The engine announces that mail exists and
@@ -182,24 +178,13 @@ Two independent roots:
 Both default to `<repoRoot>/.flume`; a set-but-relative value resolves against
 cwd. Setting both to one directory co-locates config and state.
 
-`--job <name>` (or `FLUME_JOB`) retargets only the `flumeDir` default, to
-`<repoRoot>/.flume/jobs/<name>`. `configDir` never follows the job — the chain
-is repo-resident, so a shared chain finds its sibling `prompts/` from any job
-with no chain-dir token and no dynamic path computation.
-
-**Conflict rule.** `--job` alongside an explicitly-set `FLUME_DIR` is a usage
-error, exit 2: two resolution authorities over one state root. `--job` with an
-explicit `FLUME_CONFIG_DIR` *composes* — the authority was always over state,
-and config never belonged to the job; state stays namespaced under the job dir,
-so no corruption case exists. `FLUME_JOB` read from the environment also
-composes with an explicit `FLUME_DIR` rather than conflicting: on the
-loop → tick boundary the child sees all three written-back vars, and the dir
-vars *are* the parent's canonical job resolution, so the set dirs win and the
-job name rides along for fanout namespacing.
+There is no third selector. One checkout resolves one state root, and a
+repository running several efforts at once gives each a checkout of its own
+(`spec/jobs.md`, *The checkout is the unit of isolation*) — so nothing
+retargets `flumeDir` below the root but `FLUME_DIR` itself.
 
 **Canonicalization write-back.** After resolving, the CLI writes the resolved
 **absolute** paths back into `process.env.FLUME_DIR` and `FLUME_CONFIG_DIR`,
-and — when a job is in play — the bare job *name* into `FLUME_JOB`.
 Writing back is the point: a chain loaded later in the same
 process (via tsx) and every spawned tick child then read one resolved value
 instead of re-deriving the default or falling back to a coincidentally-equal
@@ -211,11 +196,11 @@ copies into the child's `env` — plus
 the supervisor's quarantine crosses the process boundary on. No var is
 dropped or rewritten on the way down.
 
-The guarantee reaches every subcommand, including the job verbs: `resolveStateDirs`
-runs ahead of verb dispatch rather than inside the branches that happen to need it,
-so `job new` and `job status` load their chain with the same resolved, written-back
-environment a tick would see. A factory reading `process.env.FLUME_DIR` during
-`job new` gets the resolved state root.
+The guarantee reaches every subcommand: `resolveStateDirs` runs ahead of verb
+dispatch rather than inside the branches that happen to need it, so every verb
+that loads a chain loads it with the same resolved, written-back environment a
+tick would see. A factory reading `process.env.FLUME_DIR` gets the resolved
+state root whichever verb is running.
 
 **Cross-repo refusal.** `FLUME_DIR` is absolute and children inherit it, so a nested
 invocation in a *different* repository would otherwise write to the outer repo's control
@@ -236,28 +221,22 @@ live outside the working tree, so `.gitignore` needs no entry for it: the
 default `<repoRoot>/.flume` is already ignored and an out-of-tree root is
 invisible to git by construction.
 
-`--job <name>` is extracted from argv wherever it appears, before dispatch, so
-it composes with every subcommand. `flume job run <name>` rewrites itself into
-`--job <name> loop [--max N]`; a `--job` naming a different job beside it is
-exit 2.
-
 ## Bay discovery walks up to the nearest `.flume`
 
 `repoRoot` is resolved by walking up from cwd to the first level holding a
 `.flume` — the same resolution git applies to `.git/`. cwd itself counts as
 inside the bay: if its basename is `.flume`, `repoRoot` is its parent, no walk
 needed. If no ancestor has a `.flume` up to the filesystem root, the fallback
-is cwd unchanged, so a first `flume job new` in a fresh, undocked repo still
-creates `.flume` there rather than reaching for an unrelated ancestor.
+is cwd unchanged, so a first run in a fresh, undocked repo still resolves
+`.flume` there rather than reaching for an unrelated ancestor.
 `FLUME_DIR` / `FLUME_CONFIG_DIR` continue to override outright — the walk-up
 only changes what `repoRoot` defaults to.
 
-Without it, `repoRoot` was cwd literally, and every state-dir resolution and
-every `job` verb built its paths from that one value: run from any
-subdirectory, or from inside `.flume` itself, and both dirs pointed at a
-`.flume` that does not exist. `flume job status` was the sharp edge — it
-printed `no jobs` with no error, a correct-looking answer that is a lie about
-where it looked.
+Without it, `repoRoot` was cwd literally, and every state-dir resolution built
+its paths from that one value: run from any subdirectory, or from inside
+`.flume` itself, and both dirs pointed at a `.flume` that does not exist. An
+observational verb was the sharp edge — it printed a correct-looking answer
+that is a lie about where it looked.
 
 Nested bays are not disambiguated: the walk picks the nearest, same as git.
 
@@ -309,14 +288,14 @@ path, and it is not detected.
 the invoked engine unconditionally: no launcher, no re-exec, no version probe,
 no replacement check, no pin read. The engine does not read the bay's manifest
 at startup, so an unpinned invocation and a pinned one behave identically.
-Nothing is provisioned into a job dir either — no per-job engine link is
-planted; a job chain's import resolves by Node's normal walk-up to the bay's
-own install.
+Nothing is provisioned beside a state root either — no engine link is planted
+there; a chain's import resolves by Node's normal walk-up to the bay's own
+install.
 
 The negative space is the ruling, and it is load-bearing. Two generations of
-coherence machinery with opposite authority models — a job-dir link making the
-chain follow the invoked binary, and a launcher making the binary follow the
-bay's pin — composed into repeated field wedges, and both existed only to
+coherence machinery with opposite authority models — a state-root link making
+the chain follow the invoked binary, and a launcher making the binary follow
+the bay's pin — composed into repeated field wedges, and both existed only to
 compensate for one unexamined premise: a global CLI on PATH as a first-class
 invocation path. Remove the premise and both delete. Distribution is not the
 harness's mechanism (`engine-boundary.md`), and a subsystem that wedges its own
@@ -418,20 +397,21 @@ Standing consequences:
   is asserted against literally; splitting a git *ref path* is that exception,
   not a violation.
 - **Total path length.** `join(...).length` can exceed win32's ~260-character
-  limit where no single component does — a chain-declared friction dir under a
-  job's state root, a fanout mirror dir, a revert-note filename. The idiom is
+  limit where no single component does — a chain-declared friction dir under
+  the state root, a fanout mirror dir, a revert-note filename. The idiom is
   `join` paired with `toNamespacedPath`, which prepends the `\\?\`
   extended-length prefix on win32 and is a no-op elsewhere. The bar is the
   built path's **depth**, not every fs call: a path whose depth is bounded by
-  the runtime's own layout (`<flumeDir>/awake/<phase>`, `<flumeDir>/loop.pid`,
-  `.flume/jobs/<name>`) does not need it; a path extending a chain-declared or
+  the runtime's own layout (`<flumeDir>/awake/<phase>`, `<flumeDir>/loop.pid`)
+  does not need it; a path extending a chain-declared or
   entry-derived segment does. `namespacedJoin` is the shared
   helper: it joins and namespaces in one call, and passing it a single path is
   a legitimate use — the join is a no-op and the namespacing is the point.
 
-  `job new` additionally pins `core.longpaths` repo-locally on win32. The
-  ceiling `git worktree add` imposes is separate and unreachable by this idiom
-  — see `spec/worktrees.md`.
+  Worktree provisioning additionally pins `core.longpaths` repo-locally on
+  win32, before any path nested deep enough to need it exists. The ceiling
+  `git worktree add` imposes is separate and unreachable by this idiom — see
+  `spec/worktrees.md`.
 - **Test-repo hygiene.** Temp git repos pin `core.autocrlf false` (and any
   future byte-sensitive config) so revert-path byte assertions survive
   host-level git config. The repository itself pins `eol=lf` through

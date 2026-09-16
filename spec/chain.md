@@ -182,26 +182,23 @@ writes it the same way, and the loop reverts forever while looking alive.
 
 ## Chain residency — one chain per `.flume`
 
-The chain lives at `<configDir>/chain.ts`, and **job resolution never retargets
-`configDir`**. `--job`/`FLUME_JOB` moves only the state root (`flumeDir` →
-`<repoRoot>/.flume/jobs/<name>`); `configDir` stays `<repoRoot>/.flume`, or an
-explicit `FLUME_CONFIG_DIR`, which composes with a job. There is no
-job-local chain.
+The chain lives at `<configDir>/chain.ts`: one chain per state root, and
+`configDir` is `<repoRoot>/.flume` or an explicit `FLUME_CONFIG_DIR`.
 
-- **A `chain.ts` inside a job dir is inert, and stays unpoliced.** The runtime
-  never looks there; machinery does not police caller-owned content. No probe,
-  no warning, no refusal — the invariant is what resolution *is*, not a rule
-  to enforce.
-- **Per-job variation is already served**: a chain is code, and `FLUME_JOB` is
-  written back into the environment when the state roots resolve, before the
-  tick's chain load, so one repo chain can dispatch on it. Operator-run
-  worktrees give concurrent divergence, each checkout resolving its own chain.
+- **A `chain.ts` anywhere the runtime does not resolve is inert, and stays
+  unpoliced.** The runtime never looks there; machinery does not police
+  caller-owned content. No probe, no warning, no refusal — the invariant is
+  what resolution *is*, not a rule to enforce.
+- **Variation between efforts is served by the checkout**: operator-run
+  worktrees give concurrent divergence, each checkout resolving its own chain
+  against its own state root (`spec/jobs.md`, *The checkout is the unit of
+  isolation*).
 - `promptPath` mechanics follow for free: it resolves against `configDir` — a
   relative path keeps its meaning beneath it, an absolute one is taken as given,
   which is how a package-shipped prompt gets an address — and
-  `configDir` is always the directory the chain actually lives in — a shared
-  chain finds its sibling `prompts/` from any job, with no chain-dir token
-  and no dynamic path computation.
+  `configDir` is always the directory the chain actually lives in, so a chain
+  finds its sibling `prompts/` with no chain-dir token and no dynamic path
+  computation.
 
 ## Per-phase agent assignment
 
@@ -284,35 +281,11 @@ both concurrencies now that singleton ticks provision one too
 (`spec/worktrees.md`, *Singleton runs in a worktree*); the singleton-in-checkout
 gap it used to carry as drift is closed.
 
-## `Chain.seedDir` — the declared job seed
-
-The chain declares what a newborn job contains; machinery materializes the
-declaration and holds no content opinion.
-
-- **`Chain.seedDir?: string`**: a **configDir-relative**
-  directory — the `promptPath` idiom, so stubs are real files beside the chain
-  (e.g. `.flume/job-seed/`).
-- `flume job new` loads the repo chain first: no `<configDir>/chain.ts` is a
-  usage error (exit 2) — a job that could never `run` must not be creatable —
-  and a declared `seedDir` that is absent on disk is the same class of error,
-  checked **before** the state root is touched so a bad declaration leaves no
-  stray job dir.
-- The copy is **verbatim, skip-existing** (`cp` with `force: false`): a re-run
-  fills gaps — a stub added to the seed dir reaches existing jobs — and never
-  clobbers a worked file. No interpolation. This is what makes "idempotent on
-  re-run" true.
-- Absent `seedDir` → a bare job, **no warning**: state accretes from ticks, and
-  bare is legitimate. There is no seed default and no per-invocation template
-  flag; authority is a repo-declared fact.
-
-The rest of `job new`'s sequence — runtime ignores, longpaths pin, baseline
-commit on current HEAD — is `spec/jobs.md`.
-
 ## `Chain.friction` — the declared friction channel
 
 **`Chain.friction?: string`**: a **state-root-relative**
 directory naming the friction channel (e.g. `"friction"`), resolved against the
-resolved `flumeDir`, same idiom as `seedDir`.
+resolved `flumeDir`.
 
 - Validated at chain load: must be relative and must resolve inside the
   state root, else a usage-shaped error. The check is base-independent — it
@@ -334,9 +307,8 @@ resolved `flumeDir`, same idiom as `seedDir`.
   list, or print bytes verbatim, and never derives a decision from them.
   Where the declaration is consumed: the runtime ignore set
   (`spec/jobs.md`), the wave-teardown harvest and the revert note
-  (`spec/worktrees.md`, `spec/loop.md`), the count line `flume status`,
-  `flume job status`, and the loop-end summary print when the channel is
-  declared and non-empty, and the `flume friction` read verb
+  (`spec/worktrees.md`, `spec/loop.md`), the count line `flume status` and the
+  loop-end summary print when the channel is declared and non-empty, and the `flume friction` read verb
   (`spec/cli.md`).
 
 ## Supervisor policy is a chain-overridable default
@@ -687,8 +659,8 @@ into it.
 - **The runtime canonicalizes, then loads.** `flumeDir` and `configDir` are
   resolved to **absolute** paths before any code path constructs the chain.
   This holds for every verb that
-  loads a chain — `tick`, `loop`, `status`, `wake`, `sleep`, `check`, and the
-  `job` verbs alike. The resolved values are also written back to
+  loads a chain — `tick`, `loop`, `status`, `wake`, `sleep`, and `check`
+  alike. The resolved values are also written back to
   `process.env.FLUME_DIR` and `process.env.FLUME_CONFIG_DIR` so spawned
   children (an agent, a gate's shell) inherit one answer; the env is a
   child-process channel, not the chain's read path.
@@ -710,12 +682,12 @@ into it.
   resolution: `withSessionCapture(agent, { dir: resolve(api.paths.flumeDir,
   "sessions") })` is the whole placement, and `examples/` shows it. An
   absolute path still matters — a fanout tick runs inside the worktree base
-  (`<flumeDir>/worktrees/` by default, relocatable, namespaced per job), so a
-  relative dir would land in a worktree git later removes.
+  (`<flumeDir>/worktrees/` by default, relocatable), so a relative dir would
+  land in a worktree git later removes.
 - A relocated state root is expected to live outside the working tree, so no
   in-repo gitignore glob is added for it; the default `<repoRoot>/.flume`
-  receives the same runtime-ignore merge a job dir does (`spec/jobs.md`,
-  *Runtime ignores*). The harness package does not support a relocated root
+  receives the runtime-ignore merge (`spec/jobs.md`, *Runtime ignores*). The
+  harness package does not support a relocated root
   and refuses it at load (`spec/harness.md`, *Committed-path discipline*).
 
 ## The package a chain loads through
@@ -733,7 +705,7 @@ Durable packaging policy:
   dependency on `tsx` for the package's own surface.
 - **Git 2.36 or newer.** The engine reads `worktree list --porcelain -z`, which
   git grew in 2.36; on an older git worktree reclamation degrades loudly and
-  nothing else does. `flume loop` and `flume job run` read the version at
+  nothing else does. `flume loop` reads the version at
   start and, below the floor, warn once naming the version, the floor, and
   what degrades — a warning, not a refusal, because the degrade is bounded to
   reclamation and the loop is otherwise a working one. A version the run

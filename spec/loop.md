@@ -89,7 +89,7 @@ output:
 - **`cherry-pick`.** A fanout wave's per-entry worktree commits are carried onto the
   tip the tick started on, in order, with `cherry-pick --abort` on conflict.
 - **Ephemeral `flume/**` branch names.** `createWorktree` constructs
-  `flume/<namespace>/<slug>` (or repo-global `flume/<slug>` with no namespace) —
+  `flume/<slug>` —
   the slug is a fanout entry's tag under fanout and the phase name under singleton
   (`spec/worktrees.md`, *Singleton runs in a worktree*); provisioning is
   `git worktree add -B` (`git.addWorktree`), and teardown removes the
@@ -184,7 +184,7 @@ platform that most needs one.
   same boundary it re-reads the baton. Nothing polls mid-tick; an in-flight tick
   always completes. A hung agent is therefore still hung — the stop flag is not a
   kill and does not subsume whatever the operator does about a tick that never ends.
-- **Presence at start refuses the run.** `flume loop` (and `job run`) with the flag
+- **Presence at start refuses the run.** `flume loop` with the flag
   already on disk refuses before any tick, exit 1, naming the flag path — removing
   the flag is the operator's acknowledgement that the stop was seen, and the refusal
   message says exactly that. A stale flag can therefore never silently swallow a
@@ -225,8 +225,8 @@ defect rather than a workaround the operator owes the engine:
   the engine itself declined to sequence seconds earlier. Crash-equals-stop is
   hollow if the recovery a crash leaves intact is one the next merge deletes.
 - **A dead wave's residue is swept at the next start.** Worktrees and `flume/**`
-  branches abandoned by a killed fanout tick are removed at the next `loop`/`job
-  run` start, under the tip claim — `spec/worktrees.md`, *Startup sweep*. Per-wave
+  branches abandoned by a killed fanout tick are removed at the next `loop`
+  start, under the tip claim — `spec/worktrees.md`, *Startup sweep*. Per-wave
   stale-slug removal only ever covered entries being re-provisioned; an abandoned
   entry that left the queue leaked its worktree indefinitely, which was the one
   observed gap between this guarantee and the tree.
@@ -236,7 +236,7 @@ defect rather than a workaround the operator owes the engine:
   bookkeeping the hazard covers has landed: the `pending.json` rewrite and the records.
   (The verdict is the CLI's, written after `tick()` returns; a marker is not held for
   it.) A file
-  surviving at the next `loop` / `job run` start is a merge that died between the pick
+  surviving at the next `loop` start is a merge that died between the pick
   and the bookkeeping: the commit may sit on trunk ungated with its entry still `open`,
   and a second run would pick it again (field-traced once, 0.12.0, gh#19). The run
   refuses to start (exit `EX_CONFIG`), naming the file, the branch, and the entry, and
@@ -681,7 +681,7 @@ Either way a fresh process reads the same unparseable file until the queue's dec
 writer runs over it (`spec/pending.md`, *Queue reads are strict*), and
 that leg writes no verdict at all (see *The tick verdict*).
 
-`flume loop` (and `job run`):
+`flume loop`:
 
 - **Mount-dead aborts immediately.** The supervisor fail-fasts on a child's 69 and
   propagates it, rather than burning the remaining `--max` ticks re-hitting the same
