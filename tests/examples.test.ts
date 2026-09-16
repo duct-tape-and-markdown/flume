@@ -2045,9 +2045,16 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
  * declares is a cost nobody owes — so the claim is equality, not coverage,
  * and either side moving alone reds.
  *
- * Neither side is restated here (*Derived state is computed, never restated
- * beside its source*): the members come off the declaration through a
- * checker, the walk off the page's own bullets.
+ * The second case holds the walk as the section's only naming of the set:
+ * prose re-listing the operations beside the bullets is a copy no equality
+ * read reaches, so a fourth operation lands in the walk and strands it
+ * (*Derived state is computed, never restated beside its source*). Both cases
+ * read the same mention list — every backticked operation name in the
+ * section, bullet lead or not — so neither can be green over a naming the
+ * other cannot see.
+ *
+ * Neither side is restated here (same section): the members come off the
+ * declaration through a checker, the namings off the page.
  *
  * `docs/MIGRATING-0.16.md` states the same three operations and is
  * deliberately not pinned: that page opens by declaring itself a dated
@@ -2088,16 +2095,12 @@ describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () =
     return runner.getProperties().map((operation) => operation.name);
   };
 
-  it("docs/CHAIN-AUTHORING.md's adoption section names every operation Runner declares", () => {
-    const operations = runnerOperations();
-
-    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
-    // non-vacuous"): a resolution that fell through to an empty property list
-    // would compare two empty sets and pass. One anchor rather than a second
-    // copy of the list — the count is what proves the set is the real one.
-    expect(operations.length).toBeGreaterThan(1);
-    expect(operations).toContain("runAtBase");
-
+  /**
+   * The section under judgment, anchored before anything is read off it: a
+   * heading match that captured the wrong span would report every operation
+   * missing, or an empty walk against an empty span.
+   */
+  const adoptionSection = (): string => {
     const section = sectionOf(
       readFileSync(
         fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
@@ -2105,18 +2108,77 @@ describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () =
       ),
       /^### What adoption costs$/m,
     );
-    // The section is the one it claims to be before a set is read off it: a
-    // heading match that captured the wrong span would report every operation
-    // missing, or an empty walk against an empty span.
     expect(section).toContain("**The runner is the largest single piece**");
+    return section;
+  };
+
+  /**
+   * Every place the section names an operation, in page order — the name, and
+   * whether it leads a top-level bullet. The read is over every mention
+   * rather than over the bullet leads alone, because the defect this pair
+   * catches is a second naming of the set beside the walk it points at
+   * (*Derived state is computed, never restated beside its source*), and a
+   * reader that only sees bullets cannot see one.
+   */
+  const mentionsIn = (
+    section: string,
+    operations: readonly string[],
+  ): { name: string; leadsBullet: boolean }[] =>
+    [...section.matchAll(/`([A-Za-z][A-Za-z0-9]*)`/g)]
+      .filter((mention) => operations.includes(mention[1]!))
+      .map((mention) => ({
+        name: mention[1]!,
+        leadsBullet: /(?:^|\n)- $/.test(section.slice(0, mention.index)),
+      }));
+
+  /**
+   * Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+   * non-vacuous"): a resolution that fell through to an empty property list
+   * would compare two empty sets and pass, and a mention list filtered
+   * against it would be empty too. One anchor rather than a second copy of
+   * the list — the count is what proves the set is the real one.
+   */
+  const declaredOperations = (): string[] => {
+    const operations = runnerOperations();
+    expect(operations.length).toBeGreaterThan(1);
+    expect(operations).toContain("runAtBase");
+    return operations;
+  };
+
+  it("docs/CHAIN-AUTHORING.md's adoption section names every operation Runner declares", () => {
+    const operations = declaredOperations();
+    const section = adoptionSection();
 
     /** The operations the section walks: one top-level bullet each, led by its name. */
-    const walked = [...section.matchAll(/^- `([A-Za-z][A-Za-z0-9]*)`/gm)].map((m) => m[1]!);
+    const walked = mentionsIn(section, operations)
+      .filter((mention) => mention.leadsBullet)
+      .map((mention) => mention.name);
 
     expect(
       [...walked].sort(),
       "docs/CHAIN-AUTHORING.md's adoption section walks exactly the operations `Runner` declares",
     ).toEqual([...operations].sort());
+  });
+
+  it("docs/CHAIN-AUTHORING.md's adoption section names Runner's operation set in one place", () => {
+    const operations = declaredOperations();
+    const section = adoptionSection();
+    const mentions = mentionsIn(section, operations);
+
+    expect(
+      mentions.length,
+      "docs/CHAIN-AUTHORING.md's adoption section names the operations at all",
+    ).toBeGreaterThan(1);
+
+    expect(
+      mentions.filter((mention) => !mention.leadsBullet).map((mention) => mention.name),
+      "docs/CHAIN-AUTHORING.md's adoption section names an operation outside the walk's bullets",
+    ).toEqual([]);
+
+    expect(
+      mentions.map((mention) => mention.name),
+      "docs/CHAIN-AUTHORING.md's adoption section names each operation once",
+    ).toEqual([...new Set(mentions.map((mention) => mention.name))]);
   });
 });
 

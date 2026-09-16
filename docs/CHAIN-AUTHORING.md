@@ -214,8 +214,7 @@ rather than read as a name nothing carried.
 
 Anything else — cargo, dotnet, a tool that answers to no such command —
 authors a `RunnerFactory`: `(ctx) => Runner`, called once at chain load, over
-`run`, `runAtBase` and `lanes`. The work is not the signatures, it is what
-they return.
+the operations below. The work is not the signatures, it is what they return.
 
 - `run` reports structured results and never an exit code: a passed count for
   the judge's vacuity check, per requested line whether one passing test
