@@ -578,6 +578,13 @@ export async function runFanout(
           // same wave were provisioned from the same tip, and each carries
           // its own value regardless.
           baseSha: r.spanBase,
+          // And `preCherry` beside it: the trunk tip this entry's span
+          // landed onto, which is where the sibling that picked ahead of it
+          // left trunk — the lower end of the range `commitTouchedPaths`
+          // above is diffed over. A cumulative gate measuring trunk before
+          // and after this entry reads its *before* here, never off the
+          // wave-shared `baseSha` (spec/chain.md "What a gate receives").
+          landedOnSha: preCherry,
           log: (l) => leg.log.info(l),
         },
         leg.gateScope,

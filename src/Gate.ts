@@ -143,6 +143,24 @@ export interface GateContext {
    */
   baseSha: string;
   /**
+   * Under `afterMerge`, the trunk tip the gated span landed onto: the lower
+   * end of the range {@link touchedPaths} is diffed over, and the trunk as
+   * this entry found it before its own commits were carried across. Absent
+   * under `afterCommit`, where no trunk is involved and {@link baseSha} is
+   * the whole story.
+   *
+   * It is how a per-entry cumulative gate on trunk — one that measures a set
+   * before and after this entry and refuses growth — reads the right
+   * *before*. {@link baseSha} is what the tick *saw* when it branched, and
+   * every sibling in a fanout wave shares it, so a gate measured against it
+   * inherits every sibling's landing; `HEAD^` is right only while a span
+   * lands as one commit (spec/chain.md "What a gate receives"). Set on every
+   * dispatcher-built `afterMerge` context, so an `afterMerge` gate reads it
+   * without a fallback; the dispatcher already holds the sha it
+   * cherry-picked onto.
+   */
+  landedOnSha?: string;
+  /**
    * The pending entry this span was provisioned for, as the wave selected it
    * — set at both stages under fanout, absent on a singleton tick, which
    * carries no entry (spec/chain.md "What a gate receives"). A chain gate

@@ -353,6 +353,11 @@ export async function runSingleton(
             // tell an input this tick ignored from one that landed
             // after it started (spec/chain.md "What a gate receives").
             baseSha: spanBase,
+            // The trunk tip the span landed onto — the lower end of the
+            // range `commitTouchedPaths` above is diffed over. Trunk may
+            // have moved since this tick branched, so it is its own fact
+            // and not `spanBase` under another name.
+            landedOnSha: preCherry,
             log: (l) => leg.log.info(l),
           },
           leg.gateScope,

@@ -63,7 +63,12 @@ import {
   type FlumeApiPaths,
   type FlumePaths,
 } from "../src/flumeApi.ts";
-import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
+import type {
+  Gate,
+  GateContext,
+  GatePhase,
+  GateResult,
+} from "../src/Gate.ts";
 import type {
   Chain,
   Phase,
@@ -17414,5 +17419,168 @@ describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, rec
 
     expect(existsSync(planted!)).toBe(false);
     expect(await registered(planted!)).toBe(false);
+  });
+});
+
+// ---------- `landedOnSha`: the trunk tip a gated span landed onto ----------
+
+/**
+ * `baseSha` is what the tick *saw* when it branched, and every sibling in a
+ * fanout wave shares it. `landedOnSha` is where trunk actually stood when
+ * this entry's span was carried across — a place the sibling picked ahead of
+ * it has already moved. A cumulative afterMerge gate, one measuring a set on
+ * trunk before and after this entry, needs the second and had no way to read
+ * it but `HEAD^`, which is right only while a span lands as one commit
+ * (spec/chain.md "What a gate receives").
+ */
+describe("Dispatcher — the trunk tip an afterMerge span landed onto", () => {
+  /** A gate that records every context it is handed, key presence included. */
+  function ctxProbe(
+    name: string,
+    when: GatePhase,
+    seen: GateContext[],
+  ): Gate {
+    return {
+      name,
+      when,
+      run(ctx) {
+        seen.push({ ...ctx });
+        return Promise.resolve({ ok: true, message: `${name} probed` });
+      },
+    };
+  }
+
+  /** An agent leg that commits one file into its own worktree. */
+  const commitsFile = (rel: string) => (cwd: string) =>
+    writeAndCommit(cwd, rel, "landed\n", `build: ${rel}`);
+
+  function fanoutDispatcher(
+    gates: Gate[],
+    bySlug: Record<string, (cwd: string) => Promise<void>>,
+  ): Dispatcher {
+    return new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({ name: "build", concurrency: "fanout", gates }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent(bySlug),
+      log: silent,
+      maxParallel: 4,
+    });
+  }
+
+  it("an afterMerge gate context carries the trunk tip the span landed onto", async () => {
+    await writePending(fx.repo, [
+      makeEntry("LANDED-ONE", ["src/landed-one.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    // Nothing lands on trunk between here and the pick — the wave's own
+    // queue rewrite comes after every gate — so this *is* the tip the span
+    // is about to be carried onto.
+    const preHead = await head(fx.repo);
+
+    const seen: GateContext[] = [];
+    const outcome = await fanoutDispatcher(
+      [ctxProbe("merge-probe", "afterMerge", seen)],
+      { "landed-one": commitsFile("src/landed-one.ts") },
+    ).tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["LANDED-ONE"]);
+    // Vacuity: every assertion below reads a context the probe captured.
+    expect(seen, "the afterMerge probe never ran").toHaveLength(1);
+    const ctx = seen[0]!;
+
+    expect(ctx.landedOnSha).toBe(preHead);
+    expect(ctx.landedOnSha).not.toBe(ctx.commitSha);
+    // "Landed onto", read off git rather than off the same field: this span
+    // reached trunk as one commit, so its parent is the tip it landed on.
+    const { stdout: parent } = await exec(
+      "git",
+      ["rev-parse", `${ctx.commitSha}^`],
+      { cwd: fx.repo },
+    );
+    expect(ctx.landedOnSha).toBe(parent.trim());
+  });
+
+  it("an afterCommit gate context carries no landedOnSha", async () => {
+    await writePending(fx.repo, [
+      makeEntry("LANDED-BOTH", ["src/landed-both.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const atCommit: GateContext[] = [];
+    const atMerge: GateContext[] = [];
+    const outcome = await fanoutDispatcher(
+      [
+        ctxProbe("commit-probe", "afterCommit", atCommit),
+        ctxProbe("merge-probe", "afterMerge", atMerge),
+      ],
+      { "landed-both": commitsFile("src/landed-both.ts") },
+    ).tick();
+
+    expect(outcome.result?.shippedTags).toEqual(["LANDED-BOTH"]);
+    expect(atCommit, "the afterCommit probe never ran").toHaveLength(1);
+    expect(atMerge, "the afterMerge probe never ran").toHaveLength(1);
+    // Control first, so the absence below is the *stage's* and not the
+    // field's: the same tick set it on the other stage
+    // (.claude/rules/engineering.md "A green verdict is proven non-vacuous").
+    expect(atMerge[0]!.landedOnSha).toMatch(/^[0-9a-f]{40}$/);
+
+    expect("landedOnSha" in atCommit[0]!).toBe(false);
+    expect(atCommit[0]!.landedOnSha).toBeUndefined();
+  });
+
+  it("landedOnSha is the lower end of the range touchedPaths is diffed over", async () => {
+    // Two entries with disjoint declared files fan out into one batch and
+    // are picked one after the other, so the second lands onto a trunk the
+    // first has already moved — the case a wave-shared `baseSha` cannot see.
+    await writePending(fx.repo, [
+      makeEntry("LANDED-FIRST", ["src/landed-first.ts"]),
+      makeEntry("LANDED-SECOND", ["src/landed-second.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const seen: GateContext[] = [];
+    const outcome = await fanoutDispatcher(
+      [ctxProbe("merge-probe", "afterMerge", seen)],
+      {
+        "landed-first": commitsFile("src/landed-first.ts"),
+        "landed-second": commitsFile("src/landed-second.ts"),
+      },
+    ).tick();
+
+    expect(outcome.result?.shippedTags?.slice().sort()).toEqual([
+      "LANDED-FIRST",
+      "LANDED-SECOND",
+    ]);
+    expect(seen, "the afterMerge probe ran for fewer than both entries")
+      .toHaveLength(2);
+
+    // The range each context reports is exactly the one its own
+    // `touchedPaths` was diffed over — driven through the engine's own diff
+    // helper, not a second spelling of it here.
+    for (const ctx of seen) {
+      expect(ctx.landedOnSha).toMatch(/^[0-9a-f]{40}$/);
+      expect(
+        await git.diffNameOnly(fx.repo, ctx.landedOnSha!, ctx.commitSha),
+      ).toEqual(ctx.touchedPaths);
+    }
+
+    // Read in pick order, whichever entry each turned out to be: both
+    // branched from one tip, and the second landed onto where the first
+    // left trunk.
+    const [first, second] = seen as [GateContext, GateContext];
+    expect(second.baseSha).toBe(first.baseSha);
+    expect(second.landedOnSha).toBe(first.commitSha);
+    expect(second.landedOnSha).not.toBe(second.baseSha);
+    // And the shared base is the wrong lower end: over it the second
+    // entry's range carries its sibling's file as well as its own.
+    expect(
+      await git.diffNameOnly(fx.repo, second.baseSha, second.commitSha),
+    ).toEqual(["src/landed-first.ts", "src/landed-second.ts"]);
   });
 });
