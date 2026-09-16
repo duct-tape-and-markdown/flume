@@ -12,13 +12,20 @@
  * and harvests lives in `src/friction.ts`, and the ephemeral worktrees it
  * provisions, tears down and sweeps live in `src/worktrees.ts`.
  *
- * What a tick reads and writes, each in the file its name is: the facts
- * artifact it builds and the vocabularies that artifact carries
- * (`src/tickVerdict.ts`), the interrupted-merge markers it stakes around a
- * cherry-pick (`src/mergingMarkers.ts`), the chain resolution that starts a
- * tick (`src/chainLoad.ts`), the logging seam it narrates through
- * (`src/log.ts`), and the exit codes the `flume tick` process boundary
- * carries (`src/exitCodes.ts`).
+ * What a tick reads and writes, each in the file its name is: which entries
+ * of the queue it may pick and the batch a wave carries off it
+ * (`src/selection.ts`), the one agent attempt both concurrencies make
+ * (`src/tickAttempt.ts`), the single call site a declared gate runs through
+ * (`src/gateRun.ts`), the facts artifact it builds and the vocabularies that
+ * artifact carries (`src/tickVerdict.ts`), the interrupted-merge markers it
+ * stakes around a cherry-pick (`src/mergingMarkers.ts`), the chain resolution
+ * that starts a tick (`src/chainLoad.ts`), the logging seam it narrates
+ * through (`src/log.ts`), and the exit codes the `flume tick` process
+ * boundary carries (`src/exitCodes.ts`).
+ *
+ * What stays here is the orchestration around those: the baton read, the
+ * chain load, the two concurrencies' merge stages, the verdict each reports
+ * in, and the queue's own reads and rewrite.
  */
 
 import {
@@ -27,18 +34,9 @@ import {
   mkdir,
   rm,
 } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  join,
-  dirname,
-  relative,
-  isAbsolute,
-  sep,
-} from "node:path";
-import { promisify } from "node:util";
+import { dirname, relative, isAbsolute, sep } from "node:path";
 
-import type { Agent, AgentUsage } from "./Agent.js";
+import type { Agent } from "./Agent.js";
 import { Baton } from "./Baton.js";
 import {
   CjsContextLoadError,
@@ -46,37 +44,27 @@ import {
   resolveWorktreesBaseDeclaration,
   type ChainModule,
 } from "./chainLoad.js";
-import type { Gate, GateContext, GateResult } from "./Gate.js";
 import { bound } from "./bounds.js";
-import { writablePathsGate } from "./builtinGates.js";
 import type { FlumePaths } from "./flumeApi.js";
+import { runGate, type GateRunScope } from "./gateRun.js";
 import { existsLoud } from "./fsProbe.js";
 import { consoleLogger, type Logger } from "./log.js";
 import type { MergingMarker } from "./mergingMarkers.js";
-import { partitionByFileOverlap } from "./partition.js";
 import {
   gitPath,
   matchesAny,
   defaultStateRoot,
-  fsStamp,
   namespacedJoin,
   phasePromptPath,
   slugify,
-  entryWriteScope,
   mergingDir,
   mergingMarkerPath,
-  renderedPromptsDir,
   resolvePendingPath,
-  STATE_ROOT_NAMES,
 } from "./paths.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import {
-  buildCleanExit,
   buildGateRevert,
   buildNotShipped,
-  buildPlatformPreempt,
-  buildRenderRefused,
-  buildTipMoved,
   priorAttemptRef,
   PriorAttemptStore,
   type PriorAttemptRef,
@@ -91,24 +79,40 @@ import type {
   TickContext,
   TickResult,
 } from "./Phase.js";
-import { renderPrompt, InlineExecRenderError } from "./Prompt.js";
+import { renderPrompt } from "./Prompt.js";
 import type { PriorAttempt, NoCommitMode } from "./Prompt.js";
-import type {
-  GateFailure,
-  MergeFailure,
-  MergeOutcome,
-  ProvisionFailure,
-  ReportedGateResult,
-  TickVerdict,
-  TickVerdictInvocation,
-  TickVerdictMergeOutcome,
+import {
+  blamedOn,
+  pickableEntries,
+  quarantineKey,
+  selectBatch,
+} from "./selection.js";
+import {
+  persistHookRefusal,
+  runAttempt,
+  type AgentBounds,
+  type AttemptContext,
+  type AttemptOutcome,
+} from "./tickAttempt.js";
+import {
+  gateFailureSignature,
+  MAX_FAILURE_SIGNATURE,
+  reportedGateRow,
+  throwFacts,
+  type GateFailure,
+  type MergeFailure,
+  type MergeOutcome,
+  type ProvisionFailure,
+  type ReportedGateResult,
+  type TickVerdict,
+  type TickVerdictInvocation,
+  type TickVerdictMergeOutcome,
 } from "./tickVerdict.js";
 import * as git from "./git.js";
 import {
   createWorktree,
   sweepStaleWorktrees,
   teardownWorktreeInstance,
-  withGateCheckouts,
   type WorktreeContext,
 } from "./worktrees.js";
 
@@ -126,58 +130,6 @@ import {
  * already uses; this line goes with it.
  */
 export type { ChainFactory } from "./chainLoad.js";
-
-const execFileP = promisify(execFile);
-
-/** Bound on a persisted stage-failure signature (provision/merge/gate alike) — a comparison key, not a transcript. */
-const MAX_FAILURE_SIGNATURE = 500;
-
-/**
- * What a throw reports: the message it raised and, when it has one, the stack
- * that raised it. Every seam that answers a throw with a record rather than
- * losing the tick reads it here — a gate's `{ message, details }`
- * (`spec/chain.md`, *What a gate returns*) and a hook's render-refused record
- * (*What a hook receives*) are the same two facts under two names, so the
- * decoding is shared rather than re-derived beside each one
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
- *
- * `stack` is absent rather than a second copy of `message` when the thrown
- * value has none — a non-`Error`, or an `Error` whose `stack` was stripped —
- * because a duplicated line reads as evidence while carrying none
- * (*Derived state is computed, never restated beside its source*).
- */
-function throwFacts(err: unknown): { message: string; stack?: string } {
-  const message = err instanceof Error ? err.message : String(err);
-  const stack =
-    err instanceof Error && typeof err.stack === "string" && err.stack
-      ? err.stack
-      : undefined;
-  return stack ? { message, stack } : { message };
-}
-
-/**
- * The one construction of a {@link ReportedGateResult} from the
- * {@link GateResult} a gate just returned. Every reporting surface — the
- * afterCommit loop, both afterMerge loops, and the failure record each hands
- * to `buildGateRevert` — reads the row from here, so a field the engine
- * decodes cannot reach one surface and be dropped from the next
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
- *
- * Optional fields ride only when the gate authored them: `exactOptionalPropertyTypes`
- * makes an explicit `undefined` a different shape from absence, and absence is
- * what "the gate said nothing" means on disk.
- */
-function reportedGateRow(gate: string, r: GateResult): ReportedGateResult {
-  return {
-    gate,
-    ok: r.ok,
-    message: r.message,
-    ...(r.details ? { details: r.details } : {}),
-    ...(r.verdict ? { verdict: r.verdict } : {}),
-    ...(r.skipped ? { skipped: r.skipped } : {}),
-    ...(r.failingFiles ? { failingFiles: r.failingFiles } : {}),
-  };
-}
 
 /** Shared return shape for {@link Dispatcher.runSingleton} and {@link Dispatcher.runFanout}. */
 type PhaseTickOutcome = {
@@ -205,93 +157,6 @@ type PhaseTickOutcome = {
 };
 
 /**
- * How an agent invocation ended. A clean exit with no commit is a
- * clean-exit (the agent refused a constraint and said so in its final
- * message, captured here as `finalMessage` — lifted from the transcript by
- * the adapter's own `extractFinalMessage`, spec/chain.md "The agent seam");
- * any process failure is a platform-preempt (not a defect in the work); the
- * no-commit classification consults this distinction only when the tick
- * produced nothing usable.
- *
- * When a commit lands, `runFanout`'s ship classification consults it too
- * (spec/pending.md "Ship detection trusts the agent's own account", ruling
- * 2026-08-03): a `clean` termination's final message is the agent's own
- * account of what it did, so a stated park there still keeps the entry out
- * of `shipped` even though its commit landed and its gates passed. A
- * `process-failure` never "says" anything of its own — `failureClass` is
- * engine-authored, not agent prose — so it never blocks shipping on that
- * basis; a commit it left behind is honored exactly as a clean one would be.
- *
- * `promptPath` is the persisted rendered prompt the run was handed
- * (spec/prompt.md "The rendered prompt is persisted before the agent runs").
- * On the termination rather than beside it because `invokeAgent` is the one
- * seam every run passes through: a run cannot exist without its record, and
- * the type says so instead of a call-order comment.
- */
-type AgentTermination =
-  | { kind: "clean"; promptPath: string; finalMessage: string; usage?: AgentUsage }
-  | { kind: "process-failure"; promptPath: string; failureClass: string; usage?: AgentUsage };
-
-/**
- * What one agent attempt left behind, whatever fate it reached — the record
- * half of {@link AttemptOutcome}.
- */
-type AttemptFacts = {
-  /** Every afterCommit gate row this attempt produced, the failing row included. */
-  gateResults: ReportedGateResult[];
-  /** No-commit mode when the attempt produced no usable commit; absent when its span survived. */
-  noCommit?: NoCommitMode;
-  /**
-   * The tip-verify backstop refused: the base this worktree branched from is
-   * no longer an ancestor of the HEAD the agent left on its private branch,
-   * so the span was soft-reset and never reached the merge stage.
-   */
-  tipMoved?: boolean;
-  /**
-   * The reverted commit's touched paths, captured before `dropLastCommit`
-   * discarded it — set only alongside `noCommit: "gate-revert"`, so a caller
-   * can land the footprint that never reached trunk on its own.
-   */
-  footprint?: string[];
-  /** Set only alongside `noCommit: "gate-revert"` — the blamed record of the failing gate. */
-  gateFailure?: GateFailure;
-};
-
-/**
- * The outcome of {@link Dispatcher.runAttempt} — render → tip read → invoke
- * → tip verify → afterCommit gates → revert — in the one vocabulary both
- * concurrencies' merge stages read.
- *
- * `committed` discriminates. A committed attempt always names the span it
- * produced and the termination that produced it, so neither caller's merge
- * stage reaches for an assertion to pick it up. An uncommitted one carries
- * `spanBase` once the agent ran at all (the tip it branched from, reported
- * as the tick's `baseSha`), `headSha` when a commit landed and was then lost
- * to the ancestry refusal or the afterCommit revert, and `termination`
- * whenever `invokeAgent` ran — all three absent when the render refused.
- */
-type AttemptOutcome =
-  | (AttemptFacts & {
-      committed: true;
-      /**
-       * The tip the agent branched from — read inside the worktree right
-       * before the invocation, so a `setupWorktree` commit is already behind
-       * it. The ancestry check's base, the afterCommit gates' span base, and
-       * the start of the range the merge stage picks.
-       */
-      spanBase: string;
-      /** The span's tip: the worktree HEAD the agent left, gates green. */
-      headSha: string;
-      termination: AgentTermination;
-    })
-  | (AttemptFacts & {
-      committed: false;
-      spanBase?: string;
-      headSha?: string;
-      termination?: AgentTermination;
-    });
-
-/**
  * One provisioned fanout entry's fate, as the wave's merge loop reads it:
  * the attempt's own outcome plus the entry and worktree facts the merge
  * stage acts on. `declined` is the one fate that never reaches an attempt —
@@ -312,61 +177,6 @@ type EntryAttempt = AttemptOutcome & {
   /** `phase.shouldRun` declined this entry before the agent was invoked. */
   declined?: boolean;
 };
-
-/** Hex width of the entry-bytes half of a {@link quarantineKey}. */
-const QUARANTINE_KEY_HASH_LENGTH = 10;
-
-/**
- * spec/loop.md "Repeated identical failures — quarantine, then abort": the
- * run-scoped quarantine key for one entry **as read** — its slug and a hash
- * of its bytes in `pending.json`, joined `slug@hash`.
- *
- * The hash covers the entry's whole parsed shape, so any edit to it — a
- * re-scoped `files`, a widened `summary`, a changed gate — yields a new key
- * and lifts a hold the old key still carries, with no stop-and-relaunch (a
- * slug-only key survived a re-scope and forced exactly that, field report
- * 0.12.0). The parse is `PendingSchema`'s strict object, so every field in
- * the file survives into the hashed JSON and none is invented: two ticks
- * reading identical file content always agree on the key, and a whitespace
- * reformat — which re-scopes nothing — never lifts a hold.
- *
- * **`observedFiles` is excluded, declared divergence from spec/loop.md's
- * "a hash of its bytes".** That field is the engine's own accretion, not a
- * declaration anyone re-scoped: `commitPendingUpdate` merges a failed
- * attempt's footprint onto the entry in the *same* wave that blames it, so
- * hashing it would have every merge- and gate-stage quarantine mint a fresh
- * key on the next read and lift its own hold — the run re-attempts the wall
- * at full agent price, which is the burn the section exists to prevent.
- * A key identifying the work as declared cannot be keyed on the engine's
- * notes about it (`.claude/rules/engine-boundary.md`, *Told, not
- * inferred*). Every other write-back is a real state change and re-keys
- * deliberately.
- *
- * Like a failure signature, the result is an **opaque equality key**:
- * written by the engine, compared by the engine, never parsed apart by
- * either side of the `FLUME_QUARANTINED_SLUGS` channel.
- */
-export function quarantineKey(entry: PendingEntry): string {
-  const { observedFiles: _engineAccretion, ...declared } = entry;
-  const hash = createHash("sha1")
-    .update(JSON.stringify(declared))
-    .digest("hex")
-    .slice(0, QUARANTINE_KEY_HASH_LENGTH);
-  return `${slugify(entry.tag)}@${hash}`;
-}
-
-/**
- * The entry-scoping half of every stage-failure record, filled from the
- * entry the failure is blamed on. One home for the `tag`/`quarantineKey`
- * pairing {@link StageFailureEntry} types — a call site that has the entry
- * spreads this rather than rebuilding either half.
- */
-function blamedOn(entry: PendingEntry): {
-  tag: string;
-  quarantineKey: string;
-} {
-  return { tag: entry.tag, quarantineKey: quarantineKey(entry) };
-}
 
 /**
  * The state root's path relative to the primary repo root **in git's own
@@ -399,27 +209,6 @@ export function computeStateRootRel(
   const rel = relative(repoRoot, flumeDir);
   const outside = rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
   return outside ? undefined : gitPath(rel);
-}
-
-/**
- * {@link GateFailure.signature}: derived from the gate's own name plus its
- * failure output, so two different gates failing with the same message text
- * (or the same gate failing with two different messages) never collide.
- */
-function gateFailureSignature(failure: { gate: string; message: string }): string {
-  return bound(`${failure.gate}: ${failure.message}`.trim(), MAX_FAILURE_SIGNATURE);
-}
-
-/**
- * What a tick's chain declares about how long an agent invocation runs and how
- * long its tree gets to go — the two `AgentInvocation` (`src/Agent.ts`)
- * fields a tick carries over from its `supervisorPolicy` (`src/Phase.ts`), in
- * that seam's own optional shape: absent is what tells a provider nothing was
- * declared.
- */
-interface AgentBounds {
-  timeoutMs?: number;
-  killGraceMs?: number;
 }
 
 /**
@@ -943,6 +732,62 @@ export class Dispatcher {
   }
 
   /**
+   * What one agent attempt (`src/tickAttempt.ts`) reads, composed from what
+   * this dispatcher already holds. Composed on read for the same reason
+   * {@link worktreeCtx} is — it carries that context, whose last field the
+   * per-tick chain load supplies — and never stored, so no attempt can run
+   * against a snapshot taken before the tick resolved its chain.
+   */
+  private get attemptCtx(): AttemptContext {
+    return {
+      configDir: this.opts.configDir,
+      configDirRel: computeStateRootRel(
+        this.opts.repoRoot,
+        this.opts.configDir,
+      ),
+      flumeDir: this.flumeDir,
+      stateRootRel: this.stateRootRel,
+      pendingPath: this.pendingPath,
+      worktreeCtx: this.worktreeCtx,
+      attempts: this.attempts,
+      bounds: this.bounds,
+      ...(this.opts.stopSignal !== undefined
+        ? { stopSignal: this.opts.stopSignal }
+        : {}),
+      log: this.log,
+    };
+  }
+
+  /** What `runGate` (`src/gateRun.ts`) needs from this dispatcher's afterMerge loops. */
+  private get gateScope(): GateRunScope {
+    return { worktreeCtx: this.worktreeCtx, log: this.log };
+  }
+
+  /**
+   * {@link selectBatch} bound to this dispatcher's own two knobs: the run's
+   * live quarantine, and the parallelism ceiling the chain's own declaration
+   * overrides. Bound here so the wave, the preview of that wave, and the
+   * post-wave re-derivation all reach the one selection the same way
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*).
+   */
+  private selection(
+    chain: Chain,
+    pending: readonly PendingEntry[],
+    isForkResolved: (slug: string) => boolean,
+  ) {
+    return selectBatch({
+      chain,
+      pending,
+      isForkResolved,
+      ...(this.opts.quarantinedSlugs !== undefined
+        ? { quarantinedSlugs: this.opts.quarantinedSlugs }
+        : {}),
+      maxParallel: this.maxParallel,
+    });
+  }
+
+  /**
    * The grace an agent tree this dispatcher aborts gets between its SIGTERM
    * and the SIGKILL that follows: what the chain {@link tick} resolved
    * declares, the engine's own {@link DEFAULT_KILL_GRACE_MS} where it declares
@@ -1270,11 +1115,7 @@ export class Dispatcher {
     // chain's declared knobs — taken from the one derivation `runFanout`
     // runs, never re-spelled here (.claude/rules/engineering.md, "A module
     // is one job").
-    const { pickable, batches } = this.selectBatch(
-      chain,
-      pending,
-      isForkResolved,
-    );
+    const { pickable, batches } = this.selection(chain, pending, isForkResolved);
 
     let entry: PendingEntry | undefined;
     if (phase.concurrency === "fanout") {
@@ -1341,247 +1182,6 @@ export class Dispatcher {
       ...(entry !== undefined ? { entry } : {}),
       pickable,
       prompt,
-    };
-  }
-
-  // ---------- selection ----------
-
-  /**
-   * The batch a fanout tick would carry off this queue, and the selection
-   * facts it is drawn from — one derivation for `runFanout`, which runs the
-   * wave, and `render`, which previews it. The two `supervisorPolicy` reads
-   * are spelled here alone, so a preview and the tick it previews cannot
-   * disagree about which entry goes first
-   * (.claude/rules/engineering.md, "A module is one job").
-   *
-   * `batches` is empty exactly when `pickable` is; both callers answer that
-   * case in their own vocabulary before reading a batch.
-   */
-  private selectBatch(
-    chain: Chain,
-    pending: readonly PendingEntry[],
-    isForkResolved: (slug: string) => boolean,
-  ): {
-    pickable: PendingEntry[];
-    /**
-     * Entries the gate switch would pick, but this run's live quarantine
-     * drops anyway — key beside tag, so a chain's handoff can tell
-     * "quarantined open" from "genuinely pickable" without re-deriving it,
-     * and can see which read of the entry the hold stands under. Keyed on
-     * the entry as read: an entry re-scoped on trunk hashes to a new key, so
-     * the next tick picks it up without a relaunch.
-     */
-    quarantinedTags: { tag: string; key: string }[];
-    batches: PendingEntry[][];
-    /**
-     * The globs `batches` was partitioned under — reported rather than
-     * re-read by a caller, so the footprint recorder filters through exactly
-     * the list the partition collided on.
-     */
-    partitionIgnore: string[];
-  } {
-    // The environment facts this chain asserts, matched against each entry's
-    // `requiresCapability` gate.
-    const capabilities = new Set(chain.capabilities ?? []);
-    // A slug the supervisor quarantined earlier this run (its worktree
-    // provisioning failed on a prior tick) is dropped here — `pending.json`
-    // itself is untouched, so a fresh run/process retries it from scratch.
-    const quarantinedSlugs = this.opts.quarantinedSlugs;
-    const eligible = gateEligible(pending, isForkResolved, capabilities);
-    const pickable = eligible.filter(
-      (e) => !heldByQuarantine(e, quarantinedSlugs),
-    );
-    // spec/pending.md "Fanout partition — disjoint touched paths":
-    // `partitionIgnore` narrows the collision set only — `declaredPaths`
-    // (fence, write guard, ship detection) is untouched. Both knobs are
-    // chain-overridable defaults (.claude/rules/engine-boundary.md's
-    // policy-constant rule); `chain` is this tick's freshly-resolved chain,
-    // so reading its declaration at the point of use is byte-identical to a
-    // per-run bind.
-    const partitionIgnore = chain.supervisorPolicy?.partitionIgnore ?? [];
-    return {
-      pickable,
-      quarantinedTags: eligible
-        .filter((e) => heldByQuarantine(e, quarantinedSlugs))
-        .map((e) => ({ tag: e.tag, key: quarantineKey(e) })),
-      batches: partitionByFileOverlap(pickable, {
-        maxParallel: chain.supervisorPolicy?.maxParallel ?? this.maxParallel,
-        ignore: partitionIgnore,
-      }),
-      partitionIgnore,
-    };
-  }
-
-  // ---------- the attempt both concurrencies make ----------
-
-  /**
-   * One agent attempt inside a provisioned worktree: render → tip read →
-   * invoke → tip verify → afterCommit gates → revert. The one sequence both
-   * concurrencies run — a singleton on the wave-of-one worktree it
-   * provisioned for the phase (spec/worktrees.md, "Singleton runs in a
-   * worktree"), a fanout entry on its own — rather than two legs spelling
-   * the same steps and differing only in how they return
-   * (.claude/rules/engineering.md, "A module is one job").
-   *
-   * What each caller still owns is what surrounds the attempt: the
-   * `shouldRun` consult (a singleton takes it before provisioning, so a
-   * decline costs no worktree; a fanout entry takes it per entry, after),
-   * the merge stage, and the verdict vocabulary each reports in.
-   */
-  private async runAttempt(opts: {
-    phase: Phase;
-    chain: Chain;
-    agent: Agent;
-    /** The worktree this attempt runs in — provisioned and set up by the caller. */
-    wt: { path: string; branch: string };
-    /**
-     * This attempt's `TickContext`, built by the caller: a singleton reads
-     * the whole queue and carries no assignment, a fanout entry carries its
-     * assignment and no queue.
-     */
-    ctx: TickContext;
-    /**
-     * The prior-attempt slot this attempt reads its retry input from and
-     * writes every refusal record to. It lives at the repo root, not in this
-     * fresh worktree, so a reverted attempt's record survives into the next
-     * tick's brand-new one.
-     */
-    ref: PriorAttemptRef;
-    /** What every log line and record here is keyed by: the entry tag under fanout, the phase name for a singleton. */
-    label: string;
-    /** The entry a fanout attempt carries; absent for a singleton, which assigns none. */
-    entry?: PendingEntry;
-    extraEnv?: Record<string, string>;
-  }): Promise<AttemptOutcome> {
-    const { phase, chain, agent, wt, ctx, ref, label, entry } = opts;
-    const prior = await this.attempts.read(ref);
-
-    const argsResult = await this.resolvePromptArgs(phase, ctx, ref, label);
-    if (!argsResult.ok) {
-      // A thrown `promptArgs` never reaches the render, and lands on the
-      // render's own refusal — same no-commit mode, same persisted record
-      // (spec/chain.md, "What a hook receives").
-      return { committed: false, gateResults: [], noCommit: "render-refused" };
-    }
-
-    let prompt: string;
-    try {
-      prompt = await renderPrompt({
-        phase,
-        flumeDir: this.flumeDir,
-        promptFile: phasePromptPath(this.opts.configDir, phase.promptPath),
-        cwd: wt.path,
-        args: argsResult.args,
-        ...(entry ? { assignedEntry: entry } : {}),
-        ...(prior ? { priorAttempt: prior } : {}),
-      });
-    } catch (err) {
-      if (!(err instanceof InlineExecRenderError)) throw err;
-      // An unresolved inline-exec span aborts the render — the agent is
-      // never invoked. Distinct from clean-exit/platform-preempt: no agent
-      // ran at all.
-      await this.persistRenderRefused(ref, label, err);
-      return { committed: false, gateResults: [], noCommit: "render-refused" };
-    }
-
-    // Fresh read, not the tip the worktree was provisioned from: the two
-    // agree unless `setupWorktree` itself committed something.
-    const spanBase = await git.revParse(wt.path);
-    const termination = await this.invokeAgent(
-      phase,
-      ref.key,
-      wt.path,
-      prompt,
-      agent,
-      this.bounds,
-      opts.extraEnv,
-      entry?.tag,
-    );
-    const headSha = await git.revParse(wt.path);
-
-    if (headSha === spanBase) {
-      // No commit, no gate: classify and persist the matching prior-attempt
-      // record — the durable channel, so an attempt that keeps exiting clean
-      // at the same wall is legible without reading session logs. A clean
-      // exit that produced nothing is a clean-exit; any process failure is a
-      // platform-preempt (not a defect in the work).
-      const mode = await this.classifyNoCommit(ref, termination);
-      this.log.warn(`[flume] ${label}: ${mode} (no commit)`);
-      return {
-        committed: false,
-        gateResults: [],
-        noCommit: mode,
-        spanBase,
-        termination,
-      };
-    }
-
-    // Tip verify (spec/loop.md "Tip verify"): the agent commits directly in
-    // this worktree, so verify after the fact — but ancestry, not parent
-    // equality. The worktree's own branch is private to this attempt, so an
-    // agent that commits, keeps working, and commits again has produced a
-    // completed multi-commit span, not interference; only a base that is no
-    // longer an ancestor of the observed HEAD means something reset or
-    // rewrote the branch out from under the agent.
-    if (
-      await this.checkTipMovedPerEntry(wt.path, label, ref, spanBase, headSha)
-    ) {
-      return {
-        committed: false,
-        gateResults: [],
-        tipMoved: true,
-        spanBase,
-        headSha,
-        termination,
-      };
-    }
-
-    // The ancestry check above cleared the whole span as one completed unit
-    // (spec/loop.md "N commits are completion") — gate the span's cumulative
-    // footprint, not just `headSha`'s own single-commit diff, so a gate
-    // can't miss what an earlier commit in the span touched.
-    const verdict = await this.runAfterCommitGates(
-      phase,
-      wt.path,
-      headSha,
-      entry,
-      spanBase,
-    );
-    if (!verdict.ok) {
-      // This revert never reaches the merge stage, so it's the only chance
-      // to capture what the commit actually touched — `runAfterCommitGates`
-      // already computed this for its gate loop
-      // (.claude/rules/engineering.md "The fix lands at the mechanism"), so
-      // reuse it instead of re-deriving via a second `git show --name-only`
-      // before dropLastCommit discards the evidence.
-      const { footprint, gateFailure } = await this.revertAfterCommitFailure(
-        chain,
-        wt.path,
-        headSha,
-        ref,
-        label,
-        entry,
-        verdict.failure!,
-        verdict.touchedPaths,
-      );
-      return {
-        committed: false,
-        gateResults: verdict.results,
-        noCommit: "gate-revert",
-        footprint,
-        gateFailure,
-        spanBase,
-        headSha,
-        termination,
-      };
-    }
-
-    return {
-      committed: true,
-      gateResults: verdict.results,
-      spanBase,
-      headSha,
-      termination,
     };
   }
 
@@ -1774,7 +1374,7 @@ export class Dispatcher {
     // → tip read → invoke → tip verify → afterCommit gates → revert. What is
     // left below is the singleton's own merge stage and its verdict
     // vocabulary.
-    const attempt = await this.runAttempt({
+    const attempt = await runAttempt(this.attemptCtx, {
       phase,
       chain,
       agent,
@@ -1875,23 +1475,27 @@ export class Dispatcher {
         );
         let entryFailure: ReportedGateResult | undefined;
         for (const gate of afterMergeGates) {
-          const gr = await this.runGate(gate, {
-            cwd: repoRoot,
-            repoRoot,
-            flumeDir: this.flumeDir,
-            stateRootRel: this.stateRootRel,
-            pendingPath: this.pendingPath,
-            configDir: this.opts.configDir,
-            phaseName: phase.name,
-            commitSha: mergedSha,
-            touchedPaths: commitTouchedPaths,
-            // The span's base, not `preCherry`: an afterMerge gate
-            // reading trunk needs the tip the agent branched from to
-            // tell an input this tick ignored from one that landed
-            // after it started (spec/chain.md "What a gate receives").
-            baseSha: spanBase,
-            log: (l) => this.log.info(l),
-          });
+          const gr = await runGate(
+            gate,
+            {
+              cwd: repoRoot,
+              repoRoot,
+              flumeDir: this.flumeDir,
+              stateRootRel: this.stateRootRel,
+              pendingPath: this.pendingPath,
+              configDir: this.opts.configDir,
+              phaseName: phase.name,
+              commitSha: mergedSha,
+              touchedPaths: commitTouchedPaths,
+              // The span's base, not `preCherry`: an afterMerge gate
+              // reading trunk needs the tip the agent branched from to
+              // tell an input this tick ignored from one that landed
+              // after it started (spec/chain.md "What a gate receives").
+              baseSha: spanBase,
+              log: (l) => this.log.info(l),
+            },
+            this.gateScope,
+          );
           const row = reportedGateRow(gate.name, gr);
           gateResults.push(row);
           if (!gr.ok) {
@@ -2089,7 +1693,7 @@ export class Dispatcher {
     // "quarantined open" from "genuinely pickable" without re-deriving it
     // from pendingAfter.
     const { pickable, quarantinedTags, batches, partitionIgnore } =
-      this.selectBatch(chain, pending, isForkResolved);
+      this.selection(chain, pending, isForkResolved);
 
     if (pickable.length === 0) {
       // No agent ran — not a no-commit *agent* tick, so nothing to classify.
@@ -2454,26 +2058,30 @@ export class Dispatcher {
       // detection trusts the agent's own account").
       const entryMergeGateResultsStart = mergeGateResults.length;
       for (const gate of afterMergeGates) {
-        const gr = await this.runGate(gate, {
-          cwd: repoRoot,
-          repoRoot,
-          flumeDir: this.flumeDir,
-          stateRootRel: this.stateRootRel,
-          pendingPath: this.pendingPath,
-          configDir: this.opts.configDir,
-          phaseName: phase.name,
-          commitSha: mergedSha,
-          touchedPaths: commitTouchedPaths,
-          entry: r.entry,
-          // This entry's own span base, not `preCherry`: the tip its agent
-          // branched from, so an afterMerge gate reading trunk can tell an
-          // input the entry ignored from one that landed after it started
-          // (spec/chain.md "What a gate receives"). Sibling entries in the
-          // same wave were provisioned from the same tip, and each carries
-          // its own value regardless.
-          baseSha: r.spanBase,
-          log: (l) => this.log.info(l),
-        });
+        const gr = await runGate(
+          gate,
+          {
+            cwd: repoRoot,
+            repoRoot,
+            flumeDir: this.flumeDir,
+            stateRootRel: this.stateRootRel,
+            pendingPath: this.pendingPath,
+            configDir: this.opts.configDir,
+            phaseName: phase.name,
+            commitSha: mergedSha,
+            touchedPaths: commitTouchedPaths,
+            entry: r.entry,
+            // This entry's own span base, not `preCherry`: the tip its agent
+            // branched from, so an afterMerge gate reading trunk can tell an
+            // input the entry ignored from one that landed after it started
+            // (spec/chain.md "What a gate receives"). Sibling entries in the
+            // same wave were provisioned from the same tip, and each carries
+            // its own value regardless.
+            baseSha: r.spanBase,
+            log: (l) => this.log.info(l),
+          },
+          this.gateScope,
+        );
         const row = reportedGateRow(gate.name, gr);
         mergeGateResults.push(row);
         if (!gr.ok) {
@@ -2855,7 +2463,7 @@ export class Dispatcher {
         ...(chorSha ? { commitSha: chorSha } : {}),
         gateResults: allGateResults,
         pendingAfter: pendingAfterWave,
-        pickableAfter: this.selectBatch(chain, pendingAfterWave, isForkResolved)
+        pickableAfter: this.selection(chain, pendingAfterWave, isForkResolved)
           .pickable,
         flumeDir: this.flumeDir,
         configDir: this.opts.configDir,
@@ -2940,7 +2548,7 @@ export class Dispatcher {
 
     return {
       ...site,
-      ...(await this.runAttempt({
+      ...(await runAttempt(this.attemptCtx, {
         phase,
         chain,
         agent,
@@ -3056,346 +2664,6 @@ export class Dispatcher {
   }
 
   /**
-   * Tip verify's guarded revert, for a commit the agent
-   * made itself. `expectedSha` is `postHead`, the commit this call's own
-   * caller just observed.
-   *
-   * Mirrors `git.dropLastCommit`'s guarded-revert idiom, reconfirming the
-   * tip is still `expectedSha` immediately
-   * before resetting, so a second race (the ref moving again in the gap
-   * between observing `postHead` and reverting it) refuses loudly rather
-   * than silently dropping a commit this call never observed at the tip.
-   * Soft, not hard, unlike `dropLastCommit`: the agent's work was never at
-   * fault, so it survives as uncommitted changes on disk rather than being
-   * discarded.
-   *
-   * `resetToSha` is always the recorded base — every worktree branch (a
-   * fanout entry's, or, since spec/worktrees.md "Singleton runs in a
-   * worktree", a singleton phase's own) is a private ref with exactly one
-   * legitimate writer, so the target is always that branch's own start
-   * point. The trunk's former shared-ref ambiguity — which needed a
-   * commit-*count* revert because the dispatcher couldn't tell its own
-   * commits from an interleaved operator's — no longer has a caller: a
-   * singleton tick's agent now commits on a private branch same as a fanout
-   * entry's, never on the trunk directly.
-   */
-  private async revertTipMovedCommit(
-    cwd: string,
-    expectedSha: string,
-    resetToSha: string,
-  ): Promise<void> {
-    const currentTip = await git.revParse(cwd);
-    if (currentTip !== expectedSha) {
-      throw new Error(
-        `tip-verify revert refused: current tip ${currentTip} does not ` +
-          `match expected ${expectedSha} — this call did not observe the ` +
-          `commit at the current tip, refusing to reset`,
-      );
-    }
-    await git.softResetTo(cwd, resetToSha);
-  }
-
-  /**
-   * Tip verify (spec/loop.md "Tip verify", "Per-entry leg —
-   * private ref, ancestry, N commits are completion"). Every worktree branch
-   * — a fanout entry's or a singleton phase's own (spec/worktrees.md
-   * "Singleton runs in a worktree") — has exactly one legitimate writer:
-   * this tick's agent. The check is ancestry — the recorded base must be an
-   * ancestor of the observed HEAD — so a multi-commit span never trips this
-   * on its own account; the caller runs the whole span's gates and
-   * cherry-picks it like a single-commit entry once this returns `false`.
-   *
-   * Refusal fires only when the base is *not* an ancestor of `postHead`,
-   * which on a private branch means something reset or rewrote it out from
-   * under the agent. Both the log line and the persisted record name
-   * `postHead` itself as the observed tip — never `postHead`'s parent alone,
-   * which would read the agent's own work as the intruder and leave the top
-   * commit undiscoverable (the flume 0.10.1 field trace this split closes).
-   */
-  private async checkTipMovedPerEntry(
-    cwd: string,
-    label: string,
-    ref: PriorAttemptRef,
-    preHead: string,
-    postHead: string,
-  ): Promise<boolean> {
-    const ancestor = await git.isAncestor(cwd, preHead, postHead);
-    if (ancestor) return false;
-    await this.revertTipMovedCommit(cwd, postHead, preHead);
-    await this.attempts.write(ref, buildTipMoved(preHead, postHead));
-    this.log.warn(
-      `[flume] ${label}: tip moved (no commit) — expected ${preHead}, found ${postHead}`,
-    );
-    return true;
-  }
-
-  private async invokeAgent(
-    phase: Phase,
-    key: string,
-    cwd: string,
-    prompt: string,
-    agent: Agent,
-    bounds: AgentBounds,
-    extraEnv?: Record<string, string>,
-    /**
-     * The provisioned entry's tag under fanout; omitted by the singleton
-     * caller, which has no entry — the same rule the {@link
-     * TickVerdictInvocation} row this call produces already follows.
-     */
-    entryTag?: string,
-  ): Promise<AgentTermination> {
-    // Before the try: a record that cannot be written refuses the run
-    // outright rather than reading as a platform-preempt of a run that
-    // never started (.claude/rules/engineering.md "Loud or nothing").
-    const promptPath = await this.recordRenderedPrompt(key, prompt);
-    try {
-      const result = await agent.invoke({
-        cwd,
-        prompt,
-        ...(entryTag !== undefined ? { entryTag } : {}),
-        ...bounds,
-        // The tick's own teardown, reaching the one process a tick starts
-        // that outlives a bare `process.exit` (spec/loop.md, "The loop lock
-        // and the tip claim").
-        ...(this.opts.stopSignal !== undefined
-          ? { signal: this.opts.stopSignal }
-          : {}),
-        onStdout: (chunk) => process.stdout.write(chunk),
-        onStderr: (chunk) => process.stderr.write(chunk),
-        ...(extraEnv ? { extraEnv } : {}),
-      });
-      if (result.exitCode !== 0) {
-        // A non-zero exit is a process failure, not the agent's own clean
-        // exit: crash, OOM/SIGKILL, auth, or rate-limit surfaced as a
-        // non-zero code. A platform-preempt — not a defect in the work.
-        const failureClass = `agent process exited with code ${result.exitCode} (non-work failure: crash, kill, auth, or rate-limit surfaced as a non-zero exit)`;
-        this.log.warn(`[flume] ${phase.name}: ${failureClass}`);
-        return {
-          kind: "process-failure",
-          promptPath,
-          failureClass,
-          ...(result.usage ? { usage: result.usage } : {}),
-        };
-      }
-      // Clean exit. `result.finalMessage` is the agent's closing prose,
-      // already lifted from the full transcript by the adapter — recorded
-      // verbatim, read for intent by the chain and never here.
-      return {
-        kind: "clean",
-        promptPath,
-        finalMessage: result.finalMessage ?? "",
-        ...(result.usage ? { usage: result.usage } : {}),
-      };
-    } catch (err) {
-      // Swallow abort/timeout/spawn errors so a single bad invocation doesn't
-      // tear down the loop. The post-invocation `git rev-parse` still runs,
-      // so any commit the agent managed to make before aborting is honored;
-      // otherwise the phase falls through with `committed: false`. Either way
-      // this is a platform-preempt — not a defect in the work.
-      const e = err as Error & { name?: string; code?: string };
-      const failureClass =
-        e.name === "AbortError" || e.code === "ABORT_ERR"
-          ? "agent process aborted (per-tick timeout or dispatcher signal)"
-          : `agent process error before exit: ${e.message}`;
-      this.log.warn(`[flume] ${phase.name}: ${failureClass}`);
-      return { kind: "process-failure", promptPath, failureClass };
-    }
-  }
-
-  /**
-   * The one place a gate's `run` is called — every gate-run site in this
-   * class goes through here rather than pasting its own guard
-   * (`.claude/rules/engineering.md` "The fix lands at the mechanism").
-   *
-   * **A gate that throws is a gate that failed** (spec/chain.md "What a gate
-   * returns"): the throw is recorded as `{ ok: false, message: <the error's
-   * message>, details: <its stack> }` and the tick continues into exactly the
-   * bookkeeping a returned refusal gets — verdict written, merge reverted or
-   * refused. A gate's exception is a fact about the gate, never a reason to
-   * lose the tick's facts or to strand a merge behind the crash marker
-   * (spec/loop.md "Crash equals stop").
-   *
-   * The stack rides as `details` because that is the field a returned refusal
-   * carries its full output in — so the retry prompt and the prior-attempt
-   * record show the frame that raised, not one line of message. A throw with
-   * no stack — a non-`Error` value, or an `Error` whose `stack` was stripped —
-   * records **no** `details` rather than a second copy of `message`: a
-   * duplicated line reads as evidence while carrying none
-   * (`.claude/rules/engineering.md` "Derived state is computed, never restated
-   * beside its source").
-   *
-   * It is also the one **reclamation** point for what a gate checked out:
-   * `withGateCheckouts` (`src/worktrees.ts`) scopes the invocation, and any
-   * detached tree the gate asked the API for (`api.git.checkoutAt`) is
-   * removed when this call unwinds — returned verdict and throw alike, so a
-   * differential gate that crashed mid-run cannot leak the tree it was
-   * reading (spec/chain.md "What a gate receives"). The scope takes the same
-   * `worktreeCtx` every other worktree call site here reads, so where a
-   * gate's checkout lands — declared base and job namespace both — is the
-   * placement the startup sweep goes on to read, never a second composition
-   * of it.
-   */
-  private async runGate(gate: Gate, ctx: GateContext): Promise<GateResult> {
-    try {
-      return await withGateCheckouts(this.worktreeCtx, () => gate.run(ctx));
-    } catch (err) {
-      const { message, stack } = throwFacts(err);
-      this.log.warn(
-        `[flume] gate '${gate.name}' threw: ${message}; recorded as that gate's failure`,
-      );
-      return { ok: false, message, ...(stack ? { details: stack } : {}) };
-    }
-  }
-
-  private async runAfterCommitGates(
-    phase: Phase,
-    cwd: string,
-    commitSha: string,
-    assignedEntry: PendingEntry | undefined,
-    /**
-     * Touched paths are the cumulative
-     * `spanBase..commitSha` diff rather than `commitSha`'s own single-commit
-     * diff — the whole-span gate (spec/loop.md "N commits are completion").
-     * Both a fanout entry's worktree branch and a singleton phase's own
-     * (spec/worktrees.md "Singleton runs in a worktree") are private refs
-     * whose ancestry check clears a multi-commit span as one completed tick.
-     */
-    spanBase: string,
-  ): Promise<{
-    ok: boolean;
-    /** First failing gate — the same row `results` carries, so a prior-attempt
-     * record a caller persists from it cannot name a different failure than the
-     * verdict reports. */
-    failure?: ReportedGateResult;
-    results: ReportedGateResult[];
-    /** The commit's touched paths, already computed for the gate loop below —
-     * exposed so callers don't re-derive via a second `git show --name-only`
-     * for the same commit (.claude/rules/engineering.md "The fix lands at
-     * the mechanism"). */
-    touchedPaths: string[];
-  }> {
-    // Entry-scoped write guard (spec/pending.md, "The entry-scoped write
-    // guard is opt-in, and off by default"). The whole decision — whether
-    // this tick is scoped at all, and to which paths — is `entryWriteScope`
-    // (`src/paths.ts`), the one call `renderPrompt` also makes to state the
-    // fence in the agent's prompt (.claude/rules/engineering.md "The fix
-    // lands at the mechanism"). Unscoped, a fanout tick's allowance is
-    // byte-identical to a singleton tick's — `writablePaths` alone.
-    const gates: Gate[] = [
-      ...phase.gates.filter((g) => g.when === "afterCommit"),
-      writablePathsGate(
-        phase.writablePaths,
-        entryWriteScope(phase, assignedEntry),
-      ),
-    ];
-    // Computed once per commit and shared across every gate this loop runs —
-    // chainLoadGate and writablePathsGate read it off the context instead of
-    // each shelling out its own `git show --name-only` for the same commit
-    // (.claude/rules/engineering.md "The fix lands at the mechanism").
-    const commitTouchedPaths = await git.diffNameOnly(cwd, spanBase, commitSha);
-    // `cwd` here is the fanout worktree (or a singleton's own worktree,
-    // spec/worktrees.md "Singleton runs in a worktree") — a fresh checkout
-    // that holds only tracked files at the same relative layout as the
-    // primary checkout. `this.opts.configDir` is resolved against the
-    // primary checkout, so an in-repo configDir is rebased onto `cwd` at its
-    // own relative offset rather than passed through verbatim, or a
-    // configDir relocated *within* the repo would point a gate at the wrong
-    // tree entirely. A configDir relocated *outside* the repo has no
-    // worktree mirror to rebase onto — the checkout carries only tracked
-    // files — so it passes through verbatim, and the escape test that
-    // decides which case this is comes from `computeStateRootRel` rather
-    // than being re-derived here (`.claude/rules/engineering.md` "The fix
-    // lands at the mechanism").
-    const configDirRel = computeStateRootRel(
-      this.opts.repoRoot,
-      this.opts.configDir,
-    );
-    const configDir =
-      configDirRel === undefined
-        ? this.opts.configDir
-        : join(cwd, configDirRel);
-    const results: ReportedGateResult[] = [];
-    for (const gate of gates) {
-      const r: GateResult = await this.runGate(gate, {
-        cwd,
-        repoRoot: cwd,
-        flumeDir: this.flumeDir,
-        stateRootRel: this.stateRootRel,
-        pendingPath: this.pendingPath,
-        configDir,
-        phaseName: phase.name,
-        commitSha,
-        touchedPaths: commitTouchedPaths,
-        baseSha: spanBase,
-        ...(assignedEntry ? { entry: assignedEntry } : {}),
-        log: (l) => this.log.info(l),
-      });
-      const row = reportedGateRow(gate.name, r);
-      results.push(row);
-      if (!r.ok) {
-        if (r.details) this.log.warn(r.details);
-        return {
-          ok: false,
-          failure: row,
-          results,
-          touchedPaths: commitTouchedPaths,
-        };
-      }
-    }
-    return { ok: true, results, touchedPaths: commitTouchedPaths };
-  }
-
-  /**
-   * The one `afterCommit`-revert path (spec/worktrees.md "Reverted prose
-   * survives the reset"): every afterCommit gate revert — a fanout entry's
-   * worktree commit or, since singleton moved into a worktree too
-   * (spec/worktrees.md "Singleton runs in a worktree"), a singleton phase's
-   * own — snapshots the commit's files before dropping it and writes the
-   * operator's revert note, whichever worktree it ran in. The former
-   * asymmetry — snapshot singleton-only, note fanout-only — collapsed with
-   * the paths themselves once both concurrencies commit to a private branch
-   * a tick tears down at the end.
-   *
-   * `label` names the entry tag or the phase name — both the revert note's
-   * filename and the log line use it. `blamed` is the fanout entry this
-   * revert is scoped to, and `undefined` for a singleton phase's own revert
-   * (no entry to quarantine — {@link StageFailureEntry}'s doc). The entry,
-   * not its tag: the returned {@link GateFailure} carries the quarantine key
-   * beside the tag, and only the entry as read can supply it.
-   */
-  private async revertAfterCommitFailure(
-    chain: Chain,
-    cwd: string,
-    sha: string,
-    ref: PriorAttemptRef,
-    label: string,
-    blamed: PendingEntry | undefined,
-    failure: ReportedGateResult,
-    touchedPaths: string[],
-  ): Promise<{ footprint: string[]; gateFailure: GateFailure }> {
-    const record = await buildGateRevert(
-      "afterCommit",
-      failure,
-      cwd,
-      sha,
-      touchedPaths,
-    );
-    await this.writeRevertNote(chain, cwd, sha, label, failure);
-    await this.attempts.snapshotReverted(cwd, sha, ref);
-    await git.dropLastCommit(cwd, sha);
-    await this.attempts.write(ref, record);
-    this.log.warn(`[flume] ${label}: commit reverted (${failure.message})`);
-    return {
-      footprint: touchedPaths,
-      gateFailure: {
-        ...(blamed ? blamedOn(blamed) : {}),
-        signature: gateFailureSignature(failure),
-        message: failure.message,
-      },
-    };
-  }
-
-  /**
    * Startup sweep over this dispatcher's own worktree base
    * ({@link sweepStaleWorktrees}, `src/worktrees.ts` — what it removes, and
    * what it deliberately leaves standing, is documented there). Stays a
@@ -3433,194 +2701,14 @@ export class Dispatcher {
     await sweepStaleWorktrees(this.worktreeCtx);
   }
 
-  // ---------- the operator's copy of a revert ----------
-
-  /**
-   * Subject + body of a commit, read while `sha` is still reachable (before
-   * the hard reset / commit drop). Best-effort: a failure here must not
-   * block the revert path.
-   */
-  private async capturedCommitMessage(
-    cwd: string,
-    sha: string,
-  ): Promise<{ subject: string; body: string }> {
-    try {
-      const { stdout: subject } = await execFileP(
-        "git",
-        ["show", "-s", "--format=%s", "--no-color", sha],
-        { cwd, maxBuffer: 4 * 1024 * 1024 },
-      );
-      const { stdout: body } = await execFileP(
-        "git",
-        ["show", "-s", "--format=%b", "--no-color", sha],
-        { cwd, maxBuffer: 4 * 1024 * 1024 },
-      );
-      return { subject: subject.trim(), body: body.trim() };
-    } catch {
-      return { subject: "(commit message unavailable)", body: "" };
-    }
-  }
-
-  /**
-   * When an afterCommit gate reverts a worktree's
-   * commit and `Chain.friction` is declared, write the operator's copy of
-   * the verdict — the gate name/message/details plus the reverted commit's
-   * subject+body — to `<friction>/<ISO-timestamp>--<tag>--reverted.md`
-   * before `git.dropLastCommit` discards the evidence. Written straight to
-   * the primary friction dir (harness code reaching into `flumeDir`, the
-   * sessions/harvest precedent) rather than the worktree-local mirror —
-   * this runs mid-wave (or mid-singleton-tick), well before that worktree's
-   * own teardown harvest.
-   *
-   * `tag` is the fanout entry's tag or, for a singleton phase's own
-   * afterCommit revert, the phase name (spec/worktrees.md "Singleton runs in
-   * a worktree" collapsed the former asymmetry — the note used to be
-   * fanout-only, since a singleton commit lived in the operator's own
-   * checkout until it was gated; now it lives in a worktree the tick tears
-   * down, so the note is what remains).
-   *
-   * Undeclared `chain.friction` is a no-op. Best-effort: a
-   * note-write failure must never block the revert it is documenting.
-   */
-  private async writeRevertNote(
-    chain: Chain,
-    cwd: string,
-    sha: string,
-    tag: string,
-    failure: { gate: string; message: string; details?: string },
-  ): Promise<void> {
-    if (chain.friction === undefined) return;
-    try {
-      const { subject, body } = await this.capturedCommitMessage(cwd, sha);
-      const stamp = fsStamp();
-      const primaryDir = join(this.flumeDir, chain.friction);
-      // win32 MAX_PATH (`.claude/rules/platform-facts.md`): TAG_MAX_LENGTH
-      // bounds only the filename component, not the friction dir's full
-      // depth. namespacedJoin (src/paths.ts) is the shared idiom.
-      await mkdir(namespacedJoin(primaryDir), { recursive: true });
-      const lines = [
-        `# Gate revert: ${failure.gate}`,
-        "",
-        failure.message,
-        ...(failure.details ? ["", "## Details", "", failure.details] : []),
-        "",
-        "## Reverted commit",
-        "",
-        subject,
-        ...(body ? ["", body] : []),
-        "",
-      ];
-      await writeFile(
-        namespacedJoin(primaryDir, `${stamp}--${tag}--reverted.md`),
-        lines.join("\n"),
-        "utf8",
-      );
-    } catch (err) {
-      this.log.warn(
-        `[flume] ${tag}: revert note write failed: ${(err as Error).message}`,
-      );
-    }
-  }
-
-  /**
-   * Classify a no-commit-no-gate tick and persist the matching
-   * prior-attempt record so the retry's prompt carries it. A clean agent exit that
-   * produced nothing is a **clean-exit** — the record carries the tail of
-   * the agent's final message and nothing about what the exit meant; a
-   * **platform-preempt** otherwise — the non-work failure class, explicitly
-   * not a defect in the work. Returns the mode for `TickOutcome` / the
-   * logger record.
-   */
-  private async classifyNoCommit(
-    ref: PriorAttemptRef,
-    termination: AgentTermination,
-  ): Promise<NoCommitMode> {
-    if (termination.kind === "clean") {
-      await this.attempts.write(ref, buildCleanExit(termination.finalMessage));
-      return "clean-exit";
-    }
-    await this.attempts.write(
-      ref,
-      buildPlatformPreempt(termination.failureClass),
-    );
-    return "platform-preempt";
-  }
-
-  /**
-   * Persist the fully rendered prompt before the agent runs (spec/prompt.md
-   * "The rendered prompt is persisted before the agent runs") and return
-   * its path relative to `flumeDir`, forward-slash, for the verdict's
-   * invocation row. `key` is the same prior-attempt key the retry record
-   * uses — the phase name for a singleton, the slugified tag for a fanout
-   * entry — so the two records for one span share a name. The timestamp
-   * keeps ticks apart; the key keeps a wave's entries apart. A write
-   * failure propagates: a tick whose input record cannot be kept does not
-   * spend an invocation (.claude/rules/engineering.md "Loud or nothing").
-   */
-  private async recordRenderedPrompt(
-    key: string,
-    prompt: string,
-  ): Promise<string> {
-    const dir = renderedPromptsDir(this.flumeDir);
-    const name = `${fsStamp()}-${slugify(key)}.md`;
-    await mkdir(namespacedJoin(dir), { recursive: true });
-    await writeFile(namespacedJoin(dir, name), prompt, "utf8");
-    return `${STATE_ROOT_NAMES.renderedPrompts}/${name}`;
-  }
-
-  /**
-   * Persist the render-refused record and log it — the one
-   * shared shape both the singleton and fanout render callsites route
-   * through (.claude/rules/engineering.md "The fix lands at the mechanism"),
-   * the same way {@link classifyNoCommit} above already centralizes the
-   * no-commit persist+log.
-   * Each callsite still builds its own return shape from here, matching how
-   * `classifyNoCommit`'s two callers already differ. `label` is the
-   * phase name (singleton) or entry tag (fanout) — whichever scope `key`
-   * itself was derived from.
-   */
-  private async persistRenderRefused(
-    ref: PriorAttemptRef,
-    label: string,
-    err: InlineExecRenderError,
-  ): Promise<void> {
-    await this.attempts.write(ref, buildRenderRefused(err.message));
-    this.log.warn(
-      `[flume] ${label}: render-refused (no commit): ${err.message}`,
-    );
-  }
-
-  /**
-   * A pre-invocation hook that threw, persisted the way the render's own
-   * refusal is (`spec/chain.md`, *What a hook receives*): same
-   * `render-refused` record, so the retry reads the hook and the frame that
-   * raised instead of running blind against a seam it cannot see failed. The
-   * caller supplies the no-commit outcome; this writes the record and says so
-   * once, for both hooks and both concurrencies.
-   */
-  private async persistHookRefusal(
-    ref: PriorAttemptRef,
-    label: string,
-    hook: "shouldRun" | "promptArgs",
-    err: unknown,
-  ): Promise<void> {
-    const { message, stack } = throwFacts(err);
-    await this.attempts.write(
-      ref,
-      buildRenderRefused(
-        `${hook} hook threw: ${message}${stack === undefined ? "" : `\n${stack}`}`,
-      ),
-    );
-    this.log.warn(
-      `[flume] ${label}: ${hook} threw: ${message}; render-refused (no commit)`,
-    );
-  }
-
   /**
    * `phase.shouldRun`, consulted for both concurrencies at one site — the
    * singleton leg before it provisions anything, the fanout leg per entry
    * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*;
-   * `runGate` is the same shape one seam over).
+   * `runGate` (`src/gateRun.ts`) is the same shape one seam over). Its
+   * refusal record is the attempt's own (`persistHookRefusal`,
+   * `src/tickAttempt.ts`), shared with the `promptArgs` consult the attempt
+   * makes rather than spelled twice.
    *
    * Three answers, not two. A throw is **refused**, never `declined`: a hook
    * that could not decide has not decided to skip (`spec/chain.md`, *What a
@@ -3639,33 +2727,12 @@ export class Dispatcher {
     try {
       verdict = phase.shouldRun(ctx);
     } catch (err) {
-      await this.persistHookRefusal(ref, label, "shouldRun", err);
+      await persistHookRefusal(this.attemptCtx, ref, label, "shouldRun", err);
       return "refused";
     }
     if (verdict) return "run";
     this.log.info(`[flume] ${label}: declined (shouldRun) — no invocation`);
     return "declined";
-  }
-
-  /**
-   * `phase.promptArgs`, called for both concurrencies at one site. A throw is
-   * `render-refused` (`spec/chain.md`, *What a hook receives*): the prompt
-   * never resolved, so the agent is never invoked and the record persisted is
-   * the one any other render refusal leaves. An absent hook is an empty map,
-   * exactly as before.
-   */
-  private async resolvePromptArgs(
-    phase: Phase,
-    ctx: TickContext,
-    ref: PriorAttemptRef,
-    label: string,
-  ): Promise<{ ok: true; args: Record<string, string> } | { ok: false }> {
-    try {
-      return { ok: true, args: phase.promptArgs?.(ctx) ?? {} };
-    } catch (err) {
-      await this.persistHookRefusal(ref, label, "promptArgs", err);
-      return { ok: false };
-    }
   }
 
   /**
@@ -3961,74 +3028,4 @@ function summarize(
   if (awaking.length > 0) parts.push(`→ ${awaking.join(",")}`);
   else parts.push(`→ hibernate`);
   return parts.join(" ");
-}
-
-/**
- * Pickability in the fanout context. The dispatcher's model: a dep is
- * satisfied iff it is no longer in pending (we remove entries on ship).
- * `requiresCapability` is pickable iff the chain's declared `capabilities`
- * asserts the entry's named capability.
- *
- * The foundations governor runs first: an entry whose `dependsOnForks`
- * contains any unresolved slug is not pickable, regardless of gate kind.
- * `isForkResolved` defaults to always-resolved so the check is a no-op when no
- * resolver is wired or no entry declares a fork dependency.
- */
-function isPickable(
-  entry: PendingEntry,
-  pending: readonly PendingEntry[],
-  isForkResolved: (slug: string) => boolean = () => true,
-  capabilities: ReadonlySet<string> = new Set(),
-): boolean {
-  if (!entry.dependsOnForks.every(isForkResolved)) return false;
-  switch (entry.gate.kind) {
-    case "open":
-      return true;
-    case "blockedBy": {
-      // Narrow into a local so the closure doesn't lose the discriminator.
-      const depTags = entry.gate.tags;
-      return depTags.every((depTag) => !pending.some((e) => e.tag === depTag));
-    }
-    case "parked":
-    case "deferred":
-      return false;
-    case "requiresCapability":
-      return capabilities.has(entry.gate.capability);
-  }
-}
-
-/** The entries `isPickable` clears, before this run's live quarantine is applied. */
-function gateEligible(
-  pending: readonly PendingEntry[],
-  isForkResolved: (slug: string) => boolean,
-  capabilities: ReadonlySet<string>,
-): PendingEntry[] {
-  return pending.filter((e) =>
-    isPickable(e, pending, isForkResolved, capabilities),
-  );
-}
-
-/** Whether this run's live quarantine holds the entry **as read** ({@link quarantineKey}). */
-function heldByQuarantine(
-  entry: PendingEntry,
-  quarantinedSlugs?: ReadonlySet<string>,
-): boolean {
-  return quarantinedSlugs?.has(quarantineKey(entry)) ?? false;
-}
-
-/**
- * `isPickable` plus the run's live quarantine drop — the same filter
- * `runSingleton`'s pre-tick selection, `Dispatcher.selectBatch` and
- * `TickResult.pickableAfter`'s post-tick re-derivation apply, so no two can
- * disagree on what "pickable" means at the moment each is taken.
- */
-function pickableEntries(
-  pending: readonly PendingEntry[],
-  isForkResolved: (slug: string) => boolean,
-  capabilities: ReadonlySet<string>,
-  quarantinedSlugs?: ReadonlySet<string>,
-): PendingEntry[] {
-  return gateEligible(pending, isForkResolved, capabilities).filter(
-    (e) => !heldByQuarantine(e, quarantinedSlugs),
-  );
 }

@@ -358,8 +358,9 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
 /**
  * The rejection an aborted invocation settles with, in the shape Node's own
  * `spawn({ signal })` produced before the teardown above replaced it: `name`
- * and `code` are what the dispatcher classifies a platform-preempt by
- * (`src/Dispatcher.ts`), and the signal's own reason rides as `cause` so a
+ * and `code` are what a tick classifies a platform-preempt by
+ * (`invokeAgent`, `src/tickAttempt.ts`), and the signal's own reason rides as
+ * `cause` so a
  * timeout and a stop signal stay distinguishable to a reader.
  */
 function abortError(reason: unknown): Error {

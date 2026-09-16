@@ -9,12 +9,19 @@
  * shape and its I/O live in their own file rather than inside whichever of
  * them happens to construct it (`.claude/rules/engineering.md`, *A module is
  * one job*).
+ *
+ * The small constructors of those vocabularies live here too — the row a
+ * gate's result becomes, the signature a stage failure is compared by, the
+ * two facts a throw reports — because every producer spells them the same
+ * way and a field decoded for one surface may not be dropped from the next.
  */
 
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 
 import type { AgentUsage } from "./Agent.js";
+import { bound } from "./bounds.js";
+import type { GateResult } from "./Gate.js";
 import { namespacedJoin, tickVerdictPath, tickVerdictsLogPath } from "./paths.js";
 import type { NoCommitMode } from "./Prompt.js";
 
@@ -145,6 +152,74 @@ export interface ReportedGateResult {
    * engine holds is reported, never rediscovered*).
    */
   failingFiles?: string[];
+}
+
+/** Bound on a persisted stage-failure signature (provision/merge/gate alike) — a comparison key, not a transcript. */
+export const MAX_FAILURE_SIGNATURE = 500;
+
+/**
+ * {@link GateFailure.signature}: derived from the gate's own name plus its
+ * failure output, so two different gates failing with the same message text
+ * (or the same gate failing with two different messages) never collide.
+ */
+export function gateFailureSignature(failure: {
+  gate: string;
+  message: string;
+}): string {
+  return bound(
+    `${failure.gate}: ${failure.message}`.trim(),
+    MAX_FAILURE_SIGNATURE,
+  );
+}
+
+/**
+ * What a throw reports: the message it raised and, when it has one, the stack
+ * that raised it. Every seam that answers a throw with a record rather than
+ * losing the tick reads it here — a gate's `{ message, details }`
+ * (`spec/chain.md`, *What a gate returns*) and a hook's render-refused record
+ * (*What a hook receives*) are the same two facts under two names, so the
+ * decoding is shared rather than re-derived beside each one
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * `stack` is absent rather than a second copy of `message` when the thrown
+ * value has none — a non-`Error`, or an `Error` whose `stack` was stripped —
+ * because a duplicated line reads as evidence while carrying none
+ * (*Derived state is computed, never restated beside its source*).
+ */
+export function throwFacts(err: unknown): { message: string; stack?: string } {
+  const message = err instanceof Error ? err.message : String(err);
+  const stack =
+    err instanceof Error && typeof err.stack === "string" && err.stack
+      ? err.stack
+      : undefined;
+  return stack ? { message, stack } : { message };
+}
+
+/**
+ * The one construction of a {@link ReportedGateResult} from the
+ * {@link GateResult} a gate just returned. Every reporting surface — the
+ * afterCommit loop, both afterMerge loops, and the failure record each hands
+ * to `buildGateRevert` — reads the row from here, so a field the engine
+ * decodes cannot reach one surface and be dropped from the next
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * Optional fields ride only when the gate authored them: `exactOptionalPropertyTypes`
+ * makes an explicit `undefined` a different shape from absence, and absence is
+ * what "the gate said nothing" means on disk.
+ */
+export function reportedGateRow(
+  gate: string,
+  r: GateResult,
+): ReportedGateResult {
+  return {
+    gate,
+    ok: r.ok,
+    message: r.message,
+    ...(r.details ? { details: r.details } : {}),
+    ...(r.verdict ? { verdict: r.verdict } : {}),
+    ...(r.skipped ? { skipped: r.skipped } : {}),
+    ...(r.failingFiles ? { failingFiles: r.failingFiles } : {}),
+  };
 }
 
 /**

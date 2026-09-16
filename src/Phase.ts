@@ -108,7 +108,7 @@ export interface TickContext {
    * queue with `blockedBy` resolved, every declared fork checked through
    * the chain's `forkResolver`, `requiresCapability` checked against
    * `Chain.capabilities`, and this run's quarantine drop applied — the same
-   * computation fanout selection uses (`isPickable`, `src/Dispatcher.ts`),
+   * computation fanout selection uses (`isPickable`, `src/selection.ts`),
    * so a singleton `shouldRun` and the next fanout tick cannot disagree
    * (spec/chain.md "What a hook receives"). A `shouldRun`/`promptArgs` hook
    * reads this instead of re-deriving pickability with its own copy of the
@@ -217,7 +217,7 @@ export interface FanoutEntryOutcome {
  * (spec/loop.md "Repeated identical failures — quarantine, then abort").
  *
  * The `key` is the hold's own identity — the entry's slug plus a hash of its
- * bytes in `pending.json` (`quarantineKey`, `src/Dispatcher.ts`) — reported
+ * bytes in `pending.json` (`quarantineKey`, `src/selection.ts`) — reported
  * beside the tag so a chain can see *which read* of the entry the hold
  * stands under. Editing the entry on trunk changes its key and lifts the
  * hold, so a chain comparing the key it saw last tick against this one reads
@@ -251,7 +251,7 @@ export interface TickResult {
   pendingAfter: readonly PendingEntry[];
   /**
    * `pendingAfter` filtered by the same dispatcher verdict as
-   * `TickContext.pickable` (`isPickable`, `src/Dispatcher.ts`), taken at the
+   * `TickContext.pickable` (`isPickable`, `src/selection.ts`), taken at the
    * same post-tick re-read as `pendingAfter` itself. A `handoff` that wakes a
    * sibling phase on "anything pickable" reads this instead of calling
    * `isPickableNow` with a default resolver and an empty capability set — a

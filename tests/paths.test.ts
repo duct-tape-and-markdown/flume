@@ -115,7 +115,7 @@ describe("entryWriteScopeUnion — entry.files ∪ entryChannelPaths, shared", (
 // Mechanism pin (ENTRY-WRITE-SCOPE-ONE-DERIVATION, per
 // .claude/rules/engineering.md "The fix lands at the mechanism"):
 // `prependHarnessBlock` (src/Prompt.ts) and `runAfterCommitGates`
-// (src/Dispatcher.ts) each used to spell the `assignedEntry &&
+// (src/tickAttempt.ts) each used to spell the `assignedEntry &&
 // phase.scopeWritesToEntry` test and the `declaredPaths(entry)` /
 // `phase.entryChannelPaths ?? []` pair for themselves, sharing only the
 // final union — so a one-sided edit could render a fence the write guard did

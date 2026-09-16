@@ -473,8 +473,8 @@ export interface RenderOptions {
    * Pending entry assigned to this tick (fanout phases only), read from the
    * same `TickContext` the dispatcher already threads through. When present,
    * the `<harness>` block states the *effective* fence — `entry.files ∪
-   * phase.entryChannelPaths` — as what the write guard (`src/Dispatcher.ts`
-   * `runAfterCommitGates`) actually enforces on this tick, naming
+   * phase.entryChannelPaths` — as what the write guard (`runAfterCommitGates`,
+   * `src/tickAttempt.ts`) actually enforces on this tick, naming
    * `phase.writablePaths` separately as the outer ceiling. Absent (singleton
    * ticks, or a fanout tick with no assignment) renders the unscoped block —
    * exact byte shape pinned by tests/Prompt.test.ts's "byte-identical to the

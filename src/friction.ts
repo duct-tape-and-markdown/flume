@@ -14,8 +14,8 @@
  * spec/chain.md "The friction channel" and spec/worktrees.md "Teardown
  * harvest — the delivery guarantee" are the contracts these serve.
  *
- * `writeRevertNote` stays in `src/Dispatcher.ts`: it is the gate-revert
- * path's own note, built from a commit message only the dispatcher reads.
+ * `writeRevertNote` stays in `src/tickAttempt.ts`: it is the gate-revert
+ * path's own note, built from a commit message only that attempt reads.
  */
 
 import { copyFile, mkdir, readdir, rename, rm } from "node:fs/promises";
@@ -97,7 +97,7 @@ export async function frictionCountLine(
 ): Promise<string | undefined> {
   if (chain.friction === undefined) return undefined;
   // win32 MAX_PATH (`.claude/rules/platform-facts.md`): same join(stateRoot,
-  // chain.friction) construction writeRevertNote (`src/Dispatcher.ts`) and
+  // chain.friction) construction writeRevertNote (`src/tickAttempt.ts`) and
   // harvestFriction below guard — namespacedJoin (src/paths.ts) is the
   // shared idiom.
   return renderFrictionCount(
@@ -194,7 +194,7 @@ export async function harvestFriction(
   try {
     // win32 MAX_PATH (`.claude/rules/platform-facts.md`): mirrorDir nests
     // a worktree path under chain.friction. namespacedJoin (src/paths.ts)
-    // is the shared idiom — same as writeRevertNote (`src/Dispatcher.ts`).
+    // is the shared idiom — same as writeRevertNote (`src/tickAttempt.ts`).
     entries = await readdir(namespacedJoin(mirrorDir), {
       withFileTypes: true,
     });

@@ -269,7 +269,7 @@ export async function superviseLoop(
   let ticks = 0;
   const shippedTags = new Set<string>();
   const erroredTicks: string[] = [];
-  // Run-scoped quarantine (`quarantineKey` (`src/Dispatcher.ts`) values —
+  // Run-scoped quarantine (`quarantineKey` (`src/selection.ts`) values —
   // `slug@hash` of the entry as the failing tick read it) plus the
   // consecutive-identical-signature streak for the abort backstop. Both reset
   // to empty on every fresh `superviseLoop` call — quarantine never outlives
@@ -591,7 +591,7 @@ export async function superviseLoop(
  * the cli entrypoint (`dist/src/cli.js` built, `src/cli.ts` from source).
  * `quarantinedSlugs` crosses the process boundary via the
  * `FLUME_QUARANTINED_SLUGS` env var — comma-joined `quarantineKey`
- * (`src/Dispatcher.ts`) values, which the CLI's `tick` command reads back into
+ * (`src/selection.ts`) values, which the CLI's `tick` command reads back into
  * `DispatcherOptions.quarantinedSlugs`; omitted entirely when empty. The var
  * name predates the key and stands; a key never contains a comma, so the
  * join round-trips by construction.

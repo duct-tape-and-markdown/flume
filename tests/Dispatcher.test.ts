@@ -24,10 +24,10 @@ import {
 import {
   PendingParseFailure as realPendingParseFailure,
   Dispatcher,
-  quarantineKey,
   computeStateRootRel,
   type DispatcherOptions,
 } from "../src/Dispatcher.ts";
+import { quarantineKey } from "../src/selection.ts";
 import type { Logger } from "../src/log.ts";
 import { readMergingMarkers } from "../src/mergingMarkers.ts";
 import {

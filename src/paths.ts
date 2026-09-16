@@ -178,7 +178,7 @@ export function entryWriteScopeUnion(
  * **The one site that decides scoped-or-not, and the one site that names the
  * two inputs.** Both consumers of the decision take it from here:
  * `effectiveFenceLines` (`src/Prompt.ts`) renders the scope for the agent,
- * and `src/Dispatcher.ts` hands the same value to `writablePathsGate`
+ * and `src/tickAttempt.ts` hands the same value to `writablePathsGate`
  * (`src/builtinGates.ts`), which enforces it against the commit. Each used
  * to spell the `assignedEntry && phase.scopeWritesToEntry` test and the
  * `declaredPaths(entry)` / `phase.entryChannelPaths ?? []` pair for itself,
