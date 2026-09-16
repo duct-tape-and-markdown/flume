@@ -121,10 +121,11 @@ reads against **disk** rather than against the program or against prose: the
 series order is decidable from the `MIGRATING-<minor>.md` names, which is the
 reading *Narration is the ladder's bottom rung* already licenses for a page
 name. Filed as a `pins[]` line on
-`EVERY-BREAKING-MINOR-FROM-0-10-HAS-ITS-NOTE`, whose scan already reads
-`CHANGELOG.md` against `docs/` — so the queue now carries one `docs/`-reading
-pin whichever way this question is ruled, and (a) would want a fourth arm
-naming it: a page **name** read against the tree, never a page's sentence.
+`EACH-MIGRATION-NOTE-RESOLVES-THE-NOTE-BEFORE-IT`, which joins the
+`CHANGELOG.md`-against-`docs/` coverage arm that shipped in
+`tests/harnessPackaging.test.ts` — so the suite already reads `docs/` on disk
+whichever way this question is ruled, and (a) would want a fourth arm naming
+it: a page **name** read against the tree, never a page's sentence.
 
 ## What row does a declared findings script take, and what shape is its stdout?
 
@@ -204,3 +205,55 @@ that survives the next split. (c) is separable and worth its own ruling —
 (a) leaves nothing mechanical reading `spec/`'s identifiers, so the fourth
 instance of this arrives the same way the first three did, from a build note
 after the fact.
+
+## Does 0.15.0's shipped `### Breaking` list get amended?
+
+**PARKED.** `TickResult.quarantinedTags` went `readonly string[]` ->
+`readonly QuarantinedTag[]` at 0.15 (`src/Phase.ts:198` at `v0.14.0`,
+`:288` at `v0.15.0`) — a public-API break on the type a `handoff` reads.
+0.15.0's changelog section carries a `### Breaking` heading and files this
+one under `### Added` (`CHANGELOG.md:231`). `spec/cli.md` *Versioning
+policy* says each public-API breaking change lands under `### Breaking`; the
+same section says changelog curation is human-performed at cut time, which is
+why this is a question and not an entry. `docs/MIGRATING-0.15.md` § 5.6 walks
+the break and says out loud that the release did not list it.
+
+- **(a)** Move the bullet under 0.15.0's `### Breaking`. One line; the note's
+  § 5.6 sentence then reads false and shrinks in the same commit. The tag and
+  the published tarball are untouched.
+- **(b)** Leave it. A shipped section is a record of what the cut said, the
+  migration note is the consumer's actual path, and it already covers this.
+- **(c)** Amend, and promote a rung: an API-surface diff between two tags read
+  against the later one's `### Breaking` list. The real check — nothing today
+  reads a break against the section that should name it — but it needs this
+  ruling first and a tag-to-tag `.d.ts` comparison the repo has no machine
+  for.
+
+Recommended (a). The changelog documents the API, not the curation, and a
+consumer reading 0.15.0's Breaking list to size an upgrade currently misses a
+type change that reds their build. (c) is separable and worth its own ruling.
+
+## What does the git floor say about a version it could not read?
+
+**NEEDS AMENDMENT.** `spec/chain.md`, *The package a chain loads through*,
+states two arms: below the floor warn once, at or above say nothing. A `git
+--version` that cannot be read — no git on PATH, a wrapper answering in its
+own words — is neither, and the shipped code takes a third arm:
+`gitFloorWarning` (`src/cli.ts:168`) warns there too, calling the floor
+*unconfirmed* rather than met, declared and cited at the site. Held by "a git
+whose version cannot be read warns that the floor is unconfirmed". No
+autonomous phase can close this: the missing sentence is in `spec/`
+(`spec-plan-build.md`).
+
+- **(a)** Name the third arm as shipped: an unread version warns, the floor
+  unconfirmed rather than met.
+- **(b)** Rule the arm quiet — an unread version starts silently. Cheaper
+  output, and it is precisely the silent degrade `engineering.md` *Loud or
+  nothing* refuses: reading silence as "at or above" turns a missing
+  instrument into a met floor.
+- **(c)** Refuse the run on an unread version. Overshoots — the degrade the
+  floor bounds is worktree reclamation alone, and the spec already rules the
+  below-floor case a warning rather than a refusal.
+
+Recommended (a). It is what shipped and what the posture already requires;
+the sentence is the only thing missing.

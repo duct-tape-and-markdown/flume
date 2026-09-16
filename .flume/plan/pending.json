@@ -1,32 +1,31 @@
 [
   {
-    "tag": "EVERY-BREAKING-MINOR-FROM-0-10-HAS-ITS-NOTE",
+    "tag": "EACH-MIGRATION-NOTE-RESOLVES-THE-NOTE-BEFORE-IT",
     "gate": {
       "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
-      "new": [
+      "new": [],
+      "edit": [
         {
-          "path": "tests/migrationNotes.test.ts",
-          "description": "CHANGELOG.md's minor sections read against docs/, and each note's previous-note link against the series on disk, with the scan's floor declared and cited"
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "the series arm joins the coverage arm already there: each note opening read against the minors on disk"
         }
       ],
-      "edit": [],
       "retire": []
     },
-    "summary": "the rule that every Breaking minor has a migration note lives only in spec prose; nothing reads CHANGELOG.md's ### Breaking sections against docs/",
+    "summary": "each migration note opens by naming the previous note in the series and nothing resolves that name, so a wrong or missing neighbour ships green",
     "per": {
       "path": "spec/cli.md",
       "section": "Versioning policy"
     },
-    "acceptance": "a minor from 0.10 on whose changelog section carries a ### Breaking heading and has no docs/MIGRATING-<minor>.md reds the default lane, and the mined minor set is asserted non-empty before the verdict.",
+    "acceptance": "a note whose opening names a previous note that is not the minor below it on disk reds the default lane, and the judged note set is asserted non-empty.",
     "tests": [],
     "pins": [
-      "every minor from 0.10 whose CHANGELOG.md section carries a ### Breaking heading has a migration note under docs/",
-      "each migration note names the previous minor's note as the previous note in the series"
+      "each migration note names the note for the minor below it as the previous note in the series"
     ],
-    "notes": "Promotes the Versioning-policy bullet a rung (engineering.md, Narration is the ladder's bottom rung). The floor is 0.10 because MIGRATING-0.10.md is the routing table covering 0.2.x, 0.6.x and 0.9.0 — below it no per-minor note exists by design, so the floor is declared at the scan. The series link is green today and decidable off the minors on disk. Blocked on the three notes."
+    "notes": "Re-scoped: the coverage half (every Breaking minor has a page, n=7) shipped at c647e90a in this file — `breakingMinors` there mines the sections. What is left is the contiguous case: the `spanning` arm fires only on a gap, so a note naming the wrong neighbour is judged by nothing. Green today, so a pin. `docs/` read against disk by page name, which the ladder already licenses."
   },
   {
     "tag": "A-DOTFILE-IS-NEVER-A-FRICTION-NOTE",
@@ -69,6 +68,100 @@
     ],
     "pins": [],
     "notes": "Sites: countFrictionFiles (src/job.ts:557) is the count both `flume status` and `flume job status` print; the listing and read are the `friction` arm of src/cli.ts. The teardown harvest (src/friction.ts) is not named by the section and stays as it is."
+  },
+  {
+    "tag": "THE-STATE-ROOT-OFFSET-TAKES-ITS-NAMES-FILE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/paths.ts",
+          "description": "computeStateRootRel lands beside escapesRoot and gitPath; the cite above it re-homes"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the declaration leaves; the two call sites import it"
+        },
+        {
+          "path": "src/flumeApi.ts",
+          "description": "the import and its two cite pairs"
+        },
+        {
+          "path": "src/Phase.ts",
+          "description": "the cite pair"
+        },
+        {
+          "path": "src/pendingLedger.ts",
+          "description": "the cite pair"
+        },
+        {
+          "path": "src/Gate.ts",
+          "description": "the cite"
+        },
+        {
+          "path": "src/tickAttempt.ts",
+          "description": "the cite"
+        },
+        {
+          "path": "harness/gates.ts",
+          "description": "the cite"
+        },
+        {
+          "path": "harness/prompts.ts",
+          "description": "the cite"
+        },
+        {
+          "path": "tests/paths.test.ts",
+          "description": "takes the moved unit test and its cite"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the moved test leaves; the import"
+        },
+        {
+          "path": "tests/pendingLedger.test.ts",
+          "description": "the import and the cite pair"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the import"
+        },
+        {
+          "path": "tests/harnessGates.test.ts",
+          "description": "the import and the cite"
+        },
+        {
+          "path": "tests/harnessBuildArgs.test.ts",
+          "description": "the import and two cites"
+        },
+        {
+          "path": "tests/Gate.test.ts",
+          "description": "the import"
+        },
+        {
+          "path": "tests/builtinGates.test.ts",
+          "description": "the import"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the import"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "computeStateRootRel is pure path arithmetic declared in src/Dispatcher.ts, so src/flumeApi.ts, eight test files and nine cites reach the orchestrator for a paths.ts job",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "computeStateRootRel is declared in src/paths.ts, every caller including the dispatcher imports it from there, and no citation names its old home.",
+    "tests": [],
+    "pins": [],
+    "notes": "Build note leftover: the escape half already moved to `escapesRoot` (`src/paths.ts`); the arithmetic did not. paths.ts needs nothing new — `relative`, `gitPath`, `escapesRoot` are all there — and stays cycle-free, which its header states. The move strands cites naming `src/Dispatcher.ts`: four pairs and five comma-form ones. Same commit, per the section."
   },
   {
     "tag": "A-GATE-IS-TOLD-THE-TRUNK-IT-LANDED-ONTO",
