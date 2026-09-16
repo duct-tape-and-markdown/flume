@@ -488,6 +488,70 @@
     "notes": "Sizes the arm 669d630 left for the sweep. Sites: chain:36, harnessWindows:80,631, harnessGates:108, harnessChain:123, harnessCi:89,449, harnessRunner:62, bin:191. Exemptions: harnessCi:447 (`stdio: \"ignore\"`, captures nothing) and the execFileSync spellings inside fixture string literals (cli, cliJobResolution, subprocessHelper). Blocked on the async arm so the sync one extends that scan rather than growing beside it."
   },
   {
+    "tag": "THE-SPAWN-CAP-SCAN-READS-THIS-REPOS-OWN-CHAIN",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/spawnCaps.ts",
+          "description": "the domain names this repo's own chain files beside the shipped trees"
+        },
+        {
+          "path": "tests/spawnCaps.test.ts",
+          "description": "the case pinning that the domain reaches them"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the spawn-cap scan's domain is five shipped trees, so the one chain this repo runs every tick could add a capturing spawn and inherit 1 MiB silently",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "Node caps a captured child stream at 1 MiB, and reports the overrun as a spawn failure"
+    },
+    "acceptance": "the scan judges `.flume/chain.ts` and `.flume/declaration.ts` beside the shipped trees, each refusing when absent the way an empty tree does, so a capturing spawn added to this repo's chain reds where it is written.",
+    "tests": [
+      "the spawn-cap scan judges this repo's own chain and declaration"
+    ],
+    "pins": [],
+    "notes": "From EVERY-SHIPPED-SPAWN-DECLARES-ITS-OUTPUT-CAP's note. `.flume` cannot join as a tree: the walk recurses and `.flume/worktrees/` holds whole repo copies, so the domain gains named files. Neither file spawns today, so the verdict lands empty over them. A red there is not build's to fix — `.flume/` is outside its fence — and an interactive session lands it."
+  },
+  {
+    "tag": "A-CALLBACK-ANSWER-REFUSES-RATHER-THAN-PASSES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/namespacedFsScan.ts",
+          "description": "a path-answering call whose answer goes to a callback is reported, not walked"
+        },
+        {
+          "path": "tests/namespacedFsPaths.test.ts",
+          "description": "the fixture case, and the tree-wide arm spelled empty-by-design"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the escape walk follows a call expression, so a path-answering fs call handing its answer to a callback passes the namespaced-escape verdict silently",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "a path-answering fs call whose answer leaves through a callback is reported as unfollowed rather than judged clean; the tree-wide arm over `src/` and `harness/` asserts that report empty as its own case, empty-by-design spelled rather than inherited.",
+    "tests": [
+      "the namespaced-fs scan reports a path-answering call whose answer goes to a callback rather than judging it clean"
+    ],
+    "pins": [],
+    "notes": "From ASYNC-REALPATH-REFUSES-A-COMPOSED-PATH's note. `realpath` carries answersPath, but a callback form's answer never crosses the call expression `readerPastFs` follows. No src/ or harness/ module calls an async fs form today, so the report lands empty. Not the binding-graph reader the header declines by design — the refusal that bounds it. `CALLBACK_NATIVE_SOURCE` is already the shape."
+  },
+  {
     "tag": "SELECTION-AND-ATTEMPT-LEAVE-THE-DISPATCHER",
     "gate": {
       "kind": "open"
