@@ -2,8 +2,8 @@
  * Build's per-tick prompt arguments (`spec/harness.md`, *The prompts and
  * their discipline*): the entry the tick was handed, the section its `per`
  * cites as this tick's tree holds it, and the one note the tick may write —
- * the placeholders the shipped `build.md` names and the shared args do not
- * supply.
+ * the placeholders the shipped `harness/prompts/build.md` names and the
+ * shared args do not supply.
  *
  * The rendering case is an agreement gate (`.claude/rules/engineering.md`, *A
  * seam gate reads what the real writer wrote*): the real writers are

@@ -527,8 +527,8 @@ describe("GateResult.failingFiles — optional, type passthrough", () => {
 
 describe("writablePathsGate — the refusal reports the paths it refused on", () => {
   it("a writable-paths refusal names every violating path on failingFiles", async () => {
-    // Both refusal sets at once: `spec/bad.md` and `docs/x.md` breach the
-    // phase ceiling, `src/stray.ts` clears the ceiling but falls outside the
+    // Both refusal sets at once: the two doc paths below breach the phase
+    // ceiling, `src/stray.ts` clears the ceiling but falls outside the
     // entry's declared allowance, and `src/a.ts` is inside both.
     const gate = writablePathsGate(["src/**"], ["src/a.ts"]);
     const result = await gate.run(

@@ -552,7 +552,7 @@ it("the build emits every prompt the package addresses beside dist/harness", asy
 
 /**
  * The other half of the same emit hop: `flume-harness init` addresses the
- * `PROTOCOL.md` it writes by a `templates/` hop beside its own module
+ * protocol page it writes by a `templates/` hop beside its own module
  * (`harness/init.ts`), so an emit without it is an adoption verb that fails
  * at a consumer's first `flume-harness init` — after the state root exists.
  *
@@ -630,8 +630,9 @@ it("the flume-harness bin adopts an empty repository against the published emit"
 
 /**
  * `files` decides what leaves the tarball, and the harness assets — the
- * prompts and the `PROTOCOL.md` template — are the part of the emit that is
- * not a `tsc` output. A `files` list narrowed to the compiled shapes, or a
+ * prompts and the `harness/templates/PROTOCOL.md` template — are the part of
+ * the emit that is not a `tsc` output. A `files` list narrowed to the
+ * compiled shapes, or a
  * copy step aimed outside `dist`, would publish a harness whose every asset
  * address is dead.
  *

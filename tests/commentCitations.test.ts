@@ -26,6 +26,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import {
   type CitationScan,
+  type CitationSite,
   formatCitation,
   scanCommentCitations,
 } from "./helpers/commentCitations.ts";
@@ -80,6 +81,11 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * the identifier alone — a title is a literal, so an identifier written in one
  * is a token of the tree by having been written, and judging it would answer
  * the citation out of the citation.
+ *
+ * Last of all is the page name a literal of this tree spells and no file of
+ * it holds, fenced and bare, beside a module path spelled by that same
+ * literal: the page names are answered by the working tree alone, and the
+ * module path is the arm that still reads the token set.
  *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
@@ -190,6 +196,12 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `  it("a title citing <area>/notes.md, which names no one file", () => {});`,
     `});`,
     ``,
+    `// The page-name arm is answered by the working tree and by nothing else:`,
+    `// \`docs/retired.md\` and docs/withdrawn.md name no page here, whatever the`,
+    `// array below spells. The identifier alphabet is untouched, so`,
+    `// \`lib/retired.ts\` still resolves through that same literal.`,
+    `export const RETIRED = ["docs/retired.md", "docs/withdrawn.md", "lib/retired.ts"];`,
+    ``,
   ].join("\n"),
 };
 
@@ -242,8 +254,11 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "blockedBy",
     "dataShapes.ts",
     "docs/guide.md",
+    "docs/retired.md",
     "docs/vanished.md",
+    "docs/withdrawn.md",
     "lib/dataShapes.ts",
+    "lib/retired.ts",
     "lib/vanished.ts",
     "release-notes.md",
     "surface.ts",
@@ -263,6 +278,8 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:36 lib/vanished.ts",
     "lib/surface.ts:57 docs/vanished.md",
     "lib/surface.ts:68 vanished-notes.md",
+    "lib/surface.ts:85 docs/retired.md",
+    "lib/surface.ts:85 docs/withdrawn.md",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
@@ -276,6 +293,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "dataShapes.ts",
     "docs/guide.md",
     "lib/dataShapes.ts",
+    "lib/retired.ts",
     "release-notes.md",
     "surface.ts",
     "this.opts.maxDepth",
@@ -528,6 +546,7 @@ it("the citation scan judges an unbackticked *.md page name in a comment", () =>
     "lib/surface.ts:57 docs/vanished.md",
     "lib/surface.ts:58 <area>/notes.md",
     "lib/surface.ts:58 docs/*.md",
+    "lib/surface.ts:85 docs/withdrawn.md",
   ]);
 
   // Judged, and judged in both directions by the arm the fenced paths go
@@ -649,6 +668,43 @@ it("the citation scan judges a title's page name and not a backticked identifier
   expect(fixtureScan.titles.findings.map((s) => s.text)).toEqual([
     "docs/vanished.md",
   ]);
+});
+
+it("a comment's page name is answered by the working tree, never by a string literal a judged tree carries", () => {
+  // Vacuity guard: both page names were collected, one fenced and one bare,
+  // and both are judged — so the verdict below is the page-name arm declining
+  // a token rather than a reader that never saw either citation.
+  const judged = fixtureScan.scanned.map((s) => s.text);
+  expect(fixtureScan.backticked.map((s) => s.text)).toContain(
+    "docs/retired.md",
+  );
+  expect(fixtureScan.bare.map((s) => s.text)).toContain("docs/withdrawn.md");
+  expect(judged).toContain("docs/retired.md");
+  expect(judged).toContain("docs/withdrawn.md");
+
+  // And the literal spelling both is a token of this tree, which is the arm
+  // that must not answer here: every other citation shape resolves through
+  // it, so without this the emptiness below would be a tree that happens to
+  // spell neither name.
+  expect(fixtureScan.resolved.map((s) => s.text)).toContain("lib/retired.ts");
+  expect(existsSync(join(fixtureRoot, "lib", "retired.ts"))).toBe(false);
+
+  // The verdict: no file of this tree holds either page, so both dangle
+  // however the array below them spells them. Answered by the token set, a
+  // page the repo renamed away would leave every comment citing it standing.
+  const findings = fixtureScan.findings.map((s) => s.text);
+  expect(findings).toContain("docs/retired.md");
+  expect(findings).toContain("docs/withdrawn.md");
+
+  // The widened set over this repo, which is where the arm earns its keep:
+  // page names are cited in quantity and in both fencings, so the emptiness
+  // the pin below asserts is read over a populated set rather than over the
+  // handful a narrowed collector would leave.
+  const pages = repoScan.scanned.filter((site) => site.text.endsWith(".md"));
+  const fenced = new Set<CitationSite>(repoScan.backticked);
+  expect(pages.length).toBeGreaterThan(1000);
+  expect(pages.filter((site) => fenced.has(site)).length).toBeGreaterThan(400);
+  expect(pages.filter((site) => !fenced.has(site)).length).toBeGreaterThan(400);
 });
 
 // --- the pin -------------------------------------------------------------

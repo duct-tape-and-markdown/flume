@@ -6739,9 +6739,10 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
   it("an agent whose final message says it parked still ships when no predicate is declared — the engine reads no prose (.claude/rules/engine-boundary.md \"Told, not inferred\")", async () => {
     // Fails on the pre-fix tree: a retired prose detector matched
     // /\bpark(?:ed|ing)?\b/i against this message and classified a genuine
-    // ship as channel-only, so the entry never left the queue. The instructed workflow produces exactly
-    // this message — build.md tells an agent to park an open question,
-    // .claude/rules/collaboration.md tells it to raise judgment calls that way.
+    // ship as channel-only, so the entry never left the queue. The instructed
+    // workflow produces exactly this message — harness/prompts/build.md tells
+    // an agent to park an open question, .claude/rules/collaboration.md tells
+    // it to raise judgment calls that way.
     await writePending(fx.repo, [makeEntry("SHIPS-AND-MENTIONS-PARK", ["src/ok.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -6796,8 +6797,8 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
       writablePaths: ["src/**", "notes/**"],
       entryChannelPaths: ["notes/**"],
       // The chain's convention, not the engine's: this one calls a commit
-      // touching only `notes/park.md` unfinished. The engine has no such
-      // notion and never inspects the message below.
+      // touching only the entry's note channel unfinished. The engine has no
+      // such notion and never inspects the message below.
       shipped: ({ touchedPaths }) =>
         !(
           touchedPaths.length > 0 &&
@@ -11812,7 +11813,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
 
 // Plan is a singleton phase. When its pending.json fails the chain-local
 // pendingParseGate, the whole commit is `git reset --hard`-ed away — the
-// state.md / open-questions.md prose in that same commit dies with it,
+// `.flume/plan/open-questions.md` prose in that same commit dies with it,
 // recoverable, before the durable snapshot, only by a human reading session
 // logs. The contract mandates the findings stay recoverable without session
 // logs. This asserts the chosen mechanism: a verbatim, durable,
@@ -14588,11 +14589,10 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     const frictionDir = join(fx.repo, ".flume", "friction");
 
     // Two separate waves for the same tag (a re-derived retry, or simply the
-    // tag recurring), each writing a friction note under the identical
-    // agent-chosen filename `note.md`. Frozen at two distinct instants so
-    // the resulting stamps are deterministic and provably different — the
-    // collision this entry closes is exactly two such notes landing on the
-    // same destination.
+    // tag recurring), each writing a friction note under one identical
+    // agent-chosen filename. Frozen at two distinct instants so the resulting
+    // stamps are deterministic and provably different — the collision this
+    // entry closes is exactly two such notes landing on the same destination.
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date("2024-01-01T00:00:00.000Z"));
@@ -14732,9 +14732,9 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     expect(afterFirst).toEqual(["note.md"]);
 
     // A sibling entry lands in a later wave, as a plan tick would. Its
-    // worktree branches from the new trunk tip, so its checkout inherits
-    // `.flume/friction/note.md` as ordinary tracked content — not anything
-    // its own agent produced this tick.
+    // worktree branches from the new trunk tip, so its checkout inherits the
+    // harvested note as ordinary tracked content — not anything its own agent
+    // produced this tick.
     const afterFirstPending = await readPendingFromDisk(fx.repo);
     await writePending(fx.repo, [
       ...afterFirstPending,

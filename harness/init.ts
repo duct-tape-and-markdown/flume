@@ -2,12 +2,11 @@
  * `flume-harness init` — what adopting the harness package writes into a
  * repository (`spec/harness.md`, *Adoption and upgrade*): the declaration
  * skeleton, the `chain.ts` that applies the package's factory to it, the
- * state root with an empty queue in it, the ignore set, `PROTOCOL.md`, and
- * the dependency
- * line that makes `@dtmd/flume/harness` resolve from the declaration that
- * imports it. The engine refuses a load with no `<configDir>/chain.ts`, so
- * an adoption that stopped at the declaration would leave a repository one
- * hand-written file short of its first tick.
+ * state root with an empty queue in it, the ignore set, a protocol page, and
+ * the dependency line that makes `@dtmd/flume/harness` resolve from the
+ * declaration that imports it. The engine refuses a load with no
+ * `<configDir>/chain.ts`, so an adoption that stopped at the declaration
+ * would leave a repository one hand-written file short of its first tick.
  *
  * **A verb on the harness bin, never on the engine's.** The engine's verb set
  * is closed and `src/` never imports this directory, so an adoption verb on
@@ -17,7 +16,7 @@
  *
  * **Every refusal is taken before the first byte is written.** An init that
  * stopped half-way would leave a repository carrying an ignore set for a
- * state root that does not exist, or a `PROTOCOL.md` beside no declaration —
+ * state root that does not exist, or a protocol page beside no declaration —
  * a tree nothing refuses and no re-run can distinguish from a finished one.
  * Every input the adoption reads — the state root's absence, this package's
  * own manifest, the consumer's — is resolved before the first `mkdir`, and
@@ -62,7 +61,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  *
  * Spelled as a default rather than baked in: everything this module composes
  * takes the root as a parameter, so a consumer adopting into a different one
- * gets a declaration, an ignore set, and a `PROTOCOL.md` that agree about
+ * gets a declaration, an ignore set, and a protocol page that agree about
  * where its state lives.
  */
 export const DEFAULT_STATE_ROOT = STATE_ROOT_DIRNAME;
@@ -95,10 +94,10 @@ const PROTOCOL_REL = "PROTOCOL.md";
 const EMPTY_QUEUE = "[]\n";
 
 /**
- * The placeholder the shipped `PROTOCOL.md` template carries wherever it
- * names the consumer's state root. One token, substituted by value: a
- * template that spelled `.flume` would be silently wrong for every consumer
- * that adopted into another root.
+ * The placeholder the shipped `harness/templates/PROTOCOL.md` carries
+ * wherever it names the consumer's state root. One token, substituted by
+ * value: a template that spelled `.flume` would be silently wrong for every
+ * consumer that adopted into another root.
  */
 const STATE_ROOT_TOKEN = "{{STATE_ROOT}}";
 
@@ -166,10 +165,10 @@ export interface HarnessInitResult {
 }
 
 /**
- * Where the shipped `PROTOCOL.md` template lives on disk — absolute,
- * resolved from this module rather than from any caller's cwd, for the
- * reason `promptPath` (`prompts.ts`) is: it is package content, and the same
- * relative hop has to reach it from a checkout's `harness/` and from the
+ * Where the shipped `harness/templates/PROTOCOL.md` lives on disk —
+ * absolute, resolved from this module rather than from any caller's cwd, for
+ * the reason `promptPath` (`prompts.ts`) is: it is package content, and the
+ * same relative hop has to reach it from a checkout's `harness/` and from the
  * emit's `dist/harness/` alike. `tsc` emits no markdown, so the build's
  * asset-copy step is what puts it there (`scripts/pack-harness-assets.mjs`).
  */
@@ -404,7 +403,7 @@ export async function harnessInit(
  * or a throw if any `{{…}}` placeholder survives.
  *
  * The refusal is the point: a template that grew a second placeholder would
- * otherwise ship a `PROTOCOL.md` whose prose reads as a literal brace token
+ * otherwise ship a protocol page whose prose reads as a literal brace token
  * to every consumer who opens it, and nothing downstream would notice
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */

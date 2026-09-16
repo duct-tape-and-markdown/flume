@@ -24,6 +24,13 @@
  * is reported into, because a tail is a page name the author never wrote and a
  * root-level page answers it whenever the break falls at a directory boundary.
  *
+ * A page name is resolved on disk and nowhere else, whichever fence carried
+ * it. Every other citation shape reads the judged trees first, and a page
+ * name is the one citation those trees routinely hold as *data* — a fixture
+ * path, a prompt's own prose, a message a suite asserts on. Answered by such
+ * a literal, a comment naming a page the repo has since renamed away keeps
+ * resolving, which is the reading the carve-out exists to refuse.
+ *
  * Both the comments and the identifier half of the verdict go through the
  * TypeScript program. The comments are read off real trivia ranges rather
  * than matched out of the file text, so a `//` inside a string literal is
@@ -246,6 +253,15 @@ const isPathSubject = (text: string): boolean => {
  * keeps `.mdx` and `.md-draft` from being read as a page name truncated.
  */
 const BARE_PAGE = /\S*\.md(?![A-Za-z0-9_-])/g;
+
+/**
+ * Whether a citation is a page name: the path arm's subject rule narrowed to
+ * the extension the carve-out reads without a fence. One predicate for both
+ * fencings, so the resolution a page name gets does not turn on whether its
+ * author backticked it.
+ */
+const isPageName = (text: string): boolean =>
+  text.endsWith(".md") && isPathSubject(text);
 
 /**
  * The brackets prose opens with and a filename never starts with. Stripped
@@ -652,6 +668,10 @@ const commentSpans = (
  * working tree holds at that repo-relative path. What a segment *means* is
  * never read: the scan proves the name exists and stops there.
  *
+ * A `*.md` page name is the exception, and takes the working tree alone —
+ * the arm a title's page name already goes through, for the reason the
+ * header states.
+ *
  * A literal is therefore a resolution arm, which is why nothing that exists
  * *in order to be excused* may sit in a judged tree as one: a list spelling
  * the names it excuses would resolve every one of them.
@@ -708,7 +728,7 @@ export const scanCommentCitations = (
     scanned.push(
       ...[
         ...spans.closed.filter((site) => isSubject(site.text)),
-        ...spans.bare.filter((site) => isPathSubject(site.text)),
+        ...spans.bare.filter((site) => isPageName(site.text)),
       ].sort((a, b) => a.line - b.line),
     );
   }
@@ -719,12 +739,17 @@ export const scanCommentCitations = (
   // this predicate, so nothing downstream sees a path in two alphabets.
   const onDisk = (text: string): boolean => existsSync(resolve(root, text));
 
+  // The page-name arm short-circuits the token set rather than sitting behind
+  // it, for the reason the header states: a literal answering a page name is
+  // how a renamed page leaves its citations standing.
   const resolves = (text: string): boolean =>
-    tokens.has(text) ||
-    onDisk(text) ||
-    text
-      .split(".")
-      .every((segment) => KEYWORDS.has(segment) || tokens.has(segment));
+    isPageName(text)
+      ? onDisk(text)
+      : tokens.has(text) ||
+        onDisk(text) ||
+        text
+          .split(".")
+          .every((segment) => KEYWORDS.has(segment) || tokens.has(segment));
 
   // The page names the titles carry, judged by the page-name arm alone. The
   // token set is not consulted: a title is a string literal, so a name written
@@ -732,7 +757,7 @@ export const scanCommentCitations = (
   // read through `tokens` would answer the citation out of the citation.
   const titlePageNames = titled
     .flatMap(titlePages)
-    .filter((site) => isPathSubject(site.text));
+    .filter((site) => isPageName(site.text));
 
   return {
     modules: [...modules],

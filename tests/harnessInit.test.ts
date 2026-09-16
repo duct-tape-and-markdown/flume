@@ -263,7 +263,7 @@ it("flume-harness init writes the state root's protocol page from harness/templa
 
     // Both renders are the template with one token replaced by value: mask
     // each one's own state root back out and all three texts coincide. A
-    // PROTOCOL.md composed in `init.ts` instead of read from the template,
+    // protocol page composed in `init.ts` instead of read from the template,
     // or a state root baked into the template, breaks the identity.
     const mask = (text: string, token: string): string => text.split(token).join("\0");
     expect(mask(written.defaulted, defaulted.stateRoot)).toBe(

@@ -460,7 +460,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
     return { file: found!.file, phase: found!.phase! };
   }
 
-  /** The phase that names `plan.md`, as the shipped sweep found it. */
+  /** The phase that names `examples/prompts/plan.md`, as the shipped sweep found it. */
   function planTemplate(): { file: string; phase: Phase } {
     return templateNamed("plan.md");
   }

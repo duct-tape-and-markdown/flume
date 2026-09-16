@@ -322,8 +322,8 @@ export function boundedName(
  *
  * Exported for the one consumer that needs the bare name rather than a
  * path: the harness package's `DEFAULT_STATE_ROOT` (`harness/init.ts`),
- * which writes it into a consumer's declaration, ignore set and
- * `PROTOCOL.md`. Everything that builds a path takes an accessor below.
+ * which writes it into a consumer's declaration, ignore set and protocol
+ * page. Everything that builds a path takes an accessor below.
  */
 export const STATE_ROOT_DIRNAME = ".flume";
 

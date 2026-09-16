@@ -337,8 +337,8 @@ function spanSubstitutes(raw: string, key: SharedPromptArg): boolean {
  * The roster is a parameter because the cases below judge different ones: the
  * odd-root loop renders every shipped prompt, while the guarded-span cases
  * render the plan slices alone, and a count taken over all of `PHASES` cannot
- * tell a plan slice that stopped reading an artifact from `build.md` never
- * having read it.
+ * tell a plan slice that stopped reading an artifact from
+ * `harness/prompts/build.md` never having read it.
  */
 async function promptsReadingEachArtifact(
   roster: readonly PromptName[] = PHASES,
