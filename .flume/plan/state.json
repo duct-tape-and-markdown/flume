@@ -122,9 +122,9 @@
   },
   "drainedRuns": {
     "windows": {
-      "run": "35161822728",
+      "run": "35162590336",
       "titles": [
-        "every backticked identifier in a src/, harness/ or tests/ comment names a declaration those trees hold"
+        "cross-process loop lock — real `flume loop` against <flumeDir>/loop.pid > reclaims a stale pidfile (dead pid): the loop runs and drops the lock on exit"
       ]
     },
     "posix": {
