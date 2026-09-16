@@ -542,6 +542,88 @@ interprets them no further.
   built-ins composed from it inherit it; a hand-rolled gate with no single
   command line declares none and renders as name alone.
 
+### What's on `ctx`
+
+`GateContext` is the gate's whole input surface. The dispatcher builds one
+per invocation; treat it as read-only and confine side effects to disk
+inside `cwd`. Nothing on it is optional for a gate's convenience: a field
+that can be empty is empty for a reason the gate branches on — a relocated
+state root, a stage with no trunk, a singleton tick with no entry — and each
+says so below.
+
+**Where the gate is running.**
+
+- `cwd` — the working tree the gate runs in: the tick's ephemeral worktree
+  under `afterCommit` (both concurrencies alike — a singleton tick works in
+  its own worktree too), the primary checkout under `afterMerge`.
+- `repoRoot` — the same value as `cwd`, spelled for the composition that
+  wants a root rather than a working directory. No field reaches the primary
+  checkout from inside a worktree, so a gate that needs the trunk belongs at
+  `afterMerge`.
+- `flumeDir` — the absolute, resolved state root: how a gate reaches
+  state-relative paths (`join(ctx.flumeDir, "prior-attempts")`) without
+  hardcoding `.flume/` or reading `process.env`. It is the **primary
+  checkout's** state root at both stages, never rebased onto a worktree,
+  because runtime state (`awake/`, `prior-attempts/`, `tick-verdicts.jsonl`)
+  exists only there. Under `afterCommit` it is therefore *not* nested under
+  `repoRoot` — the worktree lives inside it — so never derive a
+  repo-relative path from the two.
+- `stateRootRel` — the state root's path relative to the primary repo root,
+  in git's own alphabet (forward slashes, whatever the host's separator).
+  The one value that reads a **tracked** state-root file as the gated commit
+  holds it: `git show <commitSha>:<stateRootRel>/plan/pending.json`. A gate
+  that reads such a file off `flumeDir` instead reads the *previous*
+  commit's copy under `afterCommit`. The key is always present; its value is
+  `undefined` when the state root is relocated outside the repository, and
+  that absence is the fact a gate branches on.
+- `configDir` — the absolute chain/prompts dir, rebased onto the gate's own
+  `cwd` while it resolves inside the repo (a worktree carries the tracked
+  layout at the same offset), passed through verbatim when it is relocated
+  outside one.
+- `pendingPath` — the absolute, resolved queue path (`Chain.pendingPath`).
+  Read it directly: re-composing it from `ctx.flumeDir` and literal segments
+  hardcodes a layout the chain can move.
+
+**What is being gated.**
+
+- `phaseName` — the phase the gate is running for.
+- `commitSha` — the commit under inspection: the tip of the gated span, at
+  both stages.
+- `touchedPaths` — the span's changed paths (repo-relative, forward-slash),
+  the cumulative `baseSha..commitSha` diff computed once per commit and
+  shared across every gate the tick runs. Read this rather than shelling out
+  `git show --name-only` yourself.
+- `baseSha` — the sha the span started from: the worktree's tip when the
+  tick branched, the same value the dispatcher cherry-picks from. Set at
+  **both** stages. It is how a gate tells an input the tick *ignored* from
+  one it *never saw* — `git log <baseSha>..HEAD -- <inputs>` names what
+  landed on trunk after the tick branched, and `git show <baseSha>:<path>`
+  is the input as the tick read it. Without it a chain rebuilds the base
+  from a worktree path convention the engine never promised. A gate that
+  needs the *tree* at that sha rather than a file out of it asks the API for
+  a detached checkout (`api.git.checkoutAt`), which the engine plants under
+  the worktrees base and removes when the gate returns — a differential gate
+  never provisions its own.
+- `landedOnSha` — under `afterMerge`, the trunk tip the gated span landed
+  onto: the lower end of the range `touchedPaths` is diffed over, and the
+  trunk as this entry found it before its own commits were carried across.
+  It is the right *before* for a per-entry cumulative gate on trunk — one
+  measuring a set before and after this entry and refusing growth. `baseSha`
+  is what the tick *saw* when it branched and every sibling in a fanout wave
+  shares it, so a gate measured against that inherits every sibling's
+  landing; `HEAD^` is right only while a span lands as one commit. Absent
+  under `afterCommit`, where no trunk is involved and `baseSha` is the whole
+  story.
+- `entry` — the pending entry the gated span was provisioned for, as the
+  wave selected it: set at both stages under fanout, absent on a singleton
+  tick, which carries no entry. It is how a chain gate holds a commit to the
+  entry's *own* contract — the behaviors its `tests[]` names, an acceptance
+  its extension declares — rather than to the phase's uniform bar alone. The
+  engine reads none of those fields; a gate reads them back through the
+  chain's own extension schema.
+- `log` — the harness-side output channel. A gate does not write to stdout
+  itself.
+
 ### Use the built-ins first
 
 ```ts
@@ -1287,7 +1369,8 @@ them over depends on where you are, and there is one for every position:
   off `flumeDir`) and `writablePaths` (off `stateRootRel`).
 - **Gates** receive the resolved roots on `GateContext` — `ctx.flumeDir`
   (state root), `ctx.configDir` (chain/prompts dir), and `ctx.pendingPath`
-  (the queue, already resolved from `Chain.pendingPath`). A gate that reads
+  (the queue, already resolved from `Chain.pendingPath`); *What's on `ctx`*
+  (§2) walks the rest of that surface. A gate that reads
   pending reads `ctx.pendingPath` directly; re-composing that path out of
   `ctx.flumeDir` and literal segments both hardcodes a layout the chain can
   move and re-derives a value the dispatcher resolved once per tick. The

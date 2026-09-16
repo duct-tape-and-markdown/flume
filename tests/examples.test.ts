@@ -2137,6 +2137,138 @@ describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () =
 });
 
 /**
+ * Agreement pin (.claude/rules/engineering.md, *Narration is the ladder's
+ * bottom rung*: a `docs/` page stating what a shipped interface does — "the
+ * files a verb writes", a gate's input surface — may be pinned against the
+ * interface it describes). *What's on `ctx`* is the only standing page that
+ * tells a chain author what a gate is handed; a migration page reaches
+ * whoever ports across one release and nobody after. A field `GateContext`
+ * gains and the page skips is a capability a chain rebuilds by hand off a
+ * convention the engine never promised — the failure `baseSha` and
+ * `landedOnSha` each shipped into — and a field the interface drops is an
+ * instruction to read something that is not there, so the claim is equality
+ * rather than coverage and either side moving alone reds.
+ *
+ * Neither side is restated here (*Derived state is computed, never restated
+ * beside its source*): the fields come off the declaration through a
+ * checker, the walk off the page's own bullets.
+ *
+ * `docs/MIGRATING-0.15.md` names a subset of the same fields and is
+ * deliberately not pinned: that page is a dated record of one release's
+ * port, not the standing surface.
+ */
+describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () => {
+  /** The section, heading line through the line before the next heading of any level. */
+  const sectionOf = (doc: string, heading: RegExp): string => {
+    const start = doc.search(heading);
+    expect(start, `\`${heading.source}\` matches a heading`).toBeGreaterThanOrEqual(0);
+    const body = doc.indexOf("\n", start) + 1;
+    const next = doc.slice(body).search(/^#{1,6} /m);
+    return next === -1 ? doc.slice(start) : doc.slice(start, body + next);
+  };
+
+  /**
+   * Every member of `GateContext` (`src/Gate.ts`), resolved by a checker over
+   * that module alone — no lib, no resolution, no `@types`, the sibling
+   * runner-walk pin's tier and for its reason: the subject is one interface
+   * in one module, and the cheap tier keeps the case in the fast lane
+   * (spec/worktrees.md, *The default test lane must stay fast*). The
+   * unresolved `PendingEntry` import costs nothing here — a property's name
+   * is readable whether or not its type resolved. An interface that moved
+   * out of `src/Gate.ts` resolves to nothing rather than quietly to
+   * something else, and the vacuity pin below is what reds on it.
+   */
+  const gateContextFields = (): string[] => {
+    const module = join(REPO_ROOT, "src/Gate.ts");
+    const program = ts.createProgram({
+      rootNames: [module],
+      options: { noLib: true, noResolve: true, types: [] },
+    });
+    const source = program.getSourceFile(module);
+    expect(source, "src/Gate.ts is in the program").toBeDefined();
+
+    let contextName: ts.Identifier | undefined;
+    ts.forEachChild(source!, (node) => {
+      if (ts.isInterfaceDeclaration(node) && node.name.text === "GateContext") {
+        contextName = node.name;
+      }
+    });
+    expect(contextName, "src/Gate.ts declares an interface `GateContext`").toBeDefined();
+
+    const checker = program.getTypeChecker();
+    const context = checker.getDeclaredTypeOfSymbol(
+      checker.getSymbolAtLocation(contextName!)!,
+    );
+    return context.getProperties().map((field) => field.name);
+  };
+
+  it("docs/CHAIN-AUTHORING.md's gate section names every GateContext field the engine sets", () => {
+    const fields = gateContextFields();
+
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a resolution that fell through to an empty property list
+    // would compare two empty sets and pass. One anchor rather than a second
+    // copy of the list — the count is what proves the set is the real one.
+    expect(fields.length).toBeGreaterThan(1);
+    expect(fields).toContain("baseSha");
+
+    const section = sectionOf(
+      readFileSync(
+        fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
+        "utf8",
+      ),
+      /^### What's on `ctx`$/m,
+    );
+    // The section is the one it claims to be before a set is read off it: a
+    // heading match that captured the wrong span would report every field
+    // missing, or an empty walk against an empty span.
+    expect(section).toContain("`GateContext` is the gate's whole input surface");
+
+    /** The fields the section walks: one top-level bullet each, led by its name. */
+    const walked = [...section.matchAll(/^- `([A-Za-z][A-Za-z0-9]*)` —/gm)].map((m) => m[1]!);
+
+    expect(
+      [...walked].sort(),
+      "docs/CHAIN-AUTHORING.md's gate section walks exactly the fields `GateContext` declares",
+    ).toEqual([...fields].sort());
+  });
+
+  it("docs/CHAIN-AUTHORING.md's gate section says which stage sets each span field", () => {
+    const section = sectionOf(
+      readFileSync(
+        fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
+        "utf8",
+      ),
+      /^### What's on `ctx`$/m,
+    );
+
+    /**
+     * One bullet's body, its lead name through the line before the next
+     * bullet, with the page's own wrapping folded out — the phrases below are
+     * sentences, and where a sentence breaks across lines is the formatter's
+     * business, not the claim's.
+     */
+    const bulletFor = (field: string): string => {
+      const lead = section.indexOf(`- \`${field}\` —`);
+      expect(lead, `the section walks \`${field}\``).toBeGreaterThanOrEqual(0);
+      const rest = section.slice(lead + 1);
+      const next = rest.search(/^- `/m);
+      return (next === -1 ? rest : rest.slice(0, next)).replace(/\s+/g, " ");
+    };
+
+    // A field whose availability varies is the one a chain guesses wrong
+    // about: `baseSha` at both stages, `landedOnSha` only where a trunk
+    // exists. Naming the field without naming its stage is how a gate ends
+    // up branching on a value it assumed was there.
+    expect(bulletFor("baseSha")).toContain("**both** stages");
+    const landedOn = bulletFor("landedOnSha");
+    expect(landedOn).toContain("`afterMerge`");
+    expect(landedOn).toContain("Absent under `afterCommit`");
+    expect(bulletFor("entry")).toContain("absent on a singleton tick");
+  });
+});
+
+/**
  * spec/chain.md, *Per-run artifacts belong under `FLUME_DIR`* — "`examples/`
  * shows it". The backlog groomer is the example that does, so the placement
  * is driven rather than read: a real `groom` tick runs, and the transcript
