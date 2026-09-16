@@ -57,6 +57,7 @@ import {
 } from "./Dispatcher.js";
 import { frictionCountLine } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
+import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
 import { claudeCode } from "./Agent.js";
@@ -122,6 +123,26 @@ export const EX_IOERR = 74;
 function parseMaxValue(value: string | undefined): number | null {
   const parsed = value !== undefined ? Number(value) : NaN;
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/**
+ * What a signal handler says at receipt, before the wait it is announcing
+ * starts (spec/loop.md, "The loop lock and the tip claim"). One spelling for
+ * both handlers below: a `flume loop` waiting on its tick child and a bare
+ * `flume tick` waiting on its agent tree are the same promise one rung apart,
+ * and the operator at a Ctrl-C is at whichever one they launched.
+ *
+ * Neither handler bounds its own wait, so the only number that ends a tree
+ * ignoring the SIGTERM is the escalation grace — named here rather than left
+ * to a lookup, because `--help` names no supervisor knob and a Ctrl-C that
+ * takes the whole grace is otherwise a silent hang.
+ */
+function signalledWaitLine(waitingOn: string, graceMs: number): string {
+  return (
+    `[flume] signalled; waiting for ${waitingOn} to exit — this wait has no ` +
+    `bound of its own; the SIGKILL that ends a tree ignoring the SIGTERM ` +
+    `lands ${graceMs}ms after it (supervisorPolicy.killGraceMs)`
+  );
 }
 
 /**
@@ -985,11 +1006,25 @@ async function main(): Promise<number> {
     // on its abort holds this exit open, which is the intended outcome rather
     // than a hang to bound — exiting anyway is the release-over-a-live-writer
     // this whole path exists to stop. What bounds a well-behaved agent is its
-    // own teardown (`supervisorPolicy.killGraceMs`, `src/Phase.ts`).
+    // own teardown (`supervisorPolicy.killGraceMs`, `src/Phase.ts`), which is
+    // the number `agentKillGraceMs` carries to the line the handler writes at
+    // receipt: the wait is silent otherwise, and an agent that swallows the
+    // SIGTERM makes it a long one.
     let tickRun: Promise<TickOutcome> | undefined;
+    let agentKillGraceMs = DEFAULT_KILL_GRACE_MS;
     const releaseAndExit = async (code: number): Promise<never> => {
       stopTick.abort();
       if (tickRun !== undefined) {
+        // The wait, announced before it starts rather than explained after it
+        // ends — and only where there is one: a signal landing ahead of
+        // `dispatcher.tick()` takes this process straight out with no tree
+        // behind it, and a line about a wait that never happens is noise.
+        console.log(
+          signalledWaitLine(
+            "the agent tree this tick started",
+            agentKillGraceMs,
+          ),
+        );
         // The tick's own failure is the tick's to report; this path owes the
         // operator a dead agent tree, a released claim, and the signal's exit
         // code, and a throw escaping here would replace all three with an
@@ -1015,6 +1050,21 @@ async function main(): Promise<number> {
       }
     }
     try {
+      // The grace the handler above names, read where the handler cannot read
+      // it: at receipt the tree is already going down, and a chain resolved
+      // then would delay the wait it is announcing. Best-effort and silent on
+      // failure — the tick below resolves the same chain and reports that
+      // load's failure as mount-dead (`.claude/rules/engineering.md`, "Loud or
+      // nothing": the refusal that bounds this degraded path). A chain that
+      // declares nothing leaves the engine's own default standing, which is
+      // what the teardown would apply anyway (`src/processTree.ts`).
+      try {
+        const { chain } = await resolveChain();
+        agentKillGraceMs =
+          chain.supervisorPolicy?.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
+      } catch {
+        // unresolved chain — the default stands and `tick()` names the failure
+      }
       tickRun = dispatcher.tick();
       const outcome = await tickRun;
       console.log(outcome.summary);
@@ -1139,9 +1189,24 @@ async function main(): Promise<number> {
     // with it, and waiting on nothing would only delay the exit.
     const stopRun = new AbortController();
     let supervisedRun: Promise<SuperviseResult> | undefined;
+    // The grace that wait ends under, read off the resolve below: the
+    // supervisor has no window into the child's own, so it names the same
+    // declaration the child will read for itself. Initialized to the engine
+    // default so a signal landing before that resolve — or after one that
+    // failed — still names the number the child's teardown would apply.
+    let childKillGraceMs = DEFAULT_KILL_GRACE_MS;
     const releaseAndExit = async (code: number): Promise<never> => {
       stopRun.abort();
       if (supervisedRun !== undefined) {
+        // The wait, announced before it starts rather than explained after it
+        // ends — and only where there is one: before the run starts there is
+        // no child to wait for.
+        console.log(
+          signalledWaitLine(
+            "the in-flight tick child and the tree it spawned",
+            childKillGraceMs,
+          ),
+        );
         // The run's own failure is the run's to report; this path owes the
         // operator a released lock and the signal's exit code, and a throw
         // escaping here would replace both with an unhandled rejection.
@@ -1243,6 +1308,7 @@ async function main(): Promise<number> {
     let friction: Chain["friction"];
     try {
       ({ chain: { supervisorPolicy, friction } } = await resolveChain());
+      childKillGraceMs = supervisorPolicy?.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
     } catch {
       // unresolved chain — defaults apply; the child tick names the failure
     }

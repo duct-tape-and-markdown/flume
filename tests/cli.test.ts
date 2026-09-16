@@ -1841,6 +1841,15 @@ const TICK_GRACE_MS = DECLARED_GRACE_MS * 8;
 const WEDGED_HOLD_MS = DECLARED_GRACE_MS * 8;
 
 /**
+ * The grace the bare tick's announcement arm declares — long enough that the
+ * agent tree the announced wait is about is provably still up while the line
+ * is read, rather than racing an escalation that could have ended it first.
+ * Nothing waits it out: that arm ends by killing the tree itself, as every
+ * arm here does.
+ */
+const ANNOUNCED_GRACE_MS = 600_000;
+
+/**
  * Every pid a signalled-teardown driver learned about — the loop's below and
  * the bare tick's further down — drained by the arms' `afterEach`.
  *
@@ -2183,6 +2192,48 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
     },
     SPAWN_BUDGET_MS,
   );
+
+  it.skipIf(process.platform === "win32")(
+    "a signalled loop logs the wait it is entering before its tick tree is down, naming the grace",
+    async () => {
+      // Non-vacuity for the number below: a supervisor naming the engine's
+      // own default would satisfy a `toContain` over any grace that happened
+      // to equal it, so the declared one must differ from it.
+      expect(DECLARED_GRACE_MS).not.toBe(DEFAULT_KILL_GRACE_MS);
+
+      // Wedged, so the child never exits and the run never ends: everything
+      // read below is read while the tree the line is about is still up,
+      // which is what makes this "before" rather than "afterwards".
+      const run = await signalledLoopRun({
+        wedged: true,
+        killGraceMs: DECLARED_GRACE_MS,
+      });
+      try {
+        const line = await waitFor(
+          "the supervisor to announce the wait it is entering",
+          () =>
+            run
+              .out()
+              .split("\n")
+              .find((l) => l.includes("signalled; waiting for")),
+        );
+
+        // The child and the supervisor are both still there — the line is
+        // the operator's account of a wait in progress, not a summary of one
+        // that ended. (`signalled; stopping after` is printed only once the
+        // child has been reaped, which here never happens.)
+        expect(processAlive(run.parkedPid)).toBe(true);
+        expect(processAlive(run.supervisorPid)).toBe(true);
+        // The bound the wait ends under, named rather than left to a lookup:
+        // the grace this chain declares and the knob that declares it.
+        expect(line).toContain(`${DECLARED_GRACE_MS}ms`);
+        expect(line).toContain("supervisorPolicy.killGraceMs");
+      } finally {
+        await run.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
 });
 
 /**
@@ -2271,10 +2322,16 @@ function bareTickAgentChainSrc(
 }
 
 /**
- * Drive a real bare `flume tick` to an agent parked mid-invocation, SIGTERM
- * the tick, and wait for it to exit — the shape every arm below shares.
- * Returns the pids it observed, the exit status, how long the teardown took,
- * and the cleanup its caller owns.
+ * Drive a real bare `flume tick` to an agent parked mid-invocation and SIGTERM
+ * the tick — the shape every arm below shares. Returns the pids it observed,
+ * the output collected so far, the exit as a promise carrying how long the
+ * teardown took, and the cleanup its caller owns.
+ *
+ * The exit is handed over rather than awaited here, as the loop driver above
+ * hands its own over: an arm whose subject is what the tick *says* while its
+ * agent is still up has no exit to wait for — a tick holding its declared
+ * grace over an agent that swallows the SIGTERM is exactly the wait that arm
+ * reads.
  *
  * The signal targets the pid recorded in the tip claim rather than the
  * spawned process's own: tsx re-execs itself into a second node process, so
@@ -2292,8 +2349,12 @@ async function signalledBareTickRun(opts: {
   agentPid: number;
   grandchildPid: number | undefined;
   claimPath: string;
-  exit: { code: number | null; signal: NodeJS.Signals | null };
-  teardownMs: number;
+  exited: Promise<{
+    code: number | null;
+    signal: NodeJS.Signals | null;
+    teardownMs: number;
+  }>;
+  out: () => string;
   cleanup: () => Promise<void>;
 }> {
   const repo = await makeJobRepo("main");
@@ -2334,7 +2395,10 @@ async function signalledBareTickRun(opts: {
       env: hermeticEnv(),
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let out = "";
     record(tick.pid);
+    tick.stdout?.on("data", (d: Buffer) => (out += d));
+    tick.stderr?.on("data", (d: Buffer) => (out += d));
 
     const claimPath = tipClaimPath(
       await gitCommonDir(repo.dir),
@@ -2369,22 +2433,25 @@ async function signalledBareTickRun(opts: {
     expect(agentPid).not.toBe(tickPid);
     expect(processAlive(agentPid)).toBe(true);
 
+    let signalledAt = 0;
     const exited = new Promise<{
       code: number | null;
       signal: NodeJS.Signals | null;
+      teardownMs: number;
     }>((resolveExit) => {
-      tick?.on("exit", (code, signal) => resolveExit({ code, signal }));
+      tick?.on("exit", (code, signal) =>
+        resolveExit({ code, signal, teardownMs: Date.now() - signalledAt }),
+      );
     });
-    const signalledAt = Date.now();
+    signalledAt = Date.now();
     process.kill(tickPid, "SIGTERM");
-    const exit = await exited;
 
     return {
       agentPid,
       grandchildPid,
       claimPath,
-      exit,
-      teardownMs: Date.now() - signalledAt,
+      exited,
+      out: () => out,
       cleanup,
     };
   } catch (err) {
@@ -2417,6 +2484,8 @@ describe("flume tick — a signalled bare tick takes its agent down (spec/loop.m
     async () => {
       const run = await signalledBareTickRun({ grandchild: true });
       try {
+        await run.exited;
+
         // Non-vacuity: the grandchild is a third process, neither the tick
         // nor the agent — the one a kill aimed at the agent process never
         // reaches.
@@ -2458,6 +2527,8 @@ describe("flume tick — a signalled bare tick takes its agent down (spec/loop.m
         killGraceMs: DECLARED_GRACE_MS,
       });
       try {
+        const { teardownMs } = await run.exited;
+
         // The agent swallowed the SIGTERM and would have parked past this
         // case's whole budget, so reaching here at all is the escalation.
         expect(processAlive(run.agentPid)).toBe(false);
@@ -2468,7 +2539,7 @@ describe("flume tick — a signalled bare tick takes its agent down (spec/loop.m
         // have finished before `DEFAULT_KILL_GRACE_MS`, and half of that
         // still leaves the declared grace an order of magnitude of slack on a
         // loaded host.
-        expect(run.teardownMs).toBeLessThan(DEFAULT_KILL_GRACE_MS / 2);
+        expect(teardownMs).toBeLessThan(DEFAULT_KILL_GRACE_MS / 2);
       } finally {
         await run.cleanup();
       }
@@ -2484,7 +2555,50 @@ describe("flume tick — a signalled bare tick takes its agent down (spec/loop.m
         // 128 + SIGTERM, the handler's own exit — not a death by the signal
         // itself, which would leave the claim standing and report `signal`
         // here instead.
-        expect(run.exit).toEqual({ code: 143, signal: null });
+        const { code, signal } = await run.exited;
+        expect({ code, signal }).toEqual({ code: 143, signal: null });
+      } finally {
+        await run.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "a signalled bare tick logs the wait it is entering before its agent tree is down, naming the grace",
+    async () => {
+      // Non-vacuity for the number below: a tick naming the engine's own
+      // default would satisfy a `toContain` over any grace that happened to
+      // equal it, so the declared one must differ from it.
+      expect(ANNOUNCED_GRACE_MS).not.toBe(DEFAULT_KILL_GRACE_MS);
+
+      // The agent swallows the SIGTERM and the declared grace outlasts this
+      // whole case, so the escalation cannot land while the line is read:
+      // everything below is read with the tree the line is about still up,
+      // which is what makes this "before" rather than "afterwards".
+      const run = await signalledBareTickRun({
+        ignoreSigterm: true,
+        killGraceMs: ANNOUNCED_GRACE_MS,
+      });
+      try {
+        const line = await waitFor(
+          "the tick to announce the wait it is entering",
+          () =>
+            run
+              .out()
+              .split("\n")
+              .find((l) => l.includes("signalled; waiting for")),
+        );
+
+        // The agent is still there, and so is the claim the tick releases
+        // only once that agent is gone — the line is the operator's account
+        // of a wait in progress, not a summary of one that ended.
+        expect(processAlive(run.agentPid)).toBe(true);
+        expect(existsSync(run.claimPath)).toBe(true);
+        // The bound the wait ends under, named rather than left to a lookup:
+        // the grace this chain declares and the knob that declares it.
+        expect(line).toContain(`${ANNOUNCED_GRACE_MS}ms`);
+        expect(line).toContain("supervisorPolicy.killGraceMs");
       } finally {
         await run.cleanup();
       }
