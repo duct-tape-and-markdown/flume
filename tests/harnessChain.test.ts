@@ -1400,3 +1400,118 @@ it("chain load refuses a shell the host does not resolve, naming the gate", () =
     shell: true,
   });
 });
+
+/**
+ * The setup hook of a chain built over `declaration`, refusing where the
+ * factory returned none — the case reads provisioning off the hook the build
+ * phase actually carries rather than off a second reduction built beside it.
+ */
+function setupHook(declaration: unknown): NonNullable<Phase["setupWorktree"]> {
+  const hook = phaseNamed(chainFor(declaration), BUILD_PHASE).setupWorktree;
+  if (!hook) throw new Error("the build phase carries no setupWorktree hook");
+  return hook;
+}
+
+posixOnly("a declared shell runs the setup restore", async () => {
+  const tree = await mkTempDir("flume-harness-chain-declared-shell-restore-");
+  try {
+    const shell = await recordingShell(tree);
+    // Non-vacuity: the declared shell is nothing the package could have
+    // reached on its own, so every claim below is about the declaration.
+    expect(shell).not.toBe(DEFAULT_SHELL);
+    expect(existsSync(join(tree, "shell-argv.txt"))).toBe(false);
+
+    const marker = "restored-by-the-declared-shell";
+    const restore = `touch ${marker}`;
+    const hook = setupHook({
+      ...DECLARATION,
+      runner: recordingRunner([]),
+      shell,
+      setup: { directories: ["."], restore },
+    });
+
+    await hook({ worktreePath: tree, repoRoot: repo, worktreeKey: BUILD_PHASE });
+
+    // The declared shell was the process spawned, and it was handed the same
+    // `-c` form a declared command gate's line takes: a restore is a command
+    // line the consumer wrote, so it runs under the shell that consumer
+    // named rather than under a spawn of its own.
+    expect({
+      argv: await readFile(join(tree, "shell-argv.txt"), "utf8"),
+      ran: existsSync(join(tree, marker)),
+    }).toEqual({ argv: `-c\n${restore}\n`, ran: true });
+  } finally {
+    await rm(tree, { recursive: true, force: true });
+  }
+});
+
+it("an undeclared shell runs the setup restore under sh", async () => {
+  // Non-vacuity: the base declaration genuinely says nothing about a shell,
+  // so what runs below is the schema's own default rather than a value this
+  // fixture chose.
+  expect("shell" in DECLARATION).toBe(false);
+
+  const report = `printf '%s' "$0"`;
+  const restore = `${report} > shell-name.txt`;
+  const hook = setupHook({
+    ...DECLARATION,
+    runner: recordingRunner([]),
+    setup: { directories: ["."], restore },
+  });
+
+  const tree = await mkTempDir("flume-harness-chain-default-shell-restore-");
+  try {
+    // Spawned rather than spelled, for the reason the command gate's own
+    // default-shell case states: `$0` reads as the *host's* resolution of the
+    // default name, which is not the name itself on every host.
+    const control = spawnCaptureSync(DEFAULT_SHELL, ["-c", report], { cwd: tree });
+    // Vacuity pins: two empty strings would agree. The control ran, and it
+    // said something (`.claude/rules/engineering.md`, *A green verdict is
+    // proven non-vacuous*).
+    expect({ status: control.status, said: control.stdout !== "" }).toEqual({
+      status: 0,
+      said: true,
+    });
+
+    await hook({ worktreePath: tree, repoRoot: repo, worktreeKey: BUILD_PHASE });
+
+    // `$0` under `-c` is the shell as it was invoked, so this is the name the
+    // package spawned for a restore the declaration named no shell for.
+    expect(await readFile(join(tree, "shell-name.txt"), "utf8")).toBe(control.stdout);
+  } finally {
+    await rm(tree, { recursive: true, force: true });
+  }
+});
+
+it("chain load refuses a shell the host does not resolve, naming the setup restore", () => {
+  const restore = "printf restored";
+  const loadWith = (shell: string) => (): Chain =>
+    chainFor({
+      ...DECLARATION,
+      runner: recordingRunner([]),
+      shell,
+      setup: { directories: ["."], restore },
+    });
+
+  // Control: the package's default shell loads on this host, so the refusal
+  // below is the declared shell's doing and not the setup declaration's.
+  expect(loadWith(DEFAULT_SHELL)).not.toThrow();
+
+  // `COMMAND` is the case's unresolvable name throughout this file — a shell
+  // no host answers to.
+  expect(loadWith(COMMAND)).toThrow();
+
+  let message = "";
+  try {
+    loadWith(COMMAND)();
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  // One probe, every declared command line: the restore is refused at load
+  // on the same terms a gate's command is, and names both halves — which
+  // line is stranded, and which shell stranded it.
+  expect({
+    restore: message.includes(restore),
+    shell: message.includes(COMMAND),
+  }).toEqual({ restore: true, shell: true });
+});

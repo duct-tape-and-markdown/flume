@@ -131,8 +131,9 @@ operations, which is adoption's largest single piece and is priced under
 *What adoption costs* below), and `slices` (which plan slices run,
 and the sweep's domain). Optional: `channelPaths`, `scopeWritesToEntry` (off
 by default, and the package takes no side), `resolver`, `handoff` per phase,
-`gates` per phase and `when`, `shell` (the shell a `shell` or `script` gate's
-command runs under, `sh` where the declaration is silent), `agents`,
+`gates` per phase and `when`, `shell` (the shell every command line the
+declaration carries runs under — a `shell` or `script` gate's, `setup`'s
+restore — `sh` where the declaration is silent), `agents`,
 `supervisor` (the engine's policy passed through whole), `setup`, `slots`
 (prompt text — an autonomy dial, domain context; never a directive),
 `capabilities` (the environment facts this repository asserts, passed through
@@ -173,14 +174,16 @@ grow, a file that may not reappear — reads `FLUME_LANDED_ON_SHA` for its
 fanout entry's may be several; `FLUME_BASE_SHA` is what the tick *saw*, which
 every sibling in a wave shares.
 
-Name the `shell` your commands are written for. `sh` is the default because
-a POSIX host resolves it and the commands most consumers write are POSIX;
-which shells a win32 host resolves depends on what put them on PATH, so a
-consumer whose gates run there declares the one it installed — `bash`, or an
-absolute path to it. The declared shell is probed once at chain load, and a
-shell this host will not run refuses the load naming the gate that declared a
-command for it, rather than reporting itself as that gate failing on the
-tick that first reached it.
+Name the `shell` your commands are written for. It is every command line the
+declaration carries, not the gates alone: `setup`'s restore runs under it
+too, in the same `-c` form. `sh` is the default because a POSIX host resolves
+it and the commands most consumers write are POSIX; which shells a win32 host
+resolves depends on what put them on PATH, so a consumer whose gates run
+there declares the one it installed — `bash`, or an absolute path to it. The
+declared shell is probed once at chain load, and a shell this host will not
+run refuses the load naming the line that declared a command for it, rather
+than reporting itself as that gate failing on the tick that first reached it
+— or as every worktree in a wave failing to provision.
 
 ### What adoption costs
 

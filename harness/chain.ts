@@ -55,6 +55,7 @@ import {
   type PlanSlice,
 } from "./declaration.js";
 import { constructGate } from "./declaredGates.js";
+import { runnableShell, shellArgs } from "./declaredShell.js";
 import { entryExtension } from "./entryExtension.js";
 import { MAX_OUTPUT_BYTES } from "./exec.js";
 import { harnessGates, type GateEngine } from "./gates.js";
@@ -416,25 +417,47 @@ function provisioning(
 ): (root: string) => Promise<void> {
   const setup = declaration.setup;
   if (setup === undefined) return (root) => api.setupWorktree(root);
+  const install = installing(api, declaration, setup.restore);
   return async (root) => {
     for (const directory of setup.directories) {
-      const cwd = resolve(root, directory);
-      if (setup.restore === undefined) {
-        await api.setupWorktree(cwd);
-        continue;
-      }
-      // The cap is this site's to state: a consumer's restore command is
-      // arbitrary, its output is read by nothing here, and node's inherited
-      // 1 MiB reports an overrun where an exit status would sit — a verbose
-      // install arriving as a restore that never ran
-      // (`.claude/rules/platform-facts.md`, *Node caps a captured child
-      // stream at 1 MiB, and reports the overrun as a spawn failure*). One
-      // number with the rest of the package's captures.
-      await execFileWithShimRetry("sh", ["-c", setup.restore], {
-        cwd,
-        maxBuffer: MAX_OUTPUT_BYTES,
-      });
+      await install(resolve(root, directory));
     }
+  };
+}
+
+/**
+ * How one declared directory is installed: the engine's own lockfile-aware
+ * install, or the consumer's `restore` under the shell the declaration
+ * named.
+ *
+ * A restore is a command line the consumer wrote, so it takes the shell and
+ * the invocation form every other such line takes — a gate's command, a
+ * gate's script — rather than a spawn of its own beside them
+ * (`declaredShell.ts`). The shell is resolved once here, at chain load: a
+ * host that will not run it strands every worktree this hook provisions, and
+ * a wave of entries each parking on its own setup is that refusal arriving
+ * once per entry, hours late (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ */
+function installing(
+  api: FlumeApi,
+  declaration: Declaration,
+  restore: string | undefined,
+): (cwd: string) => Promise<void> {
+  if (restore === undefined) return (cwd) => api.setupWorktree(cwd);
+  const shell = runnableShell(api, declaration.shell, `\`setup.restore\` "${restore}"`);
+  return async (cwd) => {
+    // The cap is this site's to state: a consumer's restore command is
+    // arbitrary, its output is read by nothing here, and node's inherited
+    // 1 MiB reports an overrun where an exit status would sit — a verbose
+    // install arriving as a restore that never ran
+    // (`.claude/rules/platform-facts.md`, *Node caps a captured child
+    // stream at 1 MiB, and reports the overrun as a spawn failure*). One
+    // number with the rest of the package's captures.
+    await execFileWithShimRetry(shell, shellArgs(restore), {
+      cwd,
+      maxBuffer: MAX_OUTPUT_BYTES,
+    });
   };
 }
 
