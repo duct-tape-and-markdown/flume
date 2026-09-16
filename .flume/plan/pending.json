@@ -75,6 +75,40 @@
     "notes": "Ratified at 6426288 after the parked question. Measured: 84 pair-form sites, 2 red today (tests/friction.test.ts:151, tests/harnessChain.test.ts:852). Non-repo-relative spellings (./Gate.js, prompts.ts) are not paths the path arm reads, so no pair is drawn from them. Ships before the Dispatcher splits so their stranded cites red mechanically."
   },
   {
+    "tag": "MAXBUFFER-NARRATION-SHRINKS-TO-ITS-PAGE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/subprocess.ts",
+          "description": "SPAWN_OUTPUT_CAP_BYTES's first paragraph and MAXBUFFER_CODE's line shrink to the page; the sizing rationale read off src/'s own caps stays, and exitStatusOf's overrun arm cites the page for both codes"
+        },
+        {
+          "path": "scripts/build-changelog.mjs",
+          "description": "the git helper's node-default sentence shrinks to the page; why Infinity rather than a raised number is this site's decision and stays"
+        },
+        {
+          "path": "tests/build-changelog.test.ts",
+          "description": "the case comment restating the 1 MiB default cites the page instead"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the 1 MiB capture default and its two overrun codes are narrated at four code sites and now live on platform-facts.md; the copies shrink to cites",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "the two node facts — the 1 MiB default and the two overrun codes — are stated only on platform-facts.md, each former narrator cites the page, and each site's own sizing decision stays where it is made.",
+    "tests": [],
+    "pins": [],
+    "notes": "Closes the ruling at 1555937 and the question parked at 42879d1. Sites: SPAWN_OUTPUT_CAP_BYTES's first paragraph and MAXBUFFER_CODE (tests/helpers/subprocess.ts:29-53), exitStatusOf's overrun arm (:375-390, gaining the cite for both codes), the git helper (scripts/build-changelog.mjs:60-72), and tests/build-changelog.test.ts:507. The citation pin already resolves `platform-facts.md`, so no new check. Overlaps SUBPROCESS-HELPER-IS-THREE-MODULES on one file; ships first."
+  },
+  {
     "tag": "SUBPROCESS-HELPER-IS-THREE-MODULES",
     "gate": {
       "kind": "open"
