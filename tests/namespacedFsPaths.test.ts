@@ -35,7 +35,9 @@
  * The scan's own reading of a call is pinned here too, because the two trees
  * are judged through it: an argument it mistakes for a path (a probe's
  * subject label) reds a correct site, and one it skips (a variadic descent)
- * leaves a real one unread.
+ * leaves a real one unread — as does a call site it does not recognize as
+ * one, which is the quiet direction, since a skipped call takes its path
+ * argument and its answer out of both verdicts at once.
  */
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -209,6 +211,91 @@ export function entryIdentity(argv1: string): string {
   return plainPath(realpathSync(toNamespacedPath(argv1)));
 }
 `;
+
+/**
+ * The shape `src/cli.ts` carries now: the same fold, spent at the same
+ * `plainPath`, but resolved through libuv's `realpathSync.native` rather than
+ * node's JS `realpathSync`, which throws over a namespaced drive root on node
+ * 22 (`src/cli.ts`). The callee is a member expression, and the scan reads
+ * member callees dotted so `JSON.parse` is never taken for an imported
+ * `parse` — so without the head rule this call site would go unread: its path
+ * argument unjudged, its answer unfollowed, and the symbol reported as
+ * imported-and-never-called while a real call sits two lines below the
+ * import.
+ */
+const NATIVE_FOLDED_SOURCE = `
+import { realpathSync } from "node:fs";
+import { toNamespacedPath } from "node:path";
+import { plainPath } from "./paths.js";
+
+export function entryIdentity(argv1: string): string {
+  return plainPath(realpathSync.native(toNamespacedPath(argv1)));
+}
+`;
+
+/** The same native call with its answer handed to a reader that cannot take it. */
+const NATIVE_ESCAPING_SOURCE = `
+import { realpathSync } from "node:fs";
+import { toNamespacedPath } from "node:path";
+import { pathToFileURL } from "node:url";
+
+export function entryUrl(argv1: string): string {
+  return pathToFileURL(realpathSync.native(toNamespacedPath(argv1))).href;
+}
+`;
+
+describe("the scan's reading of a member callee", () => {
+  it("the namespaced-fs scan reads `realpathSync.native` as the path-answering fs call it is", () => {
+    const folded = scanFsCalls("src/fixture.ts", NATIVE_FOLDED_SOURCE);
+
+    // Read at all: the call is the symbol's, so the import is not reported
+    // unjudgeable and its path argument is one this module owed a fold on.
+    expect(folded.uncalled).toEqual([]);
+    expect(folded.judged).toBe(1);
+    expect(folded.bare.map((call) => describeBareCall(folded, call))).toEqual([]);
+
+    // And read on `realpathSync`'s contract rather than the default's: the
+    // native call answers with a path built from the namespaced one, so the
+    // answer is followed outward — spent here, escaping below.
+    expect(folded.answered).toBe(1);
+    expect(folded.escaped.map((e) => describeEscape(folded, e))).toEqual([]);
+
+    const escaping = scanFsCalls("src/fixture.ts", NATIVE_ESCAPING_SOURCE);
+    expect(escaping.answered).toBe(1);
+    expect(escaping.escaped.map((e) => describeEscape(escaping, e))).toEqual([
+      "src/fixture.ts:7 — realpathSync() answers a path in win32's namespaced alphabet " +
+        "and pathToFileURL(), which is no fs call, reads it",
+    ]);
+  });
+
+  it("the scan still refuses a member callee the imported fs symbol does not head", () => {
+    // The direction the rule above must not widen into. Two shapes, one
+    // rule: a foreign receiver whose *tail* spells the import
+    // (`api.readFileSync`) is not this module's call site, and a member
+    // callee the import does not head (`JSON.parse`) is not an fs call at
+    // all. Only the bare `readFileSync` below is judged, and it is composed —
+    // so a scan that read either member callee as the import would red here
+    // on an argument that is no path.
+    const foreign = scanFsCalls(
+      "src/fixture.ts",
+      `
+import { readFileSync } from "node:fs";
+import { namespacedJoin } from "./paths.js";
+
+export function config(api: CacheApi, dir: string): unknown {
+  api.readFileSync("cache-key");
+  return JSON.parse(readFileSync(namespacedJoin(dir, "c.json"), "utf8"));
+}
+`,
+    );
+    expect(foreign.judged).toBe(1);
+    expect(foreign.bare.map((call) => describeBareCall(foreign, call))).toEqual([]);
+    // `readFileSync` answers content, not a path, so nothing is followed out
+    // to `JSON.parse` — the escape verdict is vacuous here by design.
+    expect(foreign.answered).toBe(0);
+    expect(foreign.uncalled).toEqual([]);
+  });
+});
 
 describe("a namespaced path never leaves its fs call", () => {
   it("the win32 path scan admits a toNamespacedPath result spent at the fold that ends the alphabet", () => {

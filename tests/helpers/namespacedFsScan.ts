@@ -183,6 +183,39 @@ const ALPHABET_FOLD = "plainPath";
  */
 const MAX_HOPS = 8;
 
+/**
+ * The imported fs symbol `callee` is a call of, if it is a call of one at all.
+ *
+ * A member callee keeps its dots ({@link enclosingCall}), which is what stops
+ * `JSON.parse` being read as an imported `parse`. But a dotted callee whose
+ * *head* is an imported fs symbol is that symbol extended rather than a
+ * stranger that merely shares a name: `realpathSync.native` is libuv's
+ * spelling of `realpathSync`, reaches the same disk on the same argument, and
+ * answers on the same contract. Reading it as its head is what keeps such a
+ * call judged — a scan that skipped it would leave the site unread and then
+ * report the symbol as imported-and-never-called.
+ */
+function fsCallee(
+  callee: string,
+  fsSymbols: readonly string[],
+): string | undefined {
+  const head = callee.split(".")[0]!;
+  return fsSymbols.includes(head) ? head : undefined;
+}
+
+/**
+ * How one fs symbol's call sites are spelled: the bare name, or that name
+ * extended by member access ({@link fsCallee}). The lookbehind keeps a
+ * *receiver* of the same name from matching — `api.realpathSync(…)` is not
+ * this module's import.
+ */
+function callSites(fn: string): RegExp {
+  return new RegExp(
+    `(?<![.\\w$])${fn}(?:\\s*\\.\\s*[A-Za-z_$][\\w$]*)*\\s*\\(`,
+    "g",
+  );
+}
+
 /** One fs call site whose path argument was not composed. */
 export interface BareFsCall {
   /** The imported fs symbol called, as the module binds it locally. */
@@ -401,7 +434,8 @@ const NOT_A_CALLEE = new Set(["if", "while", "for", "switch", "catch", "return"]
  * grouping paren, `if (`, an array or object literal, and a statement
  * boundary all answer `undefined`, which is this reader saying the value was
  * written somewhere it does not follow. A member callee keeps its dots, so
- * `JSON.parse` is never read as an imported `parse`.
+ * `JSON.parse` is never read as an imported `parse`; whether such a callee is
+ * an fs symbol's own extension is {@link fsCallee}'s to say.
  */
 function enclosingCall(
   masked: string,
@@ -453,8 +487,9 @@ function readerPastFs(
     const outer = enclosingCall(masked, at);
     if (outer === undefined) return undefined;
     if (outer.callee === ALPHABET_FOLD) return undefined;
-    if (!fsSymbols.includes(outer.callee)) return outer.callee;
-    const contract = PATH_CONTRACTS.get(outer.callee) ?? CALLER_FOLDS_FIRST;
+    const fn = fsCallee(outer.callee, fsSymbols);
+    if (fn === undefined) return outer.callee;
+    const contract = PATH_CONTRACTS.get(fn) ?? CALLER_FOLDS_FIRST;
     if (!contract.answersPath) return undefined;
     at = outer.start;
   }
@@ -514,8 +549,10 @@ export interface FsCallScan {
  * that is no fs call reading it is reported. `answered` is that verdict's
  * vacuity count, for the same reason `judged` is the composition verdict's.
  *
- * Member calls (`api.readFile(…)`) are not call sites of the imported symbol
- * and are skipped.
+ * A member call whose receiver is something else (`api.readFile(…)`) is not a
+ * call site of the imported symbol and is skipped; a callee the symbol itself
+ * heads (`realpathSync.native(…)`) is one, and is judged on that symbol's
+ * contract ({@link fsCallee}).
  */
 export function scanFsCalls(module: string, source: string): FsCallScan {
   const masked = maskNonCode(source);
@@ -530,7 +567,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
   const lineOf = (index: number): number => source.slice(0, index).split("\n").length;
 
   for (const fn of symbols) {
-    const calls = [...masked.matchAll(new RegExp(`(?<![.\\w$])${fn}\\s*\\(`, "g"))];
+    const calls = [...masked.matchAll(callSites(fn))];
     if (calls.length === 0) {
       uncalled.push(fn);
       continue;
