@@ -267,17 +267,18 @@ async function main(): Promise<number> {
   // they have not run before, and the answer it gets is `--help`'s to the
   // byte.
   if (firstArg === "--help" || firstArg === "-h" || firstArg === "help") {
-    // ...and `flume help <command>` is that command's own `--help` page, by
-    // the same reasoning: the operator reaching for the bare verb is the one
-    // who has not learned the flag spelling yet. A name this surface holds no
-    // page for refuses usage-shaped rather than answering the top-level page
-    // over an argument it dropped.
-    if (firstArg === "help" && restArgs.length > 0) {
+    // ...and a trailing name is that command's own `--help` page, whichever
+    // spelling carried it: `flume help status`, `flume --help status` and
+    // `flume -h status` are one question, so one arm answers all three off
+    // the same decider. A name this surface holds no page for refuses
+    // usage-shaped, echoing the spelling that was typed, rather than
+    // answering the top-level page over an argument it dropped.
+    if (restArgs.length > 0) {
       const page =
         restArgs.length === 1 ? helpPageFor(restArgs[0] as string) : undefined;
       if (page === undefined) {
         console.error(`no help page for: ${restArgs.join(" ")}`);
-        console.error("usage: flume help [<command>]");
+        console.error(`usage: flume ${firstArg} [<command>]`);
         return 2;
       }
       process.stdout.write(page);

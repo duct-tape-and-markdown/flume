@@ -853,7 +853,10 @@ describe("flume help — the bare verb against the flag (FLUME-HELP-IS-THE-SAME-
  * FLUME-HELP-ANSWERS-FOR-A-SUBCOMMAND — `flume help status` printed the
  * top-level listing and dropped the name, so the bare verb an operator
  * reaches for before learning the flag spelling was the one verb whose
- * argument went nowhere (spec/cli.md, *Subcommand surface*).
+ * argument went nowhere. FLUME-HELP-FLAG-ANSWERS-FOR-A-SUBCOMMAND — the same
+ * drop survived on the flag spelling, `flume --help status`, because the
+ * lookup was gated on the bare verb alone (spec/cli.md, *Subcommand
+ * surface*).
  *
  * Each spelling pair is driven through the real CLI and read against the
  * other, never against a copy of the page — there is one writer per page and
@@ -861,14 +864,18 @@ describe("flume help — the bare verb against the flag (FLUME-HELP-IS-THE-SAME-
  * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
  * wrote").
  */
-describe("flume help <name> — the trailing name against the flag spelling (FLUME-HELP-ANSWERS-FOR-A-SUBCOMMAND)", () => {
+describe("flume help <name> and flume --help <name> — the trailing name through one decider (FLUME-HELP-ANSWERS-FOR-A-SUBCOMMAND, FLUME-HELP-FLAG-ANSWERS-FOR-A-SUBCOMMAND)", () => {
+  /** The spellings that carry a trailing name to the same decider. */
+  type Lead = "help" | "--help";
+
   /**
-   * `flume help <name>` against `flume <name> --help`, in a bay holding no
-   * chain: the flag form is pinned as the real page carrying `marker` before
-   * it stands as the expected value, then the verb form is read against it
-   * whole — both streams and the status.
+   * `flume <lead> <name>` against `flume <name> --help`, in a bay holding no
+   * chain: the trailing `--help` form is pinned as the real page carrying
+   * `marker` before it stands as the expected value, then the leading form
+   * is read against it whole — both streams and the status.
    */
-  async function expectHelpVerbMatchesFlag(
+  async function expectLeadingHelpMatchesFlag(
+    lead: Lead,
     name: string,
     marker: string,
   ): Promise<void> {
@@ -881,8 +888,8 @@ describe("flume help <name> — the trailing name against the flag spelling (FLU
       });
       expect(flag.stdout).toContain(marker);
 
-      const verb = await runCliStreams(dir, ["help", name]);
-      expect(verb).toEqual(flag);
+      const leading = await runCliStreams(dir, [lead, name]);
+      expect(leading).toEqual(flag);
 
       // Short-circuited above every side effect, on this arm as on the bare
       // verb's: the bay is as empty as the fixture planted it — no chain load
@@ -895,31 +902,53 @@ describe("flume help <name> — the trailing name against the flag spelling (FLU
     }
   }
 
-  it("flume help status prints the status subcommand's usage", async () => {
-    await expectHelpVerbMatchesFlag("status", "Usage: flume status");
-  }, SPAWN_BUDGET_MS);
-
-  it("flume help job prints the job verb's usage", async () => {
-    await expectHelpVerbMatchesFlag("job", "Usage: flume job <verb> [args]");
-  }, SPAWN_BUDGET_MS);
-
-  it("flume help with an unknown name exits 2 with usage", async () => {
+  /**
+   * An unknown trailing name on `lead`: usage-shaped, echoing the spelling
+   * that was typed, with stdout empty rather than carrying the top-level
+   * listing — the drop these cases exist to refuse.
+   */
+  async function expectUnknownNameRefuses(lead: Lead): Promise<void> {
     const dir = await mkFixtureRoot("flume-help-unknown-");
     try {
       const { stdout, stderr, code } = await runCliStreams(dir, [
-        "help",
+        lead,
         "stauts",
       ]);
-      // Usage-shaped, naming what was typed — and stdout empty rather than
-      // carrying the top-level listing, which is the drop this case exists
-      // to refuse.
       expect({ code, stdout }).toEqual({ code: 2, stdout: "" });
       expect(stderr).toContain("no help page for: stauts");
-      expect(stderr).toContain("usage: flume help [<command>]");
+      expect(stderr).toContain(`usage: flume ${lead} [<command>]`);
       expect(await readdir(join(dir, ".flume"))).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  }
+
+  it("flume help status prints the status subcommand's usage", async () => {
+    await expectLeadingHelpMatchesFlag("help", "status", "Usage: flume status");
+  }, SPAWN_BUDGET_MS);
+
+  it("flume help job prints the job verb's usage", async () => {
+    await expectLeadingHelpMatchesFlag(
+      "help",
+      "job",
+      "Usage: flume job <verb> [args]",
+    );
+  }, SPAWN_BUDGET_MS);
+
+  it("flume --help status prints the status subcommand's usage", async () => {
+    await expectLeadingHelpMatchesFlag(
+      "--help",
+      "status",
+      "Usage: flume status",
+    );
+  }, SPAWN_BUDGET_MS);
+
+  it("flume help with an unknown name exits 2 with usage", async () => {
+    await expectUnknownNameRefuses("help");
+  }, SPAWN_BUDGET_MS);
+
+  it("flume --help with an unknown name exits 2 with usage", async () => {
+    await expectUnknownNameRefuses("--help");
   }, SPAWN_BUDGET_MS);
 
   /**

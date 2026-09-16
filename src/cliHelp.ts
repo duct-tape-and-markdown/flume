@@ -77,8 +77,8 @@ Options:
   -h, --help          Print this message (\`flume help\` prints the same).
   -v, --version       Print the flume version.
 
-Run \`flume <command> --help\` — or \`flume help <command>\` — for that
-command's usage and exit codes.
+Run \`flume <command> --help\` — or \`flume help <command>\`, or \`flume --help
+<command>\` — for that command's usage and exit codes.
 `;
 
 const HELP_SUB: Record<Subcommand, string> = {
@@ -461,9 +461,10 @@ export function isSubcommand(value: string): value is Subcommand {
  * than sitting in the subcommand table. `undefined` is a name this surface
  * carries no page for.
  *
- * One decision, read by both arms that print a page: `flume <name> --help`
- * and `flume help <name>`. A page reachable through one spelling and not the
- * other is the shape this function exists to make unspellable.
+ * One decision, read by every arm that prints a page: `flume <name> --help`,
+ * `flume help <name>`, and `flume --help <name>`. A page reachable through
+ * one spelling and not another is the shape this function exists to make
+ * unspellable.
  */
 export function helpPageFor(name: string): string | undefined {
   if (isSubcommand(name)) return HELP_SUB[name];
