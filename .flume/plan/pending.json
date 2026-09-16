@@ -1,75 +1,5 @@
 [
   {
-    "tag": "EACH-MIGRATION-NOTE-RESOLVES-THE-NOTE-BEFORE-IT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/harnessPackaging.test.ts",
-          "description": "the series arm joins the coverage arm already there: each note opening read against the minors on disk"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "each migration note opens by naming the previous note in the series and nothing resolves that name, so a wrong or missing neighbour ships green",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Versioning policy"
-    },
-    "acceptance": "a note whose opening names a previous note that is not the minor below it on disk reds the default lane, and the judged note set is asserted non-empty.",
-    "tests": [],
-    "pins": [
-      "each migration note names the note for the minor below it as the previous note in the series"
-    ],
-    "notes": "Re-scoped: the coverage half (every Breaking minor has a page, n=7) shipped at c647e90a in this file — `breakingMinors` there mines the sections. What is left is the contiguous case: the `spanning` arm fires only on a gap, so a note naming the wrong neighbour is judged by nothing. Green today, so a pin. `docs/` read against disk by page name, which the ladder already licenses."
-  },
-  {
-    "tag": "A-DOTFILE-IS-NEVER-A-FRICTION-NOTE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "countFrictionFiles skips a name beginning with a dot"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "the friction verb's bare listing and its read-by-name skip the same names"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "the count's skip"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the listing's and the read verb's skip"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the friction count, the bare listing and the read verb all treat a dot-prefixed placeholder as a note, so a git-forced .gitkeep reads as work",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "`Chain.friction` — the declared friction channel"
-    },
-    "acceptance": "a dot-prefixed file in the declared friction dir counts zero, lists nothing and is unreadable by name, and the skip is by name alone.",
-    "tests": [
-      "the friction count skips a name beginning with a dot",
-      "the bare friction listing omits a name beginning with a dot",
-      "the friction read verb refuses a name beginning with a dot"
-    ],
-    "pins": [],
-    "notes": "Sites: countFrictionFiles (src/job.ts:557) is the count both `flume status` and `flume job status` print; the listing and read are the `friction` arm of src/cli.ts. The teardown harvest (src/friction.ts) is not named by the section and stays as it is."
-  },
-  {
     "tag": "THE-STATE-ROOT-OFFSET-TAKES-ITS-NAMES-FILE",
     "gate": {
       "kind": "open"
@@ -164,54 +94,9 @@
     "notes": "Build note leftover: the escape half already moved to `escapesRoot` (`src/paths.ts`); the arithmetic did not. paths.ts needs nothing new — `relative`, `gitPath`, `escapesRoot` are all there — and stays cycle-free, which its header states. The move strands cites naming `src/Dispatcher.ts`: four pairs and five comma-form ones. Same commit, per the section."
   },
   {
-    "tag": "A-GATE-IS-TOLD-THE-TRUNK-IT-LANDED-ONTO",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Gate.ts",
-          "description": "`landedOnSha` on GateContext, afterMerge only"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "set on every dispatcher-built afterMerge context"
-        },
-        {
-          "path": "tests/Gate.test.ts",
-          "description": "the field's presence and absence by stage"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the value is the lower end of the touchedPaths range"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "GateContext carries baseSha and not the trunk tip a span landed onto, so an afterMerge gate measuring trunk before and after an entry rebuilds it from HEAD^",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "What a gate receives"
-    },
-    "acceptance": "every dispatcher-built afterMerge context carries landedOnSha — the lower end of the range touchedPaths is diffed over — and an afterCommit context carries none.",
-    "tests": [
-      "an afterMerge gate context carries the trunk tip the span landed onto",
-      "an afterCommit gate context carries no landedOnSha",
-      "landedOnSha is the lower end of the range touchedPaths is diffed over"
-    ],
-    "pins": [],
-    "notes": "The dispatcher already holds the sha; it reported it on no context. baseSha keeps its own meaning — what the tick saw when it branched, shared by every sibling in a wave — so the two are distinct fields, never one renamed."
-  },
-  {
     "tag": "A-DECLARED-GATE-RUNS-WITH-THE-ENGINES-GATE-FACTS",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "A-GATE-IS-TOLD-THE-TRUNK-IT-LANDED-ONTO"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -243,49 +128,9 @@
     "notes": "The `gates` row spells two names (FLUME_BASE_SHA, FLUME_LANDED_ON_SHA) and names the rest of the set; the remaining spellings and the touched-paths encoding are build's, declared at the site. Blocked on the engine field the afterMerge variable reads."
   },
   {
-    "tag": "THE-COMPLETION-SUMMARY-TOTALS-THE-RUNS-SPEND",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/loopSupervisor.ts",
-          "description": "the completion summary totals the run's agent usage by phase"
-        },
-        {
-          "path": "src/tickVerdict.ts",
-          "description": "the totaller over verdict rows, if it lands beside the rows it reads"
-        },
-        {
-          "path": "tests/loopSupervisor.test.ts",
-          "description": "the totals, and the explicit no-invocation case"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "flume loop's completion summary names what a run did and never what it cost, though every verdict row already carries its invocation's usage",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Exit codes — the run never lies to CI"
-    },
-    "acceptance": "the completion summary totals the run's agent usage by phase, read from the verdict rows this run's ticks wrote.",
-    "tests": [
-      "the completion summary totals the run's agent usage by phase",
-      "a run whose ticks left no usage row totals nothing in the completion summary"
-    ],
-    "pins": [],
-    "notes": "TickVerdictInvocation extends AgentUsage (src/tickVerdict.ts:279) and readTickVerdicts already reads the rows; nothing totals them. This run's rows, not the log's whole history. The empty case is spelled, never inherited (`engineering.md`, *A green verdict is proven non-vacuous*)."
-  },
-  {
     "tag": "STATUS-PRINTS-THE-LIVE-RUNS-SPEND-SO-FAR",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THE-COMPLETION-SUMMARY-TOTALS-THE-RUNS-SPEND"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
