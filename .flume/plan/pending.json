@@ -23,7 +23,7 @@
     "acceptance": "the page no longer claims a singleton never runs afterMerge, and says what a singleton's afterMerge gate runs against.",
     "tests": [],
     "pins": [],
-    "notes": "Verified on disk: `runSingleton` (`src/singletonTick.ts`) filters `phase.gates` for `when === \"afterMerge\"` and runs them on trunk, and `GatePhase` (`src/Gate.ts`) already says so. Expired narration in a page the package ships. No `pins[]` line: whether a `docs/` sentence is pinnable is the standing open question, and this fix needs no ruling."
+    "notes": "Verified on disk: `runSingleton` (`src/singletonTick.ts`) filters `phase.gates` for `when === \"afterMerge\"` and runs them on trunk, and `GatePhase` (`src/Gate.ts`) already says so. The `docs/` pinnability question is now ruled, and this entry still carries no `pins[]`: the claim to retire is a negative one, and an assertion over a whole page is the lens `posture-sweep.md` refuses. The positive form rides the sibling entry's field scan."
   },
   {
     "tag": "CHAIN-AUTHORING-ENUMERATES-WHAT-A-GATE-RECEIVES",
@@ -47,9 +47,111 @@
       "section": "What a gate receives"
     },
     "acceptance": "the page enumerates GateContext's fields as the cited section names them, including the span fields and which stage sets each.",
-    "tests": [],
+    "tests": [
+      "docs/CHAIN-AUTHORING.md's gate section names every GateContext field the engine sets"
+    ],
     "pins": [],
-    "notes": "`baseSha` reached authors only via `docs/MIGRATING-0.15.md`; `landedOnSha` has no migration page (0.16.1 is current), so the standing page is its only home. A pin resolving the named fields against `GateContext`'s declared members is arm (a) of the `docs/` open question — filed there, not here."
+    "notes": "`baseSha` reached authors only via `docs/MIGRATING-0.15.md`; `landedOnSha` has no migration page, so the standing page is its only home. The pin is ruled in — a `docs/` passage stating what a shipped interface does may be read against that interface — so the named fields resolve against `GateContext` (`src/Gate.ts`). Red on the base, where the page names none."
+  },
+  {
+    "tag": "THE-ADOPTION-PAGE-NAMES-EVERY-RUNNER-OPERATION",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/examples.test.ts",
+          "description": "the adoption section's operation list against the declared interface, beside the supervisor-policy pin"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/CHAIN-AUTHORING.md prices a non-vitest adoption by naming the runner's three operations, and nothing reads that list against the declared interface",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "a pin resolves the operations *What adoption costs* names against Runner's declared members in both directions, so either side gaining or losing one reds.",
+    "tests": [],
+    "pins": [
+      "docs/CHAIN-AUTHORING.md's adoption section names every operation Runner declares"
+    ],
+    "notes": "The third carve-out now licenses a `docs/` passage read against the interface it describes; the sibling pin already shipped for `Chain.supervisorPolicy` (`tests/examples.test.ts`). `docs/MIGRATING-0.16.md` states the same three operations and is deliberately not pinned: the page opens by declaring itself a dated record, a divergence declared at the site."
+  },
+  {
+    "tag": "THE-HARVEST-SKIPS-A-DOT-PREFIXED-NAME",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/friction.ts",
+          "description": "the harvest's candidate filter takes the shared name test"
+        },
+        {
+          "path": "tests/friction.test.ts",
+          "description": "a dot-prefixed mirror file across the real harvest"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the teardown harvest filters isFile() alone, so a dot-prefixed mirror file lands in the primary dir under a stamped name the downstream skip can no longer see",
+    "per": {
+      "path": "spec/chain.md",
+      "section": "`Chain.friction` — the declared friction channel"
+    },
+    "acceptance": "harvestFriction skips a name beginning with `.` by name alone — the file stays in the mirror and dies with the worktree — while a non-dot name in the same dir still lands in the primary dir.",
+    "tests": [
+      "harvestFriction leaves a dot-prefixed mirror file where it is"
+    ],
+    "pins": [
+      "harvestFriction delivers a non-dot file from a mirror dir that also holds a dot-prefixed one"
+    ],
+    "notes": "`isDotName` (`src/paths.ts`) is the shared test the count, the listing and the read verb already take (`src/cli.ts`, `src/job.ts`); the harvest filters `e.isFile()` alone (`src/friction.ts`). The tracked-at-HEAD bound covers a committed placeholder, never an untracked one — a Finder-seeded `.DS_Store`, or one a `setupWorktree` hook materializes."
+  },
+  {
+    "tag": "FLUME-HELP-ANSWERS-FOR-A-SUBCOMMAND",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the top-level help short-circuit reads the trailing name"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "the three answers: a subcommand, the job verb, an unknown name"
+        },
+        {
+          "path": "docs/CLI.md",
+          "description": "the opening paragraph's help sentence"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "flume help status prints the top-level help and drops the name, so the first verb an operator types is the one whose argument is silently discarded",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Subcommand surface"
+    },
+    "acceptance": "`flume help <subcommand>` prints that subcommand's `--help` and exits 0 — including `job`, whose page is its own — an unknown name is usage-shaped exit 2, and bare `flume help` still prints the top-level help.",
+    "tests": [
+      "flume help status prints the status subcommand's usage",
+      "flume help job prints the job verb's usage",
+      "flume help with an unknown name exits 2 with usage"
+    ],
+    "pins": [],
+    "notes": "`HELP_SUB` (`src/cliHelp.ts`) already holds one page per subcommand and `isSubcommand` already decides the name; `job` is not in `SUBCOMMANDS` and carries `HELP_JOB`, so the job page is that name's answer. The branch to widen is the top-level short-circuit (`src/cli.ts`). `docs/CLI.md`'s opening paragraph calls `flume help` the same answer to the byte and wants the second sentence."
   },
   {
     "tag": "THE-STATE-ROOT-OFFSET-TAKES-ITS-NAMES-FILE",
@@ -347,7 +449,94 @@
       "the inbox slice is live for a waiting friction file"
     ],
     "pins": [],
-    "notes": "Chain.friction exists on the engine and the declaration mirrors none of it — no schema field, no pass-through, and no row in *What a consumer declares*'s table. The missing row is the operator's amendment; the field mirrors the engine's value as `supervisor` does. Blocked on the liveness rule so the fourth leg lands under it."
+    "notes": "`Chain.friction` exists on the engine and the declaration mirrors none of it — no schema field, no pass-through. The table row landed with the ruling (*What a consumer declares*, `friction`), so the field mirrors the engine's value as `supervisor` does. Blocked on the liveness rule so the fourth leg lands under it."
+  },
+  {
+    "tag": "A-DECLARED-FINDINGS-SCRIPT-WRITES-RECORDS",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "`findings`: declared scripts, each a name and a command"
+        },
+        {
+          "path": "harness/inboxWindow.ts",
+          "description": "the scripts run at the tip before the render; each stdout line becomes a record file"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the field and its shape"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the run, the materialization, and the empty case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the declaration names no findings scripts and the inbox slice runs none, so a consumer's per-tick measurement has no route into the drain the package already runs",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Declared findings sources"
+    },
+    "acceptance": "declared findings scripts run at the tip before the slice renders, each stdout line's name and body is materialized as a record file, and those files render and drain exactly as the inbox's do.",
+    "tests": [
+      "a declared findings script's stdout lines are materialized as record files",
+      "the inbox slice renders a materialized findings record beside the inbox's",
+      "a findings script yielding no lines leaves the record queue untouched"
+    ],
+    "pins": [],
+    "notes": "The wire shape is ratified — one `{ name, body }` object per line, the record's name and bytes stated rather than parsed. Watch the records gate: the package writes the materialized file and the slice drains it, but a plan commit that adds a record is refused, so the file must reach the agent already on disk and leave the same tick. Blocked on the friction leg, which rewrites the same window."
+  },
+  {
+    "tag": "THE-DECLARATION-ASSERTS-ITS-CAPABILITIES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "`capabilities` on the declaration"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "pass-through to Chain.capabilities, whole"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the field"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the pass-through, declared and absent"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the harness declaration asserts no capabilities, so under the package a requiresCapability entry is unpickable forever and no declaration can change it",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "a declared `capabilities` list reaches Chain.capabilities whole, and a declaration that names none asserts none.",
+    "tests": [
+      "a declared capabilities list reaches Chain.capabilities whole"
+    ],
+    "pins": [
+      "a declaration naming no capabilities leaves Chain.capabilities unasserted"
+    ],
+    "notes": "Engine side is complete: `Chain.capabilities` (`src/Phase.ts`) decides a `requiresCapability` entry's pickability and `flume status` already names one held back — nothing in `src/` moves. The pass-through mirrors the `supervisor` row's (`supervisorPolicy`, `harness/chain.ts`). Per-job capabilities add to this set and ride THE-DECLARATION-NAMES-ITS-JOBS."
   },
   {
     "tag": "THE-DECLARATION-CARRIES-SETUP-SERIALIZE",
@@ -394,7 +583,10 @@
   {
     "tag": "THE-DECLARATION-NAMES-ITS-JOBS",
     "gate": {
-      "kind": "open"
+      "kind": "blockedBy",
+      "tags": [
+        "THE-DECLARATION-ASSERTS-ITS-CAPABILITIES"
+      ]
     },
     "dependsOnForks": [],
     "files": {
@@ -428,15 +620,16 @@
       "path": "spec/harness.md",
       "section": "What a consumer declares"
     },
-    "acceptance": "`jobs` maps a job name to a specLocus, a fence and optional slots, a chain loaded under a job's state root applies that job's values over the shared declaration, and an absent `jobs` resolves the repo-level one-job case.",
+    "acceptance": "`jobs` maps a job name to a specLocus, a fence and optional slots and capabilities, a chain loaded under a job's state root applies that job's values over the shared declaration — capabilities added to the shared set rather than replacing it — and an absent `jobs` resolves the repo-level one-job case.",
     "tests": [
       "a chain loaded under a named job's state root takes that job's specLocus and fence",
       "a named job's slots override the declaration's shared slots",
+      "a named job's capabilities add to the declaration's shared set",
       "a declaration naming no jobs resolves the repo-level values",
       "the chain the factory builds declares a seedDir at the package's skeleton"
     ],
     "pins": [],
-    "notes": "The engine's job partition already gives each job its state root (spec/jobs.md); which job the chain is under is read from api.paths.flumeDir. `flume job new` seeds from the package skeleton through the factory's declared seedDir — harness/ declares none today, so that is part of this entry, not a second one."
+    "notes": "The engine's job partition already gives each job its state root (spec/jobs.md); which job the chain is under is read from api.paths.flumeDir. `flume job new` seeds from the package skeleton through the factory's declared seedDir — harness/ declares none today, so that is part of this entry. Blocked on the shared capabilities field this one adds to."
   },
   {
     "tag": "A-JOB-FENCE-STOPS-AT-A-SIBLINGS-ARTIFACTS",
