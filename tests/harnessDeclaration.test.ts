@@ -14,6 +14,8 @@
  * catch.
  */
 
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
@@ -28,6 +30,7 @@ import type {
   RunnerFactory,
   SectionResolver,
 } from "../harness/index.ts";
+import { sectionOf } from "./helpers/docSections.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 
 /**
@@ -487,5 +490,70 @@ describe("the harness declaration schema", () => {
     };
 
     expect(refusalFor(declared)).toContain("gates.build.0.when");
+  });
+
+  /**
+   * The two pages that list this schema's fields by hand, read against the
+   * schema. Both are the surface a consumer arrives on before the hover text
+   * — one enumerating what a declaration names, the other what the middle
+   * border hands a consumer — so each is pinned for what it says against the
+   * interface it describes (`.claude/rules/engineering.md`, *Narration is
+   * the ladder's bottom rung*, the `docs/` carve-out).
+   *
+   * One direction only: the schema's fields are a subset of what the page
+   * names. A page naming more — `jobs`, a field `spec/harness.md` states and
+   * the schema has yet to gain — is a page ahead of the code, which is not
+   * this pin's finding to make.
+   *
+   * The span is cut rather than the page read whole: `docs/CHAIN-AUTHORING.md`
+   * documents the engine-level `Chain` fields under the same names for two
+   * thousand lines, so a whole-page read would report every field named
+   * wherever it happened to fall and pass over a declaration list that names
+   * none of them.
+   */
+  const fieldsMissingFrom = async (
+    page: string,
+    heading: string,
+    anchor: string,
+  ): Promise<{ page: string; missing: string[] }> => {
+    const text = await readFile(new URL(`../${page}`, import.meta.url), "utf8");
+    const section = sectionOf(text, heading);
+
+    // The cut landed on the list, not on an empty span or a same-named
+    // heading elsewhere: without this a renamed heading reports no missing
+    // fields over no text at all (`.claude/rules/engineering.md`, *A green
+    // verdict is proven non-vacuous*).
+    expect({ page, anchored: section.includes(anchor) }).toEqual({
+      page,
+      anchored: true,
+    });
+
+    const fields = Object.keys(DeclarationSchema.shape);
+    expect(fields.length).toBeGreaterThan(0);
+
+    return {
+      page,
+      missing: fields.filter((field) => !section.includes(`\`${field}\``)),
+    };
+  };
+
+  it("docs/CHAIN-AUTHORING.md names every field DeclarationSchema declares", async () => {
+    expect(
+      await fieldsMissingFrom(
+        "docs/CHAIN-AUTHORING.md",
+        '### "Declaration" names two different things',
+        "The harness declaration's four required fields",
+      ),
+    ).toEqual({ page: "docs/CHAIN-AUTHORING.md", missing: [] });
+  });
+
+  it("docs/LAYERS.md names every field DeclarationSchema declares", async () => {
+    expect(
+      await fieldsMissingFrom(
+        "docs/LAYERS.md",
+        "## Border 2 — harness to consumer",
+        "Through the declaration's fields",
+      ),
+    ).toEqual({ page: "docs/LAYERS.md", missing: [] });
   });
 });

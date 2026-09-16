@@ -52,23 +52,30 @@ state is kept, what the fence refuses. A consumer enables, disables, and
 declares; it does not re-author (`spec/harness.md`).
 
 **How a consumer extends it.** Through the declaration's fields, each a typed
-place for a value the harness does not choose:
+place for a value the harness does not choose — and, beside the declaration,
+the entry fields the chain factory takes:
 
-- **entry fields** — a schema beside a hint, rendered into the plan prompt by
+- `specLocus` and `fence` — where a `per` cite may point, and what build and
+  each plan slice may write;
+- `slices` — which plan slices run, and the sweep's domain and posture pages;
+- `runner` — a factory over the judge's interface; vitest and script runners
+  ship, anything else is declared;
+- entry fields — a schema beside a hint, rendered into the plan prompt by
   the same renderer as the package's own, so a consumer's parser and the
   prompt that fills it cannot drift;
-- **slots** — text the prompts quote, context and never a directive;
-- **gates** — by registry name, shell, or script, run with the engine's gate
-  facts in their environment;
-- **the runner** — a factory over the judge's interface; vitest and script
-  runners ship, anything else is declared;
-- **jobs** — a named fence and spec locus per unit of work in one checkout;
-- **capabilities** — the environment facts a repository asserts, which decide
+- `slots` — text the prompts quote, context and never a directive;
+- `gates` — by registry name, shell, or script, run under the `shell` the
+  declaration names with the engine's gate facts in their environment;
+- `resolver` — how a `per` cite's section is found, where heading text is not
+  how this consumer's spec is keyed;
+- `channelPaths` and `scopeWritesToEntry` — what a build tick writes beside
+  its commit, and whether a fanout tick's writes narrow to its entry;
+- `jobs` — a named fence and spec locus per unit of work in one checkout;
+- `capabilities` — the environment facts a repository asserts, which decide
   whether a capability-gated entry is pickable;
-- **setup**, **agents**, **supervisor**, **ci**, and the findings sources the
-  inbox slice drains;
-- **the handoff** — overridable by declaration, for a consumer whose wake
-  rules differ.
+- `setup`, `agents`, `supervisor`, `ci`, and the findings sources the inbox
+  slice drains;
+- `handoff` — overridable per phase, for a consumer whose wake rules differ.
 
 **The test.** Would every consumer write this block identically? Then it is
 not a consumer concern: it is a declaration field the harness owes, and until
