@@ -11,6 +11,39 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-09-16
+
+The first pilot's release. A downstream consumer adopting and upgrading on
+win32 and node 22 found that the chain `flume-harness init` writes could not
+load there, and that an existing hand-written chain dies on a node patch
+upgrade for the same reason. Both are one missing manifest. Nothing here
+changes an API.
+
+### Fixed
+
+- **The chain `init` writes loads on node 22.** `tsx` loads `.flume/chain.ts`
+  in the module mode the nearest `package.json` declares, and the package is
+  ESM-only. Under a manifest with no `type` — what `npm init` writes — the
+  init-generated chain never loaded on node 22, and a hand-written chain with
+  a runtime import from the package loads on 22.20 and fails on 22.23; node 24
+  hides both. `init` now writes `.flume/package.json` declaring
+  `"type": "module"`, scoped to the state root so the consumer's own files are
+  untouched. **An existing consumer adds the same file** — the 0.16 migration
+  note now leads with that step — or its chain stops loading on node 22.23
+  and later. The install smoke runs `init` over an `npm init` manifest and
+  loads the chain it wrote, on both CI lanes.
+- **`flume status` names a chain that failed to load as a row of its own
+  listing**, `chain: failed to load — <reason>`, before the pending count, so
+  a status over a dead chain no longer has the shape of a healthy one. It
+  still exits 0.
+- **`flume help` answers**, the same as `--help`; **`flume-harness init
+  --help`** prints usage and exits 0 instead of refusing the argument.
+- **The 0.16 migration note** opens by naming the minors it does not cover,
+  reads a prior-attempt record through the exported `PriorAttempt` type in
+  its example rather than a bare string literal, and prices the `runner`
+  declaration honestly for a consumer not on vitest.
+
+
 ## [0.16.0] - 2026-09-16
 
 The harness release: **flume's opinion ships beside the engine, opted into
