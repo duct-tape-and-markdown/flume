@@ -1,76 +1,5 @@
 [
   {
-    "tag": "AN-OPEN-QUESTION-IS-ONE-FILE-PRESENT-WHILE-OPEN",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/layout.ts",
-          "description": "the questions directory and its glob, in place of the single page"
-        },
-        {
-          "path": "harness/prompts.ts",
-          "description": "the questions slot renders the directory's files"
-        },
-        {
-          "path": "harness/prompts/plan-inbox.md",
-          "description": "the span lists the directory instead of grepping `^## `"
-        },
-        {
-          "path": "harness/prompts/plan-derive.md",
-          "description": "same span"
-        },
-        {
-          "path": "harness/prompts/plan-sweep.md",
-          "description": "same span"
-        },
-        {
-          "path": "harness/init.ts",
-          "description": "adoption seeds the directory as it seeds the rest"
-        },
-        {
-          "path": "tests/harnessLayout.test.ts",
-          "description": "the path and the fence"
-        },
-        {
-          "path": "tests/harnessPrompts.test.ts",
-          "description": "the render, and the absent-directory placeholder"
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      ".flume/plan/notes/AN-OPEN-QUESTION-IS-ONE-FILE-PRESENT-WHILE-OPEN.md",
-      "README.md",
-      "docs/MIGRATING-0.17.md",
-      "harness/layout.ts",
-      "harness/prompts.ts",
-      "harness/prompts/plan-derive.md",
-      "harness/prompts/plan-discipline.md",
-      "harness/prompts/plan-inbox.md",
-      "harness/prompts/plan-sweep.md",
-      "tests/harnessLayout.test.ts",
-      "tests/harnessPrompts.test.ts"
-    ],
-    "summary": "open questions are one page every slice greps `^## ` out of, so a question's status is read from a word and no two sessions can add one without conflicting",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Records as one file each"
-    },
-    "acceptance": "open questions are one file each under the plan's `questions/` directory, present while open and deleted when answered; every slice's questions span lists that directory, and no slice reads a heading or a status word.",
-    "tests": [
-      "a plan slice's questions span lists one file per open question",
-      "an absent questions directory renders the slices' none-open placeholder",
-      "the plan fence admits a file under the questions directory"
-    ],
-    "pins": [],
-    "notes": "Ruling: presence is state. The `^## ` grep is spelled in all three slice prompts today. `.flume/plan/open-questions.md` is outside build's fence, so the layout change must leave that path inside the plan fence until a drain has migrated and removed it — otherwise the file strands where no phase can reach it. One question is open in it as of this tick."
-  },
-  {
     "tag": "A-PARKED-NOTE-IS-ITS-OWN-DIRECTORY",
     "gate": {
       "kind": "open"
@@ -110,20 +39,6 @@
       ],
       "retire": []
     },
-    "summary": "a park is read off the shape of the commit that wrote it — the entry's note and nothing else — so a park that also touched a file is a ship, and a note's kind lives in its prose",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Records as one file each"
-    },
-    "acceptance": "a build note that parks its entry lives under `notes/parked/` and an observation beside it does not, the park predicate reads that location rather than the commit's path list, and the records gate holds both directories.",
-    "tests": [
-      "a note under the parked directory parks its entry",
-      "a note beside the parked directory ships its entry",
-      "a commit writing a parked note and the entry's work is still a park",
-      "the records gate refuses a parked note written under another tick's tag"
-    ],
-    "pins": [],
-    "notes": "Ruling: location is kind. `isPark` (harness/chain.ts) is the path-list read, and both `namedLinesGate` and `shipped` consume it. The record listing and the plan fence both compose from `RECORD_DIR_NAMES`, so the parked directory joins there rather than at each reader.",
     "observedFiles": [
       ".flume/plan/notes/A-PARKED-NOTE-IS-ITS-OWN-DIRECTORY.md",
       "harness/chain.ts",
@@ -139,41 +54,21 @@
       "tests/harnessGates.test.ts",
       "tests/harnessLayout.test.ts",
       "tests/harnessRecords.test.ts"
-    ]
-  },
-  {
-    "tag": "THE-SETUP-RESTORE-TAKES-THE-DECLARED-SHELL",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/chain.ts",
-          "description": "the declared restore spawns through the declared shell, as a declared gate does"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the declared and the default shell over a restore"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "a declared command gate runs under the declaration's shell while `setup.restore` beside it still spawns through a hardcoded `sh -c` — the win32 exposure the gate closed, left standing",
+    ],
+    "summary": "a park is read off the shape of the commit that wrote it — the entry's note and nothing else — so a park that also touched a file is a ship, and a note's kind lives in its prose",
     "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
+      "path": "spec/harness.md",
+      "section": "Records as one file each"
     },
-    "acceptance": "`setup.restore` spawns through the declaration's `shell` on the same terms a declared command gate does, and an undeclared shell leaves it running under `sh`.",
+    "acceptance": "a build note that parks its entry lives under `notes/parked/` and an observation beside it does not, the park predicate reads that location rather than the commit's path list, and the records gate holds both directories.",
     "tests": [
-      "a declared shell runs the setup restore"
+      "a note under the parked directory parks its entry",
+      "a note beside the parked directory ships its entry",
+      "a commit writing a parked note and the entry's work is still a park",
+      "the records gate refuses a parked note written under another tick's tag"
     ],
-    "pins": [
-      "an undeclared shell runs the setup restore under sh"
-    ],
-    "notes": "Named by build's note on A-DECLARED-COMMAND-GATE-NAMES-ITS-SHELL as the sibling it left standing. `spec/harness.md`'s `setup` row names no shell, so the cite is the shared-mechanism rule rather than the row. `requireRunnableShell` (harness/declaredGates.ts) already refuses an unresolvable shell at load — one probe, both callers."
+    "pins": [],
+    "notes": "Ruling: location is kind. `isPark` (harness/chain.ts) is the path-list read, and both `namedLinesGate` and `shipped` consume it. The record listing and the plan fence both compose from `RECORD_DIR_NAMES`, so the parked directory joins there rather than at each reader."
   },
   {
     "tag": "THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY",
@@ -451,38 +346,6 @@
     ],
     "pins": [],
     "notes": "Read from the mode and the anchor the engine reports on the record — PriorAttempt's `mode` and `headSha` (src/Prompt.ts) — never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change."
-  },
-  {
-    "tag": "THE-ADOPTION-PAGE-NAMES-THE-OPERATIONS-ONCE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the lead-in points at the bullets instead of re-listing the set"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "the standing pin reads every place the section names the set"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the adoption section spells `run`, `runAtBase` and `lanes` three lines above the bullets the standing pin walks, so a fourth operation strands the copy no pin reads",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Derived state is computed, never restated beside its source"
-    },
-    "acceptance": "the adoption section names Runner's operation set in one place, and the standing pin's reader covers every place in that section that names it.",
-    "tests": [],
-    "pins": [
-      "docs/CHAIN-AUTHORING.md's adoption section names Runner's operation set in one place"
-    ],
-    "notes": "Same defect the three counts had, one rung down: a list rather than a count, so the count deletion left it. The bullet regex the pin walks does not reach the lead-in sentence. Either the inline list goes or the reader widens — build's call, but one copy is the target shape."
   },
   {
     "tag": "THE-PACKAGE-INVENTORY-NAMES-EVERY-DISCIPLINE-GATE",
