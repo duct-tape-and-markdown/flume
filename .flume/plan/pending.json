@@ -1,5 +1,130 @@
 [
   {
+    "tag": "ENTRY-CHECK-COMPARES-ONE-ALPHABET",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "onDiskIdentity's two answers reach the comparison in one alphabet, whether or not realpath resolved a link"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the reduction of the lane's junction input to a case the default lane runs"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the junction entry check is still red on the windows lane: realpath keeps the `\\\\?\\` prefix when it resolves nothing and drops it through a link, so the two answers never match",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Direct invocation is detected by realpath"
+    },
+    "acceptance": "`a directory-junction-equivalent argv[1] — raw path differs from the realpath — still resolves as direct` passes on the windows lane, and the prefix asymmetry it turns on is readable off-win32.",
+    "tests": [
+      "the CLI entry check reads a namespaced realpath answer and its plain spelling as the same file"
+    ],
+    "pins": [],
+    "notes": "windows lane run 35042172441. 877dc46b replaced the pathToFileURL leg but left `realpathSync(toNamespacedPath(p))`'s answer as the compared value: win32 realpath keeps the `\\\\?\\` prefix when no component is a link and returns readlink's un-prefixed target when one is, so the two sides differ by the prefix alone. The site's doc comment claims both answers share an alphabet — that claim is the defect. Judging it off-win32 wants a platform-free reduction (spec/cli.md, *win32 is a supported host*)."
+  },
+  {
+    "tag": "PLAN-FENCE-CASE-READS-GITS-ALPHABET",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/harnessLayout.test.ts",
+          "description": "the queue's arm reads the resolver's answer in the alphabet a fence glob is compared in"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the plan-fence agreement case matches `resolvePendingPath`'s host-native answer against git-alphabet fence globs, so its queue arm is green on posix by accident and red on win32",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "acceptance": "`the plan fence admits every artifact the package's own accessors address` passes on both lanes, and its queue arm still bites a one-sided rename rather than agreeing with itself.",
+    "tests": [],
+    "pins": [],
+    "notes": "windows lane run 35042172441: `.flume\\plan\\pending.json` unfenced. `resolvePendingPath` answers host-native by declaration (harness/layout.ts, queuePath) — the fold belongs at the case, not the resolver. No tests[]/pins[] line: the whole diff is the file carrying its own case, so the judge would rebuild it at the base."
+  },
+  {
+    "tag": "A-TAG-PUSH-PUBLISHES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": ".github/workflows/release.yml",
+          "description": "the `v*` tag lane: publish under NPM_TOKEN, skip a version the registry already resolves, then smoke the registry install"
+        }
+      ],
+      "edit": [
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "a registry target beside the pack one"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the push of a `v*` tag publishes — the CI release lane spec/cli.md now states, and the registry leg of the install smoke it runs",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Versioning policy"
+    },
+    "acceptance": "a `v*` tag push publishes the tagged tree under the repository's `NPM_TOKEN`, skips when that version already resolves on the registry, and then installs the published tarball from the registry and runs the shim — red on its lane when the registry does not resolve the tag.",
+    "tests": [],
+    "pins": [],
+    "notes": "From the inbox ruling (2026-09-16). The operator has set the `NPM_TOKEN` repo secret from the credential `.env` holds, verified live. The workflow's first live run is the 0.16.0 cut. CLAUDE.md keeps the manual recipe as fallback only — not build's to edit. No tests[]: the lane is yaml no suite reads, and the registry leg needs a network the suite has no business taking."
+  },
+  {
+    "tag": "A-COMMENT-PAGE-NAME-RESOLVES-ON-DISK",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "a `*.md` page name resolves against the working tree alone, as the title arm's already does"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "the arm's own case, and the widened set's vacuity count"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the citations the widened arm reds"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a `*.md` page name cited in a src/harness/tests comment resolves through any string literal those trees carry, so a citation naming a retired artifact cannot red",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "a page name cited in a comment is answered by the working tree alone, so a renamed or retired page reds its citations; the identifier arms are untouched, and every citation the widened arm reds is re-homed in the same commit.",
+    "tests": [
+      "a comment's page name is answered by the working tree, never by a string literal a judged tree carries"
+    ],
+    "pins": [],
+    "notes": "From A-TEST-TITLE-CITES-A-PAGE-THE-TREE-HOLDS, which left the call to plan. Verified: `state.md` at tests/Dispatcher.test.ts:11815 names an artifact this repo replaced with plan/state.json and resolves only off the literal at tests/examples.test.ts:333. The rule's own why — 'a renamed page cannot leave its citations standing' — is what the literal arm defeats. Widens the judged set; the reds it surfaces are this entry's to fix."
+  },
+  {
     "tag": "ONE-CHAIN-APPLICATION-PER-TICK-PROCESS",
     "gate": {
       "kind": "open"
