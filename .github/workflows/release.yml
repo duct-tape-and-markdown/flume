@@ -1,0 +1,119 @@
+name: Release
+
+# The push of a `v*` tag publishes (spec/cli.md, *Versioning policy*). The
+# version bump, the changelog curation, the release commit and the tag stay
+# human-performed at cut time; this lane is everything after the push, so a
+# cut is done when this run is green rather than when someone remembers to
+# run `npm publish` by hand.
+on:
+  push:
+    tags:
+      - "v*"
+
+# One run per tag. A re-pushed tag queues behind its own run rather than
+# racing it at the registry.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          # Writes the `.npmrc` the publish step authenticates through,
+          # keyed to NODE_AUTH_TOKEN. Every registry command in this job is
+          # `npm`, never `pnpm`: pnpm ignores the env-var auth form and falls
+          # through to `~/.npmrc`, which surfaces as a 404 on the PUT.
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      # The tag names the version this tree publishes as, and npm would
+      # happily publish a tree whose manifest says something else — leaving a
+      # tag nothing on the registry matches, which is exactly what the smoke
+      # below can then only report after the irreversible step.
+      - name: Tag and manifest agree
+        id: version
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_NAME="$(node -p "require('./package.json').name")"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "tag $GITHUB_REF_NAME names $TAG_VERSION, but package.json says $PKG_VERSION" >&2
+            exit 1
+          fi
+          echo "spec=$PKG_NAME@$PKG_VERSION" >> "$GITHUB_OUTPUT"
+
+      # Re-running a green cut, or pushing a tag over a version already
+      # published by hand (CLAUDE.md keeps that fallback), must not red the
+      # lane: what this job asserts is that the version is on the registry,
+      # not that this run is what put it there. `npm view <pkg>@<version>
+      # version` prints the version when it resolves and nothing when it does
+      # not; a name with no published versions at all 404s, which is also
+      # "not published".
+      - name: Registry already resolves this version?
+        id: published
+        run: |
+          set -uo pipefail
+          FOUND="$(npm view "${{ steps.version.outputs.spec }}" version --prefer-online 2>/dev/null || true)"
+          if [ -n "$FOUND" ]; then
+            echo "already on the registry: ${{ steps.version.outputs.spec }} — skipping publish"
+            echo "already=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "not on the registry: ${{ steps.version.outputs.spec }} — publishing"
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish
+        if: steps.published.outputs.already != 'true'
+        # `prepublishOnly` (pnpm build) builds dist/ as part of this command,
+        # so there is no separate build step to fall out of step with it.
+        # --access public: the package is scoped, and a scoped package
+        # defaults to restricted on a first publish.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+      # A publish is readable as soon as the registry commits it, but not
+      # always on the first read. Poll for the version rather than sleeping a
+      # fixed guess, and fail naming the spec that never showed up — the tag
+      # that does not resolve is the failure this lane exists to make loud.
+      # --prefer-online on every read: this job asked about the same spec
+      # before publishing, and the cached miss would otherwise outlive it.
+      - name: Registry resolves the tag
+        run: |
+          set -uo pipefail
+          SPEC="${{ steps.version.outputs.spec }}"
+          for _ in $(seq 1 30); do
+            if [ -n "$(npm view "$SPEC" version --prefer-online 2>/dev/null || true)" ]; then
+              echo "registry resolves $SPEC"
+              exit 0
+            fi
+            echo "waiting for the registry to resolve $SPEC …"
+            sleep 10
+          done
+          echo "$SPEC did not resolve on the registry within 5 minutes" >&2
+          exit 1
+
+      # The install acceptance the local smoke performs against a pack,
+      # pointed at the registry: the shared script, not a second spelling of
+      # it (.claude/rules/engineering.md, *The fix lands at the mechanism*).
+      # Install the published spec -> generated shim `--version`, held to the
+      # version the tag named -> both `exports` subpaths -> a chain-load
+      # fixture driven through a verb that refuses on a chain it cannot load.
+      - name: Registry-install smoke
+        run: node scripts/smoke-install.mjs --from-registry "${{ steps.version.outputs.spec }}"

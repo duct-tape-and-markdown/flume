@@ -476,9 +476,9 @@ it("the CI consumer-install smoke runs scripts/smoke-install.mjs rather than re-
 
 const CI_WORKFLOW = fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url));
 
-/** ci.yml with comments and blank lines dropped — every reader below is indentation-structural. */
-async function ciWorkflowLines(): Promise<string[]> {
-  return (await readFile(CI_WORKFLOW, "utf8"))
+/** A workflow with comments and blank lines dropped — every reader below is indentation-structural. */
+async function workflowLines(path: string): Promise<string[]> {
+  return (await readFile(path, "utf8"))
     .split(/\r?\n/)
     .filter((l) => l.trim() !== "" && !/^\s*#/.test(l));
 }
@@ -534,7 +534,7 @@ function runCommands(job: string[]): string[] {
 }
 
 it("the CI workflow runs on every push to main", async () => {
-  const lines = await ciWorkflowLines();
+  const lines = await workflowLines(CI_WORKFLOW);
 
   const triggers = yamlBlock(lines, "on", 0);
   expect(triggers, `${CI_WORKFLOW} must declare its triggers under \`on:\``).toBeDefined();
@@ -560,7 +560,7 @@ it("the CI workflow runs on every push to main", async () => {
 });
 
 it("the windows-latest lane runs typecheck, the default test lane, build and the install smoke", async () => {
-  const lines = await ciWorkflowLines();
+  const lines = await workflowLines(CI_WORKFLOW);
 
   const lane = declaration.ci?.find((l) => l.workflow === basename(CI_WORKFLOW));
   expect(
@@ -615,4 +615,96 @@ it("the windows-latest lane runs typecheck, the default test lane, build and the
         commands.join(" / "),
     ).toBe(true);
   }
+});
+
+/**
+ * `spec/cli.md`, *Versioning policy*: the push of a `v*` tag publishes. The
+ * cut's irreversible step is a workflow no typecheck and no suite would
+ * otherwise read, and its two failure modes are silent in opposite
+ * directions — a trigger that matches no tag publishes nothing while the
+ * policy still reads as current, and a smoke step drifting from the flag the
+ * script parses reds a cut on its own plumbing. Both cases below are
+ * indentation-structural readers over the committed yaml, and the second is
+ * an agreement case: the flag is read out of the workflow and resolved
+ * against what `scripts/smoke-install.mjs` actually parses.
+ */
+
+const RELEASE_WORKFLOW = fileURLToPath(new URL("../.github/workflows/release.yml", import.meta.url));
+
+it("the release workflow publishes on a v-prefixed tag push under the repository's NPM_TOKEN", async () => {
+  const lines = await workflowLines(RELEASE_WORKFLOW);
+
+  const triggers = yamlBlock(lines, "on", 0);
+  expect(triggers, `${RELEASE_WORKFLOW} must declare its triggers under \`on:\``).toBeDefined();
+
+  const push = yamlBlock(triggers!, "push", 2);
+  expect(
+    push,
+    `${RELEASE_WORKFLOW} must fire on \`push:\` — the tag push is what publishes`,
+  ).toBeDefined();
+
+  const tags = yamlSeq(push!, "tags", 4);
+  expect(
+    tags,
+    `the \`push:\` trigger must name the tag patterns it fires on as a sequence — ` +
+      `a push trigger with no \`tags:\` filter fires on branches instead, and ` +
+      `would publish off every commit`,
+  ).toBeDefined();
+
+  // Non-vacuity: a pattern list that named nothing would match no tag, and
+  // the membership claim below would hold over an empty filter.
+  expect(tags!.length).toBeGreaterThan(0);
+  expect(tags!.some((t) => t.startsWith("v"))).toBe(true);
+
+  const commands = runCommands(lines);
+  expect(commands.length).toBeGreaterThan(0);
+
+  const publishes = commands.filter((c) => /^npm publish\b/.test(c));
+  expect(
+    publishes,
+    `${RELEASE_WORKFLOW} must publish with \`npm publish\` — pnpm ignores the ` +
+      `env-var auth form and falls through to ~/.npmrc — found: ${commands.join(" / ")}`,
+  ).toHaveLength(1);
+
+  // The credential is the repository secret the policy names, read from the
+  // workflow rather than assumed: a publish step wired to some other secret
+  // authenticates as something nobody rotated.
+  expect(lines.some((l) => l.includes("secrets.NPM_TOKEN"))).toBe(true);
+});
+
+it("the release lane's registry smoke runs scripts/smoke-install.mjs through flags the script parses", async () => {
+  const commands = runCommands(await workflowLines(RELEASE_WORKFLOW));
+
+  const smoke = commands.filter((c) => c.includes("scripts/smoke-install.mjs"));
+  expect(
+    smoke,
+    `${RELEASE_WORKFLOW} must run the shared install smoke — the registry leg ` +
+      `is that script pointed at what was published, not a second spelling of it`,
+  ).toHaveLength(1);
+
+  const source = await readFile(
+    fileURLToPath(new URL("../scripts/smoke-install.mjs", import.meta.url)),
+    "utf8",
+  );
+  const parsed = new Set([...source.matchAll(/flagValue\("(--[a-z-]+)"\)/g)].map((m) => m[1]!));
+
+  // Non-vacuity on both sides: the script parses flags at all, and the step
+  // passes some — otherwise the agreement below holds over two empty sets.
+  expect(parsed.size).toBeGreaterThan(0);
+  const passed = [...smoke[0]!.matchAll(/(--[a-z-]+)/g)].map((m) => m[1]!);
+  expect(passed.length).toBeGreaterThan(0);
+
+  for (const flag of passed) {
+    expect(
+      parsed.has(flag),
+      `the release smoke passes \`${flag}\`, which scripts/smoke-install.mjs does ` +
+        `not parse — it would be ignored and the step would pass against the ` +
+        `default pack target instead of the registry`,
+    ).toBe(true);
+  }
+
+  // The registry target specifically: a run that lost the flag silently
+  // re-smokes a pack of the checked-out tree, which proves nothing about
+  // what the tag published.
+  expect(passed).toContain("--from-registry");
 });

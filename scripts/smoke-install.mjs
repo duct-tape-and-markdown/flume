@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * scripts/smoke-install.mjs — pack -> install -> generated shim -> chain load.
+ * scripts/smoke-install.mjs — pack (or registry) -> install -> generated
+ * shim -> chain load.
  *
  * Exercises the *installed* package through npm's *generated* bin shims
  * (`node_modules/.bin/flume.cmd` on win32, `node_modules/.bin/flume`
@@ -22,10 +23,21 @@
  * lives*): in-repo, `harness/` resolves relatively whether the map names it
  * or not.
  *
- * Usage: `node scripts/smoke-install.mjs [--scratch <dir>]`. Both CI lanes
- * run this one script rather than a second spelling of it; the POSIX lane
- * passes `--scratch` because its consumer type-resolution gate typechecks
- * against the tarball and installed consumer this run leaves behind.
+ * Two install sources, one acceptance. By default the repo is packed and
+ * that tarball installed — the pre-publish target, what a cut runs locally
+ * and what both CI lanes run. With `--from-registry <spec>` the pack is
+ * skipped and npm resolves `<spec>` from the registry instead: the same
+ * steps pointed at what was actually published, which is what the `v*` tag
+ * lane runs after it publishes (`spec/cli.md`, *Versioning policy*). A spec
+ * that pins a version pins the shim's `--version` with it, so a registry
+ * answering with some other version fails the run instead of passing under
+ * the tag's name.
+ *
+ * Usage: `node scripts/smoke-install.mjs [--scratch <dir>] [--from-registry <spec>]`.
+ * Both CI lanes run this one script rather than a second spelling of it; the
+ * POSIX lane passes `--scratch` because its consumer type-resolution gate
+ * typechecks against the tarball and installed consumer this run leaves
+ * behind.
  */
 
 import { spawnSync } from "node:child_process";
@@ -135,6 +147,25 @@ for (const [specifier, value] of [
 console.log("both exports subpaths resolved from the installed package");
 `;
 
+const USAGE =
+  "[smoke-install] usage: smoke-install.mjs [--scratch <dir>] [--from-registry <spec>]";
+
+/**
+ * The value of `--flag <value>`, or null when the flag is absent. A flag
+ * given without a value is a usage error rather than a null: every flag here
+ * names something the run cannot guess.
+ */
+function flagValue(flag) {
+  const at = process.argv.indexOf(flag);
+  if (at === -1) return null;
+  const value = process.argv[at + 1];
+  if (!value || value.startsWith("--")) {
+    console.error(USAGE);
+    process.exit(2);
+  }
+  return value;
+}
+
 /**
  * Where the run works, and who owns the cleanup.
  *
@@ -144,12 +175,24 @@ console.log("both exports subpaths resolved from the installed package");
  * input, and deleting it would delete that. The two cases differ in
  * ownership only; every step below runs identically either way.
  */
-const SCRATCH_FLAG = process.argv.indexOf("--scratch");
-const SUPPLIED_SCRATCH = SCRATCH_FLAG === -1 ? null : process.argv[SCRATCH_FLAG + 1];
-if (SCRATCH_FLAG !== -1 && !SUPPLIED_SCRATCH) {
-  console.error("[smoke-install] usage: smoke-install.mjs [--scratch <dir>]");
-  process.exit(2);
-}
+const SUPPLIED_SCRATCH = flagValue("--scratch");
+const REGISTRY_SPEC = flagValue("--from-registry");
+
+/**
+ * The version `--from-registry` pinned, when it pinned one: everything past
+ * the spec's last `@`, which is the scope separator only for a bare scoped
+ * name (`@scope/pkg` — index 0) and the version separator otherwise. Null
+ * leaves the shim's `--version` unasserted, because there is nothing to hold
+ * it to — a bare name, and equally a dist-tag (`@latest`), which names a
+ * version the spec does not spell and would fail the comparison for being a
+ * word rather than for installing the wrong package.
+ */
+const REGISTRY_VERSION = (() => {
+  if (!REGISTRY_SPEC) return null;
+  const at = REGISTRY_SPEC.lastIndexOf("@");
+  const pinned = at > 0 ? REGISTRY_SPEC.slice(at + 1) : "";
+  return /^\d/.test(pinned) ? pinned : null;
+})();
 
 let scratch;
 try {
@@ -161,18 +204,26 @@ try {
   }
   console.log(`[smoke-install] scratch dir: ${scratch}`);
 
-  const packOut = run(
-    "npm pack",
-    "npm",
-    ["pack", "--pack-destination", scratch],
-    { cwd: REPO_ROOT, capture: true },
-  );
-  const tarballName = packOut.trim().split(/\r?\n/).pop();
-  if (!tarballName) {
-    throw new SmokeStepError("npm pack: no tarball name in output");
+  // What `npm install` is pointed at below. Everything after this block is
+  // the same acceptance whichever source produced it.
+  let installTarget;
+  if (REGISTRY_SPEC) {
+    installTarget = REGISTRY_SPEC;
+    console.log(`[smoke-install] install source: registry, ${REGISTRY_SPEC}`);
+  } else {
+    const packOut = run(
+      "npm pack",
+      "npm",
+      ["pack", "--pack-destination", scratch],
+      { cwd: REPO_ROOT, capture: true },
+    );
+    const tarballName = packOut.trim().split(/\r?\n/).pop();
+    if (!tarballName) {
+      throw new SmokeStepError("npm pack: no tarball name in output");
+    }
+    installTarget = join(scratch, tarballName);
+    console.log(`[smoke-install] packed: ${installTarget}`);
   }
-  const tarballPath = join(scratch, tarballName);
-  console.log(`[smoke-install] packed: ${tarballPath}`);
 
   const consumerDir = join(scratch, "consumer");
   mkdirSync(consumerDir, { recursive: true });
@@ -185,23 +236,34 @@ try {
     cwd: consumerDir,
   });
   run(
-    "npm install tarball",
+    REGISTRY_SPEC ? "npm install from registry" : "npm install tarball",
     "npm",
     // --no-save: without it npm records a file: pin in the consumer's
     // package.json, pinning the consumer to a tarball this script deletes on
     // cleanup — same class as ci.yml's Consumer-install smoke fix (7ee70ed).
     // A consumer-install smoke tests "works when installed", not "works when
     // pinned".
-    ["install", "--no-audit", "--no-fund", "--no-save", tarballPath],
+    ["install", "--no-audit", "--no-fund", "--no-save", installTarget],
     { cwd: consumerDir },
   );
 
   const shimName = IS_WIN ? "flume.cmd" : "flume";
   const shimPath = join(consumerDir, "node_modules", ".bin", shimName);
 
-  run("generated shim --version", shimPath, ["--version"], {
+  const reportedVersion = run("generated shim --version", shimPath, ["--version"], {
     cwd: consumerDir,
-  });
+    capture: true,
+  }).trim();
+  console.log(`[smoke-install] shim reports version ${reportedVersion}`);
+  // A spec pinning a version is a claim about *which* package this run
+  // installed. Without this the step passes on whatever the registry handed
+  // back — a version the tag lane never published included.
+  if (REGISTRY_VERSION && reportedVersion !== REGISTRY_VERSION) {
+    throw new SmokeStepError(
+      `generated shim --version: installed ${reportedVersion || "(nothing)"}, but ` +
+        `--from-registry asked for ${REGISTRY_VERSION}`,
+    );
+  }
 
   writeFileSync(join(consumerDir, "subpaths.mjs"), SUBPATH_PROBE);
   run("exports subpaths", process.execPath, ["subpaths.mjs"], {
@@ -222,7 +284,8 @@ try {
   });
 
   console.log(
-    `[smoke-install] OK — pack, install, shim --version, exports subpaths, and shim ${CHAIN_LOAD_VERB} all passed`,
+    `[smoke-install] OK — ${REGISTRY_SPEC ? `registry ${REGISTRY_SPEC}` : "pack"}, ` +
+      `install, shim --version, exports subpaths, and shim ${CHAIN_LOAD_VERB} all passed`,
   );
 } catch (err) {
   if (err instanceof SmokeStepError) {
