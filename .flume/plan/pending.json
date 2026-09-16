@@ -40,22 +40,19 @@
       "path": "spec/harness.md",
       "section": "Declared findings sources"
     },
-    "acceptance": "a declared friction directory reaches Chain.friction and the inbox slice reads, renders and drains its files as it does the inbox's — one record per file, removed the way a record is drained.",
+    "acceptance": "a declared friction directory reaches Chain.friction and the inbox slice reads, renders and drains its files as it does the inbox's \u2014 one record per file, removed the way a record is drained.",
     "tests": [
       "a declared friction directory reaches Chain.friction",
       "the inbox slice renders a declared friction directory's files as records",
       "the inbox slice is live for a waiting friction file"
     ],
     "pins": [],
-    "notes": "`Chain.friction` exists on the engine and the declaration mirrors none of it — no schema field, no pass-through. The table row landed with the ruling (*What a consumer declares*, `friction`), so the field mirrors the engine's value as `supervisor` does. Blocked on the liveness rule so the fourth leg lands under it."
+    "notes": "`Chain.friction` exists on the engine and the declaration mirrors none of it \u2014 no schema field, no pass-through. The table row landed with the ruling (*What a consumer declares*, `friction`), so the field mirrors the engine's value as `supervisor` does. The declared-script sibling is cut (f45f4137), so this is the whole of what the section still owes."
   },
   {
-    "tag": "A-DECLARED-FINDINGS-SCRIPT-WRITES-RECORDS",
+    "tag": "THE-DECLARED-SHELL-IS-THE-SCHEMAS-OWN-DEFAULT",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -63,45 +60,141 @@
       "edit": [
         {
           "path": "harness/declaration.ts",
-          "description": "`findings`: declared scripts, each a name and a command"
+          "description": "`shell` takes the default; the doc comment's optional-rather-than-default reason goes with it"
         },
         {
-          "path": "harness/inboxWindow.ts",
-          "description": "the scripts run at the tip before the render; each unseen stdout line becomes a record file"
-        },
-        {
-          "path": "harness/planState.ts",
-          "description": "the drained record-name set, stamped as a lane's run is"
-        },
-        {
-          "path": "harness/prompts/plan-discipline.md",
-          "description": "the plan state's field list takes the stamp"
+          "path": "harness/declaredShell.ts",
+          "description": "the one fallback site collapses \u2014 the parse already resolved it"
         },
         {
           "path": "tests/harnessDeclaration.test.ts",
-          "description": "the field and its shape"
+          "description": "the parsed default"
         },
         {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "the run, the materialization, the delta, and the empty case"
+          "path": "tests/harnessChain.test.ts",
+          "description": "the gate and the restore still spawn under it"
         }
       ],
       "retire": []
     },
-    "summary": "the declaration names no findings scripts and the inbox slice runs none, so a consumer's per-tick measurement has no route into the drain the package already runs",
+    "summary": "an absent `shell` parses to absent and a helper folds the default afterwards, so a reader holding a parsed declaration sees no shell where the spec row states one",
     "per": {
       "path": "spec/harness.md",
-      "section": "Declared findings sources"
+      "section": "What a consumer declares"
     },
-    "acceptance": "declared findings scripts run at the tip before the slice renders, the slice stamps the record names it drained and materializes only names it has not seen since the stamp, and those files render and drain exactly as the inbox's do.",
+    "acceptance": "an absent `shell` parses to the package's default, so every reader of a parsed declaration holds a shell string and no caller applies a fallback of its own.",
     "tests": [
-      "a declared findings script's unseen stdout lines are materialized as record files",
-      "a findings script re-emitting a stamped record name materializes nothing",
-      "the inbox slice renders a materialized findings record beside the inbox's",
-      "a findings script yielding no lines leaves the record queue untouched"
+      "a declaration naming no shell parses to the package's default shell"
     ],
     "pins": [],
-    "notes": "Wire shape ratified: one `{ name, body }` object per line. The delta is the package's, never the script's — a consumer measuring a standing set re-emits it every tick and pays only its first drain. Watch the records gate: the package writes the materialized file and the slice drains it the same tick. Blocked on the friction leg, which rewrites the same window."
+    "notes": "Ruled at 98a38755: the reference consumer annotates `DeclarationInput`, and the init skeleton already did \u2014 so the doc comment's reason for `.optional()` (a defaulted field would force every consumer annotating `Declaration` to spell a shell) no longer binds. The record named this fold and nothing else."
+  },
+  {
+    "tag": "THE-HANDOFF-DECLINES-A-CLEAN-EXIT-AT-THIS-HEAD",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/handoff.ts",
+          "description": "the package's declaration of the engine's per-entry refusal"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "the refusal reaches the chain the factory builds"
+        },
+        {
+          "path": "tests/harnessHandoff.test.ts",
+          "description": "the three fates by mode and anchor"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the declaration arrives on the chain"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the default handoff re-dispatches an entry whose latest attempt was a clean exit at the current HEAD \u2014 the same dispatch against an unchanged world, for the same outcome",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The default `handoff`"
+    },
+    "acceptance": "the package declares the engine's per-entry refusal, and an entry whose latest prior attempt is a clean exit at the tick's own HEAD is not handed to build while one at an older HEAD still is.",
+    "tests": [
+      "an entry whose latest clean exit is at the current HEAD is not handed to build",
+      "an entry whose latest clean exit is at an older HEAD is handed to build",
+      "an entry whose latest attempt is a gate revert at the current HEAD is handed to build"
+    ],
+    "pins": [],
+    "notes": "Read from the mode and the anchor the engine reports on the record \u2014 PriorAttempt's `mode` and `headSha` (src/Prompt.ts) \u2014 never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change. The capability shipped at 908ce206; this is the policy half build's note named."
+  },
+  {
+    "tag": "THE-INBOX-SLICE-KEYS-A-STANDING-REFUSAL-BY-THE-ENGINES-KEY",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/inboxWindow.ts",
+          "description": "standing refusals look up by the engine's entry-attempt key instead of filtering on a hand-spelled keyspace and slug"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the agreement over a tag slugify rewrites"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the inbox slice re-spells the engine's record keying by hand \u2014 an \"entry\" keyspace literal beside its own slugify of each queued tag \u2014 so a keying change stops the slice waking, silently",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "The fix lands at the mechanism"
+    },
+    "acceptance": "the slice reaches each queued entry's standing record through the engine's own `entryAttemptKey`, and no keyspace literal or slug of a tag is spelled in the package beside it.",
+    "tests": [],
+    "pins": [
+      "the inbox slice's standing refusals key a tag slugify rewrites the way the engine's own entry-attempt key does"
+    ],
+    "notes": "From build's note on THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL. The filter direction is what made `entryAttemptKey` look like a non-drop-in: iterating the queue and looking up in `ctx.priorAttempts` is the same set, since the map holds one record per written identity. `entryAttemptKey` is exported from src/priorAttempts.ts."
+  },
+  {
+    "tag": "THE-WALKED-SET-PINS-SHARE-ONE-READER",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/docSections.ts",
+          "description": "the shared mention reader, beside `sectionOf`"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "the three CHAIN-AUTHORING walks take it; two gain the one-place arm"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "three walked-set pins over one page spell the same read three ways, and the two that read bullet leads alone cannot see a set restated in their section's opening prose",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "one reader in tests/helpers/docSections.ts answers where a section names a set, the supervisor-policy, runner-operations and `GateContext` walks all read through it, and the first two gain the one-place arm the third already carries.",
+    "tests": [],
+    "pins": [
+      "docs/CHAIN-AUTHORING.md's supervisor-policy section names the knob set in one place",
+      "docs/CHAIN-AUTHORING.md's gate section names GateContext's field set in one place"
+    ],
+    "notes": "From build's note on THE-ADOPTION-PAGE-NAMES-THE-OPERATIONS-ONCE: the lead-in-restates-the-walk defect landed three times on this page, and the fix widened one reader only. `mentionsIn` is local to the adoption describe (tests/examples.test.ts); the other two walks spell their own `toContain` loops. Nothing restates a set today, so both arms are green."
   },
   {
     "tag": "THE-DECLARATION-CARRIES-SETUP-SERIALIZE",
@@ -143,138 +236,7 @@
       "an undeclared serialize runs restores concurrently"
     ],
     "pins": [],
-    "notes": "The reduction is `provisioning(api, declaration)` in harness/chain.ts, built once per chain load — so the serialization is that function's own queue, not a second mechanism beside it. The `setup` row of the declaration table already states the behavior."
-  },
-  {
-    "tag": "THE-DECLARATION-NAMES-ITS-JOBS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "`jobs`: a map from job name to specLocus, fence and optional slots"
-        },
-        {
-          "path": "harness/chain.ts",
-          "description": "the named job's values applied over the shared declaration, and the package's own seedDir"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the field and its shape"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "resolution under a job's state root, and the one-job case"
-        },
-        {
-          "path": "tests/harnessInit.test.ts",
-          "description": "the skeleton a job root seeds from"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "a bay has no way to say a job is a named fence over shared values, so each job carries a second declaration and a loader the package should own",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "What a consumer declares"
-    },
-    "acceptance": "`jobs` maps a job name to a specLocus, a fence and optional slots and capabilities, a chain loaded under a job's state root applies that job's values over the shared declaration — capabilities added to the shared set rather than replacing it — and an absent `jobs` resolves the repo-level one-job case.",
-    "tests": [
-      "a chain loaded under a named job's state root takes that job's specLocus and fence",
-      "a named job's slots override the declaration's shared slots",
-      "a named job's capabilities add to the declaration's shared set",
-      "a declaration naming no jobs resolves the repo-level values",
-      "the chain the factory builds declares a seedDir at the package's skeleton"
-    ],
-    "pins": [],
-    "notes": "The engine's job partition already gives each job its state root (spec/jobs.md); which job the chain is under is read from api.paths.flumeDir. `flume job new` seeds from the package skeleton through the factory's declared seedDir — harness/ declares none today, so that is part of this entry. Blocked on the shared capabilities field this one adds to."
-  },
-  {
-    "tag": "A-JOB-FENCE-STOPS-AT-A-SIBLINGS-ARTIFACTS",
-    "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THE-DECLARATION-NAMES-ITS-JOBS"
-      ]
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "the job-fence refusal at chain load, naming the glob and the root"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the refusal, its message, and the admitted consumer file"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the refusal arrives at load, not at a tick"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "nothing refuses a job fence whose globs reach the package's own artifacts under a sibling job's state root, so one job's build writes another job's queue",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "What a consumer declares"
-    },
-    "acceptance": "chain load refuses a job fence glob that can match the package's queue, plan state, a record or a note under any state root but the job's own, naming the glob and the root; a consumer's own file under a sibling root still loads.",
-    "tests": [
-      "a job fence reaching the package's queue under a sibling job's root refuses the load",
-      "the refusal names the offending glob and the root it reaches",
-      "a job fence reaching a consumer's own file under a sibling root loads"
-    ],
-    "pins": [],
-    "notes": "The engine declines cross-job fence policing by design (spec/jobs.md) and every package gate keys on the tick's own root, so the refusal is the package's alone. The artifact set is the package's own layout — queue, plan state, records, notes — never a consumer's product; where a bay keeps its product is the bay's."
-  },
-  {
-    "tag": "THE-HANDOFF-DECLINES-A-CLEAN-EXIT-AT-THIS-HEAD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/handoff.ts",
-          "description": "the package's declaration of the engine's per-entry refusal"
-        },
-        {
-          "path": "harness/chain.ts",
-          "description": "the refusal reaches the chain the factory builds"
-        },
-        {
-          "path": "tests/harnessHandoff.test.ts",
-          "description": "the three fates by mode and anchor"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the declaration arrives on the chain"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the default handoff re-dispatches an entry whose latest attempt was a clean exit at the current HEAD — the same dispatch against an unchanged world, for the same outcome",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The default `handoff`"
-    },
-    "acceptance": "the package declares the engine's per-entry refusal, and an entry whose latest prior attempt is a clean exit at the tick's own HEAD is not handed to build while one at an older HEAD still is.",
-    "tests": [
-      "an entry whose latest clean exit is at the current HEAD is not handed to build",
-      "an entry whose latest clean exit is at an older HEAD is handed to build",
-      "an entry whose latest attempt is a gate revert at the current HEAD is handed to build"
-    ],
-    "pins": [],
-    "notes": "Read from the mode and the anchor the engine reports on the record — PriorAttempt's `mode` and `headSha` (src/Prompt.ts) — never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change."
+    "notes": "The reduction is `provisioning(api, declaration)` in harness/chain.ts, built once per chain load \u2014 so the serialization is that function's own queue, not a second mechanism beside it. The `setup` row of the declaration table already states the behavior."
   },
   {
     "tag": "THE-PACKAGE-INVENTORY-NAMES-EVERY-DISCIPLINE-GATE",
@@ -340,6 +302,6 @@
     "acceptance": "every site leaning on the win32 loader fact states only what is specific to its own case and cites the section that holds the fact; no shebang-spawn subject cites the `.cmd`-shim section for it.",
     "tests": [],
     "pins": [],
-    "notes": "The rows: `tests/bin.test.ts::bin/flume symlink walk`, the harnessChain command-gate row, the harnessRunner path-separator row, and the two cli.test.ts git-floor rows whose reason names a `.cmd` refusal over a shebang plant. The setup-restore row is the model — case-specific reason, then the cite. No tests[]: a section cite is unresolved by the citation pin (`tests/commentCitations.test.ts`), and prose read against prose is out of scope."
+    "notes": "The rows: `tests/bin.test.ts::bin/flume symlink walk`, the harnessChain command-gate row, the harnessRunner path-separator row, and the two cli.test.ts git-floor rows whose reason names a `.cmd` refusal over a shebang plant. The setup-restore row is the model \u2014 case-specific reason, then the cite. No tests[]: a section cite is unresolved by the citation pin (`tests/commentCitations.test.ts`), and prose read against prose is out of scope."
   }
 ]
