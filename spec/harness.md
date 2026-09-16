@@ -200,16 +200,20 @@ runner, the resolver, and a handoff override) — validated by the package's str
 load; an unknown field or a missing required
 one refuses the load naming the field and the valid set.
 
-**The declaration is a value, and the unit it configures is whatever the
-consumer's `chain.ts` hands the factory.** A repository running one loop
-hands it the module beside the state root, which is the skeleton init writes.
-A bay of jobs (`spec/jobs.md`) hands it one declaration per job: the chain is
-loaded once per job with that job's state root as `api.paths.flumeDir`, so it
-reads the job's declaration from there — a JSON file through
-`parseDeclaration`, the same strict schema — and every field that varies per
-job (gates, agents, setup, fence, slots) varies in that file. Nothing in the
-package assumes one declaration per repository; init's skeleton is the
-one-job case of the same shape.
+**One declaration, and a job is a named fence with its own brief and
+queue.** A repository running one loop declares once. A bay declares once
+too, and names its jobs in the same declaration: `jobs`, a map from job name
+to the two things that vary per unit of work inside one checkout — the spec
+locus it derives from and the fence it builds under, with a `slots` override
+where a brief wants its own context. The engine's job partition
+(`spec/jobs.md`) gives each job its state root, queue and records; the chain
+is loaded with that root, so the factory applies the named job's locus and
+fence over the shared declaration, and the repo-level values are the one-job
+case. `flume job new` seeds a job's root from the package's skeleton — the
+factory declares `seedDir` — so a consumer keeps neither a second schema nor
+a per-job file. What else varies between efforts — gates, agents, setup —
+varies per checkout, where a fresh declaration already resolves; measured
+across one bay, that is where all of it varied.
 
 | Field | What it decides |
 | --- | --- |
@@ -226,6 +230,7 @@ one-job case of the same shape.
 | `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. |
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |
 | `slots` | Prompt slots the package renders into its prompts: an autonomy dial, domain context. Text only; a slot cannot add a directive the package's discipline already states. |
+| `jobs` | Named jobs for a bay, each a `specLocus` and a `fence` (and optional `slots`) applied over the shared declaration when the chain runs under that job's state root — see *What a consumer declares*. Absent means one job, the repo-level values. |
 | `ci` | CI lanes the inbox slice reads as findings sources — each a workflow file, a job name, and the lane name its findings carry — see *CI lanes as a findings source*. Optional. |
 
 Nothing in the declaration names an engine artifact path, a verdict field, or a
@@ -259,7 +264,14 @@ build worktree is provisioned (the installer at the root when none is declared).
 The factory receives both, `(ctx: { api, provision }) => Runner`; the package
 ships a vitest runner factory that takes them from what it is given, so a
 consumer whose install is not at the repo root judges its base the same way it
-builds. A consumer with cargo, dotnet, or a script declares its own against the
+builds. It also ships a **script runner** factory for a consumer whose proof
+is a validator rather than a test tool: a declared command the package runs
+once per operation in the tree under judgment, the named lines as its
+arguments, reading one verdict line per name from its stdout — the name,
+whether a passing check carried it, and the file that did. Exit status is not
+the verdict; the lines are. Every consumer outside the JS test ecosystem was
+writing that same script, so it lives beside the vitest one and the runner
+row prices honestly. A consumer with cargo, dotnet, or a script declares its own against the
 same three operations.
 
 ## The cite resolver
