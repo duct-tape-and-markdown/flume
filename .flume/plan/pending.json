@@ -1,62 +1,8 @@
 [
   {
-    "tag": "A-MIGRATION-NOTE-FOR-0-15",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "docs/MIGRATING-0.15.md",
-          "description": "0.15.0's breaks walked with before and after, opening with the minors it does not cover"
-        }
-      ],
-      "edit": [
-        {
-          "path": "CHANGELOG.md",
-          "description": "the 0.15.0 release links its note"
-        },
-        {
-          "path": "docs/MIGRATING-0.16.md",
-          "description": "its opener and its previous-note link name 0.15's note"
-        },
-        {
-          "path": "docs/MIGRATING-0.13.md",
-          "description": "its forward pointer stops naming 0.15 as noteless"
-        },
-        {
-          "path": "docs/MIGRATING-0.14.md",
-          "description": "its forward pointer names this note as the next one"
-        },
-        {
-          "path": "README.md",
-          "description": "the Pointers list enumerates the new note"
-        },
-        {
-          "path": "tests/harnessPackaging.test.ts",
-          "description": "the spanning guard spells its empty case, which this note creates"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "0.15.0's changelog carries a ### Breaking section and docs/ has no migration note for it; the pilot's one compiler-invisible break was 0.15's",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Versioning policy"
-    },
-    "acceptance": "docs/MIGRATING-0.15.md walks every break in 0.15.0's ### Breaking section with before and after, the 0.15.0 release in CHANGELOG.md links it, and the packaging suite stays green with no note spanning a gap.",
-    "tests": [],
-    "pins": [],
-    "notes": "Source is CHANGELOG.md's 0.15.0 section (### Breaking at :172). The pilot reported this minor's break as the one their compiler did not catch, so the walk says how to find it by reading. The series pointers move with it, as they did for 0.13. This note empties `spanning`, so the blanket `toBeGreaterThan(0)` guard (tests/harnessPackaging.test.ts:1085) becomes the spelled empty case in this entry or the lane reds."
-  },
-  {
     "tag": "EVERY-BREAKING-MINOR-FROM-0-10-HAS-ITS-NOTE",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "A-MIGRATION-NOTE-FOR-0-15"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -81,75 +27,6 @@
       "each migration note names the previous minor's note as the previous note in the series"
     ],
     "notes": "Promotes the Versioning-policy bullet a rung (engineering.md, Narration is the ladder's bottom rung). The floor is 0.10 because MIGRATING-0.10.md is the routing table covering 0.2.x, 0.6.x and 0.9.0 — below it no per-minor note exists by design, so the floor is declared at the scan. The series link is green today and decidable off the minors on disk. Blocked on the three notes."
-  },
-  {
-    "tag": "THE-REVERT-NOTE-CITATIONS-CLOSE-THEIR-PAIRS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/friction.ts",
-          "description": "two `writeRevertNote` cites spelled as pairs"
-        },
-        {
-          "path": "src/job.ts",
-          "description": "the `harvestFriction` and `writeRevertNote` cites spelled as pairs"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "four comment citations name a symbol and its file with one half unfenced, so the citation pin reads them as prose and the next move of that symbol leaves them green at the wrong door",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "each of the four sites spells the pair form, and pointing any one of them at a file that does not declare the name reds the citation pin.",
-    "tests": [],
-    "pins": [],
-    "notes": "Sites the last split left behind: src/friction.ts:100 and :197 write the name unbackticked before a backticked path; src/job.ts:560 and :561 write the paths unbackticked after backticked names. Each names its file correctly today and none is read as a pair. Comments only — the typecheck, the suite and tests/commentCitations.test.ts hold it."
-  },
-  {
-    "tag": "THE-PENDING-LEDGER-IO-FAMILY-TAKES-A-FILE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "src/pendingLedger.ts",
-          "description": "the ledger's I/O: the strict read, the tolerant read, the relocation check, the wave's rewrite"
-        }
-      ],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the three readers leave; the leg context is wired to the new home"
-        },
-        {
-          "path": "src/waveTick.ts",
-          "description": "commitPendingUpdate leaves"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the cases reaching the readers follow them"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the pending ledger's I/O is one job in two homes — three readers as private Dispatcher methods, the wave's rewrite in src/waveTick.ts — and the tree gives it no file",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A module is one job"
-    },
-    "acceptance": "src/pendingLedger.ts holds the strict read, the tolerant read, the relocation check and the wave's ledger rewrite; the dispatcher and the wave leg call it and re-derive none of it.",
-    "tests": [],
-    "pins": [],
-    "notes": "readPending / readPendingTolerant / isPendingRelocated are private Dispatcher methods handed to both legs through TickLegContext (src/tickLeg.ts:103); commitPendingUpdate is src/waveTick.ts:1124. The readers want pendingPath, repoRoot, entryExtension and the log as arguments. No cycle: the rewrite throws PendingParseFailure (src/PendingSchema.ts) and runFanout wraps it, so WaveLedgerParseFailure stays with the wave."
   },
   {
     "tag": "A-DOTFILE-IS-NEVER-A-FRICTION-NOTE",
@@ -192,48 +69,6 @@
     ],
     "pins": [],
     "notes": "Sites: countFrictionFiles (src/job.ts:557) is the count both `flume status` and `flume job status` print; the listing and read are the `friction` arm of src/cli.ts. The teardown harvest (src/friction.ts) is not named by the section and stays as it is."
-  },
-  {
-    "tag": "LOOP-AND-JOB-RUN-WARN-ONCE-BELOW-THE-GIT-FLOOR",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/git.ts",
-          "description": "the version read, reported as a fact"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "`loop` and `job run` warn once at start below the floor"
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "the version read"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the two verbs' warning, and its absence at or above the floor"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the 2.36 git floor is stated in the spec and read by nothing, so a run on an older git degrades worktree reclamation with no word to the operator",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "The package a chain loads through"
-    },
-    "acceptance": "`flume loop` and `flume job run` below the floor print one warning naming the version, the floor and what degrades, and still run; at or above the floor they print nothing.",
-    "tests": [
-      "flume loop below the git floor warns once naming the version, the floor, and what degrades",
-      "flume job run below the git floor warns once and still runs",
-      "a git at or above the floor warns nothing"
-    ],
-    "pins": [],
-    "notes": "A warning, not a refusal: the degrade is bounded to reclamation (`worktree list --porcelain -z`, src/worktrees.ts:150) and the loop is otherwise a working one. Once per run, read at start — never per tick."
   },
   {
     "tag": "A-GATE-IS-TOLD-THE-TRUNK-IT-LANDED-ONTO",
