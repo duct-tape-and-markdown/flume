@@ -81,6 +81,8 @@ A finding for plan and a note from build are **records**: one file per record, n
 
 Drained means **deleted**: the inbox slice routes each record to an entry, an open question, or an accepted-debt line in its commit body, then removes the file. An empty directory is the steady state.
 
+**A landing does not wake plan.** A record or a spec edit landed from an interactive session rides the next plan tick that runs for its own reasons; the drain takes every record in the directory at once, so batching is free. The one landing that earns `flume wake plan-inbox` is one that changes what is pickable — a ruling that unblocks a queued entry. Waking per landing turns the drain into a synchronous round-trip and doubles plan's tick count for nothing shipped.
+
 ## Disk vs git log
 
 When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (`.flume/plan/pending.json`, the source file). Never grep commit messages or `git log`. Git log is orientation, not authority.
