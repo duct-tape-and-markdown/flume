@@ -1,39 +1,5 @@
 [
   {
-    "tag": "THE-STARTUP-SWEEPS-BRANCH-LEG-IS-BOUND-BY-THE-REGISTRY",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/worktrees.ts",
-          "description": "the registry reports each worktree's branch; the sweep's branch leg reaps only what its own directories held"
-        },
-        {
-          "path": "tests/worktrees.test.ts",
-          "description": "the branch leg over a sibling checkout's live branch, and the registry's branch field"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the startup sweep reaps every `flume/*` branch by name, so a sibling checkout of one repository loses a live branch this sweep never provisioned",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Startup sweep — a dead wave's residue is removed at the next start"
-    },
-    "acceptance": "the startup sweep deletes exactly the branches the worktree directories it removed were checked out on, and leaves a `flume/**` branch no directory under its base held.",
-    "tests": [
-      "the startup sweep deletes the branch a worktree it removed was checked out on",
-      "the startup sweep leaves a flume branch no worktree under its base was checked out on standing",
-      "the worktree registry reports the branch each worktree is checked out on"
-    ],
-    "pins": [],
-    "notes": "Live today, not only after the cut. `worktree list --porcelain -z` already emits `branch refs/heads/<name>` beside each `worktree <path>`, and the sweep reads the registry before it removes anything, so the pairing is in hand where the leg needs it. `for-each-ref`'s `flume/*` glob goes with the name-matched reap. `WorktreeRegistry` rides `FlumeApi.git.readWorktreeRegistry`, so the widening is public surface."
-  },
-  {
     "tag": "WORKTREE-PROVISIONING-PINS-CORE-LONGPATHS",
     "gate": {
       "kind": "open"
@@ -72,10 +38,7 @@
   {
     "tag": "THE-ENGINE-MINTS-NO-FANOUT-NAMESPACE",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THE-STARTUP-SWEEPS-BRANCH-LEG-IS-BOUND-BY-THE-REGISTRY"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -412,56 +375,6 @@
     "notes": "One entry rather than a section per cut entry: the page is a single append-only file, and three entries contending on it is the fanout-width cost the changelog gate was removed for (`spec/cli.md`, *Versioning policy*). The before/after is `flume job run <name>` → a `git worktree add` checkout with its own `.flume`."
   },
   {
-    "tag": "THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "the friction channel as a declared findings source"
-        },
-        {
-          "path": "harness/chain.ts",
-          "description": "pass-through to Chain.friction"
-        },
-        {
-          "path": "harness/inboxWindow.ts",
-          "description": "a fourth-leg read of the declared friction dir, as it reads the inbox"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the field"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the pass-through"
-        },
-        {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "the render and the liveness leg"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the harness declaration mirrors no part of Chain.friction and the inbox slice reads none, so a consumer routing its own friction notes writes the prompt paragraph the package owes",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Declared findings sources"
-    },
-    "acceptance": "a declared friction directory reaches Chain.friction and the inbox slice reads, renders and drains its files as it does the inbox's — one record per file, removed the way a record is drained.",
-    "tests": [
-      "a declared friction directory reaches Chain.friction",
-      "the inbox slice renders a declared friction directory's files as records",
-      "the inbox slice is live for a waiting friction file"
-    ],
-    "pins": [],
-    "notes": "`Chain.friction` exists on the engine and the declaration mirrors none of it — no schema field, no pass-through. The table row landed with the ruling (*What a consumer declares*, `friction`), so the field mirrors the engine's value as `supervisor` does. The declared-script sibling is cut (f45f4137), so this is the whole of what the section still owes."
-  },
-  {
     "tag": "THE-DECLARED-SHELL-IS-THE-SCHEMAS-OWN-DEFAULT",
     "gate": {
       "kind": "open"
@@ -649,38 +562,6 @@
     ],
     "pins": [],
     "notes": "The reduction is `provisioning(api, declaration)` in harness/chain.ts, built once per chain load — so the serialization is that function's own queue, not a second mechanism beside it. The `setup` row of the declaration table already states the behavior."
-  },
-  {
-    "tag": "THE-PACKAGE-INVENTORY-NAMES-EVERY-DISCIPLINE-GATE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the inventory's gate item names the whole discipline set"
-        },
-        {
-          "path": "tests/harnessGates.test.ts",
-          "description": "the page read against the set the factory builds; the module header over five gates"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the adoption page's package inventory names three of the five discipline gates and nothing reads it, so the pending and derive-cursor gates refuse a consumer's commit unannounced",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "docs/CHAIN-AUTHORING.md's package inventory names every gate the package's own set holds, read against that set by the suite rather than kept in step by hand.",
-    "tests": [
-      "docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds"
-    ],
-    "pins": [],
-    "notes": "From build's note on A-CURSOR-GATE-BOUNDS-THE-DERIVE-CURSORS-ADVANCE, which added the fifth. The set is `records`, `clean-tree`, `pending-gate`, `per cites resolve`, `derive cursor`; the page names three. tests/harnessGates.test.ts already builds the real set through `gates()` at its ordering case, so the check reads the writer's own output; its module header still says \"four\". MIGRATING-0.16 is era-scoped and stays."
   },
   {
     "tag": "THE-WIN32-LOADER-FACT-IS-CITED-NOT-RESTATED",
