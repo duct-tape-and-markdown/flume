@@ -43,19 +43,6 @@
       ],
       "retire": []
     },
-    "summary": "open questions are one page every slice greps `^## ` out of, so a question's status is read from a word and no two sessions can add one without conflicting",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "Records as one file each"
-    },
-    "acceptance": "open questions are one file each under the plan's `questions/` directory, present while open and deleted when answered; every slice's questions span lists that directory, and no slice reads a heading or a status word.",
-    "tests": [
-      "a plan slice's questions span lists one file per open question",
-      "an absent questions directory renders the slices' none-open placeholder",
-      "the plan fence admits a file under the questions directory"
-    ],
-    "pins": [],
-    "notes": "Ruling: presence is state. The `^## ` grep is spelled in all three slice prompts today. `.flume/plan/open-questions.md` is outside build's fence, so the layout change must leave that path inside the plan fence until a drain has migrated and removed it — otherwise the file strands where no phase can reach it. One question is open in it as of this tick.",
     "observedFiles": [
       ".flume/plan/notes/AN-OPEN-QUESTION-IS-ONE-FILE-PRESENT-WHILE-OPEN.md",
       "README.md",
@@ -68,7 +55,20 @@
       "harness/prompts/plan-sweep.md",
       "tests/harnessLayout.test.ts",
       "tests/harnessPrompts.test.ts"
-    ]
+    ],
+    "summary": "open questions are one page every slice greps `^## ` out of, so a question's status is read from a word and no two sessions can add one without conflicting",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Records as one file each"
+    },
+    "acceptance": "open questions are one file each under the plan's `questions/` directory, present while open and deleted when answered; every slice's questions span lists that directory, and no slice reads a heading or a status word.",
+    "tests": [
+      "a plan slice's questions span lists one file per open question",
+      "an absent questions directory renders the slices' none-open placeholder",
+      "the plan fence admits a file under the questions directory"
+    ],
+    "pins": [],
+    "notes": "Ruling: presence is state. The `^## ` grep is spelled in all three slice prompts today. `.flume/plan/open-questions.md` is outside build's fence, so the layout change must leave that path inside the plan fence until a drain has migrated and removed it — otherwise the file strands where no phase can reach it. One question is open in it as of this tick."
   },
   {
     "tag": "A-PARKED-NOTE-IS-ITS-OWN-DIRECTORY",
@@ -123,7 +123,23 @@
       "the records gate refuses a parked note written under another tick's tag"
     ],
     "pins": [],
-    "notes": "Ruling: location is kind. `isPark` (harness/chain.ts) is the path-list read, and both `namedLinesGate` and `shipped` consume it. The record listing and the plan fence both compose from `RECORD_DIR_NAMES`, so the parked directory joins there rather than at each reader."
+    "notes": "Ruling: location is kind. `isPark` (harness/chain.ts) is the path-list read, and both `namedLinesGate` and `shipped` consume it. The record listing and the plan fence both compose from `RECORD_DIR_NAMES`, so the parked directory joins there rather than at each reader.",
+    "observedFiles": [
+      ".flume/plan/notes/A-PARKED-NOTE-IS-ITS-OWN-DIRECTORY.md",
+      "harness/chain.ts",
+      "harness/gates.ts",
+      "harness/index.ts",
+      "harness/layout.ts",
+      "harness/prompts.ts",
+      "harness/prompts/build.md",
+      "harness/prompts/plan-inbox.md",
+      "harness/templates/PROTOCOL.md",
+      "tests/harnessBuildArgs.test.ts",
+      "tests/harnessChain.test.ts",
+      "tests/harnessGates.test.ts",
+      "tests/harnessLayout.test.ts",
+      "tests/harnessRecords.test.ts"
+    ]
   },
   {
     "tag": "THE-SETUP-RESTORE-TAKES-THE-DECLARED-SHELL",
@@ -395,55 +411,9 @@
     "notes": "The engine declines cross-job fence policing by design (spec/jobs.md) and every package gate keys on the tick's own root, so the refusal is the package's alone. The artifact set is the package's own layout — queue, plan state, records, notes — never a consumer's product; where a bay keeps its product is the bay's."
   },
   {
-    "tag": "THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "the per-entry refusal a chain declares, and what the engine reports about it"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "enforcement on the pickable set, and the fact reported for each entry held back"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the set with and without a declared refusal, and the reported facts"
-        },
-        {
-          "path": "tests/chain.test.ts",
-          "description": "the declaration surface"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the engine's pickable set carries no per-entry refusal a chain can declare, so a chain that must decline one entry can only decline the whole phase",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The default `handoff`"
-    },
-    "acceptance": "a chain-declared per-entry refusal removes an entry from the reported pickable set, and the engine reports which entries it held back as a fact rather than a verdict.",
-    "tests": [
-      "a chain-declared per-entry refusal removes an entry from the reported pickable set",
-      "the engine reports each entry a chain-declared refusal held back",
-      "a chain declaring no per-entry refusal leaves the pickable set unchanged"
-    ],
-    "pins": [],
-    "notes": "The capability, not the policy: the chain supplies the predicate, the engine enforces and reports (`engine-boundary.md`, *Capability vs convention*). Every input a predicate needs is already on the tick — the entry and its prior-attempt record. Contract-touching: a resident supervisor and a fresh tick child must agree on the Chain shape.",
-    "contractTouching": true
-  },
-  {
     "tag": "THE-HANDOFF-DECLINES-A-CLEAN-EXIT-AT-THIS-HEAD",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -481,76 +451,6 @@
     ],
     "pins": [],
     "notes": "Read from the mode and the anchor the engine reports on the record — PriorAttempt's `mode` and `headSha` (src/Prompt.ts) — never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change."
-  },
-  {
-    "tag": "THE-HELP-FLAG-ANSWERS-FOR-A-NAME-IN-EVERY-SPELLING",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "the third spelling — the answer and the unknown-name refusal"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "the help surface names all three spellings"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`flume -h <name>` answers that subcommand's usage today and nothing pins it, so narrowing the one decider back to two spellings would ship green",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "Subcommand surface"
-    },
-    "acceptance": "`flume -h <name>` is pinned for both the answer and the unknown-name refusal, and docs/CLI.md names it beside the other two spellings.",
-    "tests": [],
-    "pins": [
-      "flume -h status prints the status subcommand's usage",
-      "flume -h with an unknown name exits 2 with usage"
-    ],
-    "notes": "Build's note parked this as a decision; the cited section already decides it — \"one decider serves every spelling of help for a name\" covers `-h <name>`, and the arm is spelling-blind today, echoing the spelling typed in its refusal. So the property holds and gains its check, and no spec edit is owed."
-  },
-  {
-    "tag": "THE-DOCS-DECLARATION-LISTS-ARE-PINNED-AGAINST-THE-SCHEMA",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "both pages read against DeclarationSchema.shape"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "whatever field the pin finds missing"
-        },
-        {
-          "path": "docs/LAYERS.md",
-          "description": "same"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "two docs pages list the declaration's fields by hand and neither is read against `DeclarationSchema.shape`, so a field the docs never gain is caught by nothing",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "docs/CHAIN-AUTHORING.md's and docs/LAYERS.md's declaration field lists are read against `DeclarationSchema.shape` by the suite, and both name every field the schema declares.",
-    "tests": [],
-    "pins": [
-      "docs/CHAIN-AUTHORING.md names every field DeclarationSchema declares",
-      "docs/LAYERS.md names every field DeclarationSchema declares"
-    ],
-    "notes": "From build's note on THE-DECLARATION-ASSERTS-ITS-CAPABILITIES. `tests/harnessDeclaration.test.ts` pins the fixture against the schema; nothing reads the pages. The carve-out that makes a docs page pinnable is the cited section's: a page stating what a shipped interface does is read against that interface. `jobs`, `friction` and `findings` all land into these lists."
   },
   {
     "tag": "THE-ADOPTION-PAGE-NAMES-THE-OPERATIONS-ONCE",
