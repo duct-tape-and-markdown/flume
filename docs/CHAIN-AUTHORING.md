@@ -126,7 +126,8 @@ globs a `per` cite may point into), `fence` (build's `writablePaths`, and per
 plan slice what that slice may write beyond the package's own plan
 artifacts), `runner` (a factory for the test runner the judge drives —
 `vitestRunner()` ships in the package; cargo, dotnet or a script is your own
-factory over the same three operations), and `slices` (which plan slices run,
+`RunnerFactory` over the same three operations, which is adoption's largest
+single piece and is priced under *What adoption costs* below), and `slices` (which plan slices run,
 and the sweep's domain). Optional: `channelPaths`, `scopeWritesToEntry` (off
 by default, and the package takes no side), `resolver`, `handoff` per phase,
 `gates` per phase and `when`, `agents`, `supervisor` (the engine's policy
@@ -150,6 +151,31 @@ consumer. The package also narrows exactly one engine configuration: it
 requires the state root to resolve inside the repository and refuses a
 relocated root at chain load, because every mechanic it wires addresses a path
 some commit holds.
+
+**The runner is the largest single piece**, and the only one whose size
+depends on your stack rather than on the package. A vitest suite declares
+`runner: vitestRunner()` and pays nothing further. Anything else — cargo,
+dotnet, a shell script — authors a `RunnerFactory`: `(ctx) => Runner`, called
+once at chain load, over `run`, `runAtBase` and `lanes`. The work is not the
+three signatures, it is what they return.
+
+- `run` reports structured results and never an exit code: a passed count for
+  the judge's vacuity check, per requested line whether one passing test
+  carried it and in which files, and per failure the file it was attributed to.
+  A tool that cannot name tests and attribute failures machine-readably needs
+  an adapter written before it can be declared at all.
+- `runAtBase` lays the working-tree bytes of the judged files over a detached
+  checkout of a base sha and runs the same names there — a provisioned
+  checkout, and in a compiled language a build, per judged entry. That
+  recurring cost is usually the deciding one.
+- `lanes` is declared rather than discovered, and the running lane's exclusions
+  become plan's authorship hints.
+
+`Runner`, `RunnerFactory`, `RunnerContext`, `RunResult`, `NamedResult`,
+`TestFailure` and `Lane` are exported from `@dtmd/flume/harness`, and
+`vitestRunner()` is a working implementation of all three to read against.
+`runner` is a required field, so there is no adopting now and porting the
+runner later.
 
 So the shape is fixed: a plan → build derivation pipeline over a
 `pending.json` queue, with citation discipline and a named-lines judge.

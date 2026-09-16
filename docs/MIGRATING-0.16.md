@@ -20,6 +20,11 @@ declaration. Each section below names who is affected and gives the before
 and after call shape; if the `grep` at the head of a section finds nothing in
 your chain, that section is a no-op for you.
 
+Ahead of all five is **§ 0**, which is not a 0.16 change at all: the
+`package.json` beside your `chain.ts`. It is the only step on this page whose
+absence costs a *working* chain, and it is due whether or not you take this
+upgrade.
+
 0.16 also ships the **harness package** (`@dtmd/flume/harness`), flume's own
 plan/build workflow as a declared environment rather than a chain you write.
 Adopting it is opt-in and orthogonal to the five breaks: § 6 is for consumers
@@ -33,6 +38,7 @@ the pin explicitly.
 ## Which sections apply to you
 
 ```sh
+cat .flume/package.json                               # § 0 — first, whatever else
 grep -n "entryTag" .flume/chain.ts                    # § 1
 grep -rn "mergeOutcomes\|invocations" --include='*.mjs' --include='*.ts' .   # § 2
 grep -n "priorAttemptPath\|priorAttempts" .flume/chain.ts                    # § 3
@@ -41,7 +47,55 @@ grep -n "gateResults\|TickVerdictGateResult" .flume/chain.ts                 # �
 ```
 
 § 4 is the one that changes behavior with no symbol to grep for — read it
-even if your chain never mentions MCP.
+even if your chain never mentions MCP. § 0 is the one whose `cat` printing
+`No such file` is the finding.
+
+## 0. Before anything else: the manifest beside your chain
+
+**Affects** every consumer whose state root carries no `package.json` — a
+hand-written chain and an adopted harness alike, on 0.15 exactly as much as on
+0.16. It is not one of the five breaks, and it is not gated on your version
+bump: a chain still pinned to 0.15 needs it exactly as much.
+
+```sh
+cat .flume/package.json     # "No such file"? then, now:
+printf '{\n  "type": "module"\n}\n' > .flume/package.json
+```
+
+That is the whole file. It declares the module scope of what sits beside it —
+`chain.ts`, and `declaration.ts` if you adopted the harness — and nothing
+else. Your repository's own manifest is untouched, so a CommonJS package
+adopts flume and goes on being a CommonJS package.
+
+**Why it is urgent.** `tsx` loads `.flume/chain.ts` in the module mode the
+nearest `package.json` declares. With none beside `chain.ts` and no
+`"type": "module"` in your own manifest, that mode is CommonJS — and flume is
+ESM-only. Measured against the published 0.16.0 on linux:
+
+| what your chain imports | node 22.20 | node 22.23 | node 24 |
+| --- | --- | --- | --- |
+| a runtime value from `@dtmd/flume` | loads | **fails** — `Cannot find module …/dist/…/index.js?namespace=…` | loads |
+| the chain `flume-harness init` writes | **fails** — `Cannot find module './declaration.js'` | **fails** | loads |
+| types only | loads | loads | loads |
+
+A node **patch** upgrade crosses that boundary. A chain that ran green
+yesterday is one `nvm install` from not loading at all, with nothing in
+flume's own version having moved. The bottom row is not safety: a chain that
+imports only types never loads the package at runtime, and the first runtime
+import — the first gate helper, the first `vitestRunner()` — puts it on the
+top row.
+
+Where the loader failure is recognizable, 0.16 refuses it by name: the chain
+load exits `2` and states this fix rather than relaying the loader's stack
+trace (`docs/CLI.md`, *`flume tick`*). The 22.20 shape above is not one of
+those — it reads as a plain missing module — so write the file rather than
+waiting to be told about it.
+
+A `tsconfig.json` does not substitute; `tsx` reads the manifest for module
+scope, not the compiler options. Nor does adopting exempt you: the
+`flume-harness init` of the 0.16.0 cut did not write this file, though later
+versions do (`docs/CLI.md`, *`flume-harness init`*) — which is why the step
+opens with a `cat` and not a write.
 
 ## 1. `setupWorktree` / `teardownWorktree`: `entryTag` is `worktreeKey`
 
@@ -389,12 +443,66 @@ package's, and that is the trade:
 | the agent, per phase | `agents` — `model`, `extraArgs`, and `inheritUserMcp` (§ 4), off by default here too |
 | `supervisorPolicy` | `supervisor`, passed through whole |
 | `setupWorktree` installs | `setup` — directories to install, an optional restore command; run in every provisioned worktree, singleton and fanout alike |
-| a vitest invocation the judge drives | `runner: vitestRunner()`; cargo, dotnet or a script means declaring your own factory over `run` / `runAtBase` / `lanes` |
+| a vitest invocation the judge drives | `runner: vitestRunner()` — one value, if your suite is vitest. Cargo, dotnet or a script means a `RunnerFactory` of your own over `run` / `runAtBase` / `lanes`, and that is the largest single piece of the whole port: priced below |
 | where a `per` cite may point | `specLocus` |
 | a typed spec resolved other than by heading text | `resolver` |
 | `handoff` | `handoff`, **per phase** — overriding build's routing never means copying the slice ladder |
 | which plan phases exist | `slices.enabled`; `plan-sweep` additionally needs `sweep.domain` and `sweep.posturePages` |
 | prompt preamble text you want kept | `slots.autonomy` / `slots.domain` — text only; a slot cannot add a directive the package's discipline already states |
+
+#### Pricing the runner row
+
+For a vitest suite that row costs `runner: vitestRunner()` and you are done.
+For cargo, dotnet, a shell script, or anything else, it is the one cell in the
+table that is a project rather than a value — price it before you commit to
+adopting, not after.
+
+What you write is a `RunnerFactory`: `(ctx) => Runner`, called once at chain
+load, rather than a `Runner` you construct yourself. Two of the three
+operations need what only the load holds. `ctx.api` is the engine surface your
+factory is handed — `api.git.checkoutAt` for the tree at a base sha, and
+`api.paths.flumeDir` to plant it under, so a run that dies mid-flight leaves a
+directory the stale-worktree sweep reclaims rather than one nothing owns.
+`ctx.provision` is your own declared `setup` already reduced to
+a function, so the base checkout is provisioned the way a build worktree is and
+you never re-derive that beside your declaration.
+
+The three operations, and what each owes:
+
+- **`run(names, cwd)`** — run the suite and return a `RunResult`: `ok`,
+  `passed` (the count the judge reads to refuse a green verdict over zero
+  tests), one `NamedResult` per requested line (`carried`, plus the
+  run-relative `files` whose passing tests carried it), and a `TestFailure` per
+  failure (the file it was attributed to, the failing test's full name where
+  the file got that far, the message's first line). **Never an exit code** — a
+  status would put the judge back to parsing your runner's prose. Most of the
+  port lands here, and most of *that* is one question about your tool: can it
+  report per-test names and per-file attribution machine-readably? Vitest's
+  JSON reporter can. A bare `cargo test` exit status cannot, and the gap
+  between them is yours to close.
+- **`runAtBase(names, files, baseSha, cwd)`** — lay the working-tree bytes of
+  `files` over a detached checkout of `baseSha`, run the same names there, and
+  report the same shape. This is what proves a `tests[]` line fails before the
+  change; without it the judge cannot tell a new behavior from one that already
+  held. The checkout is the engine's and is reclaimed at the gate boundary, so
+  this runs only inside a gate invocation, and `ctx.provision` is how its
+  dependencies get there. A compiled language pays a build here per judged
+  entry — that recurring cost, not the code, is usually the thing worth
+  deciding on.
+- **`lanes`** — declared, not discovered: each lane's name, the globs it
+  excludes in your own tool's vocabulary, and exactly one carrying `runs: true`
+  (the lane `run` and `runAtBase` actually execute). The running lane's
+  exclusions are rendered verbatim into plan's `tests[]` and `pins[]` hints, so
+  plan is told at authorship which files no judge will reach. `vitestRunner()`
+  refuses at construction over none or several; in a factory of your own that
+  invariant is yours to hold, and a lane set carrying no `runs` costs you the
+  hint rather than a refusal.
+
+`Runner`, `RunnerFactory`, `RunnerContext`, `RunResult`, `NamedResult`,
+`TestFailure` and `Lane` are all exported from `@dtmd/flume/harness`, and the
+shipped `vitestRunner()` is a working implementation of all three to read
+against. What none of them can be is optional: `runner` is a required
+declaration field, so there is no adopting first and porting the runner later.
 
 **What has no declaration field**, verified against the factory's returned
 `Chain` — check for these before you commit to adopting:
