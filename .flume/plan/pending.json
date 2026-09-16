@@ -1,5 +1,38 @@
 [
   {
+    "tag": "CHANGELOG-DRAFT-SURVIVES-THIS-REPOS-OWN-RANGE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "scripts/build-changelog.mjs",
+          "description": "the log read carries no cap history outgrows, and a derive failure exits by name rather than as a raw node stack"
+        },
+        {
+          "path": "tests/build-changelog.test.ts",
+          "description": "the oversized-range case and the loud-failure case"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`node scripts/build-changelog.mjs` dies `spawnSync git ENOBUFS` on this repo's own unreleased range — the release cut's only mining tool is broken today",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Versioning policy"
+    },
+    "acceptance": "the draft mines this repo's unreleased range (822 commits, ~1.15 MB of log) and prints it, and any git failure under `deriveEntries` exits 1 with a `[build-changelog]` line rather than an unhandled stack.",
+    "tests": [
+      "the changelog draft mines a range whose git log output exceeds node's default spawn buffer",
+      "a git failure while deriving entries exits with a [build-changelog] line instead of an unhandled stack"
+    ],
+    "pins": [],
+    "notes": "Repro at 8d2c6a81: exit 1, `spawnSync git ENOBUFS`, no draft — `git()` runs `execFileSync` on the default 1 MiB `maxBuffer`; the unreleased range emits ~1.15 MB, the no-prior-release fallback over full history ~3.1 MB. History only grows, so a bigger cap re-breaks. Second leg: `deriveEntries`' throw escapes `main()` uncaught, unlike `resolveLastRelease`'s (`.claude/rules/engineering.md`, *Loud or nothing*); a commitless repo reproduces it. Oversized body via `commit -F`, not argv."
+  },
+  {
     "tag": "NAMESPACED-REALPATH-SCAN-REFUSES-THE-JS-FORM",
     "gate": {
       "kind": "open"
@@ -495,11 +528,15 @@
         {
           "path": "tests/Prompt.test.ts",
           "description": "its bare temp roots come through the folding helper"
+        },
+        {
+          "path": "tests/namespacedFsPaths.test.ts",
+          "description": "its bare temp roots come through the folding helper"
         }
       ],
       "retire": []
     },
-    "summary": "163 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), …))`, each correct-by-accident until a comparison against git's output grows beside it",
+    "summary": "166 temp fixture roots in tests/ are named by a bare `mkdtemp(join(tmpdir(), …))`, each correct-by-accident until a comparison against git's output grows beside it",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
@@ -509,7 +546,7 @@
       "every temp fixture root in tests/ is created through the helper that folds it to git's spelling"
     ],
     "pins": [],
-    "notes": "From FIXTURE-AND-GIT-SPELL-ONE-PATH-THE-SAME-WAY's note: six lane reds came from this class, three reproducible off-win32 with `TMPDIR` pointed at a symlink. 163 sites over 39 files; 15 are `mkdtempSync` and want a sync sibling beside `mkTempDir`, whose doc comment is the only thing holding the property today. Blocked on the helper split so the 39 files are routed at the maker's final home once, not twice."
+    "notes": "From FIXTURE-AND-GIT-SPELL-ONE-PATH-THE-SAME-WAY's note: six lane reds came from this class, three reproducible off-win32 with `TMPDIR` on a symlink. Measured 166 sites over 39 files; 16 are `mkdtempSync` and want a sync sibling beside `mkTempDir`, whose doc comment is all that holds the property today. The scan spells its exemptions rather than discovering them: `mkTempDir`'s own body, and a case whose subject is an unfolded spelling. Blocked on the split so the files route once."
   },
   {
     "tag": "NODE22-THROW-SHRINKS-TO-ITS-PAGE",
