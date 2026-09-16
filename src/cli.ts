@@ -30,8 +30,11 @@ import {
   currentRefPath,
   gitCommonDir,
   liveTipClaimPid,
+  readGitVersion,
   tipClaimPath,
   TipClaimHeldError,
+  WORKTREE_LIST_Z_FLOOR,
+  type GitVersion,
 } from "./git.js";
 import {
   ensureRuntimeIgnores,
@@ -144,6 +147,42 @@ function signalledWaitLine(waitingOn: string, graceMs: number): string {
     `[flume] signalled; waiting for ${waitingOn} to exit — this wait has no ` +
     `bound of its own; the SIGKILL that ends a tree ignoring the SIGTERM ` +
     `lands ${graceMs}ms after it (supervisorPolicy.killGraceMs)`
+  );
+}
+
+/**
+ * What a run has to say about the git it found, or nothing when that git
+ * carries the floor the engine reads at.
+ *
+ * spec/chain.md, *The package a chain loads through*: below 2.36 the engine's
+ * `worktree list --porcelain -z` read fails, and reclamation — and nothing
+ * else — degrades. That bound is what makes proceeding a **declared** degrade
+ * rather than a silent one (`.claude/rules/engineering.md`, *Loud or
+ * nothing*): the operator is told which git answered, what the engine needs,
+ * and exactly what stops working, and the run they scheduled still happens.
+ *
+ * A version that could not be read warns too. The floor is then unconfirmed
+ * rather than met, and reading silence as "at or above" is the one degrade
+ * this exists to rule out.
+ */
+function gitFloorWarning(version: GitVersion): string | undefined {
+  const floor = `${WORKTREE_LIST_Z_FLOOR.major}.${WORKTREE_LIST_Z_FLOOR.minor}`;
+  const degrades =
+    "worktree reclamation degrades — `git worktree list --porcelain -z` is " +
+    "how the engine learns which paths git still holds a worktree at, so " +
+    "residue is left standing and an occupied path is refused as one git " +
+    "does not own";
+  if (!version.read) {
+    return (
+      `[flume] git version unread (${version.reason}), so this run cannot ` +
+      `confirm the git ${floor} floor the engine reads at: below it, ${degrades}.`
+    );
+  }
+  if (version.meetsWorktreeListZFloor) return undefined;
+  return (
+    `[flume] ${version.line} is below the git ${floor} floor the engine ` +
+    `reads at: ${degrades}. The run continues; git ${floor} or newer ends ` +
+    `the warning.`
   );
 }
 
@@ -1111,6 +1150,13 @@ async function main(): Promise<number> {
       console.error("usage: flume loop [--max N]");
       return 2;
     }
+    // The git floor, read once per run and never per tick: the `flume tick`
+    // children `superviseLoop` spawns below reach no branch that reads it,
+    // and `job run` arrives here through its own `cmd = "loop"` rewrite
+    // above, so both verbs the floor is stated for warn exactly once
+    // (spec/chain.md, "The package a chain loads through").
+    const gitFloorLine = gitFloorWarning(await readGitVersion(repoRoot));
+    if (gitFloorLine !== undefined) console.error(gitFloorLine);
     // spec/loop.md "Graceful stop — the stop flag": presence at start
     // refuses the run before any tick — a stale flag must never silently
     // swallow a scheduled run. `job run` reaches this same branch via its

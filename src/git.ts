@@ -824,3 +824,96 @@ export async function trackedModifications(cwd: string): Promise<string[]> {
   const records = await statusRecords(cwd);
   return records.filter((r) => r.code !== "??").map((r) => r.path);
 }
+
+/**
+ * The git `worktree list --porcelain -z` needs — the read worktree
+ * reclamation is built on (`readWorktreeRegistry`, `src/worktrees.ts`), which
+ * git grew in 2.36 (spec/chain.md, *The package a chain loads through*).
+ *
+ * Major and minor alone: git's patch level has never gated a subcommand
+ * option, and a floor spelled to the patch would refuse a distribution
+ * backport that carries the option.
+ */
+export const WORKTREE_LIST_Z_FLOOR = { major: 2, minor: 36 } as const;
+
+/**
+ * What `git --version` said about the git this process will run, decoded —
+ * or why nothing could be read from it.
+ *
+ * A fact, never a verdict: this says which git answered and whether it
+ * carries the option the engine reads, not what a caller should do about it
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported*).
+ */
+export type GitVersion =
+  | {
+      readonly read: true;
+      /**
+       * git's own line, verbatim — `git version 2.43.0`, and whatever the
+       * host appends to it (`.windows.1`, ` (Apple Git-145)`). Reported
+       * rather than re-spelled from the numbers below, so a message naming
+       * the version names the one the operator would see themselves.
+       */
+      readonly line: string;
+      readonly major: number;
+      readonly minor: number;
+      /** Whether this git carries {@link WORKTREE_LIST_Z_FLOOR}'s option. */
+      readonly meetsWorktreeListZFloor: boolean;
+    }
+  | { readonly read: false; readonly reason: string };
+
+/**
+ * git's version line, decoded.
+ *
+ * Reading a version out of an English line is pattern-matching prose the
+ * engine did not author (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*) — the sanctioned exception, declared here: git exposes its
+ * version through no other channel, there is no exit code or porcelain form
+ * to key on instead, and `git version <major>.<minor>` is the documented
+ * opening of that line on every host. Only the opening is read; everything a
+ * distribution appends past the minor is carried verbatim in {@link
+ * GitVersion.line} rather than parsed.
+ *
+ * A line that does not open that way is **unread**, never guessed at: a
+ * version inferred from an unrecognized spelling would decide the floor
+ * silently and wrongly (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+export function parseGitVersion(line: string): GitVersion {
+  const said = line.trim();
+  const fields = /^git version (\d+)\.(\d+)/.exec(said);
+  if (!fields) {
+    return {
+      read: false,
+      reason: `\`git --version\` said ${JSON.stringify(said)}, which does not open \`git version <major>.<minor>\``,
+    };
+  }
+  const major = Number(fields[1]);
+  const minor = Number(fields[2]);
+  return {
+    read: true,
+    line: said,
+    major,
+    minor,
+    meetsWorktreeListZFloor:
+      major > WORKTREE_LIST_Z_FLOOR.major ||
+      (major === WORKTREE_LIST_Z_FLOOR.major &&
+        minor >= WORKTREE_LIST_Z_FLOOR.minor),
+  };
+}
+
+/**
+ * Run `git --version` in `cwd` and decode it through {@link parseGitVersion}.
+ *
+ * A git that cannot be started at all — absent from PATH, not executable —
+ * arrives as an unread reading carrying the spawn's own message, not as a
+ * throw: the caller reading this is asking which git it has, and a host with
+ * no git answers that question rather than ending the run early. Every other
+ * git call in this module still fails on its own terms.
+ */
+export async function readGitVersion(cwd: string): Promise<GitVersion> {
+  try {
+    const { stdout } = await run(cwd, ["--version"]);
+    return parseGitVersion(stdout);
+  } catch (err) {
+    return { read: false, reason: (err as Error).message };
+  }
+}

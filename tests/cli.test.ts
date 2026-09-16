@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, win32 } from "node:path";
+import { delimiter, dirname, join, relative, win32 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
@@ -4364,6 +4364,206 @@ describe("flume loop — runtime ignores at the default state root", () => {
 
         expect(await readFile(ignorePath, "utf8")).toBe(seeded);
       } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
+/**
+ * spec/chain.md, *The package a chain loads through* — the git 2.36 floor the
+ * engine's `worktree list --porcelain -z` read sits on, as the two verbs that
+ * read it at start report it.
+ *
+ * Driven through the real CLI over a `git` planted on PATH: the version the
+ * warning turns on is one only git itself states, and no host here can be
+ * made to ship an old build. The shim answers `--version` and delegates every
+ * other invocation to the host's own git, so the run the warning rides is a
+ * real one — `--max 0` reaches the floor read, the tip claim and the startup
+ * sweep, and stops without spawning a child tick.
+ *
+ * POSIX only, and the ledger carries the reason: `src/git.ts` spawns `git`
+ * through `execFile` with no shell, and win32 refuses a `.cmd` shim from a
+ * direct spawn (`spec/cli.md`, *win32 is a supported host*), so the plant the
+ * whole block is built on cannot be reached there.
+ */
+describe("flume loop / job run — the git floor warning", () => {
+  /**
+   * The host's own git, found the way a spawn would find it — on the PATH
+   * this process had before any shim was planted in front of it.
+   */
+  function hostGit(): string {
+    for (const dir of (process.env["PATH"] ?? "").split(delimiter)) {
+      if (dir === "") continue;
+      const candidate = join(dir, "git");
+      if (existsSync(candidate)) return candidate;
+    }
+    throw new Error("this host has no git on PATH");
+  }
+
+  /**
+   * A directory holding a `git` that answers `--version` with `line` and
+   * hands everything else to the host's git.
+   *
+   * The delegation is what keeps the case honest: the CLI runs perhaps a
+   * dozen git commands during a `--max 0` loop, and a shim that answered any
+   * of them itself would be testing the fixture rather than the engine.
+   */
+  async function plantGit(line: string): Promise<string> {
+    const dir = await mkTempDir("flume-git-shim-");
+    const shim = join(dir, "git");
+    await writeFile(
+      shim,
+      `#!/bin/sh\n` +
+        `if [ "$1" = "--version" ]; then\n` +
+        `  printf '%s\\n' ${JSON.stringify(line)}\n` +
+        `  exit 0\n` +
+        `fi\n` +
+        `exec ${JSON.stringify(hostGit())} "$@"\n`,
+      { mode: 0o755, encoding: "utf8" },
+    );
+    return dir;
+  }
+
+  /** `hermeticEnv()` with `dir`'s git ahead of the host's. */
+  const withGit = (dir: string): NodeJS.ProcessEnv => ({
+    ...hermeticEnv(),
+    PATH: `${dir}${delimiter}${process.env["PATH"] ?? ""}`,
+  });
+
+  /** How many times `out` carries the floor warning's own sentence. */
+  const warnings = (out: string): number =>
+    out.split("is below the git 2.36 floor").length - 1;
+
+  it.skipIf(process.platform === "win32")(
+    "flume loop below the git floor warns once naming the version, the floor, and what degrades",
+    async () => {
+      const repo = await makeJobRepo("main");
+      const shim = await plantGit("git version 2.35.9");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+
+        const r = await runCli(
+          repo.dir,
+          ["loop", "--max", "0"],
+          withGit(shim),
+        );
+
+        // A warning, not a refusal: the run the operator asked for happened.
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("reached --max 0");
+        // Once — the read is the run's, never the tick's.
+        expect(warnings(r.out)).toBe(1);
+        // The version git itself stated, verbatim.
+        expect(r.out).toContain("git version 2.35.9");
+        // What degrades, and the read it degrades at.
+        expect(r.out).toContain("worktree reclamation degrades");
+        expect(r.out).toContain("git worktree list --porcelain -z");
+      } finally {
+        await rm(shim, { recursive: true, force: true });
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "flume job run below the git floor warns once and still runs",
+    async () => {
+      const repo = await makeJobRepo("main");
+      const shim = await plantGit("git version 2.35.9");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+
+        const r = await runCli(
+          repo.dir,
+          ["job", "run", "probejob", "--max", "0"],
+          withGit(shim),
+        );
+
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("reached --max 0");
+        expect(warnings(r.out)).toBe(1);
+        expect(r.out).toContain("git version 2.35.9");
+        // The job's own state root was materialized: the verb ran as itself,
+        // not as a bare `loop` that happened to warn.
+        expect(existsSync(join(repo.dir, ".flume", "jobs", "probejob"))).toBe(
+          true,
+        );
+      } finally {
+        await rm(shim, { recursive: true, force: true });
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "a git at or above the floor warns nothing",
+    async () => {
+      const repo = await makeJobRepo("main");
+      const atFloor = await plantGit("git version 2.36.0");
+      const belowFloor = await plantGit("git version 2.35.9");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+
+        const quiet = await runCli(
+          repo.dir,
+          ["loop", "--max", "0"],
+          withGit(atFloor),
+        );
+        expect(quiet.code).toBe(0);
+        expect(quiet.out).toContain("reached --max 0");
+        expect(warnings(quiet.out)).toBe(0);
+        expect(quiet.out).not.toContain("2.36.0");
+
+        // The control the silence above means nothing without: the same
+        // fixture, one minor lower, does warn — so the quiet run is a git
+        // that met the floor rather than a warning nothing could produce
+        // (`.claude/rules/engineering.md`, *A green verdict is proven
+        // non-vacuous*). The floor's own version is the boundary, and it is
+        // on the quiet side of it.
+        const loud = await runCli(
+          repo.dir,
+          ["loop", "--max", "0"],
+          withGit(belowFloor),
+        );
+        expect(loud.code).toBe(0);
+        expect(warnings(loud.out)).toBe(1);
+      } finally {
+        await rm(atFloor, { recursive: true, force: true });
+        await rm(belowFloor, { recursive: true, force: true });
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "a git whose version cannot be read warns that the floor is unconfirmed",
+    async () => {
+      const repo = await makeJobRepo("main");
+      // A `git` answering `--version` with something no version can be read
+      // out of — the arm a wrapper script on PATH reaches.
+      const shim = await plantGit("a wrapper, not a version");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+
+        const r = await runCli(
+          repo.dir,
+          ["loop", "--max", "0"],
+          withGit(shim),
+        );
+
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("reached --max 0");
+        // Unconfirmed, never read as met.
+        expect(r.out).toContain("git version unread");
+        expect(r.out).toContain("a wrapper, not a version");
+        expect(r.out).toContain("2.36");
+      } finally {
+        await rm(shim, { recursive: true, force: true });
         await repo.cleanup();
       }
     },

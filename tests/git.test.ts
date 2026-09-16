@@ -109,6 +109,9 @@ import {
   dropLastCommit,
   gitCommonDir,
   isAncestor,
+  parseGitVersion,
+  readGitVersion,
+  WORKTREE_LIST_Z_FLOOR,
   liveTipClaimPid,
   pinLongPaths,
   readFileAtRef,
@@ -1423,5 +1426,93 @@ describe("trackedModifications", () => {
 
   it("returns an empty list on a clean tree", async () => {
     expect(await trackedModifications(repo)).toEqual([]);
+  });
+});
+
+/**
+ * `readGitVersion` / `parseGitVersion` (`src/git.ts`) — which git answered,
+ * and whether it carries the `worktree list --porcelain -z` option worktree
+ * reclamation is built on.
+ *
+ * The decode is driven over hand-authored lines: no real writer here is
+ * flume's, and the spellings that matter are the ones *other* hosts' git
+ * builds emit, which this host cannot be made to produce
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*: the scope is agreement claims). The one case that does need a real
+ * git runs the host's own.
+ */
+describe("readGitVersion — the git this process will run", () => {
+  it("reads the host's own git: a version line, its numbers, and the floor verdict", async () => {
+    const version = await readGitVersion(repo);
+    if (!version.read) throw new Error(`host git unread: ${version.reason}`);
+    // The line is git's, not a re-spelling of the numbers beside it.
+    expect(version.line).toMatch(/^git version \d+\.\d+/);
+    expect(version.line).toContain(`${version.major}.${version.minor}`);
+    expect(Number.isInteger(version.major)).toBe(true);
+    expect(Number.isInteger(version.minor)).toBe(true);
+    // This suite drives `worktree list --porcelain -z` elsewhere and passes,
+    // so the host's git carries the option — the verdict must say so.
+    expect(version.meetsWorktreeListZFloor).toBe(true);
+  });
+
+  it("decodes the spellings hosts append past the minor, floor verdict intact", () => {
+    const spellings = [
+      "git version 2.43.0",
+      "git version 2.39.3 (Apple Git-145)",
+      "git version 2.45.2.windows.1",
+      "  git version 2.36.0\n",
+    ];
+    // Vacuity: every spelling below is judged, none skipped.
+    expect(spellings).toHaveLength(4);
+    for (const line of spellings) {
+      const version = parseGitVersion(line);
+      if (!version.read) throw new Error(`unread: ${line}`);
+      expect(version.major).toBe(2);
+      expect(version.meetsWorktreeListZFloor).toBe(true);
+      expect(version.line).toBe(line.trim());
+    }
+  });
+
+  it("puts the floor's own neighbours on the right side of it", () => {
+    const at = parseGitVersion(
+      `git version ${WORKTREE_LIST_Z_FLOOR.major}.${WORKTREE_LIST_Z_FLOOR.minor}.0`,
+    );
+    const below = parseGitVersion(
+      `git version ${WORKTREE_LIST_Z_FLOOR.major}.${WORKTREE_LIST_Z_FLOOR.minor - 1}.9`,
+    );
+    const majorBelow = parseGitVersion(
+      `git version ${WORKTREE_LIST_Z_FLOOR.major - 1}.99.0`,
+    );
+    const majorAbove = parseGitVersion(
+      `git version ${WORKTREE_LIST_Z_FLOOR.major + 1}.0.0`,
+    );
+    expect([at.read, below.read, majorBelow.read, majorAbove.read]).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect([
+      at.read && at.meetsWorktreeListZFloor,
+      below.read && below.meetsWorktreeListZFloor,
+      majorBelow.read && majorBelow.meetsWorktreeListZFloor,
+      majorAbove.read && majorAbove.meetsWorktreeListZFloor,
+    ]).toEqual([true, false, false, true]);
+  });
+
+  it("leaves a line it does not recognize unread rather than guessing a version", () => {
+    const unread = parseGitVersion("not git at all 9.9");
+    expect(unread.read).toBe(false);
+    // The refusal quotes what was actually said, so the operator can see
+    // which binary answered.
+    expect(unread.read === false && unread.reason).toContain("not git at all");
+  });
+
+  it("reports a git that cannot be started as unread, carrying the spawn failure", async () => {
+    // A cwd that does not exist: the spawn itself fails, which is the same
+    // arm a host with no git on PATH reaches.
+    const gone = await readGitVersion(join(repo, "no-such-dir"));
+    expect(gone.read).toBe(false);
+    expect(gone.read === false && gone.reason.length).toBeGreaterThan(0);
   });
 });
