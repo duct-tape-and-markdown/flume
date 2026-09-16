@@ -504,12 +504,91 @@ shipped `vitestRunner()` is a working implementation of all three to read
 against. What none of them can be is optional: `runner` is a required
 declaration field, so there is no adopting first and porting the runner later.
 
+#### What the package retires outright
+
+The table's rows are code that *moves* — a value you were computing becomes a
+value you declare. This list is code that **goes**: you delete it and declare
+nothing in its place, because the package already does the job and takes no
+value for it. The runner row above is the largest thing the port makes you
+write; this is usually the largest thing it lets you delete, and reading it
+before you start porting rows is what keeps the deletions from becoming
+translations — forced into a `gates` row or an `agents` wrapper, each of
+these becomes a second copy of the package's own behavior running beside
+it.
+
+Four discipline gates arrive unasked on every phase — `records`,
+`clean-tree`, the engine's pending gate, and `per cites resolve` — ahead of
+anything you declare, and nothing in `gates` can displace one. The first of
+the three below is the one a hand-written chain most often duplicated.
+
+**A `per`-cite gate of your own.** A chain that wanted its cites checked
+wrote the gate itself: stat each open entry's `per.path`, refuse the plan
+commit that queued an entry pointing at a file that is not there. The
+package's `per cites resolve` is that claim and three more. It reads
+`pending.json` and every cited file **at the gated commit** rather than off
+the working tree, so it judges the commit under inspection and not the one
+before it. It resolves the `section` — heading text, or your declared
+`resolver` — where a stat only proves the file exists. It reports every
+unresolved cite in one message, tag first, rather than handing the queue back
+one fix per tick. And over a drained queue it returns green *marked skipped*,
+so a pass over zero entries is spelled rather than inherited. Delete the gate
+body; what survives it is two table rows, `specLocus` and `resolver`, which
+are the only things of yours it reads.
+
+**The agent decorator stack.** The package composes it:
+
+```ts
+// your chain, per phase
+const agent = withTerminalRenderer(
+  withSessionCapture(claudeCode({ outputFormat: "stream-json", model }), {
+    dir: resolve(flumeDir, "sessions"),
+  }),
+);
+
+// adopted — declare the knobs, not the stack
+agents: { build: { model: "…", extraArgs: ["…"], inheritUserMcp: false } },
+```
+
+Retired with it: the transcript directory you chose and the `.gitignore` line
+that kept it out of commits. The package tees every tick's raw stream to
+`<stateRoot>/sessions/` and ships that path in the ignore lines `init`
+merges, so the footprint is named once and one `rm` removes it. The three
+fields above are the whole of what you still choose — `model` undeclared
+means the flag is omitted and the binary's own default applies, which is a
+tier you pick rather than one you inherit. A decorator of your *own* outside
+the package's stack is a different matter; see the list below.
+
+**The entry contract, spelled twice.** A hand-written chain declared its
+entry fields in a zod extension and then explained them again in the plan
+prompt — the cap in the schema, the meaning in the prose, the two kept
+agreeing by hand. The package declares each field once, `schema` beside
+`hint`, and renders the hint rather than restating it: the plan slices are
+given the whole rendered schema block, and the build prompt quotes the
+`tests[]` and `pins[]` hints verbatim back to the tick that must satisfy
+them. So both halves go — the package's seven fields (`summary`, `per`,
+`acceptance`, `tests`, `pins`, `notes`, and the contract-touching flag) out
+of your extension, and every prompt paragraph restating what one of them
+means or how long it may be. Your prompt files go whole regardless; prompts
+are the package's, and a `slots` entry is text, not a directive.
+
+The sharp edge here is a field you already have under one of those names.
+A `tests` field of your own shape — `{ path, asserts }`, say — is not merged
+and not overridden: the extension refuses it at chain load, naming the key,
+because a redeclaration is removal spelled as addition. Drop yours and take
+the package's, which is a list of test *titles* the judge runs against the
+merged tree and then against the base. Fields under other names merge beside
+the package's untouched.
+
 **What has no declaration field**, verified against the factory's returned
 `Chain` — check for these before you commit to adopting:
 
 - `Chain.friction` — the friction channel and the `flume friction` verb.
 - `Chain.seedDir` — so `flume job new` under the package seeds a bare job.
 - `Chain.pendingPath`, `Chain.worktreesBase`, `Chain.capabilities`.
+- **A decorator of your own around the agent.** `agents` takes `model`,
+  `extraArgs` and `inheritUserMcp`, and the package composes the stack around
+  them itself with no injection point — so a wrapper of yours outside it, a
+  cost ledger or a metrics tee, has nowhere to sit.
 - **Phases beyond the package's own.** The phase list is the enabled plan
   slices plus `build`. A hand-written chain with a third phase (a release
   phase, a review phase) has nowhere to put it.
