@@ -56,6 +56,7 @@ import {
 } from "./declaration.js";
 import { constructGate } from "./declaredGates.js";
 import { entryExtension } from "./entryExtension.js";
+import { MAX_OUTPUT_BYTES } from "./exec.js";
 import { harnessGates, type GateEngine } from "./gates.js";
 import { resolveHandoff } from "./handoff.js";
 import { SESSIONS_REL } from "./ignores.js";
@@ -407,7 +408,17 @@ function provisioning(
         await api.setupWorktree(cwd);
         continue;
       }
-      await execFileWithShimRetry("sh", ["-c", setup.restore], { cwd });
+      // The cap is this site's to state: a consumer's restore command is
+      // arbitrary, its output is read by nothing here, and node's inherited
+      // 1 MiB reports an overrun where an exit status would sit — a verbose
+      // install arriving as a restore that never ran
+      // (`.claude/rules/platform-facts.md`, *Node caps a captured child
+      // stream at 1 MiB, and reports the overrun as a spawn failure*). One
+      // number with the rest of the package's captures.
+      await execFileWithShimRetry("sh", ["-c", setup.restore], {
+        cwd,
+        maxBuffer: MAX_OUTPUT_BYTES,
+      });
     }
   };
 }

@@ -47,6 +47,21 @@ import type {
 const BACKLOG_PATH = "BACKLOG.json";
 const SHIPPED_PATH = "SHIPPED.md";
 
+/**
+ * How much of a child's output either git call below may buffer, in bytes.
+ *
+ * Both are quiet and neither's output is read, so the number is not the
+ * point — declaring one is. Node keeps 1 MiB per stream unless a call says
+ * otherwise and reports an overrun as a killed child rather than a
+ * truncation, so a chain that inherits the default has a spawn failure
+ * waiting on whichever of its commands one day prints more than it used to
+ * (`.claude/rules/platform-facts.md`, *Node caps a captured child stream at
+ * 1 MiB, and reports the overrun as a spawn failure*). A chain of your own
+ * picks its own number here; what it does not do is leave the choice
+ * unstated.
+ */
+const GIT_OUTPUT_CAP_BYTES = 8 << 20;
+
 // ---------- entry extension + tag refinement ----------
 
 /**
@@ -173,8 +188,14 @@ const factory: ChainFactory = (api) => {
       const prior = existsSync(shippedPath) ? readFileSync(shippedPath, "utf8") : "";
       writeFileSync(shippedPath, `${prior}- ${pick.tag}: ${reason}\n`);
 
-      execFileSync("git", ["add", BACKLOG_PATH, SHIPPED_PATH], { cwd });
-      execFileSync("git", ["commit", "-q", "-m", `groom: ship ${pick.tag}`], { cwd });
+      execFileSync("git", ["add", BACKLOG_PATH, SHIPPED_PATH], {
+        cwd,
+        maxBuffer: GIT_OUTPUT_CAP_BYTES,
+      });
+      execFileSync("git", ["commit", "-q", "-m", `groom: ship ${pick.tag}`], {
+        cwd,
+        maxBuffer: GIT_OUTPUT_CAP_BYTES,
+      });
 
       return { exitCode: 0, stdout: say(`shipped ${pick.tag}`), stderr: "" };
     },

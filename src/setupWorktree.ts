@@ -18,6 +18,23 @@ import { namespacedJoin } from "./paths.js";
 import { execFileWithShimRetry } from "./spawnShim.js";
 
 /**
+ * How much of an install's output one run of this hook holds, in bytes.
+ *
+ * Nothing here reads what comes back — the install runs for its effect on
+ * `node_modules` — but node buffers it regardless, and a run that outgrows
+ * the cap is killed with `SIGTERM` and reported where an exit status would
+ * sit, never as a truncation (`.claude/rules/platform-facts.md`, *Node caps
+ * a captured child stream at 1 MiB, and reports the overrun as a spawn
+ * failure*). Inherited, that default turns a large-but-successful install
+ * into a worktree the engine says could not be provisioned.
+ *
+ * Sized as a runaway ceiling rather than a working set: a cold install of a
+ * large workspace prints a progress line per package and crosses 1 MiB
+ * routinely, while nothing legitimate approaches this.
+ */
+const INSTALL_OUTPUT_CAP_BYTES = 64 << 20;
+
+/**
  * Runs the install implied by whichever lockfile `dir` contains:
  * `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`; `package-lock.json`
  * → `npm ci`; both present → pnpm wins (flume's own convention); neither →
@@ -46,12 +63,16 @@ export async function setupWorktree(dir: string): Promise<void> {
   if (hasPnpmLock) {
     await execFileWithShimRetry("pnpm", ["install", "--frozen-lockfile"], {
       cwd: dir,
+      maxBuffer: INSTALL_OUTPUT_CAP_BYTES,
     });
     return;
   }
 
   if (hasNpmLock) {
-    await execFileWithShimRetry("npm", ["ci"], { cwd: dir });
+    await execFileWithShimRetry("npm", ["ci"], {
+      cwd: dir,
+      maxBuffer: INSTALL_OUTPUT_CAP_BYTES,
+    });
     return;
   }
 

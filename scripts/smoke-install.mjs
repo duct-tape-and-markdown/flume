@@ -62,6 +62,21 @@ const CHILD_ENV = Object.fromEntries(
 class SmokeStepError extends Error {}
 
 /**
+ * How much of a captured step's output `run` holds, in bytes.
+ *
+ * `npm pack` and `npm install` are the loud steps, and a registry install
+ * of a fresh consumer prints a line per resolved package. Inherited, node's
+ * 1 MiB would kill the child with `SIGTERM` and report it where an exit
+ * status belongs, so the run would fail as "exited null" on exactly the
+ * verbose install this script exists to prove works
+ * (`.claude/rules/platform-facts.md`, "Node caps a captured child stream at
+ * 1 MiB, and reports the overrun as a spawn failure"). Declared for every
+ * step, capturing or not: the option costs an inheriting step nothing, and
+ * a cap chosen per branch is a cap that moves when the branch does.
+ */
+const STEP_OUTPUT_CAP_BYTES = 64 << 20;
+
+/**
  * Windows requires shell:true to invoke .cmd/.bat targets (npm itself, and
  * the generated flume.cmd shim under test) — Node no longer auto-invokes
  * cmd.exe for them. Node quotes the argv array for us when shell:true is
@@ -76,6 +91,7 @@ function run(step, cmd, args, opts = {}) {
     cwd: opts.cwd,
     env: CHILD_ENV,
     encoding: "utf8",
+    maxBuffer: STEP_OUTPUT_CAP_BYTES,
   });
   if (result.error) {
     throw new SmokeStepError(`${step}: ${result.error.message}`);
