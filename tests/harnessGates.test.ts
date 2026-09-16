@@ -1,7 +1,8 @@
 /**
  * The harness package's gate set (`spec/harness.md`, *The gates the
- * discipline needs*): what each of the four refuses, and that all four sit
- * ahead of whatever a consumer declared.
+ * discipline needs*): what each of the five refuses, that all five sit
+ * ahead of whatever a consumer declared, and that the page a consumer adopts
+ * from names every one of them.
  *
  * Every case runs over a **real git repository** and gates a **real commit**:
  * the span each gate reads is `git diff` over the two shas git just handed
@@ -18,7 +19,7 @@
  * `plan/notes` — so a layout rename moves these cases with it.
  */
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -43,6 +44,7 @@ import { isAncestor, readFileAtRef, statusRecords } from "../src/git.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
+import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
@@ -889,4 +891,38 @@ it("the package's gates precede a consumer's declared gates for the same phase",
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain("OUT-OF-FENCE");
   expect(refused.details).toContain("docs/design.md");
+});
+
+/**
+ * The inventory a consumer reads before the hover text, read against the set
+ * the factory builds (`.claude/rules/engineering.md`, *Narration is the
+ * ladder's bottom rung*, the `docs/` carve-out): the page states which gates
+ * the package brings to a commit, so it is pinned for what it says against
+ * the interface it describes.
+ *
+ * The names come from `gates()` — the real factory over the real declaration,
+ * the same call every other case here runs — so a sixth gate added to the set
+ * reds this until the page names it, and a rename carries the page with it.
+ *
+ * The span is cut to the adoption section rather than the page read whole:
+ * `docs/CHAIN-AUTHORING.md` documents `pending-gate` and the records gates at
+ * length further down, so a whole-page read would report every name found
+ * wherever it fell and pass over an inventory naming none of them.
+ */
+it("docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds", async () => {
+  const names = gates().map((g) => g.name);
+  // Vacuity pin: an empty set is named in full by every page there is.
+  expect(names.length).toBeGreaterThan(0);
+
+  const page = await readFile(
+    new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
+    "utf8",
+  );
+  const inventory = sectionOf(page, "## First: do you need to write one?");
+
+  // The cut landed on the inventory: without this a renamed heading reports
+  // no missing gate over no text at all.
+  expect(inventory).toContain("**The harness package**");
+
+  expect(names.filter((name) => !inventory.includes(`\`${name}\``))).toEqual([]);
 });

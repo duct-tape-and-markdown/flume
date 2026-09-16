@@ -60,8 +60,10 @@ the first of them is what this page documents:
   (`plan-inbox`, `plan-derive`, `plan-sweep`), a fanout `build` phase, their
   prompts and discipline, the entry extension (`summary`, `per`,
   `acceptance`, `tests[]`, `pins[]`, `notes`), the judge that proves a
-  `tests[]` line green on the merged tree and red on the base, the `per` /
-  records / clean-tree gates, the records conventions, and the plan state as
+  `tests[]` line green on the merged tree and red on the base, the five
+  discipline gates that run ahead of whatever a consumer declared
+  (`records`, `clean-tree`, `pending-gate`, `per cites resolve`,
+  `derive cursor`), the records conventions, and the plan state as
   typed state rather than prose a cursor is regexed out of.
 
 One package, one version: an engine minor that breaks the chain surface ships
