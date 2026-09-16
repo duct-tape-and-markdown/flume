@@ -504,10 +504,15 @@ interface GateResult {
 ```
 
 `afterCommit` runs on the worktree branch; failure drops the commit and the
-entry stays pending. `afterMerge` runs on the trunk after a fanout wave
-lands; failure reverts **only the offending entry's commit** — its clean
-siblings stay shipped and that one entry returns to pending. Singleton
-phases never run `afterMerge` (they commit straight to the trunk).
+entry stays pending. `afterMerge` runs on the trunk after the tick's span
+has been cherry-picked onto it; failure reverts **only the offending
+commit** — under fanout, the wave's clean siblings stay shipped and that one
+entry returns to pending.
+
+Both placements are open to both concurrencies. A singleton tick works in
+its own worktree and cherry-picks its span onto the trunk like a wave of
+one (§3, *Singleton*), so its `afterMerge` gate runs on the trunk with the
+span merged — the same tree a fanout entry's sees, minus the siblings.
 
 `verdict`, `skipped` and `failingFiles` are **facts about the run, not
 engine judgments**: the dispatcher copies them onto the tick verdict and
@@ -725,6 +730,17 @@ This is a default, not a law. A suite whose N parallel copies still finish
 well inside their timeout can stay at `afterCommit`, where it buys the
 pre-merge catch as well. Move it to `afterMerge` once running it N-wide is
 itself what makes it flake.
+
+A singleton phase has both placements too, and weighs them on the other
+axis: nothing contends with a lone tick, so the question is where the check
+wants to stand rather than what it costs. `afterCommit` runs it in the
+tick's own worktree — a cold tree the phase's `setupWorktree` just
+provisioned — and a failure keeps the commit off the trunk entirely.
+`afterMerge` runs it on the trunk with the span applied, which is the only
+place a check about the *merged* result can run: a cross-cutting suite that
+must see the tick's output alongside whatever else landed on the trunk
+while it worked. The cost is the usual one — a bad commit is briefly on the
+trunk before the revert.
 
 Moving a builtin costs nothing: `tscGate({ when: "afterMerge" })` is the
 same check at the other point. Don't hand-roll a `shellGate` restating the
