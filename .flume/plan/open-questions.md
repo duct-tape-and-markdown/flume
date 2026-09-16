@@ -51,3 +51,47 @@ oversight.
 it matches what the ruling actually did on both sides, and it keeps the
 corpus's readable shorthand. If (b) is wanted instead, the edit is the
 human's and wants its own landing — derive cannot write `spec/`.
+
+## Does `flume --help <name>` answer for that name, or refuse it?
+
+**Status: PARKED** — `spec/cli.md`, *Subcommand surface*.
+
+The spec names three help spellings and rules on all three: every subcommand
+answers `--help`; `flume --help` lists all subcommands and `flume help` "is
+the same answer"; `flume help <subcommand>` is that subcommand's `--help`,
+"and an unknown name there is usage-shaped (exit 2) like a trailing positional
+anywhere else, never silently dropped". It says nothing about a name trailing
+the *flag*.
+
+On disk that gap is a silent drop: `src/cli.ts:271` gates the trailing-name
+lookup on `firstArg === "help"`, so `flume --help status` prints the top-level
+page and discards `status`. The comment at the site (`src/cli.ts:266`)
+condemns exactly this shape — "a name this surface holds no page for refuses
+usage-shaped rather than answering the top-level page over an argument it
+dropped" — for the verb arm only. Since
+FLUME-HELP-ANSWERS-FOR-A-SUBCOMMAND shipped, this is the one place in the CLI
+where argv is discarded rather than honored or refused.
+
+**Options.**
+
+- **(a) Answer with that name's page.** One more arm on the same branch,
+  through the same decider (`helpPageFor`, `src/cliHelp.ts`); an unknown name
+  exits 2 as the verb arm's does. Reads the spec's "`flume help` is the same
+  answer" as covering the trailing form too, which is the symmetry an operator
+  assumes. Cost: `flume --help status` and `flume status --help` become the
+  same page — harmless, but a fourth spelling to keep working.
+- **(b) Refuse usage-shaped (exit 2).** Reads the spec's own class — "any argv
+  the surface cannot honor as typed", whose stated harm is "running something
+  other than what the operator typed" — as governing, since `--help`'s
+  declared contract is the top-level list and nothing else. Cost: an operator
+  who guessed the composite spelling gets a refusal where the verb spelling
+  answers.
+- **(c) Leave the drop.** Costs nothing now and keeps one surface where argv
+  vanishes, which is the shape gh#1 was filed over.
+
+**Recommended: (a)**, weakly. Both (a) and (b) close the drop, both are a
+one-line change on that branch, and each has a spec sentence behind it — which
+is why this is a fork rather than a derivation. (a) keeps one decider serving
+every spelling of "help for <name>"; (b) keeps `--help`'s contract narrow. A
+sentence in *Subcommand surface* naming the flag form closes this either way,
+and that sentence is the human's: neither plan nor build writes `spec/`.

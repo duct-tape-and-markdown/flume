@@ -1,5 +1,37 @@
 [
   {
+    "tag": "THE-GATEPHASE-LEAD-IN-STOPS-NARROWING-AFTERMERGE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Gate.ts",
+          "description": "the `afterMerge` clause of the GatePhase lead-in block"
+        },
+        {
+          "path": "tests/docComments.test.ts",
+          "description": "the lead-in block's claim, beside the existing block-scoped doc pins"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "GatePhase's lead-in comment says afterMerge runs after a fanout phase's wave lands, so the shipped hover text denies the singleton case the union members below it name",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Singleton runs in a worktree"
+    },
+    "acceptance": "the GatePhase lead-in states when afterMerge runs without scoping it to a fanout phase, and a pin reads that block.",
+    "tests": [
+      "the `GatePhase` lead-in comment does not scope `afterMerge` to a fanout phase"
+    ],
+    "pins": [],
+    "notes": "Left standing by CHAIN-AUTHORING-STOPS-DENYING-A-SINGLETON-AFTERMERGE, which fixed the docs page and the union members below this block. `GatePhase` ships from `src/index.ts`, so the block is engine surface the ladder rules pinnable (`engineering.md`, *Narration is the ladder's bottom rung*) — one rung above the page already fixed. `tests/docComments.test.ts` holds block-scoped doc pins with vacuity guards; the assertion reads its own block."
+  },
+  {
     "tag": "CHAIN-AUTHORING-ENUMERATES-WHAT-A-GATE-RECEIVES",
     "gate": {
       "kind": "open"
@@ -26,6 +58,32 @@
     ],
     "pins": [],
     "notes": "`baseSha` reached authors only via `docs/MIGRATING-0.15.md`; `landedOnSha` has no migration page, so the standing page is its only home. The pin is ruled in — a `docs/` passage stating what a shipped interface does may be read against that interface — so the named fields resolve against `GateContext` (`src/Gate.ts`). Red on the base, where the page names none."
+  },
+  {
+    "tag": "THE-ADOPTION-PAGE-PRICES-OPERATIONS-NOT-A-COUNT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the count words in *What adoption costs* and in the declaration lead-in above it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "three sentences on the adoption page count Runner's operations instead of naming them, so a fourth operation strands prose beside the pin that reads the operation list",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "acceptance": "no sentence in the adoption page's runner prose carries a copy of Runner's member count; each names the operations instead.",
+    "tests": [],
+    "pins": [],
+    "notes": "Sites: :129 \"over the same three operations\", :160 \"not the three signatures\", :176 \"a working implementation of all three\". Left unpinned by THE-ADOPTION-PAGE-NAMES-EVERY-RUNNER-OPERATION: the only check available is `toContain` over a phrasing, which reds on a rewrite rather than on the fact. Deleting the copy is the fix, and that entry's bullet pin then covers the section. `docs/MIGRATING-0.16.md` describes a cut release and is out of scope."
   },
   {
     "tag": "THE-STATE-ROOT-OFFSET-TAKES-ITS-NAMES-FILE",
