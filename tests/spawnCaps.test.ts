@@ -24,8 +24,10 @@ import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   formatPromisifiedSpawnSite,
   formatSpawnCapSite,
+  formatSyncSpawnSite,
   scanPromisifiedSpawns,
   scanSpawnCaps,
+  scanSyncSpawns,
   type SpawnCapScan,
 } from "./helpers/spawnCaps.ts";
 
@@ -38,8 +40,9 @@ import {
  * Capless and capped calls through an alias; a cap named in an options
  * object built above the call rather than at it; a wrapper that hands its
  * caller's options bag through, judged at its two call sites instead of its
- * own; a `spawnSync` piping nothing; one piping and capping nothing; and a
- * streaming spawn, which has no cap to declare.
+ * own; an `execFileSync` and a `spawnSync` each piping nothing; a `spawnSync`
+ * piping and capping nothing; and a streaming spawn, which has no cap to
+ * declare.
  *
  * One case sits outside the swept tree, at the path this repo's own chain
  * is named by, so the domain's named-file arm is judged by the same verdicts
@@ -101,6 +104,15 @@ const CASES: Record<string, string> = {
     `import { capture } from "./wrapper.ts";`,
     `export const list = (cwd: string) =>`,
     `  capture("git", ["log"], { cwd, maxBuffer: 16 << 20 });`,
+    ``,
+  ].join("\n"),
+
+  "src/probe.ts": [
+    `import { execFileSync } from "node:child_process";`,
+    `export const present = (): boolean => {`,
+    `  execFileSync("git", ["--version"], { stdio: "ignore" });`,
+    `  return true;`,
+    `};`,
     ``,
   ].join("\n"),
 
@@ -196,6 +208,55 @@ it("the wrapper scan reds a promisified spawn built outside the declared home", 
   expect(scan.findings.map(formatPromisifiedSpawnSite)).toEqual([
     "src/capless.ts:3 promisify(execFile)",
   ]);
+});
+
+/**
+ * The sync verdict, over the same fixture: four of its cases reach a sync
+ * capturing API directly, named below rather than here, and a domain
+ * declaring one of them its home has exactly three findings by construction.
+ * The wrapper the case holding the home spells takes its options bag from a
+ * caller, which is a forwarder to the cap scan and a capture to this one —
+ * the two scans ask different questions of one call.
+ *
+ * The repo pin this backs (`tests/subprocessHelper.test.ts`) asserts an
+ * absence, which is green over a needle that reads nothing — this is the run
+ * where the needle bites.
+ */
+it("the sync scan reds a capturing sync spawn written outside the declared home", () => {
+  const scan = scanSyncSpawns(fixtureRoot, FIXTURE_DOMAIN, ["src/wrapper.ts"]);
+  expect(scan.scanned.map(formatSyncSpawnSite).sort()).toEqual([
+    ".flume/chain.ts:3 execFileSync",
+    "src/builtOptions.ts:4 execFileSync",
+    "src/piped.mjs:3 spawnSync",
+    "src/wrapper.ts:7 execFileSync",
+  ]);
+  expect(scan.findings.map(formatSyncSpawnSite).sort()).toEqual([
+    ".flume/chain.ts:3 execFileSync",
+    "src/builtOptions.ts:4 execFileSync",
+    "src/piped.mjs:3 spawnSync",
+  ]);
+});
+
+/**
+ * The exemption the repo pin rests on, shown on cases built to carry it: a
+ * call piping nothing captures nothing, and the fixture spells one with
+ * `execFileSync` and one with `spawnSync`, so neither half of the family is
+ * excused by the other's reading. The third case below is an async spawn,
+ * which is no sync capture whatever it buffers.
+ *
+ * Each module is read and still holds a capturing name, so the absences are
+ * exclusions rather than a domain that missed them.
+ */
+it("the sync scan exempts a capture-free sync spawn and reads no async one", () => {
+  const scan = scanSyncSpawns(fixtureRoot, FIXTURE_DOMAIN, []);
+  const exempt = ["src/probe.ts", "src/inherit.mjs", "src/capless.ts"];
+  for (const module of exempt) {
+    expect(scan.modules).toContain(module);
+    expect(CASES[module]).toMatch(/exec|spawn/);
+  }
+  const judged = new Set(scan.scanned.map((site) => site.module));
+  expect([...judged].length).toBeGreaterThan(0);
+  for (const module of exempt) expect(judged).not.toContain(module);
 });
 
 it("the scan refuses a child_process import it cannot read", async () => {

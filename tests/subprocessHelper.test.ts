@@ -42,7 +42,9 @@ import {
 import { REPO_ROOT, filesUnder, relPath } from "./helpers/repoProgram.ts";
 import {
   formatPromisifiedSpawnSite,
+  formatSyncSpawnSite,
   scanPromisifiedSpawns,
+  scanSyncSpawns,
 } from "./helpers/spawnCaps.ts";
 import {
   LANES,
@@ -248,6 +250,70 @@ it("no file under tests/ promisifies execFile outside the module that declares t
       "runs on node's 1 MiB default, and the overrun arrives as a child that " +
       "never ran",
   ).toEqual([]);
+});
+
+/**
+ * The same verdict for the blocking half. A sync capture needs no
+ * construction line to be a wrapper — `execFileSync("git", …)` is one where
+ * it stands — so the judged set is the calls themselves, and nine of them
+ * across seven files ran on node's 1 MiB default, seven of those the same
+ * git helper spelled seven times.
+ *
+ * Two exemptions, spelled here rather than left to be rediscovered by
+ * whoever next wonders why the scan is quiet over a file that names a sync
+ * API: a call that pipes nothing captures nothing, and a capturing name
+ * inside a fixture's source *string* is not a call at all.
+ */
+const syncSpawns = scanSyncSpawns(REPO_ROOT, { trees: ["tests"] }, [
+  WRAPPER_HOME,
+]);
+
+/** The one site under `tests/` that names a sync API and pipes no stream. */
+const CAPTURE_FREE = "tests/harnessCi.test.ts";
+
+/** The files whose only sync spelling is source a fixture writes out. */
+const FIXTURE_LITERAL: readonly string[] = [
+  "tests/cli.test.ts",
+  "tests/cliJobResolution.test.ts",
+  "tests/subprocessHelper.test.ts",
+];
+
+// Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is proven
+// non-vacuous"): the verdict below is an absence, which a domain that walked
+// no module reports exactly as a clean tree does. Pinned on the subject — the
+// capping module's own blocking spawns, both of them.
+it("the sync scan reads tests/ and finds the home's own capturing sync spawns", () => {
+  expect(syncSpawns.modules.length).toBeGreaterThan(0);
+  expect(syncSpawns.modules).toContain(WRAPPER_HOME);
+  expect(
+    syncSpawns.scanned
+      .filter((site) => site.module === WRAPPER_HOME)
+      .map((site) => site.callee)
+      .sort(),
+  ).toEqual(["execFileSync", "spawnSync"]);
+});
+
+it("no file under tests/ captures a sync child's output outside the module that declares the cap", () => {
+  expect(
+    syncSpawns.findings.map(formatSyncSpawnSite),
+    `import { gitOutSync } or { spawnCaptureSync } from "${WRAPPER_HOME}" ` +
+      "instead — a bare sync capture runs on node's 1 MiB default, and the " +
+      "overrun arrives as ENOBUFS with no exit status at all",
+  ).toEqual([]);
+});
+
+// The two exemptions, asserted rather than inherited: each named file is in
+// the domain and still spells a sync capturing API, so the scan's silence
+// over it is the exclusion this suite claims and not a file it never read.
+it("the sync scan exempts a capture-free probe and a fixture's source literal", () => {
+  const judged = new Set(syncSpawns.scanned.map((site) => site.module));
+  for (const module of [CAPTURE_FREE, ...FIXTURE_LITERAL]) {
+    expect(syncSpawns.modules).toContain(module);
+    expect(readFileSync(join(REPO_ROOT, module), "utf8")).toMatch(
+      /execFileSync|execSync|spawnSync/,
+    );
+    expect(judged).not.toContain(module);
+  }
 });
 
 describe("runCli — reports the CLI's own status, not a default", () => {

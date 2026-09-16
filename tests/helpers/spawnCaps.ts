@@ -4,14 +4,17 @@
  * caller names — where a capturing API is turned into a spawn wrapper by
  * hand.
  *
- * Two verdicts over two judged sets, so two `Scan`s
+ * Three verdicts over three judged sets, so three `Scan`s
  * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*):
- * {@link scanSpawnCaps} judges calls, {@link scanPromisifiedSpawns} judges
- * the `promisify(execFile)` line a call is written against. The second exists
- * because a domain can be one where judging every call is the wrong question
- * — `tests/`, where a fixture's deliberately capless spawn is a subject and
- * a mocked `execFile` is not a spawn at all — and the answerable question is
- * instead how many wrappers the domain is allowed to have.
+ * {@link scanSpawnCaps} judges calls, while {@link scanPromisifiedSpawns} and
+ * {@link scanSyncSpawns} judge where a call is *written* — the
+ * `promisify(execFile)` line an async spawn is built on, and the sync capture
+ * itself, which needs no construction line to be a wrapper of its own. The
+ * second pair exists because a domain can be one where judging every call is
+ * the wrong question — `tests/`, where a fixture's deliberately capless spawn
+ * is a subject and a mocked `execFile` is not a spawn at all — and the
+ * answerable question is instead how many spawn homes the domain is allowed
+ * to have.
  *
  * `execFile`, `exec`, their sync forms, and a piped `spawnSync` keep at most
  * `maxBuffer` bytes per stream — 1 MiB unless the call says otherwise — and
@@ -34,12 +37,12 @@
  * caller a declared cap it never needed, and that is the direction this scan
  * takes on every judgement below — a missed site costs the silent kill.
  *
- * Three things the scan will not read, each refused or excluded out loud
+ * Three things the scans will not read, each refused or excluded out loud
  * rather than passed over: a `node:child_process` import in a shape with no
  * named bindings (thrown on — the module's spawns would be invisible), an
  * async `spawn`, which has no `maxBuffer` and streams instead of buffering
- * (never a subject), and a `spawnSync` whose `stdio` is spelled as literals
- * that pipe nothing (a subject that captures nothing).
+ * (never a subject), and a call whose `stdio` is spelled as literals that
+ * pipe nothing (a subject that captures nothing).
  *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
@@ -133,28 +136,39 @@ const UTIL = new Set(["node:util", "util"]);
 const PROMISIFY = "promisify";
 
 /**
- * How a capturing API decides whether it buffers. `execFile`, `exec` and
- * their sync forms always do — `stdio` is not theirs to read — while
- * `spawnSync` buffers whatever it pipes, which is every stream by default.
+ * The APIs that buffer a child's streams into memory, by the name
+ * `node:child_process` exports each one under. Every one of them buffers
+ * whatever its `stdio` pipes, which is every stream by default, so one rule
+ * decides capture for all five and none of them is a special case
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
  * Async `spawn` is deliberately absent: it has no `maxBuffer` at all, hands
  * the streams to its caller, and a cap on it is enforced by hand where one
  * is wanted (`src/Prompt.ts`).
  */
-const CAPTURING_APIS: ReadonlyMap<string, Family> = new Map([
-  ["exec", "always"],
-  ["execFile", "always"],
-  ["execSync", "always"],
-  ["execFileSync", "always"],
-  ["spawnSync", "stdio"],
+const CAPTURING_APIS: ReadonlySet<string> = new Set([
+  "exec",
+  "execFile",
+  "execSync",
+  "execFileSync",
+  "spawnSync",
 ]);
 
-/** Whether a capturing name always buffers, or buffers what `stdio` pipes. */
-type Family = "always" | "stdio";
+/**
+ * The three of those that block the caller. A sync capture is the arm
+ * {@link scanSyncSpawns} judges, and the one whose overrun arrives as
+ * `ENOBUFS` with `status: null` rather than as a rejection.
+ */
+const SYNC_APIS: ReadonlySet<string> = new Set([
+  "execSync",
+  "execFileSync",
+  "spawnSync",
+]);
 
 /** The option a site declares its cap under. */
 const CAP_KEY = "maxBuffer";
 
-/** The option a `spawnSync` switches its capture with. */
+/** The option a capturing call switches its capture with. */
 const STDIO_KEY = "stdio";
 
 /** The `stdio` spellings that buffer — anything else pipes no stream. */
@@ -234,8 +248,9 @@ function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
 }
 
 /**
- * The local names a module binds to a capturing API, with the family each
- * one carries.
+ * The local names a module binds to a capturing API, each mapped to the API
+ * it renames — so a caller judging one arm of the family (the sync one,
+ * below) reads what was imported rather than what it was called locally.
  *
  * A `node:child_process` import the scan cannot read its bindings off — a
  * default or namespace import, or a bare side-effect import — is refused
@@ -243,8 +258,8 @@ function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
  * invisible and the module would report clean (`.claude/rules/engineering.md`,
  * *Loud or nothing*).
  */
-function importedApis(src: ts.SourceFile, module: string): Map<string, Family> {
-  const bound = new Map<string, Family>();
+function importedApis(src: ts.SourceFile, module: string): Map<string, string> {
+  const bound = new Map<string, string>();
   for (const st of src.statements) {
     if (!ts.isImportDeclaration(st)) continue;
     if (!ts.isStringLiteralLike(st.moduleSpecifier)) continue;
@@ -257,8 +272,8 @@ function importedApis(src: ts.SourceFile, module: string): Map<string, Family> {
           "the names it imports and would judge this module's spawns as none",
       );
     for (const el of bindings.elements) {
-      const family = CAPTURING_APIS.get((el.propertyName ?? el.name).text);
-      if (family) bound.set(el.name.text, family);
+      const api = (el.propertyName ?? el.name).text;
+      if (CAPTURING_APIS.has(api)) bound.set(el.name.text, api);
     }
   }
   return bound;
@@ -468,10 +483,15 @@ function forwardsOptions(
 }
 
 /**
- * Whether a `stdio`-switched call pipes nothing, read off literals alone: a
- * string spelling, or an array of them, naming no piped stream. Anything
- * else — an identifier, a conditional, an absent `stdio`, which is node's
- * piping default — is a capture the site declares its cap for.
+ * Whether the call pipes nothing, read off literals alone: a string spelling,
+ * or an array of them, naming no piped stream. Anything else — an identifier,
+ * a conditional, an absent `stdio`, which is node's piping default — is a
+ * capture, and so a site that declares its cap and a site the sync scan
+ * below holds to the wrapper.
+ *
+ * Read for every capturing API rather than for `spawnSync` alone: node hands
+ * each of the five the same `stdio`, and a stream that was never piped is a
+ * stream no `maxBuffer` bounds.
  */
 function pipesNothing(call: ts.CallExpression): boolean {
   for (const arg of call.arguments) {
@@ -503,9 +523,9 @@ function pipesNothing(call: ts.CallExpression): boolean {
  */
 function aliases(
   src: ts.SourceFile,
-  capturing: ReadonlyMap<string, Family>,
-): Map<string, Family> {
-  const found = new Map<string, Family>();
+  capturing: ReadonlySet<string>,
+): Set<string> {
+  const found = new Set<string>();
   walk(src, (n) => {
     if (!ts.isVariableDeclaration(n) || !ts.isIdentifier(n.name)) return;
     const bound = n.name.text;
@@ -513,12 +533,11 @@ function aliases(
     if (!init) return;
     walk(init, (ref) => {
       if (!ts.isIdentifier(ref) || !isValueReference(ref)) return;
-      const family = capturing.get(ref.text);
-      if (!family) return;
+      if (!capturing.has(ref.text)) return;
       const parent = ref.parent;
       if (parent && ts.isCallExpression(parent) && parent.expression === ref)
         return;
-      found.set(bound, family);
+      found.add(bound);
     });
   });
   return found;
@@ -536,22 +555,16 @@ interface Call {
   readonly src: ts.SourceFile;
   readonly call: ts.CallExpression;
   readonly callee: string;
-  readonly family: Family;
 }
 
 /** Every call in a module whose callee is a capturing name. */
-function capturingCalls(
-  mod: Module,
-  capturing: ReadonlyMap<string, Family>,
-): Call[] {
+function capturingCalls(mod: Module, capturing: ReadonlySet<string>): Call[] {
   const calls: Call[] = [];
   walk(mod.src, (n) => {
     if (!ts.isCallExpression(n)) return;
     const callee = calleeRoot(n.expression);
-    if (!callee) return;
-    const family = capturing.get(callee);
-    if (!family) return;
-    calls.push({ module: mod.module, src: mod.src, call: n, callee, family });
+    if (!callee || !capturing.has(callee)) return;
+    calls.push({ module: mod.module, src: mod.src, call: n, callee });
   });
   return calls;
 }
@@ -568,7 +581,7 @@ function siteOf(call: Call): SpawnCapSite {
 type Verdict = "capped" | "forwarding" | "uncaptured" | "capless";
 
 function judge(call: Call): { verdict: Verdict; forwarder: string | null } {
-  if (call.family === "stdio" && pipesNothing(call.call))
+  if (pipesNothing(call.call))
     return { verdict: "uncaptured", forwarder: null };
   const fn = enclosingFunction(call.call);
   if (namesCap(call.call, localInitializers(call.src, fn)))
@@ -598,20 +611,18 @@ export function scanSpawnCaps(
     src: parse(path),
   }));
 
-  const capturing = new Map<string, Family>();
+  const capturing = new Set<string>();
   for (const mod of modules)
-    for (const [name, family] of importedApis(mod.src, mod.module))
-      capturing.set(name, family);
+    for (const name of importedApis(mod.src, mod.module).keys())
+      capturing.add(name);
 
   for (;;) {
     const before = capturing.size;
     for (const mod of modules) {
-      for (const [name, family] of aliases(mod.src, capturing))
-        if (!capturing.has(name)) capturing.set(name, family);
+      for (const name of aliases(mod.src, capturing)) capturing.add(name);
       for (const call of capturingCalls(mod, capturing)) {
         const { verdict, forwarder } = judge(call);
-        if (verdict === "forwarding" && forwarder && !capturing.has(forwarder))
-          capturing.set(forwarder, call.family);
+        if (verdict === "forwarding" && forwarder) capturing.add(forwarder);
       }
     }
     if (capturing.size === before) break;
@@ -739,6 +750,80 @@ export function scanPromisifiedSpawns(
         module,
         line: src.getLineAndCharacterOfPosition(arg.getStart()).line + 1,
         api: arg.text,
+      };
+      scanned.push(site);
+      if (!allowed.has(module)) findings.push(site);
+    });
+  }
+  return { modules, scanned, findings };
+}
+
+/** One capturing sync call the scan judged. */
+export interface SyncSpawnSite extends ScanSite {
+  /** The callee as the source spells it, e.g. `execFileSync`. */
+  readonly callee: string;
+}
+
+/** Every such call in the domain, and the ones made outside a home. */
+export interface SyncSpawnScan extends Scan<SyncSpawnSite> {
+  /** Every module read, repo-relative and posix-separated, in path order. */
+  readonly modules: readonly string[];
+}
+
+/** A site as a failure message cites it. */
+export const formatSyncSpawnSite = (site: SyncSpawnSite): string =>
+  `${site.module}:${site.line} ${site.callee}`;
+
+/**
+ * Every capturing *sync* call in the domain, and the subset made outside
+ * `homes` — repo-relative posix module paths, the alphabet {@link ScanSite}
+ * reports in.
+ *
+ * The sync counterpart of {@link scanPromisifiedSpawns}, and the reason it is
+ * a scan of its own rather than a second reading of that one: a sync capture
+ * is written without a construction line, so `execFileSync("git", …)` *is*
+ * the wrapper, and the judged set is the calls themselves.
+ *
+ * Per module, not through the global name set {@link scanSpawnCaps} settles:
+ * the subject is a module reaching a capturing API directly, which is local
+ * by definition, and a domain-wide set would let one module's local helper
+ * name decide another's verdict.
+ *
+ * Two exclusions, and both are the mechanism rather than a list. A call that
+ * pipes nothing captures nothing, so it is no wrapper and never a finding —
+ * a `--version` probe run for its exit status alone stays where it is
+ * written. And a capturing name spelled inside a *string literal* is a
+ * fixture's source, not a call: this reads the module through the parser, so
+ * the needle cannot be read by the reader it is a needle for.
+ */
+export function scanSyncSpawns(
+  root: string,
+  domain: SpawnCapDomain,
+  homes: readonly string[],
+): SyncSpawnScan {
+  const allowed = new Set(homes);
+  const modules: string[] = [];
+  const scanned: SyncSpawnSite[] = [];
+  const findings: SyncSpawnSite[] = [];
+  for (const path of spawnCapModules(root, domain)) {
+    const module = relPath(root, path);
+    modules.push(module);
+    const src = parse(path);
+    const sync = new Set(
+      [...importedApis(src, module)]
+        .filter(([, api]) => SYNC_APIS.has(api))
+        .map(([local]) => local),
+    );
+    if (sync.size === 0) continue;
+    walk(src, (n) => {
+      if (!ts.isCallExpression(n)) return;
+      const callee = calleeRoot(n.expression);
+      if (!callee || !sync.has(callee)) return;
+      if (pipesNothing(n)) return;
+      const site: SyncSpawnSite = {
+        module,
+        line: src.getLineAndCharacterOfPosition(n.getStart(src)).line + 1,
+        callee,
       };
       scanned.push(site);
       if (!allowed.has(module)) findings.push(site);

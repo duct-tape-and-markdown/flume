@@ -2,11 +2,13 @@
  * Starting a child process from a suite: the tsx/src/cli.ts entry paths the
  * spawns go through, the `exec`/`runCli`/`runNodeStreams`/`gitOut` wrappers
  * that cli.test.ts, job.test.ts, job.integration.test.ts and
- * loop-process-boundary.integration.test.ts each hand-rolled a copy of, the
- * two numbers every one of those spawns runs under — the output cap
- * (`SPAWN_OUTPUT_CAP_BYTES`) and the wall-clock budget the spawning file
- * declares (`SPAWN_BUDGET_MS`) — and the liveness probe (`processAlive`) that
- * reads a child back afterwards.
+ * loop-process-boundary.integration.test.ts each hand-rolled a copy of, their
+ * blocking siblings (`gitOutSync`/`spawnCaptureSync`) that the harness suites
+ * driving real git repositories each hand-rolled again, the two numbers every
+ * one of those spawns runs under — the output cap (`SPAWN_OUTPUT_CAP_BYTES`)
+ * and the wall-clock budget the spawning file declares (`SPAWN_BUDGET_MS`) —
+ * and the liveness probe (`processAlive`) that reads a child back
+ * afterwards.
  *
  * What a child is *told* is `tests/helpers/gitEnv.ts`, and where it runs is
  * `tests/helpers/fixtureRoot.ts`; this module starts it.
@@ -15,7 +17,13 @@
  * as a suite of its own.
  */
 
-import { execFile, type PromiseWithChild } from "node:child_process";
+import {
+  execFile,
+  execFileSync,
+  spawnSync,
+  type PromiseWithChild,
+  type SpawnSyncReturns,
+} from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -269,6 +277,124 @@ export async function runCli(
 export async function gitOut(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await exec("git", args, { cwd });
   return stdout.trimEnd();
+}
+
+/**
+ * Node's own `code` on a *sync* overrun. The async forms reject with
+ * {@link MAXBUFFER_CODE}; the sync forms report `ENOBUFS` with `status: null`
+ * and `signal: "SIGTERM"` — the shape of a child that never exited
+ * (`.claude/rules/platform-facts.md`, *Node caps a captured child stream at
+ * 1 MiB, and reports the overrun as a spawn failure*). Two codes for one
+ * event, so the refusals below name the event rather than either code.
+ */
+const SYNC_MAXBUFFER_CODE = "ENOBUFS";
+
+/** Whether a sync failure is this harness's cap rather than the child's. */
+const isSyncOverrun = (err: unknown): boolean =>
+  (err as NodeJS.ErrnoException | null | undefined)?.code ===
+  SYNC_MAXBUFFER_CODE;
+
+/**
+ * Refuse a sync overrun by name, for the reason {@link exitStatusOf} refuses
+ * the async one: read as node hands it over, the overrun says the child never
+ * ran, which is the one thing it did do. `spawnSync` does not even throw it —
+ * it returns truncated streams with `error` set — so a caller reading
+ * `result.stdout` past one is reading a prefix nothing told it about
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function refuseSyncOverrun(file: string, err: unknown): never {
+  throw new Error(
+    `flume test harness: \`${file}\` outran the ` +
+      `${SPAWN_OUTPUT_CAP_BYTES}-byte output cap this harness declares ` +
+      `(\`SPAWN_OUTPUT_CAP_BYTES\`, tests/helpers/subprocess.ts), so node ` +
+      `killed it mid-stream and the ` +
+      `status and signal it reports are node's, not the child's. The child ` +
+      `ran — this is the cap, not a failed spawn. Fix: shrink what the ` +
+      `fixture makes the child print, or raise the cap at its one home. ` +
+      `Underlying failure: ${String(err)}`,
+  );
+}
+
+/**
+ * `execFileSync` under {@link SPAWN_OUTPUT_CAP_BYTES} — {@link exec}'s
+ * blocking sibling, for the suites whose fixtures are built by a sequence of
+ * git commands that has nothing to await.
+ *
+ * `stdio` is this module's rather than a caller's: node leaves a sync child's
+ * stderr on the *parent's* stderr unless the call says otherwise, so a
+ * fixture command that failed printed its sentence into the lane's output and
+ * left the thrown error saying only `Command failed`. Piped, that sentence
+ * rides the error to the case that has to explain it — and stdin is closed,
+ * because a sync spawn that blocks on a prompt blocks the whole lane.
+ */
+function captureSync(
+  file: string,
+  args: readonly string[],
+  options: SpawnOptions = {},
+): string {
+  try {
+    return execFileSync(file, [...args], {
+      ...options,
+      encoding: "utf8",
+      maxBuffer: SPAWN_OUTPUT_CAP_BYTES,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    if (isSyncOverrun(err)) refuseSyncOverrun(file, err);
+    throw err;
+  }
+}
+
+/**
+ * Run a git subprocess in `cwd` and block on it; return its trimmed stdout,
+ * and throw what git said when git refused.
+ *
+ * {@link gitOut}'s blocking sibling, and the shape seven files under `tests/`
+ * had each spelled for themselves — every copy on node's 1 MiB default
+ * (`.claude/rules/engineering.md`, *A module is one job*: a helper spelled in
+ * three modules has one home). `tests/subprocessHelper.test.ts` holds the
+ * scan that keeps the count at one.
+ *
+ * A file whose own helper closes over its fixture repository keeps that
+ * helper — the argument order and the trimming are a suite's ergonomics —
+ * and reaches the child through this one.
+ */
+export function gitOutSync(cwd: string, args: readonly string[]): string {
+  return captureSync("git", args, { cwd }).trimEnd();
+}
+
+/**
+ * What a suite hands one blocking spawn beyond {@link SpawnOptions}: stdin,
+ * which only a sync spawn can hand over as a value.
+ */
+export interface SyncSpawnOptions extends SpawnOptions {
+  /** Written to the child's stdin, which is then closed. */
+  readonly input?: string;
+}
+
+/**
+ * `spawnSync` under {@link SPAWN_OUTPUT_CAP_BYTES}, streams decoded as text.
+ *
+ * {@link captureSync}'s counterpart for the one question `execFileSync`
+ * cannot answer: what a child that exited *non-zero* wrote, per stream, with
+ * the status it chose — which is the subject of every case that drives a
+ * published shim. The result is node's own, so a case reads `status`,
+ * `stdout`, `stderr` and `error` off it as it always did; the overrun is the
+ * one failure this refuses on, because node reports that one in `error` and
+ * hands back a prefix of the output regardless.
+ */
+export function spawnCaptureSync(
+  file: string,
+  args: readonly string[],
+  options: SyncSpawnOptions = {},
+): SpawnSyncReturns<string> {
+  const result = spawnSync(file, [...args], {
+    ...options,
+    encoding: "utf8",
+    maxBuffer: SPAWN_OUTPUT_CAP_BYTES,
+  });
+  if (isSyncOverrun(result.error)) refuseSyncOverrun(file, result.error);
+  return result;
 }
 
 /**

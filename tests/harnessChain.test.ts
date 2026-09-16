@@ -18,7 +18,6 @@
  * the windows read it with git.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -55,7 +54,7 @@ import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
@@ -120,8 +119,7 @@ let api: FlumeApi;
 /** The sha the plan cursors name — one commit behind the tip. */
 let cursor: string;
 
-const git = (args: string[]): string =>
-  execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+const git = (args: string[]): string => gitOutSync(repo, args).trim();
 
 beforeAll(async () => {
   repo = await mkTempDir("flume-harness-chain-");

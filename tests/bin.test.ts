@@ -20,7 +20,6 @@
  * either assertion runs.
  */
 
-import { spawnSync } from "node:child_process";
 import { chmod, cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +28,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { declaration } from "../.flume/declaration.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS, exec, runCli } from "./helpers/subprocess.ts";
+import {
+  SPAWN_BUDGET_MS,
+  exec,
+  runCli,
+  spawnCaptureSync,
+} from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
@@ -181,7 +185,7 @@ describe("bin/flume.js — the published bin.flume entry", () => {
     shim: string,
     args: string[],
     opts: { input?: string; env?: NodeJS.ProcessEnv } = {},
-  ) => spawnSync(process.execPath, [shim, ...args], { encoding: "utf8", ...opts });
+  ) => spawnCaptureSync(process.execPath, [shim, ...args], opts);
 
   it("bin/flume.js execs dist/src/cli.js with argv preserved", async () => {
     // Identifies itself, so a shim that resolved some *other* file (or

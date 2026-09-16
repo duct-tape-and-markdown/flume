@@ -23,6 +23,9 @@
  * branch git reports for the tip, not a string this file hands it.
  */
 
+// The one child this file starts outside `gitOutSync`: a probe run for its
+// exit status alone, with every stream unpiped, so nothing is captured and
+// no output cap governs it (`tests/helpers/spawnCaps.ts`).
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
@@ -46,7 +49,7 @@ import {
 } from "../harness/index.ts";
 
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
@@ -85,7 +88,7 @@ afterEach(() => {
 });
 
 function git(...args: string[]): string {
-  return execFileSync("git", args, { cwd: repo, encoding: "utf8" });
+  return gitOutSync(repo, args);
 }
 
 /** The lane every case declares — one workflow, one job, one name. */
@@ -441,13 +444,13 @@ it.runIf(process.platform !== "win32")(
     process.env["PATH"] = binDir;
 
     // Vacuity: the CLI really is unreachable from this PATH, and git really
-    // is — so the reason below is the forge's absence and not git's.
+    // is — so the reason below is the forge's absence and not git's. The
+    // probe captures nothing: what it proves is the spawn failing, and its
+    // streams go nowhere.
     expect(() =>
       execFileSync("gh", ["--version"], { stdio: "ignore" }),
     ).toThrow();
-    expect(execFileSync("git", ["--version"], { encoding: "utf8" })).toContain(
-      "git version",
-    );
+    expect(git("--version")).toContain("git version");
 
     const rendered = laneBlock();
     expect(rendered).toContain(`lane \`${LANE.name}\``);

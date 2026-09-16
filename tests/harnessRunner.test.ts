@@ -26,7 +26,6 @@
  * `node_modules` on install*, bounds.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
@@ -50,7 +49,7 @@ import { withGateCheckouts } from "../src/worktrees.ts";
 import { filesUnder, relPath } from "./helpers/repoProgram.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
@@ -60,7 +59,7 @@ vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 const git = (repo: string, args: string[]): string =>
-  execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  gitOutSync(repo, args).trim();
 
 const put = async (repo: string, rel: string, body: string): Promise<void> => {
   await mkdir(dirname(join(repo, rel)), { recursive: true });

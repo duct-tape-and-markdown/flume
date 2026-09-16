@@ -18,7 +18,6 @@
  * `plan/notes` — so a layout rename moves these cases with it.
  */
 
-import { execFileSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -43,7 +42,7 @@ import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 
 // This file's cases drive real git repositories, and a git spawn is a spawn
 // like any other: the lane's one budget, for its cases and its hooks alike,
@@ -105,7 +104,7 @@ const declaration: Declaration = parseDeclaration({
 const phase = { writablePaths: [...BUILD_FENCE] };
 
 const git = (repo: string, args: string[]): string =>
-  execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  gitOutSync(repo, args).trim();
 
 /** The span the dispatcher would hand a gate, as git itself reports it. */
 interface Span {

@@ -7,7 +7,6 @@
  * chain reaches the engine through.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
@@ -24,7 +23,7 @@ import { gitPath, matchesAny } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 import { declaration } from "../.flume/declaration.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 
 // This file's cases drive real git repositories, and a git spawn is a spawn
 // like any other: the lane's one budget, for its cases and its hooks alike,
@@ -33,7 +32,7 @@ import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 function git(repo: string, args: string[]): string {
-  return execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  return gitOutSync(repo, args).trim();
 }
 
 async function initRepo(prefix: string): Promise<string> {

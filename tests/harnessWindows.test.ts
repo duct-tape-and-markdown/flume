@@ -22,7 +22,6 @@
  * environment no consumer could declare.
  */
 
-import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -53,7 +52,7 @@ import {
 } from "../src/Prompt.ts";
 import { slugify } from "../src/paths.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 
 // This file's cases drive real git repositories, and a git spawn is a spawn
 // like any other: the lane's one budget, for its cases and its hooks alike,
@@ -77,7 +76,7 @@ afterEach(() => {
 });
 
 function git(...args: string[]): string {
-  return execFileSync("git", args, { cwd: repo, encoding: "utf8" });
+  return gitOutSync(repo, args);
 }
 
 /** Write `files` into the repo and commit them, returning the new sha. */
@@ -628,11 +627,7 @@ it("a window render refuses by name when git fails for a reason other than an un
   // refusal, not that the test and the module agree on a phrasing.
   let said = "";
   try {
-    execFileSync("git", ["ls-files"], {
-      cwd: notATree,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    gitOutSync(notATree, ["ls-files"]);
   } catch (err) {
     said = err instanceof Error ? err.message : String(err);
   }
