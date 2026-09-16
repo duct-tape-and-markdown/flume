@@ -3,6 +3,17 @@
 > **Dated record.** Describes the 0.15.0 → 0.16.0 upgrade as it stood at the
 > cut, not flume as it ships now.
 
+**This note does not cover 0.13, 0.14 or 0.15.** The previous note in the
+series is [`MIGRATING-0.12.md`](MIGRATING-0.12.md), and each of the three
+minors between it and this one shipped breaking changes with no note of its
+own. If your pin is below `0.15.0`, read those three releases' `### Breaking`
+sections in [`../CHANGELOG.md`](../CHANGELOG.md) before treating this note as
+the whole upgrade — the sections below describe the `0.15.0` → `0.16.0` step
+and nothing earlier. The break most likely to survive a jump unnoticed is
+0.15's `voluntary-bail` → `clean-exit` rename, which no typecheck catches in
+a chain that reads the mode as a bare string; § 3 shows the read that turns
+it into a compile error.
+
 From **0.15.0**. Five breaking changes, every one of them a rename or a
 default the engine now takes — no chain restructuring, no new required
 declaration. Each section below names who is affected and gives the before
@@ -160,6 +171,46 @@ a `shouldRun` that gates on "have I failed here before?" will read every tick
 as a first attempt until the key is updated. That is the one failure mode in
 this section worth grepping for deliberately. `clearedPriorAttempts` on the
 verdict reports the same composed keys.
+
+**Reading the record.** The lookup is one half of how that `shouldRun` goes
+quiet. Reading the result untyped is the other, and the two travel together —
+a chain that addressed the record by hand usually decoded it by hand too:
+
+```ts
+// the shape that typechecks and never fires
+const rec = ctx.priorAttempts.get(api.slugify(entry.tag)) as
+  | { mode?: string }
+  | undefined;
+if (rec?.mode !== "voluntary-bail") return true; // renamed in 0.15 — true forever
+```
+
+A cast to `{ mode?: string }` accepts every string, so a mode an earlier
+release renamed still compiles and simply compares false for the rest of the
+chain's life. Nothing reds; the brake just stops braking. The record's fields
+did not change in 0.16, but reading it through the types the package exports
+makes that half a compile error, and leaves only the key to get right:
+
+```ts
+import { type PriorAttempt, type PriorAttemptMode } from "@dtmd/flume";
+
+// the modes this chain brakes on, stated once against the engine's own union
+const BRAKE_ON: readonly PriorAttemptMode[] = ["gate-revert", "clean-exit"];
+
+shouldRun: async (ctx) => {
+  const entry = ctx.assignedEntry;
+  if (entry === undefined) return true;
+  const rec: PriorAttempt | undefined = ctx.priorAttempts?.get(
+    `entry:${api.slugify(entry.tag)}`,
+  );
+  return rec === undefined || !BRAKE_ON.includes(rec.mode);
+},
+```
+
+`PriorAttemptMode` is every mode a record can carry and `PriorAttempt` is the
+mode-tagged union itself, so a spelling the engine no longer mints is a type
+error at the line that names it, and narrowing on `rec.mode` reaches the
+variant's own fields — `finalMessage` on a `clean-exit` record, not the
+`constraint` the same rename retired.
 
 **Record shape.** Every record now carries `key` (its keyspace) and `keyedAs`
 (the identity it was written under) beside the `headSha`/`at` anchor, and a
@@ -383,7 +434,5 @@ version bump will not carry forward.
 - [`CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md) — the full shape of every chain
   surface named above.
 - [`CLI.md`](CLI.md) — `flume log`, `flume check`, `flume job`.
-- [`MIGRATING-0.12.md`](MIGRATING-0.12.md) — the previous note in this series;
-  0.13, 0.14 and 0.15 shipped breaking changes with no note of their own, so a
-  consumer jumping more than one minor should read those releases'
-  `### Breaking` sections in [`../CHANGELOG.md`](../CHANGELOG.md) as well.
+- [`MIGRATING-0.12.md`](MIGRATING-0.12.md) — the previous note in this series.
+  What lies between the two is named at the head of this page.

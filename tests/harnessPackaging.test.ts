@@ -971,3 +971,129 @@ it("every docs/MIGRATING page is linked from README.md or CHANGELOG.md", async (
     });
   }
 });
+
+/** `docs/MIGRATING-<version>.md` → its minor series, else not a note. */
+function noteMinor(page: string): string | undefined {
+  const m = /^docs\/MIGRATING-(\d+)\.(\d+)(?:\.\d+)?\.md$/.exec(page);
+  return m === null ? undefined : `${m[1]}.${m[2]}`;
+}
+
+/** Every minor series `CHANGELOG.md` states a released version under. */
+function releasedMinors(changelog: string): string[] {
+  const seen = new Set<string>();
+  for (const m of changelog.matchAll(/^## \[(\d+)\.(\d+)\.\d+\]/gm)) seen.add(`${m[1]}.${m[2]}`);
+  return [...seen];
+}
+
+function minorRank(minor: string): number {
+  const [major = "0", rest = "0"] = minor.split(".");
+  return Number(major) * 1000 + Number(rest);
+}
+
+/**
+ * The released minors a note leaves uncovered: those between it and the
+ * nearest note below it. The earliest note in the series spans nothing —
+ * there is no previous note to measure a gap against — so it yields the
+ * empty set rather than every minor ever cut.
+ */
+function skippedMinors(minor: string, notes: string[], released: string[]): string[] {
+  const here = minorRank(minor);
+  const below = notes.map(minorRank).filter((r) => r < here);
+  if (below.length === 0) return [];
+  const prev = Math.max(...below);
+  return released
+    .filter((m) => minorRank(m) > prev && minorRank(m) < here)
+    .sort((a, b) => minorRank(a) - minorRank(b));
+}
+
+/** Everything before a page's first section heading. */
+function pageHead(body: string): string {
+  const at = body.search(/^## /m);
+  return at === -1 ? body : body.slice(0, at);
+}
+
+/** The head's paragraphs that point a reader at the changelog. */
+function changelogParagraphs(head: string): string[] {
+  return head.split(/\n[ \t]*\n/).filter((p) => p.includes("CHANGELOG.md"));
+}
+
+/** Whether prose names a minor series whole — `0.1` is not named by `0.16`. */
+function namesMinor(prose: string, minor: string): boolean {
+  return new RegExp(String.raw`\b${minor.replace(".", String.raw`\.`)}\b`).test(prose);
+}
+
+/**
+ * The other half of the upgrade half (`spec/cli.md`, *Versioning policy*): a
+ * migration note opens by naming the minors it does not cover, so a consumer
+ * jumping more than one version reads the earlier `### Breaking` sections
+ * before concluding they are done. The note series is sparse — a minor may
+ * ship breaks and no note — so a reader who finds the note for the version
+ * they are moving *to* has no way to learn what sits behind it except from
+ * the note itself.
+ *
+ * The gap is derived, never listed here (`.claude/rules/engineering.md`,
+ * *Derived state is computed*): the note set comes off the tree, the
+ * released minors off `CHANGELOG.md`'s own version headings, and a note's
+ * gap is the released minors between it and the previous note in the series.
+ * A note added, or a minor cut, moves the verdict with no edit to this file.
+ *
+ * The gap is read against the head alone — everything before the first
+ * section heading — and within the head only against the paragraphs that
+ * point at the changelog. A minor named anywhere else in the head is the
+ * note's own step ("From **0.15.0**"), which is the opposite claim.
+ */
+it("every docs/MIGRATING note names the minors it does not cover ahead of its first section", async () => {
+  // The scanners, each over an input naming versions in the voices it has to
+  // tell apart.
+  expect(noteMinor("docs/MIGRATING-0.16.md")).toBe("0.16");
+  expect(noteMinor("docs/CLI.md")).toBeUndefined();
+  expect(
+    releasedMinors(
+      "# Changelog\n\n## [Unreleased]\n\n## [1.2.3] - 2026-01-01\n\n" +
+        "## [1.2.0]\n\n## [0.9.1]\n",
+    ),
+  ).toEqual(["1.2", "0.9"]);
+  expect(skippedMinors("0.16", ["0.10", "0.12", "0.16"], ["0.11", "0.13", "0.15", "0.14"])).toEqual(
+    ["0.13", "0.14", "0.15"],
+  );
+  expect(skippedMinors("0.10", ["0.10", "0.12"], ["0.8", "0.9", "0.10"])).toEqual([]);
+  // A pointer below the first section heading is out of the head, and a head
+  // paragraph that points nowhere is not the notice.
+  expect(
+    changelogParagraphs(
+      pageHead(
+        "From **0.15.0**.\n\nSkips 0.13 — see ../CHANGELOG.md.\n\n" +
+          "## 1. A section\n\nAlso ../CHANGELOG.md.\n",
+      ),
+    ),
+  ).toEqual(["Skips 0.13 — see ../CHANGELOG.md."]);
+  const prose = "pins below `0.15.0` on 0.16";
+  expect(["0.1", "0.15", "0.16"].filter((m) => namesMinor(prose, m))).toEqual(["0.15", "0.16"]);
+
+  const released = releasedMinors(await readFile(join(REPO_ROOT, "CHANGELOG.md"), "utf8"));
+  expect(released.length).toBeGreaterThan(0);
+
+  const notes = (await filesUnder(join(REPO_ROOT, "docs"), "docs")).flatMap((page) => {
+    const minor = noteMinor(page);
+    return minor === undefined ? [] : [{ page, minor }];
+  });
+  expect(notes.length).toBeGreaterThan(0);
+  const series = notes.map(({ minor }) => minor);
+
+  const spanning = notes.flatMap(({ page, minor }) => {
+    const skipped = skippedMinors(minor, series, released);
+    return skipped.length === 0 ? [] : [{ page, skipped }];
+  });
+  // Non-vacuity: every note sitting one minor above its predecessor skips
+  // nothing, and the loop below would judge no page at all.
+  expect(spanning.length).toBeGreaterThan(0);
+
+  for (const { page, skipped } of spanning) {
+    const body = await readFile(join(REPO_ROOT, ...page.split("/")), "utf8");
+    const notice = changelogParagraphs(pageHead(body)).join("\n\n");
+    expect({ page, named: skipped.filter((m) => namesMinor(notice, m)) }).toEqual({
+      page,
+      named: skipped,
+    });
+  }
+});
