@@ -42,10 +42,19 @@ Every check lives at the most deterministic layer that can express it — a
   harness's own prose is written is harness governance, which this page does
   not administer; a suite that reads prose against prose is that governance
   wearing engine discipline, and every section here becomes a generator
-  against it. Two carve-outs, both reading prose against the program rather
+  against it. Three carve-outs, each reading prose against the program rather
   than against prose. A doc comment reachable from the `exports` map's
   `.d.ts` is the hover text a chain author reads, so it is engine surface and
-  may be pinned for what it says. And a reference in a comment — a
+  may be pinned for what it says. A page under `docs/` or the README that
+  states what a shipped interface does — a verb's exit codes, a runner's
+  operations, the files a verb writes — is the surface a consumer reads
+  before the hover text, so it may be pinned for what it says against the
+  interface it describes, and never against another page: a passage that
+  restates a rule page is prose against prose and stays with its authors. A
+  page name such a passage cites resolves on disk, as a page name does
+  anywhere, so a note that names its neighbour in a series names one that
+  exists.
+  And a reference in a comment — a
   backticked identifier or a backticked repo-relative path in `src/`,
   `harness/`, or `tests/`, where the program reaches; a `*.md` page name,
   with or without backticks, in any tree the sweep domain names, since a

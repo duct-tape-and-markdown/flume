@@ -126,6 +126,15 @@ Give the pack a consumer directory of its own, with the tarball as the only
 handoff between steps; the install order within one step is that step's to
 declare at its site.
 
+## This tree has no prettier config, and prettier reflows it at 80
+
+The repository declares no prettier configuration and no prettier dependency;
+the tree is hand-formatted at width 100. `npx prettier --write` therefore
+reflows a whole file at prettier's default 80, and its other defaults do not
+match what is on disk either, so the first write is a large unrelated diff.
+Format by hand. Adopting a formatter is a posture decision with its own ask,
+not a side effect of this footgun.
+
 ## Node caps a captured child stream at 1 MiB, and reports the overrun as a spawn failure
 
 `execFile`, `exec`, and their sync forms keep at most `maxBuffer` bytes of a

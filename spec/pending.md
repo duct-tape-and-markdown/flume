@@ -46,7 +46,7 @@ Entry order is meaningful — top is next. An empty array is valid and means not
 
 `TAG_PATTERN` admits letters, digits, and `._()-`, length 1..`TAG_MAX_LENGTH`. No whitespace, no
 path separators. `TAG_MAX_LENGTH = 255 - 39`: 255 is the conservative shared filesystem
-`NAME_MAX`, and 39 is the fixed scaffolding `Dispatcher.writeRevertNote` wraps around a raw tag
+`NAME_MAX`, and 39 is the fixed scaffolding the revert note's filename wraps around a raw tag
 (`<stamp>--<tag>--reverted.md`) — the tightest raw-tag consumer. Every other component that is
 the tag or its slug alone (the commit-message token, the `slugify`d branch name and prior-attempt
 key — `slugify` never lengthens) is looser, so this bound clears them too; a component composing

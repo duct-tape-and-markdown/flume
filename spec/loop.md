@@ -473,11 +473,11 @@ attempted.
   else.** How the agent process ended is consulted only when the ref did not move. A commit the
   agent made *before* a non-zero exit, an abort, or a spawn failure is honored like any
   other — tip verify, the full afterCommit stack, cherry-pick, afterMerge, and it can
-  ship. `Dispatcher.AgentTermination` declares this deliberate: with a commit in hand,
-  how the process ended is irrelevant. Nothing records that the producing process died,
+  ship. This is deliberate: with a commit in hand, how the process ended is
+  irrelevant. Nothing records that the producing process died,
   so a chain wanting that distinction must get it from the agent.
 - **No per-tick timeout ships.** `DispatcherOptions.tickTimeoutMs` is the only timeout
-  seam, and `Dispatcher.invokeAgent` forwards it only when set. The CLI constructs its
+  seam, applied to the agent invocation only when set. The CLI constructs its
   dispatcher without one and no chain field declares it, so under `flume tick` and
   `flume loop` a hung agent blocks the tick — and the supervisor awaiting the child —
   until the operator kills it. The `platform-preempt` timeout case is reachable only by

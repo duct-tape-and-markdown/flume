@@ -322,9 +322,11 @@ resolved `flumeDir`, same idiom as `seedDir`.
   joined to" is a property of the path string alone.
 - The directory itself is created lazily by whichever engine write needs it
   first; its absence is never an error.
-- **A dotfile is not a note.** The count, the listing, and the read verb skip
-  a name beginning with `.` — a placeholder git made the consumer create is no
-  work — and the skip is by name alone, never by content.
+- **A dotfile is not a note.** The count, the listing, the read verb, and
+  the teardown harvest skip a name beginning with `.` — a placeholder git
+  made the consumer create is no work, and a harvest that relayed one under a
+  stamped name would turn a skipped name into an unskippable one — and the
+  skip is by name alone, never by content.
 - **Undeclared disables the whole channel** — every friction-lifecycle
   behavior stays off, and there is no default channel.
 - The engine guarantees the channel's lifecycle without ever **interpreting**
@@ -734,7 +736,10 @@ Durable packaging policy:
   nothing else does. `flume loop` and `flume job run` read the version at
   start and, below the floor, warn once naming the version, the floor, and
   what degrades — a warning, not a refusal, because the degrade is bounded to
-  reclamation and the loop is otherwise a working one. Stated here beside the node floor so the README's
+  reclamation and the loop is otherwise a working one. A version the run
+  cannot read — no git on the path, a wrapper answering in its own words —
+  warns the same way, naming the floor as unconfirmed rather than met;
+  silence is reserved for a floor that was read and cleared. Stated here beside the node floor so the README's
   prerequisite line derives from one place.
 - **ESM-only.** `"type": "module"`, Node 22+. `attw --pack . --profile esm-only`
   is the accurate *profile* — the default profile's `CJSResolvesToESM` finding

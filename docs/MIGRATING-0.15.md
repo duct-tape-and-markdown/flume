@@ -372,9 +372,8 @@ contract without re-reading the queue.
 quarantine now keys `slug@hash`, so re-scoping a held entry on trunk mints a
 new key and lifts the hold inside the same run — and the field is
 `readonly QuarantinedTag[]` (`{ tag, key }`) rather than `readonly string[]`.
-This one is not listed under the release's `### Breaking` heading, but it is
-a type change: an `includes(tag)` call reds at the bump, which is the outcome
-you want.
+This is a type change: an `includes(tag)` call reds at the bump, which is the
+outcome you want.
 
 ```ts
 // 0.14

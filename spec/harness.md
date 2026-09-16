@@ -137,8 +137,11 @@ notes; a paragraph every consumer would repeat is a surface the package owes
 (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
 
 A **declared script** is the fourth source: a command the inbox slice runs at
-the tip before it renders, whose stdout is records — one per finding, in the
-record shape — drained like the rest. A measurement a consumer takes every
+the tip before it renders, whose stdout is one JSON object per line,
+`{ name, body }` — the record's file name and its bytes, stated rather than
+parsed out of prose — each materialized as a record file and drained like
+the rest, so the drain is the drain the package already runs and the
+agreement pin has a real writer to drive. A measurement a consumer takes every
 tick (a census of what the tree holds against what the register claims) is
 the consumer's to compute and the package's to route; it never rides a prompt
 slot, which is text, and it never becomes a prompt paragraph.
@@ -236,8 +239,11 @@ another job's root is admitted; where a bay keeps its product is the bay's.
 | `setup` | Directories to install and a restore command, run in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. |
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |
 | `slots` | Prompt slots the package renders into its prompts: an autonomy dial, domain context. Text only; a slot cannot add a directive the package's discipline already states. |
-| `jobs` | Named jobs for a bay, each a `specLocus` and a `fence` (and optional `slots`) applied over the shared declaration when the chain runs under that job's state root — see *What a consumer declares*. Absent means one job, the repo-level values. |
+| `capabilities` | The capabilities this repository asserts, passed through whole to `Chain.capabilities`; an entry that requires one the declaration does not assert is unpickable, and `flume status` names it. Optional; absent asserts none. |
+| `jobs` | Named jobs for a bay, each a `specLocus` and a `fence` (and optional `slots` and `capabilities`, added to the shared set) applied over the shared declaration when the chain runs under that job's state root — see *What a consumer declares*. Absent means one job, the repo-level values. |
 | `ci` | CI lanes the inbox slice reads as findings sources — each a workflow file, a job name, and the lane name its findings carry — see *CI lanes as a findings source*. Optional. |
+| `friction` | The friction directory, state-root-relative, passed through to `Chain.friction` and read by the inbox slice as a findings source — see *Declared findings sources*. Optional; absent disables the channel. |
+| `findings` | Declared scripts the inbox slice runs at the tip before it renders, each a name and a command; stdout is one JSON object per line, `{ name, body }`, materialized as record files and drained like the rest — see *Declared findings sources*. Optional. |
 
 Nothing in the declaration names an engine artifact path, a verdict field, or a
 prior-attempt mode. Those are the engine's to report and the package's to read.

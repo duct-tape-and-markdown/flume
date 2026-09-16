@@ -196,6 +196,14 @@ a typecheck does not catch, the `voluntary-bail` → `clean-exit` rename, and
 - **`JobStatus.awake` is `string[] | null`.** An unreadable baton directory is
   reported per job instead of throwing out of every sibling's row.
 
+- **`TickResult.quarantinedTags` is `readonly QuarantinedTag[]`**, each
+  `{ tag, key }`, not `readonly string[]`: the run-scoped quarantine keys
+  `slug@hash`, so re-scoping a held entry on trunk mints a new key and lifts
+  the hold inside the same run. A `handoff` calling `includes(tag)` on it
+  reds at the bump, which is the outcome wanted; `docs/MIGRATING-0.15.md`
+  § 5.6 walks it. Filed under Added at the cut; moved here because the list
+  documents the API, not the curation.
+
 ### Added
 
 - **The rendered prompt is persisted before the agent runs.** The exact bytes
@@ -226,9 +234,6 @@ a typecheck does not catch, the `voluntary-bail` → `clean-exit` rename, and
 - **Stale prior-attempt records are cleared at the wave's queue read.** A
   record whose entry left the queue unshipped no longer stands forever, and
   `PriorAttemptKeyspace` and `QuarantinedTag` are exported.
-- **The run-scoped quarantine keys `slug@hash`.** Re-scoping a held entry on
-  trunk mints a new key and lifts the hold inside the same run;
-  `TickResult.quarantinedTags` reports the key beside each tag.
 - **A merge a crash interrupted is refused at the next start.** The merge
   stage stakes `<flumeDir>/merging/<slug>.json` before each cherry-pick and
   retires it after the queue rewrite; a survivor refuses `loop` and `job run`

@@ -82,7 +82,10 @@ supervisor, the locks, and the exit-code contract live in `spec/loop.md`; the
 Every subcommand answers `--help` / `-h` with usage and its exit codes, and
 that short-circuits before any side effect — chain load, baton mutation, agent
 invocation. `flume --help` lists all subcommands, and `flume help` is the
-same answer, since it is the first thing a new operator types; `flume --version` / `-v`
+same answer, since it is the first thing a new operator types; `flume help
+<subcommand>` is that subcommand's `--help`, and an unknown name there is
+usage-shaped (exit 2) like a trailing positional anywhere else, never
+silently dropped; `flume --version` / `-v`
 prints the package version, read from flume's own `package.json` at
 `../package.json` relative to the running module — the same relative position
 in a source checkout and in the published tarball. Both top-level flags
