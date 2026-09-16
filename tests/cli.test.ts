@@ -1303,7 +1303,13 @@ const THROWING_CHAIN_SRC =
  * exit 0, with nothing said — a confident wrong number
  * (`.claude/rules/engineering.md`, "Loud or nothing"). The load is shared
  * (`loadChainForObservation`, `src/cliChainLoad.ts`) and reports its own
- * failure; the surfaces' exit codes and stdout are unchanged.
+ * failure on stderr; the surfaces' exit codes are unchanged.
+ *
+ * Stderr alone was still the shape of a healthy repo to anything reading the
+ * listing — `status`'s stdout was byte-identical over a chain that died — so
+ * `status` also renders the failure as a row of its own output, ahead of the
+ * count that rebased (spec/cli.md, "`flume status` owes exactly this"). The
+ * row is `status`'s alone; `job status` keeps the stderr report it had.
  */
 describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORTED)", () => {
   it("flume status names the chain-load failure it proceeded past", async () => {
@@ -1340,6 +1346,32 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
     }
   }, SPAWN_BUDGET_MS);
 
+  it("flume status prints the chain-load failure as a row of its listing before the pending count", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
+
+      const status = await runCliStreams(repo.dir, ["status"]);
+
+      expect(status.code).toBe(0);
+      const row = status.stdout.indexOf(
+        "chain: failed to load — chain factory exploded",
+      );
+      const count = status.stdout.indexOf("pending: ");
+      // Non-vacuity: both lines are on this listing, not merely ordered by
+      // two -1s. The row explains the count, so it precedes it.
+      expect(row).toBeGreaterThanOrEqual(0);
+      expect(count).toBeGreaterThanOrEqual(0);
+      expect(row).toBeLessThan(count);
+      // Nothing above the row is withheld: the baton line still leads the
+      // listing, and the failure is a row of it rather than a replacement
+      // for it.
+      expect(status.stdout.indexOf("hibernating")).toBeLessThan(row);
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
   it("both observational surfaces still exit 0 when the chain fails to load", async () => {
     const repo = await makeJobRepo("main");
     try {
@@ -1351,15 +1383,24 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
 
       expect(status.code).toBe(0);
       expect(jobStatus.code).toBe(0);
-      // The report rides stderr; the observational stdout is the same text
-      // either surface prints over a chain that loads.
+      // The failure and the cost sentence it carries ride stderr on both
+      // surfaces; each surface's own listing is otherwise the text it prints
+      // over a chain that loads — plus, on `status` alone, the row below.
       expect(status.stderr).toContain("chain failed to load");
       expect(jobStatus.stderr).toContain("chain failed to load");
       expect(status.stdout).toContain("hibernating");
       expect(status.stdout).toContain("pending: 0");
-      expect(status.stdout).not.toContain("chain failed to load");
+      // The stderr report's cost sentence stays on stderr — the stdout row is
+      // the listing's own line, not the report duplicated into it. Named as
+      // one arm rather than a `not` over the whole listing
+      // (`.claude/rules/posture-sweep.md`, the negative-assertion lens).
+      expect(status.stdout).not.toContain("proceeding over engine defaults");
       expect(jobStatus.stdout).toContain("j1");
-      expect(jobStatus.stdout).not.toContain("chain failed to load");
+      // `job status` has no such row: its listing is one line per job, and a
+      // chain that died costs every one of them the same thing, so the report
+      // stays whole on stderr (spec/cli.md, "`flume status` owes exactly
+      // this" — the row is `status`'s alone).
+      expect(jobStatus.stdout).not.toContain("failed to load");
     } finally {
       await repo.cleanup();
     }

@@ -43,7 +43,7 @@ export async function runJobVerb(
       // rebases every job's pending count on the default queue path: the
       // shared load (`loadChainForObservation`, src/cliChainLoad.ts) reports
       // the failure and what it withholds.
-      const chain = await loadChainForObservation(
+      const { chain } = await loadChainForObservation(
         paths,
         "job status",
         "proceeding over engine defaults — the pending count reads the " +

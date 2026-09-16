@@ -22,10 +22,18 @@
  * so the cost sentence is the **caller's**, passed in, while the failure line
  * and the bounding refusals are this module's. This is the declared
  * degraded-but-proceeding path (`.claude/rules/engineering.md`, "Loud or
- * nothing"): it reports the failure and what the failure cost, on stderr so
- * the observational stdout stays byte-unchanged, and names the refusals that
- * bound it — `flume tick` and `flume check` exit non-zero on this same load
- * rather than proceeding.
+ * nothing"): it reports the failure and what the failure cost on stderr, and
+ * names the refusals that bound it — `flume tick` and `flume check` exit
+ * non-zero on this same load rather than proceeding.
+ *
+ * The stderr report is not the whole obligation, because one of these
+ * surfaces is a *listing*: `flume status` renders the failure as a row of its
+ * own output (spec/cli.md, "`flume status` owes exactly this"), so a status
+ * over a dead chain never has the shape of a healthy one on stdout. The
+ * report shared here cannot know that — so the failure comes back as a fact
+ * on `ChainObservation` as well as going out as a line, and the surface that
+ * has somewhere to put it renders it (`.claude/rules/engineering.md`, "A fact
+ * the engine holds is reported, never rediscovered").
  */
 
 import { CjsContextLoadError, diskChainLoader } from "./chainLoad.js";
@@ -50,9 +58,24 @@ export function refuseCjsContextHost(err: unknown): number | undefined {
 }
 
 /**
+ * What a best-effort load leaves its caller: the chain, or the reason it
+ * could not be had. `loadFailure` is present exactly when `chain` is absent,
+ * so a surface with somewhere to render the failure reads it off the same
+ * result it reads the chain off, rather than re-deciding from `chain ===
+ * undefined` what the load already knew.
+ *
+ * Module-local: every caller destructures the result at the callsite, so
+ * nothing outside this file names the type (`.claude/rules/engineering.md`,
+ * "An export earns its consumer"). It widens when a caller needs to hold one.
+ */
+type ChainObservation =
+  | { readonly chain: Chain; readonly loadFailure?: undefined }
+  | { readonly chain: undefined; readonly loadFailure: string };
+
+/**
  * Load the repo-resident chain for a read-only verb. Returns the chain, or
- * `undefined` after reporting why it could not be had — never throws, so the
- * caller's exit code is unaffected.
+ * the reason it could not be had after reporting that reason on stderr —
+ * never throws, so the caller's exit code is unaffected.
  *
  * `surface` is the verb naming itself in the report (`status`, `job status`,
  * `wake`). `degradedCost` is that verb's own sentence for what proceeding
@@ -60,25 +83,27 @@ export function refuseCjsContextHost(err: unknown): number | undefined {
  * bounding clause. `paths` is the caller's single `resolveStateDirs()`
  * result, so the factory sees the same canonicalized roots every other
  * subcommand passes it.
+ *
+ * `loadFailure` carries the bare reason — no `[flume]` prefix, no surface
+ * name — because the caller rendering it is placing it in its own output,
+ * where the surface is already established and the engine's stderr prefix
+ * would read as an error line escaping into a listing.
  */
 export async function loadChainForObservation(
   paths: FlumePaths,
   surface: string,
   degradedCost: string,
-): Promise<Chain | undefined> {
+): Promise<ChainObservation> {
   try {
     const { chain } = await diskChainLoader(paths)();
-    return chain;
+    return { chain };
   } catch (err) {
-    console.error(
-      `[flume] ${surface}: chain failed to load: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`[flume] ${surface}: chain failed to load: ${reason}`);
     console.error(
       `[flume] ${surface}: ${degradedCost} \`flume tick\` and \`flume ` +
         `check\` refuse on this same load.`,
     );
-    return undefined;
+    return { chain: undefined, loadFailure: reason };
   }
 }

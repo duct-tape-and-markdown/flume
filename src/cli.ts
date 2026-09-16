@@ -168,7 +168,7 @@ async function chainRefusesPhase(
   surface: string,
   phase: string,
 ): Promise<boolean> {
-  const chain = await loadChainForObservation(
+  const { chain } = await loadChainForObservation(
     paths,
     surface,
     `proceeding without phase validation — '${phase}' is taken on trust, so ` +
@@ -475,15 +475,23 @@ async function main(): Promise<number> {
     // spec/pending.md "The pending queue": best-effort — a missing or broken
     // chain must never fail `status` — but never silent: the shared load
     // (`loadChainForObservation`, src/cliChainLoad.ts) reports the failure and
-    // names what it costs, because the pending count below then rebases on the
-    // default queue path.
-    const chain = await loadChainForObservation(
+    // names what it costs on stderr, because the pending count below then
+    // rebases on the default queue path.
+    const { chain, loadFailure } = await loadChainForObservation(
       paths,
       "status",
       "proceeding over engine defaults — the pending count reads the default " +
         "queue path, and chain-declared friction and capability lines are " +
         "withheld.",
     );
+    // That stderr report is not enough on a *listing* (spec/cli.md, "`flume
+    // status` owes exactly this"): a status whose chain died printed stdout
+    // byte-identical to a healthy repo's, so an operator reading the listing —
+    // or anything piping it — saw a count with no sign it had been rebased.
+    // The failure is a row of the listing, on the listing's stream, ahead of
+    // the count it explains; nothing above it is withheld, and the exit stays
+    // 0.
+    if (loadFailure) console.log(`chain: failed to load — ${loadFailure}`);
     // The pending entry count, independent of whether the chain loads — `flume
     // job status` probes the same file the same way (`readPendingLoose`,
     // src/job.ts), so a corrupt pending.json reads "unparsable" identically
