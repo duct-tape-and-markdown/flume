@@ -2145,9 +2145,9 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
 /**
  * SUPERVISORPOLICY-TICKTIMEOUTMS — `Chain.supervisorPolicy.tickTimeoutMs`
  * (`src/Phase.ts`) joins `maxParallel` as a per-tick chain-overridable
- * default: both `runSingleton` and `runFanoutEntry` read it straight off the
- * tick's own resolved chain at their `invokeAgent` call sites, rather than
- * binding it once per run like `quarantineScope`/`abortThreshold`. The
+ * default: the one `invokeAgent` call site both concurrencies reach through
+ * (`runAttempt`) reads it straight off the tick's own resolved chain, rather
+ * than binding it once per run like `quarantineScope`/`abortThreshold`. The
  * override doesn't gate ship/no-ship, so it's observed the only way it can
  * be — a recording agent captures the `timeoutMs` `agent.invoke` actually
  * received.
