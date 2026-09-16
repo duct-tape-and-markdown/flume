@@ -1,5 +1,31 @@
 [
   {
+    "tag": "THE-CRASH-MARKER-CASE-READS-THE-REPORTED-FATE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the merge-stage crash-marker case reads each entry's fate off result.entries before the merge row that derives from it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the crash-marker case reads MARK-B's fate off a mergeOutcomes row's absence, so a red says `undefined` where the engine already reported committed:false and a noCommit class",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "the case asserts every entry's committed and noCommit off result.entries[] before it reads a mergeOutcomes row, so the next red on this title names which no-commit class happened instead of reporting an absence.",
+    "tests": [],
+    "pins": [],
+    "notes": "Closes the windows-lane park on arm (a): make the fate readable, reproduce after. Row absence is a derivative of the fate (src/Dispatcher.ts, the !r.committed leg); result.entries[] carries committed and noCommit (src/Phase.ts:329). Whole diff is the case's own file, so no tests[] line is judgeable — the assertions ride the existing it(), not a new one. Case at tests/Dispatcher.test.ts:4826."
+  },
+  {
     "tag": "EVERY-TEST-SYNC-SPAWN-RUNS-UNDER-THE-DECLARED-CAP",
     "gate": {
       "kind": "open"
@@ -13,8 +39,16 @@
           "description": "the capped sync wrapper beside the async one, and the git-capture helper the seven files each spell"
         },
         {
+          "path": "tests/helpers/spawnCaps.ts",
+          "description": "the landed async scanner gains its sync arm rather than a sibling scanner"
+        },
+        {
+          "path": "tests/spawnCaps.test.ts",
+          "description": "the scanner's own suite covers the sync arm over its fixture domain"
+        },
+        {
           "path": "tests/subprocessHelper.test.ts",
-          "description": "the async scan gains its sync arm, exemptions spelled rather than discovered"
+          "description": "the tests/ scan gains its sync arm, exemptions spelled rather than discovered"
         },
         {
           "path": "tests/chain.test.ts",
@@ -57,7 +91,7 @@
       "no file under tests/ captures a sync child's output outside the module that declares the cap"
     ],
     "pins": [],
-    "notes": "Sizes the arm 669d630 left for the sweep. Sites: chain:36, harnessWindows:80,631, harnessGates:108, harnessChain:123, harnessCi:89,449, harnessRunner:62, bin:191. Exemptions: harnessCi:447 (`stdio: \"ignore\"`, captures nothing) and the execFileSync spellings inside fixture string literals (cli, cliJobResolution, subprocessHelper). Blocked on the async arm so the sync one extends that scan rather than growing beside it."
+    "notes": "Async arm landed 0a972dd6 as scanPromisifiedSpawns (tests/helpers/spawnCaps.ts), driven from tests/subprocessHelper.test.ts over {trees:['tests']}; the sync arm extends that scanner. Sites: chain:36, harnessWindows:80,631, harnessGates:108, harnessChain:123, harnessCi:89,449, harnessRunner:62, bin:191. Exempt: harnessCi:447 (stdio ignore) and execFileSync inside fixture string literals (cli, cliJobResolution, subprocessHelper) — the scan parses, so a needle cannot be the reader."
   },
   {
     "tag": "THE-PAGE-NAME-ARM-READS-EVERY-SWEEP-TREE",
@@ -79,6 +113,14 @@
         {
           "path": "tests/helpers/external-vocabulary.json",
           "description": "the consumer-repo page names examples/ narrates, each with its reason"
+        },
+        {
+          "path": "tests/helpers/repoProgram.ts",
+          "description": "the scopeless read for the trees no tsconfig reaches, if the program helper is where it lands"
+        },
+        {
+          "path": "tests/helpers/spawnCaps.ts",
+          "description": "source of the {trees, files} domain shape — read it, and leave it where it is"
         }
       ],
       "retire": []
@@ -93,7 +135,7 @@
       "every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.ts cites names a page the working tree holds"
     ],
     "pins": [],
-    "notes": "Ruled at 29e3df4c, option 1: one tree list per arm. bin/*.js and scripts/*.mjs are outside the tsconfig, so this arm reads them at the scopeless createSourceFile tier; the {trees, files} domain in tests/helpers/spawnCaps.ts is the shape to copy for .flume/chain.ts. Measured 51 comment-borne page names in the widened trees, 9 of them examples/ narrating a consumer's repo (state.md, notes/journal.md, .flume/prompts/*) — that class already has three entries in external-vocabulary.json.",
+    "notes": "Ruled 29e3df4c, option 1: one tree list per arm. bin/*.js and scripts/*.mjs are outside the tsconfig, so this arm reads them at the scopeless createSourceFile tier. Copy the {trees, files} domain shape from tests/helpers/spawnCaps.ts for .flume/chain.ts — copy, never lift: a5243281 moved it out and left spawnCapModules and parse dangling there, and tsc reverted the span. Measured 51 comment-borne page names in the widened trees, 9 of them examples/ narrating a consumer's repo.",
     "observedFiles": [
       ".flume/plan/notes/THE-PAGE-NAME-ARM-READS-EVERY-SWEEP-TREE.md",
       "tests/commentCitations.test.ts",
@@ -213,7 +255,7 @@
       ],
       "retire": []
     },
-    "summary": "tests/subprocessHelper.test.ts is 1443 lines over three modules its own header enumerates: the spawn wrappers, the state-root leak guard, and the auto-gc pin",
+    "summary": "tests/subprocessHelper.test.ts is 1491 lines over three modules its own header enumerates: the spawn wrappers, the state-root leak guard, and the auto-gc pin",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
@@ -221,6 +263,188 @@
     "acceptance": "the state-root guard sits in the suite that owns the rooting idiom, the gc pin has a suite named for its module, and subprocessHelper.test.ts holds the helper it is named for alone.",
     "tests": [],
     "pins": [],
-    "notes": "The module move shipped at 04c4d344; its suite did not. Describes to move: the guard at :239, the gc cases at :1373 and :1400. Behavior-free — the same cases run, and tests/helpers/subprocess.ts:89 cites this file for the scan, which stays. Collides on file with the two tests/ scan entries above; the partitioner serializes them."
+    "notes": "The module move shipped at 04c4d344; its suite did not. Describes to move: the leak guard at :278, the gc pin at :1447. Behavior-free — the same cases run, and tests/helpers/subprocess.ts:77 and :116 cite this file for the scan, which stays. Collides on file with the two tests/ scan entries above; the partitioner serializes them."
+  },
+  {
+    "tag": "THE-ETARGET-COMMENT-SHRINKS-TO-ITS-PAGE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "description": "the type-resolution gate's npm-resolution narration shrinks to a pointer; the install-order comment stays at the site"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the consumer type-resolution gate re-explains npm's manifest-range resolution in eight comment lines that platform-facts.md now owns as a named section",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "the ETARGET narration on the type-resolution gate is a pointer at the platform-facts section, the step's own decision (its own consumer dir, the tarball as the only handoff) still reads at the site, and the --no-save install-order comment is untouched.",
+    "tests": [],
+    "pins": [],
+    "notes": "Closes the npm park: (a) for the ETARGET fact, (b) for the prune order. The owning section already defers install order to the site, so the prune comment at ci.yml:114-117 stays. Shrink target: ci.yml:106-113. A shrink is not complete until what the removed prose covered for is re-homed — nothing else in the step leans on it, so the pointer is the whole move."
+  },
+  {
+    "tag": "THE-PORT-TABLE-NAMES-WHAT-THE-PACKAGE-RETIRES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/MIGRATING-0.16.md",
+          "description": "s6 names the consumer code the package retires outright, beside the table of what a declaration field replaces"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "s6's port table maps a chain's fields onto declaration fields and names none of the consumer code the package retires with no field to replace it",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Adoption and upgrade"
+    },
+    "acceptance": "a consumer reading s6 can name, per surface, which of its own code the package retires outright: the per-gate at a ref, the agent wrapper stack, and the entry contract split across a prompt and a schema.",
+    "tests": [],
+    "pins": [],
+    "notes": "From a 947-line consumer chain audit. Verified on this tree: perGate (harness/gates.ts:195) is the consumer's 56-line perPathsExist; harness/chain.ts:364 builds withTerminalRenderer(withSessionCapture(claudeCode())) from `agents`; harness/entryExtension.ts renders schema-plus-hint through renderSchemaForPrompt. Scope is what 0.16 ships — setup.serialize, jobs and gate facts are later minors and belong in their own note."
+  },
+  {
+    "tag": "A-MIGRATION-NOTE-FOR-0-13",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "docs/MIGRATING-0.13.md",
+          "description": "0.13.0's breaks walked with before and after, opening with the minors it does not cover"
+        }
+      ],
+      "edit": [
+        {
+          "path": "CHANGELOG.md",
+          "description": "the 0.13.0 release links its note, as 0.11 and 0.12 link theirs"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "0.13.0's changelog carries a ### Breaking section and docs/ has no migration note for it, so a chain on 0.12 has no walked path forward",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Versioning policy"
+    },
+    "acceptance": "docs/MIGRATING-0.13.md walks every break in 0.13.0's ### Breaking section with before and after, opens by naming the earlier minors it does not cover, and the 0.13.0 release in CHANGELOG.md links it.",
+    "tests": [],
+    "pins": [],
+    "notes": "Rule landed 7316c2f1; three minors are missing notes and this is the first. Source is CHANGELOG.md's 0.13.0 section (112 lines, ### Breaking at :403). Shape to follow: docs/MIGRATING-0.12.md. Earlier minors are covered — MIGRATING-0.10.md is the routing table for 0.2.x/0.6.x/0.9.0."
+  },
+  {
+    "tag": "A-MIGRATION-NOTE-FOR-0-14",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "A-MIGRATION-NOTE-FOR-0-13"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "docs/MIGRATING-0.14.md",
+          "description": "0.14.0's breaks walked with before and after, opening with the minors it does not cover"
+        }
+      ],
+      "edit": [
+        {
+          "path": "CHANGELOG.md",
+          "description": "the 0.14.0 release links its note"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "0.14.0's changelog carries a ### Breaking section and docs/ has no migration note for it",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Versioning policy"
+    },
+    "acceptance": "docs/MIGRATING-0.14.md walks every break in 0.14.0's ### Breaking section with before and after, opens by naming 0.13 as the minor it does not cover, and the 0.14.0 release in CHANGELOG.md links it.",
+    "tests": [],
+    "pins": [],
+    "notes": "Source is CHANGELOG.md's 0.14.0 section (85 lines, ### Breaking at :319). Blocked on the 0.13 note so the minor this one names ahead of itself resolves to a page when it is written."
+  },
+  {
+    "tag": "A-MIGRATION-NOTE-FOR-0-15",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "A-MIGRATION-NOTE-FOR-0-14"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "docs/MIGRATING-0.15.md",
+          "description": "0.15.0's breaks walked with before and after, opening with the minors it does not cover"
+        }
+      ],
+      "edit": [
+        {
+          "path": "CHANGELOG.md",
+          "description": "the 0.15.0 release links its note"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "0.15.0's changelog carries a ### Breaking section and docs/ has no migration note for it; the pilot's one compiler-invisible break was 0.15's",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Versioning policy"
+    },
+    "acceptance": "docs/MIGRATING-0.15.md walks every break in 0.15.0's ### Breaking section with before and after, opens by naming 0.14 as the minor it does not cover, and the 0.15.0 release in CHANGELOG.md links it.",
+    "tests": [],
+    "pins": [],
+    "notes": "Source is CHANGELOG.md's 0.15.0 section (149 lines, ### Breaking at :172). The pilot reported this minor's break as the one their compiler did not catch, so the walk says how to find it by reading rather than by building. Blocked on the 0.14 note for the same forward-naming reason."
+  },
+  {
+    "tag": "EVERY-BREAKING-MINOR-FROM-0-10-HAS-ITS-NOTE",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "A-MIGRATION-NOTE-FOR-0-15"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/migrationNotes.test.ts",
+          "description": "CHANGELOG.md's minor sections read against docs/, with the scan's floor declared and cited"
+        }
+      ],
+      "edit": [],
+      "retire": []
+    },
+    "summary": "the rule that every Breaking minor has a migration note lives only in spec prose; nothing reads CHANGELOG.md's ### Breaking sections against docs/",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Versioning policy"
+    },
+    "acceptance": "a minor from 0.10 on whose changelog section carries a ### Breaking heading and has no docs/MIGRATING-<minor>.md reds the default lane, and the mined minor set is asserted non-empty before the verdict.",
+    "tests": [],
+    "pins": [
+      "every minor from 0.10 whose CHANGELOG.md section carries a ### Breaking heading has a migration note under docs/"
+    ],
+    "notes": "Promotes the Versioning-policy bullet a rung (engineering.md, Narration is the ladder's bottom rung). The floor is 0.10 because MIGRATING-0.10.md is the routing table covering 0.2.x, 0.6.x and 0.9.0 — below it there is no per-minor note by design, so the floor is declared and cited at the scan, not discovered. Blocked on the three notes: the pin is green only once they land."
   }
 ]
