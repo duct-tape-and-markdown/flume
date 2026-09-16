@@ -15,8 +15,8 @@ import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
 import { consoleLogger, type Logger } from "./log.js";
 import {
   readTickVerdict,
-  totalAgentUsage,
-  type AgentUsageTotals,
+  totalAgentUsageByPhase,
+  type PhaseAgentUsage,
   type StageFailureEntry,
   type TickVerdict,
 } from "./tickVerdict.js";
@@ -151,16 +151,6 @@ export const FAILURE_STAGES = ["provision", "merge", "gate"] as const;
  */
 export type FailureStage = (typeof FAILURE_STAGES)[number];
 
-/**
- * One phase's share of a run's agent spend: every usage row the run's ticks
- * of that phase wrote, summed. `phase` is the verdict's own `phaseName`
- * ({@link TickVerdict}) — the supervisor groups by what the tick reported,
- * never by what it spawned.
- */
-export interface PhaseAgentUsage extends AgentUsageTotals {
-  phase: string;
-}
-
 /** Outcome of a supervised loop: how many child ticks ran and why it stopped. */
 export interface SuperviseResult {
   ticks: number;
@@ -199,7 +189,8 @@ export interface SuperviseResult {
   erroredTicks: string[];
   /**
    * What this run spent on agents, one entry per phase whose ticks invoked
-   * one, in the order each phase first did — summed from the usage rows the
+   * one, in the order each phase first did ({@link totalAgentUsageByPhase})
+   * — summed from the usage rows the
    * children wrote to their verdicts (spec/loop.md "Every agent invocation
    * leaves a usage row"), which is the only place the counts cross the
    * child→supervisor boundary. Empty when no tick this run invoked an agent
@@ -296,13 +287,14 @@ export async function superviseLoop(
   let ticks = 0;
   const shippedTags = new Set<string>();
   const erroredTicks: string[] = [];
-  // This run's agent spend, keyed by the phase name the verdict reported and
-  // insertion-ordered by when each phase first invoked one. Accumulated the
-  // same way `shippedTags` is, and for the same reason: the rows cross the
-  // child boundary one tick at a time, and what the summary owes an operator
-  // is the run's total. A phase appears only once it has a row, so the map
-  // never carries a zero-spend entry for a phase that never ran.
-  const agentUsageByPhase = new Map<string, AgentUsageTotals>();
+  // Every verdict this run's children left behind, kept for the spend fold in
+  // `settled` below. Accumulated the same way `shippedTags` is, and for the
+  // same reason: the rows cross the child boundary one tick at a time, and
+  // what the summary owes an operator is the run's total. The grouping itself
+  // is `totalAgentUsageByPhase`'s (`src/tickVerdict.ts`) — one totaller for
+  // this run and for the live-run line `flume status` prints from the same
+  // rows.
+  const runVerdicts: TickVerdict[] = [];
   // Run-scoped quarantine (`quarantineKey` (`src/selection.ts`) values —
   // `slug@hash` of the entry as the failing tick read it) plus the
   // consecutive-identical-signature streak for the abort backstop. Both reset
@@ -341,10 +333,7 @@ export async function superviseLoop(
     ticks,
     shippedTags: [...shippedTags],
     erroredTicks,
-    agentUsageByPhase: [...agentUsageByPhase].map(([phase, totals]) => ({
-      phase,
-      ...totals,
-    })),
+    agentUsageByPhase: totalAgentUsageByPhase(runVerdicts),
     ...stop,
   });
   const stoppedBySignal = (): SuperviseResult => {
@@ -392,19 +381,7 @@ export async function superviseLoop(
     let countedAsErrored = false;
     if (verdict) {
       for (const tag of verdict.shippedTags) shippedTags.add(tag);
-      // Guarded on a non-empty row list rather than folded unconditionally:
-      // `totalAgentUsage` over zero rows is a no-op on the numbers, but
-      // seeding the map would put a phase that invoked nothing this run into
-      // the summary at zero spend.
-      if (verdict.invocations.length > 0) {
-        agentUsageByPhase.set(
-          verdict.phaseName,
-          totalAgentUsage(
-            verdict.invocations,
-            agentUsageByPhase.get(verdict.phaseName),
-          ),
-        );
-      }
+      runVerdicts.push(verdict);
       const verdictProvisionFailures = verdict.provisionFailures ?? [];
       const verdictMergeFailures = verdict.mergeFailures ?? [];
       const shipHookThrew = verdict.mergeOutcomes.filter(

@@ -11,7 +11,15 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readFile,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, relative, win32 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -42,6 +50,11 @@ import { RUNTIME_IGNORES } from "../src/job.ts";
 import { DEFAULT_PENDING_REL, resolvePendingPath } from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
+import {
+  writeTickVerdict,
+  type TickVerdict,
+  type TickVerdictInvocation,
+} from "../src/tickVerdict.ts";
 import { denyDirectory } from "./helpers/denial.ts";
 import { fileWithContent, waitFor } from "./helpers/waitFor.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -1783,6 +1796,197 @@ describe("flume status — tip claim line (spec/cli.md \"flume status owes exact
       expect(r.out).not.toContain("tip claim");
     } finally {
       await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+});
+
+/**
+ * `flume status`'s live-run spend (spec/cli.md, "`flume status` owes exactly
+ * this", line 7). The number that decides whether a loop keeps running was
+ * readable only by ending the run and reading `flume loop`'s completion
+ * summary, or by re-reading the verdict log by hand.
+ *
+ * The rows are written by the engine's own writer (`writeTickVerdict`,
+ * `src/tickVerdict.ts`) rather than hand-serialized here, so the log the CLI
+ * reads back is the one a real tick would have left
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). What each case authors is the fixture's *facts* — which phase
+ * spent what, and when — never the file's shape.
+ *
+ * The run's window is the lock's own mtime, so each case back-dates
+ * `loop.pid` and dates its rows against that instant instead of racing the
+ * wall clock the CLI reads.
+ */
+describe("flume status — the live run's spend (spec/cli.md \"flume status owes exactly this\", line 7)", () => {
+  /** One agent run's usage row, the fields the totals are summed from. */
+  function invocation(usage: Partial<TickVerdictInvocation>): TickVerdictInvocation {
+    return {
+      promptPath: "rendered-prompts/probe.md",
+      uncommittedTracked: [],
+      ...usage,
+    };
+  }
+
+  /** One phase's tick, dated `at`, carrying `invocations`. */
+  function verdict(
+    phaseName: string,
+    at: number,
+    invocations: TickVerdictInvocation[],
+  ): TickVerdict {
+    return {
+      phaseName,
+      tags: [],
+      committed: true,
+      gateResults: [],
+      shippedTags: [],
+      mergeOutcomes: [],
+      invocations,
+      summary: `${phaseName}: one tick`,
+      headSha: "0".repeat(40),
+      at: new Date(at).toISOString(),
+    };
+  }
+
+  /**
+   * A fixture root whose `loop.pid` records `pid` and whose claim instant is
+   * `runStart` — one tick's worth of spend from before that instant, and two
+   * phases' worth after it. Returns the root and the instant, so a case can
+   * re-claim the lock at the same window.
+   */
+  async function fixture(
+    prefix: string,
+    pid: number,
+  ): Promise<{ dir: string; runStart: number }> {
+    const dir = await mkFixtureRoot(prefix);
+    const flumeDir = join(dir, ".flume");
+    const runStart = Date.now() - 60_000;
+    // Ticks of the run, and one tick from before it: the stale row's phase
+    // name is what proves the window bounds the fold rather than the log
+    // simply being short.
+    await writeTickVerdict(
+      flumeDir,
+      verdict("previous-run", runStart - 60_000, [
+        invocation({ turns: 999, costUsd: 99 }),
+      ]),
+    );
+    await writeTickVerdict(
+      flumeDir,
+      verdict("plan", runStart + 1_000, [
+        invocation({
+          turns: 4,
+          durationMs: 1_000,
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheCreationInputTokens: 30,
+          cacheReadInputTokens: 40,
+          costUsd: 0.5,
+        }),
+      ]),
+    );
+    await writeTickVerdict(
+      flumeDir,
+      verdict("build", runStart + 2_000, [
+        invocation({
+          turns: 3,
+          durationMs: 500,
+          inputTokens: 5,
+          outputTokens: 6,
+          cacheCreationInputTokens: 7,
+          cacheReadInputTokens: 8,
+          costUsd: 0.125,
+        }),
+        invocation({
+          turns: 3,
+          durationMs: 500,
+          inputTokens: 5,
+          outputTokens: 6,
+          cacheCreationInputTokens: 7,
+          cacheReadInputTokens: 8,
+          costUsd: 0.125,
+        }),
+      ]),
+    );
+    await claim(dir, pid, runStart);
+    return { dir, runStart };
+  }
+
+  /** Record `pid` in `loop.pid` as of `at` — the run's claim instant. */
+  async function claim(dir: string, pid: number, at: number): Promise<void> {
+    const pidPath = join(dir, ".flume", "loop.pid");
+    await writeFile(pidPath, String(pid), "utf8");
+    await utimes(pidPath, new Date(at), new Date(at));
+  }
+
+  /**
+   * The spend lines in `out` — read as their own block, never as a search
+   * over the whole rendered listing, which quotes fixture paths and phase
+   * names of its own (`.claude/rules/posture-sweep.md`, "A negative
+   * assertion over a whole rendered artifact").
+   */
+  const spendLines = (out: string): string[] =>
+    out.split("\n").filter((l) => l.startsWith("agent usage this run:"));
+
+  it("flume status totals the live run's agent usage by phase", async () => {
+    // The vitest worker itself plays the live supervisor — its own pid is
+    // guaranteed alive for the duration of this test.
+    const { dir } = await fixture("flume-status-spend-live-", process.pid);
+    try {
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(0);
+      expect(r.out).toContain(`supervisor pid ${process.pid} live`);
+      const lines = spendLines(r.out);
+      expect(lines).toHaveLength(1);
+      const line = lines[0] ?? "";
+      // One entry per phase that invoked an agent this run, in the order each
+      // first did, each carrying that phase's rows summed.
+      expect(line).toContain(
+        "plan ×1 (4 turns, 1.0s, 10 in / 20 out tokens, " +
+          "30 cache-write / 40 cache-read, $0.5000)",
+      );
+      expect(line).toContain(
+        "build ×2 (6 turns, 1.0s, 10 in / 12 out tokens, " +
+          "14 cache-write / 16 cache-read, $0.2500)",
+      );
+      expect(line.indexOf("plan ×1")).toBeLessThan(line.indexOf("build ×2"));
+      // The window is the run's, not the log's: the tick from before the
+      // claim is another run's money.
+      expect(line).not.toContain("previous-run");
+      expect(line).not.toContain("999");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("flume status prints no spend line when no supervisor is live", async () => {
+    // Harvest a genuinely dead pid: spawn a no-op node child and wait for it
+    // to exit before recording its pid as the stale holder.
+    const probe = exec(process.execPath, ["-e", ""]);
+    const deadPid = probe.child.pid;
+    await probe;
+    expect(deadPid).toBeDefined();
+    const { dir, runStart } = await fixture(
+      "flume-status-spend-dead-",
+      deadPid ?? 999_999_999,
+    );
+    try {
+      const dead = await runCli(dir, ["status"]);
+
+      expect(dead.code).toBe(0);
+      expect(dead.out).toContain("loop.pid present, process dead — stale");
+      expect(spendLines(dead.out)).toEqual([]);
+
+      // Non-vacuity: the same rows, under a live claim at the same instant,
+      // do print — so the absence above is the liveness arm rather than an
+      // empty log (`.claude/rules/engineering.md`, *A green verdict is proven
+      // non-vacuous*).
+      await claim(dir, process.pid, runStart);
+      const live = await runCli(dir, ["status"]);
+
+      expect(live.code).toBe(0);
+      expect(spendLines(live.out)).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   }, SPAWN_BUDGET_MS);
 });
@@ -4019,8 +4223,8 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
   // accessor being wrapped, not on a filename spelled here.
   const src = readFileSync(CLI_SRC_PATH, "utf8");
 
-  it("builds the status-check loop-lock path (existsLoud) through namespacedJoin", () => {
-    expect(src).toMatch(/existsLoud\(namespacedJoin\(loopLockPath\(flumeDir\)\)\)/);
+  it("builds the status-check loop-lock path (statLoud) through namespacedJoin", () => {
+    expect(src).toMatch(/statLoud\(namespacedJoin\(loopLockPath\(flumeDir\)\)\)/);
   });
 
   it("builds the loop-lock path (lockPath) through namespacedJoin, and writeFileSync/unlinkSync both read it from lockPath", () => {

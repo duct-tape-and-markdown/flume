@@ -57,10 +57,11 @@ import { readMergingMarkers } from "./mergingMarkers.js";
 import {
   clearTickVerdict,
   readTickVerdicts,
+  totalAgentUsageByPhase,
   writeTickVerdict,
 } from "./tickVerdict.js";
 import { frictionCountLine } from "./friction.js";
-import { existsLoud } from "./fsProbe.js";
+import { existsLoud, statLoud } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
@@ -87,6 +88,7 @@ import {
   resolveStateDirs,
 } from "./cliJobResolution.js";
 import {
+  agentUsageLine,
   tickExitCode,
   loopExitCode,
   describeRefFailure,
@@ -443,15 +445,23 @@ async function main(): Promise<number> {
     // incident's "hibernating" reading left the operator to infer
     // relaunch-safety instead of being told it. No pidfile: silent, leaving
     // the output as it read before this line existed.
-    // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) refuses
+    // Absent is the only silent reading: `statLoud` (src/fsProbe.ts) refuses
     // a `loop.pid` that is present but unstattable (a symlink loop, a
     // permission-denied parent) rather than reading it as absent and printing
     // no supervisor line over a possibly-live loop
     // (`.claude/rules/engineering.md`, "Loud or nothing").
-    let supervisorLive = false;
-    let loopLockPresent: boolean;
+    //
+    // Whole `Stats` rather than the boolean face of the same probe, because a
+    // live holder's `loop.pid` is also *when* this run began: the supervisor
+    // writes the file once, as it claims the state root, and never rewrites
+    // it, so its mtime is the window the spend line at the end of this
+    // listing is bounded by. One probe answers both, and the pidfile's
+    // contents stay the holder's pid and nothing else (spec/loop.md, "The
+    // loop lock and the tip claim").
+    let supervisor: { pid: number; startedAtMs: number } | undefined;
+    let loopLockStat: Stats | undefined;
     try {
-      loopLockPresent = existsLoud(namespacedJoin(loopLockPath(flumeDir)));
+      loopLockStat = statLoud(namespacedJoin(loopLockPath(flumeDir)));
     } catch (err) {
       // The stat error carries the offending path itself; the name here comes
       // from the accessor's own table, never a second spelling of "loop.pid".
@@ -460,9 +470,9 @@ async function main(): Promise<number> {
       );
       return EX_IOERR;
     }
-    if (loopLockPresent) {
+    if (loopLockStat !== undefined) {
       const pid = await liveLoopPid(flumeDir);
-      supervisorLive = pid !== null;
+      if (pid !== null) supervisor = { pid, startedAtMs: loopLockStat.mtimeMs };
       console.log(
         pid !== null
           ? `supervisor pid ${pid} live`
@@ -491,7 +501,7 @@ async function main(): Promise<number> {
     }
     if (stopFlagPresent) {
       console.log(
-        supervisorLive
+        supervisor
           ? `${statusStopPath} present: the running supervisor will finish ` +
               "its in-flight tick and end the run"
           : `${statusStopPath} present: the next \`loop\`/\`job run\` refuses ` +
@@ -576,6 +586,32 @@ async function main(): Promise<number> {
           );
         }
       }
+    }
+    // spec/cli.md "`flume status` owes exactly this", line 7: what the live
+    // run has spent so far, where the operator already looks. No live
+    // supervisor, nothing extra — there is no run for a total to be about.
+    //
+    // The rows are the run's own by the date each carries (`TickVerdict.at`):
+    // at or after the instant the supervisor claimed the lock. A row this
+    // window excludes is one a previous run — or a bare `flume tick` before
+    // this one started — paid for, and totalling it here would answer a
+    // question about the live run with another run's money. `readTickVerdicts`
+    // already skips what it cannot parse, and a row whose `at` does not parse
+    // dates itself into no run's window.
+    //
+    // The grouping is `totalAgentUsageByPhase`'s (`src/tickVerdict.ts`) and
+    // the line is `agentUsageLine`'s (`src/cliVerdict.ts`) — the same two the
+    // loop-end summary prints from, so the run's cost reads alike wherever it
+    // is read.
+    if (supervisor) {
+      const startedAtMs = supervisor.startedAtMs;
+      const spend = totalAgentUsageByPhase(
+        (await readTickVerdicts(flumeDir)).filter(
+          (v) => Date.parse(v.at) >= startedAtMs,
+        ),
+      );
+      const line = agentUsageLine("agent usage this run", spend);
+      if (line) console.log(line);
     }
     return 0;
   }

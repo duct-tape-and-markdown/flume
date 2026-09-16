@@ -93,7 +93,11 @@ HEAD or no claim file prints nothing extra), then the pending entry count
 from plan/pending.json ("pending: N"; "pending: 0" if absent; "pending:
 unparsable" if present but malformed), then, when the chain loads, a
 friction count (declared Chain.friction dir holding notes) and one line per
-pending entry gated on a capability the chain hasn't asserted. Observational
+pending entry gated on a capability the chain hasn't asserted, then, when a
+supervisor is live, what that run has spent on agents so far ("agent usage
+this run: <phase> ×N (...)", one entry per phase whose ticks invoked an
+agent since the run claimed loop.pid; no live supervisor — or a live run
+that has invoked none yet — prints nothing extra). Observational
 — no side effects, no agent invocation.
 
 Exit codes:

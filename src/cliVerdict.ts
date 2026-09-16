@@ -6,8 +6,8 @@
 
 import { type TickOutcome } from "./Dispatcher.js";
 import { EX_TERMINAL_MISCONFIG, EX_MOUNT_DEAD } from "./exitCodes.js";
-import { type TickVerdict } from "./tickVerdict.js";
-import type { PhaseAgentUsage, SuperviseResult } from "./loopSupervisor.js";
+import { type PhaseAgentUsage, type TickVerdict } from "./tickVerdict.js";
+import type { SuperviseResult } from "./loopSupervisor.js";
 import type { CurrentRef } from "./git.js";
 
 /**
@@ -104,16 +104,34 @@ export function loopCompletionSummary(
         result.erroredTicks.join(" | "),
     );
   }
-  if (result.agentUsageByPhase.length > 0) {
-    const spend = result.agentUsageByPhase.map(phaseUsageSegment).join("; ");
-    parts.push(`agent usage: ${spend}`);
-  }
+  const spend = agentUsageLine("agent usage", result.agentUsageByPhase);
+  if (spend) parts.push(spend);
   if (parts.length === 0) return undefined;
   return `[flume] ${parts.join(" | ")}`;
 }
 
 /**
- * One phase's totals as the completion summary spells them. Every total the
+ * `label`, then one segment per phase — the whole spend line, or `undefined`
+ * when the span spent nothing (a phase that never invoked an agent is absent
+ * from the fold rather than present at zero — `totalAgentUsageByPhase`
+ * (`src/tickVerdict.ts`)).
+ *
+ * Both surfaces that report spend take this: `flume loop`'s completion
+ * summary for the run it just finished, `flume status` for what the live run
+ * has spent so far. The label is each surface's own sentence; the numbers
+ * are not respelled beside each other (`.claude/rules/engineering.md`, *The
+ * fix lands at the mechanism*).
+ */
+export function agentUsageLine(
+  label: string,
+  byPhase: readonly PhaseAgentUsage[],
+): string | undefined {
+  if (byPhase.length === 0) return undefined;
+  return `${label}: ${byPhase.map(phaseUsageSegment).join("; ")}`;
+}
+
+/**
+ * One phase's totals as the spend line spells them. Every total the
  * supervisor carries is named: a count the engine summed and then declined to
  * print is a fact it holds and does not report. Raw counts rather than
  * abbreviated ones — the line is read by CI as often as by a person, and a

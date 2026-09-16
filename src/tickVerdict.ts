@@ -397,7 +397,10 @@ type SummableUsageKey = {
 
 /**
  * A set of {@link TickVerdictInvocation} rows summed — what some span of
- * agent runs reported, in the units the rows report them in. Every field is
+ * agent runs reported, in the units the rows report them in. Module-internal:
+ * every consumer outside this file groups by phase, so what they hold is
+ * {@link PhaseAgentUsage} and this is the shape it is built from
+ * (`.claude/rules/engineering.md`, *An export earns its consumer*). Every field is
  * a total rather than an optional fact: a row that omitted one contributed
  * zero to it, and an empty set totals zero across the board.
  *
@@ -406,7 +409,7 @@ type SummableUsageKey = {
  * row states, the same reason a row omits it when the invocation named more
  * than one.
  */
-export type AgentUsageTotals = Record<SummableUsageKey, number> & {
+type AgentUsageTotals = Record<SummableUsageKey, number> & {
   /** How many rows were summed — one per agent run. */
   invocations: number;
 };
@@ -421,7 +424,7 @@ export type AgentUsageTotals = Record<SummableUsageKey, number> & {
  * {@link TickVerdictInvocation}'s, so a decode that starts reporting one
  * more of them is totalled here or reported nowhere.
  */
-export function totalAgentUsage(
+function totalAgentUsage(
   rows: readonly TickVerdictInvocation[],
   into: AgentUsageTotals = {
     invocations: 0,
@@ -454,6 +457,49 @@ export function totalAgentUsage(
     ),
     costUsd: sum((r) => r.costUsd, into.costUsd),
   };
+}
+
+/**
+ * One phase's share of some span of agent spend: every usage row that span's
+ * ticks of that phase wrote, summed. `phase` is the verdict's own
+ * `phaseName` ({@link TickVerdict}) — grouped by what each tick reported,
+ * never by what something spawned.
+ */
+export interface PhaseAgentUsage extends AgentUsageTotals {
+  phase: string;
+}
+
+/**
+ * Fold `verdicts` into one total per phase, in the order each phase first
+ * invoked an agent. A phase appears only once a verdict of its own carried a
+ * row, so "nothing was spent" and "nothing ran" read the same because they
+ * are, and a span whose ticks invoked nothing totals to an empty list rather
+ * than a roster at zero.
+ *
+ * One grouping for every span of rows: `superviseLoop`
+ * (`src/loopSupervisor.ts`) folds the run it just supervised, `flume status`
+ * folds what the live run has written so far, and neither respells the
+ * grouping beside the other (`.claude/rules/engineering.md`, *The fix lands
+ * at the mechanism*). Which rows are in the span is the caller's — the
+ * supervisor holds its own children's verdicts, `status` bounds the log by
+ * when the run claimed the lock.
+ */
+export function totalAgentUsageByPhase(
+  verdicts: readonly TickVerdict[],
+): PhaseAgentUsage[] {
+  const byPhase = new Map<string, AgentUsageTotals>();
+  for (const verdict of verdicts) {
+    // Guarded on a non-empty row list rather than folded unconditionally:
+    // `totalAgentUsage` over zero rows is a no-op on the numbers, but seeding
+    // the map would put a phase that invoked nothing into the result at zero
+    // spend.
+    if (verdict.invocations.length === 0) continue;
+    byPhase.set(
+      verdict.phaseName,
+      totalAgentUsage(verdict.invocations, byPhase.get(verdict.phaseName)),
+    );
+  }
+  return [...byPhase].map(([phase, totals]) => ({ phase, ...totals }));
 }
 
 /**
@@ -586,7 +632,14 @@ export interface TickVerdict {
    * just to record one.
    */
   headSha: string;
-  /** ISO timestamp alongside {@link headSha} — ambient wall-clock context, not itself load-bearing. */
+  /**
+   * ISO timestamp alongside {@link headSha}, written when the verdict was
+   * built. Load-bearing for one reader: `flume status` bounds the live run's
+   * spend to the rows this field dates at or after the instant that run
+   * claimed `loop.pid` (spec/cli.md, "`flume status` owes exactly this"), so
+   * a row is in a run's window by what it says rather than by where it sits
+   * in the log. Ambient context to every other reader.
+   */
   at: string;
 }
 
