@@ -43,10 +43,11 @@
  *
  * Because the working tree is all a page name needs, that arm reaches further
  * than the rest: `scanPageCitations` below reads it over its own domain —
- * every tree the sweep domain names and the chain this repo runs — at a
- * scopeless parse, where no tsconfig covers `bin/` or `scripts/` and no
- * checker is wanted. Same reader, same fencings, same subject rule, same
- * resolution; what that scan drops is every citation a declaration answers.
+ * every tree the sweep domain names and the chain this repo runs — through
+ * the shared scopeless parse (`parseScopeless`, `repoProgram.ts`), where no
+ * tsconfig covers `bin/` or `scripts/` and no checker is wanted. Same reader,
+ * same fencings, same subject rule, same resolution; what that scan drops is
+ * every citation a declaration answers.
  *
  * A page name is resolved on disk and nowhere else, whichever fence carried
  * it. Every other citation shape reads the judged trees first, and a page
@@ -87,7 +88,7 @@
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 import ts from "typescript";
@@ -95,6 +96,7 @@ import ts from "typescript";
 import {
   eachToken,
   modulesUnder,
+  parseScopeless,
   relPath,
   repoProgram,
   sourcesOf,
@@ -976,27 +978,6 @@ export interface PageCitationScan extends Scan<CitationSite> {
    */
   readonly wraps: Scan<WrappedCitation>;
 }
-
-/**
- * One module of the widened domain, parsed with no scope around it.
- *
- * The tier is this arm's own choice and the reason is here rather than in the
- * shared base: `bin/` and `scripts/` sit in no tsconfig this repo has, so a
- * program-backed read would report them as holding nothing. It costs the
- * checker, which this arm never consults — a page name is answered by the
- * working tree alone — so the two halves agree on what they give up.
- *
- * Parents are set, because the comment reader walks to the leaves to reach
- * every trivia range.
- */
-const parseScopeless = (path: string): ts.SourceFile =>
-  ts.createSourceFile(
-    path,
-    readFileSync(path, "utf8"),
-    ts.ScriptTarget.ESNext,
-    true,
-    /\.(?:m|c)?js$/.test(path) ? ts.ScriptKind.JS : ts.ScriptKind.TS,
-  );
 
 /**
  * Scan a domain's comments for `*.md` page names the working tree cannot

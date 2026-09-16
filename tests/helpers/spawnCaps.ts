@@ -30,12 +30,13 @@
  * observable only once a child has already been killed is no defence at all.
  *
  * **Names, not scopes.** Like the lane's spawn scan (`spawnBudget.ts`) this
- * reads files through `createSourceFile` and carries one global set of
- * capturing names, so a wrapper discovered in one module is judged at its
- * call sites in every other without an import graph. The trade is stated
- * once here: a name that merely collides with a capturing one costs its
- * caller a declared cap it never needed, and that is the direction this scan
- * takes on every judgement below — a missed site costs the silent kill.
+ * reads its modules through the shared scopeless parse (`parseScopeless`,
+ * `repoProgram.ts`) and carries one global set of capturing names, so a
+ * wrapper discovered in one module is judged at its call sites in every other
+ * without an import graph. The trade is stated once here: a name that merely
+ * collides with a capturing one costs its caller a declared cap it never
+ * needed, and that is the direction this scan takes on every judgement
+ * below — a missed site costs the silent kill.
  *
  * Three things the scans will not read, each refused or excluded out loud
  * rather than passed over: a `node:child_process` import in a shape with no
@@ -47,16 +48,15 @@
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
-import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-
 import ts from "typescript";
 
 import {
   REPO_ROOT,
-  filesUnder,
+  modulesUnder,
+  parseScopeless,
   relPath,
   type Scan,
+  type ScanDomain,
   type ScanSite,
 } from "./repoProgram.ts";
 
@@ -80,9 +80,7 @@ const SHIPPED_TREES: readonly string[] = [
 /**
  * The chain this repo runs every tick — a consumer of the package, and the
  * one whose spawns land on this machine on every loop. Named file by file
- * rather than swept as a tree: the walk below recurses, and `.flume/` also
- * holds the worktree checkouts a tick runs in (`spec/worktrees.md`), whole
- * copies of this repo that a tree would descend into and judge again.
+ * rather than swept as a tree, for the reason {@link ScanDomain} states.
  *
  * Neither file spawns today, so the verdict over them is empty — which is
  * the point of naming them: a capturing spawn added to this repo's own chain
@@ -93,38 +91,11 @@ const CHAIN_FILES: readonly string[] = [
   ".flume/declaration.ts",
 ];
 
-/**
- * What the scan reads: trees walked whole, and files named one by one for a
- * directory whose other contents are not source of this repo's. Both refuse
- * when they resolve to nothing, so a renamed file or an emptied tree reds
- * rather than shrinking the domain silently.
- *
- * `files` is omitted by a caller whose domain is trees alone — a fixture's,
- * below. The repo's own domain is `REPO_DOMAIN`, which names both.
- */
-export interface SpawnCapDomain {
-  readonly trees: readonly string[];
-  readonly files?: readonly string[];
-}
-
 /** Everything this repo ships or runs, outside `tests/`. */
-const REPO_DOMAIN: SpawnCapDomain = {
+const REPO_DOMAIN: ScanDomain = {
   trees: SHIPPED_TREES,
   files: CHAIN_FILES,
 };
-
-/** The extensions a module in those trees is written in. */
-const SOURCE_SUFFIXES: readonly string[] = [
-  ".ts",
-  ".mts",
-  ".cts",
-  ".js",
-  ".mjs",
-  ".cjs",
-];
-
-/** Emitted types declare no calls, so nothing in them is a spawn. */
-const EXCLUDED_SUFFIXES: readonly string[] = [".d.ts"];
 
 /** The specifiers a capturing API is imported through. */
 const CHILD_PROCESS = new Set(["node:child_process", "child_process"]);
@@ -198,48 +169,6 @@ export interface SpawnCapScan extends Scan<SpawnCapSite> {
 /** A site as a failure message cites it. */
 export const formatSpawnCapSite = (site: SpawnCapSite): string =>
   `${site.module}:${site.line} ${site.callee}`;
-
-/** Every module of the domain, absolute, in a stable order. */
-function spawnCapModules(root: string, domain: SpawnCapDomain): string[] {
-  const found = new Set<string>();
-  for (const tree of domain.trees) {
-    const dir = join(root, ...tree.split("/"));
-    const before = found.size;
-    for (const suffix of SOURCE_SUFFIXES)
-      for (const path of filesUnder({
-        root: dir,
-        suffix,
-        excluded: EXCLUDED_SUFFIXES,
-      }))
-        found.add(path);
-    if (found.size === before)
-      throw new Error(
-        `no source module under ${tree}/: the spawn-cap scan would judge ` +
-          "that tree's spawns as none",
-      );
-  }
-  for (const file of domain.files ?? []) {
-    const path = join(root, ...file.split("/"));
-    if (!statSync(path, { throwIfNoEntry: false })?.isFile())
-      throw new Error(
-        `no source module at ${file}: the spawn-cap scan would judge that ` +
-          "file's spawns as none",
-      );
-    found.add(path);
-  }
-  return [...found].sort((a, b) => a.localeCompare(b));
-}
-
-function parse(path: string): ts.SourceFile {
-  const js = /\.(?:m|c)?js$/.test(path);
-  return ts.createSourceFile(
-    path,
-    readFileSync(path, "utf8"),
-    ts.ScriptTarget.ESNext,
-    true,
-    js ? ts.ScriptKind.JS : ts.ScriptKind.TS,
-  );
-}
 
 /** Every node under `node`, itself included. */
 function walk(node: ts.Node, visit: (n: ts.Node) => void): void {
@@ -604,11 +533,11 @@ function judge(call: Call): { verdict: Verdict; forwarder: string | null } {
  */
 export function scanSpawnCaps(
   root: string = REPO_ROOT,
-  domain: SpawnCapDomain = REPO_DOMAIN,
+  domain: ScanDomain = REPO_DOMAIN,
 ): SpawnCapScan {
-  const modules: Module[] = spawnCapModules(root, domain).map((path) => ({
+  const modules: Module[] = modulesUnder(root, domain).map((path) => ({
     module: relPath(root, path),
-    src: parse(path),
+    src: parseScopeless(path),
   }));
 
   const capturing = new Set<string>();
@@ -728,17 +657,17 @@ function isPromisify(
  */
 export function scanPromisifiedSpawns(
   root: string,
-  domain: SpawnCapDomain,
+  domain: ScanDomain,
   homes: readonly string[],
 ): PromisifiedSpawnScan {
   const allowed = new Set(homes);
   const modules: string[] = [];
   const scanned: PromisifiedSpawnSite[] = [];
   const findings: PromisifiedSpawnSite[] = [];
-  for (const path of spawnCapModules(root, domain)) {
+  for (const path of modulesUnder(root, domain)) {
     const module = relPath(root, path);
     modules.push(module);
-    const src = parse(path);
+    const src = parseScopeless(path);
     const apis = importedApis(src, module);
     if (apis.size === 0) continue;
     const names = promisifyNames(src);
@@ -798,17 +727,17 @@ export const formatSyncSpawnSite = (site: SyncSpawnSite): string =>
  */
 export function scanSyncSpawns(
   root: string,
-  domain: SpawnCapDomain,
+  domain: ScanDomain,
   homes: readonly string[],
 ): SyncSpawnScan {
   const allowed = new Set(homes);
   const modules: string[] = [];
   const scanned: SyncSpawnSite[] = [];
   const findings: SyncSpawnSite[] = [];
-  for (const path of spawnCapModules(root, domain)) {
+  for (const path of modulesUnder(root, domain)) {
     const module = relPath(root, path);
     modules.push(module);
-    const src = parse(path);
+    const src = parseScopeless(path);
     const sync = new Set(
       [...importedApis(src, module)]
         .filter(([, api]) => SYNC_APIS.has(api))

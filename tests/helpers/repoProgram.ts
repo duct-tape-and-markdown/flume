@@ -1,9 +1,9 @@
 /**
  * The base this suite's source scanners are visitors over: the tsconfig
  * parse, the repo-relative fold, the program and checker a scan resolves
- * through, the source selection both off the program and off disk, the token
- * walk, the directory walk, and the site and verdict vocabulary every scan
- * reports in.
+ * through, the source selection both off the program and off disk, the
+ * scopeless parse a module read off disk is judged from, the token walk, the
+ * directory walk, and the site and verdict vocabulary every scan reports in.
  *
  * One job — *what the scanners share* — rather than a scanner of its own
  * (`.claude/rules/engineering.md`, *A module is one job*). Three siblings
@@ -11,17 +11,20 @@
  * and verdict three ways, and a fourth scanner would have copied all of it
  * again.
  *
- * What is deliberately **not** shared is the compiler-API tier each scanner
- * runs at, which is a choice each makes for a stated reason: the export scan
- * walks a declaration emit, the citation scan a checker-backed program, the
- * spawn scan a scopeless `createSourceFile`. This module carries the program
- * tier the checker-backed scans want and nothing above it; a scanner that
- * needs another builds it at its own site, where the reason is written down.
+ * A compiler-API tier stays **out** of this module while one scanner is the
+ * only one running at it, because at one the tier is that scanner's choice
+ * and the reason for it belongs where the choice is made: the export scan
+ * walks a declaration emit, and builds it at its own site. The condition that
+ * moves a tier here is a **second** consumer — at two it is no longer anyone's
+ * choice, and the copy is the thing that drifts. Two tiers have met it: the
+ * checker-backed program the citation and export scans resolve through, and
+ * the scopeless parse below. A scanner building its own is claiming it is
+ * still alone at that tier.
  *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -290,3 +293,28 @@ export const modulesUnder = (
   }
   return [...found].sort((a, b) => a.localeCompare(b));
 };
+
+/**
+ * One module parsed with nothing around it — no tsconfig, no program, no
+ * checker, and so no answer to what any name in it resolves to.
+ *
+ * The tier a scan runs at when its domain reaches trees no tsconfig of this
+ * repo covers — `bin/`, `scripts/`, `.flume/` — where a program-backed read
+ * would report those trees as holding nothing, and when the verdict is
+ * answerable from the syntax alone: a callee as the source spells it, a
+ * comment's own text, a filename the working tree either holds or does not.
+ * A scan wanting a name *resolved* takes {@link repoProgram} instead.
+ *
+ * Kind is read off the extension rather than left to the default, because the
+ * domains walked at this tier hold `.mjs` and `.cjs` as well as `.ts`.
+ * Parents are set: every caller walks to the leaves, one for a token and one
+ * for the trivia hanging off it.
+ */
+export const parseScopeless = (path: string): ts.SourceFile =>
+  ts.createSourceFile(
+    path,
+    readFileSync(path, "utf8"),
+    ts.ScriptTarget.ESNext,
+    true,
+    /\.(?:m|c)?js$/.test(path) ? ts.ScriptKind.JS : ts.ScriptKind.TS,
+  );

@@ -37,6 +37,7 @@ import { configDefaults } from "vitest/config";
 import {
   REPO_ROOT,
   filesUnder,
+  parseScopeless,
   relPath,
   type FileWalk,
   type Scan,
@@ -185,15 +186,6 @@ export interface SpawnSite extends ScanSite {
    * files is the lane's one number restated per case.
    */
   readonly ownCeiling: string | null;
-}
-
-function parse(path: string): ts.SourceFile {
-  return ts.createSourceFile(
-    path,
-    readFileSync(path, "utf8"),
-    ts.ScriptTarget.ESNext,
-    true,
-  );
 }
 
 /**
@@ -511,7 +503,7 @@ function exportedNames(src: ts.SourceFile): Set<string> {
  * process startup, by the same propagation the suites are scanned with.
  */
 export function harnessSpawnExports(): string[] {
-  const src = parse(SPAWN_WRAPPERS);
+  const src = parseScopeless(SPAWN_WRAPPERS);
   const exported = exportedNames(src);
   return [...reachingNames(src, PROCESS_STARTS)].filter((n) => exported.has(n));
 }
@@ -522,7 +514,7 @@ export function harnessSpawnExports(): string[] {
  */
 export function harnessBudgets(): Map<string, number> {
   const out = new Map<string, number>();
-  const src = parse(SPAWN_WRAPPERS);
+  const src = parseScopeless(SPAWN_WRAPPERS);
   const exported = exportedNames(src);
   const walk = (n: ts.Node): void => {
     if (
@@ -784,7 +776,7 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
   const registrars: SpawnSite[] = [];
 
   for (const path of filesUnder(rule, request.dir)) {
-    const src = parse(path);
+    const src = parseScopeless(path);
     const module = relPath(REPO_ROOT, path);
     const imported = harnessImports(src);
     const spawns = reachingNames(src, [
