@@ -1,85 +1,5 @@
 [
   {
-    "tag": "THE-CLI-PAGE-STOPS-PROMISING-AN-UNCHANGED-STATUS-STDOUT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CLI.md",
-          "description": "the `flume status` section's degraded-load sentence"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the CLI page promises a failed chain load leaves status's stdout byte-unchanged, which the failure row status prints on stdout contradicts",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "`flume status` owes exactly this"
-    },
-    "acceptance": "the CLI page's `flume status` section states the load failure as a row of the listing on stdout, and carries no claim that a failed load leaves that stdout byte-unchanged.",
-    "tests": [],
-    "pins": [],
-    "notes": "Site: docs/CLI.md:28, \"because the report is on stderr, the stdout a prompt or watch loop parses stays byte-unchanged\". Item 6 of the cited section rules the opposite — the row prints \"on the same stream as the rest\" — and `src/cli.ts` console.logs it. The stderr report still happens; only the byte-unchanged promise is false. Unpinnable both ways: a `toContain` over a phrasing reds on a rewrite, a `not.toContain` is a negative over a whole page."
-  },
-  {
-    "tag": "THE-ADOPTION-PAGE-PRICES-OPERATIONS-NOT-A-COUNT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the count words in *What adoption costs* and in the declaration lead-in above it"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "three sentences on the adoption page count Runner's operations instead of naming them, so a fourth operation strands prose beside the pin that reads the operation list",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Derived state is computed, never restated beside its source"
-    },
-    "acceptance": "no sentence in the adoption page's runner prose carries a copy of Runner's member count; each names the operations instead.",
-    "tests": [],
-    "pins": [],
-    "notes": "Sites: :129 \"over the same three operations\", :160 \"not the three signatures\", :176 \"a working implementation of all three\". Left unpinned by THE-ADOPTION-PAGE-NAMES-EVERY-RUNNER-OPERATION: the only check available is `toContain` over a phrasing, which reds on a rewrite rather than on the fact. Deleting the copy is the fix, and that entry's bullet pin then covers the section. `docs/MIGRATING-0.16.md` describes a cut release and is out of scope."
-  },
-  {
-    "tag": "THE-GATE-FACT-TABLE-IS-PINNED-TO-THE-CHILDS-ENVIRONMENT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the doc table read against the FLUME_ set the gate's child saw"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the gate-fact table in docs/CHAIN-AUTHORING.md is prose alone, so a seventh fact or a renamed one leaves a green, stale table on the page a chain author reads first",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "the table under *What a declared command gate's child reads* is read against the FLUME_ variables a real declared gate's child is handed, so an added, dropped or renamed fact reds the default lane.",
-    "tests": [],
-    "pins": [
-      "docs/CHAIN-AUTHORING.md names exactly the FLUME_ variables a declared gate's child is handed"
-    ],
-    "notes": "The section's own heading is the anchor, as the sibling doc walks use. `flumeEnvSeenBy` already spawns the real gate and returns the child's FLUME_ set, so the pin is set-equality against a value the file holds — hence this prediction over tests/examples.test.ts, where the other doc walks live. Bullet bodies stay unpinned: reading them against doc comments is prose against prose."
-  },
-  {
     "tag": "THE-STATE-ROOT-OFFSET-TAKES-ITS-NAMES-FILE",
     "gate": {
       "kind": "open"
@@ -174,40 +94,6 @@
     "notes": "Build note leftover: the escape half already moved to `escapesRoot` (`src/paths.ts`); the arithmetic did not. paths.ts needs nothing new — `relative`, `gitPath`, `escapesRoot` are all there — and stays cycle-free, which its header states. The move strands cites naming `src/Dispatcher.ts`: four pairs and five comma-form ones. Same commit, per the section."
   },
   {
-    "tag": "THE-INBOX-SLICE-IS-LIVE-ONLY-FOR-UNROUTED-WORK",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/inboxWindow.ts",
-          "description": "the record leg yields to a pickable entry; the park leg does not"
-        },
-        {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "liveness across the three cases"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the inbox slice wakes on any waiting record, so an observation note holds the baton while the queue carries pickable entries — the sweep's yield rule, unapplied to the inbox",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The phases"
-    },
-    "acceptance": "while the engine reports anything pickable the inbox slice is live only for a standing park; with nothing pickable a waiting record makes it live, and a deferred record still renders on the tick that runs.",
-    "tests": [
-      "the inbox slice is not live for a waiting record while the engine reports anything pickable",
-      "the inbox slice is live for a standing park even while entries are pickable",
-      "the inbox slice is live for a waiting record when nothing is pickable"
-    ],
-    "pins": [],
-    "notes": "SliceWindow already carries `pickable`, so the predicate reads a reported fact. The park leg is `standingRefusals` and stays unconditional — build must not re-pick an entry whose park stands; the record leg is `recordsPending` and yields. The lane leg is bounded by its own once-per-run stamp and is untouched here."
-  },
-  {
     "tag": "A-LANE-STAMP-CARRIES-THE-FAILING-TITLES-IT-WOKE-ON",
     "gate": {
       "kind": "open"
@@ -256,10 +142,7 @@
   {
     "tag": "THE-INBOX-SLICE-READS-A-DECLARED-FRICTION-DIRECTORY",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THE-INBOX-SLICE-IS-LIVE-ONLY-FOR-UNROUTED-WORK"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -662,10 +545,7 @@
   {
     "tag": "THE-INBOX-DRAIN-ADVANCES-THE-DERIVE-CURSOR",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THE-INBOX-SLICE-IS-LIVE-ONLY-FOR-UNROUTED-WORK"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
