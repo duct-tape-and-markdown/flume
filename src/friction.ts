@@ -97,9 +97,9 @@ export async function frictionCountLine(
 ): Promise<string | undefined> {
   if (chain.friction === undefined) return undefined;
   // win32 MAX_PATH (`.claude/rules/platform-facts.md`): same join(stateRoot,
-  // chain.friction) construction writeRevertNote (`src/tickAttempt.ts`) and
-  // harvestFriction below guard — namespacedJoin (src/paths.ts) is the
-  // shared idiom.
+  // chain.friction) construction `writeRevertNote` (`src/tickAttempt.ts`)
+  // and `harvestFriction` below guard — `namespacedJoin` (`src/paths.ts`)
+  // is the shared idiom.
   return renderFrictionCount(
     countFrictionFiles(namespacedJoin(stateRoot, chain.friction)),
   );
@@ -193,8 +193,9 @@ export async function harvestFriction(
   let entries: Dirent[];
   try {
     // win32 MAX_PATH (`.claude/rules/platform-facts.md`): mirrorDir nests
-    // a worktree path under chain.friction. namespacedJoin (src/paths.ts)
-    // is the shared idiom — same as writeRevertNote (`src/tickAttempt.ts`).
+    // a worktree path under chain.friction. `namespacedJoin`
+    // (`src/paths.ts`) is the shared idiom — same as `writeRevertNote`
+    // (`src/tickAttempt.ts`).
     entries = await readdir(namespacedJoin(mirrorDir), {
       withFileTypes: true,
     });

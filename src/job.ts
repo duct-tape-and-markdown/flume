@@ -558,8 +558,8 @@ export function countFrictionFiles(dir: string): number | null {
   try {
     // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dir joins a job
     // dir onto chain.friction, the same construction `harvestFriction`
-    // (src/friction.ts) and `writeRevertNote` (src/tickAttempt.ts) guard.
-    // namespacedJoin (src/paths.ts) is the shared idiom.
+    // (`src/friction.ts`) and `writeRevertNote` (`src/tickAttempt.ts`)
+    // guard. `namespacedJoin` (`src/paths.ts`) is the shared idiom.
     return readdirSync(namespacedJoin(dir), { withFileTypes: true }).filter(
       (e) => e.isFile(),
     ).length;
