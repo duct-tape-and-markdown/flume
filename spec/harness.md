@@ -77,7 +77,10 @@ runner through the runner interface below and never assumes vitest.
 The `per` gate (the cited file is in the
 gated commit and the section is a heading in it), the records gate (one file
 per record, titled, under the tick's own tag), the
-clean-tree gate, and the pending gate wired to the consumer's fence. The
+clean-tree gate, the pending gate wired to the consumer's fence, and the
+cursor gate: a plan commit's derive cursor is an ancestor of the tip and a
+descendant of its pre-commit value, refused otherwise, because a cursor
+stepped past commits nobody derived fails silently on every tick after. The
 record byte cap is not the gate's: a note over the cap ships with its entry,
 and the drain that reads it says so in the plan commit body — a shape rule on
 a prose channel refuses the prose, never the code it rode in with.
@@ -98,6 +101,19 @@ questions file never carries a ruling of its own — so nothing is lost when a
 question is re-filed, because the answer lives in the commit that closed it
 and in the page it changed, never in the question.
 
+**Presence is state, location is kind, content is for the reader.** A slice
+never derives a state from a word: not a status read out of a heading, not a
+park read out of a commit's path list, not a kind read out of a note's
+prose. The engine already keeps its facts this way — a marker in `awake/`,
+the stop flag, the lock, a merging stake, a record per prior attempt under a
+directory per keyspace — and the package's own artifacts take the same shape:
+open questions are one file each under the plan's `questions/` directory,
+present while open and deleted when answered, so any session may add one and
+the drain closes one the way it drains a record; a build note that parks its
+entry lives under `notes/parked/` and an observation beside it does not, so
+the kind is the path and the records gate holds it. What a slice needs to
+know before it reads a file, it knows from where the file is.
+
 
 ### CI lanes as a findings source
 
@@ -115,8 +131,13 @@ green.
 
 A lane makes the inbox slice live exactly when its latest completed run for
 the tip's branch failed, that run is past the stamp the slice last wrote for
-the lane, and its failing-title set differs from the set the stamp carries;
-the stamp is the run and its failing titles, so a red that persists unchanged
+the lane, and — where the lane declares a title reader — its failing-title
+set differs from the set the stamp carries. The reader is the consumer's: a
+pattern or a function over the run's log, stating the grammar its runner
+emits, since the package parses no prose it did not author; a lane that
+declares none wakes once per failing run, which is the same rule over an
+empty set, spelled rather than inherited. The stamp is the run and the titles
+the reader gave it, so a red that persists unchanged
 advances the stamp at the next tick that runs anyway and wakes nothing. The
 slice stamps the run it woke on, drained or unread, as it
 stamps a cursor. So a red lane wakes the slice once per run and never every
@@ -250,7 +271,7 @@ another job's root is admitted; where a bay keeps its product is the bay's.
 | `slots` | Prompt slots the package renders into its prompts: an autonomy dial, domain context. Text only; a slot cannot add a directive the package's discipline already states. |
 | `capabilities` | The capabilities this repository asserts, passed through whole to `Chain.capabilities`; an entry that requires one the declaration does not assert is unpickable, and `flume status` names it. Optional; absent asserts none. |
 | `jobs` | Named jobs for a bay, each a `specLocus` and a `fence` (and optional `slots` and `capabilities`, added to the shared set) applied over the shared declaration when the chain runs under that job's state root — see *What a consumer declares*. Absent means one job, the repo-level values. |
-| `ci` | CI lanes the inbox slice reads as findings sources — each a workflow file, a job name, and the lane name its findings carry — see *CI lanes as a findings source*. Optional. |
+| `ci` | CI lanes the inbox slice reads as findings sources — each a workflow file, a job name, the lane name its findings carry, and optionally a title reader (a pattern or a function over the run's log) that gives the liveness rule its failing-title set — see *CI lanes as a findings source*. Optional. |
 | `friction` | The friction directory, state-root-relative, passed through to `Chain.friction` and read by the inbox slice as a findings source — see *Declared findings sources*. Optional; absent disables the channel. |
 | `findings` | Declared scripts the inbox slice runs at the tip before it renders, each a name and a command; stdout is one JSON object per line, `{ name, body }`, materialized as record files and drained like the rest — see *Declared findings sources*. Optional. |
 
