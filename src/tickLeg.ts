@@ -25,7 +25,7 @@ import type { PendingEntry } from "./PendingSchema.js";
 import type { Chain, TickResult } from "./Phase.js";
 import type { NoCommitMode } from "./Prompt.js";
 import type { PriorAttemptStore } from "./priorAttempts.js";
-import type { BatchSelection } from "./selection.js";
+import type { BatchSelection, EntryRefusalFacts } from "./selection.js";
 import type { AttemptContext } from "./tickAttempt.js";
 import type {
   GateFailure,
@@ -93,10 +93,19 @@ export interface TickLegContext extends PendingLedgerContext {
   readonly gateScope: GateRunScope;
   /** This run's live quarantine — `DispatcherOptions.quarantinedSlugs`. */
   readonly quarantinedSlugs?: ReadonlySet<string>;
-  /** {@link BatchSelection} under this dispatcher's own quarantine and parallelism ceiling. */
+  /**
+   * {@link BatchSelection} under this dispatcher's own quarantine and
+   * parallelism ceiling.
+   *
+   * `refusalFacts` is the leg's, not the dispatcher's: the records and the
+   * tip a chain's declared refusal is judged against are read *at* the
+   * selection, and a pre-wave batch and a post-wave `pickableAfter` are two
+   * selections over two worlds.
+   */
   selection(
     chain: Chain,
     pending: readonly PendingEntry[],
     isForkResolved: (slug: string) => boolean,
+    refusalFacts: EntryRefusalFacts,
   ): BatchSelection;
 }

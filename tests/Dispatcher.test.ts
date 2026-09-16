@@ -107,6 +107,13 @@ import type { NoCommitMode } from "../src/index.ts";
 import type { PriorAttemptKeyspace, QuarantinedTag } from "../src/index.ts";
 
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): EntryRefusalContext is what `Chain.refusesEntry` is handed, so a
+// chain author declaring that predicate as a named function needs to name it
+// from the package entry point. This import fails tsc if it drops from
+// src/index.ts.
+import type { EntryRefusalContext } from "../src/index.ts";
+
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): slugify/priorAttemptPath are the chain-facing exported rule
 // (spec/loop.md "Prior-outcome feedback to the retrying tick"), so a chain
 // author needs to reach them from the package entry point, not just the module
@@ -7098,6 +7105,229 @@ describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-
     expect(outcome.result?.shippedTags).toEqual(["SHIPS"]);
     expect(outcome.result?.nothingPickable).toBeUndefined();
     expect(outcome.result?.quarantinedTags).toBeUndefined();
+  });
+});
+
+/**
+ * THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL (`spec/harness.md`, *The
+ * default `handoff`*): a chain that must decline one entry could previously
+ * only decline the whole phase. `Chain.refusesEntry` is the injection point;
+ * the engine enforces it on every pickable set it reports and names what it
+ * held back on `TickResult.refusedTags`
+ * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
+ *
+ * Every case below drives the real predicate through the real selection —
+ * a whole `Dispatcher.tick()` — rather than calling `pickableSelection`
+ * beside it, because the claim is that the engine's *reported* sets carry
+ * the refusal, and a set asserted at its own producer proves only
+ * self-agreement (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*).
+ *
+ * The agents here commit nothing, so every entry the wave did carry stays in
+ * the queue and the post-tick sets are read over a queue that still holds
+ * both the picked and the refused — which is what makes "missing from
+ * `pickableAfter`" a refusal rather than a ship.
+ */
+describe("Dispatcher fanout — the pickable set carries a chain-declared per-entry refusal", () => {
+  /** Two open entries, disjoint by files, in queue order. */
+  const twoOpen = (): PendingEntry[] => [
+    makeEntry("PICKED", ["src/picked.ts"]),
+    makeEntry("HELD", ["src/held.ts"]),
+  ];
+
+  /** A fanout `build` phase and the baton woken for it. */
+  const wakeBuild = (): Phase => {
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    return makePhase({ name: "build", concurrency: "fanout", gates: [] });
+  };
+
+  it("a chain-declared per-entry refusal removes an entry from the reported pickable set", async () => {
+    await writePending(fx.repo, twoOpen());
+    const phase = wakeBuild();
+
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      refusesEntry: (ctx) => ctx.entry.tag === "HELD",
+    };
+
+    // Registered for `PICKED` alone: the wave throwing "no action registered
+    // for slug 'held'" is this case's loudest possible failure, so the
+    // refusal is proven at dispatch as well as in the reported set.
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ picked: async () => {} }),
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: both entries are still queued and still `open`, so the
+    // set below is a refusal and not a drained queue.
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
+      "PICKED",
+      "HELD",
+    ]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(["PICKED"]);
+    // Held back at selection, so it never reached an agent at all.
+    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual(["PICKED"]);
+  });
+
+  it("the engine reports each entry a chain-declared refusal held back", async () => {
+    await writePending(fx.repo, [
+      makeEntry("PICKED", ["src/picked.ts"]),
+      makeEntry("HELD-ONE", ["src/one.ts"]),
+      makeEntry("HELD-TWO", ["src/two.ts"]),
+    ]);
+    const phase = wakeBuild();
+
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      refusesEntry: (ctx) => ctx.entry.tag.startsWith("HELD-"),
+    };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ picked: async () => {} }),
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: three entries were judged, and the two named below are
+    // the ones missing from the pickable set the same tick reported.
+    expect(outcome.result?.pendingAfter).toHaveLength(3);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(["PICKED"]);
+    expect(outcome.result?.refusedTags).toEqual(["HELD-ONE", "HELD-TWO"]);
+    // The engine's own hold is a separate fact and is not borrowed for this
+    // one: nothing quarantined this run.
+    expect(outcome.result?.quarantinedTags).toBeUndefined();
+  });
+
+  it("a chain declaring no per-entry refusal leaves the pickable set unchanged", async () => {
+    await writePending(fx.repo, twoOpen());
+    const phase = wakeBuild();
+
+    // The same queue and the same phase as the first case, declaring no
+    // refusal: both entries are carried, and the reported hold is empty
+    // rather than absent, so a chain reads "nothing refused" as a fact.
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ picked: async () => {}, held: async () => {} }),
+      log: silent,
+    }).tick();
+
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
+      "PICKED",
+      "HELD",
+    ]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
+      "PICKED",
+      "HELD",
+    ]);
+    expect(outcome.result?.entries?.map((e) => e.tag).sort()).toEqual([
+      "HELD",
+      "PICKED",
+    ]);
+    expect(outcome.result?.refusedTags).toEqual([]);
+  });
+
+  it("a chain-declared refusal is handed each entry, its own standing record and the tip the selection was taken at", async () => {
+    await writePending(fx.repo, twoOpen());
+    const flumeDir = join(fx.repo, ".flume");
+    await mkdir(join(flumeDir, "prior-attempts", "entry"), { recursive: true });
+    const record: PriorAttempt = {
+      mode: "clean-exit",
+      finalMessage: "nothing to do here",
+      key: "entry",
+      keyedAs: slugify("HELD"),
+      headSha: "0".repeat(40),
+      at: "2024-01-01T00:00:00.000Z",
+    };
+    await writeFile(
+      join(flumeDir, "prior-attempts", "entry", `${slugify("HELD")}.json`),
+      JSON.stringify(record),
+    );
+
+    const phase = wakeBuild();
+    const seen: EntryRefusalContext[] = [];
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      refusesEntry: (ctx) => {
+        seen.push(ctx);
+        return ctx.entry.tag === "HELD";
+      },
+    };
+
+    const preHead = await head(fx.repo);
+    await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ picked: async () => {} }),
+      log: silent,
+    }).tick();
+
+    // The wave's opening selection, before the post-tick re-derivation adds
+    // its own consults: one per entry the gate switch cleared, in queue
+    // order, each carrying the entry as read.
+    const opening = seen.slice(0, 2);
+    expect(opening.map((ctx) => ctx.entry.tag)).toEqual(["PICKED", "HELD"]);
+    expect(opening[0]!.entry).toEqual(twoOpen()[0]);
+    // The record standing for `HELD` reaches the predicate; `PICKED` has
+    // none, and absent is absent rather than a record that failed to decode.
+    expect(opening[0]!.priorAttempt).toBeUndefined();
+    expect(opening[1]!.priorAttempt).toEqual(record);
+    // The tip the selection was taken at — the engine's own number, not the
+    // anchor the record carries.
+    expect(opening.map((ctx) => ctx.headSha)).toEqual([preHead, preHead]);
+    expect(preHead).not.toBe(record.headSha);
+  });
+
+  it("a singleton hook's TickContext.pickable carries the same chain-declared refusal a wave applies", async () => {
+    await writePending(fx.repo, twoOpen());
+
+    let captured: readonly PendingEntry[] | undefined;
+    const planPhase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      // Declines every time — this case wants the selection the dispatcher
+      // handed the hook, not a committed tick.
+      shouldRun: (ctx) => {
+        captured = ctx.pickable;
+        return false;
+      },
+    });
+    const chain: Chain = {
+      phases: [planPhase],
+      humanOnly: [],
+      refusesEntry: (ctx) => ctx.entry.tag === "HELD",
+    };
+
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: the hook ran and was handed a set, over a queue that
+    // still carries both entries.
+    expect(captured).toBeDefined();
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
+      "PICKED",
+      "HELD",
+    ]);
+    expect(captured!.map((e) => e.tag)).toEqual(["PICKED"]);
+    expect(outcome.result?.refusedTags).toEqual(["HELD"]);
   });
 });
 

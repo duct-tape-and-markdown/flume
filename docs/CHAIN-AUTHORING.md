@@ -2091,6 +2091,57 @@ cascade's ALL-CAPS convention above — lowercase-kebab
 (`/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/`). Both refinements compose against the
 identical mechanical floor; the engine has no opinion on case.
 
+## 12. Declining one entry at selection (`refusesEntry`)
+
+The gate kinds above are the *entry's* declaration of when it may be picked.
+`Chain.refusesEntry` is the chain's: a predicate the engine consults for every
+entry the gate switch (and this run's quarantine) has already cleared, at
+selection time, before any worktree exists.
+
+```ts
+const chain: Chain = {
+  phases: [plan, build],
+  humanOnly: [],
+  // Never re-dispatch an entry whose last attempt exited cleanly against the
+  // tip we are still on: the same dispatch against an unchanged world is the
+  // same outcome, at full agent price.
+  refusesEntry: ({ priorAttempt, headSha }) =>
+    priorAttempt?.mode === "clean-exit" && priorAttempt.headSha === headSha,
+};
+```
+
+Answered `true`, the entry is held back from every pickable set the tick
+reports — the wave's own batch, `TickContext.pickable`, and
+`TickResult.pickableAfter` — and its tag is named on
+`TickResult.refusedTags`. Answered `false`, nothing changes. Declaring no
+predicate at all refuses nothing, and `refusedTags` is `[]`.
+
+What the predicate is handed (`EntryRefusalContext`) is every fact the engine
+already holds about the entry at that moment, so it reaches for none itself:
+
+| Field | What it carries |
+| ----- | --------------- |
+| `entry` | The entry as this tick read it from the queue — tag, gate, files, and whatever your `entryExtension` declared. |
+| `priorAttempt` | The entry's own latest prior-attempt record, or absent on a first attempt. The same record `TickContext.priorAttempts` carries under `entry:<tag slug>`, decoded by the engine's own reader. |
+| `headSha` | The trunk tip this selection was taken at — the number to compare a record's `headSha` anchor against. |
+
+Three properties worth knowing before you declare one:
+
+- **It runs at selection, not after dispatch.** A refused entry costs a
+  predicate call, not a worktree and an agent invocation. That is the whole
+  reason to prefer it over declining inside the agent's own tick.
+- **It is consulted more than once per tick** — once for the set the tick
+  opens on, and again for the post-tick `pickableAfter` the handoff routes
+  on, that second pass judged against the tip and the records as they stand
+  *after* the tick. Keep the predicate pure and cheap; it is not an async
+  seam, and a predicate that throws fails the tick rather than being read as
+  a refusal.
+- **The refusal is yours, and so is what it means.** The engine reports which
+  entries you held back and nothing about why — no reason field, no verdict.
+  A `handoff` that wants to act on a refusal (wake a phase that can re-scope
+  the entry, or hibernate rather than re-picking it) reads `refusedTags`
+  beside `pickableAfter`.
+
 ## Putting it together
 
 ```ts

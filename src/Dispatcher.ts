@@ -64,7 +64,11 @@ import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { Chain, TickContext, TickResult } from "./Phase.js";
 import { renderPrompt } from "./Prompt.js";
 import type { NoCommitMode } from "./Prompt.js";
-import { selectBatch, type BatchSelection } from "./selection.js";
+import {
+  selectBatch,
+  type BatchSelection,
+  type EntryRefusalFacts,
+} from "./selection.js";
 import { runSingleton } from "./singletonTick.js";
 import type { AgentBounds, AttemptContext } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
@@ -636,8 +640,8 @@ export class Dispatcher {
       ...(this.opts.quarantinedSlugs !== undefined
         ? { quarantinedSlugs: this.opts.quarantinedSlugs }
         : {}),
-      selection: (chain, pending, isForkResolved) =>
-        this.selection(chain, pending, isForkResolved),
+      selection: (chain, pending, isForkResolved, refusalFacts) =>
+        this.selection(chain, pending, isForkResolved, refusalFacts),
     };
   }
 
@@ -653,6 +657,7 @@ export class Dispatcher {
     chain: Chain,
     pending: readonly PendingEntry[],
     isForkResolved: (slug: string) => boolean,
+    refusalFacts: EntryRefusalFacts,
   ): BatchSelection {
     return selectBatch({
       chain,
@@ -661,6 +666,7 @@ export class Dispatcher {
       ...(this.opts.quarantinedSlugs !== undefined
         ? { quarantinedSlugs: this.opts.quarantinedSlugs }
         : {}),
+      refusalFacts,
       maxParallel: this.maxParallel,
     });
   }
@@ -945,7 +951,7 @@ export class Dispatcher {
    *
    * Every step below is the tick's own: `chainLoader`,
    * `readPendingForDecision` (`src/pendingLedger.ts`),
-   * `pickableEntries`, `partitionByFileOverlap`, `attempts.readAll`,
+   * `pickableSelection`, `partitionByFileOverlap`, `attempts.readAll`,
    * `phasePromptPath`, `renderPrompt`. The verb this replaces re-derived
    * three of them beside the dispatcher and disagreed with it on all three
    * (operator ruling 2026-08-03), which is the failure this method exists to
@@ -1002,11 +1008,21 @@ export class Dispatcher {
       (chainModule.forkResolver ?? this.opts.forkResolver)?.(
         this.opts.repoRoot,
       ) ?? (() => true);
+    // The two facts a chain's declared per-entry refusal is judged against,
+    // read here because the selection below is where they are consulted — the
+    // same map the context carries further down, so a preview asks the
+    // chain's predicate about exactly the records a tick would.
+    const priorAttempts = await this.attempts.readAll();
     // The selection a fanout tick would make on this queue, under this
     // chain's declared knobs — taken from the one derivation `runFanout`
     // runs, never re-spelled here (.claude/rules/engineering.md, "A module
     // is one job").
-    const { pickable, batches } = this.selection(chain, pending, isForkResolved);
+    const { pickable, batches } = this.selection(
+      chain,
+      pending,
+      isForkResolved,
+      { priorAttempts, headSha: await git.revParse(this.opts.repoRoot) },
+    );
 
     let entry: PendingEntry | undefined;
     if (phase.concurrency === "fanout") {
@@ -1034,7 +1050,6 @@ export class Dispatcher {
       }
     }
 
-    const priorAttempts = await this.attempts.readAll();
     // Each concurrency's own context, field for field — a singleton reads the
     // whole queue and carries no assignment, a fanout entry carries its
     // assignment and no queue. A preview that widened either would show the

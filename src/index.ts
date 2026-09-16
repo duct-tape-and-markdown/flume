@@ -19,6 +19,9 @@ export { Baton } from "./Baton.js";
 export type {
   Chain,
   Concurrency,
+  // What `Chain.refusesEntry` is handed; a chain declaring the predicate as a
+  // named function needs the name.
+  EntryRefusalContext,
   // `TickResult.entries` carries one per fanout entry; a chain reading the
   // wave's per-entry outcomes into a helper needs the name.
   FanoutEntryOutcome,

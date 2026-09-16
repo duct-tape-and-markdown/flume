@@ -28,7 +28,7 @@ import {
 import type { Chain, Phase, TickContext, TickResult } from "./Phase.js";
 import type { NoCommitMode } from "./Prompt.js";
 import { buildGateRevert, priorAttemptRef } from "./priorAttempts.js";
-import { pickableEntries } from "./selection.js";
+import { bindEntryRefusal, pickableSelection } from "./selection.js";
 import { consultShouldRun, runAttempt } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import { checkMergedTipUnmoved } from "./tipVerify.js";
@@ -72,13 +72,18 @@ export async function runSingleton(
   const isForkResolved = forkResolver?.(repoRoot) ?? (() => true);
   const capabilities = new Set(chain.capabilities ?? []);
   const quarantinedSlugs = leg.quarantinedSlugs;
-  const pickable = pickableEntries(
+  // Read before the selection, because the chain's declared per-entry
+  // refusal is judged against each entry's own record and the tip this tick
+  // starts from — the same map `ctxFacts` hands the agent below.
+  const priorAttempts = await leg.attempts.readAll();
+  const selected = pickableSelection({
     pending,
     isForkResolved,
     capabilities,
-    quarantinedSlugs,
-  );
-  const priorAttempts = await leg.attempts.readAll();
+    ...(quarantinedSlugs !== undefined ? { quarantinedSlugs } : {}),
+    refuses: bindEntryRefusal(chain, { priorAttempts, headSha: preHead }),
+  });
+  const pickable = selected.pickable;
 
   const ref = priorAttemptRef(phase);
 
@@ -88,6 +93,7 @@ export async function runSingleton(
     gateResults: [],
     pendingAfter: pending,
     pickableAfter: pickable,
+    refusedTags: selected.refusedTags,
     flumeDir: leg.flumeDir,
     configDir: leg.configDir,
     shippedTags: [],
@@ -487,6 +493,20 @@ export async function runSingleton(
   );
 
   const pendingAfterSingleton = await readPendingTolerant(leg);
+  // A second selection over a second world: this tick may have committed,
+  // and it may have left a record of its own. Both facts are re-read, so a
+  // chain's refusal judges the tree the handoff is about to route in rather
+  // than the one this tick opened on.
+  const postSelection = pickableSelection({
+    pending: pendingAfterSingleton,
+    isForkResolved,
+    capabilities,
+    ...(quarantinedSlugs !== undefined ? { quarantinedSlugs } : {}),
+    refuses: bindEntryRefusal(chain, {
+      priorAttempts: await leg.attempts.readAll(),
+      headSha: await git.revParse(repoRoot),
+    }),
+  });
   return {
     result: {
       phaseName: phase.name,
@@ -494,12 +514,10 @@ export async function runSingleton(
       ...(commitSha ? { commitSha } : {}),
       gateResults,
       pendingAfter: pendingAfterSingleton,
-      pickableAfter: pickableEntries(
-        pendingAfterSingleton,
-        isForkResolved,
-        capabilities,
-        quarantinedSlugs,
-      ),
+      pickableAfter: postSelection.pickable,
+      // Paired with the set above, not with the tick's opening one: a
+      // handoff routes on what is pickable now.
+      refusedTags: postSelection.refusedTags,
       flumeDir: leg.flumeDir,
       configDir: leg.configDir,
       ...(preWtHead ? { baseSha: preWtHead } : {}),

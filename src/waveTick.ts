@@ -191,12 +191,23 @@ export async function runFanout(
   // Foundations governor: resolve the per-tick fork predicate once, then let
   // it gate selection alongside `blockedBy`. Default: every fork resolved.
   const isForkResolved = forkResolver?.(repoRoot) ?? (() => true);
+  // spec/chain.md "What a hook receives": one read of prior-attempts/ for
+  // the whole wave — every entry's TickContext gets the same map, since
+  // the records on disk don't change mid-wave. Read here rather than beside
+  // that use because selection needs it first: a chain's declared per-entry
+  // refusal is judged against each entry's own record and the tip this wave
+  // is about to branch from.
+  const priorAttempts = await leg.attempts.readAll();
   // spec/loop.md "Repeated identical failures": `quarantinedTags` is
   // reported on the result (below) so a chain's handoff can tell
   // "quarantined open" from "genuinely pickable" without re-deriving it
-  // from pendingAfter.
-  const { pickable, quarantinedTags, batches, partitionIgnore } =
-    leg.selection(chain, pending, isForkResolved);
+  // from pendingAfter. `refusedTags` is the same service for the other
+  // hold — the chain's own refusal — and rides the result beside it.
+  const { pickable, quarantinedTags, refusedTags, batches, partitionIgnore } =
+    leg.selection(chain, pending, isForkResolved, {
+      priorAttempts,
+      headSha: preHead,
+    });
 
   if (pickable.length === 0) {
     // No agent ran — not a no-commit *agent* tick, so nothing to classify.
@@ -213,6 +224,7 @@ export async function runFanout(
         shippedTags: [],
         revertedTags: [],
         quarantinedTags,
+        refusedTags,
         nothingPickable: true,
         ...(queueParseFailure ? { queueParseFailure } : {}),
       },
@@ -324,11 +336,6 @@ export async function runFanout(
       if (r && r.extraEnv) extraEnvByIndex[i] = r.extraEnv;
     }
   }
-
-  // spec/chain.md "What a hook receives": one read of prior-attempts/ for
-  // the whole wave — every entry's TickContext gets the same map, since
-  // the records on disk don't change mid-wave.
-  const priorAttempts = await leg.attempts.readAll();
 
   // Run agent in each worktree concurrently — skipping any entry whose
   // setupWorktree hook threw above. Its worktree/branch still get torn
@@ -972,6 +979,15 @@ export async function runFanout(
   });
 
   const pendingAfterWave = await readPendingTolerant(leg);
+  // The post-wave re-derivation is a second selection over a second world:
+  // this wave's cherry-picks and ledger commit moved the tip, and its own
+  // records are now on disk. Re-read both rather than reusing the wave's
+  // opening facts — a refusal judged against the tip this wave started from
+  // would hold an entry back over a world that no longer exists.
+  const postSelection = leg.selection(chain, pendingAfterWave, isForkResolved, {
+    priorAttempts: await leg.attempts.readAll(),
+    headSha: await git.revParse(repoRoot),
+  });
   return {
     result: {
       phaseName: phase.name,
@@ -979,8 +995,10 @@ export async function runFanout(
       ...(chorSha ? { commitSha: chorSha } : {}),
       gateResults: allGateResults,
       pendingAfter: pendingAfterWave,
-      pickableAfter: leg.selection(chain, pendingAfterWave, isForkResolved)
-        .pickable,
+      pickableAfter: postSelection.pickable,
+      // Paired with the set above, not with the wave's opening one: a
+      // handoff routes on what is pickable now.
+      refusedTags: postSelection.refusedTags,
       flumeDir: leg.flumeDir,
       configDir: leg.configDir,
       // The tip every worktree in this wave was provisioned from

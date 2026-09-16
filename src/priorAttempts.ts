@@ -118,6 +118,21 @@ function priorAttemptMapKey(ref: PriorAttemptRef): string {
 }
 
 /**
+ * The key one entry's own record occupies in that map, for a reader holding
+ * the entry rather than the ref — selection, which judges a chain's declared
+ * per-entry refusal against the record standing for each entry it is about to
+ * offer (`bindEntryRefusal`, `src/selection.ts`).
+ *
+ * Here rather than beside that reader: the join and the slug are this
+ * module's, and a second spelling of either is how a lookup comes to miss a
+ * record the walk filed under a key it composed differently
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+export function entryAttemptKey(entry: PendingEntry): string {
+  return priorAttemptMapKey({ key: slugify(entry.tag), keyspace: "entry" });
+}
+
+/**
  * The ref a persisted record was written under, read back off the record's
  * own stamped fields — the inverse of what {@link PriorAttemptStore.write}
  * stamps. `clearStale` re-derives the path of a record it enumerated this

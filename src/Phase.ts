@@ -78,6 +78,39 @@ export interface ShipContext {
 }
 
 /**
+ * Facts about one entry the gate switch cleared, handed to
+ * {@link Chain.refusesEntry} so the chain can hold that one entry back
+ * without declining the phase.
+ *
+ * Every field is something the engine already holds at the moment it takes
+ * the set — the entry as read, the record standing for it, and the tip the
+ * read was taken at — so a predicate reaches for none of it itself
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ */
+export interface EntryRefusalContext {
+  /** The entry being judged, as this tick read it from the queue. */
+  entry: PendingEntry;
+  /**
+   * The entry's own latest persisted prior-attempt record, absent on a first
+   * attempt — the same record `TickContext.priorAttempts` carries under
+   * `entry:<tag slug>`, read with the dispatcher's own reader and its own
+   * tolerance (a corrupt or unrecognized-mode record reads as absent).
+   *
+   * A predicate asking "did the last attempt at this entry reach anything"
+   * reads the record's own `mode` and its `headSha` anchor rather than
+   * reconstructing either from the queue or from git.
+   */
+  priorAttempt?: PriorAttempt;
+  /**
+   * The trunk tip this selection was taken at — the same sha the records
+   * above are anchored against, so "this record was written at the world as
+   * it now stands" is a comparison and not an inference.
+   */
+  headSha: string;
+}
+
+/**
  * Context handed to a phase's `promptArgs` builder when constructing the
  * agent invocation for one tick.
  */
@@ -359,6 +392,28 @@ export interface TickResult {
    * genuinely pickable one, without re-deriving it.
    */
   quarantinedTags?: readonly QuarantinedTag[];
+  /**
+   * Every entry this chain's own {@link Chain.refusesEntry} held back from
+   * the set reported on {@link pickableAfter} above, by tag, in queue order.
+   *
+   * Paired with that set rather than with the tick's opening one: a `handoff`
+   * routes on what is pickable *now*, and the refusal is the only reason an
+   * entry the gate switch clears can be missing from it without the
+   * quarantine having taken it. Without this field a chain reading a
+   * shrunken `pickableAfter` cannot tell its own refusal from a drained
+   * queue — the same silent degradation `quarantinedTags` exists to prevent
+   * for the other holder-back (`.claude/rules/engineering.md`, *Loud or
+   * nothing*).
+   *
+   * Empty, never absent, on every tick the engine computed a pickable set
+   * for — which is every tick that ran a phase, under either concurrency. A
+   * chain declaring no refusal reads `[]` here on every tick.
+   *
+   * A fact, never a verdict: the engine says which entries the chain's own
+   * predicate declined, and nothing about why or what to do next
+   * (`.claude/rules/engine-boundary.md`, *Routing rule*).
+   */
+  refusedTags?: readonly string[];
   /**
    * spec/loop.md "The no-commit taxonomy": true iff this fanout tick found
    * nothing pickable (after the quarantine drop above) and therefore never
@@ -687,6 +742,31 @@ export interface Chain {
    * stays non-pickable until the chain names it here.
    */
   capabilities?: string[];
+  /**
+   * A per-entry refusal this chain declares. Answered `true` for an entry the
+   * gate switch and this run's quarantine both cleared, the engine holds that
+   * entry back from every pickable set the tick reports — the wave's own
+   * batch, `TickContext.pickable` and `TickResult.pickableAfter` alike — and
+   * names it on `TickResult.refusedTags`.
+   *
+   * The injection point is the chain's, the enforcement the engine's
+   * (`.claude/rules/engine-boundary.md`, *Capability vs convention*): which
+   * entry to decline, and on what evidence, is the declarer's whole business,
+   * and the engine reads the answer as "not this tick" and nothing more. It
+   * neither supplies a predicate of its own nor a reason vocabulary for one.
+   * Undeclared or omitted refuses nothing: every entry the gate switch clears
+   * stays pickable, and `refusedTags` is empty.
+   *
+   * Consulted at selection time, before any worktree is created — the same
+   * place and shape as the gate switch — so a refused entry is skipped rather
+   * than picked, provisioned, and then declined. Synchronous and pure over
+   * {@link EntryRefusalContext}: selection is not an async seam, and every
+   * fact a tick holds about the entry is already on that context. A predicate
+   * that throws propagates and fails the tick rather than being folded into a
+   * verdict the chain never reached
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  refusesEntry?: (ctx: EntryRefusalContext) => boolean;
   /**
    * Override for the `flume loop` supervisor's repeated-failure policy —
    * the run-scoped quarantine and the consecutive-identical-failure abort
