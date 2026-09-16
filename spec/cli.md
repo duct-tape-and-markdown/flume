@@ -257,8 +257,9 @@ which resolves through junctions and symlinks to the file's realpath, against
 comparison. Through any junction- or symlink-based install (pnpm's linked
 store) a raw string comparison never matches, `main()` never runs, and the
 process exits 0 having done nothing — a silent no-op that looks like success.
-Guards: an undefined `argv[1]` is not direct; a throwing `realpathSync` falls
-back to the raw comparison rather than crashing the import.
+Guards: an undefined `argv[1]` is not direct; a throwing `realpathSync` compares
+the unresolved path instead, in the same alphabet, rather than crashing the
+import.
 
 ## A CJS-context host is refused, never relayed
 

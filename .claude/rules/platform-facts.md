@@ -89,6 +89,23 @@ This is **not** the `git worktree add` limit above. That one is git's own
 ~200-char refusal, which `toNamespacedPath` cannot reach because git builds the
 path itself. This one is the general Node fs limit, which it does fix.
 
+## `realpathSync` keeps the `\\?\` prefix only where nothing resolved
+
+Node's JS `realpathSync` builds its answer from the argument it was handed: a
+namespaced path comes back namespaced when no component was a link, and comes
+back as `readlink`'s un-prefixed target when one was. Two answers over one
+file differ by the prefix alone, decided only by how that file was installed —
+a junction- or symlink-based install (pnpm's linked store) and a plain copy
+spell the same file two ways. `realpathSync.native` (libuv) strips the prefix
+unconditionally.
+
+So a namespaced answer that is **compared** rather than handed back to an fs
+call is folded out of the namespaced alphabet first — `plainPath`
+(`src/paths.ts`) is the idiom, `namespacedJoin`'s inverse — on every leg of
+the comparison, the throwing one included. The fold is unconditional: no posix
+path or posix `realpathSync` answer can begin with the prefix, so nothing is
+gated on the platform.
+
 ## Filesystem `NAME_MAX` is 255, and scaffolding eats into it
 
 Conservatively shared across ext4, APFS, and NTFS. Any identifier that becomes
