@@ -1,5 +1,179 @@
 [
   {
+    "tag": "INIT-WRITES-THE-ESM-MANIFEST-AND-ANSWERS-HELP",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/init.ts",
+          "description": "the state root gains a package.json declaring \"type\": \"module\", beside the declaration, chain and queue it already writes"
+        },
+        {
+          "path": "harness/cli.ts",
+          "description": "a --help after the verb answers before the no-arguments refusal reads it as an argument"
+        },
+        {
+          "path": "tests/harnessInit.test.ts",
+          "description": "the manifest init writes, and init --help"
+        },
+        {
+          "path": "scripts/smoke-install.mjs",
+          "description": "the smoke runs the init verb over npm init's own manifest and loads the chain it wrote, without the type=module patch that masked this"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the chain `flume-harness init` writes never loads on node 22 with no \"type\": \"module\" in scope, and `init --help` refuses as an argument",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Adoption and upgrade"
+    },
+    "acceptance": "init writes the state-root manifest; the install smoke adopts over the manifest `npm init` produces and loads the chain init wrote; `flume-harness init --help` prints usage and exits 0 before anything is written.",
+    "tests": [
+      "flume-harness init writes a state-root package.json declaring type module",
+      "flume-harness init --help prints usage and exits 0 without writing a state root"
+    ],
+    "pins": [],
+    "notes": "Measured in `.claude/rules/platform-facts.md`, *A CommonJS-scoped `chain.ts` stops loading the ESM-only package at node 22.23*: the init-written chain never loaded on node 22, a hand-written one dies at 22.23, node 24 hides both. The smoke's `npm pkg set type=module` is why no lane saw it. Pilot report; wants a 0.16.1."
+  },
+  {
+    "tag": "STATUS-NAMES-A-DEAD-CHAIN-AS-A-ROW",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cliChainLoad.ts",
+          "description": "the best-effort load hands its caller the failure as a fact, rather than printing for every surface"
+        },
+        {
+          "path": "src/cli.ts",
+          "description": "status renders that fact as a row of its own listing, before the pending count"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the row, and the two chain-load-failure cases already there"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`flume status` over a chain that failed to load prints stdout byte-identical to a healthy repo — the failure rides stderr alone",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "`flume status` owes exactly this"
+    },
+    "acceptance": "status prints `chain: failed to load — <reason>` as a row of its listing before the pending count, on the listing's own stream, exit still 0; `flume job status` and `wake`/`sleep` keep the report they have.",
+    "tests": [
+      "flume status prints the chain-load failure as a row of its listing before the pending count"
+    ],
+    "pins": [],
+    "notes": "Ruled at 9af54562, item 6. The shared load prints for four surfaces, so the fact has to reach status to be rendered there (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never rediscovered*). tests/cli.test.ts:1342 asserts `not.toContain` over whole stdout — re-read that arm while the line moves (`posture-sweep.md`, the negative-assertion lens)."
+  },
+  {
+    "tag": "FLUME-HELP-IS-THE-SAME-ANSWER",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the top-level short-circuit takes the bare verb beside the two flags"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "the bare verb's answer, against the flag's"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`flume help` exits 64 with `unknown command: help` — the first verb a new operator types",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Subcommand surface"
+    },
+    "acceptance": "`flume help` prints what `flume --help` prints and exits 0, short-circuiting before any chain load or baton read.",
+    "tests": [
+      "flume help prints the same usage as flume --help and exits 0"
+    ],
+    "pins": [],
+    "notes": "Pilot's first command after adoption. src/cli.ts:221 short-circuits `--help`/`-h` alone; the bare verb falls through to the unknown-command refusal at :1365. The text stays src/cliHelp.ts's — this is one arm on the dispatch, not a second usage string."
+  },
+  {
+    "tag": "A-MIGRATION-NOTE-OPENS-WITH-THE-MINORS-IT-SKIPS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/MIGRATING-0.16.md",
+          "description": "the head names 0.13-0.15 and where their breaks are read; § 3's example reads the record through the exported types"
+        },
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "the scan, beside the MIGRATING-page linkage scan already there"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "docs/MIGRATING-0.16.md names the minors it does not cover only in its closing See also, and its § 3 example reads a record's mode as a bare string",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "Versioning policy"
+    },
+    "acceptance": "every migration note names, ahead of its first section, the released minors between it and the previous note, and a scan reds one that does not; § 3's example reads a prior-attempt record through the exported PriorAttempt / PriorAttemptMode.",
+    "tests": [
+      "every docs/MIGRATING note names the minors it does not cover ahead of its first section"
+    ],
+    "pins": [],
+    "notes": "A pilot jumped 0.14 -> 0.16 and missed 0.15's `voluntary-bail` -> `clean-exit`: a `{ mode?: string }` cast typechecked, compared false forever, and disarmed their brake. Released minors are readable from CHANGELOG's headings; the gap set must be non-empty for the scan to judge anything (engineering.md, *A green verdict is proven non-vacuous*)."
+  },
+  {
+    "tag": "THE-0.16-NOTE-LEADS-WITH-THE-MANIFEST-STEP",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": [
+        "INIT-WRITES-THE-ESM-MANIFEST-AND-ANSWERS-HELP"
+      ]
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "docs/MIGRATING-0.16.md",
+          "description": "the upgrade path opens with the state-root manifest; the porting table's runner row prices what it asks for"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the same pricing where the runner is declared"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the 0.16 note's upgrade path says nothing about the state-root manifest, and its porting table prices a non-vitest runner as one table cell",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "Adoption and upgrade"
+    },
+    "acceptance": "the note's upgrade steps open with adding `.flume/package.json` (`\"type\": \"module\"`) ahead of any other step, and the docs say where the runner is declared that a non-vitest consumer authors a RunnerFactory over run/runAtBase/lanes — adoption's largest single piece.",
+    "tests": [],
+    "pins": [],
+    "notes": "Two pilot findings in one file: an existing consumer is one node patch from a dead chain (`platform-facts.md`), and the adoption table's runner row (docs/MIGRATING-0.16.md:341) read as a one-liner to a consumer whose stack is not node. Blocked on the init entry so the step names a manifest init writes."
+  },
+  {
     "tag": "EVERY-TEST-EXEC-RUNS-UNDER-THE-DECLARED-CAP",
     "gate": {
       "kind": "open"
