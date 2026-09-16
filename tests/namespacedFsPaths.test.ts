@@ -27,6 +27,12 @@
  * are one property; a scan holding only the first passes the site that folds
  * correctly and then hands the answer to a reader that cannot take it.
  *
+ * Where that answer goes out of reach — a callback form hands it to a
+ * function the site passed, and nothing of it crosses the call expression —
+ * the scan reports the call as unfollowed rather than returning the empty
+ * escape verdict a clean call returns. An answer nothing read is not an
+ * answer that was judged (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
  * And it reads the head the fold arrives at, because a composed path is not
  * a safer argument everywhere: node's JS realpath walk refuses every
  * namespaced drive path through node 22 — `realpathSync` throwing it, the
@@ -69,6 +75,7 @@ import {
   describeBareCall,
   describeEscape,
   describeJsForm,
+  describeUnfollowed,
   scanFsCalls,
   type FsCallScan,
 } from "./helpers/namespacedFsScan.ts";
@@ -275,7 +282,13 @@ export function entryIdentity(argv1: string, done: (id: string) => void): void {
 }
 `;
 
-/** The head that does take it, over the same fold and the same callback. */
+/**
+ * The head that does take it, over the same fold and the same callback — and
+ * so the one source on which every verdict but the answer's is green: the
+ * path composes, and `.native` is the head that resolves a namespaced one.
+ * What remains is where the answer went, which is a callback, and that is the
+ * axis the unfollowed report decides.
+ */
 const CALLBACK_NATIVE_SOURCE = CALLBACK_JS_FORM_SOURCE.replace(
   "  realpath(",
   "  realpath.native(",
@@ -436,6 +449,54 @@ describe("a namespaced path never leaves its fs call", () => {
       ),
     ).toEqual([]);
   });
+
+  it("the namespaced-fs scan reports a path-answering call whose answer goes to a callback rather than judging it clean", () => {
+    const callback = scanFsCalls("src/fixture.ts", CALLBACK_NATIVE_SOURCE);
+
+    // Every other verdict is green over this source — the path composes and
+    // the head is the one that resolves a namespaced path — so the answer is
+    // all that is left to judge, and the walk above cannot reach it: it never
+    // crosses the call expression. Without a report of its own, this call is
+    // an unresolved input the scan proceeds over
+    // (`.claude/rules/engineering.md`, *Loud or nothing*).
+    expect(callback.bare.map((call) => describeBareCall(callback, call))).toEqual([]);
+    expect(callback.jsForm.map((call) => describeJsForm(callback, call))).toEqual([]);
+    expect(callback.escaped.map((e) => describeEscape(callback, e))).toEqual([]);
+    expect(callback.unfollowed.map((call) => describeUnfollowed(callback, call))).toEqual([
+      "src/fixture.ts:7 — realpath() answers a path in win32's namespaced " +
+        "alphabet into a callback, which this scan follows no further than the " +
+        "call expression; where that answer is spent is unread",
+    ]);
+    // And the escape verdict's vacuity count does not claim it: a call that
+    // verdict never judged must not read as one more call it judged clean.
+    expect(callback.answered).toBe(0);
+
+    // The route is what this turns on, not the name: the same `realpath` off
+    // the promise face of `fs` answers through the expression, which the walk
+    // does read — so it is counted and followed rather than reported here.
+    const promised = scanFsCalls("src/fixture.ts", PROMISES_REALPATH_SOURCE);
+    expect(promised.answered).toBe(1);
+    expect(promised.unfollowed).toEqual([]);
+  });
+
+  it("no src/ or harness/ call answers a path into a callback, so the unfollowed report is empty by design", () => {
+    // Empty is the whole verdict here, and it is spelled rather than inherited
+    // from the escape verdict beside it (`.claude/rules/engineering.md`, *A
+    // green verdict is proven non-vacuous*): neither tree calls an async
+    // `node:fs` form today, so this report has no subject to count. The day one
+    // arrives, the escape verdict silently stops covering that call and this
+    // case is what says so.
+    const scans = [...scanTree("src"), ...scanTree("harness")];
+    // The scan reached fs importers at all — the walk, the import clause and
+    // the call-site regex all still match — which is what an empty-by-design
+    // verdict cannot assert for itself.
+    expect(scans.filter((scan) => scan.symbols.length > 0).length).toBeGreaterThan(0);
+    expect(
+      scans.flatMap((scan) =>
+        scan.unfollowed.map((call) => describeUnfollowed(scan, call)),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("a composed path reaches only the head that takes it", () => {
@@ -467,7 +528,9 @@ describe("a composed path reaches only the head that takes it", () => {
 
     // Same green everywhere else as the sync source above: the path composes,
     // and the answer goes to a callback rather than out through the call
-    // expression, so neither existing verdict can see this call.
+    // expression, so the composition and escape verdicts both pass over this
+    // call — the escape one by unreachability, which is the unfollowed report
+    // below and not this case's subject.
     expect(refused.bare.map((call) => describeBareCall(refused, call))).toEqual([]);
     expect(refused.escaped.map((e) => describeEscape(refused, e))).toEqual([]);
     expect(refused.nativeOnly).toBe(1);

@@ -51,6 +51,14 @@
  * that name is, which is the fold's own module to say and the composition
  * verdict above to judge.
  *
+ * **And an answer that never crosses that expression.** `node:fs`'s callback
+ * forms hand their answer to a function the call site passed, so the walk
+ * above reaches nothing and returns nothing — which reads exactly like a
+ * clean call. Such a call is reported unfollowed instead ({@link
+ * UnfollowedAnswer}): the refusal that bounds the walk's reach, rather than a
+ * verdict passed over an answer nothing read (`.claude/rules/engineering.md`,
+ * *Loud or nothing*).
+ *
  * **Which head takes it.** The last thing the contract says is whether the
  * symbol's plain spelling can be handed a namespaced path at all. Node's JS
  * `realpath` and `realpathSync` cannot take one through node 22 — the sync
@@ -108,6 +116,12 @@ const PROMISES_MODULE = /^(?:node:)?fs\/promises$/;
  */
 const PROBE_SOURCE = new RegExp(`(?:^|/)${PROBE_STEM}\\.ts$`);
 
+/**
+ * Where a path-answering fs call's answer arrives, and so whether this scan
+ * can follow it — {@link PathContract.answer}.
+ */
+type AnswerRoute = "none" | "expression" | "callback";
+
 /** Which arguments of one fs call carry a path, and who composed them. */
 interface PathContract {
   /** The argument positions holding a path, given the call's arity. */
@@ -118,12 +132,21 @@ interface PathContract {
    */
   calleeFolds: boolean;
   /**
-   * `true` when the call answers with a path built from the one it was
-   * handed, so a namespaced argument comes back out through the answer.
-   * Content (`readFile`), stats (`stat`), a boolean or nothing at all carry
-   * no path, and the fold is spent at the call.
+   * Where a path built from the one the call was handed comes back out, so a
+   * namespaced argument leaves the call again.
+   *
+   * - `"none"` — nothing of the path comes back. Content (`readFile`), stats
+   *   (`stat`), a boolean or nothing at all carry no path, and the fold is
+   *   spent at the call.
+   * - `"expression"` — the call evaluates to the path, so the answer rides
+   *   out through the expression it is written into, which is what {@link
+   *   readerPastFs} follows.
+   * - `"callback"` — the path arrives at a function the call site passed in,
+   *   and nothing of it crosses the call expression at all. That walk cannot
+   *   reach it, so the call is reported unfollowed rather than judged clean
+   *   ({@link UnfollowedAnswer}).
    */
-  answersPath: boolean;
+  answer: AnswerRoute;
   /**
    * `true` when the symbol's JS implementation refuses a path in win32's
    * namespaced alphabet, so only its `.native` head reaches disk with one
@@ -141,9 +164,32 @@ interface PathContract {
 const CALLER_FOLDS_FIRST: PathContract = {
   positions: () => [0],
   calleeFolds: false,
-  answersPath: false,
+  answer: "none",
   nativeOnly: false,
 };
+
+/**
+ * One path-answering name as `node:fs` binds its two spellings: the async one
+ * is the callback form, whose answer arrives at a function the call site
+ * passed and never crosses the call expression, and the sync one answers
+ * through that expression itself.
+ *
+ * The route is declared per spelling here rather than read off the Sync
+ * suffix where it is used: node's naming is not a fact this scan gets to
+ * infer from a name. `node:fs/promises` binds the async spelling to a promise
+ * the expression does carry, which is {@link contractFor}'s to say.
+ */
+function answeringPair(
+  callbackForm: string,
+  syncForm: string,
+  nativeOnly: boolean,
+): [string, PathContract][] {
+  const shared = { positions: () => [0], calleeFolds: false, nativeOnly };
+  return [
+    [callbackForm, { ...shared, answer: "callback" }],
+    [syncForm, { ...shared, answer: "expression" }],
+  ];
+}
 
 /**
  * The calls whose path arguments are not "the first one, the caller's".
@@ -161,7 +207,8 @@ const CALLER_FOLDS_FIRST: PathContract = {
  * The middle family is node's path-answering one: each builds its answer
  * from the path it was given (`mkdir`'s under `{ recursive }`, which is why
  * it is here rather than in the default), so a namespaced argument leaves
- * again through the return value.
+ * again — out through the return value at the sync spelling, into a callback
+ * at the async one ({@link answeringPair}).
  *
  * `realpath` and `realpathSync` sit last because they answer a path *and*
  * are the spellings whose bare form refuses the argument: node's JS walk
@@ -189,42 +236,21 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
     {
       positions: () => [0, 1],
       calleeFolds: false,
-      answersPath: false,
+      answer: "none",
       nativeOnly: false,
     },
   ]),
-  ...[
-    "readlink",
-    "readlinkSync",
-    "mkdtemp",
-    "mkdtempSync",
-    "mkdir",
-    "mkdirSync",
-  ].map<[string, PathContract]>((fn) => [
-    fn,
-    {
-      positions: () => [0],
-      calleeFolds: false,
-      answersPath: true,
-      nativeOnly: false,
-    },
-  ]),
-  ...["realpath", "realpathSync"].map<[string, PathContract]>((fn) => [
-    fn,
-    {
-      positions: () => [0],
-      calleeFolds: false,
-      answersPath: true,
-      nativeOnly: true,
-    },
-  ]),
+  ...answeringPair("readlink", "readlinkSync", false),
+  ...answeringPair("mkdtemp", "mkdtempSync", false),
+  ...answeringPair("mkdir", "mkdirSync", false),
+  ...answeringPair("realpath", "realpathSync", true),
   [
     "isDirectoryOrAbsent",
     {
       positions: (arity) =>
         Array.from({ length: Math.max(arity - 1, 0) }, (_, i) => i + 1),
       calleeFolds: true,
-      answersPath: false,
+      answer: "none",
       nativeOnly: false,
     },
   ],
@@ -234,15 +260,22 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
  * The contract `fn` carries, given the specifier it was imported from.
  *
  * Every contract is the symbol's own, except where the promise face of `fs`
- * reaches a different implementation under the same name: the JS-form refusal
- * ({@link PathContract.nativeOnly}) is `node:fs`'s alone, because
- * `node:fs/promises` has no JS form to refuse and no `.native` head a site
- * could be asked for ({@link PROMISES_MODULE}).
+ * reaches a different implementation under the same name ({@link
+ * PROMISES_MODULE}). Two fields are that one fact: there is no JS form to
+ * refuse and no `.native` head a site could be asked for ({@link
+ * PathContract.nativeOnly}), and the answer comes back through the call
+ * expression rather than at a callback ({@link PathContract.answer}). Both
+ * are re-keyed here and nowhere else, so a reader of a contract never has to
+ * remember which spelling it came from.
  */
 function contractFor(specifier: string, fn: string): PathContract {
   const contract = PATH_CONTRACTS.get(fn) ?? CALLER_FOLDS_FIRST;
-  if (!contract.nativeOnly || !PROMISES_MODULE.test(specifier)) return contract;
-  return { ...contract, nativeOnly: false };
+  if (!PROMISES_MODULE.test(specifier)) return contract;
+  return {
+    ...contract,
+    answer: contract.answer === "callback" ? "expression" : contract.answer,
+    nativeOnly: false,
+  };
 }
 
 /**
@@ -594,11 +627,18 @@ function readerPastFs(
     if (outer.callee === ALPHABET_FOLD) return undefined;
     const fn = fsCallee(outer.callee, fsSymbols);
     if (fn === undefined) return outer.callee;
-    // By name, not by specifier: this walk reads `answersPath` alone, and no
-    // specifier varies it — the one field {@link contractFor} re-keys is the
-    // JS-form refusal, which is the argument's verdict and not the answer's.
+    // What this walk asks of a call it passes through is whether the alphabet
+    // rides on out of it, and only `"expression"` does: a call that spends the
+    // path answers `"none"`, and a callback form puts its answer where no
+    // expression reaches.
+    //
+    // Read by name rather than by specifier, so the promise face of `fs` —
+    // which {@link contractFor} re-keys to `"expression"` — stops the walk at
+    // a call whose answer does ride out. That divergence is the conservative
+    // direction, and the shape it declines to chase is already red at the
+    // outer call's own path argument, which reads as no composition.
     const contract = PATH_CONTRACTS.get(fn) ?? CALLER_FOLDS_FIRST;
-    if (!contract.answersPath) return undefined;
+    if (contract.answer !== "expression") return undefined;
     at = outer.start;
   }
   return undefined;
@@ -611,6 +651,20 @@ export interface EscapedNamespacedPath {
   /** The callee that read the answer, as the source spells it. */
   reader: string;
   /** 1-indexed line of the fs call that answered, for the failure message. */
+  line: number;
+}
+
+/**
+ * One namespaced answer this scan's outward walk cannot reach: the call
+ * handed it to a callback, so it crosses no expression ({@link
+ * PathContract.answer}). Where that answer goes is unread — which is what
+ * this says, rather than letting an empty escape verdict read as a clean
+ * call (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+export interface UnfollowedAnswer {
+  /** The fs symbol that answered with a path, as the module binds it. */
+  fn: string;
+  /** 1-indexed line of the call that answered, for the failure message. */
   line: number;
 }
 
@@ -652,6 +706,14 @@ export interface FsCallScan {
   /** The answers of those calls that a non-fs callee read. */
   escaped: EscapedNamespacedPath[];
   /**
+   * The path-answering calls whose answer went to a callback instead, which
+   * the outward walk cannot follow. Reported rather than judged, and kept out
+   * of {@link FsCallScan.answered} for the same reason: the escape verdict
+   * has nothing to say about a call here, so a vacuity count claiming it
+   * would say that verdict had judged one more call than it did.
+   */
+  unfollowed: UnfollowedAnswer[];
+  /**
    * How many composed paths reached a symbol whose JS spelling refuses one
    * ({@link PathContract.nativeOnly}) — the vacuity count for {@link
    * FsCallScan.jsForm}, empty both for a module that spells every such call
@@ -674,10 +736,15 @@ export interface FsCallScan {
  * proven non-vacuous*).
  *
  * `escaped` is the other half: where a call answered with a path built from
- * a namespaced argument ({@link PathContract.answersPath}), the answer is
+ * a namespaced argument ({@link PathContract.answer}), the answer is
  * followed outward through the expression it was written into, and a callee
  * that is no fs call reading it is reported. `answered` is that verdict's
  * vacuity count, for the same reason `judged` is the composition verdict's.
+ *
+ * `unfollowed` is where that walk stops short: a call whose answer arrives at
+ * a callback crosses no expression, so the walk reaches nothing and would
+ * return exactly what a clean call returns. Those calls are reported instead,
+ * and counted in neither `answered` nor `escaped`.
  *
  * A member call whose receiver is something else (`api.readFile(…)`) is not a
  * call site of the imported symbol and is skipped; a callee the symbol itself
@@ -701,6 +768,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
   const isProbe = PROBE_SOURCE.test(module);
   const bare: BareFsCall[] = [];
   const escaped: EscapedNamespacedPath[] = [];
+  const unfollowed: UnfollowedAnswer[] = [];
   const jsForm: JsFormCall[] = [];
   const uncalled: string[] = [];
   let judged = 0;
@@ -738,7 +806,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
         }
         judged++;
         if (isComposed(masked, argument)) {
-          namespacedAnswer ||= contract.answersPath;
+          namespacedAnswer ||= contract.answer !== "none";
           namespacedArgument = true;
           continue;
         }
@@ -759,6 +827,12 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
         }
       }
       if (!namespacedAnswer) continue;
+      if (contract.answer === "callback") {
+        // The answer went where the walk below cannot reach, so the scan says
+        // so instead of returning nothing and reading as a clean call.
+        unfollowed.push({ fn, line: lineOf(index) });
+        continue;
+      }
       answered++;
       const reader = readerPastFs(masked, symbols, index);
       if (reader !== undefined) {
@@ -774,6 +848,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
     bare,
     answered,
     escaped,
+    unfollowed,
     nativeOnly,
     jsForm,
     uncalled,
@@ -792,6 +867,18 @@ export function describeJsForm(scan: FsCallScan, call: JsFormCall): string {
     `${scan.module}:${call.line} — ${call.callee}() is handed a path in ` +
     `win32's namespaced alphabet, which node's JS implementation refuses ` +
     `through node 22; only ${call.fn}.native resolves one`
+  );
+}
+
+/** An `UnfollowedAnswer` as one line of a failure message. */
+export function describeUnfollowed(
+  scan: FsCallScan,
+  call: UnfollowedAnswer,
+): string {
+  return (
+    `${scan.module}:${call.line} — ${call.fn}() answers a path in win32's ` +
+    `namespaced alphabet into a callback, which this scan follows no further ` +
+    `than the call expression; where that answer is spent is unread`
   );
 }
 
