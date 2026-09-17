@@ -32,7 +32,6 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import ts from "typescript";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Gate, GateContext } from "../src/Gate.ts";
@@ -51,8 +50,8 @@ import {
 } from "../src/flumeApi.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
 import { restatementsOf, sectionOf, walkOf } from "./helpers/docSections.ts";
+import { docWalk, type DocWalkRequest } from "./helpers/docWalk.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
-import { REPO_ROOT } from "./helpers/repoProgram.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
 import backlogGroomerFactory from "../examples/backlog-groomer-chain.ts";
 import cascadeFactory, {
@@ -2052,90 +2051,34 @@ it("docs/CHAIN-AUTHORING.md names exactly the built-in gates shellGate composes"
  * listing used to carry — each knob's binding class — from the bullet that
  * decides it, which is where the fact stops being a list.
  *
- * The knob list is read off the declaration through the repo program, never
- * kept as a second list beside it (*Derived state is computed, never restated
- * beside its source*): a field added to the type without a paragraph reds
- * here, which a hand-kept list could only do if someone remembered to extend
- * it. The checker resolves it, so the pin survives the block becoming a named
- * type rather than the inline literal it is today.
+ * The knob list is read off the declaration through `docWalk`
+ * (`tests/helpers/docWalk.ts`), never kept as a second list beside it
+ * (*Derived state is computed, never restated beside its source*): a field
+ * added to the type without a paragraph reds here, which a hand-kept list
+ * could only do if someone remembered to extend it. A checker resolves it, so
+ * the pin survives the block becoming a named type rather than the inline
+ * literal it is today.
  */
 describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the block", () => {
   /**
-   * Every property of `Chain["supervisorPolicy"]`, resolved by a checker.
-   *
-   * The tier is declared here rather than taken from `repoProgram`, which
-   * builds the whole repo's program for the scans that resolve across it
-   * (`tests/helpers/repoProgram.ts`): the subject is one block in one module,
-   * and a checker over that module alone — no lib, no resolution, no
-   * `@types` — answers it in a tenth of the time a repo program takes to
-   * start, which is what keeps this case in the fast lane
-   * (spec/worktrees.md, *The default test lane must stay fast*). A block that
-   * moved out of `src/Phase.ts` would resolve to nothing here rather than
-   * quietly to something else, and the vacuity pin below is what reds on it.
+   * The knobs `Chain["supervisorPolicy"]` declares, against the section that
+   * walks them — both armed by `docWalk` (`tests/helpers/docWalk.ts`), the one
+   * reader the three walks over this page share, so the resolution, its
+   * vacuity anchor and the section's own anchor are spelled once each rather
+   * than once per walk.
    */
-  const policyKnobs = (): string[] => {
-    const module = join(REPO_ROOT, "src/Phase.ts");
-    const program = ts.createProgram({
-      rootNames: [module],
-      options: { noLib: true, noResolve: true, types: [] },
-    });
-    const source = program.getSourceFile(module);
-    expect(source, "src/Phase.ts is in the program").toBeDefined();
-
-    let chainName: ts.Identifier | undefined;
-    ts.forEachChild(source!, (node) => {
-      if (ts.isInterfaceDeclaration(node) && node.name.text === "Chain") {
-        chainName = node.name;
-      }
-    });
-    expect(chainName, "src/Phase.ts declares an interface `Chain`").toBeDefined();
-
-    const checker = program.getTypeChecker();
-    const chain = checker.getDeclaredTypeOfSymbol(
-      checker.getSymbolAtLocation(chainName!)!,
-    );
-    const field = chain.getProperty("supervisorPolicy");
-    expect(field, "`Chain` declares `supervisorPolicy`").toBeDefined();
-    const policy = checker.getNonNullableType(
-      checker.getTypeOfSymbolAtLocation(field!, field!.valueDeclaration!),
-    );
-    return policy.getProperties().map((knob) => knob.name);
-  };
-
-  /**
-   * Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
-   * non-vacuous"): a resolution that fell through to an empty property list
-   * would walk zero knobs and pass, and a listing filtered against it would
-   * be empty too. One anchor rather than a second copy of the list — the
-   * count is what proves the set is the real one.
-   */
-  const declaredKnobs = (): string[] => {
-    const knobs = policyKnobs();
-    expect(knobs.length).toBeGreaterThan(1);
-    expect(knobs).toContain("quarantineScope");
-    return knobs;
-  };
-
-  /**
-   * The section under judgment, anchored before anything is read off it: a
-   * heading match that captured the wrong span would report every knob
-   * missing, or an empty walk against an empty span.
-   */
-  const policySection = (): string => {
-    const section = sectionOf(
-      readFileSync(
-        fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
-        "utf8",
-      ),
-      /^## \d+\. Supervisor policy \(`supervisorPolicy`\)$/m,
-    );
-    expect(section).toContain("`Chain.supervisorPolicy`");
-    return section;
+  const POLICY: DocWalkRequest = {
+    module: "src/Phase.ts",
+    interface: "Chain",
+    through: "supervisorPolicy",
+    member: "quarantineScope",
+    page: "docs/CHAIN-AUTHORING.md",
+    heading: /^## \d+\. Supervisor policy \(`supervisorPolicy`\)$/m,
+    anchor: "`Chain.supervisorPolicy`",
   };
 
   it("docs/CHAIN-AUTHORING.md's supervisor-policy section names every Chain.supervisorPolicy field the engine reads", () => {
-    const knobs = declaredKnobs();
-    const section = policySection();
+    const { members: knobs, section } = docWalk(POLICY);
 
     expect(
       [...walkOf(section, knobs)].sort(),
@@ -2144,8 +2087,7 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
   });
 
   it("docs/CHAIN-AUTHORING.md's supervisor-policy section names the knob set in one place", () => {
-    const knobs = declaredKnobs();
-    const section = policySection();
+    const { members: knobs, section } = docWalk(POLICY);
 
     // The walk is there before an absence is asserted beside it: over a
     // section that walks nothing, every listing reads as the only one
@@ -2166,8 +2108,7 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
   });
 
   it("docs/CHAIN-AUTHORING.md's supervisor-policy section says when each knob is bound", () => {
-    const knobs = declaredKnobs();
-    const section = policySection();
+    const { members: knobs, section } = docWalk(POLICY);
 
     /**
      * One bullet's body, its lead name through the line before the next
@@ -2226,73 +2167,21 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
  */
 describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () => {
   /**
-   * Every member of `Runner` (`harness/runner.ts`), resolved by a checker
-   * over that module alone — no lib, no resolution, no `@types`, for the
-   * reason the supervisor-policy pin above states: the subject is one
-   * interface in one module, and the cheap tier is what keeps the case in
-   * the fast lane (spec/worktrees.md, *The default test lane must stay
-   * fast*). An interface that moved out of `harness/runner.ts` resolves to
-   * nothing rather than quietly to something else, and the vacuity pin below
-   * is what reds on it.
+   * The operations `Runner` (`harness/runner.ts`) declares, against the
+   * section that prices them — armed by `docWalk` (`tests/helpers/docWalk.ts`),
+   * the reader the sibling walks above and below arm through too.
    */
-  const runnerOperations = (): string[] => {
-    const module = join(REPO_ROOT, "harness/runner.ts");
-    const program = ts.createProgram({
-      rootNames: [module],
-      options: { noLib: true, noResolve: true, types: [] },
-    });
-    const source = program.getSourceFile(module);
-    expect(source, "harness/runner.ts is in the program").toBeDefined();
-
-    let runnerName: ts.Identifier | undefined;
-    ts.forEachChild(source!, (node) => {
-      if (ts.isInterfaceDeclaration(node) && node.name.text === "Runner") {
-        runnerName = node.name;
-      }
-    });
-    expect(runnerName, "harness/runner.ts declares an interface `Runner`").toBeDefined();
-
-    const checker = program.getTypeChecker();
-    const runner = checker.getDeclaredTypeOfSymbol(
-      checker.getSymbolAtLocation(runnerName!)!,
-    );
-    return runner.getProperties().map((operation) => operation.name);
-  };
-
-  /**
-   * The section under judgment, anchored before anything is read off it: a
-   * heading match that captured the wrong span would report every operation
-   * missing, or an empty walk against an empty span.
-   */
-  const adoptionSection = (): string => {
-    const section = sectionOf(
-      readFileSync(
-        fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
-        "utf8",
-      ),
-      /^### What adoption costs$/m,
-    );
-    expect(section).toContain("**The runner is the largest single piece**");
-    return section;
-  };
-
-  /**
-   * Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
-   * non-vacuous"): a resolution that fell through to an empty property list
-   * would compare two empty sets and pass, and a mention list filtered
-   * against it would be empty too. One anchor rather than a second copy of
-   * the list — the count is what proves the set is the real one.
-   */
-  const declaredOperations = (): string[] => {
-    const operations = runnerOperations();
-    expect(operations.length).toBeGreaterThan(1);
-    expect(operations).toContain("runAtBase");
-    return operations;
+  const ADOPTION: DocWalkRequest = {
+    module: "harness/runner.ts",
+    interface: "Runner",
+    member: "runAtBase",
+    page: "docs/CHAIN-AUTHORING.md",
+    heading: /^### What adoption costs$/m,
+    anchor: "**The runner is the largest single piece**",
   };
 
   it("docs/CHAIN-AUTHORING.md's adoption section names every operation Runner declares", () => {
-    const operations = declaredOperations();
-    const section = adoptionSection();
+    const { members: operations, section } = docWalk(ADOPTION);
 
     expect(
       [...walkOf(section, operations)].sort(),
@@ -2301,8 +2190,7 @@ describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () =
   });
 
   it("docs/CHAIN-AUTHORING.md's adoption section names Runner's operation set in one place", () => {
-    const operations = declaredOperations();
-    const section = adoptionSection();
+    const { members: operations, section } = docWalk(ADOPTION);
 
     // The walk is there before an absence is asserted beside it: over a
     // section that walks nothing, every listing reads as the only one
@@ -2342,74 +2230,23 @@ describe("docs/CHAIN-AUTHORING.md — the adoption price walks the runner", () =
  */
 describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () => {
   /**
-   * Every member of `GateContext` (`src/Gate.ts`), resolved by a checker over
-   * that module alone — no lib, no resolution, no `@types`, the sibling
-   * runner-walk pin's tier and for its reason: the subject is one interface
-   * in one module, and the cheap tier keeps the case in the fast lane
-   * (spec/worktrees.md, *The default test lane must stay fast*). The
-   * unresolved `PendingEntry` import costs nothing here — a property's name
-   * is readable whether or not its type resolved. An interface that moved
-   * out of `src/Gate.ts` resolves to nothing rather than quietly to
-   * something else, and the vacuity pin below is what reds on it.
+   * The fields `GateContext` (`src/Gate.ts`) declares, against the section
+   * that walks them — armed by `docWalk` (`tests/helpers/docWalk.ts`), as the
+   * sibling walks over this page are. The unresolved `PendingEntry` import
+   * costs that reader's cheap tier nothing: a property's name is readable
+   * whether or not its type resolved.
    */
-  const gateContextFields = (): string[] => {
-    const module = join(REPO_ROOT, "src/Gate.ts");
-    const program = ts.createProgram({
-      rootNames: [module],
-      options: { noLib: true, noResolve: true, types: [] },
-    });
-    const source = program.getSourceFile(module);
-    expect(source, "src/Gate.ts is in the program").toBeDefined();
-
-    let contextName: ts.Identifier | undefined;
-    ts.forEachChild(source!, (node) => {
-      if (ts.isInterfaceDeclaration(node) && node.name.text === "GateContext") {
-        contextName = node.name;
-      }
-    });
-    expect(contextName, "src/Gate.ts declares an interface `GateContext`").toBeDefined();
-
-    const checker = program.getTypeChecker();
-    const context = checker.getDeclaredTypeOfSymbol(
-      checker.getSymbolAtLocation(contextName!)!,
-    );
-    return context.getProperties().map((field) => field.name);
-  };
-
-  /**
-   * Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
-   * non-vacuous"): a resolution that fell through to an empty property list
-   * would compare two empty sets and pass, and a section read against it would
-   * name nothing to restate. One anchor rather than a second copy of the list
-   * — the count is what proves the set is the real one.
-   */
-  const declaredFields = (): string[] => {
-    const fields = gateContextFields();
-    expect(fields.length).toBeGreaterThan(1);
-    expect(fields).toContain("baseSha");
-    return fields;
-  };
-
-  /**
-   * The section under judgment, anchored before anything is read off it: a
-   * heading match that captured the wrong span would report every field
-   * missing, or an empty walk against an empty span.
-   */
-  const gateSection = (): string => {
-    const section = sectionOf(
-      readFileSync(
-        fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
-        "utf8",
-      ),
-      /^### What's on `ctx`$/m,
-    );
-    expect(section).toContain("`GateContext` is the gate's whole input surface");
-    return section;
+  const GATE: DocWalkRequest = {
+    module: "src/Gate.ts",
+    interface: "GateContext",
+    member: "baseSha",
+    page: "docs/CHAIN-AUTHORING.md",
+    heading: /^### What's on `ctx`$/m,
+    anchor: "`GateContext` is the gate's whole input surface",
   };
 
   it("docs/CHAIN-AUTHORING.md's gate section names every GateContext field the engine sets", () => {
-    const fields = declaredFields();
-    const section = gateSection();
+    const { members: fields, section } = docWalk(GATE);
 
     expect(
       [...walkOf(section, fields)].sort(),
@@ -2418,8 +2255,7 @@ describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () =>
   });
 
   it("docs/CHAIN-AUTHORING.md's gate section names GateContext's field set in one place", () => {
-    const fields = declaredFields();
-    const section = gateSection();
+    const { members: fields, section } = docWalk(GATE);
 
     // The walk is there before an absence is asserted beside it: over a
     // section that walks nothing, every listing reads as the only one.
@@ -2439,7 +2275,7 @@ describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () =>
   });
 
   it("docs/CHAIN-AUTHORING.md's gate section says which stage sets each span field", () => {
-    const section = gateSection();
+    const { section } = docWalk(GATE);
 
     /**
      * One bullet's body, its lead name through the line before the next
