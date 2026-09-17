@@ -30,8 +30,15 @@ import {
   type PriorAttempt,
 } from "../src/Prompt.ts";
 // The roster comes from the package root rather than src/Prompt.ts: a chain
-// reads it there, which is the whole reason it is a runtime value.
-import { PRIOR_ATTEMPT_MODES } from "../src/index.ts";
+// reads it there, which is the whole reason it is a runtime value. The two
+// keyers come from there under their own names for the same reason, and are
+// spelled apart from the module's copies below so a case naming the package's
+// surface cannot be satisfied by the module import.
+import {
+  entryAttemptKey as surfaceEntryAttemptKey,
+  recordAttemptKey as surfaceRecordAttemptKey,
+  PRIOR_ATTEMPT_MODES,
+} from "../src/index.ts";
 import {
   buildCleanExit,
   buildGateRevert,
@@ -1137,6 +1144,86 @@ it("a fanout entry's record answers the key entryAttemptKey answers for its entr
     expect(record?.mode).toBe("clean-exit");
 
     expect(recordAttemptKey(record!)).toBe(entryAttemptKey(collidingEntry));
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+
+/**
+ * The same two keyers, judged where a consumer actually reaches them. The
+ * cases above import them from `src/priorAttempts.ts`, which no package
+ * `exports` entry resolves — green there says the join exists, never that a
+ * chain holding `TickContext.priorAttempts` can take it
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*). Both run through the real writer and the real reader (*A
+ * seam gate reads what the real writer wrote*): the key under judgement is the
+ * one `PriorAttemptStore.readAll` filed the record under, so a surface export
+ * that agreed with a hand-written join and not with the store reds here.
+ */
+it("the package's public surface spells the prior-attempt map key for an entry", async () => {
+  const fx = await makeFixture();
+  try {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    // A tag `slugify` rewrites, so what the surface answers is the engine's
+    // slug and not the tag echoed back.
+    expect(slugify(COLLIDING_TAG)).not.toBe(COLLIDING_TAG);
+    const entryRef = priorAttemptRef(
+      { name: "build" } as Phase,
+      collidingEntry,
+    );
+    await store.write(entryRef, buildCleanExit("parked: the entry"));
+
+    const all = await store.readAll();
+    // Vacuity pin: the walk filed a record, so the key below is the one a
+    // consumer would have been looking the record up by.
+    expect(all.size).toBe(1);
+
+    const filedUnder = [...all.keys()][0]!;
+    expect(surfaceEntryAttemptKey(collidingEntry)).toBe(filedUnder);
+    expect(all.get(surfaceEntryAttemptKey(collidingEntry))).toMatchObject({
+      finalMessage: "parked: the entry",
+    });
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+/**
+ * The record half of the same claim, over both keyspaces — a consumer
+ * iterating the map holds records, not refs, and that is the side with no
+ * keyspace to assume.
+ */
+it("the package's public surface spells the prior-attempt map key for a record", async () => {
+  const fx = await makeFixture();
+  try {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    const phaseRef = priorAttemptRef({ name: COLLIDING_PHASE } as Phase);
+    const entryRef = priorAttemptRef(
+      { name: "build" } as Phase,
+      collidingEntry,
+    );
+    // One stem, two records: a surface keyer reading the identity alone would
+    // answer one key for both.
+    expect(slugify(phaseRef.key)).toBe(slugify(entryRef.key));
+    await store.write(phaseRef, buildCleanExit("parked: the phase"));
+    await store.write(entryRef, buildCleanExit("parked: the entry"));
+
+    const all = await store.readAll();
+    // Vacuity pin: both keyspaces are populated before the agreement is
+    // judged over them.
+    expect([...all.values()].map((rec) => rec.key).sort()).toEqual([
+      "entry",
+      "phase",
+    ]);
+
+    for (const [key, record] of all) {
+      expect(surfaceRecordAttemptKey(record), key).toBe(key);
+    }
   } finally {
     await fx.cleanup();
   }

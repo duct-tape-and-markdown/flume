@@ -125,10 +125,12 @@ function priorAttemptMapKey(ref: PriorAttemptRef): string {
  * consumer asking which of the queue's entries a refusal is still standing
  * against.
  *
- * Exported rather than left beside either reader: the join and the slug are
- * this module's, and a second spelling of either is how a lookup comes to
- * miss a record the walk filed under a key it composed differently
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ * Shipped from the package root (`src/index.ts`) for that second reader: the
+ * join and the slug are this module's, and a second spelling of either — in
+ * the engine or in a chain that had no engine spelling to reach for — is how
+ * a lookup comes to miss a record the walk filed under a key it composed
+ * differently (`.claude/rules/engineering.md`, *A fact the engine holds is
+ * reported, never rediscovered*).
  */
 export function entryAttemptKey(entry: PendingEntry): string {
   return priorAttemptMapKey({ key: slugify(entry.tag), keyspace: "entry" });
@@ -160,6 +162,10 @@ function refOfRecord(rec: PriorAttempt): PriorAttemptRef {
  * here and never left to the side holding the record
  * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
  * never rediscovered*).
+ *
+ * Shipped from the package root beside {@link entryAttemptKey}: the record is
+ * what a consumer holds after iterating the map, so the side most likely to
+ * re-spell the join is the one outside the engine.
  */
 export function recordAttemptKey(rec: PriorAttempt): string {
   return priorAttemptMapKey(refOfRecord(rec));

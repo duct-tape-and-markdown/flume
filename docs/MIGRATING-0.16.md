@@ -225,6 +225,11 @@ ctx.priorAttempts.get(`entry:${api.slugify(entry.tag)}`);
 ctx.priorAttempts.get(`phase:${phase.name}`);
 ```
 
+The join also ships as a helper, so the composition above is the fallback
+rather than the spelling to adopt: `entryAttemptKey(entry)` answers the key for
+a queue entry you hold, `recordAttemptKey(record)` answers it for a record you
+pulled out of the map, and both come from the package root.
+
 A lookup by bare identity now finds nothing — it does not throw, it misses, so
 a `shouldRun` that gates on "have I failed here before?" will read every tick
 as a first attempt until the key is updated. That is the one failure mode in

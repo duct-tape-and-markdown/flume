@@ -85,9 +85,15 @@ export { partitionByFileOverlap, type PartitionOptions } from "./partition.js";
 
 export { gitPath, matchesAny, slugify, stopFlagPath } from "./paths.js";
 
+// The keyers ride the surface beside the paths: the map a chain reads
+// (`TickContext.priorAttempts`) is keyed by a join the engine composes, so a
+// consumer holding a queue entry — or a record it pulled back out of that map
+// — takes the engine's own spelling instead of re-composing one.
 export {
+  entryAttemptKey,
   priorAttemptPath,
   priorAttemptsDir,
+  recordAttemptKey,
   type PriorAttemptRef,
 } from "./priorAttempts.js";
 
