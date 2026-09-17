@@ -23,7 +23,7 @@
       ],
       "retire": []
     },
-    "summary": "`core.longpaths` is pinned by `job new` alone, so on win32 nothing pins it before the first worktree path deep enough to need it \u2014 and the verb is cut",
+    "summary": "`core.longpaths` is pinned by `job new` alone, so on win32 nothing pins it before the first worktree path deep enough to need it — and the verb is cut",
     "per": {
       "path": "spec/cli.md",
       "section": "win32 is a supported host"
@@ -33,48 +33,7 @@
       "worktree provisioning pins core.longpaths before it adds the worktree"
     ],
     "pins": [],
-    "notes": "`pinLongPaths` (`src/git.ts`) holds the win32 guard and the idempotent read itself, so the call site is unconditional and the case is decidable off win32 \u2014 a win32-only test would skip on the default lane and read green on the base. `jobNew` is its only caller today; THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT removes that one, so this lands first."
-  },
-  {
-    "tag": "A-STALE-PID-IS-NEVER-A-JUST-EXITED-PID",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "tests/helpers/deadPid.ts",
-          "description": "the one home for a pid no live process holds"
-        }
-      ],
-      "edit": [
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the five loop-lock and status stale-pidfile cases take it"
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "the two tip-claim reclaim cases take it"
-        },
-        {
-          "path": "tests/tip-claim.integration.test.ts",
-          "description": "the integration-lane copy takes it"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the stale-pid cases record a pid harvested from a child that just exited \u2014 the pid win32 recycles first, so the reclaim reads it live and the lane reds",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A module is one job"
-    },
-    "acceptance": "no case writes a pid harvested from a just-exited process; one shared helper mints the stale pid every claim and pidfile case uses, and asserts at the mint that it names no live process.",
-    "tests": [],
-    "pins": [
-      "the shared stale-pid helper's pid names no live process"
-    ],
-    "notes": "Lane `windows` run 35162590336 red at the loop-lock reclaim case while its sibling, same idiom, passed \u2014 a race, and pid recycling is the only one on offer. Sites: tests/cli.test.ts:474,539,872,2051,2105; tests/git.test.ts:1209,1234; tests/tip-claim.integration.test.ts:543. cli.test.ts:2059 already falls back to 999_999_999. No tests[]: the diff is all tests/, so no line is judgeable."
+    "notes": "`pinLongPaths` (`src/git.ts`) holds the win32 guard and the idempotent read itself, so the call site is unconditional and the case is decidable off win32 — a win32-only test would skip on the default lane and read green on the base. `jobNew` is its only caller today; THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT removes that one, so this lands first."
   },
   {
     "tag": "THE-ENGINE-MINTS-NO-FANOUT-NAMESPACE",
@@ -116,17 +75,17 @@
       ],
       "retire": []
     },
-    "summary": "the dispatcher still takes a fanout namespace and folds it into every branch name, worktree path and sweep base \u2014 a level beneath the base the spec cut",
+    "summary": "the dispatcher still takes a fanout namespace and folds it into every branch name, worktree path and sweep base — a level beneath the base the spec cut",
     "per": {
       "path": "spec/worktrees.md",
-      "section": "Placement \u2014 the worktree base"
+      "section": "Placement — the worktree base"
     },
     "acceptance": "`DispatcherOptions` carries no namespace, and a fanout branch is `flume/<slug>` with its directory `<base>/<dirName>` under every resolution.",
     "tests": [
       "DispatcherOptions no longer carries a fanout namespace (type-level)"
     ],
     "pins": [],
-    "notes": "`tests/Dispatcher.test.ts`'s trunkBranch absence case is the shape \u2014 a conditional type over `keyof DispatcherOptions`, red on the base. Nothing behavioral changes absent a namespace, so the surface removal is the whole entry. Blocked on the registry-bound branch leg because that lands in the same function and deletes the `branchPattern` this entry would otherwise unbranch."
+    "notes": "`tests/Dispatcher.test.ts`'s trunkBranch absence case is the shape — a conditional type over `keyof DispatcherOptions`, red on the base. Nothing behavioral changes absent a namespace, so the surface removal is the whole entry. Blocked on the registry-bound branch leg because that lands in the same function and deletes the `branchPattern` this entry would otherwise unbranch."
   },
   {
     "tag": "THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT",
@@ -215,7 +174,7 @@
         "tests/job.integration.test.ts"
       ]
     },
-    "summary": "the engine still ships `job new|run|rm|status` and the `Chain.seedDir` they seed from \u2014 a second state root under one checkout the spec no longer has",
+    "summary": "the engine still ships `job new|run|rm|status` and the `Chain.seedDir` they seed from — a second state root under one checkout the spec no longer has",
     "per": {
       "path": "spec/jobs.md",
       "section": "The checkout is the unit of isolation"
@@ -227,7 +186,7 @@
       "the top-level help names no job verb"
     ],
     "pins": [],
-    "notes": "`src/job.ts` keeps `RUNTIME_IGNORES`, `ensureRuntimeIgnores`, `readPendingLoose`, `countFrictionFiles` and `liveLoopPid`; THE-RUNTIME-IGNORE-SET-LEAVES-SRC-JOB-TS re-homes them after. `docs/CLI.md` \u00a7 `flume job run` is walked by `tests/cliHelp.test.ts`, so both move together. Blocked on the longpaths move because `jobNew` is `pinLongPaths`'s only caller."
+    "notes": "`src/job.ts` keeps `RUNTIME_IGNORES`, `ensureRuntimeIgnores`, `readPendingLoose`, `countFrictionFiles` and `liveLoopPid`; THE-RUNTIME-IGNORE-SET-LEAVES-SRC-JOB-TS re-homes them after. `docs/CLI.md` § `flume job run` is walked by `tests/cliHelp.test.ts`, so both move together. Blocked on the longpaths move because `jobNew` is `pinLongPaths`'s only caller."
   },
   {
     "tag": "THERE-IS-NO-JOB-SELECTOR",
@@ -374,7 +333,7 @@
         "tests/job.test.ts"
       ]
     },
-    "summary": "with the verbs gone `src/job.ts` is named for nothing it holds \u2014 an ignore set, a loose queue read, a friction count and a live-pid read, four jobs and no job",
+    "summary": "with the verbs gone `src/job.ts` is named for nothing it holds — an ignore set, a loose queue read, a friction count and a live-pid read, four jobs and no job",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "A module is one job"
@@ -382,7 +341,7 @@
     "acceptance": "`src/job.ts` does not exist; the ignore set is its own module and each other survivor sits in the file its name already is.",
     "tests": [],
     "pins": [],
-    "notes": "Target shape: `RUNTIME_IGNORES`, `mergeIgnoreLines`, `ensureRuntimeIgnores`, `frictionIgnoreEntry` \u2192 `src/runtimeIgnores.ts`; `countFrictionFiles` \u2192 `src/friction.ts`; `liveLoopClaim`/`liveLoopPid` \u2192 `src/pidClaim.ts`; `readPendingLoose` \u2192 `src/pendingLedger.ts`. Behavior-free: the typecheck, the suite and the export and citation pins hold it. `spec/jobs.md` keeps its name \u2014 `harness/ignores.ts` and `src/cli.ts` still cite *Runtime ignores*."
+    "notes": "Target shape: `RUNTIME_IGNORES`, `mergeIgnoreLines`, `ensureRuntimeIgnores`, `frictionIgnoreEntry` → `src/runtimeIgnores.ts`; `countFrictionFiles` → `src/friction.ts`; `liveLoopClaim`/`liveLoopPid` → `src/pidClaim.ts`; `readPendingLoose` → `src/pendingLedger.ts`. Behavior-free: the typecheck, the suite and the export and citation pins hold it. `spec/jobs.md` keeps its name — `harness/ignores.ts` and `src/cli.ts` still cite *Runtime ignores*."
   },
   {
     "tag": "THE-0-17-NOTE-WALKS-THE-JOB-CUT",
@@ -405,7 +364,7 @@
       ],
       "retire": []
     },
-    "summary": "the 0.17 note opens by saying neither break is in the API, which the job cut falsifies \u2014 four verbs, two selectors, `Chain.seedDir` and a dispatcher option all go",
+    "summary": "the 0.17 note opens by saying neither break is in the API, which the job cut falsifies — four verbs, two selectors, `Chain.seedDir` and a dispatcher option all go",
     "per": {
       "path": "spec/cli.md",
       "section": "Versioning policy"
@@ -413,47 +372,7 @@
     "acceptance": "docs/MIGRATING-0.17.md walks each API break the job cut lands with before and after, and its opening paragraph and section-applicability grep name them.",
     "tests": [],
     "pins": [],
-    "notes": "One entry rather than a section per cut entry: the page is a single append-only file, and three entries contending on it is the fanout-width cost the changelog gate was removed for (`spec/cli.md`, *Versioning policy*). The before/after is `flume job run <name>` \u2192 a `git worktree add` checkout with its own `.flume`."
-  },
-  {
-    "tag": "THE-DECLARED-SHELL-IS-THE-SCHEMAS-OWN-DEFAULT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "`shell` takes the default; the doc comment's optional-rather-than-default reason goes with it"
-        },
-        {
-          "path": "harness/declaredShell.ts",
-          "description": "the one fallback site collapses \u2014 the parse already resolved it"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the parsed default"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the gate and the restore still spawn under it"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "an absent `shell` parses to absent and a helper folds the default afterwards, so a reader holding a parsed declaration sees no shell where the spec row states one",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "What a consumer declares"
-    },
-    "acceptance": "an absent `shell` parses to the package's default, so every reader of a parsed declaration holds a shell string and no caller applies a fallback of its own.",
-    "tests": [
-      "a declaration naming no shell parses to the package's default shell"
-    ],
-    "pins": [],
-    "notes": "Ruled at 98a38755: the reference consumer annotates `DeclarationInput`, and the init skeleton already did \u2014 so the doc comment's reason for `.optional()` (a defaulted field would force every consumer annotating `Declaration` to spell a shell) no longer binds. The record named this fold and nothing else."
+    "notes": "One entry rather than a section per cut entry: the page is a single append-only file, and three entries contending on it is the fanout-width cost the changelog gate was removed for (`spec/cli.md`, *Versioning policy*). The before/after is `flume job run <name>` → a `git worktree add` checkout with its own `.flume`."
   },
   {
     "tag": "THE-HANDOFF-DECLINES-A-CLEAN-EXIT-AT-THIS-HEAD",
@@ -483,7 +402,7 @@
       ],
       "retire": []
     },
-    "summary": "the default handoff re-dispatches an entry whose latest attempt was a clean exit at the current HEAD \u2014 the same dispatch against an unchanged world, for the same outcome",
+    "summary": "the default handoff re-dispatches an entry whose latest attempt was a clean exit at the current HEAD — the same dispatch against an unchanged world, for the same outcome",
     "per": {
       "path": "spec/harness.md",
       "section": "The default `handoff`"
@@ -495,39 +414,7 @@
       "an entry whose latest attempt is a gate revert at the current HEAD is handed to build"
     ],
     "pins": [],
-    "notes": "Read from the mode and the anchor the engine reports on the record \u2014 PriorAttempt's `mode` and `headSha` (src/Prompt.ts) \u2014 never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change. The capability shipped at 908ce206; this is the policy half build's note named."
-  },
-  {
-    "tag": "THE-INBOX-SLICE-KEYS-A-STANDING-REFUSAL-BY-THE-ENGINES-KEY",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/inboxWindow.ts",
-          "description": "standing refusals look up by the engine's entry-attempt key instead of filtering on a hand-spelled keyspace and slug"
-        },
-        {
-          "path": "tests/harnessWindows.test.ts",
-          "description": "the agreement over a tag slugify rewrites"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the inbox slice re-spells the engine's record keying by hand \u2014 an \"entry\" keyspace literal beside its own slugify of each queued tag \u2014 so a keying change stops the slice waking, silently",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "The fix lands at the mechanism"
-    },
-    "acceptance": "the slice reaches each queued entry's standing record through the engine's own `entryAttemptKey`, and no keyspace literal or slug of a tag is spelled in the package beside it.",
-    "tests": [],
-    "pins": [
-      "the inbox slice's standing refusals key a tag slugify rewrites the way the engine's own entry-attempt key does"
-    ],
-    "notes": "From build's note on THE-PICKABLE-SET-CARRIES-A-CHAIN-DECLARED-REFUSAL. The filter direction is what made `entryAttemptKey` look like a non-drop-in: iterating the queue and looking up in `ctx.priorAttempts` is the same set, since the map holds one record per written identity. `entryAttemptKey` is exported from src/priorAttempts.ts."
+    "notes": "Read from the mode and the anchor the engine reports on the record — PriorAttempt's `mode` and `headSha` (src/Prompt.ts) — never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change. The capability shipped at 908ce206; this is the policy half build's note named."
   },
   {
     "tag": "THE-SUPERVISOR-POLICY-SECTION-NAMES-ITS-KNOBS-ONCE",
@@ -540,7 +427,7 @@
       "edit": [
         {
           "path": "docs/CHAIN-AUTHORING.md",
-          "description": "each knob's bullet states its binding time; \u00a79's closing paragraph stops listing membership"
+          "description": "each knob's bullet states its binding time; §9's closing paragraph stops listing membership"
         },
         {
           "path": "tests/examples.test.ts",
@@ -549,7 +436,7 @@
       ],
       "retire": []
     },
-    "summary": "\u00a79's closing paragraph lists all six supervisor knobs beside the walk that owns them, so a seventh strands it and the restatement arm the page's other walks carry cannot go on",
+    "summary": "§9's closing paragraph lists all six supervisor knobs beside the walk that owns them, so a seventh strands it and the restatement arm the page's other walks carry cannot go on",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Derived state is computed, never restated beside its source"
@@ -601,7 +488,7 @@
       "an undeclared serialize runs restores concurrently"
     ],
     "pins": [],
-    "notes": "The reduction is `provisioning(api, declaration)` in harness/chain.ts, built once per chain load \u2014 so the serialization is that function's own queue, not a second mechanism beside it. The `setup` row of the declaration table already states the behavior."
+    "notes": "The reduction is `provisioning(api, declaration)` in harness/chain.ts, built once per chain load — so the serialization is that function's own queue, not a second mechanism beside it. The `setup` row of the declaration table already states the behavior."
   },
   {
     "tag": "THE-WIN32-LOADER-FACT-IS-CITED-NOT-RESTATED",
@@ -635,7 +522,7 @@
     "acceptance": "every site leaning on the win32 loader fact states only what is specific to its own case and cites the section that holds the fact; no shebang-spawn subject cites the `.cmd`-shim section for it.",
     "tests": [],
     "pins": [],
-    "notes": "The rows: `tests/bin.test.ts::bin/flume symlink walk`, the harnessChain command-gate row, the harnessRunner path-separator row, and the two cli.test.ts git-floor rows whose reason names a `.cmd` refusal over a shebang plant. The setup-restore row is the model \u2014 case-specific reason, then the cite. No tests[]: a section cite is unresolved by the citation pin (`tests/commentCitations.test.ts`), and prose read against prose is out of scope."
+    "notes": "The rows: `tests/bin.test.ts::bin/flume symlink walk`, the harnessChain command-gate row, the harnessRunner path-separator row, and the two cli.test.ts git-floor rows whose reason names a `.cmd` refusal over a shebang plant. The setup-restore row is the model — case-specific reason, then the cite. No tests[]: a section cite is unresolved by the citation pin (`tests/commentCitations.test.ts`), and prose read against prose is out of scope."
   },
   {
     "tag": "THE-GATE-SET-CARDINAL-SHRINKS-TO-THE-PIN",
@@ -657,7 +544,7 @@
       ],
       "retire": []
     },
-    "summary": "the adoption page and the gate suite's header still count the discipline gates in prose, beside the pin that now reads their names \u2014 a sixth gate turns both stale with nothing red",
+    "summary": "the adoption page and the gate suite's header still count the discipline gates in prose, beside the pin that now reads their names — a sixth gate turns both stale with nothing red",
     "per": {
       "path": ".claude/rules/engineering.md",
       "section": "Narration is the ladder's bottom rung"
@@ -706,6 +593,6 @@
     "acceptance": "one exported listing in `src/friction.ts` answers what the declared channel holds; the bare `friction` verb, the count, the teardown harvest and `harness/friction.ts` all read it, and no second walk survives.",
     "tests": [],
     "pins": [],
-    "notes": "Target shape: `frictionNotes(dir)` in src/friction.ts \u2014 the sorted direct-child files `isDotName` does not skip. Blocked because `countFrictionFiles` sits in src/job.ts today and src/friction.ts already imports it, so a call the other way closes the job.ts -> chainLoad.ts -> friction.ts cycle; the ignore-set entry moves it into src/friction.ts first."
+    "notes": "Target shape: `frictionNotes(dir)` in src/friction.ts — the sorted direct-child files `isDotName` does not skip. Blocked because `countFrictionFiles` sits in src/job.ts today and src/friction.ts already imports it, so a call the other way closes the job.ts -> chainLoad.ts -> friction.ts cycle; the ignore-set entry moves it into src/friction.ts first."
   }
 ]
