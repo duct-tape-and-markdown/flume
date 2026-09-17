@@ -68,6 +68,7 @@ export {
 
 export {
   defaultHandoff,
+  defaultRefusesEntry,
   resolveHandoff,
   type Handoff,
   type HandoffSlice,

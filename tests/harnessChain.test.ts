@@ -57,7 +57,7 @@ import type {
   TickResult,
 } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
-import { renderPrompt } from "../src/Prompt.ts";
+import { renderPrompt, type PriorAttempt } from "../src/Prompt.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
@@ -792,6 +792,51 @@ it("each returned phase runs the handoff the declaration names for it, else the 
       woke: fallback(sliceResult),
     });
   }
+});
+
+it("the chain the factory builds declines a clean exit at the tick's own HEAD", () => {
+  // Driven through the chain the factory returns, over the context the
+  // engine composes at selection (`bindEntryRefusal`, `src/selection.ts`) —
+  // so this is the predicate a real wave consults, not the module-level one
+  // asserted against itself.
+  const refusesEntry = chainFor().refusesEntry;
+  if (refusesEntry === undefined) {
+    throw new Error("the factory declared no per-entry refusal");
+  }
+
+  const head = "9".repeat(40);
+  const entry: PendingEntry = {
+    tag: "SOME-ENTRY",
+    gate: { kind: "open" },
+    dependsOnForks: [],
+    files: { new: [], edit: [], retire: [] },
+  };
+  const cleanExit = (headSha: string): PriorAttempt => ({
+    mode: "clean-exit",
+    finalMessage: "nothing to do here",
+    key: "entry",
+    keyedAs: "some-entry",
+    headSha,
+    at: "2026-09-16T00:00:00.000Z",
+  });
+
+  expect(
+    refusesEntry({ entry, priorAttempt: cleanExit(head), headSha: head }),
+  ).toBe(true);
+
+  // Control: the same record at a tip the world has moved past leaves the
+  // entry the wave's, so the refusal above is the anchor's doing rather than
+  // a factory that declines every walled entry forever.
+  expect(
+    refusesEntry({
+      entry,
+      priorAttempt: cleanExit("1".repeat(40)),
+      headSha: head,
+    }),
+  ).toBe(false);
+
+  // And a first attempt — no record at all — is never held back.
+  expect(refusesEntry({ entry, headSha: head })).toBe(false);
 });
 
 it("the package's judge runs after a consumer's declared gates at the same when", () => {
