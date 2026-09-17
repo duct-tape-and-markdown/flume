@@ -667,8 +667,10 @@ const factory: ChainFactory = (flume) => {
   composed `pending.json` validation plus a plan-time fence pre-check
   against the target phase. See below.
 - `shellGate({ name, when, cmd, args, failHint? })` — escape hatch for "run
-  a command, fail on non-zero". The four built-ins above are all
-  `shellGate` instances.
+  a command, fail on non-zero". `tscGate`, `vitestGate` and `eslintGate` are
+  `shellGate` instances, built through one shared package-manager factory —
+  which is why each carries a `command` string. `writablePathsGate` and
+  `pendingGate` run their own checks.
 
 ### `pendingGate`: composed validation + fence pre-check
 
