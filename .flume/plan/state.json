@@ -122,9 +122,9 @@
   },
   "drainedRuns": {
     "windows": {
-      "run": "35162590336",
+      "run": "35163992613",
       "titles": [
-        "cross-process loop lock — real `flume loop` against <flumeDir>/loop.pid > reclaims a stale pidfile (dead pid): the loop runs and drops the lock on exit"
+        "flume status — supervisor liveness > reports a stale pidfile when the recorded pid is dead"
       ]
     },
     "posix": {

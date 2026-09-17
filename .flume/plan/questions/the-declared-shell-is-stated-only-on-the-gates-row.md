@@ -1,9 +1,13 @@
 # `spec/harness.md` states the declared shell's refusal on the `gates` row alone
 
-Shipped at 2ecb5132: the shell fallback, the `-c` form and the load-time probe
-live in `harness/declaredShell.ts`, and `setup.restore` is its second caller.
-So a declaration carrying a restore and no command gate now refuses at load on
-a shell this host will not run.
+Shipped at 2ecb5132: the `-c` form and the load-time probe live in
+`harness/declaredShell.ts`, and `setup.restore` is its second caller. So a
+declaration carrying a restore and no command gate now refuses at load on a
+shell this host will not run. Since dca32d8a the fallback is no longer a third
+thing there: an absent `shell` takes `DEFAULT_SHELL` at the parse
+(`harness/declaration.ts`), so every reader downstream holds a shell the
+consumer or the package named. That sharpens the question rather than changing
+it — the default is now a schema fact the `setup` row could point at.
 
 The spec states that refusal only in the `gates` row of *What a consumer
 declares*, and says it names "the gate". The `setup` row names no shell at

@@ -1,41 +1,5 @@
 [
   {
-    "tag": "WORKTREE-PROVISIONING-PINS-CORE-LONGPATHS",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/worktrees.ts",
-          "description": "provisioning pins core.longpaths ahead of `worktree add`"
-        },
-        {
-          "path": "tests/worktrees.test.ts",
-          "description": "the pin runs before the add"
-        },
-        {
-          "path": "src/git.ts",
-          "description": "`pinLongPaths`'s doc names its new caller"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`core.longpaths` is pinned by `job new` alone, so on win32 nothing pins it before the first worktree path deep enough to need it — and the verb is cut",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "win32 is a supported host"
-    },
-    "acceptance": "worktree provisioning pins `core.longpaths` repo-locally on win32 before `git worktree add`, and `pinLongPaths` still has a caller once the job verbs are gone.",
-    "tests": [
-      "worktree provisioning pins core.longpaths before it adds the worktree"
-    ],
-    "pins": [],
-    "notes": "`pinLongPaths` (`src/git.ts`) holds the win32 guard and the idempotent read itself, so the call site is unconditional and the case is decidable off win32 — a win32-only test would skip on the default lane and read green on the base. `jobNew` is its only caller today; THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT removes that one, so this lands first."
-  },
-  {
     "tag": "THE-ENGINE-MINTS-NO-FANOUT-NAMESPACE",
     "gate": {
       "kind": "open"
@@ -90,10 +54,7 @@
   {
     "tag": "THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "WORKTREE-PROVISIONING-PINS-CORE-LONGPATHS"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -165,7 +126,7 @@
         },
         {
           "path": "src/git.ts",
-          "description": "the job-dir pathspec examples"
+          "description": "the job-dir pathspec examples and `pinLongPaths`'s job-dir half"
         }
       ],
       "retire": [
@@ -186,7 +147,7 @@
       "the top-level help names no job verb"
     ],
     "pins": [],
-    "notes": "`src/job.ts` keeps `RUNTIME_IGNORES`, `ensureRuntimeIgnores`, `readPendingLoose`, `countFrictionFiles` and `liveLoopPid`; THE-RUNTIME-IGNORE-SET-LEAVES-SRC-JOB-TS re-homes them after. `docs/CLI.md` § `flume job run` is walked by `tests/cliHelp.test.ts`, so both move together. Blocked on the longpaths move because `jobNew` is `pinLongPaths`'s only caller."
+    "notes": "`src/job.ts` keeps `RUNTIME_IGNORES`, `ensureRuntimeIgnores`, `readPendingLoose`, `countFrictionFiles` and `liveLoopPid`; THE-RUNTIME-IGNORE-SET-LEAVES-SRC-JOB-TS re-homes them after. `docs/CLI.md` § `flume job run` is walked by `tests/cliHelp.test.ts`, so both move together. `pinLongPaths` keeps two callers without `jobNew` — both worktree provisioning sites pin — so only the job-dir half of its doc sentence (`src/git.ts`) dies here."
   },
   {
     "tag": "THERE-IS-NO-JOB-SELECTOR",
@@ -417,6 +378,43 @@
     "notes": "Read from the mode and the anchor the engine reports on the record — PriorAttempt's `mode` and `headSha` (src/Prompt.ts) — never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change. The capability shipped at 908ce206; this is the policy half build's note named."
   },
   {
+    "tag": "THE-ENGINE-KEYS-A-PRIOR-ATTEMPT-RECORD",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/priorAttempts.ts",
+          "description": "a keyer over a record beside `entryAttemptKey`"
+        },
+        {
+          "path": "harness/inboxWindow.ts",
+          "description": "the records sort reads it instead of joining the halves"
+        },
+        {
+          "path": "tests/priorAttempts.test.ts",
+          "description": "the store's walk against the keyer"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "a consumer holding a prior-attempt record has no engine spelling of the key it sits under — `entryAttemptKey` covers the entry keyspace alone",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "the engine answers the map key for any `PriorAttempt`, and `harness/inboxWindow.ts` composes no key of its own.",
+    "tests": [
+      "a prior-attempt record answers the key the store's own walk filed it under",
+      "a fanout entry's record answers the key entryAttemptKey answers for its entry"
+    ],
+    "pins": [],
+    "notes": "Target shape: a keyer taking a `PriorAttempt` beside `entryAttemptKey` (`src/priorAttempts.ts`), answering what `priorAttemptMapKey` composes from the record's own stated halves — both keyspaces, one spelling. Not barrelled: `entryAttemptKey` is not either, and the harness imports the module directly (*An export earns its consumer*). The one site left is `renderBuildRecords`'s sort comparator, ordering only — so this is the reporting gap, not a mis-key."
+  },
+  {
     "tag": "THE-SUPERVISOR-POLICY-SECTION-NAMES-ITS-KNOBS-ONCE",
     "gate": {
       "kind": "open"
@@ -594,5 +592,38 @@
     "tests": [],
     "pins": [],
     "notes": "Target shape: `frictionNotes(dir)` in src/friction.ts — the sorted direct-child files `isDotName` does not skip. Blocked because `countFrictionFiles` sits in src/job.ts today and src/friction.ts already imports it, so a call the other way closes the job.ts -> chainLoad.ts -> friction.ts cycle; the ignore-set entry moves it into src/friction.ts first."
+  },
+  {
+    "tag": "THE-LONGPATHS-PIN-PRECEDES-THE-WORKTREE-ADD",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/worktrees.test.ts",
+          "description": "the call-order pin over both provisioning sites"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the win32 case stops claiming an order its body never asserts"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "both provisioning sites pin `core.longpaths` before `git worktree add`, but the one case titled for that order asserts the end state alone, on win32 only",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A green verdict is proven non-vacuous"
+    },
+    "acceptance": "a default-lane case asserts the pin runs before the add at both provisioning sites, and no title claims an order its body does not assert.",
+    "tests": [],
+    "pins": [
+      "createWorktree pins core.longpaths before it adds the worktree",
+      "checkoutAt pins core.longpaths before it adds its detached worktree"
+    ],
+    "notes": "The property holds today (`src/worktrees.ts`, both sites), so both lines are `pins[]` — a `tests[]` line green at the base reverts the commit. Decidable off win32: `pinLongPaths` no-ops there but is still called, so the order is a call-sequence spy (`vi.mock` with `importOriginal`, the `tests/git.test.ts` idiom), never a config read. The over-claiming title is the win32-only `Dispatcher fanout — createWorktree pins core.longpaths` case."
   }
 ]
