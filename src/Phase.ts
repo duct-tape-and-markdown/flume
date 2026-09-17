@@ -680,26 +680,18 @@ export interface Chain {
    */
   humanOnly: string[];
   /**
-   * `configDir`-relative directory `flume job new` seeds a fresh job dir
-   * from — the `promptPath` idiom (stubs are real files beside the chain,
-   * e.g. `.flume/job-seed/`). Copied verbatim, skip-existing (re-run fills
-   * gaps — a stub added to the seed dir reaches existing jobs — and never
-   * clobbers a worked file). Absent means a bare job: no content opinion,
-   * no warning.
-   */
-  seedDir?: string;
-  /**
    * State-root-relative directory path naming the friction channel (e.g.
    * "friction") — loop-to-owner notes, gitignored, hand-routed by the
    * operator, never in a commit diff. Resolved against the resolved
-   * `flumeDir` at load, same idiom as `seedDir`. Undeclared: every
-   * friction-lifecycle behavior stays off, no default channel.
+   * `flumeDir` at load, the `promptPath` idiom applied to a directory.
+   * Undeclared: every friction-lifecycle behavior stays off, no default
+   * channel.
    */
   friction?: string;
   /**
    * State-root-relative file path naming the pending queue (spec/pending.md,
-   * *The pending queue*) — the `seedDir`/`friction` idiom applied to the
-   * queue file itself. Resolved against the resolved `flumeDir` once per
+   * *The pending queue*) — the `friction` idiom applied to the queue file
+   * itself. Resolved against the resolved `flumeDir` once per
    * tick, same as `friction`. Undeclared defaults to `"plan/pending.json"`,
    * the one default the engine keeps because its own mechanics (fanout
    * selection, the wave-end rewrite) read the file and a tick cannot run

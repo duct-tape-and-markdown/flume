@@ -12,9 +12,11 @@ import { rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
 import { loadChainModule } from "../src/chainLoad.ts";
+import type { Chain } from "../src/Phase.ts";
 import { slugify } from "../src/paths.ts";
 import { priorAttemptPath } from "../src/priorAttempts.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
@@ -194,5 +196,79 @@ describe("this repo's chain is the harness factory applied to its declaration (s
     expect(declaration.scopeWritesToEntry).toBe(false);
     const loaded = await loadChainModule(REPO_PATHS);
     expect(loaded.chain.phases.map((p) => p.name)).toEqual(chain.phases.map((p) => p.name));
+  });
+});
+
+/**
+ * `Chain.seedDir` declared a directory `flume job new` copied into a fresh
+ * job dir. The engine seeds no second state root beneath a checkout
+ * (spec/jobs.md, *The checkout is the unit of isolation*), so there is no
+ * value for a chain to hand it: the field is gone from the declared surface,
+ * not merely unread.
+ *
+ * Judged through the real compiler over the real `src/Phase.ts`, not by a
+ * conditional type alone. A conditional type is erased before vitest runs, so
+ * a suite that only asserted `true` would pass against a tree that still
+ * declares the field — green over the exact absence it names. The excess
+ * property check is what makes the absence observable at runtime here, and
+ * the control literal beside it is what keeps the refusal the field's rather
+ * than the fixture's (`.claude/rules/engineering.md`, *A green verdict is
+ * proven non-vacuous*).
+ */
+describe("Chain declarations — the job seed is off the surface", () => {
+  const PHASE_SRC = fileURLToPath(new URL("../src/Phase.ts", import.meta.url));
+
+  /** Type-check one `Chain` literal against the real `src/Phase.ts`. */
+  async function diagnose(fields: string): Promise<string> {
+    const dir = await mkTempDir("flume-chain-seeddir-type-");
+    try {
+      const file = join(dir, "fixture.ts");
+      await writeFile(
+        file,
+        `import type { Chain } from ${JSON.stringify(PHASE_SRC)};\n` +
+          `export const chain: Chain = { ${fields} };\n`,
+        "utf8",
+      );
+      // The repo's own strictness, so the excess-property check reads the
+      // same way `pnpm tsc` does.
+      const program = ts.createProgram([file], {
+        target: ts.ScriptTarget.ES2023,
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        strict: true,
+        exactOptionalPropertyTypes: true,
+        allowImportingTsExtensions: true,
+        skipLibCheck: true,
+        noEmit: true,
+      });
+      return program
+        .getSemanticDiagnostics(program.getSourceFile(file))
+        .map((d) => ts.flattenDiagnosticMessageText(d.messageText, " "))
+        .join("\n");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  const REQUIRED = "phases: [], humanOnly: []";
+
+  it("Chain no longer carries seedDir (type-level)", async () => {
+    // Control first: the same literal without the field compiles clean, so
+    // the refusal below is the field's and not the fixture's.
+    expect(await diagnose(REQUIRED)).toBe("");
+
+    // And a sibling optional the chain surface still declares compiles too,
+    // so the refusal is this field's rather than every optional's.
+    expect(await diagnose(`${REQUIRED}, friction: "friction"`)).toBe("");
+
+    expect(await diagnose(`${REQUIRED}, seedDir: "job-seed"`)).toContain(
+      "seedDir",
+    );
+
+    // And the key itself is gone from the interface, which is what a
+    // `keyof` consumer would see. Erased at runtime, held by `pnpm tsc`.
+    type SeedDirPurged = "seedDir" extends keyof Chain ? never : true;
+    const purged: SeedDirPurged = true;
+    expect(purged).toBe(true);
   });
 });

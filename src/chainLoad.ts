@@ -218,20 +218,18 @@ export async function loadChainModule(
   // "Chain residency"), so the file to load is computed from the roots the
   // factory will receive rather than passed beside them — a second parameter
   // could only disagree with `paths.configDir`. `chainModulePath`
-  // (src/paths.ts) is that computation, shared with the two sibling surfaces
-  // that name the same file: `jobNew`'s precondition and `chainLoadGate`'s
-  // touched-path key.
+  // (src/paths.ts) is that computation, shared with the sibling surface that
+  // names the same file: `chainLoadGate`'s touched-path key.
   const path = chainModulePath(paths.configDir);
   // win32 MAX_PATH: the single fix point for this check — every caller
-  // (job.ts's jobNew/jobRun, builtinGates.ts's chainLoadGate, this file's
-  // own default loader) reaches an existing chain.ts through here.
-  // namespacedJoin (src/paths.ts) is the shared idiom.
+  // (builtinGates.ts's chainLoadGate, this file's own default loader)
+  // reaches an existing chain.ts through here. namespacedJoin
+  // (src/paths.ts) is the shared idiom.
   // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
   // on any other stat failure rather than reporting absence, so a chain.ts
   // that is present but unreachable — a symlink loop, a permission-denied
   // configDir — names that failure instead of telling the operator to create
-  // a file they are looking at. Same split the sibling probe one line ahead
-  // of this call in `jobNew` (src/job.ts) already gives the very same path.
+  // a file they are looking at.
   if (!existsLoud(namespacedJoin(path))) {
     throw new Error(
       `chain config not found at ${path}; create .flume/chain.ts that ` +

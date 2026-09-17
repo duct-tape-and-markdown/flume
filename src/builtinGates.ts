@@ -395,9 +395,9 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       // paths for one queue. `opts.targetFence` is dereferenced here rather
       // than at construction, so a declaration-driven fence (a Phase whose
       // writablePaths/entryChannelPaths are populated after
-      // `pendingGate(...)` is called, e.g. a getter backed by a per-job
-      // declaration.json) is pre-checked against its current value, not a
-      // stale snapshot from module load.
+      // `pendingGate(...)` is called, e.g. a getter backed by a
+      // declaration read off disk) is pre-checked against its current value,
+      // not a stale snapshot from module load.
       const violations = queueFenceViolations(
         parsed.entries.filter((entry) => fenceWhen(entry)),
         [opts.targetFence],

@@ -318,47 +318,6 @@ is the chain for every job in the repo, resolved fresh from whichever
 branch is checked out. See the README's "Chain residency" section for the
 full contract.
 
-### Chain-declared seed
-
-There is no job-local chain, and no `--template` flag. `.flume/jobs/<name>/`
-holds job *state* only — job resolution never retargets `configDir` (see
-"Where the chain lives" above), so every job under this repo ticks the one
-chain at `.flume/chain.ts`, and that chain is the sole author of what a
-fresh job dir contains. One optional `Chain` field carries the declaration:
-
-- **`Chain.seedDir?: string`** — a `configDir`-relative directory (the
-  `promptPath` idiom: stubs are real files beside the chain, e.g.
-  `.flume/job-seed/`). `flume job new <name>` copies it into the fresh job
-  dir verbatim, skip-existing: a re-run fills gaps (a stub added to the
-  seed dir reaches jobs already created) and never clobbers a worked file.
-  Absent `seedDir` → a bare job, no warning — state accretes from ticks,
-  and bare is legitimate. No interpolation and no seed-function form: the
-  copy is dumb by design, and `chain.ts` is already code if you need
-  logic.
-
-`flume job new` loads the repo chain before doing anything else — no chain
-at `<configDir>/chain.ts` is a usage error (a job that could never `run`
-must not be creatable), and a declared-but-absent `seedDir` is the same
-class of error, checked before the state root is touched.
-
-**What the runtime still owns, unconditionally, on every `job new`** — the
-line between this and `seedDir` is the same line as "machinery vs.
-opinion" everywhere else in this doc:
-
-- Merging its own ignore entries into the job dir's `.gitignore`, creating
-  the file if `seedDir` carries none and preserving any lines it does. The
-  set and its merge semantics are the runtime's alone (`spec/jobs.md`,
-  "Runtime ignores") — it grows without asking your chain.
-- Pinning `core.longpaths true` repo-locally on Windows.
-- Baseline-committing the seeded harness so subsequent plan/build ticks
-  produce clean deltas.
-
-A dir your chain writes that the runtime doesn't know about is still your
-declaration to make: `sessions/` is the canonical case (session capture is
-the `withSessionCapture` decorator's convention, not the runtime's), so its
-ignore line belongs in your `seedDir`, same as it belonged in a `--template`
-directory before this line.
-
 **Migrating off a per-job shim chain.** Before this line, a job's state
 root carried its own one-line shim chain
 (`export { default } from "../../chain.ts"`) purely so job resolution had
@@ -2187,12 +2146,11 @@ Everything that needs an engine value lives inside the factory; anything
 that does not — a `zod` entry extension, plain constants — can stay at
 module scope. `examples/cascade-chain.ts` is this shape end to end.
 
-`phases` is the ordered list, and the order is a contract:
-`flume job run` wakes `phases[0]` when the baton is hibernating — the
-first phase is the chain's entry point, by position rather than by name
-(machinery never hardcodes a phase name). Put the phase a cold start
-should begin with first; cascade leads with `plan` because a fresh job
-must derive pending before anything can build.
+`phases` is the ordered list, and the order is a contract: the first phase
+is the chain's entry point, by position rather than by name (machinery never
+hardcodes a phase name). Put the phase a cold start should begin with first;
+cascade leads with `plan` because a fresh state root must derive pending
+before anything can build.
 
 `humanOnly` lists phases the dispatcher
 cannot wake via another phase's `handoff` — humans wake them by touching

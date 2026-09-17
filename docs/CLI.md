@@ -3,7 +3,7 @@
 > **Current reference.** Describes flume as it ships now; every spec cite
 > names a live `spec/*.md` section.
 
-`flume <subcommand>`. All commands run against the current working directory; the chain config is loaded from `./.flume/chain.ts`. Top-level `flume --help` lists the subcommands — as does the bare verb `flume help`, the same answer to the byte — `flume --version` prints the package version, and `flume <subcommand> --help` prints per-command usage with exit codes. A trailing name is that subcommand's page whichever spelling carried it — `flume help <subcommand>`, `flume --help <subcommand>` and `flume -h <subcommand>` alike, `flume help job` being the job verb's own; a name with no page refuses usage-shaped (exit `2`) naming it and echoing the spelling typed, rather than dropping the argument and answering the top-level listing.
+`flume <subcommand>`. All commands run against the current working directory; the chain config is loaded from `./.flume/chain.ts`. Top-level `flume --help` lists the subcommands — as does the bare verb `flume help`, the same answer to the byte — `flume --version` prints the package version, and `flume <subcommand> --help` prints per-command usage with exit codes. A trailing name is that subcommand's page whichever spelling carried it — `flume help <subcommand>`, `flume --help <subcommand>` and `flume -h <subcommand>` alike; a name with no page refuses usage-shaped (exit `2`) naming it and echoing the spelling typed, rather than dropping the argument and answering the top-level listing.
 
 Flume is exec-local: a bay declares `@dtmd/flume` as a dev dependency and invokes it through the package manager (`pnpm exec flume`, an npm script, `npx flume`). The binary that runs is the bay's own pinned copy, resolved the same way as every other dependency — global installs are unsupported, and the engine makes no attempt to detect or accommodate one.
 
@@ -77,8 +77,8 @@ flume sleep plan
 ## `flume stop`
 
 Writes `.flume/stop` and prints what happens next: with a live supervisor, that it
-finishes its in-flight tick and ends the run; otherwise, that the next `loop` /
-`job run` refuses to start until the flag is removed. Idempotent — running it again
+finishes its in-flight tick and ends the run; otherwise, that the next `loop`
+refuses to start until the flag is removed. Idempotent — running it again
 while the flag is already present rewrites the same empty file and prints the same
 statement. The verb is discoverability, not a privileged channel: `touch .flume/stop`
 is equally the interface, and nothing distinguishes the two writers. There is
@@ -90,70 +90,7 @@ refused before the flag is written. Exits `0` always; `2` if given any argument.
 ```sh
 flume stop
 # [flume] wrote .flume/stop: a live supervisor finishes its in-flight tick and
-# ends the run; the next `loop`/`job run` refuses to start until the flag is
-# removed.
-```
-
-## `flume job new <name>`
-
-Creates a job — state root `.flume/jobs/<name>/` on the current HEAD, whatever branch that is. Loads the repo chain (`<configDir>/chain.ts` — repo-resident, never job-local) and copies its declared `Chain.seedDir`, if any, into the state root verbatim, skip-existing: a re-run fills gaps (a stub added to the seed dir reaches jobs already created) and never clobbers a worked file. No `seedDir` declared → a bare job, no warning — state accretes from ticks, and bare is legitimate. Machinery only: no presets, no harness content baked into the CLI — that is the chain's to declare (see [`docs/CHAIN-AUTHORING.md`](CHAIN-AUTHORING.md)). No branch is created or checked out. The job name must be a single path segment; a name containing a path separator is rejected before any directory is constructed.
-
-Every run (idempotent) also:
-
-- **Requires the repo chain to exist.** No chain at `<configDir>/chain.ts` is a usage error — a job that could never `run` must not be creatable. A declared-but-absent `seedDir` is the same class of error, checked before the state root is touched.
-- **Merges the runtime ignore entries** into the job dir's `.gitignore` — the runtime-owned set (`spec/jobs.md`, "Runtime ignores") — creating the file if absent and preserving any lines the seed carried. The runtime owns its layout, and only that; chain-convention dirs (e.g. `sessions/`) are the chain's to declare in its `seedDir`.
-- **Pins `core.longpaths true`** repo-locally on Windows.
-- **Baseline-commits the seeded harness** (`git add .flume/jobs/<name>` — the ignore entries keep runtime state out of the commit) on the current HEAD, so subsequent plan/build ticks produce clean deltas. A re-run with nothing changed commits nothing.
-
-Leaves HEAD untouched — tune the state, then run the job. Exits `0` on success; `1` on git or filesystem failure; `2` on usage errors (missing or unknown verb, missing `<name>`, a `<name>` that is not a single segment, no chain at `<configDir>/chain.ts`, or a declared `seedDir` absent on disk).
-
-```sh
-flume job new docs-refresh            # seeds from the repo chain's Chain.seedDir, if declared
-flume job new scratch                 # no seedDir declared: bare job, no warning
-```
-
-## `flume job run <name> [--max N]`
-
-Runs a job. Two steps, the first a preflight:
-
-1. **Wake the entry phase iff the baton is hibernating.** The entry phase is `chain.phases[0]` — a content-free convention, no hardcoded phase names. A non-hibernating baton is left untouched, so an interrupted job resumes mid-flight instead of being restarted from the top. No branch assertion — the engine has no opinion on which branch a state root runs on.
-2. **Run the standard loop under the job resolution.** From here this is exactly `flume --job <name> loop [--max N]`, on whatever branch HEAD is on: same `loop.pid` lock in the job state root, same one-child-process-per-tick supervisor, same exit codes.
-
-Exit codes are the loop's, against the job's state root: exits `0` on hibernation, when `--max` (default `50`) is hit, or on partial success (some entries shipped despite other ticks erroring); exits `1` on git or harness failure, while another live loop holds the job's lock, when the job's stop flag is already present, when at least one tick errored **and** the run shipped nothing, or when the consecutive-failure backstop aborted the run (`spec/loop.md`, "Exit codes — the run never lies to CI"); exits `2` on usage errors (missing `<name>`, a bad `--max` value, a stray positional); exits `69` (`EX_MOUNT_DEAD`) when a child tick's chain fails to load — halts the run immediately rather than continuing; exits `74` (`EX_IOERR`) when the job's stop flag or its merging-marker dir exists but cannot be read (see `flume loop`); exits `78` when a child tick reports terminal misconfiguration (see `flume tick`), or when an unreconciled `merging/<slug>.json` marker stands under the job dir at start. A graceful stop mid-run ends iteration after the in-flight tick but never changes the code. Any errored ticks are named in the completion summary regardless of exit code.
-
-```sh
-flume job new docs-refresh
-flume job run docs-refresh --max 20
-```
-
-## `flume job rm <name>`
-
-Throw the harness away, keep the work. Four steps:
-
-1. **Refuse while the job's `loop.pid` records a live pid** (exit `1`) — removing the state root out from under a running supervisor would strand its ticks. Stop the loop first; a stale pidfile (dead pid) is reclaimed silently.
-2. **`git rm -r .flume/jobs/<name>` + cleanup commit on the current HEAD.** The commit is pathspec-scoped to the job dir, so unrelated staged work stays in the index. No branch is checked out or touched.
-3. **Remove untracked runtime remnants** — `awake/`, `prior-attempts/`, `rendered-prompts/`, pid files, and any leftover `node_modules/` (a stale engine link from a job dir created before the exec-local doctrine, if present): the ignore entries kept them out of git, so `git rm` left them behind.
-4. **`git worktree prune`** — clears metadata left by the job's worktrees, a tick's own as much as a wave's.
-
-The commits the job caused — including this cleanup commit — stay exactly where they landed, on whatever branch the job ran on. Integrating or discarding that history is an ordinary git operation, the operator's to run; see [`docs/MIGRATING-0.10.md`](MIGRATING-0.10.md) § 5 for the recipe when a job's work needs to move onto a clean branch first.
-
-Exits `0` on success (re-running on an already-clean job is a no-op); `1` on a live loop or a git/filesystem failure; `2` on usage errors (missing `<name>`, or a `<name>` whose job dir does not exist).
-
-```sh
-flume job rm docs-refresh
-```
-
-## `flume job status`
-
-Enumerates `.flume/jobs/*` in the working tree — one line per job, sorted by name, with the job's awake phases (or `hibernating`) and its pending count. The awake set is the job's own baton (`<jobdir>/awake/`) — `awake: unreadable` where that dir exists but cannot be read (a permission failure, a path too long for the platform), which is neither a phase list nor a hibernating baton and is never reported as one, and never aborts the enumeration for the sibling jobs; the pending count is the number of entries in `<jobdir>/plan/pending.json` — `0` when the file is absent (nothing planned is nothing pending), `unparsable` when it exists but does not parse, so one broken plan never hides the others. Non-directories under `jobs/` are skipped; prints `no jobs` when the dir is empty or missing — *missing*, never merely unreadable: a jobs dir that exists but cannot be read fails the verb (exit `1`) rather than reporting an empty repo.
-
-Observational, like `flume status`: nothing on disk changes — no baton dirs materialized — so it is safe to bake into prompts and watch loops. It takes the same best-effort chain load `flume status` does, for the repo chain's declared `Chain.pendingPath` and `Chain.friction` (a job whose friction dir holds notes gets a trailing `friction: N note(s) await routing` column). A missing or broken chain never fails the verb: it withholds the friction column, leaves every job's pending count reading the default queue path, and reports the failure and what it cost on stderr, never silently. Note it reads the working tree's checkout: a job dir's tracked files (chain, prompts, `plan/pending.json`) are branch-scoped and will not appear on a branch that never committed them. Its gitignored subdirs — `awake/`, `loop.pid`, `prior-attempts/`, `rendered-prompts/`, `worktrees/` (`spec/jobs.md`, "Runtime ignores") — are untracked and outlive a branch switch, so a stale baton or `loop.pid` from a job dir seeded elsewhere can still surface after HEAD moves off that branch. Exits `0` always (including `no jobs`); `2` if given any argument; `1` on a filesystem failure.
-
-```sh
-flume job status
-# docs-refresh  awake: build  pending: 3
-# scratch       hibernating  pending: 0
-# sealed        awake: unreadable  pending: 0
+# ends the run; the next `loop` refuses to start until the flag is removed.
 ```
 
 ## `flume log [-n N] [--json]`
@@ -278,7 +215,7 @@ and this verb only moves bytes; it never derives meaning from them. `name` must 
 a direct child of the declared directory — the same scope the bare list enumerates;
 a nested or escaping path is refused, not resolved. A dot-prefixed name is not a
 note: the bare list omits it, `name` refuses it as absent, and the `friction: N`
-count on `flume status` and `flume job status` skips it — a `.gitkeep` git made
+count on `flume status` skips it — a `.gitkeep` git made
 the consumer create for an otherwise-empty, gitignored channel dir is no work. The
 skip is by name alone, never by content. A chain that declares no
 `Chain.friction` refuses usage-shaped, naming the missing declaration. A declared but

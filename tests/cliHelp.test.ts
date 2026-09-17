@@ -24,7 +24,6 @@ import {
   loopExitCode,
   tickExitCode,
 } from "../src/cliVerdict.ts";
-import { RUNTIME_IGNORES } from "../src/job.ts";
 import {
   DEFAULT_ABORT_THRESHOLD,
   FAILURE_STAGES,
@@ -69,6 +68,72 @@ function documentedExitCodes(help: string): Set<number> {
 const ascending = (codes: Iterable<number>): number[] =>
   [...new Set(codes)].sort((a, b) => a - b);
 
+/**
+ * The command names the top-level listing's own `Commands:` block
+ * advertises — read off `HELP_TOP` rather than restated, so the two cases
+ * below judge the block the CLI really prints.
+ */
+function topLevelCommandNames(): string[] {
+  const start = HELP_TOP.indexOf("Commands:\n");
+  expect(start).toBeGreaterThan(-1);
+  const block = HELP_TOP.slice(start, HELP_TOP.indexOf("\n\nOptions:"));
+  return [
+    ...new Set(
+      block
+        .split("\n")
+        .map((line) => /^ {2}(\S+)/.exec(line)?.[1])
+        .filter((name): name is string => name !== undefined),
+    ),
+  ];
+}
+
+/**
+ * The engine offers no lifecycle verb over a job — it mints no state root
+ * beneath the checkout and seeds none (spec/jobs.md, *The checkout is the
+ * unit of isolation*). `job` is therefore an ordinary unrecognized word, and
+ * the CLI owes it the same refusal every other unrecognized word gets rather
+ * than a verb-shaped usage line that reads as a typo inside a real command.
+ *
+ * Driven through the real CLI: the arm under test is the dispatch, and a
+ * control word beside it keeps the refusal `job`'s own rather than the
+ * fixture's (`.claude/rules/engineering.md`, *A green verdict is proven
+ * non-vacuous*).
+ */
+it("flume job is an unknown command and exits 2", async () => {
+  const dir = await mkFixtureRoot("flume-job-unknown-");
+  try {
+    // Control: a word the CLI does answer, so the refusal below is not the
+    // fixture refusing everything.
+    const known = await runCli(dir, ["status"]);
+    expect(known.code).toBe(0);
+
+    for (const argv of [["job"], ["job", "status"], ["job", "new", "x"]]) {
+      const r = await runCli(dir, argv);
+      expect(r.code, argv.join(" ")).toBe(2);
+      expect(r.out, argv.join(" ")).toContain("unknown command: job");
+      expect(r.out, argv.join(" ")).toContain("Run `flume --help` for usage.");
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The same absence on the surface an operator reads to find the verb set:
+ * the listing must not advertise a verb the dispatch refuses. Scoped to the `Commands:` block alone: the
+ * `--job` selector below it is a different surface and legitimately names
+ * the word (`.claude/rules/posture-sweep.md`, *a negative assertion over a
+ * whole rendered artifact*).
+ */
+it("the top-level help names no job verb", () => {
+  const names = topLevelCommandNames();
+  // Vacuity: an unparsed block would hold this over the empty set.
+  expect(names.length).toBeGreaterThan(1);
+  expect(names).toContain("loop");
+  expect(names).not.toContain("job");
+  expect(helpPageFor("job")).toBeUndefined();
+});
+
 /*
  * The `flume tick` process's exit-code range, in two halves with different
  * owners, driven rather than hand-copied so every surface that restates it
@@ -93,14 +158,13 @@ const TICK_PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
 ]);
 
 /*
- * The `flume loop` / `flume job run` process's exit-code range, in the same
- * two halves: the codes `loopExitCode` (`src/cliVerdict.ts`) maps a
- * `SuperviseResult` to, and the codes the process returns without ever
- * reaching it. `docs/CLI.md` §§ `flume loop` and `flume job run` each
- * restate this range, and each is pinned against the producer below rather
- * than against the other copy or against the `--help` blocks — two prose
- * copies compared to each other move together in the commit that changes
- * the behavior, and agree while both are wrong.
+ * The `flume loop` process's exit-code range, in the same two halves: the
+ * codes `loopExitCode` (`src/cliVerdict.ts`) maps a `SuperviseResult` to,
+ * and the codes the process returns without ever reaching it. `docs/CLI.md`
+ * § `flume loop` and `flume loop --help` each restate this range, and each
+ * is pinned against the producer below rather than against the other copy —
+ * two prose copies compared to each other move together in the commit that
+ * changes the behavior, and agree while both are wrong.
  */
 
 /**
@@ -409,14 +473,12 @@ describe("docs/CLI.md's flume tick section against tickExitCode's derived range 
 });
 
 /**
- * CLI-DOC-LOOP-EXIT-CODES-PINNED — `docs/CLI.md` §§ `flume loop` and `flume
- * job run` are the loop range's two prose copies, and both had drifted: the
- * loop section named 0, 1 and 69 and neither the usage code, the I/O
- * refusal nor the terminal-misconfiguration code; `job run` missed the I/O
- * refusal. Each is pinned against the same driven producer —
- * `loopExitCode` over the `SuperviseResult` space, beside the named
- * start-up set — never against the other section and never against the
- * `--help` blocks (`.claude/rules/engineering.md`, "A seam gate reads what
+ * CLI-DOC-LOOP-EXIT-CODES-PINNED — `docs/CLI.md` § `flume loop` is the loop
+ * range's prose copy, and it had drifted: it named 0, 1 and 69 and neither
+ * the usage code, the I/O refusal nor the terminal-misconfiguration code. It
+ * is pinned against the driven producer — `loopExitCode` over the
+ * `SuperviseResult` space, beside the named start-up set — never against the
+ * `--help` block (`.claude/rules/engineering.md`, "A seam gate reads what
  * the real writer wrote").
  */
 describe("docs/CLI.md's loop sections against loopExitCode's derived range (CLI-DOC-LOOP-EXIT-CODES-PINNED)", () => {
@@ -455,31 +517,25 @@ describe("docs/CLI.md's loop sections against loopExitCode's derived range (CLI-
     await expectSectionNamesTheLoopRange(/^## `flume loop\b/);
   });
 
-  it("docs/CLI.md's flume job run section names every exit code the real loop range produces", async () => {
-    await expectSectionNamesTheLoopRange(/^## `flume job run\b/);
-  });
 });
 
 /**
- * JOB-HELP-NAMES-THE-WHOLE-LOOP-RANGE — the loop range's two *runtime* prose
- * copies. `flume job run` rewrites the command to `loop` and relays its exit
- * code verbatim, while the other job verbs return only 0/1/2, so `flume job
- * --help`'s block owes exactly the loop range — and it named 0, 1, 2 and 78
- * alone: an operator hitting a child tick's mount-dead (69) or a start-up
- * I/O refusal (74) read a status the surface never mentioned. Each block is
- * driven against `loopExitCode` beside the named start-up set, never against
- * the other block or against `docs/CLI.md` — two prose copies compared to
+ * JOB-HELP-NAMES-THE-WHOLE-LOOP-RANGE — the loop range's *runtime* prose
+ * copy. `flume loop --help`'s block owes exactly the loop range — and it
+ * named 0, 1, 2 and 78 alone: an operator hitting a child tick's mount-dead
+ * (69) or a start-up I/O refusal (74) read a status the surface never
+ * mentioned. The block is driven against `loopExitCode` beside the named
+ * start-up set, never against `docs/CLI.md` — two prose copies compared to
  * each other move together in the commit that changes the behavior, and
  * agree while both are wrong (`.claude/rules/engineering.md`, "A seam gate
  * reads what the real writer wrote").
  */
-describe("the --help blocks that restate the loop range, against loopExitCode's derived range (JOB-HELP-NAMES-THE-WHOLE-LOOP-RANGE)", () => {
+describe("the --help block that restates the loop range, against loopExitCode's derived range (JOB-HELP-NAMES-THE-WHOLE-LOOP-RANGE)", () => {
   /**
-   * Both surfaces make the same claim about the same range, so both take
-   * the same check: the block's own listed codes, read off the real help
-   * output, equal to the whole range in both directions — a code the run
-   * gained and the block never named is red, and so is a code the block
-   * names that no longer reaches an operator through it.
+   * The block's own listed codes, read off the real help output, equal to
+   * the whole range in both directions — a code the run gained and the
+   * block never named is red, and so is a code the block names that no
+   * longer reaches an operator through it.
    */
   async function expectHelpNamesTheLoopRange(
     argv: readonly string[],
@@ -506,10 +562,6 @@ describe("the --help blocks that restate the loop range, against loopExitCode's 
 
   it("flume loop --help names every exit code the loop range produces, beside its named start-up set", async () => {
     await expectHelpNamesTheLoopRange(["loop", "--help"]);
-  }, SPAWN_BUDGET_MS);
-
-  it("flume job --help names every exit code the loop range produces, since job run relays it", async () => {
-    await expectHelpNamesTheLoopRange(["job", "--help"]);
   }, SPAWN_BUDGET_MS);
 });
 
@@ -676,7 +728,7 @@ describe("flume loop --help — the abort backstop's stage vocabulary against lo
  * from the engine's (`.claude/rules/engineering.md`, "Derived state is
  * computed, never restated beside its source").
  */
-describe("flume loop/job --help — the backstop threshold names its knob (HELP-ABORT-THRESHOLD-IS-OVERRIDABLE)", () => {
+describe("flume loop --help — the backstop threshold names its knob (HELP-ABORT-THRESHOLD-IS-OVERRIDABLE)", () => {
   /**
    * The exit-1 clause of a help surface, whitespace-collapsed: help text
    * wraps the prose across lines, so a phrase match needs one line.
@@ -704,12 +756,6 @@ describe("flume loop/job --help — the backstop threshold names its knob (HELP-
     const { out, code } = await runCli(process.cwd(), ["loop", "--help"]);
     expect(code).toBe(0);
     expectsOverridableThreshold(exitOneClause(out, "\n  74 "));
-  }, SPAWN_BUDGET_MS);
-
-  it("flume job --help names supervisorPolicy.abortThreshold rather than a fixed consecutive-tick count", async () => {
-    const { out, code } = await runCli(process.cwd(), ["job", "--help"]);
-    expect(code).toBe(0);
-    expectsOverridableThreshold(exitOneClause(out, "\n  2 "));
   }, SPAWN_BUDGET_MS);
 });
 
@@ -771,33 +817,6 @@ describe("flume friction --help — the exit-code list against the verb's own I/
     }
   }, SPAWN_BUDGET_MS);
 });
-
-/**
- * JOB-NEW-HELP-INTERPOLATES-RUNTIME-IGNORES — the `new` verb's help named
- * five of the ten entries `jobNew` really merges, a hand copy that had
- * already gone stale against the runtime's layout. The roster is now read
- * off {@link RUNTIME_IGNORES} itself (`.claude/rules/engineering.md`,
- * "Derived state is computed, never restated beside its source"), so this
- * drives the real CLI and compares its printed block against the constant
- * the seeding code merges — the real writer's value through the real
- * surface, not a fixture of either.
- */
-it("job new help names every RUNTIME_IGNORES entry", async () => {
-  const { out, code } = await runCli(process.cwd(), ["job", "new", "--help"]);
-  expect(code).toBe(0);
-
-  // Vacuity pin: an empty constant would let any help text at all pass.
-  expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
-  for (const entry of RUNTIME_IGNORES) expect(out).toContain(entry);
-
-  // ...and nothing respelled beside them: the printed block, unwrapped, is
-  // exactly the constant, so an entry dropped or invented here is red.
-  const marker = "The entries merged:\n";
-  const start = out.indexOf(marker);
-  expect(start).toBeGreaterThan(-1);
-  const block = out.slice(start + marker.length, out.indexOf("\n\n", start));
-  expect(block.replace(/\s+/g, " ").trim()).toBe(RUNTIME_IGNORES.join(", "));
-}, SPAWN_BUDGET_MS);
 
 /**
  * FLUME-HELP-IS-THE-SAME-ANSWER — `flume help` answered `unknown command:
@@ -929,11 +948,11 @@ describe("flume help <name> and flume --help <name> — the trailing name throug
     await expectLeadingHelpMatchesFlag("help", "status", "Usage: flume status");
   }, SPAWN_BUDGET_MS);
 
-  it("flume help job prints the job verb's usage", async () => {
+  it("flume help friction prints the friction subcommand's usage", async () => {
     await expectLeadingHelpMatchesFlag(
       "help",
-      "job",
-      "Usage: flume job <verb> [args]",
+      "friction",
+      "Usage: flume friction",
     );
   }, SPAWN_BUDGET_MS);
 
@@ -967,21 +986,11 @@ describe("flume help <name> and flume --help <name> — the trailing name throug
    * not to a page would otherwise ship a listed name whose help refuses.
    */
   it("every command the top-level listing advertises has a page flume help reaches", () => {
-    const start = HELP_TOP.indexOf("Commands:\n");
-    expect(start).toBeGreaterThan(-1);
-    const block = HELP_TOP.slice(start, HELP_TOP.indexOf("\n\nOptions:"));
-    const names = [
-      ...new Set(
-        block
-          .split("\n")
-          .map((line) => /^ {2}(\S+)/.exec(line)?.[1])
-          .filter((name): name is string => name !== undefined),
-      ),
-    ];
+    const names = topLevelCommandNames();
     // Vacuity: an unparsed block would leave nothing to judge, and every
     // name below would hold over the empty set.
     expect(names.length).toBeGreaterThan(1);
-    expect(names).toContain("job");
+    expect(names).toContain("friction");
     expect(names.filter((name) => helpPageFor(name) === undefined)).toEqual([]);
   });
 });

@@ -3531,8 +3531,8 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
  * spec/worktrees.md "Startup sweep — a dead wave's residue is removed at
  * the next start": per-wave stale-slug removal (`createWorktree`, above)
  * only ever covers an entry being re-provisioned; an entry that left the
- * queue entirely leaked its worktree and branch indefinitely. `flume
- * loop`/`flume job run` close that gap by calling
+ * queue entirely leaked its worktree and branch indefinitely. `flume loop`
+ * closes that gap by calling
  * `Dispatcher.sweepStaleWorktrees()` once, after the tip claim, before the
  * first tick (`src/cli.ts`). These tests call the method directly — the
  * CLI wiring is a one-line call site, and this is where the removal
@@ -4762,7 +4762,7 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
 
 /**
  * The one consumer of `readMergingMarkers` is the CLI's startup refusal
- * (`flume loop` / `flume job run`), where an empty read means *start*. So
+ * (`flume loop`), where an empty read means *start*. So
  * the listing's ENOENT-vs-other split is load-bearing: absent is the honest
  * empty answer, and anything else must escape rather than read as "no
  * interrupted merge" (`.claude/rules/engineering.md`, "Loud or nothing").

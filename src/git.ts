@@ -34,7 +34,7 @@ const FALLBACK_REMOVE_RETRY_DELAY_MS = 200;
  * path, a job dir named by an operator, a filename read back off git's own
  * `--name-only`. Under git's default parse those are globs, so a name
  * carrying `*`, `?` or `[` matches itself *and* every sibling it happens to
- * glob: `git add -- '.flume/jobs/a*'` stages sibling job `ab` too, and `git
+ * glob: `git add -- '.flume/plan/a*'` stages sibling `ab` too, and `git
  * rm -r` over the same spelling deletes it (measured, git 2.43). A leading
  * `:` is worse still — read as magic, `:leading.ts` selects nothing and
  * `:(icase)x` exits `128`. Either way the engine acts on a set it was never
@@ -49,9 +49,9 @@ const FALLBACK_REMOVE_RETRY_DELAY_MS = 200;
  * pathspec of every invocation the wrapper makes, including ones not written
  * yet (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
- * Exported for the sibling wrappers that spawn their own git —
- * `src/job.ts`'s porcelain wrapper and `harness/gitRange.ts`'s window reader
- * — so the three surfaces cannot disagree about what a pathspec means.
+ * Exported for the sibling wrapper that spawns its own git —
+ * `harness/gitRange.ts`'s window reader — so the two surfaces cannot
+ * disagree about what a pathspec means.
  */
 export function literalPathspecEnv(): NodeJS.ProcessEnv {
   return { ...process.env, GIT_LITERAL_PATHSPECS: "1" };
@@ -249,9 +249,10 @@ export async function dropLastCommit(
 
 /**
  * win32 MAX_PATH guard: repo-locally pin `core.longpaths` before any operation
- * that nests paths deep enough to exceed it — a job dir
- * (`.flume/jobs/<name>/...`) or a fanout worktree (nested at least as deep as
- * the job dir it was cloned for). No-op off win32. Checks the local config
+ * that nests paths deep enough to exceed it — a worktree under the state
+ * root's base, and everything a tick writes inside it. Both provisioning
+ * sites (`src/worktrees.ts`) call it before `git worktree add`. No-op off
+ * win32. Checks the local config
  * first and skips the write when already `true` — a blind repeat write races
  * an external holder of `.git/config` (downstream incident, @dtmd/flume 0.11.0
  * win32: EACCES on wave >= 2).

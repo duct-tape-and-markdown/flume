@@ -1085,7 +1085,7 @@ export class Dispatcher {
    * Startup sweep over this dispatcher's own worktree base
    * ({@link sweepStaleWorktrees}, `src/worktrees.ts` — what it removes, and
    * what it deliberately leaves standing, is documented there). Stays a
-   * method because `flume loop` and `flume job run` reach it through the
+   * method because `flume loop` reaches it through the
    * Dispatcher they already hold (`src/cli.ts`), after the tip claim is
    * acquired and before the first tick.
    */

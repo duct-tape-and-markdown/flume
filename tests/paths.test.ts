@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { chainLoadGate } from "../src/builtinGates.ts";
 import { loadChainModule } from "../src/chainLoad.ts";
 import type { GateContext } from "../src/Gate.ts";
-import { JobUsageError, jobNew, RUNTIME_IGNORES } from "../src/job.ts";
+import { RUNTIME_IGNORES } from "../src/job.ts";
 import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import {
@@ -597,16 +597,15 @@ describe("STATE_ROOT_NAMES owns the tick-verdict filenames", () => {
 
 // Mechanism pin (CHAIN-MODULE-PATH-ONE-DERIVATION, per
 // .claude/rules/engineering.md "The fix lands at the mechanism"): the loader
-// that imports the chain, the `job new` precondition that refuses without it,
-// and the gate that decides whether a commit touched it each spelled
-// `chain.ts` themselves. The gate's copy was the silent one — a divergence
-// leaves `chainLoadGate` reporting `skipped` over the very commit that broke
-// the chain.
+// that imports the chain and the gate that decides whether a commit touched
+// it each spelled `chain.ts` themselves. The gate's copy was the silent one —
+// a divergence leaves `chainLoadGate` reporting `skipped` over the very commit
+// that broke the chain.
 //
-// Both pins below are agreement gates (.claude/rules/engineering.md, "A seam
-// gate reads what the real writer wrote"): the real gate / the real verb names
-// the path, and the real loader is then driven over the file that name points
-// at. No chain filename is authored by this test's hand on either side.
+// The pin below is an agreement gate (.claude/rules/engineering.md, "A seam
+// gate reads what the real writer wrote"): the real gate names the path, and
+// the real loader is then driven over the file that name points at. No chain
+// filename is authored by this test's hand on either side.
 describe("the chain module's path has one derivation", () => {
   const PIN_CHAIN =
     `export default () => ({ chain: { phases: [{ name: "a", description: "", ` +
@@ -674,36 +673,6 @@ describe("the chain module's path has one derivation", () => {
     expect(ran.skipped).toBeUndefined();
   });
 
-  it("jobNew's chain precondition probes the file loadChainModule resolves from the same configDir", async () => {
-    // `jobNew` is the writer: over a chainless configDir its refusal names
-    // the path it probed, the only account it gives of that path.
-    const refusal = await jobNew({
-      repoRoot: repo,
-      name: "probe",
-      configDir,
-      flumeDir: configDir,
-      log: () => {},
-    }).then(
-      () => undefined,
-      (err: unknown) => err,
-    );
-    expect(refusal).toBeInstanceOf(JobUsageError);
-    const probed = /no chain at (.+?);/.exec((refusal as Error).message)?.[1];
-    // Vacuity: a refusal that named no path would leave the load below
-    // proving only that some chain somewhere loads.
-    expect(probed).toBeTruthy();
-    expect(probed).toBe(chainModulePath(configDir));
-
-    // The real consumer over the file the real precondition named.
-    await writeFile(probed!, PIN_CHAIN, "utf8");
-    const { chain } = await loadChainModule({
-      repoRoot: repo,
-      configDir,
-      flumeDir: configDir,
-    });
-    expect(chain.phases.map((p) => p.name)).toEqual(["a"]);
-  });
-
   it("the chain module's filename is spelled once, in paths.ts", () => {
     expect(CHAIN_MODULE_NAME).toBe("chain.ts");
 
@@ -718,8 +687,8 @@ describe("the chain module's path has one derivation", () => {
     expect(
       spellers,
       `src/: '${CHAIN_MODULE_NAME}' is spelled as a string literal outside ` +
-        "paths.ts — a fourth spelling is how the loader, the precondition " +
-        "and the gate come to name different files",
+        "paths.ts — a third spelling is how the loader and the gate come to " +
+        "name different files",
     ).toEqual(["paths.ts"]);
   });
 });

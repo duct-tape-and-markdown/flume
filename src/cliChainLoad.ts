@@ -3,15 +3,14 @@
  *
  * `refuseCjsContextHost` is the refusal: the one home for the
  * `CjsContextLoadError` -> headline + exit 2 contract (spec/cli.md, "A
- * CJS-context host is refused, never relayed"), reached by `flume check`,
- * `flume friction`, `flume job new` and `flume job run` alike rather than
- * re-typed in each catch (`.claude/rules/engineering.md`, "The fix lands at
+ * CJS-context host is refused, never relayed"), reached by `flume check` and
+ * `flume friction` alike rather than re-typed in each catch (`.claude/rules/engineering.md`, "The fix lands at
  * the mechanism"). `flume tick` holds the same contract one layer down, where
  * the refusal is a `TickOutcome.usageError` rather than an exit code.
  *
  * `loadChainForObservation` is the best-effort load the read-only surfaces
- * take — `flume status` and `flume wake`/`flume sleep` (`src/cli.ts`), `flume
- * job status` (`src/cliJobVerbs.ts`). Each reads chain-declared values
+ * take — `flume status` and `flume wake`/`flume sleep` (`src/cli.ts`). Each
+ * reads chain-declared values
  * (`Chain.pendingPath`, `Chain.friction`, `Chain.capabilities`,
  * `Chain.phases`) to describe or validate against state it will report either
  * way; none may fail on a chain that does not load, because none of them runs
@@ -77,8 +76,7 @@ type ChainObservation =
  * the reason it could not be had after reporting that reason on stderr —
  * never throws, so the caller's exit code is unaffected.
  *
- * `surface` is the verb naming itself in the report (`status`, `job status`,
- * `wake`). `degradedCost` is that verb's own sentence for what proceeding
+ * `surface` is the verb naming itself in the report (`status`, `wake`). `degradedCost` is that verb's own sentence for what proceeding
  * without the chain costs, printed after the failure and before the shared
  * bounding clause. `paths` is the caller's single `resolveStateDirs()`
  * result, so the factory sees the same canonicalized roots every other

@@ -1078,8 +1078,8 @@ describe("flume status — friction line", () => {
       // Deny the friction dir structurally (`tests/helpers/denial.ts`):
       // readdir now fails ENOTDIR — the path is there but is not a dir to
       // read — not ENOENT (`.claude/rules/engineering.md`, "Loud or
-      // nothing"). Same primitive `flume job status`'s own frictionCount
-      // test uses (tests/job.test.ts), and it denies on win32 too.
+      // nothing"). Same primitive `countFrictionFiles`'s own split is
+      // pinned with (tests/job.test.ts), and it denies on win32 too.
       denyDirectory(frictionDir);
 
       const r = await runCli(repo.dir, ["status"]);
@@ -1097,8 +1097,8 @@ describe("flume status — friction line", () => {
  * `flume status` names the pending entry count alongside awake phases:
  * a valid pending.json by entry count, a corrupt one as "unparsable" rather
  * than silently dropped, and an absent one as 0. No chain/git repo needed —
- * the count comes from `readPendingLoose` (`src/job.ts`), the same
- * chain-less probe `flume job status` uses per job.
+ * the count comes from `readPendingLoose` (`src/job.ts`), the chain-less
+ * probe pinned per-arm in tests/job.test.ts.
  */
 describe("flume status — pending entry count", () => {
   it("names the entry count for a valid pending.json", async () => {
@@ -1286,29 +1286,28 @@ describe("flume status — names the missing capability on a requiresCapability 
 });
 
 /**
- * A chain.ts whose factory throws — the load failure `status` and `job
- * status` must report rather than absorb. Throwing from the factory (not a
- * syntax error) keeps the failure the operator's own, with a message this
- * suite can name verbatim.
+ * A chain.ts whose factory throws — the load failure `status` must report
+ * rather than absorb. Throwing from the factory (not a syntax error) keeps
+ * the failure the operator's own, with a message this suite can name
+ * verbatim.
  */
 const THROWING_CHAIN_SRC =
   `export default () => {\n  throw new Error("chain factory exploded");\n};\n`;
 
 /**
- * CHAIN-LOAD-FAILURE-REPORTED — both observational surfaces load the chain
+ * CHAIN-LOAD-FAILURE-REPORTED — the observational surfaces load the chain
  * best-effort, for `Chain.pendingPath`, `Chain.friction`, and
  * `Chain.capabilities`. Best-effort used to mean silent: a chain that threw
  * left `status` printing a pending count rebased on the default queue path,
  * exit 0, with nothing said — a confident wrong number
  * (`.claude/rules/engineering.md`, "Loud or nothing"). The load is shared
  * (`loadChainForObservation`, `src/cliChainLoad.ts`) and reports its own
- * failure on stderr; the surfaces' exit codes are unchanged.
+ * failure on stderr; the surface's exit code is unchanged.
  *
  * Stderr alone was still the shape of a healthy repo to anything reading the
  * listing — `status`'s stdout was byte-identical over a chain that died — so
  * `status` also renders the failure as a row of its own output, ahead of the
- * count that rebased (spec/cli.md, "`flume status` owes exactly this"). The
- * row is `status`'s alone; `job status` keeps the stderr report it had.
+ * count that rebased (spec/cli.md, "`flume status` owes exactly this").
  */
 describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORTED)", () => {
   it("flume status names the chain-load failure it proceeded past", async () => {
@@ -1371,22 +1370,18 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
     }
   }, SPAWN_BUDGET_MS);
 
-  it("both observational surfaces still exit 0 when the chain fails to load", async () => {
+  it("flume status still exits 0 when the chain fails to load", async () => {
     const repo = await makeJobRepo("main");
     try {
       await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
-      await mkdir(join(repo.dir, ".flume", "jobs", "j1"), { recursive: true });
 
       const status = await runCliStreams(repo.dir, ["status"]);
-      const jobStatus = await runCliStreams(repo.dir, ["job", "status"]);
 
       expect(status.code).toBe(0);
-      expect(jobStatus.code).toBe(0);
-      // The failure and the cost sentence it carries ride stderr on both
-      // surfaces; each surface's own listing is otherwise the text it prints
-      // over a chain that loads — plus, on `status` alone, the row below.
+      // The failure and the cost sentence it carries ride stderr; the
+      // listing is otherwise the text it prints over a chain that loads —
+      // plus the row below.
       expect(status.stderr).toContain("chain failed to load");
-      expect(jobStatus.stderr).toContain("chain failed to load");
       expect(status.stdout).toContain("hibernating");
       expect(status.stdout).toContain("pending: 0");
       // The stderr report's cost sentence stays on stderr — the stdout row is
@@ -1394,12 +1389,6 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
       // one arm rather than a `not` over the whole listing
       // (`.claude/rules/posture-sweep.md`, the negative-assertion lens).
       expect(status.stdout).not.toContain("proceeding over engine defaults");
-      expect(jobStatus.stdout).toContain("j1");
-      // `job status` has no such row: its listing is one line per job, and a
-      // chain that died costs every one of them the same thing, so the report
-      // stays whole on stderr (spec/cli.md, "`flume status` owes exactly
-      // this" — the row is `status`'s alone).
-      expect(jobStatus.stdout).not.toContain("failed to load");
     } finally {
       await repo.cleanup();
     }
@@ -1713,7 +1702,7 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
       expect(r.code).toBe(EX_IOERR);
       expect(r.out).toContain(join(flumeDir, "stop"));
       expect(r.out).toContain("failed to stat");
-      expect(r.out).not.toContain("the next `loop`/`job run` refuses");
+      expect(r.out).not.toContain("the next `loop` refuses");
       expect(r.out).not.toContain("will finish its in-flight tick");
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -1721,7 +1710,7 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
   }, SPAWN_BUDGET_MS);
 
   it(
-    "names the path and that the next loop/job run refuses, when no supervisor is live",
+    "names the path and that the next loop refuses, when no supervisor is live",
     async () => {
       const dir = await mkFixtureRoot("flume-status-stop-dead-");
       try {
@@ -1732,7 +1721,7 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
         expect(r.code).toBe(0);
         expect(r.out).toContain(join(flumeDir, "stop"));
         expect(r.out).toContain(
-          "the next `loop`/`job run` refuses to start until it is removed",
+          "the next `loop` refuses to start until it is removed",
         );
         expect(r.out).not.toContain("supervisor pid");
       } finally {
@@ -3226,7 +3215,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
   );
 
   it(
-    "job run refuses at start too, sharing the same `loop` rewrite",
+    "a job-resolved state root refuses at start too, on its own stop flag",
     async () => {
       const repo = await makeJobRepo("main");
       try {
@@ -3237,9 +3226,9 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
         await writeFile(stopPath, "", "utf8");
 
         const r = await runCli(repo.dir, [
-          "job",
-          "run",
+          "--job",
           "probejob",
+          "loop",
           "--max",
           "3",
         ]);
@@ -3343,7 +3332,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
   );
 
   it(
-    "job run refuses at start too, sharing the same `loop` rewrite",
+    "a job-resolved state root refuses at start too, on its own marker",
     async () => {
       const repo = await makeJobRepo("main");
       try {
@@ -3356,9 +3345,9 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
         );
 
         const r = await runCli(repo.dir, [
-          "job",
-          "run",
+          "--job",
           "probejob",
+          "loop",
           "--max",
           "3",
         ]);
@@ -4097,24 +4086,6 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
     SPAWN_BUDGET_MS,
   );
 
-  it(
-    "flume job run <name> <extra> still refuses via its pre-existing check (baseline unchanged)",
-    async () => {
-      const repo = await makeJobRepo("main");
-      try {
-        await writeRepoConfig(repo.dir, minimalChainSrc());
-        const r = await runCli(repo.dir, ["job", "run", "probejob", "extra"]);
-        expect(r.code).toBe(2);
-        expect(r.out).toContain("usage: flume job run");
-        expect(
-          existsSync(join(repo.dir, ".flume", "jobs", "probejob", "loop.pid")),
-        ).toBe(false);
-      } finally {
-        await repo.cleanup();
-      }
-    },
-    SPAWN_BUDGET_MS,
-  );
 });
 
 /**
@@ -4765,7 +4736,7 @@ describe("flume loop — runtime ignores at the default state root", () => {
  * direct spawn (`spec/cli.md`, *win32 is a supported host*), so the plant the
  * whole block is built on cannot be reached there.
  */
-describe("flume loop / job run — the git floor warning", () => {
+describe("flume loop — the git floor warning", () => {
   /**
    * The host's own git, found the way a spawn would find it — on the PATH
    * this process had before any shim was planted in front of it.
@@ -4846,16 +4817,18 @@ describe("flume loop / job run — the git floor warning", () => {
   );
 
   it.skipIf(process.platform === "win32")(
-    "flume job run below the git floor warns once and still runs",
+    "a job-resolved loop below the git floor warns once and still runs",
     async () => {
       const repo = await makeJobRepo("main");
       const shim = await plantGit("git version 2.35.9");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
+        const jobFlumeDir = join(repo.dir, ".flume", "jobs", "probejob");
+        await mkdir(jobFlumeDir, { recursive: true });
 
         const r = await runCli(
           repo.dir,
-          ["job", "run", "probejob", "--max", "0"],
+          ["--job", "probejob", "loop", "--max", "0"],
           withGit(shim),
         );
 
@@ -4863,11 +4836,9 @@ describe("flume loop / job run — the git floor warning", () => {
         expect(r.out).toContain("reached --max 0");
         expect(warnings(r.out)).toBe(1);
         expect(r.out).toContain("git version 2.35.9");
-        // The job's own state root was materialized: the verb ran as itself,
-        // not as a bare `loop` that happened to warn.
-        expect(existsSync(join(repo.dir, ".flume", "jobs", "probejob"))).toBe(
-          true,
-        );
+        // The run really was against the job's own root: its lock landed
+        // there and not in the bay.
+        expect(existsSync(join(repo.dir, ".flume", "loop.pid"))).toBe(false);
       } finally {
         await rm(shim, { recursive: true, force: true });
         await repo.cleanup();

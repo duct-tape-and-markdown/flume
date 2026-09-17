@@ -26,7 +26,7 @@ export function tickExitCode(outcome: TickOutcome): number {
 }
 
 /**
- * Map a whole `flume loop` / `job run` supervised run to its process exit
+ * Map a whole `flume loop` supervised run to its process exit
  * code: `terminal`/`mountDead` propagate the child's abort code unchanged.
  * `repeatedFailure` is unconditionally non-zero — the consecutive-failure
  * backstop fired regardless of how much the run shipped before hitting the
@@ -65,7 +65,7 @@ export function describeRefFailure(
 }
 
 /**
- * `flume loop` / `job run`'s completion summary line naming surfaced tick
+ * `flume loop`'s completion summary line naming surfaced tick
  * errors, an abort on the consecutive-failure backstop (named by the stage
  * `superviseLoop` reported it against — provision, merge or gate — never
  * fixed to one of the three), (spec/loop.md

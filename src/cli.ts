@@ -39,11 +39,9 @@ import {
 import {
   ensureRuntimeIgnores,
   frictionIgnoreEntry,
-  jobRun,
   liveLoopClaim,
   liveLoopPid,
   readPendingLoose,
-  JobUsageError,
 } from "./job.js";
 import { diskChainLoader } from "./chainLoad.js";
 import { renderPidClaim, type PidClaim } from "./pidClaim.js";
@@ -102,7 +100,6 @@ import {
   loadChainForObservation,
   refuseCjsContextHost,
 } from "./cliChainLoad.js";
-import { runJobVerb } from "./cliJobVerbs.js";
 import type { FlumePaths } from "./flumeApi.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -125,10 +122,8 @@ export const EX_DATAERR = 65;
 export const EX_IOERR = 74;
 
 /**
- * Shared `--max` numeric parse for `job run` (rewrites into `loop` below) and
- * `loop` itself — a non-numeric or negative value must refuse identically on
- * both surfaces, and `job run` must refuse before its preflight wakes the
- * entry phase, not after rewriting into `loop`.
+ * `loop`'s `--max` numeric parse: a value that is missing, non-numeric or
+ * negative is `null`, and the caller refuses on it before the run starts.
  */
 function parseMaxValue(value: string | undefined): number | null {
   const parsed = value !== undefined ? Number(value) : NaN;
@@ -296,57 +291,11 @@ async function main(): Promise<number> {
   let rest = restArgs;
 
   // Per-subcommand --help short-circuits before any side effects (chain load,
-  // baton mutation, agent invocation). `job` is on this same arm — its verbs
-  // share one page, which `helpPageFor` decides alongside the table's.
+  // baton mutation, agent invocation).
   const cmdHelp = helpPageFor(cmd);
   if (cmdHelp !== undefined && wantsHelp(rest)) {
     process.stdout.write(cmdHelp);
     return 0;
-  }
-
-  // `flume job <verb>`. `run` is the exception — it IS the standard loop under
-  // the job resolution, so it rewrites itself into `--job <name> loop [--max
-  // N]` and falls through; only its preflight (branch + entry-phase wake) runs
-  // before the loop, below. The other verbs (`status`/`rm`/`new`) are stashed
-  // in `jobVerbArgs` and dispatched to `runJobVerb` *after* state-dir
-  // resolution below — they operate on the repo and the job dir named by their
-  // own argument, not on a resolved state root, but they still need the single
-  // canonicalized `configDir` every other subcommand reads, not a
-  // re-derivation from raw `process.env.FLUME_CONFIG_DIR`.
-  let jobRunName: string | undefined;
-  let jobVerbArgs: readonly string[] | undefined;
-  if (cmd === "job") {
-    if (rest[0] === "run") {
-      const words = rest.slice(1);
-      let maxArgs: string[] = [];
-      const maxIdx = words.indexOf("--max");
-      if (maxIdx >= 0) {
-        const value = words[maxIdx + 1];
-        if (parseMaxValue(value) === null) {
-          console.error("usage: flume job run <name> [--max N]");
-          return 2;
-        }
-        maxArgs = ["--max", value as string];
-        words.splice(maxIdx, 2);
-      }
-      const name = words[0];
-      if (!name || words.length > 1) {
-        console.error("usage: flume job run <name> [--max N]");
-        return 2;
-      }
-      if (jobFlag !== undefined && jobFlag !== name) {
-        console.error(
-          `[flume] --job ${jobFlag} conflicts with \`job run ${name}\`: one resolution authority — drop --job`,
-        );
-        return 2;
-      }
-      jobRunName = name;
-      jobFlag = name;
-      cmd = "loop";
-      rest = maxArgs;
-    } else {
-      jobVerbArgs = rest;
-    }
   }
 
   // Resolve both state roots up front and canonicalize them back into the env.
@@ -358,8 +307,7 @@ async function main(): Promise<number> {
   // (not constructing) lets the values survive the `loop` → `tick` process
   // boundary — children inherit the (now absolute-canonical) env vars — and
   // lets a chain loaded later in this process read one authoritative state
-  // root. This runs ahead of every subcommand branch, `job status`/`rm`/`new`
-  // included, so none of them re-derives `configDir` independently.
+  // root.
   let flumeDir: string;
   let configDir: string;
   let job: string | undefined;
@@ -381,24 +329,15 @@ async function main(): Promise<number> {
   // `resolveStateDirs` reached rather than re-deriving one from the env.
   const paths: FlumePaths = { repoRoot, configDir, flumeDir };
 
-  if (jobVerbArgs !== undefined) {
-    return runJobVerb(jobVerbArgs, paths);
-  }
-
-  // `--job` / `FLUME_JOB` names an existing state root everywhere except
-  // `job new` (which creates it — routed above via `runJobVerb`, never
-  // reaches this guard) and `job run` (spec/jobs.md "`flume job run <name>`"
-  // — no existence precondition, by design: it may materialize a bare state
-  // root). `jobRunName` is what distinguishes the `job run` rewrite from a
-  // bare `--job`/`FLUME_JOB` use of `status`/`tick`/`loop`/`wake`/`sleep` —
-  // the flag alone can't carry that distinction, since `job run` reaches
-  // this same resolution by construction (above).
+  // `--job` / `FLUME_JOB` names an existing state root: nothing in the verb
+  // set creates one, so a name with no directory behind it is a typo, not a
+  // job waiting to be seeded.
   // Absent is the only silent reading, as with the `status` probes below:
   // `existsLoud` (src/fsProbe.ts) refuses a state root that is present but
   // unstattable (a symlink loop, a permission-denied parent) rather than
   // reporting `does not exist` over a job the operator can see on disk
   // (`.claude/rules/engineering.md`, "Loud or nothing").
-  if (job !== undefined && jobRunName === undefined) {
+  if (job !== undefined) {
     let stateRootPresent: boolean;
     try {
       stateRootPresent = existsLoud(namespacedJoin(flumeDir));
@@ -411,32 +350,6 @@ async function main(): Promise<number> {
     if (!stateRootPresent) {
       console.error(`[flume] no job '${job}': ${flumeDir} does not exist`);
       return 2;
-    }
-  }
-
-  // `job run` preflight: wake the entry phase iff hibernating. Placed after
-  // the resolution (a conflict must refuse before any mutation). No branch
-  // assertion — the engine has no opinion on which branch a state root runs
-  // on.
-  if (jobRunName !== undefined) {
-    try {
-      await jobRun({ name: jobRunName, repoRoot, flumeDir, configDir });
-    } catch (err) {
-      // `jobRun` loads the chain to name the entry phase whenever the baton
-      // is hibernating, so this catch sees the same CJS-context refusal
-      // `check`, `friction` and `job new` do — through the same arm, so no
-      // surface can drift into relaying it at exit 1 behind a
-      // `job run failed:` prefix.
-      const cjs = refuseCjsContextHost(err);
-      if (cjs !== undefined) return cjs;
-      if (err instanceof JobUsageError) {
-        console.error(`[flume] ${err.message}`);
-        return 2;
-      }
-      console.error(
-        `[flume] job run failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return 1;
     }
   }
 
@@ -507,8 +420,8 @@ async function main(): Promise<number> {
         supervisor
           ? `${statusStopPath} present: the running supervisor will finish ` +
               "its in-flight tick and end the run"
-          : `${statusStopPath} present: the next \`loop\`/\`job run\` refuses ` +
-              "to start until it is removed",
+          : `${statusStopPath} present: the next \`loop\` refuses to start ` +
+              "until it is removed",
       );
     }
     // Report the current tip's claim alongside supervisor liveness,
@@ -563,10 +476,9 @@ async function main(): Promise<number> {
     // the count it explains; nothing above it is withheld, and the exit stays
     // 0.
     if (loadFailure) console.log(`chain: failed to load — ${loadFailure}`);
-    // The pending entry count, independent of whether the chain loads — `flume
-    // job status` probes the same file the same way (`readPendingLoose`,
-    // src/job.ts), so a corrupt pending.json reads "unparsable" identically
-    // on both surfaces.
+    // The pending entry count, independent of whether the chain loads:
+    // `readPendingLoose` (src/job.ts) is the probe, so an absent queue reads
+    // 0 and a corrupt one reads "unparsable" rather than failing the verb.
     const pending = readPendingLoose(
       resolvePendingPath(flumeDir, chain?.pendingPath),
     );
@@ -687,8 +599,8 @@ async function main(): Promise<number> {
     writeFileSync(namespacedJoin(stopPath), "");
     console.log(
       `[flume] wrote ${stopPath}: a live supervisor finishes its in-flight ` +
-        "tick and ends the run; the next `loop`/`job run` refuses to start " +
-        "until the flag is removed.",
+        "tick and ends the run; the next `loop` refuses to start until the " +
+        "flag is removed.",
     );
     return 0;
   }
@@ -1219,24 +1131,21 @@ async function main(): Promise<number> {
       words.splice(words.indexOf("--max"), 2);
     }
     // loop consumes zero positionals — an unexpected trailing token past
-    // `--max N` runs something other than what the operator typed, the same
-    // harm class as `job run`'s pre-existing `words.length > 1` check
+    // `--max N` runs something other than what the operator typed
     // (spec/cli.md "Subcommand surface", gh#1).
     if (words.length > 0) {
       console.error("usage: flume loop [--max N]");
       return 2;
     }
     // The git floor, read once per run and never per tick: the `flume tick`
-    // children `superviseLoop` spawns below reach no branch that reads it,
-    // and `job run` arrives here through its own `cmd = "loop"` rewrite
-    // above, so both verbs the floor is stated for warn exactly once
-    // (spec/chain.md, "The package a chain loads through").
+    // children `superviseLoop` spawns below reach no branch that reads it, so
+    // a run warns exactly once (spec/chain.md, "The package a chain loads
+    // through").
     const gitFloorLine = gitFloorWarning(await readGitVersion(repoRoot));
     if (gitFloorLine !== undefined) console.error(gitFloorLine);
     // spec/loop.md "Graceful stop — the stop flag": presence at start
     // refuses the run before any tick — a stale flag must never silently
-    // swallow a scheduled run. `job run` reaches this same branch via its
-    // `cmd = "loop"` rewrite above, so it refuses identically.
+    // swallow a scheduled run.
     // Absent is the only silent reading: a flag that is present but
     // unstattable would otherwise start the run, which is the one outcome
     // this guard exists to rule out (`.claude/rules/engineering.md`, "Loud or
@@ -1362,7 +1271,7 @@ async function main(): Promise<number> {
     writeFileSync(lockPath, renderPidClaim(process.pid, new Date()));
     lockHeld = true;
     // Advisory per-ref tip claim — one flume writer per tip, the resource
-    // multiple jobs under one checkout actually contend on. Guards a different
+    // two flume runs over one checkout actually contend on. Guards a different
     // resource than loop.pid (a ref vs. a state root); both stand. A refusal
     // here rolls back the loop.pid claim just taken above — through the same
     // `dropLock` the signal handlers call, so the rollback has one owner.
@@ -1447,17 +1356,16 @@ async function main(): Promise<number> {
     } catch {
       // unresolved chain — defaults apply; the child tick names the failure
     }
-    // spec/jobs.md "Runtime ignores": the default `<repoRoot>/.flume` takes
-    // the same runtime-owned merge a job dir takes at `job new` — declared
-    // `Chain.friction` included, through the one `frictionIgnoreEntry`
-    // spelling (`src/job.ts`) — so a fresh adopter never commits a tick
-    // artifact because a line was missing from the repo's own ignore file.
-    // Under the tip claim and ahead of the sweep below: the claim is what
-    // rules out a concurrent writer against this root, and the sweep is the
-    // first thing this run writes under it. Idempotent — a root already
-    // carrying the entries is left byte-identical. `job run` reaches this
-    // via its `cmd = "loop"` rewrite above, where the root is the job dir
-    // `job new` already merged; a bare tick never does.
+    // spec/jobs.md "Runtime ignores": the state root this run writes under
+    // takes the runtime-owned merge — declared `Chain.friction` included,
+    // through the one `frictionIgnoreEntry` spelling (`src/job.ts`) — so a
+    // fresh adopter never commits a tick artifact because a line was missing
+    // from the repo's own ignore file. Under the tip claim and ahead of the
+    // sweep below: the claim is what rules out a concurrent writer against
+    // this root, and the sweep is the first thing this run writes under it.
+    // Idempotent — a root already carrying the entries is left
+    // byte-identical. `loop` is the only verb that merges; a bare tick never
+    // does.
     await ensureRuntimeIgnores(
       flumeDir,
       friction !== undefined ? [frictionIgnoreEntry(friction)] : [],
@@ -1466,9 +1374,8 @@ async function main(): Promise<number> {
     // the tip claim above and before the first tick, so a dead prior wave's
     // abandoned worktrees/branches never linger past this start. Safe here
     // and only here — holding the claim just acquired is what rules out a
-    // live sibling owning anything under this state root's worktree base.
-    // `job run` reaches this same branch via its `cmd = "loop"` rewrite
-    // above, so it shares this call; a bare `flume tick` never does.
+    // live sibling owning anything under this state root's worktree base. A
+    // bare `flume tick` never sweeps.
     await dispatcher.sweepStaleWorktrees();
     // Supervisor: one fresh `flume tick` process per iteration. Past the sweep
     // call above, the dispatcher constructed above is otherwise unused on this

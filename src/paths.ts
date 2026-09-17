@@ -12,8 +12,8 @@
  * is the one place that pairs them.
  *
  * Those layout sections (bottom of this file) are here for the same reason
- * and need nothing beyond `node:path`, so the CLI, the dispatcher, the
- * baton, and the job verbs can all reach them without a cycle. The module's
+ * and need nothing beyond `node:path`, so the CLI, the dispatcher and the
+ * baton can all reach them without a cycle. The module's
  * only other imports keep that property: `Phase` is type-only and erased,
  * and `PendingSchema` reaches no further than zod.
  */
@@ -398,13 +398,6 @@ export function isDotName(name: string): boolean {
  */
 export const STATE_ROOT_DIRNAME = ".flume";
 
-/**
- * The job namespace's place under a repo root (spec/jobs.md, *A job is a
- * state root*) — relative, so the absolute accessors below and the
- * repo-relative {@link jobDirRel} hang from one composition rather than
- * spelling the two segments apiece.
- */
-const JOBS_REL = join(STATE_ROOT_DIRNAME, "jobs");
 
 /**
  * The state root a repo root carries when nothing relocates it —
@@ -412,9 +405,8 @@ const JOBS_REL = join(STATE_ROOT_DIRNAME, "jobs");
  *
  * **The one composition.** Every default that resolves to the bay reads it
  * here: `resolveStateDirs`'s two dirs (`src/cliJobResolution.ts`), the
- * `Dispatcher`'s `flumeDir` (`src/Dispatcher.ts`), `superviseLoop`'s two
- * (`src/loopSupervisor.ts`), and `jobNew`'s `configDir` / `flumeDir`
- * (`src/job.ts`). Each used to spell the layout itself, so a relocation had
+ * `Dispatcher`'s `flumeDir` (`src/Dispatcher.ts`) and `superviseLoop`'s two
+ * (`src/loopSupervisor.ts`). Each used to spell the layout itself, so a relocation had
  * to be remembered at a dozen sites, and a site that forgot would resolve a
  * state root the rest of the engine never reads
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
@@ -425,36 +417,19 @@ export function defaultStateRoot(repoRoot: string): string {
 }
 
 /**
- * Where a repo's jobs live — `<repoRoot>/.flume/jobs`, the dir `job status`
- * enumerates (`src/job.ts`). Anchored on the *default* state root by
- * construction: a job's state root is a place in the repo's tree, not a
- * place under whatever `FLUME_DIR` the current invocation resolved.
- */
-export function jobsRoot(repoRoot: string): string {
-  return join(repoRoot, JOBS_REL);
-}
-
-/**
- * One job's state root — `<repoRoot>/.flume/jobs/<name>`, absolute. The dir
- * `job new` seeds, `job rm` removes, `job status` reads a row from, and
- * `--job <name>` resolves `flumeDir` to; one composition, so the verb that
- * creates a job and the flag that runs it cannot address different dirs.
+ * The state root `--job <name>` resolves `flumeDir` to —
+ * `<repoRoot>/.flume/jobs/<name>`, absolute. Anchored on the *default* state
+ * root by construction: the flag names a place in the repo's tree, not a
+ * place under whatever `FLUME_DIR` the invocation would otherwise resolve.
  *
- * `name` is a single path segment — `validateJobName` (`src/job.ts`) is
- * where that shape is enforced, on the creating verb.
+ * `name` arrives from the flag verbatim — `resolveStateDirs`
+ * (`src/cliJobResolution.ts`) composes it straight in, and the engine mints
+ * no such directory itself (spec/jobs.md, *The checkout is the unit of
+ * isolation*), so a name that is not a single segment resolves a root that
+ * does not exist and the CLI refuses on its absence.
  */
 export function jobDir(repoRoot: string, name: string): string {
-  return join(jobsRoot(repoRoot), name);
-}
-
-/**
- * The same dir, repo-relative — `.flume/jobs/<name>` in the host's
- * alphabet. For the callers that need the offset rather than the location:
- * `jobDirPathspec` (`src/job.ts`) folds {@link gitPath} over this to name
- * the dir to git.
- */
-export function jobDirRel(name: string): string {
-  return join(JOBS_REL, name);
+  return join(repoRoot, STATE_ROOT_DIRNAME, "jobs", name);
 }
 
 // ---------- the state root's layout ----------
@@ -470,7 +445,7 @@ export function jobDirRel(name: string): string {
  * restated beside its source").
  *
  * Exported for the one consumer that needs a bare name rather than a path:
- * the job `.gitignore` seed (`RUNTIME_IGNORES`, `src/job.ts`). Everything
+ * the runtime ignore set (`RUNTIME_IGNORES`, `src/job.ts`). Everything
  * that builds a path takes an accessor below.
  *
  */
@@ -567,8 +542,8 @@ export function worktreesBase(flumeDir: string, declared?: string): string {
  * spec/loop.md "Crash equals stop": where the merge stage leaves one marker
  * per entry whose span it is mid-way through putting on trunk —
  * `<flumeDir>/merging/<slug>.json`. Written before the pick and removed once
- * the ship bookkeeping has landed, so a file here at the next `loop` / `job
- * run` start is a merge a crash interrupted and the run refuses.
+ * the ship bookkeeping has landed, so a file here at the next `loop` start
+ * is a merge a crash interrupted and the run refuses.
  *
  * Same split as {@link tickVerdictPath}: this module owns the name so the
  * CLI's startup refusal can reach it without importing the marker's reader,
@@ -609,7 +584,7 @@ export function stopFlagPath(flumeDir: string): string {
  * The latest tick's verdict alone, overwritten every real `flume tick` and
  * removed by `clearTickVerdict` before that tick's own work begins.
  * Re-exported from `src/tickVerdict.ts`, which owns what the file carries and
- * when — this module owns only the name, so the job `.gitignore` seed can
+ * when — this module owns only the name, so the runtime ignore set can
  * reach it without importing the verdict's I/O.
  */
 export function tickVerdictPath(flumeDir: string): string {
@@ -637,8 +612,8 @@ export const DEFAULT_PENDING_REL = join("plan", "pending.json");
  * The queue file a state root actually reads: the chain's declared
  * `pendingPath` when it has one, {@link DEFAULT_PENDING_REL} otherwise,
  * resolved against `stateRoot`. Every consumer of the queue — the
- * dispatcher, `flume check`, `flume status`, `flume job status` — resolves
- * it here, so an undeclared queue is the same absolute file on all of them.
+ * dispatcher, `flume check`, `flume status` — resolves it here, so an
+ * undeclared queue is the same absolute file on all of them.
  */
 export function resolvePendingPath(stateRoot: string, declared?: string): string {
   return join(stateRoot, declared ?? DEFAULT_PENDING_REL);
@@ -648,10 +623,9 @@ export function resolvePendingPath(stateRoot: string, declared?: string): string
 
 /**
  * The chain module's filename under a config dir. Spelled here and nowhere
- * else in `src/`: the loader that imports it, the `job new` precondition
- * that refuses without it, and the gate that decides whether a commit
- * touched it all read {@link chainModulePath}, so the three cannot disagree
- * about which file the chain is.
+ * else in `src/`: the loader that imports it and the gate that decides
+ * whether a commit touched it both read {@link chainModulePath}, so the two
+ * cannot disagree about which file the chain is.
  */
 export const CHAIN_MODULE_NAME = "chain.ts";
 
@@ -660,11 +634,10 @@ export const CHAIN_MODULE_NAME = "chain.ts";
  * (spec/chain.md "Chain residency").
  *
  * **The one derivation.** `loadChainModule` (`src/chainLoad.ts`) resolves
- * the file it imports from here; `jobNew`'s chain precondition (`src/job.ts`)
- * probes the same path before it creates a job that could never `run`; and
- * `chainLoadGate` (`src/builtinGates.ts`) keys its touched-path check on
- * this path made repo-relative. Each used to spell the filename itself, and
- * the gate's copy was the silent one: a divergence leaves it reporting
+ * the file it imports from here, and `chainLoadGate` (`src/builtinGates.ts`)
+ * keys its touched-path check on this path made repo-relative. Each used to
+ * spell the filename itself, and the gate's copy was the silent one: a
+ * divergence leaves it reporting
  * `skipped` over the very commit that broke the chain the loader then
  * refuses (`.claude/rules/engineering.md`, "The fix lands at the
  * mechanism").

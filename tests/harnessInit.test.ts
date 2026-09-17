@@ -36,7 +36,7 @@ import {
   type HarnessInitResult,
 } from "../harness/index.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
-import { HELP_JOB, HELP_TOP, isSubcommand } from "../src/cliHelp.ts";
+import { HELP_TOP, isSubcommand } from "../src/cliHelp.ts";
 import { parsePending } from "../src/PendingSchema.ts";
 import { queuePath } from "../harness/layout.ts";
 import { resolvePendingPath } from "../src/paths.ts";
@@ -658,12 +658,10 @@ it("the engine's flume bin exposes no harness verb", async () => {
   expect(isSubcommand("init")).toBe(false);
   expect(isSubcommand("harness")).toBe(false);
 
-  // Nor in the help text a caller reads to find the verbs: neither the top
-  // table nor the job one lists an adoption command.
-  for (const help of [HELP_TOP, HELP_JOB]) {
-    expect(help.length).toBeGreaterThan(0);
-    expect(help).not.toMatch(/^ {2}(init|harness)\b/m);
-  }
+  // Nor in the help text a caller reads to find the verbs: the top table
+  // lists no adoption command.
+  expect(HELP_TOP.length).toBeGreaterThan(0);
+  expect(HELP_TOP).not.toMatch(/^ {2}(init|harness)\b/m);
 
   // And the engine's bin reaches the engine's entry alone — a shim that
   // routed a verb into the harness emit would name it here. Comment lines
@@ -841,8 +839,8 @@ it("the chain.ts init writes loads through the engine's chain loader as a valid 
   await installShim(repoRoot, result.packageName);
   expect(result.written).toContain(`${result.stateRoot}/chain.ts`);
 
-  // `loadChainModule` is what every tick, `jobNew` and `chainLoadGate` reach
-  // a chain through, so driving it over the adopted roots — repo root, and
+  // `loadChainModule` is what every tick and `chainLoadGate` reach a chain
+  // through, so driving it over the adopted roots — repo root, and
   // the state root as both config dir and state dir, exactly as a consumer's
   // `flume tick` resolves them — is the load a first tick performs. It runs
   // in a child under `tsx` because the chain resolves its own bare imports

@@ -5,7 +5,7 @@
  *
  * spec/loop.md "Crash equals stop". The wave's merge stage writes a marker
  * around each cherry-pick (`src/waveTick.ts`); the CLI's startup refusal
- * (`flume loop`, `flume job run`) is the reader. The shape sits with the
+ * (`flume loop`) is the reader. The shape sits with the
  * reader rather than inside the leg that stakes it because it is the
  * vocabulary of that seam, not of a tick (`.claude/rules/engineering.md`, *A
  * module is one job*).
@@ -51,8 +51,8 @@ function isMergingMarker(rec: unknown): rec is MergingMarker {
 
 /**
  * Every merge marker standing under a state root, each paired with the file
- * it was read from — the CLI's startup refusal (`flume loop` / `flume job
- * run`) is the one consumer.
+ * it was read from — the CLI's startup refusal (`flume loop`) is the one
+ * consumer.
  *
  * A file that will not parse, or parses to the wrong shape, still counts:
  * the marker's *presence* is the fact, and degrading an unreadable one to

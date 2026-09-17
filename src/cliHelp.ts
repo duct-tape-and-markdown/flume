@@ -5,7 +5,6 @@
  * on disk this tick").
  */
 
-import { RUNTIME_IGNORES } from "./job.js";
 import { DEFAULT_ABORT_THRESHOLD } from "./loopSupervisor.js";
 
 const SUBCOMMANDS = [
@@ -34,8 +33,8 @@ Commands:
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
   stop                Write .flume/stop and print what happens next: a live
                       supervisor finishes its in-flight tick then ends the
-                      run; the next loop/job run refuses to start until the
-                      flag is removed. Idempotent. No unstop/resume verb —
+                      run; the next loop refuses to start until the flag is
+                      removed. Idempotent. No unstop/resume verb —
                       removing the flag is the operator's own acknowledgement.
   log [-n N] [--json] Print the last N tick verdicts (default 10) from
                       tick-verdicts.jsonl, oldest first — a human table by
@@ -51,19 +50,6 @@ Commands:
   friction [name]     List (bare) the declared friction channel's notes —
                       filename, size, mtime — or, with <name>, print that
                       note's bytes verbatim. Never interpreted.
-  job new <name>      Seed .flume/jobs/<name>/ from the repo chain's declared
-                      Chain.seedDir, if any (runtime .gitignore, baseline
-                      commit on the current HEAD). No branch created.
-  job run <name> [--max N]
-                      Wake the chain's entry phase from hibernation, then
-                      loop under the job resolution — on whatever branch
-                      HEAD is on.
-  job rm <name>       Remove the job's state root: git rm + cleanup commit on
-                      the current HEAD, untracked runtime swept, worktrees
-                      pruned. Refuses on a live loop.
-  job status          List jobs under .flume/jobs/ — awake phases + pending
-                      count, plus a friction count where declared and
-                      non-empty, per job. Observational; no side effects.
 
 Options:
   --job <name>        Resolve state to <repoRoot>/.flume/jobs/<name> and set
@@ -72,8 +58,7 @@ Options:
                       chains are repo-resident; an explicit FLUME_CONFIG_DIR
                       composes. Conflicts with explicit FLUME_DIR (exit 2).
                       Refuses (exit 2) if <name> names no existing state
-                      root — every command reached this way except
-                      \`job run\`, which may create one; use \`job new\`.
+                      root: no verb creates one.
   -h, --help          Print this message (\`flume help\` prints the same).
   -v, --version       Print the flume version.
 
@@ -218,8 +203,8 @@ Exit codes:
 Write <flumeDir>/stop and print what happens next: a live supervisor
 finishes its in-flight tick — merge, park, verdict, and handoff run exactly
 as they would have — then releases the tip claim and the loop lock and ends
-the run; without a live supervisor, the next \`loop\`/\`job run\` refuses to
-start until the flag is removed. Idempotent — a repeat call finds the flag
+the run; without a live supervisor, the next \`loop\` refuses to start until
+the flag is removed. Idempotent — a repeat call finds the flag
 already present and prints the same statement. The verb is discoverability
 plus the printed statement, never a privileged channel: \`touch\` on the same
 path is equally the interface. There is deliberately no \`unstop\`/\`resume\`
@@ -345,121 +330,13 @@ Exit codes:
 `,
 };
 
-/**
- * Comma-joined `items` filled into `indent`-prefixed lines no wider than
- * `width`. A help block interpolating a runtime-owned list cannot hand-wrap
- * it — the literal does not know how many entries the constant holds, which
- * is the whole point of reading it from there.
- */
-function fillList(
-  items: readonly string[],
-  indent: string,
-  width: number,
-): string {
-  const lines: string[] = [];
-  let line = indent;
-  items.forEach((item, i) => {
-    const piece = i === items.length - 1 ? item : `${item},`;
-    if (line !== indent && line.length + 1 + piece.length > width) {
-      lines.push(line);
-      line = indent;
-    }
-    line += line === indent ? piece : ` ${piece}`;
-  });
-  lines.push(line);
-  return lines.join("\n");
-}
-
-/**
- * The ignore set `job new` seeds, read off {@link RUNTIME_IGNORES} — the
- * constant `jobNew` actually merges — rather than respelled here, so an
- * entry added to the runtime's layout cannot leave this surface naming a
- * subset (`.claude/rules/engineering.md`, "Derived state is computed, never
- * restated beside its source").
- */
-const RUNTIME_IGNORE_ROSTER = fillList([...RUNTIME_IGNORES], "        ", 78);
-
-export const HELP_JOB = `Usage: flume job <verb> [args]
-
-Lifecycle verbs over a job — .flume/jobs/<name>/, tracked files in the
-working tree, on whatever branch the operator is on. Machinery only —
-harness content arrives via the repo chain's declared Chain.seedDir,
-chain-owned.
-
-Verbs:
-  new <name>
-      Load the repo chain (<configDir>/chain.ts — missing chain exits 2: a
-      job that could never \`run\` must not be creatable), copy its declared
-      seedDir into .flume/jobs/<name>/ verbatim and skip-existing (absent
-      seedDir → bare job, no warning; a declared-but-absent seedDir exits 2),
-      merge the runtime's ignore entries into the job dir's .gitignore, pin
-      core.longpaths repo-locally (win32), and baseline-commit the seeded
-      harness on the current HEAD. No branch is created or checked out.
-      The entries merged:
-${RUNTIME_IGNORE_ROSTER}
-
-  run <name> [--max N]
-      Wake the chain's entry phase (phases[0]) iff the baton is hibernating
-      — a mid-job baton is left untouched; then run the standard loop under
-      the job resolution, on whatever branch HEAD is on. Lock, supervisor,
-      and exit codes are identical to \`flume --job <name> loop [--max N]\`.
-
-  rm <name>
-      Refuse while the job's loop.pid records a live pid. \`git rm -r
-      .flume/jobs/<name>\` plus a cleanup commit on the current HEAD, remove
-      untracked runtime remnants (awake/, prior-attempts/, the @dtmd/flume
-      link, pid files), and \`git worktree prune\`. No branch is touched.
-
-  status
-      Enumerate .flume/jobs/* in the working tree: one line per job with its
-      awake phases (or "hibernating"), pending count (entries in the
-      job's plan/pending.json; 0 when absent, "unparsable" when broken), and,
-      when the repo chain declares Chain.friction, a friction count (0 when
-      the dir is absent, "unreadable" when it exists but can't be read).
-      Observational — nothing on disk changes; prints "no jobs" when the
-      jobs dir is empty or missing.
-
-Exit codes:
-  0   Success (run: hibernation reached, or --max ticks completed —
-      including partial success, some ticks errored but at least one entry
-      shipped; rm on a job dir with nothing tracked is a no-op; status:
-      always, including no jobs).
-  1   Git or filesystem failure (provisioning, commit); for run also:
-      harness error, another live loop holds the job's lock, at least one
-      tick errored and the run shipped nothing, or an identical
-      provision-stage, merge-stage or gate-stage failure repeated on as many
-      consecutive ticks as the chain's supervisorPolicy.abortThreshold
-      declares (default ${DEFAULT_ABORT_THRESHOLD}); for rm also: the job's
-      loop is still live.
-  2   Usage error: missing or unknown verb, missing <name>, a <name> that is
-      not a single path segment, new with no chain at <configDir>/chain.ts or
-      a declared seedDir absent on disk, rm on a <name> whose job dir does
-      not exist, status given any argument, or run given a --max that is
-      missing, non-numeric, or negative (no tick runs).
-  69  run: stopped on a child tick's mount-dead failure (see \`flume tick
-      --help\`): the chain never resolved. The run aborts after that one tick
-      instead of burning the remaining --max ticks against the same wall.
-  74  run: I/O error (EX_IOERR) at start — the stop flag (\`stop\` under the
-      job dir) exists but could not be stat'd, or the merging-marker dir
-      (\`merging/\`) exists but could not be listed. Refused rather than
-      started: an unreadable flag is not an absent one, and an unlistable
-      marker dir is not an absent marker. Naming the path and the underlying
-      error.
-  78  run: stopped on a child tick's terminal misconfiguration (see
-      \`flume tick --help\`); also, at start, an unreconciled interrupted
-      merge — a \`merging/<slug>.json\` marker under the job dir (see
-      \`flume loop --help\`).
-`;
-
 export function isSubcommand(value: string): value is Subcommand {
   return (SUBCOMMANDS as readonly string[]).includes(value);
 }
 
 /**
- * The page that answers one command name — its {@link HELP_SUB} entry, or
- * {@link HELP_JOB} for `job`, whose verbs share a page of their own rather
- * than sitting in the subcommand table. `undefined` is a name this surface
- * carries no page for.
+ * The page that answers one command name — its {@link HELP_SUB} entry.
+ * `undefined` is a name this surface carries no page for.
  *
  * One decision, read by every arm that prints a page: `flume <name> --help`,
  * `flume help <name>`, and `flume --help <name>`. A page reachable through
@@ -467,8 +344,7 @@ export function isSubcommand(value: string): value is Subcommand {
  * unspellable.
  */
 export function helpPageFor(name: string): string | undefined {
-  if (isSubcommand(name)) return HELP_SUB[name];
-  return name === "job" ? HELP_JOB : undefined;
+  return isSubcommand(name) ? HELP_SUB[name] : undefined;
 }
 
 export function wantsHelp(args: readonly string[]): boolean {

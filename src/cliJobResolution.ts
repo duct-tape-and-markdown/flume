@@ -48,9 +48,9 @@ export class CrossRepoFlumeDirError extends Error {}
  * Walk up from `cwd` looking for the nearest `.flume` — the same resolution
  * git applies to `.git/`. `cwd` itself counts as inside the bay: if its
  * basename is `.flume`, the bay root is its parent, no walk needed. If no
- * ancestor has a `.flume`, fall back to `cwd` unchanged so a first `flume job
- * new` in a fresh, undocked repo still creates `.flume` there rather than
- * reaching for an unrelated ancestor.
+ * ancestor has a `.flume`, fall back to `cwd` unchanged so a first tick in a
+ * fresh, undocked repo still resolves `.flume` there rather than reaching for
+ * an unrelated ancestor.
  *
  * Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws on
  * a `.flume` that is present but unstattable (a symlink loop, a

@@ -798,18 +798,15 @@ describe("parsePendingLoose — chain-less informational reads", () => {
     expect(leaves(looseCallSites())).not.toContain(LOOSE_DECLARATION);
   });
 
-  it("its one call site never rewrites pending.json — readPendingLoose (job.ts, shared by jobStatus and flume status) is read-only", () => {
+  it("its one call site never rewrites pending.json — readPendingLoose (job.ts, what flume status counts through) is read-only", () => {
     const jobSrc = readFileSync(`${SRC_DIR}/job.ts`, "utf8");
     const probeBody = extractFunctionBody(jobSrc, "readPendingLoose");
-    const jobStatusBody = extractFunctionBody(jobSrc, "jobStatus");
     const noMutation =
       /\b(writeFileSync|writeFile|appendFileSync|appendFile|rmSync|rm|unlinkSync|unlink)\s*\(/;
 
     expect(probeBody).toContain("parsePendingLoose(");
-    expect(jobStatusBody).toContain("readPendingLoose(");
-    // No write/delete call anywhere in either function that reads pending.json.
+    // No write/delete call anywhere in the function that reads pending.json.
     expect(probeBody).not.toMatch(noMutation);
-    expect(jobStatusBody).not.toMatch(noMutation);
   });
 });
 

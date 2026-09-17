@@ -58,9 +58,9 @@ export function validateFrictionDeclaration(chain: Chain): void {
 
 /**
  * The one rendering of a friction count into the line every status surface
- * prints — `flume status`, `flume job status`, and the loop-end summary all
- * pass their own count through here rather than composing wording of their
- * own (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ * prints — `flume status` and the loop-end summary both reach it through
+ * {@link frictionCountLine} rather than composing wording of their own
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
  *
  * The count is {@link countFrictionFiles}'s three-way reading, and each arm
  * has exactly one wording: `null` — the dir exists but could not be read
@@ -72,7 +72,7 @@ export function validateFrictionDeclaration(chain: Chain): void {
  * Separators around the line belong to the caller's layout, never to this
  * wording.
  */
-export function renderFrictionCount(
+function renderFrictionCount(
   count: number | null | undefined,
 ): string | undefined {
   if (count === null) return "friction: unreadable";
@@ -83,12 +83,11 @@ export function renderFrictionCount(
 /**
  * The friction count line for a state root: count of files directly under
  * the declared friction dir, resolved against `stateRoot` — whichever state
- * root is in play for the caller (the repo's `flumeDir`, or a job's dir) —
- * rendered by {@link renderFrictionCount}. Undeclared `Chain.friction` is
- * the undefined count: no dir to read, so no line.
+ * root the caller resolved — rendered by {@link renderFrictionCount}.
+ * Undeclared `Chain.friction` is the undefined count: no dir to read, so no
+ * line.
  *
- * Counting is `countFrictionFiles` (`src/job.ts`), the same probe
- * `flume job status` holds its per-job count from; rendering is the shared
+ * Counting is `countFrictionFiles` (`src/job.ts`); rendering is the shared
  * function above. Nothing here is this surface's own
  * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
  */

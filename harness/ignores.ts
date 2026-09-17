@@ -24,8 +24,8 @@
  * ignores*).
  *
  * The engine's half of the set has a second writer and does repair itself:
- * the engine re-merges `RUNTIME_IGNORES` into the state root every `loop` /
- * `job run` start resolves. What leaves the package's half with one writer
+ * the engine re-merges `RUNTIME_IGNORES` into the state root every `loop`
+ * start resolves. What leaves the package's half with one writer
  * is that that set names none of the package's own artifacts — the
  * asymmetry this declaration rests on, so it is pinned rather than asserted
  * here (`tests/harnessIgnores.test.ts`).
@@ -33,15 +33,15 @@
  * **Why the engine's own ignore lines rather than its names.** A gitignore
  * line carries one fact past the name — whether the entry is a directory,
  * spelled as a trailing separator — and the engine already states it, in the
- * set it seeds every job dir's `.gitignore` with (`RUNTIME_IGNORES`,
- * `src/job.ts`). A job dir is a state root, so those lines are this set
- * modulo the prefix; respelling them here would be a second copy of the
+ * set it merges into every state root's `.gitignore` (`RUNTIME_IGNORES`,
+ * `src/job.ts`). Those lines are this set modulo the prefix, so respelling
+ * them here would be a second copy of the
  * directory/file split, agreeing with the first only by care
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*).
  *
- * That set carries one line the runtime does not own — `node_modules/`,
- * which is the job template's — so the filter keys on the engine's path
+ * That set carries one line the runtime does not own — `node_modules/` —
+ * so the filter keys on the engine's path
  * record (`STATE_ROOT_NAMES`, `src/paths.ts`) rather than on the literal:
  * what survives is engine-owned by construction, and a line the template
  * adds later is dropped without this module being touched.

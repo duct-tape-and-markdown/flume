@@ -503,7 +503,7 @@ export async function runFanout(
     const preCherry = await git.revParse(repoRoot);
     // spec/loop.md "Crash equals stop": stake the merge before the pick —
     // a death anywhere past this line leaves the marker standing, and the
-    // next `loop` / `job run` start refuses over it rather than picking
+    // next `loop` start refuses over it rather than picking
     // the same span onto trunk a second time.
     mergingSlugs.add(slugify(r.entry.tag));
     await writeMergingMarker(leg, r.entry, r.branch, r.spanBase);

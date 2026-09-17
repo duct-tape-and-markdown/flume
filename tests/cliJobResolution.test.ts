@@ -27,7 +27,6 @@ import {
 } from "../src/cliJobResolution.ts";
 import { Baton } from "../src/Baton.ts";
 import { EX_IOERR } from "../src/cli.ts";
-import { jobNew } from "../src/job.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import {
@@ -609,12 +608,11 @@ function jobEnvProbeChainSrc(phaseName: string): string {
 /**
  * CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH — a chain whose factory (not a phase
  * agent) records `process.env.FLUME_DIR` to `<cwd>/observed-flume-dir.json`
- * at load time. `job new` invokes the factory synchronously
- * (`loadChainModule`, `src/chainLoad.ts`) before the job dir it creates
- * exists, so the probe writes beside the repo root rather than under the
- * still-nonexistent job dir.
+ * at load time. Every chain-loading verb invokes the factory synchronously
+ * (`loadChainModule`, `src/chainLoad.ts`), so the probe writes beside the
+ * repo root the verb ran in.
  */
-function jobNewEnvProbeChainSrc(): string {
+function envProbeChainSrc(): string {
   return (
     `import { writeFileSync } from "node:fs";\n` +
     `import { join } from "node:path";\n` +
@@ -745,14 +743,13 @@ describe("job resolution — real CLI", () => {
         expect(envOnly.code).toBe(2);
         expect(existsSync(jobDir)).toBe(false);
 
-        // `job new` is the sole verb permitted to create it — unaffected by
-        // the refusal above because it carries no --job flag of its own, so
-        // `job` stays undefined through resolution and the existence guard
-        // never fires (CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH).
+        // No verb creates the root — the operator does (spec/jobs.md, *The
+        // checkout is the unit of isolation*), and the same flag then
+        // resolves it.
         await writeRepoConfig(repo.dir, minimalChainSrc());
-        const created = await runCli(repo.dir, ["job", "new", "ghost"]);
-        expect(created.code).toBe(0);
-        expect(existsSync(jobDir)).toBe(true);
+        await mkdir(jobDir, { recursive: true });
+        const resolved = await runCli(repo.dir, ["--job", "ghost", "status"]);
+        expect(resolved.code).toBe(0);
       } finally {
         await repo.cleanup();
       }
@@ -800,26 +797,26 @@ describe("job resolution — real CLI", () => {
   );
 
   it(
-    "job new resolves flumeDir/configDir ahead of dispatch: a chain factory reading process.env.FLUME_DIR sees the canonicalized value, not the caller's raw relative one (CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH)",
+    "the CLI resolves flumeDir/configDir ahead of dispatch: a chain factory reading process.env.FLUME_DIR sees the canonicalized value, not the caller's raw relative one (CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH)",
     async () => {
       const repo = await makeJobRepo("main");
       try {
-        await writeRepoConfig(repo.dir, jobNewEnvProbeChainSrc());
+        await writeRepoConfig(repo.dir, envProbeChainSrc());
         const observedPath = join(repo.dir, "observed-flume-dir.json");
 
-        const created = await runCli(repo.dir, ["job", "new", "probejob"], {
+        const ran = await runCli(repo.dir, ["check"], {
           ...hermeticEnv(),
           FLUME_DIR: "tmp/relative-state",
         });
-        expect(created.code).toBe(0);
+        // Non-vacuity: the verb really loaded the chain, so the probe below
+        // is reading a value this run wrote.
+        expect(ran.code).toBe(0);
+        expect(existsSync(observedPath)).toBe(true);
 
         const observed = JSON.parse(
           await readFile(observedPath, "utf8"),
         ) as { FLUME_DIR: string };
         expect(observed.FLUME_DIR).toBe(resolve(repo.dir, "tmp/relative-state"));
-        expect(
-          existsSync(join(repo.dir, ".flume", "jobs", "probejob")),
-        ).toBe(true);
       } finally {
         await repo.cleanup();
       }
@@ -1146,13 +1143,14 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
 });
 
 /**
- * CLI-FIXTURE-ANCESTOR-PROOF — the job-verb half of the rooting pin (the
- * `flume status` half lives in tests/cli.test.ts). `job status` enumerates
- * `<repoRoot>/.flume/jobs`, so it reports the walk-up's answer directly:
- * whichever bay `repoRoot` landed on is the one whose jobs it lists.
+ * CLI-FIXTURE-ANCESTOR-PROOF — the job-resolution half of the rooting pin
+ * (the `flume status` half lives in tests/cli.test.ts). `--job <name>`
+ * resolves `<repoRoot>/.flume/jobs/<name>` and refuses a name with no root
+ * behind it, so it reports the walk-up's answer directly: whichever bay
+ * `repoRoot` landed on decides whether the name resolves at all.
  */
 describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCESTOR-PROOF)", () => {
-  it("a `.flume` planted above the fixture does not change a job verb's resolved state root", async () => {
+  it("a `.flume` planted above the fixture does not change `--job`'s resolved state root", async () => {
     const attic = await mkTempDir("flume-attic-job-");
     try {
       // The litter: a bay above every fixture created under it, holding a
@@ -1161,65 +1159,22 @@ describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCE
         recursive: true,
       });
 
-      // Control: an unrooted sibling resolves through the litter and lists
+      // Control: an unrooted sibling resolves through the litter and finds
       // the attic's job, so the rooted case below has a wrong answer
       // available to it.
       const stray = join(attic, "stray");
       await mkdir(stray, { recursive: true });
-      const unrooted = await runCli(stray, ["job", "status"]);
+      const unrooted = await runCli(stray, ["--job", "ghostjob", "status"]);
       expect(unrooted.code).toBe(0);
-      expect(unrooted.out).toContain("ghostjob");
+      expect(unrooted.out).toContain("hibernating");
 
       const dir = await mkFixtureRoot("flume-rooted-job-", attic);
-      const rooted = await runCli(dir, ["job", "status"]);
-      expect(rooted.code).toBe(0);
-      expect(rooted.out).toContain("no jobs");
-      expect(rooted.out).not.toContain("ghostjob");
+      const rooted = await runCli(dir, ["--job", "ghostjob", "status"]);
+      expect(rooted.code).toBe(2);
+      expect(rooted.out).toContain("no job 'ghostjob'");
+      expect(rooted.out).toContain(join(dir, ".flume", "jobs", "ghostjob"));
     } finally {
       await rm(attic, { recursive: true, force: true });
     }
   }, SPAWN_BUDGET_MS);
-});
-
-/**
- * Agreement pin (`.claude/rules/engineering.md`, *A seam gate reads what the
- * real writer wrote*): `job new` writes a job's state root and `--job`
- * resolves one, and the two used to spell `<repoRoot>/.flume/jobs/<name>`
- * apiece — a claim the unit cases above cannot reach, because each composes
- * its own expected path by the tester's hand and would ship a one-sided
- * rename green. Here the real `jobNew` seeds the job, the dir it actually
- * created is read back out of its own seed commit, and the real
- * `resolveStateDirs` is asked where `--job` points, with nothing composed by
- * this file in between.
- */
-it("`--job <name>` resolves the state root `job new <name>` seeded", async () => {
-  const repo = await makeJobRepo("main");
-  try {
-    await writeRepoConfig(repo.dir, minimalChainSrc());
-    await jobNew({ repoRoot: repo.dir, name: "seeded", log: () => {} });
-
-    // Where the writer put the job, taken from the seed commit it made.
-    const tracked = (
-      await gitOut(repo.dir, ["show", "--name-only", "--format=", "HEAD"])
-    )
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    expect(tracked.length).toBeGreaterThan(0);
-    const seeded = new Set(tracked.map((p) => dirname(resolve(repo.dir, p))));
-    expect(seeded.size).toBe(1);
-    const seededDir = [...seeded][0]!;
-
-    const env: NodeJS.ProcessEnv = {};
-    const { flumeDir, configDir } = resolveStateDirs(env, repo.dir, "seeded");
-    expect(flumeDir).toBe(seededDir);
-    expect(existsSync(flumeDir)).toBe(true);
-
-    // Config never follows the job: the chain `jobNew` loaded is still the
-    // one `--job` resolves `configDir` to.
-    expect(configDir).not.toBe(flumeDir);
-    expect(existsSync(join(configDir, "chain.ts"))).toBe(true);
-  } finally {
-    await repo.cleanup();
-  }
 });

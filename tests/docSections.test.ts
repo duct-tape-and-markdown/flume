@@ -56,7 +56,7 @@ describe("sectionOf", () => {
       "",
       "```bash",
       "# tune: edit .flume/jobs/docs-refresh/",
-      "flume job run docs-refresh",
+      "flume --job docs-refresh loop",
       "```",
       "",
       "prose after the block",

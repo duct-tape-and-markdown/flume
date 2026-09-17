@@ -499,7 +499,7 @@ export async function teardownWorktreeInstance(
  * its worktrees and their `flume/**` branches — teardown never ran, and
  * per-wave stale-slug removal ({@link createWorktree} above) only ever covers
  * an entry being re-provisioned, never one that left the queue entirely.
- * `flume loop` / `flume job run` call this once through
+ * `flume loop` calls this once through
  * `Dispatcher.sweepStaleWorktrees`, after the tip claim is
  * acquired and before the first tick (`src/cli.ts`) — holding the claim
  * is the guard: one flume writer per ref means no live sibling owns
