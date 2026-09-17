@@ -1,77 +1,8 @@
 [
   {
-    "tag": "THERE-IS-NO-JOB-SELECTOR",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [
-        {
-          "path": "src/cliStateDirs.ts",
-          "description": "the resolver under the name of the two roots it resolves"
-        },
-        {
-          "path": "tests/cliStateDirs.test.ts",
-          "description": "the suite moves with it"
-        }
-      ],
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "the `--job` extraction, the conflict arm and the `FLUME_JOB` write-back"
-        },
-        {
-          "path": "src/cliHelp.ts",
-          "description": "the `--job` flag line"
-        },
-        {
-          "path": "src/paths.ts",
-          "description": "the resolver cites follow the rename"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "the selector and conflict-rule passages"
-        },
-        {
-          "path": "tests/helpers/fixtureRoot.ts",
-          "description": "the job-resolution cites"
-        },
-        {
-          "path": "tests/helpers/gitEnv.ts",
-          "description": "the inherited job resolution"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the write-back and selector cases"
-        }
-      ],
-      "retire": [
-        "src/cliJobResolution.ts",
-        "tests/cliJobResolution.test.ts"
-      ]
-    },
-    "summary": "`--job` and `FLUME_JOB` still retarget the state root below the checkout, with a conflict rule and a write-back, for a partition the spec cut",
-    "per": {
-      "path": "spec/cli.md",
-      "section": "State-root and config-dir resolution"
-    },
-    "acceptance": "nothing but `FLUME_DIR` retargets the state root, no surface writes `FLUME_JOB` back, and the resolver module is named for the two roots it resolves.",
-    "tests": [
-      "an invocation carrying --job exits 2",
-      "FLUME_JOB in the environment does not retarget the state root",
-      "FLUME_JOB is not written back into a spawned tick's environment"
-    ],
-    "pins": [],
-    "notes": "The module's own header calls it state-root and config-dir resolution and its filename names the leg being cut, so the rename rides this commit and re-homes the cites it strands (`.claude/rules/engineering.md`, *A module is one job*). `JobResolutionConflictError` goes; `CrossRepoFlumeDirError`, the provenance stamp and the bay walk-up all stay."
-  },
-  {
     "tag": "THE-RUNTIME-IGNORE-SET-LEAVES-SRC-JOB-TS",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THERE-IS-NO-JOB-SELECTOR"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -153,10 +84,7 @@
   {
     "tag": "THE-0-17-NOTE-WALKS-THE-JOB-CUT",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THERE-IS-NO-JOB-SELECTOR"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -211,37 +139,14 @@
     "acceptance": "every site leaning on the win32 loader fact states only what is specific to its own case and cites the section that holds the fact; no shebang-spawn subject cites the `.cmd`-shim section for it.",
     "tests": [],
     "pins": [],
-    "notes": "The rows: `tests/bin.test.ts::bin/flume symlink walk`, the harnessChain command-gate row, the harnessRunner path-separator row, and the two cli.test.ts git-floor rows whose reason names a `.cmd` refusal over a shebang plant. The setup-restore row is the model — case-specific reason, then the cite. No tests[]: a section cite is unresolved by the citation pin (`tests/commentCitations.test.ts`), and prose read against prose is out of scope."
-  },
-  {
-    "tag": "THE-GATE-SET-CARDINAL-SHRINKS-TO-THE-PIN",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the adoption passage's count drops; the names stay"
-        },
-        {
-          "path": "tests/harnessGates.test.ts",
-          "description": "the module header's two counts and the ordering case's third"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the adoption page and the gate suite's header still count the discipline gates in prose, beside the pin that now reads their names — a sixth gate turns both stale with nothing red",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "no page or module header states a cardinal for the package's gate set; the inventory pin over `gates()` is the only statement of its membership.",
-    "tests": [],
-    "pins": [],
-    "notes": "Sites: docs/CHAIN-AUTHORING.md:63 (\"the five discipline gates\"), tests/harnessGates.test.ts:3 (twice) and :869. The name pin landed at 0c8a024a and the promoting commit left the counts beside it. docs/MIGRATING-0.16.md's four at :376 and :525 stays: that page declares itself a dated record of one release's port, a divergence declared at its site."
+    "notes": "The rows: `tests/bin.test.ts::bin/flume symlink walk`, the harnessChain command-gate row, the harnessRunner path-separator row, and the two cli.test.ts git-floor rows whose reason names a `.cmd` refusal over a shebang plant. The setup-restore row is the model — case-specific reason, then the cite. No tests[]: a section cite is unresolved by the citation pin (`tests/commentCitations.test.ts`), and prose read against prose is out of scope.",
+    "observedFiles": [
+      ".flume/plan/notes/THE-WIN32-LOADER-FACT-IS-CITED-NOT-RESTATED.md",
+      "tests/cli.test.ts",
+      "tests/harnessChain.test.ts",
+      "tests/harnessRunner.test.ts",
+      "tests/helpers/host-declarations.json"
+    ]
   },
   {
     "tag": "THE-FRICTION-CHANNELS-LISTING-HAS-ONE-HOME",
