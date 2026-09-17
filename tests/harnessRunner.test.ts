@@ -953,10 +953,9 @@ describe("the script runner", () => {
   it.runIf(process.platform !== "win32")(
     "resolves a command carrying a path separator against the tree it runs in",
     async () => {
-      // A shebang script, so the case declares its host: win32 spawns no such
-      // file, and a structural substitute would stop being the subject
-      // (`.claude/rules/platform-facts.md`, *Node refuses to spawn a `.cmd`
-      // shim without a shell*).
+      // The tree-relative command is a shebang script, so the case declares
+      // its host (`.claude/rules/platform-facts.md`, *win32 spawns no shebang
+      // script*).
       const local = scriptRunner({ command: "checks/verdict.sh" })(ctx);
 
       // The working tree's copy answers here, and the base checkout's copy

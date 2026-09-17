@@ -1396,11 +1396,9 @@ it("docs/CHAIN-AUTHORING.md names exactly the FLUME_ variables a declared gate's
  *
  * **POSIX-only, by construction.** A shebang line and an executable
  * permission bit are what make this file spawnable, and win32 carries
- * neither — the bit toggles a read-only attribute there and confers nothing
- * (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*),
- * and the interpreter a `#!` names is read by the kernel, which no win32
- * loader does. So {@link posixOnly} guards the two cases that declare this
- * path as their shell.
+ * neither (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on
+ * win32* for the bit, *win32 spawns no shebang script* for the loader). So
+ * {@link posixOnly} guards the cases that declare this path as their shell.
  */
 async function recordingShell(tree: string): Promise<string> {
   const shell = join(tree, "recording-shell");
@@ -1414,14 +1412,15 @@ async function recordingShell(tree: string): Promise<string> {
 
 /*
  * The host {@link recordingShell} needs, declared rather than left to a lane
- * to discover: the interposed recorder *is* the subject of the two cases
- * below, and win32 has no substitute for it that keeps the subject intact. A
- * `.cmd` recorder is reachable only through cmd.exe's re-parse of the gate's
- * argv, which would put the case's assertions on that re-parse rather than on
- * the spawn the gate made — a different subject wearing this one's title. The
- * shell the package reaches *without* a declaration is covered on every host
- * by the default-shell case further down, and that a declared shell is
- * refused when the host will not run it by the chain-load case after it.
+ * to discover: the interposed recorder *is* the subject of the cases below,
+ * and the host that cannot spawn it has no substitute that keeps the subject
+ * intact — a `.cmd` recorder is reachable only through cmd.exe's re-parse of
+ * the gate's argv, which would put the cases' assertions on that re-parse
+ * rather than on the spawn the gate made, a different subject wearing these
+ * titles. The shell the package reaches *without* a declaration is covered on
+ * every host by the default-shell case further down, and that a declared
+ * shell is refused when the host will not run it by the chain-load case after
+ * it.
  */
 const posixOnly = it.runIf(process.platform !== "win32");
 
