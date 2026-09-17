@@ -48,7 +48,13 @@ import {
   slugify,
   stopFlagPath,
 } from "./paths.js";
-import { priorAttemptPath, priorAttemptsDir } from "./priorAttempts.js";
+import {
+  entryAttemptKey,
+  phaseAttemptKey,
+  priorAttemptPath,
+  priorAttemptsDir,
+  recordAttemptKey,
+} from "./priorAttempts.js";
 import {
   composePendingList,
   parsePending,
@@ -181,6 +187,21 @@ export interface FlumeApi {
   gitPath: typeof gitPath;
   priorAttemptPath: typeof priorAttemptPath;
   priorAttemptsDir: typeof priorAttemptsDir;
+  /**
+   * The engine's own keying rule for `TickContext.priorAttempts`, one keyer
+   * per value a hook might be holding: the queue entry it was handed, the
+   * phase it is declared on, or a record it already pulled out of the map.
+   *
+   * A chain looking a record up composes nothing: the map key is a keyspace
+   * and an identity joined, and the identity rule differs by keyspace — a tag
+   * is slugged, a phase name is keyed exactly as the chain spells it. A
+   * chain-local join gets that right until the day it does not, and the
+   * failure is a `shouldRun` that reads every tick as a first attempt rather
+   * than anything that reds.
+   */
+  entryAttemptKey: typeof entryAttemptKey;
+  phaseAttemptKey: typeof phaseAttemptKey;
+  recordAttemptKey: typeof recordAttemptKey;
   /**
    * Where the graceful-stop flag lives under a state root (spec/loop.md
    * "Graceful stop — the stop flag") — the engine's own rule, the one
@@ -346,6 +367,9 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     gitPath,
     priorAttemptPath,
     priorAttemptsDir,
+    entryAttemptKey,
+    phaseAttemptKey,
+    recordAttemptKey,
     stopFlagPath,
     git: {
       showNameOnly,

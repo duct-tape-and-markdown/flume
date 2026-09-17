@@ -15,9 +15,10 @@
  * tests/Dispatcher.test.ts, where the tick that produces it lives.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,14 +29,16 @@ import {
   InlineExecRenderError,
   renderPrompt,
   type PriorAttempt,
+  type PriorAttemptKeyspace,
 } from "../src/Prompt.ts";
 // The roster comes from the package root rather than src/Prompt.ts: a chain
-// reads it there, which is the whole reason it is a runtime value. The two
+// reads it there, which is the whole reason it is a runtime value. The three
 // keyers come from there under their own names for the same reason, and are
 // spelled apart from the module's copies below so a case naming the package's
 // surface cannot be satisfied by the module import.
 import {
   entryAttemptKey as surfaceEntryAttemptKey,
+  phaseAttemptKey as surfacePhaseAttemptKey,
   recordAttemptKey as surfaceRecordAttemptKey,
   PRIOR_ATTEMPT_MODES,
 } from "../src/index.ts";
@@ -1227,4 +1230,144 @@ it("the package's public surface spells the prior-attempt map key for a record",
   } finally {
     await fx.cleanup();
   }
+});
+
+
+/**
+ * The phase half of the same surface. `entryAttemptKey` answered for a caller
+ * holding a queue entry and `recordAttemptKey` for one holding a record; a
+ * chain asking whether a *singleton phase* has a standing record held neither,
+ * and composed the join itself — the copy this keyer retires
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*).
+ *
+ * Driven through the real writer and the real reader (*A seam gate reads what
+ * the real writer wrote*): the key under judgement is the one
+ * `PriorAttemptStore.readAll` filed the record under. The phase name is one
+ * `slugify` rewrites and one a queue tag slugs onto, so a keyer that answered
+ * the stem, or that answered in the entry keyspace, cannot read green.
+ */
+it("phaseAttemptKey keys a singleton phase's record in the phase keyspace", async () => {
+  const fx = await makeFixture();
+  try {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    const phase = { name: COLLIDING_PHASE } as Phase;
+    const phaseRef = priorAttemptRef(phase);
+    const entryRef = priorAttemptRef({ name: "build" } as Phase, collidingEntry);
+    // One stem, two records: the phase name is not already its own slug, and
+    // the entry beside it slugs onto the same one.
+    expect(slugify(phaseRef.key)).not.toBe(phaseRef.key);
+    expect(slugify(phaseRef.key)).toBe(slugify(entryRef.key));
+    await store.write(phaseRef, buildCleanExit("parked: the phase"));
+    await store.write(entryRef, buildCleanExit("parked: the entry"));
+
+    const all = await store.readAll();
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): both keyspaces are populated, so the lookup below is a
+    // choice between two records rather than a hit on the only one there is.
+    expect([...all.values()].map((rec) => rec.key).sort()).toEqual([
+      "entry",
+      "phase",
+    ]);
+
+    const key = surfacePhaseAttemptKey(phase);
+    expect(all.get(key)).toMatchObject({
+      key: "phase",
+      keyedAs: COLLIDING_PHASE,
+      finalMessage: "parked: the phase",
+    });
+    // The two keyers answer apart where their identities collide — the whole
+    // reason the keyspace is half the key.
+    expect(key).not.toBe(surfaceEntryAttemptKey(collidingEntry));
+    // And the phase half agrees with what the record itself answers.
+    expect(surfaceRecordAttemptKey(all.get(key)!)).toBe(key);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+/**
+ * The keyers' adoption, read off the pages that teach the interface
+ * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*,
+ * the `docs/` carve-out): a page that shows a chain author composing
+ * `<keyspace>:<identity>` by hand is teaching a second spelling of a join the
+ * engine owns, which is the defect the three keyers exist to close. Stating
+ * the key's *shape* is not composing it — `entry:<tag slug>` in prose is the
+ * fact a reader needs to recognize a key on a verdict, and stays green.
+ *
+ * `docs/surveys/` is out of domain and declared so here: those pages quote
+ * foreign trees verbatim at a read date, so a consumer's hand-composed key is
+ * the finding being reported rather than guidance this repo gives.
+ *
+ * The detector reads its own block before it reads the pages: a scan whose
+ * pattern has stopped matching anything is a green verdict over nothing.
+ */
+it("no docs page composes a prior-attempt map key by hand", () => {
+  const docsRoot = fileURLToPath(new URL("../docs", import.meta.url));
+  /**
+   * Every keyspace the engine's union admits, as the strings a page could
+   * have written — exhaustive by type, so a keyspace the union gains is a
+   * compile error here rather than a half this scan silently stops reading.
+   */
+  const KEYSPACE_NAMES = Object.keys({
+    entry: true,
+    phase: true,
+  } satisfies Record<PriorAttemptKeyspace, true>);
+
+  /**
+   * A composition is the key being *built* in example code — a template
+   * literal opening on the keyspace, or a quoted keyspace concatenated onto
+   * an identity. Both keyspaces come off the engine's own set, so a keyspace
+   * the union gains is scanned for without this case being edited.
+   */
+  const composes = (text: string): string[] =>
+    text.split("\n").filter((line) =>
+      KEYSPACE_NAMES.some((ks) =>
+        new RegExp("[`\"']" + ks + ":(?:\\$\\{|[`\"']\\s*\\+)").test(line),
+      ),
+    );
+
+  // Detector control: the two spellings this case exists to refuse are seen,
+  // and the descriptive form it must not refuse is not.
+  expect(composes("ctx.priorAttempts.get(`entry:${api.slugify(entry.tag)}`);")).toHaveLength(1);
+  expect(composes('const k = "phase:" + phase.name;')).toHaveLength(1);
+  expect(composes("keyed by `entry:<tag slug>` for a fanout record")).toEqual([]);
+
+  const pages = [
+    ...readdirSync(docsRoot, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith(".md"))
+      .map((e) => ["docs/" + e.name, join(docsRoot, e.name)] as const),
+    ["README.md", fileURLToPath(new URL("../README.md", import.meta.url))] as const,
+  ];
+  // Vacuity pin: the pages were found, and the ones that actually walk the map
+  // are among them — a docs tree renamed out from under this scan would
+  // otherwise read green over nothing.
+  expect(pages.length).toBeGreaterThan(5);
+  const subjects = pages.filter(([, abs]) =>
+    readFileSync(abs, "utf8").includes("priorAttempts"),
+  );
+  expect(subjects.length).toBeGreaterThan(0);
+
+  const offenders = pages.flatMap(([rel, abs]) =>
+    composes(readFileSync(abs, "utf8")).map((line) => `${rel}: ${line.trim()}`),
+  );
+  expect(offenders).toEqual([]);
+
+  // The pages that walk the map name the keyers instead, so the scan above is
+  // judged over pages that had the chance to compose and declined.
+  expect(
+    subjects
+      .filter(([, abs]) => {
+        const text = readFileSync(abs, "utf8");
+        return (
+          text.includes("entryAttemptKey") ||
+          text.includes("phaseAttemptKey") ||
+          text.includes("recordAttemptKey")
+        );
+      })
+      .map(([rel]) => rel)
+      .sort(),
+  ).toEqual(["docs/CHAIN-AUTHORING.md", "docs/MIGRATING-0.16.md"]);
 });

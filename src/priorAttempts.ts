@@ -137,6 +137,30 @@ export function entryAttemptKey(entry: PendingEntry): string {
 }
 
 /**
+ * The key one singleton phase's own record occupies in that map, the other
+ * half of what {@link entryAttemptKey} answers for a fanout entry. A
+ * singleton tick carries no queue entry, so the phase is the identity — and
+ * the phase half is the one where the identity rule differs: the name is
+ * keyed **as the chain spells it**, never slugged the way a tag is, so a
+ * caller composing the join by hand gets it wrong in exactly the cases where
+ * the stem on disk and the map key diverge.
+ *
+ * Derived through {@link priorAttemptRef}, the same rule
+ * {@link PriorAttemptStore.write} keys the record by, so the lookup and the
+ * write cannot drift.
+ *
+ * Shipped from the package root beside its two siblings: with only the entry
+ * and record keyers exported, a chain asking "does this phase have a standing
+ * record?" had no engine spelling to reach for and composed
+ * `phase:${phase.name}` itself — a second copy of a join the engine owns
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ */
+export function phaseAttemptKey(phase: Phase): string {
+  return priorAttemptMapKey(priorAttemptRef(phase));
+}
+
+/**
  * The ref a persisted record was written under, read back off the record's
  * own stamped fields — the inverse of what {@link PriorAttemptStore.write}
  * stamps. `clearStale` re-derives the path of a record it enumerated this

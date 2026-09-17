@@ -16,9 +16,14 @@ import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
 import { loadChainModule } from "../src/chainLoad.ts";
-import type { Chain } from "../src/Phase.ts";
+import type { Chain, Phase } from "../src/Phase.ts";
 import { slugify } from "../src/paths.ts";
-import { priorAttemptPath } from "../src/priorAttempts.ts";
+import {
+  entryAttemptKey,
+  phaseAttemptKey,
+  priorAttemptPath,
+  recordAttemptKey,
+} from "../src/priorAttempts.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import { readFileAtRef } from "../src/git.ts";
 import { gitPath, matchesAny } from "../src/paths.ts";
@@ -63,6 +68,38 @@ describe("buildFlumeApi().slugify / .priorAttemptPath (spec/loop.md 'Prior-outco
     const api = buildFlumeApi(REPO_PATHS);
     expect(api.slugify).toBe(slugify);
     expect(api.priorAttemptPath).toBe(priorAttemptPath);
+  });
+});
+
+/**
+ * A chain takes every engine *value* off the `api` — its only engine import is
+ * `import type`, erased at runtime (`src/flumeApi.ts`). So a keyer a chain
+ * cannot reach there is a keyer a chain composes by hand, whatever the package
+ * root exports (`.claude/rules/engineering.md`, *A fact the engine holds is
+ * reported, never rediscovered*). One keyer per value a hook holds — the
+ * entry, the phase, the record — and each by reference, since a second copy on
+ * the api is the drift the surface exists to prevent.
+ */
+describe("buildFlumeApi() — the prior-attempt keyers (.claude/rules/engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
+  it("hands a chain the engine's own keyer for every value a prior-attempt lookup starts from", () => {
+    const api = buildFlumeApi(REPO_PATHS);
+    expect(api.entryAttemptKey).toBe(entryAttemptKey);
+    expect(api.phaseAttemptKey).toBe(phaseAttemptKey);
+    expect(api.recordAttemptKey).toBe(recordAttemptKey);
+    // Identity is the claim; one probe per keyspace says which rule it is —
+    // the tag slugged, the phase name kept as the chain spells it, which a
+    // chain-local join applying one rule to both would get half-right.
+    expect(
+      api.entryAttemptKey({
+        tag: "PLAN-SWEEP",
+        gate: { kind: "open" },
+        dependsOnForks: [],
+        files: { new: [], edit: [], retire: [] },
+      }),
+    ).toBe("entry:plan-sweep");
+    expect(api.phaseAttemptKey({ name: "plan_sweep" } as Phase)).toBe(
+      "phase:plan_sweep",
+    );
   });
 });
 

@@ -87,10 +87,13 @@ export { gitPath, matchesAny, slugify, stopFlagPath } from "./paths.js";
 
 // The keyers ride the surface beside the paths: the map a chain reads
 // (`TickContext.priorAttempts`) is keyed by a join the engine composes, so a
-// consumer holding a queue entry — or a record it pulled back out of that map
-// — takes the engine's own spelling instead of re-composing one.
+// consumer holding a queue entry, a singleton phase, or a record it pulled
+// back out of that map takes the engine's own spelling instead of
+// re-composing one. Both keyspaces are answered from whichever value a
+// consumer happens to hold, so nothing is left for the join to cover.
 export {
   entryAttemptKey,
+  phaseAttemptKey,
   priorAttemptPath,
   priorAttemptsDir,
   recordAttemptKey,

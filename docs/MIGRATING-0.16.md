@@ -212,8 +212,9 @@ The helper slugifies the key itself and is idempotent on an already-slugified
 one, so either spelling of a tag reaches the same file. The parameter is
 structural — pass the object literal; there is no type to import.
 
-**The map** a hook reads is keyed by keyspace and identity joined, and here
-the entry half *is* the slug:
+**The map** a hook reads is keyed by keyspace and identity joined, and the
+join is the engine's rather than yours — every value you might be holding has
+a keyer on the `api`, beside the `slugify` your 0.15 lookup already used:
 
 ```ts
 // 0.15
@@ -221,20 +222,25 @@ ctx.priorAttempts.get(api.slugify(entry.tag));
 ctx.priorAttempts.get(phase.name);
 
 // 0.16
-ctx.priorAttempts.get(`entry:${api.slugify(entry.tag)}`);
-ctx.priorAttempts.get(`phase:${phase.name}`);
+ctx.priorAttempts.get(api.entryAttemptKey(entry));
+ctx.priorAttempts.get(api.phaseAttemptKey(phase));
 ```
 
-The join also ships as a helper, so the composition above is the fallback
-rather than the spelling to adopt: `entryAttemptKey(entry)` answers the key for
-a queue entry you hold, `recordAttemptKey(record)` answers it for a record you
-pulled out of the map, and both come from the package root.
+`entryAttemptKey(entry)` answers the key for a queue entry you hold,
+`phaseAttemptKey(phase)` for a singleton phase's own record, and
+`recordAttemptKey(record)` for a record you already pulled out of the map and
+want to file or report by its key. Each applies the identity rule its keyspace
+carries — a tag is slugged, a phase name is keyed exactly as your chain spells
+it — so nothing outside the engine has to know which half gets which. The same
+three ship from the package root, for a script that is not a chain and so has
+no `api` to read them off.
 
 A lookup by bare identity now finds nothing — it does not throw, it misses, so
 a `shouldRun` that gates on "have I failed here before?" will read every tick
 as a first attempt until the key is updated. That is the one failure mode in
 this section worth grepping for deliberately. `clearedPriorAttempts` on the
-verdict reports the same composed keys.
+verdict reports keys in the same keyspace-and-identity alphabet, so a key you
+read off a verdict is one a keyer answers.
 
 **Reading the record.** The lookup is one half of how that `shouldRun` goes
 quiet. Reading the result untyped is the other, and the two travel together —
@@ -264,7 +270,7 @@ shouldRun: async (ctx) => {
   const entry = ctx.assignedEntry;
   if (entry === undefined) return true;
   const rec: PriorAttempt | undefined = ctx.priorAttempts?.get(
-    `entry:${api.slugify(entry.tag)}`,
+    api.entryAttemptKey(entry),
   );
   return rec === undefined || !BRAKE_ON.includes(rec.mode);
 },

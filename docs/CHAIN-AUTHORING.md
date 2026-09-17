@@ -1671,9 +1671,11 @@ record was written under — `entry:<tag slug>` for a fanout record,
 than the slugged stem the file sits at — so a
 `shouldRun` or `promptArgs` reading one — the `suspectFlake` marker included —
 never opens the directory itself. The join is the package's, not yours:
-`entryAttemptKey(entry)` spells the key for a queue entry you hold, and
-`recordAttemptKey(record)` spells it for a record you pulled back out of the
-map, so nothing outside the engine composes `<keyspace>:<identity>` by hand.
+`api.entryAttemptKey(entry)` spells the key for a queue entry you hold,
+`api.phaseAttemptKey(phase)` for a singleton phase's own record, and
+`api.recordAttemptKey(record)` for a record you pulled back out of the map — so
+nothing outside the engine composes `<keyspace>:<identity>` by hand, in either
+keyspace.
 
 The block is **absent on a first attempt** (no false signal), and a record
 clears two ways: an attempt that **ships clean** retires its own, and a
