@@ -30,15 +30,53 @@ import { buildFlumeApi } from "../src/flumeApi.ts";
 import type { Chain, Phase, WorktreeSetupContext } from "../src/Phase.ts";
 import { slugify, worktreesBase } from "../src/paths.ts";
 import {
+  checkoutAt,
   createWorktree,
   readWorktreeRegistry,
   sweepStaleWorktrees,
   teardownWorktreeInstance,
+  withGateCheckouts,
   worktreeDirName,
   type WorktreeContext,
 } from "../src/worktrees.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
+
+/**
+ * The names of the git calls whose *order* the provisioning suite below
+ * judges, in the order `src/worktrees.ts` actually made them. Hoisted, so the
+ * factory's wrappers close over an array that already exists when the mocked
+ * module is first pulled in.
+ */
+const gitCalls = vi.hoisted(() => [] as string[]);
+
+/**
+ * Partial mock over the git module both provisioning sites call: every export
+ * is the real one, and the two whose sequence is the property record their
+ * name on the way through — so the suites that do not care about the order
+ * run against unchanged behaviour.
+ *
+ * A call-sequence spy rather than a config read, because the pin's *effect*
+ * is win32-only: `pinLongPaths` (`src/git.ts`) returns immediately off win32,
+ * so asserting `core.longpaths` is set can only be done on one host
+ * (`tests/helpers/host-declarations.json`) and says nothing about when the
+ * call happened even there. The call itself is made on every platform, which
+ * is what makes the ordering decidable in the default lane.
+ */
+vi.mock("../src/git.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/git.ts")>();
+  return {
+    ...actual,
+    pinLongPaths: async (...args: Parameters<typeof actual.pinLongPaths>) => {
+      gitCalls.push("pinLongPaths");
+      return actual.pinLongPaths(...args);
+    },
+    addWorktree: async (...args: Parameters<typeof actual.addWorktree>) => {
+      gitCalls.push("addWorktree");
+      return actual.addWorktree(...args);
+    },
+  };
+});
 
 // This file starts processes, so it declares the lane's one budget — cases
 // and hooks alike — once here rather than inheriting the runner's default
@@ -760,5 +798,79 @@ describe("worktrees — the startup sweep reaps the branches its own directories
 
     expect(existsSync(residue)).toBe(false);
     expect(await flumeBranches(fx.repo)).toEqual(["flume/sibling-checkout"]);
+  });
+});
+
+/**
+ * WORKTREE-LONGPATHS-PIN-PRECEDES-ADD — the pin is a *precondition* of the
+ * add, at both sites that plant a worktree under the base: `createWorktree`
+ * for a tick's own tree and `checkoutAt` for a differential gate's detached
+ * one. A pin issued after the add is a pin that did nothing for the operation
+ * it exists to spare — `git worktree add` builds the deep path itself, and on
+ * win32 it is that call, not a later one, that the MAX_PATH wall refuses.
+ *
+ * Both legs run the real provisioning against a real repo; only the two git
+ * calls are wrapped, and they pass through (see the mock at the top of this
+ * file). Off win32 `pinLongPaths` writes nothing, so the sequence — not the
+ * resulting config value — is the observable, and it is the same sequence on
+ * every host.
+ */
+describe("worktrees — the longpaths pin precedes the add", () => {
+  let fx: Fixture;
+  let head: string;
+  let ctx: WorktreeContext;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+    const { stdout } = await exec("git", ["rev-parse", "HEAD"], {
+      cwd: fx.repo,
+    });
+    head = stdout.trim();
+    ctx = {
+      repoRoot: fx.repo,
+      flumeDir: join(fx.repo, ".flume"),
+      stateRootRel: ".flume",
+      log: silent,
+    };
+    gitCalls.length = 0;
+  });
+
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  it("createWorktree pins core.longpaths before it adds the worktree", async () => {
+    const wt = await createWorktree("LONGPATHS-ORDER", head, ctx);
+
+    // Vacuity (`.claude/rules/engineering.md`, "A green verdict is proven
+    // non-vacuous"): the sequence below is judged over a worktree that really
+    // got planted, so an ordering assertion over two calls that never
+    // happened cannot read as green.
+    expect(existsSync(wt.path)).toBe(true);
+    expect(await registeredWorktrees(fx.repo)).toContain(wt.path);
+
+    expect(gitCalls).toEqual(["pinLongPaths", "addWorktree"]);
+  });
+
+  it("checkoutAt pins core.longpaths before it adds its detached worktree", async () => {
+    // The gate boundary the API is only reachable from, opened here the way
+    // `Dispatcher.runGate` opens it around a real gate.
+    const planted = await withGateCheckouts({ log: silent }, async () => {
+      const path = await checkoutAt({
+        repoRoot: fx.repo,
+        flumeDir: ctx.flumeDir,
+        sha: head,
+      });
+
+      // Same vacuity pin as the sibling leg, read inside the scope: the
+      // checkout is reclaimed the moment this callback returns.
+      expect(existsSync(path)).toBe(true);
+      expect(await registeredWorktrees(fx.repo)).toContain(resolve(path));
+
+      expect(gitCalls).toEqual(["pinLongPaths", "addWorktree"]);
+      return path;
+    });
+
+    expect(existsSync(planted)).toBe(false);
   });
 });

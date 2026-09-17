@@ -15241,7 +15241,15 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
 describe.runIf(process.platform === "win32")(
   "Dispatcher fanout — createWorktree pins core.longpaths",
   () => {
-    it("pins core.longpaths on repoRoot before git worktree add", async () => {
+    // What this body reads is the end state — `core.longpaths` true on
+    // repoRoot once the tick has run — which is the only thing a config read
+    // can say: it cannot see when the pin happened relative to the add. That
+    // ordering is the sibling claim, pinned on every host as a call sequence
+    // in tests/worktrees.test.ts ("worktrees — the longpaths pin precedes the
+    // add"), so this title claims the effect alone
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*: a title is a claim its body asserts).
+    it("leaves core.longpaths pinned repo-locally once a fanout tick has provisioned its worktree", async () => {
       const entries = [makeEntry("W32-WT", ["src/w32.ts"])];
       await writePending(fx.repo, entries);
       new Baton(join(fx.repo, ".flume")).wake("build");
