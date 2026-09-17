@@ -36,7 +36,7 @@ import type { RunnerFactory } from "./runner.js";
 const globs = z.array(z.string().min(1)).min(1);
 
 /**
- * The shell a declared command gate runs under where the declaration names
+ * The shell a declared command line runs under where the declaration names
  * none — the one every POSIX host resolves.
  *
  * The schema below takes it as `shell`'s default, so the value is folded at
@@ -374,24 +374,32 @@ export const DeclarationSchema = strict({
    */
   gates: byPhase(z.array(GateDeclaration)).optional(),
   /**
-   * The shell a `shell` or `script` gate's command line runs under, spawned
-   * as `<shell> -c <command>` in the gate's own tree. Absent means
-   * {@link DEFAULT_SHELL}, folded here at the parse, so a reader holding a
-   * parsed declaration reads the shell the spec's row states rather than
-   * nothing. A consumer annotating {@link DeclarationInput} still omits it:
-   * the default is on the parse's output, not on its input.
+   * The shell every command line this declaration carries runs under — a
+   * `shell` gate's command, a `script` gate's committed path, and
+   * `setup.restore` — each spawned as `<shell> -c <line>` in the tree the
+   * package runs it in. The gates are not the whole set: a restore is text
+   * the consumer wrote too, and naming only the gates here would leave the
+   * one line whose shell a wave's provisioning depends on unaccounted for.
+   * Absent means {@link DEFAULT_SHELL}, folded here at the parse, so a
+   * reader holding a parsed declaration reads the shell the spec's row
+   * states rather than nothing. A consumer annotating
+   * {@link DeclarationInput} still omits it: the default is on the parse's
+   * output, not on its input.
    *
    * Declared rather than fixed because which shells a host resolves is the
    * consumer's environment, not the package's: on win32 `sh` resolves from
    * one launch shell and not another, so a package that spelled it would be
    * naming a host where it meant to name a mechanism
    * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*). A
-   * fallback is still mechanism — a command gate cannot be spawned without
+   * fallback is still mechanism — no declared line can be spawned without
    * some shell — so absence resolves rather than refuses.
    *
    * Whether the named shell is one *this* host resolves is not a claim a
-   * string can carry, so the chain factory probes it at load and refuses
-   * naming the gate (`declaredGates.ts`).
+   * string can carry, so it is probed at load by `runnableShell`
+   * (`harness/declaredShell.ts`), which every command site spawns through,
+   * and the refusal names the site that declared the line — the gate's
+   * command, or the restore — rather than surfacing hours in as that gate
+   * failing or as a worktree that would not provision.
    */
   shell: z.string().min(1).default(DEFAULT_SHELL),
   /**
