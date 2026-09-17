@@ -1,1 +1,54 @@
-[]
+[
+  {
+    "tag": "THE-PHASE-KEYSPACE-SHIPS-ITS-OWN-KEYER",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "src/priorAttempts.ts", "description": "`phaseAttemptKey(phase)` beside `entryAttemptKey`, over the module-local join" },
+        { "path": "src/index.ts", "description": "export it from the package root beside the two shipped keyers" },
+        { "path": "docs/MIGRATING-0.16.md", "description": "§3 stops teaching `phase:${phase.name}`; point at the keyer" },
+        { "path": "tests/priorAttempts.test.ts", "description": "the keyer's case" },
+        { "path": "tests/examples.test.ts", "description": "the docs scan, if it lands beside the other page pins" }
+      ]
+    },
+    "summary": "Ship a phase-keyspace keyer from the package root and retire the hand-composed phase key from docs/MIGRATING-0.16.md",
+    "per": { "path": ".claude/rules/engineering.md", "section": "A fact the engine holds is reported, never rediscovered" },
+    "acceptance": "Nothing outside the engine composes `<keyspace>:<slug>` for either half — the docs cite keyers, not the join.",
+    "tests": [
+      "phaseAttemptKey keys a singleton phase's record in the phase keyspace",
+      "no docs page composes a prior-attempt map key by hand"
+    ],
+    "notes": "Note THE-ATTEMPT-KEY-SHIPS-ON-THE-PACKAGES-SURFACE. Two closes were on the table; take the symmetric one. Publishing `priorAttemptMapKey` makes the caller construct a `PriorAttemptRef` and so name the keyspace itself, which is the fact `entryAttemptKey` exists to hide. `phaseAttemptKey(phase)` mirrors it and leaves the join module-local."
+  },
+  {
+    "tag": "THE-BUILT-INS-LIST-NAMES-EVERY-BUILTIN-GATE",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "*Use the built-ins first* gains a `chainLoadGate` bullet" },
+        { "path": "tests/examples.test.ts", "description": "the section's named set read against the module's exports" }
+      ]
+    },
+    "summary": "docs/CHAIN-AUTHORING.md names six of the seven gates src/builtinGates.ts ships; add chainLoadGate and pin the inventory",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+    "acceptance": "A chain author finds every built-in on the page, and a gate added to the module reds the page's listing.",
+    "tests": [
+      "docs/CHAIN-AUTHORING.md names every gate src/builtinGates.ts exports"
+    ],
+    "notes": "Note THE-BUILT-IN-GATE-CARDINAL-NAMES-ITS-MEMBERS. `chainLoadGate` has zero hits on the whole page today, so hover text is its only home. The nearest pin (the shellGate-composes case) classifies every export but says nothing about the page listing one; equality over the section's named set is what closes that."
+  },
+  {
+    "tag": "THE-DOC-BULLET-READ-HAS-ONE-HOME",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "tests/helpers/docSections.ts", "description": "`bulletOf` beside `sectionOf`/`walkOf` — one bullet, folded, through the next lead" },
+        { "path": "tests/examples.test.ts", "description": "three callers fold onto it: the two `bulletFor` locals and the shellGate inline slice" }
+      ]
+    },
+    "summary": "Fold the three spellings of the per-bullet read in tests/examples.test.ts onto one `bulletOf` in docSections",
+    "per": { "path": ".claude/rules/engineering.md", "section": "A module is one job" },
+    "acceptance": "One reader answers 'this bullet, wrapping folded'; the lead spelling is its parameter.",
+    "notes": "Note THE-CHAIN-AUTHORING-WALKS-SHARE-ONE-READER, verified wider on disk: three copies, not two — the supervisor-policy local (`- **`x`** —`), the gate-field local (`- `x` —`), and the shellGate bullet sliced inline. Behavior-free; the typecheck and the existing cases hold it, so it claims no property."
+  }
+]
