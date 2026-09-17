@@ -125,8 +125,9 @@ export function signalProcessTree(
 ): boolean {
   const { pid } = child;
   if (pid === undefined) return false;
-  // Already reaped: its pid may since have been recycled onto an unrelated
-  // process, and signalling it would kill a stranger.
+  // Already reaped, so the pid is no longer this child's to signal
+  // (`.claude/rules/platform-facts.md`, *A reaped pid returns to the host's
+  // allocation pool*).
   if (child.exitCode !== null || child.signalCode !== null) return false;
   try {
     // A negative pid is the process group's, and the child leads its own
@@ -147,7 +148,8 @@ export function signalProcessTree(
  *
  * The escalation timer is cleared at that `exit`, so a tree with the default
  * disposition never pays the grace, and the SIGKILL can never land on a pid
- * the host has since recycled.
+ * that is no longer this tree's (`.claude/rules/platform-facts.md`, *A reaped
+ * pid returns to the host's allocation pool*).
  *
  * Defaults to {@link DEFAULT_KILL_GRACE_MS}; the dispatcher forwards a
  * chain's `supervisorPolicy.killGraceMs` (`src/Phase.ts`) here through the

@@ -57,8 +57,11 @@ const FAKE_PID = 4242;
 
 function fakeChildProcess(): FakeChildProcess {
   const proc = new EventEmitter() as FakeChildProcess;
-  // What the teardown reads before it signals: a child already reaped has a
-  // pid the host may have recycled, and signalling it would kill a stranger.
+  // The three fields `signalProcessTree` (`src/processTree.ts`) reads before
+  // it signals, declared together: the null pair is what makes this fake a
+  // live child rather than a reaped one, whose pid the engine declines
+  // (`.claude/rules/platform-facts.md`, *A reaped pid returns to the host's
+  // allocation pool*).
   proc.pid = FAKE_PID;
   proc.exitCode = null;
   proc.signalCode = null;

@@ -3,11 +3,9 @@
  * pidfile and tip-claim case plants before asserting that the engine reclaims
  * it.
  *
- * Harvesting one from a child that just exited looks exact and is a race: a
- * reaped pid goes straight back into the host's allocation pool, so between
- * the harvest and the reclaim under test the number can name a stranger. The
- * reclaim then reads it live, refuses, and the case reds with nothing wrong in
- * the engine — measured on the `windows` lane, which recycles soonest.
+ * Harvesting one from a child that just exited looks exact and is a race
+ * (`.claude/rules/platform-facts.md`, *A reaped pid returns to the host's
+ * allocation pool*).
  *
  * So the pid is minted rather than harvested: a number far above anything a
  * host hands out, checked at the mint against the same signal-0 probe the
