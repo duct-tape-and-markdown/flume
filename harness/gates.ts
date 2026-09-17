@@ -6,14 +6,14 @@
  * always ahead of whatever gates the consumer declared.
  *
  * **Always first is mechanism here, not a promise.** {@link harnessGates}
- * returns the package's five and then the consumer's, so a declaration
+ * returns the package's own and then the consumer's, so a declaration
  * cannot displace one by ordering, and there is no per-phase table of which
  * gate applies where to fall out of step with the fence. The set is the same
- * for every phase the package ships: each of the five is a claim about *any*
+ * for every phase the package ships: each of them is a claim about *any*
  * commit the package's chain produces, and the ones whose subject a given
  * phase never writes cost a handful of at-ref reads to say so.
  *
- * The order the five run in is dependency order, not the spec's listing
+ * The order they run in is dependency order, not the spec's listing
  * order: the dispatcher stops at the first refusal, so the pending gate —
  * which is what proves the queue parses at all — runs before the `per` gate
  * that reads cites out of it. The cursor gate trails them, being the one
@@ -29,10 +29,10 @@
  * the commit — absent is deleted — what the worktree still holds uncommitted
  * is read off the engine's own status decode, and whether one sha reaches
  * another comes off the engine's own ancestry probe. **This module spawns no
- * process:** every fact the five judge on either rides the context or comes
+ * process:** every fact they judge on either rides the context or comes
  * off `GateEngine`.
  *
- * This module is the package's own five alone. Which phases exist and what
+ * This module is the package's own set alone. Which phases exist and what
  * fence each carries belong to the chain factory that calls this
  * (`chain.ts`); constructing a consumer's declared gates — including the
  * shell line that does spawn — belongs to `declaredGates.ts`, which is why
@@ -126,10 +126,10 @@ export interface HarnessGatesOptions {
    */
   readonly entryFields?: EntryExtension;
   /**
-   * The gates that follow the package's five, already constructed, in the
+   * The gates that follow the package's own, already constructed, in the
    * order they run — the consumer's declared gates for this phase, and
    * whatever the calling factory judges after them. Nothing here can be put
-   * ahead of the four.
+   * ahead of one of them.
    */
   readonly declared?: readonly Gate[];
 }
@@ -552,7 +552,7 @@ function buildFence(
 /**
  * The package's gate set for one phase, followed by the consumer's own.
  *
- * The five are the discipline's, and they run in dependency order: records
+ * These are the discipline's, and they run in dependency order: records
  * and the clean tree are facts about the commit itself; the pending gate
  * proves the queue parses and every entry's declared files survive build's
  * fence; the `per` gate then reads cites out of a queue already known to

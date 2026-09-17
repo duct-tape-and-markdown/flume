@@ -877,7 +877,7 @@ it("the package's judge runs after a consumer's declared gates at the same when"
     afterMerge.indexOf("named lines"),
   );
 
-  // And the five discipline gates still lead every phase's set, the
+  // And the discipline gates still lead every phase's set, the
   // consumer's declaration notwithstanding.
   const DISCIPLINE = [
     "records",
@@ -894,8 +894,8 @@ it("the package's judge runs after a consumer's declared gates at the same when"
     ]).toEqual([phase.name, DISCIPLINE]);
   }
   // Nothing of the package's trails into the consumer's own point either:
-  // build's afterCommit set is the five, then the declared typecheck, and
-  // the judge hangs on afterMerge alone.
+  // build's afterCommit set is the discipline set, then the declared
+  // typecheck, and the judge hangs on afterMerge alone.
   expect(at("afterCommit")).toEqual([...DISCIPLINE, declared.afterCommit]);
 });
 

@@ -1,8 +1,8 @@
 /**
  * The harness package's gate set (`spec/harness.md`, *The gates the
- * discipline needs*): what each of the five refuses, that all five sit
- * ahead of whatever a consumer declared, and that the page a consumer adopts
- * from names every one of them.
+ * discipline needs*): what each of them refuses, that they all sit ahead of
+ * whatever a consumer declared, and that the page a consumer adopts from
+ * names every one of them.
  *
  * Every case runs over a **real git repository** and gates a **real commit**:
  * the span each gate reads is `git diff` over the two shas git just handed
@@ -866,7 +866,7 @@ it("the package's gates precede a consumer's declared gates for the same phase",
     ...DISCIPLINE,
     ...declared.map((g) => g.name),
   ]);
-  // The consumer's own values, in order, after the package's five — not
+  // The consumer's own values, in order, after the package's own — not
   // copies, and not interleaved.
   expect(set.slice(DISCIPLINE.length)).toEqual(declared);
 

@@ -128,7 +128,7 @@ const When = z.enum(Object.keys(GATE_WHEN) as [GatePhase, ...GatePhase[]]);
 /**
  * One extra gate a consumer hangs on a phase: by the name of a gate the
  * package's registry ships, by an inline shell command, or by a script the
- * consumer commits. The package's own gates are not declarable: its five
+ * consumer commits. The package's own gates are not declarable: its
  * discipline gates are always present and always first, and its judge runs
  * after everything declared here at the same `when`.
  *
@@ -367,7 +367,7 @@ export const DeclarationSchema = strict({
    */
   handoff: byPhase(HandoffValue).optional(),
   /**
-   * Extra gates per phase. The package's five discipline gates are always
+   * Extra gates per phase. The package's discipline gates are always
    * present and always first, so nothing here can displace one; the
    * package's judge trails whatever is declared at the same `when`, so a
    * seconds-long check reports before a minutes-long suite.
