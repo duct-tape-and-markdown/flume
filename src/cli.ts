@@ -36,15 +36,18 @@ import {
   WORKTREE_LIST_Z_FLOOR,
   type GitVersion,
 } from "./git.js";
+import { diskChainLoader } from "./chainLoad.js";
+import { readPendingLoose } from "./pendingLedger.js";
+import {
+  liveLoopClaim,
+  liveLoopPid,
+  renderPidClaim,
+  type PidClaim,
+} from "./pidClaim.js";
 import {
   ensureRuntimeIgnores,
   frictionIgnoreEntry,
-  liveLoopClaim,
-  liveLoopPid,
-  readPendingLoose,
-} from "./job.js";
-import { diskChainLoader } from "./chainLoad.js";
-import { renderPidClaim, type PidClaim } from "./pidClaim.js";
+} from "./runtimeIgnores.js";
 import {
   Dispatcher,
   RenderUnresolvedError,
@@ -432,7 +435,7 @@ async function main(): Promise<number> {
     // 0.
     if (loadFailure) console.log(`chain: failed to load — ${loadFailure}`);
     // The pending entry count, independent of whether the chain loads:
-    // `readPendingLoose` (src/job.ts) is the probe, so an absent queue reads
+    // `readPendingLoose` (src/pendingLedger.ts) is the probe, so an absent queue reads
     // 0 and a corrupt one reads "unparsable" rather than failing the verb.
     const pending = readPendingLoose(
       resolvePendingPath(flumeDir, chain?.pendingPath),
@@ -729,7 +732,7 @@ async function main(): Promise<number> {
       // And a dot-prefixed note is no note (spec/chain.md, "`Chain.friction`
       // — the declared friction channel"), so naming one reads as absent —
       // the same `isDotName` (`src/paths.ts`) the listing below and
-      // `countFrictionFiles` (`src/job.ts`) apply, over the resolved
+      // `countFrictionFiles` (`src/friction.ts`) apply, over the resolved
       // basename so `./.gitkeep` cannot spell its way past it.
       const isNote = isDirectChild && !isDotName(basename(candidate));
       let bytes: Buffer | undefined;
@@ -1313,7 +1316,7 @@ async function main(): Promise<number> {
     }
     // spec/jobs.md "Runtime ignores": the state root this run writes under
     // takes the runtime-owned merge — declared `Chain.friction` included,
-    // through the one `frictionIgnoreEntry` spelling (`src/job.ts`) — so a
+    // through the one `frictionIgnoreEntry` spelling (`src/runtimeIgnores.ts`) — so a
     // fresh adopter never commits a tick artifact because a line was missing
     // from the repo's own ignore file. Under the tip claim and ahead of the
     // sweep below: the claim is what rules out a concurrent writer against

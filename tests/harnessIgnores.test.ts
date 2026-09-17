@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
 import { SESSIONS_REL, consumerIgnores } from "../harness/ignores.ts";
-import { RUNTIME_IGNORES } from "../src/job.ts";
+import { RUNTIME_IGNORES } from "../src/runtimeIgnores.ts";
 import { STATE_ROOT_NAMES } from "../src/paths.ts";
 
 /** A gitignore line as its bare name — the directory separator dropped. */
@@ -101,9 +101,9 @@ it("the consumer ignore set names no path outside the package's runtime footprin
   // Nothing but those, and each exactly once: the footprint's size is the
   // set's size.
   expect(derived).toHaveLength(FOOTPRINT.size);
-  // The one line the job-dir seed carries that the runtime does not own
-  // (`RUNTIME_IGNORES`, `src/job.ts`) is dropped by that filter, not copied
-  // through: a consumer's root is not a job dir's install.
+  // The one line the state-root seed carries that the runtime does not own
+  // (`RUNTIME_IGNORES`, `src/runtimeIgnores.ts`) is dropped by that filter,
+  // not copied through: a consumer's root is not a state root's install.
   expect(derived).not.toContain(`${STATE_ROOT}/node_modules/`);
 });
 
@@ -139,8 +139,8 @@ it("the engine's re-asserted runtime ignore set names none of the package's own 
   expect(packageOwned).toContain(SESSIONS_REL);
   expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
 
-  // The engine re-merges its set into the state root at every `loop` /
-  // `job run` start (`ensureRuntimeIgnores`, `src/job.ts`), so an engine line
+  // The engine re-merges its set into the state root at every `loop`
+  // start (`ensureRuntimeIgnores`, `src/runtimeIgnores.ts`), so an engine line
   // repairs itself in an adopted consumer's file. A package artifact landing
   // in that set would quietly give the package's lines a second writer, and
   // `ignores.ts` declares it has exactly one — adoption.

@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { chainLoadGate } from "../src/builtinGates.ts";
 import { loadChainModule } from "../src/chainLoad.ts";
 import type { GateContext } from "../src/Gate.ts";
-import { RUNTIME_IGNORES } from "../src/job.ts";
 import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
+import { RUNTIME_IGNORES } from "../src/runtimeIgnores.ts";
 import {
   CHAIN_MODULE_NAME,
   chainModulePath,

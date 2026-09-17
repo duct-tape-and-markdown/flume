@@ -58,8 +58,8 @@ export function statLoud(path: string): Stats | undefined {
  * throws: `existsSync` collapses every stat error to `false`, so a path that
  * is present but unreachable reads as absent and the caller proceeds over an
  * unresolved input (`.claude/rules/engineering.md`, "Loud or nothing"). Same
- * split `readPendingLoose` and `countFrictionFiles` (`src/job.ts`) give a
- * read, and the same win32 bound {@link statLoud} declares.
+ * split `readPendingLoose` (`src/pendingLedger.ts`) and
+ * `countFrictionFiles` (`src/friction.ts`) give a read, and the same win32 bound {@link statLoud} declares.
  *
  * The fold for win32's total-path limit is the caller's, not this probe's:
  * `namespacedJoin` (`src/paths.ts`) where the caller has segments to join,

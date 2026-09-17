@@ -46,7 +46,7 @@ import { loadChainModule } from "../src/chainLoad.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import { pendingGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
-import { RUNTIME_IGNORES } from "../src/job.ts";
+import { RUNTIME_IGNORES } from "../src/runtimeIgnores.ts";
 import {
   computeStateRootRel,
   DEFAULT_PENDING_REL,
@@ -494,7 +494,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
 
   // LOOP-LOCK-SHARES-LIVELOOPPID: the lock's liveness read and `flume
   // status`'s supervisor-liveness read both go through
-  // `liveLoopPid` (src/job.ts) — one probe, not two hand-rolled ones. This
+  // `liveLoopPid` (src/pidClaim.ts) — one probe, not two hand-rolled ones. This
   // pins agreement so a future one-sided change to either call site fails
   // here instead of silently diverging.
   it(
@@ -832,7 +832,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI", () => {
  * markers. Incident (2026-07-29): `status` read baton markers only and
  * printed "hibernating" while a prior supervisor was still alive, so the
  * operator deleted `loop.pid` on a stale assumption. Same pid-liveness
- * shape as the loop-lock tests above (`liveLoopPid`, `src/job.ts`), applied
+ * shape as the loop-lock tests above (`liveLoopPid`, `src/pidClaim.ts`), applied
  * to a bare `.flume/loop.pid` rather than a relocated root's.
  */
 describe("flume status — supervisor liveness", () => {
@@ -1095,8 +1095,8 @@ describe("flume status — friction line", () => {
  * `flume status` names the pending entry count alongside awake phases:
  * a valid pending.json by entry count, a corrupt one as "unparsable" rather
  * than silently dropped, and an absent one as 0. No chain/git repo needed —
- * the count comes from `readPendingLoose` (`src/job.ts`), the chain-less
- * probe pinned per-arm in tests/job.test.ts.
+ * the count comes from `readPendingLoose` (`src/pendingLedger.ts`), the
+ * chain-less probe pinned per-arm in tests/pendingLedger.test.ts.
  */
 describe("flume status — pending entry count", () => {
   it("names the entry count for a valid pending.json", async () => {
@@ -4305,8 +4305,9 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
   // toNamespacedPath is a no-op on POSIX, so any roundtrip test of loop.pid
   // behavior passes identically whether cli.ts routes through namespacedJoin
   // or a bare join. Pin the source shape directly, mirroring
-  // Baton.test.ts's "win32 MAX_PATH fix" precedent — job.ts:liveLoopPid is
-  // the reference shape every loop.pid call site here must match. The name
+  // Baton.test.ts's "win32 MAX_PATH fix" precedent — `liveLoopPid`
+  // (`src/pidClaim.ts`) is the reference shape every loop.pid call site here
+  // must match. The name
   // itself now comes from `loopLockPath` (src/paths.ts), so the pin is on the
   // accessor being wrapped, not on a filename spelled here.
   const src = readFileSync(CLI_SRC_PATH, "utf8");
@@ -4451,16 +4452,17 @@ describe("state root layout — `flume stop` writes the flag every reader honors
 });
 
 /**
- * A chain whose agent calls the runtime's own `liveLoopPid` (`src/job.ts`) —
+ * A chain whose agent calls the runtime's own `liveLoopPid`
+ * (`src/pidClaim.ts`) —
  * the reader side of the one-supervisor lock — from inside the child tick,
  * and records what it read. The writer is the real `flume loop` that spawned
  * that child: nothing here writes or names a pidfile.
  */
 function loopLockReaderChainSrc(phaseName: string, observedPath: string): string {
-  const jobSrc = new URL("../src/job.ts", import.meta.url).href;
+  const pidClaimSrc = new URL("../src/pidClaim.ts", import.meta.url).href;
   return (
     `import { writeFileSync } from "node:fs";\n` +
-    `import { liveLoopPid } from ${JSON.stringify(jobSrc)};\n` +
+    `import { liveLoopPid } from ${JSON.stringify(pidClaimSrc)};\n` +
     `export default () => ({ chain: {\n` +
     `  phases: [{\n` +
     `    name: ${JSON.stringify(phaseName)},\n` +
@@ -4623,7 +4625,7 @@ describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCE
  * Driven through the real CLI with `--max 0`: the merge sits under the tip
  * claim and ahead of the startup sweep, both of which `--max 0` reaches
  * before stopping without spawning a child tick. The expectation reads
- * `RUNTIME_IGNORES` (`src/job.ts`) rather than respelling the block, so a
+ * `RUNTIME_IGNORES` (`src/runtimeIgnores.ts`) rather than respelling the block, so a
  * line added there is asserted here by construction.
  */
 describe("flume loop — runtime ignores at the default state root", () => {
@@ -4661,7 +4663,8 @@ describe("flume loop — runtime ignores at the default state root", () => {
       const repo = await makeRepo("main");
       try {
         // Declared with a backslash and a doubled trailing slash: the entry
-        // that lands must be the `frictionIgnoreEntry` (`src/job.ts`)
+        // that lands must be the `frictionIgnoreEntry`
+        // (`src/runtimeIgnores.ts`)
         // normalization the merge applies, not whatever the chain wrote.
         await writeRepoConfig(repo.dir, minimalChainSrc("scratch\\friction//"));
         const ignorePath = join(repo.dir, ".flume", ".gitignore");

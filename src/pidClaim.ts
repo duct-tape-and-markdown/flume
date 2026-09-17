@@ -16,9 +16,19 @@
  * contracts and which an archive restore, a `touch`, or a backup tool moves
  * under a running loop.
  *
- * Nothing beyond the parse here: what to do about a claim — refuse, reclaim,
- * total a window — belongs to the guard that read it.
+ * The loop lock's own read sits here too — it is the one guard whose file the
+ * runtime addresses by a path accessor rather than by a caller-held one, so
+ * the read that turns `<dir>/loop.pid` into a claim is the claim's own
+ * business. The tip claim's read stays with the ref-keyed machinery that
+ * builds its path (`liveTipClaimPid`, `src/git.ts`).
+ *
+ * Nothing beyond the parse and that read here: what to do about a claim —
+ * refuse, reclaim, total a window — belongs to the guard that read it.
  */
+
+import { readFile } from "node:fs/promises";
+
+import { loopLockPath, namespacedJoin } from "./paths.js";
 
 /** A guard file's holder, as the holder itself stated it. */
 export interface PidClaim {
@@ -61,4 +71,51 @@ export function parsePidClaim(raw: string): PidClaim | null {
   if (!Number.isFinite(pid) || pid <= 0) return null;
   const atMs = Date.parse(atLine.trim());
   return Number.isFinite(atMs) ? { pid, atMs } : { pid };
+}
+
+/**
+ * What `<dir>/loop.pid` states about its holder, when that holder is a live
+ * process — `null` for no pidfile, an unparsable one, or a dead/not-ours pid
+ * (stale; callers reclaim silently). Same liveness probe as the tip claim.
+ *
+ * The statement is {@link parsePidClaim}'s: the pid off the first line, the
+ * claim instant off the second where the holder stated one. `flume status`
+ * reads the whole claim — it reports the holder *and* bounds the run's spend
+ * by the instant — so one read answers both rather than a liveness probe
+ * beside a second read of the same file.
+ *
+ * Absent (`ENOENT`) is the only no-pidfile reading; any other read failure
+ * (permission denied, a path too long for the platform, …) throws
+ * (`.claude/rules/engineering.md`, "Loud or nothing"). A `null` from an
+ * unreadable pidfile would report a live loop as dead, which is exactly the
+ * reading the `flume loop` lock claim exists to prevent.
+ */
+export async function liveLoopClaim(dir: string): Promise<PidClaim | null> {
+  // win32 MAX_PATH: dir is a state root that can nest deep; namespacedJoin
+  // (src/paths.ts) is the shared idiom.
+  const pidPath = namespacedJoin(loopLockPath(dir));
+  let raw: string;
+  try {
+    raw = await readFile(pidPath, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+  const claim = parsePidClaim(raw);
+  if (claim === null) return null;
+  try {
+    process.kill(claim.pid, 0);
+    return claim;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The live holder's pid alone — {@link liveLoopClaim} for a caller that needs
+ * only liveness. Exported for reuse (`flume loop`'s lock claim) rather than a
+ * second implementation of the same pid-liveness check.
+ */
+export async function liveLoopPid(dir: string): Promise<number | null> {
+  return (await liveLoopClaim(dir))?.pid ?? null;
 }

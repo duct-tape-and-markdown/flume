@@ -431,9 +431,9 @@ export async function createWorktree(
     await git.removeWorktree(ctx.repoRoot, path);
   }
   await mkdir(toNamespacedPath(dirname(path)), { recursive: true });
-  // Fanout worktrees nest at least as deep as the job dir they're cloned
-  // for — the identical win32 MAX_PATH gap job.ts's own baseline pin
-  // exists to spare.
+  // Fanout worktrees nest at least as deep as the state root they're cloned
+  // for — the identical win32 MAX_PATH gap the state root's own reads
+  // (`src/pidClaim.ts`, `src/friction.ts`) are pinned against.
   await git.pinLongPaths(ctx.repoRoot);
   await git.addWorktree({
     repoRoot: ctx.repoRoot,

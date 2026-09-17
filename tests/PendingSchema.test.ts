@@ -782,11 +782,11 @@ describe("parsePendingLoose — chain-less informational reads", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("has exactly one production call site — job.ts's read-only job-listing", () => {
+  it("has exactly one production call site — pendingLedger.ts's chain-less read", () => {
     const callSites = looseCallSites();
 
     expect(callSites).toHaveLength(1);
-    expect(basename(callSites[0]!.file)).toBe("job.ts");
+    expect(basename(callSites[0]!.file)).toBe("pendingLedger.ts");
     expect(callSites[0]!.count).toBe(1);
   });
 
@@ -798,9 +798,9 @@ describe("parsePendingLoose — chain-less informational reads", () => {
     expect(leaves(looseCallSites())).not.toContain(LOOSE_DECLARATION);
   });
 
-  it("its one call site never rewrites pending.json — readPendingLoose (job.ts, what flume status counts through) is read-only", () => {
-    const jobSrc = readFileSync(`${SRC_DIR}/job.ts`, "utf8");
-    const probeBody = extractFunctionBody(jobSrc, "readPendingLoose");
+  it("its one call site never rewrites pending.json — readPendingLoose (pendingLedger.ts, what flume status counts through) is read-only", () => {
+    const ledgerSrc = readFileSync(`${SRC_DIR}/pendingLedger.ts`, "utf8");
+    const probeBody = extractFunctionBody(ledgerSrc, "readPendingLoose");
     const noMutation =
       /\b(writeFileSync|writeFile|appendFileSync|appendFile|rmSync|rm|unlinkSync|unlink)\s*\(/;
 

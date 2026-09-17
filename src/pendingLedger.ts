@@ -1,8 +1,8 @@
 /**
  * The pending ledger's I/O: every way a tick reads the queue file, the
- * relocation check those reads turn on, the fence verdict that decides whose
- * read may survive a parse failure, and the one rewrite that retires what a
- * wave shipped.
+ * chain-less read a CLI verb counts through, the relocation check those reads
+ * turn on, the fence verdict that decides whose read may survive a parse
+ * failure, and the one rewrite that retires what a wave shipped.
  *
  * Calls that share one fact each — where the ledger lives, which
  * alphabet it is read out of, and whether git can see it at all — so they
@@ -21,6 +21,7 @@
  * dispatcher (`src/Dispatcher.ts`) and the wave (`src/waveTick.ts`).
  */
 
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
 
@@ -28,9 +29,14 @@ import { existsLoud } from "./fsProbe.js";
 import * as git from "./git.js";
 import type { Logger } from "./log.js";
 import { escapesRoot, gitPath, matchesAny, namespacedJoin } from "./paths.js";
-import { parsePending, PendingParseFailure } from "./PendingSchema.js";
+import {
+  parsePending,
+  parsePendingLoose,
+  PendingParseFailure,
+} from "./PendingSchema.js";
 import type {
   EntryExtension,
+  ParseResult,
   PendingEntry,
   QueueParseFailure,
 } from "./PendingSchema.js";
@@ -445,4 +451,33 @@ export async function readPendingForDecision(
     };
   }
   return { pending, queueParseFailure: undefined };
+}
+
+/**
+ * Chain-less informational read of a pending.json at `pendingPath`: absent
+ * (`ENOENT`) reads as the empty, valid list (nothing planned is nothing
+ * pending); present reads through `parsePendingLoose` (core fields
+ * validated, no extension composed — never a write path). Any other read
+ * failure (permission denied, a path too long for the platform, …) is
+ * rethrown rather than folded into the absent case
+ * (`.claude/rules/engineering.md`, "Loud or nothing") — rethrowing leaves the
+ * caller to decide how to surface it: `flume status` (`src/cli.ts`) catches
+ * it, reports the failure, and exits non-zero rather than printing
+ * "pending: 0" over a queue it could not read.
+ *
+ * The one read on this page that takes a bare path rather than a
+ * {@link PendingLedgerContext}: it runs where no chain resolved, which is the
+ * whole reason it exists beside the reads that compose a declared extension.
+ */
+export function readPendingLoose(pendingPath: string): ParseResult {
+  let raw: string;
+  try {
+    raw = readFileSync(namespacedJoin(pendingPath), "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { ok: true, entries: [], errors: [] };
+    }
+    throw err;
+  }
+  return parsePendingLoose(raw);
 }

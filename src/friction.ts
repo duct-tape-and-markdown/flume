@@ -1,8 +1,8 @@
 /**
  * friction — the friction channel's own home: the declaration check that
- * admits a `Chain.friction` value, the count line every status surface
- * prints from it, and the teardown harvest that drains a worktree's mirror
- * into the primary dir.
+ * admits a `Chain.friction` value, the file count behind every status surface
+ * and the line they print from it, and the teardown harvest that drains a
+ * worktree's mirror into the primary dir.
  *
  * Split out of `src/Dispatcher.ts` (`.claude/rules/posture-sweep.md`, "A
  * violation counts only when verified on disk this tick"): one declared
@@ -18,13 +18,13 @@
  * path's own note, built from a commit message only that attempt reads.
  */
 
+import { readdirSync } from "node:fs";
 import { copyFile, mkdir, readdir, rename, rm } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { join } from "node:path";
 
 import type { Logger } from "./log.js";
 import * as git from "./git.js";
-import { countFrictionFiles } from "./job.js";
 import {
   assertStateRootRelative,
   boundedName,
@@ -54,6 +54,39 @@ export function validateFrictionDeclaration(chain: Chain): void {
     chain.friction,
     'directory path (e.g. "friction")',
   );
+}
+
+/**
+ * Files (not subdirs) directly under `dir`, dot-prefixed names skipped — a
+ * `.gitkeep` git forced the consumer to create is not a note (spec/chain.md,
+ * "`Chain.friction` — the declared friction channel"), and the skip is
+ * `isDotName` (`src/paths.ts`), the same test the `friction` verb's listing
+ * and read-by-name apply. `0` when `dir` is absent
+ * (`ENOENT` — nothing filed is nothing to count, the same reading
+ * `readPendingLoose` (`src/pendingLedger.ts`) gives an absent `pending.json`);
+ * `null` when `dir` exists but `readdir` fails for any other reason — that
+ * failure is a real unresolved input, not a legitimate zero, so it must not
+ * read the same as an empty dir (`.claude/rules/engineering.md`, "Loud or
+ * nothing").
+ *
+ * Exported so the `friction` verb (`src/cli.ts`) shares this
+ * ENOENT-vs-other split with {@link frictionCountLine} below instead of
+ * re-deriving it (`.claude/rules/engineering.md`, "the fix lands at the
+ * mechanism").
+ */
+export function countFrictionFiles(dir: string): number | null {
+  try {
+    // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dir joins a state
+    // root onto chain.friction, the same construction `harvestFriction`
+    // below and `writeRevertNote` (`src/tickAttempt.ts`) guard.
+    // `namespacedJoin` (`src/paths.ts`) is the shared idiom.
+    return readdirSync(namespacedJoin(dir), { withFileTypes: true }).filter(
+      (e) => e.isFile() && !isDotName(e.name),
+    ).length;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    return null;
+  }
 }
 
 /**
@@ -87,7 +120,7 @@ function renderFrictionCount(
  * Undeclared `Chain.friction` is the undefined count: no dir to read, so no
  * line.
  *
- * Counting is `countFrictionFiles` (`src/job.ts`); rendering is the shared
+ * Counting is {@link countFrictionFiles}; rendering is the shared
  * function above. Nothing here is this surface's own
  * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
  */

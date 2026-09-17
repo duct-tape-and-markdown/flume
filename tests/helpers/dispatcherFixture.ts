@@ -15,7 +15,7 @@ import { join } from "node:path";
 
 import type { Logger } from "../../src/log.ts";
 import type { TickVerdict } from "../../src/tickVerdict.ts";
-import { RUNTIME_IGNORES } from "../../src/job.ts";
+import { RUNTIME_IGNORES } from "../../src/runtimeIgnores.ts";
 
 import { mkTempDir } from "./fixtureRoot.ts";
 import { exec } from "./subprocess.ts";

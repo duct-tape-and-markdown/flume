@@ -42,13 +42,15 @@ const execFileAsync = promisify(execFile);
  *
  * Sized off the engine's own spawns rather than off any one case's fixture:
  * every spawn site in `src/` declares a cap — 16 MiB at `src/git.ts`,
- * `src/job.ts`, `src/worktrees.ts` and `src/builtinGates.ts`, 4 MiB at
- * `src/Dispatcher.ts` and `src/priorAttempts.ts` — and this is the ceiling of
- * that range, so output the engine was willing to capture from a child cannot
- * overrun the harness that spawned the engine. The one `src/`-adjacent spawn
- * above it reads a git log under `maxBuffer: Infinity`
- * (`scripts/build-changelog.mjs`), and what this harness captures there is the
- * draft that read produces, not the log itself.
+ * `src/worktrees.ts` and `src/builtinGates.ts`, 4 MiB at `src/tickAttempt.ts`
+ * and `src/priorAttempts.ts` — and this is the ceiling of what the engine
+ * captures from a child whose output a tick reads back, so that output cannot
+ * overrun the harness that spawned the engine. Two `src/`-adjacent spawns sit
+ * above it and neither reaches this cap: a worktree install
+ * (`src/setupWorktree.ts`) whose output the engine logs rather than returns,
+ * and a git log read under `maxBuffer: Infinity`
+ * (`scripts/build-changelog.mjs`), of which this harness captures the draft
+ * the read produces, not the log itself.
  */
 export const SPAWN_OUTPUT_CAP_BYTES = 16 * 1024 * 1024;
 

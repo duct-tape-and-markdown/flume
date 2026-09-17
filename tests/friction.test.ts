@@ -1,6 +1,7 @@
 /**
- * The friction module's own surface: the count line every status surface
- * prints, and the teardown harvest that fills the dir it counts.
+ * The friction module's own surface: the file count behind every status
+ * surface and the line printed from it, and the teardown harvest that fills
+ * the dir it counts.
  *
  * The round-trip below is an agreement gate (`.claude/rules/engineering.md`,
  * *A seam gate reads what the real writer wrote*): the real
@@ -22,7 +23,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { frictionCountLine, harvestFriction } from "../src/friction.ts";
+import {
+  countFrictionFiles,
+  frictionCountLine,
+  harvestFriction,
+} from "../src/friction.ts";
 import { parsePending, TAG_MAX_LENGTH } from "../src/PendingSchema.ts";
 import type { Chain } from "../src/Phase.ts";
 import { denyDirectory } from "./helpers/denial.ts";
@@ -144,9 +149,8 @@ describe("frictionCountLine — EACCES/ENOENT split (dispatcher-frictioncountlin
       // Deny the friction dir structurally (`tests/helpers/denial.ts`):
       // readdir now fails ENOTDIR — the path is there but is not a dir to
       // read — not ENOENT (`.claude/rules/engineering.md`, "Loud or
-      // nothing"). Same primitive `countFrictionFiles` (`src/job.ts`) is
-      // pinned with in `tests/job.test.ts`, and unlike a mode it denies on
-      // win32 too.
+      // nothing"). Same primitive `countFrictionFiles` is pinned with
+      // directly below, and unlike a mode it denies on win32 too.
       denyDirectory(frictionDir);
 
       expect(await frictionCountLine(stateRoot, chain)).toBe(
@@ -394,3 +398,68 @@ describe("friction harvest — a dot-prefixed mirror name is not a note", () => 
     );
   });
 });
+
+/**
+ * `countFrictionFiles` gives a failed read the same three-way reading
+ * `frictionCountLine` renders above: `0` for an absent dir, a real count for
+ * a readable one, and `null` — never a zero — for a dir that is there and
+ * cannot be listed (`.claude/rules/engineering.md`, "Loud or nothing"). What
+ * counts as a note is `isDotName` (`src/paths.ts`), the one detection the
+ * `friction` verb's listing and read-by-name apply too, so the skip is pinned
+ * here rather than through the rendered line, which cannot tell a skipped
+ * name from an absent one.
+ */
+describe("countFrictionFiles — the ENOENT/other split", () => {
+  it("counts an absent dir as 0 and an unlistable one as null", async () => {
+    const base = await mkTempDir("flume-friction-count-");
+    const dir = join(base, "friction");
+    try {
+      expect(countFrictionFiles(dir)).toBe(0);
+
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "a.md"), "x\n");
+      await writeFile(join(dir, "b.md"), "y\n");
+      // A dot-prefixed name is not a note, and a subdir is not a file.
+      await writeFile(join(dir, ".gitkeep"), "");
+      await mkdir(join(dir, "nested"), { recursive: true });
+      // Non-vacuity: the dir counts before it is denied.
+      expect(countFrictionFiles(dir)).toBe(2);
+
+      // Deny structurally (`tests/helpers/denial.ts`): readdir now fails
+      // ENOTDIR — the path is there but is not a dir to read — not ENOENT.
+      denyDirectory(dir);
+      expect(countFrictionFiles(dir)).toBeNull();
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * Same deep-nesting shape as the Dispatcher.ts win32 suites
+ * (WRITEREVERTNOTE-WIN32-PATH-TOTAL-LIMIT et al.): a bare `join()` reads a
+ * too-long path as absent rather than as a real error, so the count below
+ * would silently read an empty channel instead of resolving.
+ */
+describe.runIf(process.platform === "win32")(
+  "countFrictionFiles — win32 total-path limit (FRICTIONCOUNT-WIN32-PATH-TOTAL-LIMIT)",
+  () => {
+    it("countFrictionFiles resolves a real count when the friction dir nests past win32's ~260-char limit", async () => {
+      const base = await mkTempDir("flume-friction-w32-");
+      try {
+        const frictionDir = join(
+          base,
+          ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
+        );
+        await mkdir(frictionDir, { recursive: true });
+        await writeFile(join(frictionDir, "a.md"), "x\n");
+        await writeFile(join(frictionDir, "b.md"), "y\n");
+
+        expect(frictionDir.length).toBeGreaterThan(260);
+        expect(countFrictionFiles(frictionDir)).toBe(2);
+      } finally {
+        await rm(base, { recursive: true, force: true });
+      }
+    });
+  },
+);

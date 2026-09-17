@@ -366,7 +366,7 @@ export function boundedName(
  * git made the consumer create is no work". Every friction-channel surface
  * that decides whether a name is a note shares it (spec/chain.md,
  * "`Chain.friction` — the declared friction channel"): `countFrictionFiles`
- * (`src/job.ts`) behind every status count, the `friction` verb's bare
+ * (`src/friction.ts`) behind every status count, the `friction` verb's bare
  * listing and read-by-name (`src/cli.ts`), and the teardown harvest's
  * candidate filter (`harvestFriction`, `src/friction.ts`), which would
  * otherwise relay a skipped name into the primary dir under a stamped one
@@ -429,7 +429,8 @@ export function defaultStateRoot(repoRoot: string): string {
  * restated beside its source").
  *
  * Exported for the one consumer that needs a bare name rather than a path:
- * the runtime ignore set (`RUNTIME_IGNORES`, `src/job.ts`). Everything
+ * the runtime ignore set (`RUNTIME_IGNORES`, `src/runtimeIgnores.ts`).
+ * Everything
  * that builds a path takes an accessor below.
  *
  */
@@ -548,7 +549,7 @@ export function mergingMarkerPath(flumeDir: string, slug: string): string {
 
 /**
  * The cross-process loop lock — one supervisor per state root. `flume loop`
- * writes its pid here; `liveLoopPid` (`src/job.ts`) and `flume status` read
+ * writes its pid here; `liveLoopPid` (`src/pidClaim.ts`) and `flume status` read
  * it back.
  */
 export function loopLockPath(flumeDir: string): string {

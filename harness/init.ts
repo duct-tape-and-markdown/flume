@@ -36,12 +36,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { existsLoud } from "../src/fsProbe.js";
-import { mergeIgnoreLines } from "../src/job.js";
 import {
   namespacedJoin,
   resolvePendingPath,
   STATE_ROOT_DIRNAME,
 } from "../src/paths.js";
+import { mergeIgnoreLines } from "../src/runtimeIgnores.js";
 import { readSelfPackage } from "../src/selfPackage.js";
 
 import { detailOf } from "./exec.js";

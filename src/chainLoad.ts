@@ -6,7 +6,7 @@
  *
  * spec/chain.md "Chain residency". Three surfaces load a chain — a tick
  * (`src/Dispatcher.ts`), `chainLoadGate` (`src/builtinGates.ts`) validating a
- * just-committed self-edit, and the CLI's job verbs (`src/job.ts`) — so the
+ * just-committed self-edit, and the CLI's own verbs (`src/cliChainLoad.ts`) — so the
  * load is its own job rather than a second one appended to the module that
  * runs ticks (`.claude/rules/engineering.md`, *A module is one job*).
  */

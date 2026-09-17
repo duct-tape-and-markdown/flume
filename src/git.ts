@@ -646,7 +646,7 @@ export function tipClaimPath(commonDir: string, refPath: string): string {
  * The pid recorded at a tip-claim path, when it names a live process —
  * `null` for no claim file, an unparsable one, or a dead/not-ours pid
  * (stale; callers reclaim silently). Same liveness probe as the loop lock
- * (`liveLoopPid`, src/job.ts) — a sibling primitive rather than a shared call
+ * (`liveLoopPid`, src/pidClaim.ts) — a sibling primitive rather than a shared call
  * site, since the two guard different resources (a ref vs. a state root)
  * under different keying. What the two *do* share is the statement they read:
  * `parsePidClaim` (`src/pidClaim.ts`), which takes the pid off the first

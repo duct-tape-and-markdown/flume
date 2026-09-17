@@ -15228,9 +15228,11 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
   });
 });
 
-// win32 lane: fanout worktree paths nest as deep as job dirs and
-// hit the identical MAX_PATH gap job.ts's own baseline pin exists to spare
-// (mirrored coverage in tests/git.test.ts for the shared helper itself).
+// win32 lane: fanout worktree paths nest as deep as the state roots they
+// are cloned for and hit the identical MAX_PATH gap the state root's own
+// reads are pinned against (`tests/pidClaim.test.ts`,
+// `tests/friction.test.ts`; mirrored coverage in tests/git.test.ts for the
+// shared helper itself).
 // TAG-LENGTH-BOUND-AGREEMENT-PIN above now runs on win32 too:
 // createWorktree's fanout worktree directory is length-bounded, so a
 // long-tag fanout path stays clear of the ~200-char wall `git worktree add`

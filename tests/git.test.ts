@@ -1133,7 +1133,7 @@ describe.runIf(process.platform === "win32")(
 /**
  * The advisory per-ref tip claim. Keyed under
  * `<git-common-dir>/flume/tip-claims/<ref path>`, mirroring `liveLoopPid`'s
- * (src/job.ts) exclusive-create/pid-liveness/reclaim shape but as a sibling
+ * (src/pidClaim.ts) exclusive-create/pid-liveness/reclaim shape but as a sibling
  * primitive — the tip claim guards a ref, not a state root.
  */
 describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () => {
@@ -1287,9 +1287,9 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
 });
 
 // win32 lane: the core.longpaths pin only exists on Windows
-// hosts — assert it where it can actually run. Mirrors tests/job.test.ts's
-// coverage of job.ts's baseline pin; this is the shared helper both
-// job.ts and Dispatcher's createWorktree now call.
+// hosts — assert it where it can actually run. This is the shared helper
+// every caller that provisions a worktree goes through, so the pin sits on
+// the helper rather than on each of them.
 describe.runIf(process.platform === "win32")("pinLongPaths", () => {
   it("pins core.longpaths repo-locally, idempotently", async () => {
     await pinLongPaths(repo);

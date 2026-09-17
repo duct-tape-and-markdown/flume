@@ -34,7 +34,7 @@
  * line carries one fact past the name — whether the entry is a directory,
  * spelled as a trailing separator — and the engine already states it, in the
  * set it merges into every state root's `.gitignore` (`RUNTIME_IGNORES`,
- * `src/job.ts`). Those lines are this set modulo the prefix, so respelling
+ * `src/runtimeIgnores.ts`). Those lines are this set modulo the prefix, so respelling
  * them here would be a second copy of the
  * directory/file split, agreeing with the first only by care
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
@@ -55,7 +55,7 @@
  * the verb that adopts the package.
  */
 
-import { RUNTIME_IGNORES } from "../src/job.js";
+import { RUNTIME_IGNORES } from "../src/runtimeIgnores.js";
 import { STATE_ROOT_NAMES } from "../src/paths.js";
 
 /** The engine's path record, as a membership test over its bare names. */

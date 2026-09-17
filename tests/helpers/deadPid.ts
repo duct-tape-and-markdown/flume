@@ -11,7 +11,7 @@
  *
  * So the pid is minted rather than harvested: a number far above anything a
  * host hands out, checked at the mint against the same signal-0 probe the
- * engine's own liveness readers use (`liveLoopClaim`, `src/job.ts`;
+ * engine's own liveness readers use (`liveLoopClaim`, `src/pidClaim.ts`;
  * `liveTipClaimPid`, `src/git.ts`). The check is the guarantee — the number
  * below is only a good first guess at one, and a host that disagrees gets a
  * refusal by name rather than a case that reds somewhere downstream
