@@ -1,1 +1,58 @@
-[]
+[
+  {
+    "tag": "THE-ATTEMPT-KEY-SHIPS-ON-THE-PACKAGES-SURFACE",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "src/index.ts", "description": "both attempt keyers on the `.` subpath" },
+        { "path": "src/priorAttempts.ts", "description": "doc blocks now reachable from the map's `.d.ts`" },
+        { "path": "tests/priorAttempts.test.ts", "description": "the two surface cases" }
+      ]
+    },
+    "summary": "Ship `entryAttemptKey`/`recordAttemptKey` on the package's public surface, so a chain reading `TickContext.priorAttempts` takes the engine's own join.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "Both keyers resolve through the package's `.` subpath; nothing outside the engine has to compose `<keyspace>:<slug>` for itself.",
+    "tests": [
+      "the package's public surface spells the prior-attempt map key for an entry",
+      "the package's public surface spells the prior-attempt map key for a record"
+    ],
+    "notes": "`entryAttemptKey`'s own doc already names the outside reader — a consumer asking which queue entries a refusal still stands against — and with two subpaths (`.`, `./harness`) that reader cannot import it. Either the claim is residue or the surface is short the re-export; this is the latter call. Raised by the build note on THE-ENGINE-KEYS-A-PRIOR-ATTEMPT-RECORD."
+  },
+  {
+    "tag": "THE-BUILT-IN-GATE-CARDINAL-NAMES-ITS-MEMBERS",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "the built-in list's `shellGate` claim" },
+        { "path": "tests/examples.test.ts", "description": "that claim pinned against `src/builtinGates.ts`" }
+      ]
+    },
+    "summary": "`docs/CHAIN-AUTHORING.md` tells a chain author \"the four built-ins above are all `shellGate` instances\" over five bullets, three of which `shellGate` composes.",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "The built-in list names which built-ins `shellGate` composes instead of counting them, and a pin resolves that naming against `src/builtinGates.ts`.",
+    "tests": [
+      "docs/CHAIN-AUTHORING.md names exactly the built-in gates shellGate composes"
+    ],
+    "notes": "`writablePathsGate` and `pendingGate` sit in the same bullet run and are not `shellGate`-built; `tscGate`/`vitestGate`/`eslintGate` are, through `pkgManagerGate`, and carry `command` as the evidence. Raised by the build note on THE-GATE-SET-CARDINAL-SHRINKS-TO-THE-PIN, which retired the same defect over the discipline gates."
+  },
+  {
+    "tag": "THE-CHAIN-AUTHORING-WALKS-SHARE-ONE-READER",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "tests/examples.test.ts", "description": "the three walk describes become callers" },
+        { "path": "tests/helpers/docSections.ts", "description": "home for the shared reader, beside `sectionOf`/`walkOf`" }
+      ]
+    },
+    "summary": "The supervisor-policy, adoption-price and gate-section walks spell one sequence three times — checker over one module, vacuity wrapper, anchored section — at ~90 lines each.",
+    "per": { "path": ".claude/rules/engineering.md", "section": "A module is one job" },
+    "acceptance": "One reader takes module, interface, vacuity member and heading anchor and yields the declared set plus the anchored section; the three describes call it, and every case keeps its title and its verdict.",
+    "notes": "Target shape named by the build note on THE-SUPERVISOR-POLICY-SECTION-NAMES-ITS-KNOBS-ONCE. A fourth walk copies whichever is nearest, as eight `sectionOf` copies did before `docSections.ts`. Behavior-free: the typecheck and the three describes' own cases hold it."
+  }
+]
