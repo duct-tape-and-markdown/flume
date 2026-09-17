@@ -35,6 +35,66 @@
     "acceptance": "one exported listing in `src/friction.ts` answers what the declared channel holds; the bare `friction` verb, the count, the teardown harvest and `harness/friction.ts` all read it, and no second walk survives.",
     "tests": [],
     "pins": [],
-    "notes": "Target shape: `frictionNotes(dir)` in src/friction.ts — the sorted direct-child files `isDotName` does not skip. Blocked because `countFrictionFiles` sits in src/job.ts today and src/friction.ts already imports it, so a call the other way closes the job.ts -> chainLoad.ts -> friction.ts cycle; the ignore-set entry moves it into src/friction.ts first."
+    "notes": "Target shape: `frictionNotes(dir)` in src/friction.ts — the sorted direct-child files `isDotName` does not skip. `countFrictionFiles` now sits in src/friction.ts (src/job.ts retired at 9fdf1a65), so the cycle that blocked this is gone."
+  },
+  {
+    "tag": "THE-PID-RECYCLING-FACT-IS-CITED-NOT-RESTATED",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/deadPid.ts",
+          "description": "header's fact paragraph shrinks to the cite; the mint's own reasoning stays"
+        },
+        {
+          "path": "tests/Agent.test.ts",
+          "description": "the fake child's pid comment cites rather than restates"
+        },
+        {
+          "path": "src/processTree.ts",
+          "description": "the two already-reaped comments cite rather than restate"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "four sites spell out the pid-recycling fact the platform page now owns, so each carries a copy only the agent who opened that file ever sees",
+    "per": {
+      "path": ".claude/rules/platform-facts.md",
+      "section": "A reaped pid returns to the host's allocation pool"
+    },
+    "acceptance": "each of the four sites states only what its own decision turns on and cites the platform section for the fact; no site restates the allocation-pool reasoning.",
+    "tests": [],
+    "pins": [],
+    "notes": "Same shape as 4c905ceb. Each site's decision differs — the helper mints, `processTree` declines to signal, `Agent.test` explains the fake — so the case reasoning stays and only the shared fact leaves. The existing comment-citation pin already resolves the page name."
+  },
+  {
+    "tag": "THE-SHELL-FIELDS-HOVER-NAMES-EVERY-DECLARED-LINE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "`shell`'s doc comment: every declared command line, and the refusal names the site"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "the `shell` field's hover text still reads gate-only and sends the refusal to `declaredGates.ts`, where the spec row now covers every declared line and `declaredShell.ts` owns the probe",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "hovering `shell` names a shell gate's, a script gate's and `setup.restore`'s command lines, and points the load-time refusal at `declaredShell.ts` naming the site.",
+    "tests": [],
+    "pins": [],
+    "notes": "Behavior already matches the row (2ecb5132, dca32d8a); only the hover lags. `docs/CHAIN-AUTHORING.md` (136, 188) already reads wide, so the two consumer surfaces disagree today. The `declaredGates.ts` cite resolves but names one of two callers — the citation the 2ecb5132 split stranded."
   }
 ]
