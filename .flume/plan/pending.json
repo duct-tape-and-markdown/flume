@@ -1,57 +1,5 @@
 [
   {
-    "tag": "THE-ENGINE-MINTS-NO-FANOUT-NAMESPACE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "`DispatcherOptions.namespace` and its pass-through into the worktree context"
-        },
-        {
-          "path": "src/worktrees.ts",
-          "description": "branch, path, sweep base and gate-checkout scope lose the namespace level"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "the dispatcher is constructed with no namespace"
-        },
-        {
-          "path": "src/paths.ts",
-          "description": "the placement cite loses the cut heading's tail"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the type-level absence"
-        },
-        {
-          "path": "tests/worktrees.test.ts",
-          "description": "the namespaced branch and path cases"
-        },
-        {
-          "path": "src/flumeApi.ts",
-          "description": "the registry hover loses the sibling-namespace case"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the dispatcher still takes a fanout namespace and folds it into every branch name, worktree path and sweep base — a level beneath the base the spec cut",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Placement — the worktree base"
-    },
-    "acceptance": "`DispatcherOptions` carries no namespace, and a fanout branch is `flume/<slug>` with its directory `<base>/<dirName>` under every resolution.",
-    "tests": [
-      "DispatcherOptions no longer carries a fanout namespace (type-level)"
-    ],
-    "pins": [],
-    "notes": "`tests/Dispatcher.test.ts`'s trunkBranch absence case is the shape — a conditional type over `keyof DispatcherOptions`, red on the base. Nothing behavioral changes absent a namespace, so the surface removal is the whole entry. Blocked on the registry-bound branch leg because that lands in the same function and deletes the `branchPattern` this entry would otherwise unbranch."
-  },
-  {
     "tag": "THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT",
     "gate": {
       "kind": "open"
@@ -154,7 +102,6 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "THE-ENGINE-MINTS-NO-FANOUT-NAMESPACE",
         "THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT"
       ]
     },
@@ -309,7 +256,6 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "THE-ENGINE-MINTS-NO-FANOUT-NAMESPACE",
         "THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT",
         "THERE-IS-NO-JOB-SELECTOR"
       ]
@@ -334,117 +280,6 @@
     "tests": [],
     "pins": [],
     "notes": "One entry rather than a section per cut entry: the page is a single append-only file, and three entries contending on it is the fanout-width cost the changelog gate was removed for (`spec/cli.md`, *Versioning policy*). The before/after is `flume job run <name>` → a `git worktree add` checkout with its own `.flume`."
-  },
-  {
-    "tag": "THE-HANDOFF-DECLINES-A-CLEAN-EXIT-AT-THIS-HEAD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/handoff.ts",
-          "description": "the package's declaration of the engine's per-entry refusal"
-        },
-        {
-          "path": "harness/chain.ts",
-          "description": "the refusal reaches the chain the factory builds"
-        },
-        {
-          "path": "tests/harnessHandoff.test.ts",
-          "description": "the three fates by mode and anchor"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the declaration arrives on the chain"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "the default handoff re-dispatches an entry whose latest attempt was a clean exit at the current HEAD — the same dispatch against an unchanged world, for the same outcome",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The default `handoff`"
-    },
-    "acceptance": "the package declares the engine's per-entry refusal, and an entry whose latest prior attempt is a clean exit at the tick's own HEAD is not handed to build while one at an older HEAD still is.",
-    "tests": [
-      "an entry whose latest clean exit is at the current HEAD is not handed to build",
-      "an entry whose latest clean exit is at an older HEAD is handed to build",
-      "an entry whose latest attempt is a gate revert at the current HEAD is handed to build"
-    ],
-    "pins": [],
-    "notes": "Read from the mode and the anchor the engine reports on the record — PriorAttempt's `mode` and `headSha` (src/Prompt.ts) — never a heuristic of the package's own. Only clean-exit qualifies; every other mode describes a world the next tick can change. The capability shipped at 908ce206; this is the policy half build's note named."
-  },
-  {
-    "tag": "THE-ENGINE-KEYS-A-PRIOR-ATTEMPT-RECORD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/priorAttempts.ts",
-          "description": "a keyer over a record beside `entryAttemptKey`"
-        },
-        {
-          "path": "harness/inboxWindow.ts",
-          "description": "the records sort reads it instead of joining the halves"
-        },
-        {
-          "path": "tests/priorAttempts.test.ts",
-          "description": "the store's walk against the keyer"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "a consumer holding a prior-attempt record has no engine spelling of the key it sits under — `entryAttemptKey` covers the entry keyspace alone",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A fact the engine holds is reported, never rediscovered"
-    },
-    "acceptance": "the engine answers the map key for any `PriorAttempt`, and `harness/inboxWindow.ts` composes no key of its own.",
-    "tests": [
-      "a prior-attempt record answers the key the store's own walk filed it under",
-      "a fanout entry's record answers the key entryAttemptKey answers for its entry"
-    ],
-    "pins": [],
-    "notes": "Target shape: a keyer taking a `PriorAttempt` beside `entryAttemptKey` (`src/priorAttempts.ts`), answering what `priorAttemptMapKey` composes from the record's own stated halves — both keyspaces, one spelling. Not barrelled: `entryAttemptKey` is not either, and the harness imports the module directly (*An export earns its consumer*). The one site left is `renderBuildRecords`'s sort comparator, ordering only — so this is the reporting gap, not a mis-key."
-  },
-  {
-    "tag": "THE-SUPERVISOR-POLICY-SECTION-NAMES-ITS-KNOBS-ONCE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "each knob's bullet states its binding time; §9's closing paragraph stops listing membership"
-        },
-        {
-          "path": "tests/examples.test.ts",
-          "description": "the supervisor-policy walk gains the restatement arm its siblings carry"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "§9's closing paragraph lists all six supervisor knobs beside the walk that owns them, so a seventh strands it and the restatement arm the page's other walks carry cannot go on",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Derived state is computed, never restated beside its source"
-    },
-    "acceptance": "each supervisor-policy knob's bullet states when it is bound, the closing paragraph explains the two classes without naming members, and that section's walk carries the restatement arm its two siblings already do.",
-    "tests": [
-      "docs/CHAIN-AUTHORING.md's supervisor-policy section names the knob set in one place"
-    ],
-    "pins": [],
-    "notes": "Replaces THE-WALKED-SET-PINS-SHARE-ONE-READER, whose reader-sharing half shipped at be8f2e52 and whose park named this fork. Taking arm (a): membership moves to the bullets that decide it, the paragraph keeps the once-per-run/per-tick claim. `restatementsOf` (tests/helpers/docSections.ts) is the reader; the gate and adoption walks already pass it."
   },
   {
     "tag": "THE-DECLARATION-CARRIES-SETUP-SERIALIZE",
