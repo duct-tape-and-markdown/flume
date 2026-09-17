@@ -439,6 +439,12 @@ function agentFactory(
  * above. A second one built beside either would be a chain restating what
  * this one already decides (`.claude/rules/engineering.md`, *Derived state
  * is computed, never restated beside its source*).
+ *
+ * Which is also why `setup.serialize` is honoured *here* rather than at
+ * either caller: the queue is this reduction's own, so a wave's worktree
+ * hooks and the base checkout the runner provisions take their turns in one
+ * line. A second queue built beside this one would let the base checkout
+ * warm the cache under a worktree that was promised exclusivity.
  */
 function provisioning(
   api: FlumeApi,
@@ -447,10 +453,42 @@ function provisioning(
   const setup = declaration.setup;
   if (setup === undefined) return (root) => api.setupWorktree(root);
   const install = installing(api, declaration, setup.restore);
-  return async (root) => {
+  const walk = async (root: string): Promise<void> => {
     for (const directory of setup.directories) {
       await install(resolve(root, directory));
     }
+  };
+  // The restore alone, and one worktree's whole walk at a time: the claim a
+  // consumer makes is about the command it wrote, and it makes it per
+  // checkout, so a tree's directories are restored contiguously rather than
+  // interleaved with another tree's. A declaration naming no restore is
+  // provisioned by the engine's installer, which a wave has always run
+  // concurrently and which this knob does not reach (`declaration.ts`).
+  if (setup.restore === undefined || setup.serialize !== true) return walk;
+  const turn = oneAtATime();
+  return (root) => turn(() => walk(root));
+}
+
+/**
+ * A queue of one: each job starts when the job before it has settled, in the
+ * order the calls arrived.
+ *
+ * Settled, not fulfilled. A restore that throws is that entry's provisioning
+ * failure and parks it alone (`spec/worktrees.md`, *`setupWorktree` and
+ * `teardownWorktree`*), so the rejection reaches the caller who queued it and
+ * the queue itself keeps its own tail resolved — a wave whose first restore
+ * failed still hands the next worktree its turn rather than rejecting every
+ * one behind it.
+ */
+function oneAtATime(): (job: () => Promise<void>) => Promise<void> {
+  let tail: Promise<void> = Promise.resolve();
+  return (job) => {
+    const turn = tail.then(job);
+    tail = turn.then(
+      () => {},
+      () => {},
+    );
+    return turn;
   };
 }
 

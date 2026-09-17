@@ -136,7 +136,12 @@ by default, and the package takes no side), `resolver`, `handoff` per phase,
 `gates` per phase and `when`, `shell` (the shell every command line the
 declaration carries runs under — a `shell` or `script` gate's, `setup`'s
 restore — `sh` where the declaration is silent), `agents`,
-`supervisor` (the engine's policy passed through whole), `setup`, `slots`
+`supervisor` (the engine's policy passed through whole), `setup` (the
+directories to install and the restore command that installs them, run in
+every provisioned worktree; `serialize: true` where that restore's shared
+cache is not safe to warm from several worktrees at once, which runs it one
+worktree at a time across a fanout wave while the wave's other provisioning
+stays parallel), `slots`
 (prompt text — an autonomy dial, domain context; never a directive),
 `capabilities` (the environment facts this repository asserts, passed through
 whole to `Chain.capabilities`, so a `requiresCapability` entry naming one the

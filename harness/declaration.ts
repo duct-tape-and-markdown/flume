@@ -423,8 +423,32 @@ export const DeclarationSchema = strict({
    * runner judges at, which is provisioned through the same reduction.
    */
   setup: strict({
+    /** Where to install, each relative to the checkout being provisioned. */
     directories: z.array(z.string().min(1)).min(1),
+    /**
+     * How, where the engine's lockfile-aware install is not it — a command
+     * line the consumer wrote, run in each directory above under the shell
+     * this declaration names.
+     */
     restore: z.string().min(1).optional(),
+    /**
+     * Run the restore one worktree at a time across a fanout wave, for a
+     * restore whose shared cache is not safe to warm concurrently.
+     *
+     * The restore alone. The wave's other provisioning stays parallel: the
+     * engine's own installer is a lockfile-aware `pnpm`/`npm` run against a
+     * store built to be written from several processes at once
+     * (`spec/worktrees.md`, *Never symlink `node_modules` into a worktree*),
+     * and every wave has always run it concurrently. What the package cannot
+     * know is whether the command *this* consumer wrote is safe that way — a
+     * cargo target dir, a NuGet cache, a script warming something shared — so
+     * that is the one step this knob holds, and a declaration naming no
+     * restore has nothing for it to hold.
+     *
+     * Absent is today's behavior rather than a position: restores run as
+     * concurrently as the wave provisions.
+     */
+    serialize: z.boolean().optional(),
   }).optional(),
   /** Which plan slices run; the sweep's domain and posture pages. */
   slices: Slices,

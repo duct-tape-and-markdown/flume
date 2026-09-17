@@ -1666,3 +1666,191 @@ it("chain load refuses a shell the host does not resolve, naming the setup resto
     shell: message.includes(COMMAND),
   }).toEqual({ restore: true, shell: true });
 });
+
+/**
+ * How long a fixture restore holds its turn. Long enough that a wave's
+ * spawns overlap on any host the lane runs on — node's own startup is the
+ * floor a concurrent wave has to clear — and short enough that a serialized
+ * wave of {@link WAVE} stays well inside this file's budget.
+ */
+const RESTORE_SPAN_MS = 300;
+
+/** The worktrees a fixture wave provisions at once. */
+const WAVE = 3;
+
+/**
+ * A restore command reporting its own span — `enter <cwd>`, a beat,
+ * `exit <cwd>` — into one shared log, so a wave's restores read as
+ * overlapping or not off the order the lines landed.
+ *
+ * A committed script rather than an inline one-liner: the command reaches
+ * the child through the declared shell's `-c`, and a program quoted into
+ * that would make the case a quoting fixture rather than a concurrency one.
+ */
+async function spanningRestore(dir: string, log: string): Promise<string> {
+  const script = join(dir, "span.mjs");
+  await writeFile(
+    script,
+    [
+      `import { appendFileSync } from "node:fs";`,
+      `const log = ${JSON.stringify(log)};`,
+      "appendFileSync(log, `enter ${process.cwd()}\\n`);",
+      `await new Promise((done) => setTimeout(done, ${RESTORE_SPAN_MS}));`,
+      "appendFileSync(log, `exit ${process.cwd()}\\n`);",
+      "",
+    ].join("\n"),
+  );
+  return `node ${JSON.stringify(script)}`;
+}
+
+/**
+ * {@link WAVE} worktrees under `dir`, provisioned through `hook` at once —
+ * the shape a fanout wave provisions in, where the engine runs every
+ * entry's hook concurrently (`spec/worktrees.md`, *`setupWorktree` and
+ * `teardownWorktree`*).
+ */
+async function provisionWave(
+  hook: NonNullable<Phase["setupWorktree"]>,
+  dir: string,
+): Promise<void> {
+  const trees = Array.from({ length: WAVE }, (_, index) =>
+    join(dir, `entry-${index}`),
+  );
+  await Promise.all(trees.map((tree) => mkdir(tree, { recursive: true })));
+  await Promise.all(
+    trees.map((worktreePath, index) =>
+      hook({ worktreePath, repoRoot: repo, worktreeKey: `ENTRY-${index}` }),
+    ),
+  );
+}
+
+/**
+ * What a span log says about a wave: how many spans it recorded, and how
+ * many were open at once at the deepest point. `1` deep is a queue; anything
+ * higher is provisioning that ran from several processes at the same time.
+ *
+ * The count rides beside the depth so every case below carries its own
+ * vacuity pin: a log that recorded nothing is one span deep too
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ */
+function overlap(log: string): { spans: number; deepest: number } {
+  let open = 0;
+  let deepest = 0;
+  let spans = 0;
+  for (const line of log.split("\n").filter((entry) => entry !== "")) {
+    if (line.startsWith("enter")) {
+      open += 1;
+      spans += 1;
+    } else {
+      open -= 1;
+    }
+    deepest = Math.max(deepest, open);
+  }
+  return { spans, deepest };
+}
+
+it("setup.serialize runs a fanout wave's restores one worktree at a time", async () => {
+  const dir = await mkTempDir("flume-harness-chain-serialized-restore-");
+  try {
+    const log = join(dir, "spans.log");
+    await writeFile(log, "");
+
+    const hook = setupHook({
+      ...DECLARATION,
+      runner: recordingRunner([]),
+      setup: {
+        directories: ["."],
+        restore: await spanningRestore(dir, log),
+        serialize: true,
+      },
+    });
+
+    await provisionWave(hook, dir);
+
+    // Every worktree got its turn — a queue, not a lock one entry keeps —
+    // and no two were ever inside the restore at the same time, which is the
+    // claim a consumer whose shared cache cannot be warmed twice at once is
+    // making.
+    expect(overlap(await readFile(log, "utf8"))).toEqual({
+      spans: WAVE,
+      deepest: 1,
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it("setup.serialize leaves the wave's other provisioning parallel", async () => {
+  const dir = await mkTempDir("flume-harness-chain-serialize-scope-");
+  try {
+    // The knob names the restore, and nothing else the wave provisions. A
+    // directory declared without one is installed by the engine's own
+    // lockfile-aware run against a store built to be written from several
+    // processes at once (`spec/worktrees.md`, *Never symlink `node_modules`
+    // into a worktree*) — so the queue never reaches it, and a consumer
+    // stating the claim about its restore does not serialize the install it
+    // said nothing about.
+    const spans: string[] = [];
+    const installer: FlumeApi["setupWorktree"] = async (root) => {
+      spans.push(`enter ${root}`);
+      await new Promise((done) => setTimeout(done, RESTORE_SPAN_MS));
+      spans.push(`exit ${root}`);
+    };
+
+    const chain = harnessChain({
+      // The engine's installer as a recorder: what it spawns is
+      // `src/setupWorktree.ts`'s subject, and this case is about whether the
+      // package queues the call at all.
+      api: { ...api, setupWorktree: installer },
+      declaration: {
+        ...DECLARATION,
+        runner: recordingRunner([]),
+        setup: { directories: ["."], serialize: true },
+      },
+    });
+
+    const hook = phaseNamed(chain, BUILD_PHASE).setupWorktree;
+    expect(hook).toBeDefined();
+    await provisionWave(hook!, dir);
+
+    // Every worktree installed, and the whole wave was inside the install at
+    // once — as deep as the wave is wide.
+    expect(overlap(spans.join("\n"))).toEqual({ spans: WAVE, deepest: WAVE });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it("an undeclared serialize runs restores concurrently", async () => {
+  const dir = await mkTempDir("flume-harness-chain-concurrent-restore-");
+  try {
+    const log = join(dir, "spans.log");
+    await writeFile(log, "");
+    const setup = {
+      directories: ["."],
+      restore: await spanningRestore(dir, log),
+    };
+
+    // Non-vacuity: the field is one this schema takes, so what the wave shows
+    // below is a consumer declining the knob rather than a package that has
+    // none — absent is today's behavior, not an absent mechanism.
+    expect(
+      parseDeclaration({ ...DECLARATION, setup: { ...setup, serialize: true } })
+        .setup?.serialize,
+    ).toBe(true);
+
+    const hook = setupHook({ ...DECLARATION, runner: recordingRunner([]), setup });
+
+    await provisionWave(hook, dir);
+
+    const { spans, deepest } = overlap(await readFile(log, "utf8"));
+    // Overlapped at all is the claim: how deep a wave of real spawns gets is
+    // the host's scheduling, and pinning a depth would be pinning that.
+    expect({ spans, overlapped: deepest > 1 }).toEqual({
+      spans: WAVE,
+      overlapped: true,
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

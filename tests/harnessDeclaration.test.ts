@@ -96,7 +96,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
     quarantineScope: "none",
     partitionIgnore: ["pnpm-lock.yaml"],
   },
-  setup: { directories: ["."], restore: "cp ../.env .env" },
+  setup: { directories: ["."], restore: "cp ../.env .env", serialize: true },
   slices: {
     enabled: ["plan-inbox", "plan-derive", "plan-sweep"],
     sweep: {
@@ -188,6 +188,9 @@ describe("the harness declaration schema", () => {
     expect(parsed.agents?.build?.inheritUserMcp).toBe(true);
     expect(parsed.supervisor?.maxParallel).toBe(4);
     expect(parsed.setup?.directories).toEqual(["."]);
+    // The restore's concurrency claim rides with it: a consumer whose shared
+    // cache cannot be warmed twice at once has a field to say so in.
+    expect(parsed.setup?.serialize).toBe(true);
     expect(parsed.slices.enabled).toContain("plan-sweep");
     expect(parsed.slices.sweep?.domain).toEqual(["src/**", "harness/**"]);
     expect(parsed.slots?.autonomy).toBe("ship without asking");
