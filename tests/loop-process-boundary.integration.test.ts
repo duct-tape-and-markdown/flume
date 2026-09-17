@@ -10,7 +10,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
@@ -257,32 +257,36 @@ describe("process-boundary chain reload — real `flume tick` ×2", () => {
   );
 });
 
-describe("FLUME_JOB leak — hermeticEnv keeps a job resolution from leaking into a real tick", () => {
+describe("FLUME_DIR leak — hermeticEnv keeps an outer state root from leaking into a real tick", () => {
   it(
-    "with FLUME_JOB stubbed on the vitest process, a real `flume tick` still resolves the temp repo's own .flume",
+    "with FLUME_DIR stubbed on the vitest process, a real `flume tick` still resolves the temp repo's own .flume",
     async () => {
       // Same alpha/beta misconfiguration fixture as the reload suite above:
       // chain declares only "alpha", the awake flag names "beta". Read alone
       // this always exits 78 (Axis-C, unknown phase). But if `runTick`'s env
-      // leaked FLUME_JOB from this vitest process, `resolveStateDirs` would
-      // treat that leaked value as a job resolution (src/cli.ts's `job` var),
-      // and the wrong-branch guard fires *before* dispatch ever reaches phase
-      // resolution — the temp repo's HEAD is "main", never "job/<leaked>" —
-      // exiting 1 instead of 78. `hermeticEnv()` stripping FLUME_JOB is what
-      // keeps this test on the real, intended failure mode.
+      // leaked FLUME_DIR from this vitest process, `resolveStateDirs` would
+      // take that leaked value as the state root, the baton would be read
+      // from a directory holding no awake flag at all, and the tick would
+      // exit 0 over nothing instead of 78. `hermeticEnv()` stripping every
+      // FLUME_* key is what keeps this test on the real, intended failure
+      // mode — and, before that, off the outer root it would have written to.
       await writeFile(join(repo.dir, ".flume", "chain.ts"), chainSrc("alpha"), "utf8");
       new Baton(join(repo.dir, ".flume")).wake("beta");
 
-      const prior = process.env.FLUME_JOB;
-      process.env.FLUME_JOB = "outer-job";
+      const leaked = join(repo.dir, "leaked-state");
+      await mkdir(leaked, { recursive: true });
+      const prior = process.env.FLUME_DIR;
+      process.env.FLUME_DIR = leaked;
       try {
         const t = await runTick(repo.dir);
         expect(t.code).toBe(EX_TERMINAL_MISCONFIG);
         expect(t.out).toMatch(/unknown phases: beta/);
-        expect(t.out).not.toMatch(/refusing tick/);
+        // Non-vacuity for the leak itself: the stubbed root is a real
+        // directory the tick could have resolved, and it stayed untouched.
+        expect(readdirSync(leaked)).toEqual([]);
       } finally {
-        if (prior === undefined) delete process.env.FLUME_JOB;
-        else process.env.FLUME_JOB = prior;
+        if (prior === undefined) delete process.env.FLUME_DIR;
+        else process.env.FLUME_DIR = prior;
       }
     },
     30_000,

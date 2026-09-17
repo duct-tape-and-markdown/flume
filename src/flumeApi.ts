@@ -65,7 +65,7 @@ import { checkoutAt, readWorktreeRegistry } from "./worktrees.js";
  * The three roots the runtime resolved for this run, handed to the chain
  * rather than left for it to re-derive (`spec/chain.md`, *Per-run artifacts
  * belong under `FLUME_DIR`*). All absolute, all canonicalized by
- * `resolveStateDirs` (`src/cliJobResolution.ts`) before any code path
+ * `resolveStateDirs` (`src/cliStateDirs.ts`) before any code path
  * constructs a chain.
  *
  * A chain that places a per-run artifact resolves it against `flumeDir`; it
@@ -75,11 +75,11 @@ import { checkoutAt, readWorktreeRegistry } from "./worktrees.js";
 export interface FlumePaths {
   /** Primary repo root — the checkout the run was invoked from. */
   repoRoot: string;
-  /** Where `chain.ts` and its prompt files live. Never retargeted by a job. */
+  /** Where `chain.ts` and its prompt files live. `FLUME_CONFIG_DIR` alone moves it. */
   configDir: string;
   /**
    * Mutable-state root: baton (`awake/`), pending, rendered prompts, prior
-   * attempts. `--job`/`FLUME_JOB` moves this one and only this one.
+   * attempts. `FLUME_DIR` moves this one and only this one.
    *
    * The fanout worktree base is **not** on that list: it only defaults to a
    * child of this root, and either `FLUME_WORKTREES_DIR` or the chain's own
@@ -106,8 +106,8 @@ export interface FlumeApiPaths extends FlumePaths {
    * chain load, which is where a fence glob is decided and where no
    * context exists yet to read it off. A chain rooting `writablePaths`, an
    * `entryChannelPaths` glob, or a `git show <sha>:<path>` pathspec at the
-   * state root reads this rather than spelling `.flume/` — which `--job` and
-   * a relocated `FLUME_DIR` both move — or folding its own `relative()`,
+   * state root reads this rather than spelling `.flume/` — which a
+   * relocated `FLUME_DIR` moves — or folding its own `relative()`,
    * which answers in the host's dialect and so matches nothing on win32.
    *
    * Absent is a **fact, not a verdict**: it says no commit can hold a
@@ -254,7 +254,7 @@ export interface FlumeApi {
      * credential allocated in `setupWorktree` outlives a killed tick whose
      * `teardownWorktree` never ran, and the directory listing cannot say
      * which of those directories git still calls a worktree — a relocated
-     * base, a sibling job's container directory, and residue whose
+     * base, a sibling checkout's container directory, and residue whose
      * registration git already pruned all look alike there. An unreadable
      * registry stays distinguishable from an empty one, so a reaper never
      * frees a live arm's handle on the strength of a failed `git` call.

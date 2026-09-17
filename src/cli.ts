@@ -82,11 +82,10 @@ import {
   stopFlagPath,
 } from "./paths.js";
 import {
-  JobResolutionConflictError,
   CrossRepoFlumeDirError,
   resolveRepoRoot,
   resolveStateDirs,
-} from "./cliJobResolution.js";
+} from "./cliStateDirs.js";
 import {
   agentUsageLine,
   tickExitCode,
@@ -190,9 +189,9 @@ function gitFloorWarning(version: GitVersion): string | undefined {
  * `wake`/`sleep`'s best-effort chain load: a missing or broken chain must
  * never block the marker mutation — there is nothing to validate the phase
  * name against. Only a chain that loads *successfully* and does not declare
- * `phase` among its `chain.phases` refuses. Reached with `configDir`
- * (repo-resident) — `--job` never retargets it, so a job-dir `chain.ts` is
- * inert here exactly as it is for `status` and `tick`.
+ * `phase` among its `chain.phases` refuses. Reached with `configDir`,
+ * which `FLUME_CONFIG_DIR` alone relocates, so the chain this validates
+ * against is the same one `status` and `tick` load.
  *
  * Not merely mirroring `status`'s pattern — taking it: the same shared load
  * (`loadChainForObservation`, src/cliChainLoad.ts) both observational
@@ -222,7 +221,7 @@ async function main(): Promise<number> {
 
   // Bay discovery's own stat refusal, mapped at the same boundary as every
   // other one in this file: `resolveRepoRoot` throws on a `.flume` that is
-  // present but unstattable (src/cliJobResolution.ts), and this is the first
+  // present but unstattable (src/cliStateDirs.ts), and this is the first
   // thing the CLI does, ahead of every other try/catch. Uncaught, the throw
   // reached `main().catch` and left the operator a raw stack and an exit 1 —
   // the one stat refusal in the CLI that could not be classified from the
@@ -237,20 +236,6 @@ async function main(): Promise<number> {
       `[flume] bay discovery from ${process.cwd()} failed to stat an ancestor bay: ${err instanceof Error ? err.message : String(err)}`,
     );
     return EX_IOERR;
-  }
-
-  // Global `--job <name>`: extract it wherever it appears so it composes with
-  // every subcommand, before any dispatch.
-  let jobFlag: string | undefined;
-  const jobIdx = argv.indexOf("--job");
-  if (jobIdx >= 0) {
-    const value = argv[jobIdx + 1];
-    if (!value || value.startsWith("-")) {
-      console.error("usage: flume --job <name> <command>");
-      return 2;
-    }
-    jobFlag = value;
-    argv.splice(jobIdx, 2);
   }
 
   const [firstArg, ...restArgs] = argv;
@@ -301,23 +286,17 @@ async function main(): Promise<number> {
   // Resolve both state roots up front and canonicalize them back into the env.
   // `flumeDir` is the mutable-state root (baton, pending, worktrees,
   // prior-attempts); `configDir` is the chain+prompt dir. Both default to
-  // `<repoRoot>/.flume`; `FLUME_DIR` / `FLUME_CONFIG_DIR` relocate them, and
-  // `--job` / `FLUME_JOB` retargets only the flumeDir default to
-  // `.flume/jobs/<name>` — configDir never follows the job. Resolving here
-  // (not constructing) lets the values survive the `loop` → `tick` process
-  // boundary — children inherit the (now absolute-canonical) env vars — and
-  // lets a chain loaded later in this process read one authoritative state
-  // root.
+  // `<repoRoot>/.flume`, and `FLUME_DIR` / `FLUME_CONFIG_DIR` are the only
+  // things that relocate them. Resolving here (not constructing) lets the
+  // values survive the `loop` → `tick` process boundary — children inherit
+  // the (now absolute-canonical) env vars — and lets a chain loaded later in
+  // this process read one authoritative state root.
   let flumeDir: string;
   let configDir: string;
-  let job: string | undefined;
   try {
-    ({ flumeDir, configDir, job } = resolveStateDirs(process.env, repoRoot, jobFlag));
+    ({ flumeDir, configDir } = resolveStateDirs(process.env, repoRoot));
   } catch (err) {
-    if (
-      err instanceof JobResolutionConflictError ||
-      err instanceof CrossRepoFlumeDirError
-    ) {
+    if (err instanceof CrossRepoFlumeDirError) {
       console.error(`[flume] ${err.message}`);
       return 2;
     }
@@ -328,30 +307,6 @@ async function main(): Promise<number> {
   // from — `FlumeApi.paths` by reference, so a chain reads the same answer
   // `resolveStateDirs` reached rather than re-deriving one from the env.
   const paths: FlumePaths = { repoRoot, configDir, flumeDir };
-
-  // `--job` / `FLUME_JOB` names an existing state root: nothing in the verb
-  // set creates one, so a name with no directory behind it is a typo, not a
-  // job waiting to be seeded.
-  // Absent is the only silent reading, as with the `status` probes below:
-  // `existsLoud` (src/fsProbe.ts) refuses a state root that is present but
-  // unstattable (a symlink loop, a permission-denied parent) rather than
-  // reporting `does not exist` over a job the operator can see on disk
-  // (`.claude/rules/engineering.md`, "Loud or nothing").
-  if (job !== undefined) {
-    let stateRootPresent: boolean;
-    try {
-      stateRootPresent = existsLoud(namespacedJoin(flumeDir));
-    } catch (err) {
-      console.error(
-        `[flume] job '${job}': state root ${flumeDir} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return EX_IOERR;
-    }
-    if (!stateRootPresent) {
-      console.error(`[flume] no job '${job}': ${flumeDir} does not exist`);
-      return 2;
-    }
-  }
 
   if (cmd === "status") {
     const baton = new Baton(flumeDir);
@@ -1181,7 +1136,7 @@ async function main(): Promise<number> {
     // supervisors against one state root race plan/build state. Lives under
     // flumeDir: the state root is what races, and a relocated dock must carry
     // its lock with it.
-    // win32 MAX_PATH: flumeDir can nest deep under a job/state root;
+    // win32 MAX_PATH: a relocated flumeDir can nest deep;
     // namespacedJoin (src/paths.ts) is the shared idiom — see
     // .claude/rules/platform-facts.md.
     const lockPath = namespacedJoin(loopLockPath(flumeDir));

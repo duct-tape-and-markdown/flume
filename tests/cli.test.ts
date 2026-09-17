@@ -243,7 +243,7 @@ describe("isInvokedDirectly — CLI entry survives junctions", () => {
 /**
  * The shared child-environment helper's `hermeticEnv()`
  * (`tests/helpers/gitEnv.ts`) strips every identity/provenance FLUME_* var
- * it knows of — a job resolution or a tip-claim PID leaked from the vitest
+ * it knows of — a provenance stamp or a tip-claim PID leaked from the vitest
  * process's own env is exactly as capable of retargeting a spawned CLI as a
  * relocated state root is. The assertion below checks the invariant directly —
  * no key matching `/^FLUME_/` survives in its output — rather than restating a
@@ -437,7 +437,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
     async () => {
       // A real git repo on a named branch (loop refuses outright
       // on detached HEAD, before ever reaching the lock check below).
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const flumeDir = join(repo.dir, ".flume");
         const pidPath = join(flumeDir, "loop.pid");
@@ -468,7 +468,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
   it(
     "reclaims a stale pidfile (dead pid): the loop runs and drops the lock on exit",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const flumeDir = join(repo.dir, ".flume");
         const pidPath = join(flumeDir, "loop.pid");
@@ -500,7 +500,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
   it(
     "agrees with `flume status` on a live pid: loop refuses, status reports the same pid live",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const flumeDir = join(repo.dir, ".flume");
         const pidPath = join(flumeDir, "loop.pid");
@@ -527,7 +527,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
   it(
     "agrees with `flume status` on a stale pid: loop reclaims, status reports it dead",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const flumeDir = join(repo.dir, ".flume");
         const pidPath = join(flumeDir, "loop.pid");
@@ -635,7 +635,7 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
   it(
     "a multi-entry wave (one shipped, one declined) whose commitPendingUpdate rewrite read hits corrupt pending.json still writes the wave's verdict to tick-verdict.json",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, ledgerRewriteFailureChainSrc("build"));
         const flumeDir = join(repo.dir, ".flume");
@@ -750,7 +750,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI", () => {
   it(
     "a chain declaring no supervisorPolicy: a tagged provisioning failure quarantines once, then the run is unchanged through --max (the shipped default)",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       const wtDir = await mkTempDir("flume-wt-collision-");
       try {
         await writeRepoConfig(repo.dir, supervisorPolicyChainSrc(undefined));
@@ -788,7 +788,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI", () => {
   it(
     'a chain declaring supervisorPolicy: { quarantineScope: "none", abortThreshold: 2 } aborts on the 2nd consecutive identical failure — the override reaches the real supervisor',
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       const wtDir = await mkTempDir("flume-wt-collision-");
       try {
         await writeRepoConfig(
@@ -833,7 +833,7 @@ describe("flume loop — supervisorPolicy reaching the real CLI", () => {
  * printed "hibernating" while a prior supervisor was still alive, so the
  * operator deleted `loop.pid` on a stale assumption. Same pid-liveness
  * shape as the loop-lock tests above (`liveLoopPid`, `src/job.ts`), applied
- * to a bare `.flume/loop.pid` rather than a job dir's.
+ * to a bare `.flume/loop.pid` rather than a relocated root's.
  */
 describe("flume status — supervisor liveness", () => {
   it("names the pid of a live supervisor", async () => {
@@ -910,19 +910,17 @@ describe("flume status — supervisor liveness", () => {
   }, SPAWN_BUDGET_MS);
 });
 
-// ---------- job resolution through the real CLI ----------
+// ---------- the real CLI over a scratch repository ----------
 
 /**
  * Scratch git repo on a chosen branch. The engine has no opinion on branch
- * names — some fixtures below pin `job/foo` merely as a
- * distinctive label, proven inert by running job resolution on `main`
- * instead.
+ * names — every fixture below runs on whatever branch it was given.
  */
-async function makeJobRepo(branch: string): Promise<{
+async function makeRepo(branch: string): Promise<{
   dir: string;
   cleanup: () => Promise<void>;
 }> {
-  const dir = await mkFixtureRoot("flume-job-");
+  const dir = await mkFixtureRoot("flume-cli-repo-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q", "-b", branch], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -937,13 +935,13 @@ async function makeJobRepo(branch: string): Promise<{
 /**
  * Materialize the repo-resident config: `chain.ts` at
  * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
- * fixture in this suite loads from, job resolution or not. `promptPath`
- * stays a plain configDir-relative join (the shared-prompts case).
+ * fixture in this suite loads from. `promptPath` stays a plain
+ * configDir-relative join (the shared-prompts case).
  */
 async function writeRepoConfig(
   root: string,
   chainSrc: string,
-  promptContent = "job probe prompt\n",
+  promptContent = "probe prompt\n",
 ): Promise<string> {
   const cfg = join(root, ".flume");
   await mkdir(join(cfg, "prompts"), { recursive: true });
@@ -1019,7 +1017,7 @@ function minimalStubbedAgentChainSrc(): string {
  */
 describe("flume status — friction line", () => {
   it("appends a friction count line when Chain.friction is declared and its dir holds files", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       const frictionDir = join(repo.dir, ".flume", "friction");
@@ -1037,7 +1035,7 @@ describe("flume status — friction line", () => {
   }, SPAWN_BUDGET_MS);
 
   it("omits the friction line when the declared dir exists but holds no files", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       await mkdir(join(repo.dir, ".flume", "friction"), { recursive: true });
@@ -1052,7 +1050,7 @@ describe("flume status — friction line", () => {
   }, SPAWN_BUDGET_MS);
 
   it("omits the friction line when Chain.friction is undeclared, even with a stray same-named dir present", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc());
       const strayDir = join(repo.dir, ".flume", "friction");
@@ -1069,7 +1067,7 @@ describe("flume status — friction line", () => {
   }, SPAWN_BUDGET_MS);
 
   it("renders 'friction: unreadable' when the declared dir exists but readdir fails for a non-ENOENT reason (dispatcher-frictioncountline-loud-or-nothing)", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       const frictionDir = join(repo.dir, ".flume", "friction");
@@ -1253,7 +1251,7 @@ async function writeCapabilityGatedPending(
  */
 describe("flume status — names the missing capability on a requiresCapability skip", () => {
   it("names the tag and the missing capability when the chain asserts nothing", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, capabilityChainSrc());
       await writeCapabilityGatedPending(repo.dir, "docker-host");
@@ -1269,7 +1267,7 @@ describe("flume status — names the missing capability on a requiresCapability 
   }, SPAWN_BUDGET_MS);
 
   it("omits the line once the chain asserts the capability", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, capabilityChainSrc(["docker-host"]));
       await writeCapabilityGatedPending(repo.dir, "docker-host");
@@ -1345,7 +1343,7 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
   }, SPAWN_BUDGET_MS);
 
   it("flume status prints the chain-load failure as a row of its listing before the pending count", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
 
@@ -1371,7 +1369,7 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
   }, SPAWN_BUDGET_MS);
 
   it("flume status still exits 0 when the chain fails to load", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
 
@@ -1411,7 +1409,7 @@ describe("flume wake/sleep — a chain that fails to load (WAKE-SLEEP-CHAIN-LOAD
   it(
     "flume wake reports a chain.ts that fails to load instead of proceeding silently",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
 
@@ -1441,7 +1439,7 @@ describe("flume wake/sleep — a chain that fails to load (WAKE-SLEEP-CHAIN-LOAD
   it(
     "flume sleep reports a chain.ts that fails to load instead of proceeding silently",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
         new Baton(join(repo.dir, ".flume")).wake("probe");
@@ -1476,7 +1474,7 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
   it(
     "flume wake <undeclared-phase> exits 2 and creates no flag",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc()); // declares "probe" only
         const wake = await runCli(repo.dir, ["wake", "ghost"]);
@@ -1495,7 +1493,7 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
   it(
     "flume sleep <undeclared-phase> exits 2",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc()); // declares "probe" only
         const sleep = await runCli(repo.dir, ["sleep", "ghost"]);
@@ -1511,7 +1509,7 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
   it(
     "wake/sleep still succeed for a phase the chain declares",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
         const wake = await runCli(repo.dir, ["wake", "probe"]);
@@ -1535,7 +1533,7 @@ describe("flume wake/sleep — refuse a phase the chain does not declare (CLI-FL
   it(
     "wake proceeds (best-effort) when no chain is present at all to validate against",
     async () => {
-      const repo = await makeJobRepo("main"); // no .flume/chain.ts written
+      const repo = await makeRepo("main"); // no .flume/chain.ts written
       try {
         const wake = await runCli(repo.dir, ["wake", "anything"]);
         expect(wake.code).toBe(0);
@@ -1734,7 +1732,7 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
 
 describe("flume status — tip claim line (spec/cli.md \"flume status owes exactly this\", line 4)", () => {
   it("`flume status` exits EX_IOERR on a non-ENOENT tip-claim stat, instead of printing no claim line", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       // The claim path comes from the engine accessor, never a second
       // spelling of the tip-claims layout here.
@@ -1759,7 +1757,7 @@ describe("flume status — tip claim line (spec/cli.md \"flume status owes exact
   }, SPAWN_BUDGET_MS);
 
   it("a git-side failure stays silent, as declared: a detached HEAD prints no claim line and exits 0", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       const sha = (
         await exec("git", ["rev-parse", "HEAD"], { cwd: repo.dir })
@@ -2059,7 +2057,7 @@ describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the
   it(
     "flume loop --max 0 reclaims a stale tip claim at the derived path and leaves none behind",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         // The claim path comes from the engine accessor, never a second
         // spelling of the tip-claims layout here.
@@ -2093,7 +2091,7 @@ describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the
   it(
     "flume loop refuses a live-held tip claim and leaves no loop.pid behind",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         // Same state root as the loop about to run, so `loop.pid` is taken
         // first and only the tip claim can refuse — which makes the absence
@@ -2328,7 +2326,7 @@ async function signalledLoopRun(opts: {
   out: () => string;
   cleanup: () => Promise<void>;
 }> {
-  const repo = await makeJobRepo("main");
+  const repo = await makeRepo("main");
   const scratch = await mkTempDir("flume-signalled-loop-");
   let parkedPid: number | undefined;
   let grandchildPid: number | undefined;
@@ -2817,7 +2815,7 @@ async function signalledBareTickRun(opts: {
   out: () => string;
   cleanup: () => Promise<void>;
 }> {
-  const repo = await makeJobRepo("main");
+  const repo = await makeRepo("main");
   const scratch = await mkTempDir("flume-signalled-tick-");
   let agentPid: number | undefined;
   let grandchildPid: number | undefined;
@@ -3111,7 +3109,7 @@ describe("flume tick — one chain application per process (ONE-CHAIN-APPLICATIO
   it(
     "a bare flume tick applies the chain factory once for the process",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       // Outside the repo: the count is the subject, never something the tick
       // could read as a working-tree change of its own.
       const scratch = await mkTempDir("flume-factory-count-");
@@ -3141,7 +3139,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
   it(
     "refuses before any tick, exit 1, naming the flag path — no lock taken, no tick runs",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const flumeDir = join(repo.dir, ".flume");
         const stopPath = join(flumeDir, "stop");
@@ -3166,7 +3164,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
   );
 
   it("`flume loop` refuses naming the error when the stop flag is present but unstattable, instead of starting a run over it", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       const flumeDir = join(repo.dir, ".flume");
       const stopPath = join(flumeDir, "stop");
@@ -3196,7 +3194,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
   it(
     "flume tick ignores the flag and runs normally",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
         const flumeDir = join(repo.dir, ".flume");
@@ -3215,28 +3213,28 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
   );
 
   it(
-    "a job-resolved state root refuses at start too, on its own stop flag",
+    "a relocated state root refuses at start too, on its own stop flag",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
-        const jobFlumeDir = join(repo.dir, ".flume", "jobs", "probejob");
-        await mkdir(jobFlumeDir, { recursive: true });
-        const stopPath = join(jobFlumeDir, "stop");
+        const relocated = join(repo.dir, "state");
+        await mkdir(relocated, { recursive: true });
+        const stopPath = join(relocated, "stop");
         await writeFile(stopPath, "", "utf8");
 
-        const r = await runCli(repo.dir, [
-          "--job",
-          "probejob",
-          "loop",
-          "--max",
-          "3",
-        ]);
+        const r = await runCli(repo.dir, ["loop", "--max", "3"], {
+          ...hermeticEnv(),
+          FLUME_DIR: relocated,
+        });
 
         expect(r.code).toBe(1);
         expect(r.out).toContain(stopPath);
         expect(r.out).not.toContain("reached --max");
-        expect(existsSync(join(jobFlumeDir, "loop.pid"))).toBe(false);
+        expect(existsSync(join(relocated, "loop.pid"))).toBe(false);
+        // The refusal keys on the resolved root, not the bay: the bay's own
+        // flag is absent and its lock was never taken.
+        expect(existsSync(join(repo.dir, ".flume", "loop.pid"))).toBe(false);
       } finally {
         await repo.cleanup();
       }
@@ -3295,7 +3293,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
   it(
     "a surviving merging marker refuses the next loop start with EX_CONFIG",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
         const flumeDir = join(repo.dir, ".flume");
@@ -3332,25 +3330,22 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
   );
 
   it(
-    "a job-resolved state root refuses at start too, on its own marker",
+    "a relocated state root refuses at start too, on its own marker",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
-        const jobFlumeDir = join(repo.dir, ".flume", "jobs", "probejob");
-        await mkdir(jobFlumeDir, { recursive: true });
+        const relocated = join(repo.dir, "state");
+        await mkdir(relocated, { recursive: true });
         const { markerPath } = await seedInterruptedMerge(
           repo.dir,
-          jobFlumeDir,
+          relocated,
         );
 
-        const r = await runCli(repo.dir, [
-          "--job",
-          "probejob",
-          "loop",
-          "--max",
-          "3",
-        ]);
+        const r = await runCli(repo.dir, ["loop", "--max", "3"], {
+          ...hermeticEnv(),
+          FLUME_DIR: relocated,
+        });
 
         expect(r.code).toBe(EX_TERMINAL_MISCONFIG);
         expect(r.out).toContain(markerPath);
@@ -3371,7 +3366,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
       // file is the fact. Degrading an unreadable marker to "no interrupted
       // merge" would proceed over exactly the state this refusal exists to
       // stop.
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
         const flumeDir = join(repo.dir, ".flume");
@@ -3402,7 +3397,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
       // loop start. An unclassifiable exit 1 and a raw stack is the one
       // outcome ruled out (`.claude/rules/platform-facts.md`, "Exit codes
       // come from `sysexits.h`").
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       const mergingPath = join(repo.dir, ".flume", "merging");
       try {
         await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
@@ -3525,7 +3520,7 @@ async function writeCheckPending(
 
 describe("flume check (spec/cli.md §Subcommand surface)", () => {
   it("exits EX_DATAERR naming the entry on a parsePending schema violation", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
       await writeCheckPending(repo.dir, [
@@ -3547,7 +3542,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("exits EX_DATAERR naming entry + offending paths on a fence violation", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
       await writeCheckPending(repo.dir, [
@@ -3576,7 +3571,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("exits 0 on a clean pending.json", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(
         repo.dir,
@@ -3610,7 +3605,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("honors a chain-declared pendingPath (CHAIN-PENDINGPATH) — reads and reports the custom location, not plan/pending.json", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       const customRel = join("custom", "queue.json");
       await writeRepoConfig(
@@ -3649,7 +3644,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("exits 0 when plan/pending.json is absent — nothing to check", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
 
@@ -3661,7 +3656,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("exits EX_IOERR naming the error on a non-ENOENT pending.json read failure, instead of reading it as absent", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
       // A directory in place of pending.json reproduces a non-ENOENT read
@@ -3681,7 +3676,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("mutates no baton flag and invokes no agent", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
       await writeCheckPending(repo.dir, [
@@ -3715,7 +3710,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("exits mount-dead (69) when no chain resolves to check the consumer fence against", async () => {
-    const repo = await makeJobRepo("main"); // no .flume/chain.ts written
+    const repo = await makeRepo("main"); // no .flume/chain.ts written
     try {
       const r = await runCli(repo.dir, ["check"]);
       expect(r.code).toBe(EX_MOUNT_DEAD);
@@ -3733,7 +3728,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
    * fence and every one of those paths read as a violation.
    */
   it("flume check exits 0 for a chain with no fanout phase whose entries declare files", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, noFanoutCheckChainSrc());
       await writeCheckPending(repo.dir, [
@@ -3760,7 +3755,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("flume check names the absent fanout consumer rather than the declared paths", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, noFanoutCheckChainSrc());
       await writeCheckPending(repo.dir, [
@@ -3787,7 +3782,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("--help short-circuits before any chain load or side effect", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       const r = await runCli(repo.dir, ["check", "--help"]);
       expect(r.code).toBe(0);
@@ -3827,7 +3822,7 @@ describe("consumer-phase fence pre-check — `flume check` against `pendingGate`
   }
 
   it("flume check and pendingGate name the same offending paths for one queue against one consumer phase", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(
         repo.dir,
@@ -3941,7 +3936,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
   it(
     "flume tick <positional> exits 2 rather than silently ticking whichever phase is awake",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
         new Baton(join(repo.dir, ".flume")).wake("probe");
@@ -3981,7 +3976,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
   it(
     "flume check <positional> exits 2",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
         const r = await runCli(repo.dir, ["check", "extra"]);
@@ -3997,7 +3992,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
   it(
     "flume wake <phase> <extra> exits 2",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
         const r = await runCli(repo.dir, ["wake", "probe", "extra"]);
@@ -4016,7 +4011,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
   it(
     "flume sleep <phase> <extra> exits 2",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
         new Baton(join(repo.dir, ".flume")).wake("probe");
@@ -4055,7 +4050,7 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
   it(
     "flume loop <positional> exits 2 rather than silently starting a run",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
         const r = await runCli(repo.dir, ["loop", "extra"]);
@@ -4072,7 +4067,7 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
   it(
     "flume loop --max N <positional> exits 2",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
         const r = await runCli(repo.dir, ["loop", "--max", "3", "extra"]);
@@ -4097,7 +4092,7 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
  */
 describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it("bare lists the declared channel's notes — filename, size, mtime", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       const frictionDir = join(repo.dir, ".flume", "friction");
@@ -4117,7 +4112,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("friction <name> prints that note's bytes verbatim", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       const frictionDir = join(repo.dir, ".flume", "friction");
@@ -4134,7 +4129,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("friction <name> with a nested path segment is refused the same as a missing note", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       const frictionDir = join(repo.dir, ".flume", "friction");
@@ -4161,7 +4156,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("the bare friction listing omits a name beginning with a dot", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       const frictionDir = join(repo.dir, ".flume", "friction");
@@ -4186,7 +4181,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("the friction read verb refuses a name beginning with a dot", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       const frictionDir = join(repo.dir, ".flume", "friction");
@@ -4212,7 +4207,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("refuses usage-shaped (exit 2) naming Chain.friction when the chain declares no channel", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc());
 
@@ -4225,7 +4220,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("a declared-but-absent friction dir lists empty and exits 0", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       // No .flume/friction dir created — never written by any tick yet.
@@ -4239,7 +4234,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("exits EX_IOERR naming the error on a non-ENOENT note read failure, instead of reporting 'no such note'", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       const frictionDir = join(repo.dir, ".flume", "friction");
@@ -4259,7 +4254,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it("exits EX_IOERR naming the error on a non-ENOENT bare-list readdir failure, instead of listing empty", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       // A file in place of the friction dir reproduces a non-ENOENT readdir
@@ -4278,7 +4273,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 
   it.runIf(process.platform !== "win32")("flume friction refuses with EX_IOERR when a listed note cannot be stat'd", async () => {
-    const repo = await makeJobRepo("main");
+    const repo = await makeRepo("main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
       const frictionDir = join(repo.dir, ".flume", "friction");
@@ -4395,7 +4390,7 @@ describe("state root layout — `flume stop` writes the flag every reader honors
   it(
     "the flag the stop verb wrote refuses the next `flume loop` before any tick",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
         new Baton(join(repo.dir, ".flume")).wake("probe");
@@ -4426,7 +4421,7 @@ describe("state root layout — `flume stop` writes the flag every reader honors
   it(
     "the flag the stop verb wrote mid-tick ends the supervisor's run at its next per-iteration check",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, realStopVerbChainSrc("probe"));
         const flumeDir = join(repo.dir, ".flume");
@@ -4496,7 +4491,7 @@ describe("state root layout — `flume loop` writes the lock `liveLoopPid` reads
   it(
     "the pid liveLoopPid reads mid-run is the live supervisor's own",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       const outDir = await mkTempDir("flume-loop-lock-read-");
       try {
         // Outside the state root so the probe's own output can never be
@@ -4539,7 +4534,7 @@ describe("state root layout — an undeclared Chain.pendingPath is one file for 
   it(
     "the queue at the default location is the one `flume check` validates and the one the dispatcher picks from",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       const wtDir = await mkTempDir("flume-queue-default-");
       try {
         // A fanout phase (the sole kind that picks from pending) on a chain
@@ -4620,11 +4615,10 @@ describe("CLI fixtures are rooted against an ancestor `.flume` (CLI-FIXTURE-ANCE
 });
 
 /**
- * spec/jobs.md "Runtime ignores" — the default `<repoRoot>/.flume` takes the
- * same runtime-owned `.gitignore` merge a job dir takes at `job new`, at
- * every `loop` / `job run` start. Without it a fresh adopter (whose repo
- * `.gitignore` was never hand-taught the runtime's layout) commits tick
- * artifacts.
+ * spec/jobs.md "Runtime ignores" — every state root the runtime writes into
+ * takes the runtime-owned `.gitignore` merge at every `loop` start. Without
+ * it a fresh adopter (whose repo `.gitignore` was never hand-taught the
+ * runtime's layout) commits tick artifacts.
  *
  * Driven through the real CLI with `--max 0`: the merge sits under the tip
  * claim and ahead of the startup sweep, both of which `--max 0` reaches
@@ -4636,11 +4630,11 @@ describe("flume loop — runtime ignores at the default state root", () => {
   it(
     "a loop start merges the runtime ignores into the default state root's .gitignore",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const ignorePath = join(repo.dir, ".flume", ".gitignore");
-        // No `job new` ran, so nothing has seeded this root: the file the
-        // merge must create genuinely does not exist yet.
+        // Nothing has seeded this root, so the file the merge must create
+        // genuinely does not exist yet.
         expect(existsSync(ignorePath)).toBe(false);
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);
@@ -4664,11 +4658,11 @@ describe("flume loop — runtime ignores at the default state root", () => {
   it(
     "a loop start merges a declared Chain.friction dir into the default state root's .gitignore",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         // Declared with a backslash and a doubled trailing slash: the entry
         // that lands must be the `frictionIgnoreEntry` (`src/job.ts`)
-        // normalization `job new` applies, not whatever the chain wrote.
+        // normalization the merge applies, not whatever the chain wrote.
         await writeRepoConfig(repo.dir, minimalChainSrc("scratch\\friction//"));
         const ignorePath = join(repo.dir, ".flume", ".gitignore");
 
@@ -4694,7 +4688,7 @@ describe("flume loop — runtime ignores at the default state root", () => {
   it(
     "leaves a state root that already carries the entries byte-identical, seed lines and order intact",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const flumeDir = join(repo.dir, ".flume");
         await mkdir(flumeDir, { recursive: true });
@@ -4787,7 +4781,7 @@ describe("flume loop — the git floor warning", () => {
   it.skipIf(process.platform === "win32")(
     "flume loop below the git floor warns once naming the version, the floor, and what degrades",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       const shim = await plantGit("git version 2.35.9");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
@@ -4817,27 +4811,26 @@ describe("flume loop — the git floor warning", () => {
   );
 
   it.skipIf(process.platform === "win32")(
-    "a job-resolved loop below the git floor warns once and still runs",
+    "a loop under a relocated state root below the git floor warns once and still runs",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       const shim = await plantGit("git version 2.35.9");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
-        const jobFlumeDir = join(repo.dir, ".flume", "jobs", "probejob");
-        await mkdir(jobFlumeDir, { recursive: true });
+        const relocated = join(repo.dir, "state");
+        await mkdir(relocated, { recursive: true });
 
-        const r = await runCli(
-          repo.dir,
-          ["--job", "probejob", "loop", "--max", "0"],
-          withGit(shim),
-        );
+        const r = await runCli(repo.dir, ["loop", "--max", "0"], {
+          ...withGit(shim),
+          FLUME_DIR: relocated,
+        });
 
         expect(r.code).toBe(0);
         expect(r.out).toContain("reached --max 0");
         expect(warnings(r.out)).toBe(1);
         expect(r.out).toContain("git version 2.35.9");
-        // The run really was against the job's own root: its lock landed
-        // there and not in the bay.
+        // The run really was against the relocated root: nothing landed in
+        // the bay.
         expect(existsSync(join(repo.dir, ".flume", "loop.pid"))).toBe(false);
       } finally {
         await rm(shim, { recursive: true, force: true });
@@ -4850,7 +4843,7 @@ describe("flume loop — the git floor warning", () => {
   it.skipIf(process.platform === "win32")(
     "a git at or above the floor warns nothing",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       const atFloor = await plantGit("git version 2.36.0");
       const belowFloor = await plantGit("git version 2.35.9");
       try {
@@ -4891,7 +4884,7 @@ describe("flume loop — the git floor warning", () => {
   it.skipIf(process.platform === "win32")(
     "a git whose version cannot be read warns that the floor is unconfirmed",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       // A `git` answering `--version` with something no version can be read
       // out of — the arm a wrapper script on PATH reaches.
       const shim = await plantGit("a wrapper, not a version");

@@ -299,12 +299,12 @@ it("build's per-tick args name the entry's note path from the tick context alone
 it("buildPromptArgs renders NOTE_PATH from the offset the engine reports for a nested state root", () => {
   const assigned = entry();
 
-  // A nested state root, as a job namespace produces one, with its offset
+  // A nested state root, as a relocated `FLUME_DIR` produces one, with its offset
   // from the real reporter rather than the tester's hand
   // (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
   // wrote*): whatever the host's separator, `computeStateRootRel` answers in
   // git's alphabet, and that is the value this composes the note path from.
-  const asGit = "jobs/alpha/.flume";
+  const asGit = "state/alpha/.flume";
   const nestedDir = join(repoRoot, ...asGit.split("/"));
   const nested = computeStateRootRel(repoRoot, nestedDir);
   expect(nested).toBe(asGit);

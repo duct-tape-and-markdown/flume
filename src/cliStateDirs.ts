@@ -1,8 +1,12 @@
 /**
- * State-root and config-dir resolution — the `--job` / `FLUME_JOB` /
- * `FLUME_DIR` / `FLUME_CONFIG_DIR` arithmetic and its two refusal shapes,
- * split out of `src/cli.ts` (`.claude/rules/posture-sweep.md`, "A violation
- * counts only when verified on disk this tick").
+ * State-root and config-dir resolution — the `FLUME_DIR` / `FLUME_CONFIG_DIR`
+ * arithmetic, the bay walk-up it resolves against, and the one refusal that
+ * arithmetic carries.
+ *
+ * Named for the two roots it resolves, because that is the whole job: one
+ * checkout resolves one state root (`spec/jobs.md`, *The checkout is the unit
+ * of isolation*), so there is no third selector to arbitrate between and no
+ * second authority to conflict with.
  */
 
 import { resolve, dirname, basename } from "node:path";
@@ -10,18 +14,9 @@ import { resolve, dirname, basename } from "node:path";
 import { existsLoud } from "./fsProbe.js";
 import {
   defaultStateRoot,
-  jobDir,
   namespacedJoin,
   STATE_ROOT_DIRNAME,
 } from "./paths.js";
-
-/**
- * `--job <name>` given alongside an explicitly-set `FLUME_DIR`: two resolution
- * authorities for one state root. The CLI maps this to a usage error (exit 2).
- * An explicit `FLUME_CONFIG_DIR` composes instead — the authority was always
- * over state, and config never belonged to the job.
- */
-export class JobResolutionConflictError extends Error {}
 
 /**
  * A `FLUME_DIR_RESOLVED_FOR` stamp already present in the env that disagrees
@@ -38,7 +33,7 @@ export class JobResolutionConflictError extends Error {}
  * still points at the other repo would resolve straight into the hazard this
  * guard exists to stop. The message therefore names both vars when
  * `FLUME_DIR` is set and the stamp alone when it is not — and the
- * remedy-agreement pins in `tests/cliJobResolution.test.ts` read the var
+ * remedy-agreement pins in `tests/cliStateDirs.test.ts` read the var
  * names back out of the message and apply them, so a message that names a
  * remedy which does not clear the refusal fails the suite.
  */
@@ -56,9 +51,8 @@ export class CrossRepoFlumeDirError extends Error {}
  * a `.flume` that is present but unstattable (a symlink loop, a
  * permission-denied parent) rather than reading it as absent and walking
  * *past* the operator's own bay to an unrelated ancestor's — or to the
- * no-dock fallback — which would retarget every state-dir resolution and
- * every `job` verb that follows (`.claude/rules/engineering.md`, "Loud or
- * nothing").
+ * no-dock fallback — which would retarget every state-dir resolution that
+ * follows (`.claude/rules/engineering.md`, "Loud or nothing").
  */
 export function resolveRepoRoot(cwd: string): string {
   if (basename(cwd) === STATE_ROOT_DIRNAME) return dirname(cwd);
@@ -88,19 +82,10 @@ export function resolveRepoRoot(cwd: string): string {
  * resolved against the cwd. Independent of one another: a dock sets both to its
  * ephemeral dir to co-locate config and state.
  *
- * Job resolution: `jobFlag` (the global `--job <name>`) or a pre-set
- * `FLUME_JOB` retargets only the `flumeDir` default (state root →
- * `<repoRoot>/.flume/jobs/<name>`) and writes `FLUME_JOB` back alongside the
- * dirs, so loop-spawned tick children inherit the whole resolution via env.
- * `configDir` never retargets — the chain is repo-resident, so it stays
- * `<repoRoot>/.flume` (or explicit `FLUME_CONFIG_DIR`, which composes: env
- * owns the chain+prompts dir, job owns state). The flag is a strict authority
- * over the state root — an explicitly-set `FLUME_DIR` beside it throws
- * {@link JobResolutionConflictError}. `FLUME_JOB` from env composes with an
- * explicit `FLUME_DIR` instead of conflicting: on the loop → tick boundary the
- * child sees all three written-back vars, and the dir vars *are* the parent's
- * canonical job resolution, so set dirs win and the job name rides along for
- * the branch guard and fanout namespacing.
+ * Nothing else retargets `flumeDir` below the root (spec/cli.md, *State-root
+ * and config-dir resolution*). `FLUME_DIR` is the one authority over it, so
+ * the written-back set is exactly these two dirs and the provenance stamp:
+ * a var the resolution never reads is never a var it writes.
  *
  * Cross-repo inheritance refusal: provenance is stamped, never inferred
  * (spec/cli.md, "State-root and config-dir resolution"). The write-back
@@ -116,13 +101,7 @@ export function resolveRepoRoot(cwd: string): string {
 export function resolveStateDirs(
   env: NodeJS.ProcessEnv,
   repoRoot: string,
-  jobFlag?: string,
-): { flumeDir: string; configDir: string; job: string | undefined } {
-  if (jobFlag && env.FLUME_DIR) {
-    throw new JobResolutionConflictError(
-      `--job ${jobFlag} conflicts with explicit FLUME_DIR: one resolution authority — drop --job or unset the env`,
-    );
-  }
+): { flumeDir: string; configDir: string } {
   if (
     env.FLUME_DIR_RESOLVED_FOR &&
     resolve(env.FLUME_DIR_RESOLVED_FOR) !== resolve(repoRoot)
@@ -143,18 +122,14 @@ export function resolveStateDirs(
         `process). ${remedy} to resolve fresh against this repo.`,
     );
   }
-  const job = jobFlag ?? (env.FLUME_JOB || undefined);
   const flumeDir = env.FLUME_DIR
     ? resolve(env.FLUME_DIR)
-    : job
-      ? jobDir(repoRoot, job)
-      : defaultStateRoot(repoRoot);
+    : defaultStateRoot(repoRoot);
   const configDir = env.FLUME_CONFIG_DIR
     ? resolve(env.FLUME_CONFIG_DIR)
     : defaultStateRoot(repoRoot);
   env.FLUME_DIR = flumeDir;
   env.FLUME_CONFIG_DIR = configDir;
   env.FLUME_DIR_RESOLVED_FOR = resolve(repoRoot);
-  if (job) env.FLUME_JOB = job;
-  return { flumeDir, configDir, job };
+  return { flumeDir, configDir };
 }

@@ -86,24 +86,24 @@ describe("buildFlumeApi().gitPath (.claude/rules/engineering.md 'A fact the engi
  */
 describe("buildFlumeApi().paths.stateRootRel (.claude/rules/engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
   it("buildFlumeApi reports the state root's repo-relative offset on api.paths.stateRootRel", () => {
-    // The default root, and a `--job` root two levels down: an offset that
+    // The default root, and a root relocated two levels down: an offset that
     // is not the `.flume` literal is what says the value is computed from
     // the roots rather than spelled.
     expect(buildFlumeApi(REPO_PATHS).paths.stateRootRel).toBe(".flume");
 
-    const jobDir = join(REPO_PATHS.repoRoot, ".flume", "jobs", "alpha");
-    const job = buildFlumeApi({ ...REPO_PATHS, flumeDir: jobDir });
+    const nestedDir = join(REPO_PATHS.repoRoot, "state", "alpha", ".flume");
+    const nested = buildFlumeApi({ ...REPO_PATHS, flumeDir: nestedDir });
     // Git's alphabet, whatever the host's separator — the dialect every
     // fence glob and pathspec composed from it is matched in.
-    expect(job.paths.stateRootRel).toBe(".flume/jobs/alpha");
-    expect(job.paths.stateRootRel).toBe(
-      gitPath(relative(REPO_PATHS.repoRoot, jobDir)),
+    expect(nested.paths.stateRootRel).toBe("state/alpha/.flume");
+    expect(nested.paths.stateRootRel).toBe(
+      gitPath(relative(REPO_PATHS.repoRoot, nestedDir)),
     );
 
     // The three roots still arrive by reference; only the offset is added.
-    expect(job.paths.repoRoot).toBe(REPO_PATHS.repoRoot);
-    expect(job.paths.configDir).toBe(REPO_PATHS.configDir);
-    expect(job.paths.flumeDir).toBe(jobDir);
+    expect(nested.paths.repoRoot).toBe(REPO_PATHS.repoRoot);
+    expect(nested.paths.configDir).toBe(REPO_PATHS.configDir);
+    expect(nested.paths.flumeDir).toBe(nestedDir);
   });
 
   it("api.paths.stateRootRel is absent when the state root resolves outside the repository", () => {

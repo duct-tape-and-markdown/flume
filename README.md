@@ -151,28 +151,19 @@ plain functions returning `GateResult`.
 ## Chain residency
 
 **One chain per `.flume`.** The chain lives at `<configDir>/chain.ts`, and
-job resolution never retargets `configDir` — `--job`/`FLUME_JOB` move only
-the mutable state root (`.flume` → `.flume/jobs/<name>`), never which chain
-governs the tick. There is no job-local chain: every job under a repo ticks
-the one repo-resident chain, from whichever branch happens to be checked
-out.
+the two roots move independently: `FLUME_DIR` relocates the mutable state
+root, `FLUME_CONFIG_DIR` relocates the chain and prompts dir. Relocating
+state never changes which chain governs the tick.
 
-Per-job variation is already served, twice over:
+Per-checkout variation is already served, twice over:
 
-- **A job runs on whatever branch the operator checked out.** Edit
+- **A checkout runs on whatever branch the operator is on.** Edit
   `.flume/chain.ts` there and the variation lives and dies with that
   branch — linked worktrees give concurrent divergence, since each
   resolves its own checkout's chain.
-- **A chain is code.** `FLUME_JOB` is written back into the environment
-  before the chain loads, so one repo chain can dispatch on the job name
-  itself.
-
-A `chain.ts` sitting inside a job dir — left over from an older layout, or
-hand-placed — is simply inert: the runtime never looks there, and nothing
-polices it. `.flume/jobs/<name>/` holds job *state*; the chain that governs
-every job is always the repo's own `.flume/chain.ts`. Thin job dirs plus one
-static, repo-resident chain is the native shape — not a convention layered
-on top.
+- **A chain is code.** The factory is handed the resolved roots
+  (`api.paths`) before it returns a chain, so one repo-resident chain can
+  shape itself around where this run's state lives.
 
 ## Concurrency
 
@@ -326,7 +317,7 @@ two loops against *different* docks over the same repo are allowed.
 ### One flume writer per tip
 
 `loop.pid` guards the state root; it says nothing about the tip (the ref
-HEAD resolves to) the state root's ticks commit onto — two jobs with
+HEAD resolves to) the state root's ticks commit onto — two runs with
 separate state roots, or a bare `tick` racing a `loop`, can still write to
 the same ref. `flume loop` closes that gap with an advisory per-ref claim:
 it claims the tip at start and releases it at exit, exclusive-create at
@@ -379,63 +370,39 @@ signal: an engine instance always holds one and an operator never does, so it
 is how the dispatcher tells legal history from a second writer without
 inferring anything from the commits themselves.
 
-## Jobs
-
-A job is a state root, `.flume/jobs/<name>/` (tracked; runtime subdirs
-gitignored), on whatever branch the operator is on — nothing more. Multiple
-jobs coexist under one checkout by construction; there is no dedicated
-branch to create, assert, or check out. `flume --job <name> <cmd>` (or
-`FLUME_JOB=<name>`) resolves `FLUME_DIR` to the job dir; `FLUME_CONFIG_DIR`
-stays at `<repoRoot>/.flume` (chains are repo-resident — see "Chain
-residency" above) unless you set it explicitly, which composes rather than
-conflicts. Only `--job` plus an explicit `FLUME_DIR` is a usage error — two
-authorities for one state root.
-
-**The engine mints no job.** It creates no directory under `.flume/jobs/`,
-seeds none from any chain declaration, and removes none: a job dir is an
-operator's `mkdir` and a job's end is an operator's `git rm`. `--job <name>`
-resolves the root and refuses (exit `2`) when no such root is on disk.
-Everything a job does is expressible with the relocation seams above; the
-name is a convention over them.
-
-```bash
-mkdir -p .flume/jobs/docs-refresh
-# tune: edit .flume/jobs/docs-refresh/ (state only — no chain.ts of its own)
-flume --job docs-refresh loop --max 20
-flume --job docs-refresh status    # awake phases + pending count
-```
-
-The history a job produced — the commits it caused, on whatever branch it
-ran on — stays exactly where it landed; integrating or discarding it is an
-ordinary git operation, the operator's to run.
-
-Full per-command contracts — steps, refusals, exit codes — in
-[`docs/CLI.md`](docs/CLI.md).
-
-### Concurrent jobs: one working tree per tip
+## Concurrent efforts: one checkout each
 
 **One loop per tip.** Singleton ticks, fanout cherry-picks, and merge-gate
 reverts all mutate the working tree's HEAD; two loops writing to one ref
-race it — per-job state roots mean two jobs' loops never share a
-`loop.pid`, so it's the tip claim above, not the state-root lock, that
-catches this: the second job's `loop` refuses, naming the first job's pid,
-even though the two jobs have nothing else in common.
+race it. The engine partitions no state below the checkout — it mints no
+per-effort namespace, seeds no second root, and offers no selector that
+retargets one — because a partition under one checkout buys separate files
+and no separate execution: the tip claim serializes two efforts sharing a
+tip whatever their files are called.
 
-To run jobs concurrently, give each its own tip — a separate working tree,
-via `git worktree` — so neither claims the other's ref:
+So a repository running several efforts at once gives each one a checkout of
+its own, via `git worktree`, and each resolves its own `.flume`:
 
 ```bash
-git worktree add -b docs-refresh-wip .git/flume-jobs/docs-refresh
-cd .git/flume-jobs/docs-refresh
-flume --job docs-refresh loop
+git worktree add -b docs-refresh-wip ../flume-docs-refresh
+cd ../flume-docs-refresh
+flume loop --max 20
+flume status    # awake phases + pending count, for this checkout
 ```
 
-The `.git/` placement is legal and keeps the worktree out of the main
-checkout without a `.gitignore` entry. Cross-job contention on git's shared
-`.git/worktrees` metadata is accepted: a race fails one git command → one
-tick, the entry stays pending, and the stateless-tick loop retries.
-Overlapping `writablePaths` across concurrent jobs is operator
-responsibility.
+Contention on git's shared `.git/worktrees` metadata is accepted: a race
+fails one git command → one tick, the entry stays pending, and the
+stateless-tick loop retries. Overlapping `writablePaths` across concurrent
+checkouts is operator responsibility.
+
+The history an effort produced — the commits it caused, on whatever branch
+it ran on — stays exactly where it landed; integrating or discarding it is
+an ordinary git operation, the operator's to run.
+
+Where state itself needs to live elsewhere, `FLUME_DIR` and
+`FLUME_CONFIG_DIR` relocate the two roots independently, and nothing else
+does. Full per-command contracts — steps, refusals, exit codes — in
+[`docs/CLI.md`](docs/CLI.md).
 
 ## Status
 

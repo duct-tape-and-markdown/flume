@@ -316,25 +316,12 @@ chain that captures it — the runtime never puts a directory there. Per-run
 artifacts your chain writes are yours to place: root them at
 `api.paths.flumeDir` and the one-`rm` teardown covers them too.
 
-**One chain governs every job, too.** Job resolution (`--job`/`FLUME_JOB`)
-retargets only the mutable state root (`.flume` → `.flume/jobs/<name>`) —
-never `configDir`. There is no per-job chain resolution: `.flume/chain.ts`
-is the chain for every job in the repo, resolved fresh from whichever
-branch is checked out. See the README's "Chain residency" section for the
-full contract.
-
-**Migrating off a per-job shim chain.** Before this line, a job's state
-root carried its own one-line shim chain
-(`export { default } from "../../chain.ts"`) purely so job resolution had
-something to load from the job dir, plus `import.meta.url`-based path
-gymnastics in the repo chain so `promptPath` could still find the shared
-`prompts/` dir regardless of which copy loaded. Neither is needed anymore:
-job resolution never reads a job-local `chain.ts` at all — it's inert,
-unpoliced leftover if one exists — and `promptPath` always joins
-`configDir`, which is now always the directory the chain actually lives in.
-Delete the shims; delete the gymnastics. Loading the repo chain directly is
-behaviorally identical to loading last line's shim, so there's no rush and
-no compatibility window to observe.
+**One chain governs a checkout.** The two roots move independently:
+`FLUME_DIR` relocates the mutable state root, `FLUME_CONFIG_DIR` relocates
+the chain and prompts dir, and relocating state never changes which chain
+loads. `promptPath` always joins `configDir`, which is always the directory
+the chain actually lives in. See the README's "Chain residency" section for
+the full contract.
 
 ## 1. Declaring a Phase
 
@@ -374,7 +361,7 @@ const slicePhase = (slice: PlanSlice): Phase => ({
   concurrency: "singleton",
   writablePaths: [
     // `stateRoot` is `api.paths.stateRootRel`, read once at chain load —
-    // so a run under `--job` or a relocated `FLUME_DIR` fences the
+    // so a run under a relocated `FLUME_DIR` fences the
     // directory that run actually writes.
     `${stateRoot}/plan/pending.json`,
     `${stateRoot}/plan/state.md`,
@@ -1172,7 +1159,7 @@ Two properties the return type carries, and the reason to take this over a
   standing in for a failed `git` call — so a reaper cannot free a live arm's
   handle because git happened not to answer.
 - **A directory listing answers a different question.** The base moves
-  (`FLUME_WORKTREES_DIR`, below), a shared base also holds sibling jobs'
+  (`FLUME_WORKTREES_DIR`, below), a shared base also holds sibling checkouts'
   container directories, and residue whose registration git has already pruned
   still has a directory. None of those are distinguishable by name; all of them
   are by the registry.

@@ -145,7 +145,7 @@ export function computeStateRootRel(
  * Base-independent: it resolves the declared path against an arbitrary
  * sentinel root and asks whether the result still sits under that root, so
  * it needs no actual `flumeDir` value. That value legitimately varies per
- * call site (a job-scoped run's state root differs from `configDir`, where
+ * call site (a relocated state root differs from `configDir`, where
  * `chain.ts` itself lives), but "does this relative path escape whatever
  * root it's joined to" is a property of the path string alone.
  *
@@ -387,8 +387,8 @@ export function isDotName(name: string): boolean {
 
 /**
  * The bay's own name under a repository root — the directory the walk-up
- * discovery probe looks for (`resolveRepoRoot`, `src/cliJobResolution.ts`)
- * and the one every state root defaults into absent `FLUME_DIR` / `--job`
+ * discovery probe looks for (`resolveRepoRoot`, `src/cliStateDirs.ts`)
+ * and the one every state root defaults into absent `FLUME_DIR`
  * (spec/cli.md, *State-root and config-dir resolution*).
  *
  * Exported for the one consumer that needs the bare name rather than a
@@ -404,7 +404,7 @@ export const STATE_ROOT_DIRNAME = ".flume";
  * `<repoRoot>/.flume`.
  *
  * **The one composition.** Every default that resolves to the bay reads it
- * here: `resolveStateDirs`'s two dirs (`src/cliJobResolution.ts`), the
+ * here: `resolveStateDirs`'s two dirs (`src/cliStateDirs.ts`), the
  * `Dispatcher`'s `flumeDir` (`src/Dispatcher.ts`) and `superviseLoop`'s two
  * (`src/loopSupervisor.ts`). Each used to spell the layout itself, so a relocation had
  * to be remembered at a dozen sites, and a site that forgot would resolve a
@@ -414,22 +414,6 @@ export const STATE_ROOT_DIRNAME = ".flume";
  */
 export function defaultStateRoot(repoRoot: string): string {
   return join(repoRoot, STATE_ROOT_DIRNAME);
-}
-
-/**
- * The state root `--job <name>` resolves `flumeDir` to —
- * `<repoRoot>/.flume/jobs/<name>`, absolute. Anchored on the *default* state
- * root by construction: the flag names a place in the repo's tree, not a
- * place under whatever `FLUME_DIR` the invocation would otherwise resolve.
- *
- * `name` arrives from the flag verbatim — `resolveStateDirs`
- * (`src/cliJobResolution.ts`) composes it straight in, and the engine mints
- * no such directory itself (spec/jobs.md, *The checkout is the unit of
- * isolation*), so a name that is not a single segment resolves a root that
- * does not exist and the CLI refuses on its absence.
- */
-export function jobDir(repoRoot: string, name: string): string {
-  return join(repoRoot, STATE_ROOT_DIRNAME, "jobs", name);
 }
 
 // ---------- the state root's layout ----------

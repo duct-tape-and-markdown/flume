@@ -480,12 +480,12 @@ it("the returned build phase is fanout and carries the declaration's fence", () 
 });
 
 it("the build fence and the park predicate name one note path under a nested state root", () => {
-  // A nested state root, as a job namespace produces one: every path the
+  // A nested state root, as a relocated `FLUME_DIR` produces one: every path the
   // factory composes carries the offset to it, and on win32 the engine
   // reports that offset in the host's own separator. One derivation
   // normalizes it, so the fence glob and the predicate below cannot end up in
   // different alphabets.
-  const nested = join(repo, "jobs", "alpha", STATE_ROOT);
+  const nested = join(repo, "state", "alpha", STATE_ROOT);
   const rel = relative(repo, nested).split(sep).join("/");
   // Non-vacuity: the root is genuinely more than one segment deep, which is
   // the only shape whose dialect can differ at all.

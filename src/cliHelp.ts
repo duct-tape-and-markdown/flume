@@ -52,13 +52,6 @@ Commands:
                       note's bytes verbatim. Never interpreted.
 
 Options:
-  --job <name>        Resolve state to <repoRoot>/.flume/jobs/<name> and set
-                      FLUME_JOB=<name> (equivalent to setting the env var).
-                      Config (chain.ts + prompts) stays at <repoRoot>/.flume —
-                      chains are repo-resident; an explicit FLUME_CONFIG_DIR
-                      composes. Conflicts with explicit FLUME_DIR (exit 2).
-                      Refuses (exit 2) if <name> names no existing state
-                      root: no verb creates one.
   -h, --help          Print this message (\`flume help\` prints the same).
   -v, --version       Print the flume version.
 

@@ -265,7 +265,6 @@ const CAPTURE_FREE = "tests/harnessCi.test.ts";
 /** The files whose only sync spelling is source a fixture writes out. */
 const FIXTURE_LITERAL: readonly string[] = [
   "tests/cli.test.ts",
-  "tests/cliJobResolution.test.ts",
   "tests/subprocessHelper.test.ts",
 ];
 

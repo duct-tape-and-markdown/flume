@@ -9,18 +9,16 @@ Flume is exec-local: a bay declares `@dtmd/flume` as a dev dependency and invoke
 
 The package ships a second bin, `flume-harness`, carrying the harness package's own verbs — the ones the engine's deliberately closed verb set does not offer. Its contracts are at the foot of this page, in the same form as the engine's.
 
-## Global `--job <name>` / `FLUME_JOB`
+## State-root and config-dir resolution
 
-`flume --job <name> <subcommand>` (the flag composes with every subcommand, at any argument position) resolves both `FLUME_DIR` and `FLUME_CONFIG_DIR` to `<repoRoot>/.flume/jobs/<name>` and sets `FLUME_JOB=<name>` — all three canonicalized and written back into the environment at CLI entry, so loop-spawned tick children inherit the resolution via env rather than flags. Setting `FLUME_JOB=<name>` directly (no flag) is honored identically.
+Two independent roots, resolved once at CLI entry — ahead of verb dispatch, so every subcommand and every chain load in the process reads the same answer. **`FLUME_DIR`** relocates the mutable-state root (the baton under `awake/`, `plan/pending.json`, worktrees, prior-attempt records, `loop.pid`); **`FLUME_CONFIG_DIR`** relocates the chain and prompts dir (`<configDir>/chain.ts`, and every `phase.promptPath` resolved against it). Both default to `<repoRoot>/.flume`, and a set-but-relative value resolves against the current working directory. Setting both to one directory co-locates config and state.
 
-The flag is a strict resolution authority: passing `--job` while `FLUME_DIR` or `FLUME_CONFIG_DIR` is explicitly set is a usage error (exit `2`). The env-var form composes instead of conflicting — on the loop → tick boundary the child inherits all three written-back vars, and the dir vars *are* the parent's canonical job resolution, so explicitly-set dirs win and the job name rides along.
+There is no third selector: one checkout resolves one state root, and a repository running several efforts at once gives each a checkout of its own (`git worktree add`, the operator's act). Nothing retargets the state root below the repository root but `FLUME_DIR` itself.
 
-The engine has no opinion on which branch a job runs on: the mutating subcommands (`tick`, `loop`) commit to whatever branch the working tree's HEAD is on, job-resolved or not — there is no dedicated `job/<name>` branch to assert or check out. Run on whatever branch you want the record on.
+Both resolved paths are canonicalized to absolute and written back into the environment, so a chain loaded later in the same process and every loop-spawned tick child read one resolved value instead of re-deriving the default. The write-back also stamps `FLUME_DIR_RESOLVED_FOR=<repoRoot>`: a later invocation that inherits an environment already carrying that stamp for a *different* repository refuses (exit `2`) rather than writing into the outer repository's control plane, naming both vars to clear. A `FLUME_DIR` typed fresh for the invocation carries no stamp and is never refused on that basis, whatever its path looks like.
 
 ```sh
-flume --job docs-refresh status        # reads .flume/jobs/docs-refresh/awake/
-flume --job docs-refresh loop          # commits land on whatever branch HEAD is on
-FLUME_JOB=docs-refresh flume tick      # identical resolution via env
+FLUME_DIR=/var/lib/flume/state flume loop   # state out of the working tree
 ```
 
 ## `flume status`
@@ -60,7 +58,7 @@ flume loop --max 20
 
 ## `flume wake <phase>`
 
-Marks the named phase awake by touching `.flume/awake/<phase>`. The next `flume tick` (or `flume loop`) will schedule that phase. The phase name is validated against the repo chain's declared phases behind the same best-effort load `flume status` takes: a chain that loads and does not declare `<phase>` refuses with exit `2` before the flag is written, while a missing or broken chain never blocks the flag — it reports the failure and what it cost (nothing checked the phase name, so a typo lands a marker no phase will ever read) on stderr, never silently. `--job` does not retarget the load; the chain is repo-resident. Exits `0` on success; exits `2` if the `<phase>` argument is missing, if an extra positional follows it, or on an undeclared phase.
+Marks the named phase awake by touching `.flume/awake/<phase>`. The next `flume tick` (or `flume loop`) will schedule that phase. The phase name is validated against the repo chain's declared phases behind the same best-effort load `flume status` takes: a chain that loads and does not declare `<phase>` refuses with exit `2` before the flag is written, while a missing or broken chain never blocks the flag — it reports the failure and what it cost (nothing checked the phase name, so a typo lands a marker no phase will ever read) on stderr, never silently. The chain is repo-resident: only `FLUME_CONFIG_DIR` moves the dir it loads from. Exits `0` on success; exits `2` if the `<phase>` argument is missing, if an extra positional follows it, or on an undeclared phase.
 
 ```sh
 flume wake plan
@@ -241,7 +239,7 @@ flume friction revert-note-a54de89.md
 
 A verb on the *other* bin. The harness package ships its own command line beside the engine's, so `flume`'s verb set stays closed and `src/` never imports the harness (`spec/harness.md`, *Adoption and upgrade*). It is the same npm package and the same version, so one install provides both — before the dependency is there, `npx --package @dtmd/flume flume-harness init`; once it is, `pnpm exec flume-harness init`. `flume-harness` with no verb, or with `-h` / `--help` anywhere on the command line — `flume-harness --help` and `flume-harness init --help` alike — prints the verb list and exits `0`, before anything is written.
 
-`init` adopts the harness into the repository it is run in: the repository is the current working directory and the state root is `.flume`. The verb takes no arguments and no flags — no `--job`, no state-root selector; adopting into a different root is the exported `harnessInit({ repoRoot, stateRoot })`, a library call rather than a command line. Two steps, the first entirely a preflight:
+`init` adopts the harness into the repository it is run in: the repository is the current working directory and the state root is `.flume`. The verb takes no arguments and no flags — no state-root selector; adopting into a different root is the exported `harnessInit({ repoRoot, stateRoot })`, a library call rather than a command line. Two steps, the first entirely a preflight:
 
 1. **Resolve every input before the first byte.** The state root's absence (a stat failure that is not absence refuses rather than reading as "not adopted yet"), this package's own manifest for the version range to declare, the shipped `PROTOCOL.md` template, and the repository's `package.json` if it has one. Nothing on disk is touched until all of them pass: an init that stopped half-way would leave ignore lines for a state root that does not exist, or a `PROTOCOL.md` beside no declaration — a tree nothing refuses and no re-run can tell from a finished one.
 2. **Write the adoption, then report it.** `.flume/package.json` (`"type": "module"` and nothing else — the module scope the two files beside it load in: flume is ESM-only, a chain loaded as CommonJS stops resolving it on node 22, and your own repository's manifest is untouched, so a CommonJS repo adopts and its chain still loads), `.flume/declaration.ts` (the skeleton whose `specLocus`, `fence` and `slices` are yours to fill in), `.flume/chain.ts` (the hop the engine loads — the same three lines in every adopting repository, and nothing in it yours to tune), `.flume/PROTOCOL.md`, and `.flume/plan/pending.json` holding an empty queue: nothing else creates one, and a plan slice refuses over an absent queue. Then the runtime ignore lines are *merged* into `.gitignore` — created if absent, and everything already in it kept — and `@dtmd/flume` is declared at `^<version>` in the manifest's `dependencies`. A range already declared (in either `dependencies` or `devDependencies`) is left exactly as it was: a pinned range is a decision, and overwriting it would be init choosing a version on your behalf. No installer is spawned and no lockfile is touched — which package manager reconciles `node_modules` stays yours, and the closing line says what to run next.

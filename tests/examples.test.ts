@@ -150,7 +150,7 @@ describe("cascade-chain.ts — the shipped phase list", () => {
 
 /**
  * The flagship's fence is read as doctrine, so the doctrine it teaches has to
- * survive the state root moving: `--job` and `FLUME_DIR` both relocate it, and
+ * survive the state root moving: `FLUME_DIR` relocates it, and
  * a fence spelled `.flume/` would then guard a directory no tick writes — every
  * plan commit reverted for paths outside a glob that matches nothing. Driven
  * through the real factory over the real `buildFlumeApi`, the seam a chain-load
@@ -176,16 +176,17 @@ describe("cascade-chain.ts — the plan fence roots at the reported state root",
     expect(at).toContain(".flume/plan/pending.json");
     expect(at).toContain(".flume/inbox/**");
 
-    // The same chain under `--job alpha`: the whole fence moves with the
-    // root, in git's alphabet, with nothing left behind at the literal.
-    const job = planFence(
-      join(EXAMPLE_PATHS.repoRoot, ".flume", "jobs", "alpha"),
+    // The same chain under a state root relocated inside the repo: the whole
+    // fence moves with the root, in git's alphabet, with nothing left behind
+    // at the literal.
+    const moved = planFence(
+      join(EXAMPLE_PATHS.repoRoot, "state", "alpha"),
     );
-    expect(job).toEqual(
-      at.map((g) => g.replace(/^\.flume\//, ".flume/jobs/alpha/")),
+    expect(moved).toEqual(
+      at.map((g) => g.replace(/^\.flume\//, "state/alpha/")),
     );
-    expect(job.filter((g) => g.startsWith(".flume/plan/"))).toEqual([]);
-    expect(job).toContain(".flume/jobs/alpha/plan/pending.json");
+    expect(moved.filter((g) => g.startsWith(".flume/"))).toEqual([]);
+    expect(moved).toContain("state/alpha/plan/pending.json");
   });
 
   it("cascade refuses at chain load when its state root resolves outside the repository", () => {
@@ -545,8 +546,8 @@ describe("examples/prompts — the spans read the injected state root", () => {
    * The same claim over the whole file, because a template's prose is an
    * instruction too: a span rooted at `{{FLUME_DIR}}` beside an OUTPUT block
    * naming `.flume/plan/...` sends the agent to write outside the fence its
-   * slice is judged by the moment the root moves (`--job`, a relocated
-   * state root). A sweep of the spans alone cannot see that half.
+   * slice is judged by the moment the root moves (a relocated state root).
+   * A sweep of the spans alone cannot see that half.
    */
   it("no shipped example prompt names a literal .flume/ path outside a span", () => {
     // Non-vacuity: an empty prompt set, or templates read as empty bytes,

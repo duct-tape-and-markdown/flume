@@ -24,7 +24,6 @@
 export const HERMETIC_ENV_STRIP_KEYS: readonly string[] = [
   "FLUME_DIR",
   "FLUME_CONFIG_DIR",
-  "FLUME_JOB",
   "FLUME_DIR_RESOLVED_FOR",
   "FLUME_TIP_CLAIM_HELD",
 ];
@@ -32,9 +31,9 @@ export const HERMETIC_ENV_STRIP_KEYS: readonly string[] = [
 /**
  * A copy of this process's env with every `FLUME_*` key stripped, so a
  * spawned CLI resolves the caller's own temp dir/repo default — or the
- * test's own explicit job resolution — instead of inheriting this process's.
+ * test's own explicit relocation — instead of inheriting this process's.
  * Without this the suite is not hermetic: run under a flume harness (whose
- * canonicalized env, including a job resolution and its provenance stamp,
+ * canonicalized env, including its resolved state root and provenance stamp,
  * the vitest process inherits), the child would either escape the fixture
  * and operate on the outer state root/branch, or — once FLUME_DIR is
  * overridden per-test but the stale stamp survives — misfire

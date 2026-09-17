@@ -94,7 +94,7 @@ export function mkTempDirSync(
  * Not rootable: a fixture whose subject **is** the no-ancestor fallback. It
  * must reach the filesystem root without meeting a `.flume`, which no fixture
  * can guarantee — `resolveRepoRoot`'s fallback case in
- * `tests/cliJobResolution.test.ts` is the one such site in this suite.
+ * `tests/cliStateDirs.test.ts` is the one such site in this suite.
  */
 export async function mkFixtureRoot(
   prefix: string,
@@ -109,7 +109,7 @@ export async function mkFixtureRoot(
  * The `.flume` paths that sit **above** every fixture created under
  * `fixtureParent` — the parent's own bay and each ancestor's, to the
  * filesystem root. Exactly the set `resolveRepoRoot`'s walk
- * (`src/cliJobResolution.ts`) meets after it leaves the fixture, derived by
+ * (`src/cliStateDirs.ts`) meets after it leaves the fixture, derived by
  * the same walk rather than by a list of hosts' temp dirs.
  */
 function stateRootsAbove(fixtureParent: string): string[] {

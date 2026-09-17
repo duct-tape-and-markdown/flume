@@ -120,10 +120,11 @@ it("flume job is an unknown command and exits 2", async () => {
 
 /**
  * The same absence on the surface an operator reads to find the verb set:
- * the listing must not advertise a verb the dispatch refuses. Scoped to the `Commands:` block alone: the
- * `--job` selector below it is a different surface and legitimately names
- * the word (`.claude/rules/posture-sweep.md`, *a negative assertion over a
- * whole rendered artifact*).
+ * the listing must not advertise a verb the dispatch refuses. Scoped to the
+ * `Commands:` block alone, which is the listing the claim is about — a
+ * negative read of the whole rendered page would turn on whatever else it
+ * happens to quote (`.claude/rules/posture-sweep.md`, *a negative assertion
+ * over a whole rendered artifact*).
  */
 it("the top-level help names no job verb", () => {
   const names = topLevelCommandNames();

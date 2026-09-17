@@ -364,7 +364,7 @@ const factory: ChainFactory = (api) => {
    * The offset every path this chain commits is rooted at — forward-slashed,
    * the alphabet a fence glob is matched in — reported by the engine at
    * chain load (`api.paths.stateRootRel`) rather than spelled `.flume/`
-   * here. `--job` and a relocated `FLUME_DIR` both move the state root, and
+   * here. A relocated `FLUME_DIR` moves the state root, and
    * a literal fence would then guard a directory the dispatcher no longer
    * writes: every plan commit reverts, and the artifacts the slice actually
    * wrote land outside the glob.
@@ -615,8 +615,8 @@ const factory: ChainFactory = (api) => {
     promptPath: "prompts/plan.md",
     concurrency: "singleton",
     writablePaths: [
-      // Rooted at the offset the engine reported, so a run under `--job` or
-      // a relocated `FLUME_DIR` fences the directory that run actually writes.
+      // Rooted at the offset the engine reported, so a run under a relocated
+      // `FLUME_DIR` fences the directory that run actually writes.
       `${stateRoot}/plan/pending.json`,
       `${stateRoot}/plan/state.md`,
       `${stateRoot}/plan/open-questions.md`,

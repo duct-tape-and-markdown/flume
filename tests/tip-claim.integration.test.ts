@@ -29,15 +29,13 @@ import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 
 /**
  * Scratch git repo on a chosen branch. The engine has no opinion on branch
- * names — some fixtures below pin `job/foo` merely as a
- * distinctive label, proven inert by running job resolution on `main`
- * instead.
+ * names — every fixture below runs on whatever branch it was given.
  */
-async function makeJobRepo(branch: string): Promise<{
+async function makeRepo(branch: string): Promise<{
   dir: string;
   cleanup: () => Promise<void>;
 }> {
-  const dir = await mkTempDir("flume-job-");
+  const dir = await mkTempDir("flume-tip-claim-");
   const opts = { cwd: dir };
   await exec("git", ["init", "-q", "-b", branch], opts);
   await exec("git", ["config", "user.email", "test@example.com"], opts);
@@ -77,13 +75,13 @@ async function headClaimPath(dir: string): Promise<string> {
 /**
  * Materialize the repo-resident config: `chain.ts` at
  * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
- * fixture in this suite loads from, job resolution or not. `promptPath`
+ * fixture in this suite loads from. `promptPath`
  * stays a plain configDir-relative join (the shared-prompts case).
  */
 async function writeRepoConfig(
   root: string,
   chainSrc: string,
-  promptContent = "job probe prompt\n",
+  promptContent = "probe prompt\n",
 ): Promise<string> {
   const cfg = join(root, ".flume");
   await mkdir(join(cfg, "prompts"), { recursive: true });
@@ -150,31 +148,28 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "two loops against different state roots on one branch: the second refuses, naming the claim's holder pid",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const claimPath = await headClaimPath(repo.dir);
         await mkdir(dirname(claimPath), { recursive: true });
         // The vitest worker itself plays the live first loop's holder.
         await writeFile(claimPath, String(process.pid), "utf8");
 
-        // A different state root (--job other) than the planted claim's
-        // holder — only the tip claim can refuse this pair; loop.pid never
-        // collides. Pre-existing per CLI-JOB-FLAG-REFUSES-NONEXISTENT-STATE-ROOT:
-        // --job now refuses a name with no state root before reaching the
-        // tip-claim contention this test exercises.
-        await mkdir(join(repo.dir, ".flume", "jobs", "other"), {
-          recursive: true,
+        // A different state root than the planted claim's holder — only the
+        // tip claim can refuse this pair; loop.pid never collides.
+        const other = join(repo.dir, "other-state");
+        await mkdir(other, { recursive: true });
+        const r = await runCli(repo.dir, ["loop", "--max", "0"], {
+          ...hermeticEnv(),
+          FLUME_DIR: other,
         });
-        const r = await runCli(repo.dir, ["--job", "other", "loop", "--max", "0"]);
 
         expect(r.code).toBe(1);
         expect(r.out).toContain(`refs/heads/main claimed by pid ${process.pid}`);
         expect(r.out).toContain(claimPath);
         // Refused before ever taking its own loop.pid — nothing left behind
-        // for the job's own state root.
-        expect(
-          existsSync(join(repo.dir, ".flume", "jobs", "other", "loop.pid")),
-        ).toBe(false);
+        // in the contender's own state root.
+        expect(existsSync(join(other, "loop.pid"))).toBe(false);
         // The live holder's claim survives the refused contender untouched.
         expect(await readFile(claimPath, "utf8")).toBe(String(process.pid));
       } finally {
@@ -187,7 +182,7 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "two loops from two worktrees on different branches: both run (keyed per-ref, not per-checkout)",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       const wtParent = await mkTempDir("flume-tip-claim-wt-");
       const wtDir = join(wtParent, "wt");
       try {
@@ -218,7 +213,7 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "a bare flume tick with no other live claim-holder acquires and releases a claim around its single tick",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, slowAgentChainSrc("probe"));
         new Baton(join(repo.dir, ".flume")).wake("probe");
@@ -254,7 +249,7 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "a signalled bare flume tick releases its tip claim on POSIX; on win32 (TerminateProcess, no handler runs) it survives and is stale-reclaimable",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, slowAgentChainSrc("probe"));
         new Baton(join(repo.dir, ".flume")).wake("probe");
@@ -308,7 +303,7 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "a bare flume tick refuses exit 1 when a live process already holds the claim",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
 
@@ -335,7 +330,7 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "claim file (and loop.pid) are gone after SIGTERM on POSIX; on win32 (TerminateProcess, no handler runs) both survive and the claim is stale-reclaimable — the amended tip-claim outcome",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, slowAgentChainSrc("probe"));
         new Baton(join(repo.dir, ".flume")).wake("probe");
@@ -413,7 +408,7 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "flume loop exits 1 on detached HEAD before any tick, taking neither loop.pid nor the tip claim",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         // Derived while HEAD still names a ref: once detached there is no
         // ref to key a claim on, so the path this loop *would* have claimed
@@ -444,7 +439,7 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "flume tick exits 1 on detached HEAD without invoking the agent",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await exec("git", ["checkout", "--detach"], { cwd: repo.dir });
         await writeRepoConfig(repo.dir, minimalChainSrc());
@@ -492,7 +487,7 @@ describe("flume loop/tick — tip claim wiring", () => {
     // tick's own on every subsequent iteration.
     "flume tick on detached HEAD clears a stale tick-verdict.json before refusing",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
         const flumeDir = join(repo.dir, ".flume");
@@ -530,7 +525,7 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "flume status reports the tip claim alongside supervisor liveness",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const claimPath = await headClaimPath(repo.dir);
         await mkdir(dirname(claimPath), { recursive: true });
@@ -556,7 +551,7 @@ describe("flume loop/tick — tip claim wiring", () => {
   it(
     "flume status prints nothing extra with no claim file, or on a detached HEAD",
     async () => {
-      const repo = await makeJobRepo("main");
+      const repo = await makeRepo("main");
       try {
         const clean = await runCli(repo.dir, ["status"]);
         expect(clean.code).toBe(0);
