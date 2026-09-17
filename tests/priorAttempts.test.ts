@@ -39,10 +39,12 @@ import {
   buildPlatformPreempt,
   buildRenderRefused,
   buildTipMoved,
+  entryAttemptKey,
   priorAttemptPath,
   priorAttemptRef,
   priorAttemptsDir,
   PriorAttemptStore,
+  recordAttemptKey,
   type PriorAttemptDraft,
   type PriorAttemptRef,
 } from "../src/priorAttempts.ts";
@@ -1054,6 +1056,87 @@ it("clearStale keeps a phase record whose name slugifies onto a tag the queue no
     expect([...(await store.readAll()).keys()]).toEqual([
       `phase:${COLLIDING_PHASE}`,
     ]);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+/**
+ * The record's own key, reported rather than rediscovered
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). `entryAttemptKey` answers for a caller holding an
+ * entry; a caller holding a record off `TickContext.priorAttempts` — the
+ * harness's own records block among them — had no engine spelling at all and
+ * had to join the record's two halves itself.
+ *
+ * Driven through the real writer and the real reader (*A seam gate reads what
+ * the real writer wrote*): the keyer is judged against the key
+ * `PriorAttemptStore.readAll` actually filed each record under, over both
+ * keyspaces, so a keyer that agrees with a hand-written join but not with the
+ * store cannot read green here.
+ */
+it("a prior-attempt record answers the key the store's own walk filed it under", async () => {
+  const fx = await makeFixture();
+  try {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    // Both keyspaces, and a phase name `slugify` rewrites: a map holding only
+    // records whose identity is already its stem would agree with a keyer
+    // that read the filename.
+    const phaseRef = priorAttemptRef({ name: COLLIDING_PHASE } as Phase);
+    const entryRef = priorAttemptRef(
+      { name: "build" } as Phase,
+      collidingEntry,
+    );
+    expect(slugify(phaseRef.key)).toBe(slugify(entryRef.key));
+    await store.write(phaseRef, buildCleanExit("parked: the phase"));
+    await store.write(entryRef, buildCleanExit("parked: the entry"));
+
+    const all = await store.readAll();
+    // Vacuity pin: the walk really filed two records, one per keyspace, so
+    // the agreement below is judged over a populated map.
+    expect(all.size).toBe(2);
+    expect([...all.values()].map((rec) => rec.key).sort()).toEqual([
+      "entry",
+      "phase",
+    ]);
+
+    for (const [key, record] of all) {
+      expect(recordAttemptKey(record), key).toBe(key);
+    }
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+/**
+ * The two keyers agree where their keyspaces overlap: a record written for a
+ * queue entry answers what the entry itself answers. Without this the engine
+ * would hold two spellings of one key and a consumer could reach a record by
+ * one and fail to match it by the other.
+ */
+it("a fanout entry's record answers the key entryAttemptKey answers for its entry", async () => {
+  const fx = await makeFixture();
+  try {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    // A tag `slugify` rewrites, so the two keyers agreeing is an agreement
+    // about the slug and not about a tag that was already in slug form.
+    expect(slugify(COLLIDING_TAG)).not.toBe(COLLIDING_TAG);
+    const entryRef = priorAttemptRef(
+      { name: "build" } as Phase,
+      collidingEntry,
+    );
+    await store.write(entryRef, buildCleanExit("parked: the entry"));
+
+    const record = await store.read(entryRef);
+    // Vacuity pin: there is a record to key, so the comparison below is over
+    // a real one rather than over `undefined` on both sides.
+    expect(record?.mode).toBe("clean-exit");
+
+    expect(recordAttemptKey(record!)).toBe(entryAttemptKey(collidingEntry));
   } finally {
     await fx.cleanup();
   }

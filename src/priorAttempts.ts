@@ -146,6 +146,26 @@ function refOfRecord(rec: PriorAttempt): PriorAttemptRef {
 }
 
 /**
+ * The key one record occupies in that map, for a reader holding the record
+ * rather than the entry — {@link PriorAttemptStore.readAll}, which files each
+ * record it decoded under it, and the harness package's own records block,
+ * which orders the standing records a tick is shown by the identity they were
+ * filed under (`harness/inboxWindow.ts`).
+ *
+ * Covers both keyspaces where {@link entryAttemptKey} covers the entry
+ * keyspace alone: a record carries its own two halves, so the key is read off
+ * it rather than composed from a keyspace the caller had to assume. A reader
+ * re-spelling those halves holds a copy of the join that goes quietly wrong
+ * the day the engine changes how it keys — which is why the join is answered
+ * here and never left to the side holding the record
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ */
+export function recordAttemptKey(rec: PriorAttempt): string {
+  return priorAttemptMapKey(refOfRecord(rec));
+}
+
+/**
  * Prior-attempt records live beside the baton, under `priorAttemptsDir`
  * (`src/paths.ts`, which owns the name): gitignored harness runtime state
  * under the flume state dir, NOT in the per-entry worktree (a fanout retry
@@ -344,7 +364,7 @@ export class PriorAttemptStore {
    * Every persisted prior-attempt record under `<flumeDir>/prior-attempts/`,
    * keyed by the keyspace and the identity each record was **written** under
    * — `entry:<tag slug>`, `phase:<phase name>`
-   * ({@link priorAttemptMapKey}) — not by the filename stem it happens to
+   * ({@link recordAttemptKey}) — not by the filename stem it happens to
    * sit at. For a fanout record the identity and the stem are the same text
    * (the ref's key is already a tag slug); for a singleton they diverge
    * whenever `slugify` rewrites the phase name, and it is the chain's own
@@ -395,7 +415,7 @@ export class PriorAttemptStore {
         if (!e.isFile() || !e.name.endsWith(".json")) continue;
         const stem = e.name.slice(0, -".json".length);
         const rec = await this.read({ key: stem, keyspace });
-        if (rec) out.set(priorAttemptMapKey(refOfRecord(rec)), rec);
+        if (rec) out.set(recordAttemptKey(rec), rec);
       }
     }
     return out;

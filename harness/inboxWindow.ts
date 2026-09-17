@@ -42,7 +42,7 @@
 import { readFileSync } from "node:fs";
 
 import { namespacedJoin } from "../src/paths.js";
-import { entryAttemptKey } from "../src/priorAttempts.js";
+import { entryAttemptKey, recordAttemptKey } from "../src/priorAttempts.js";
 import type { PriorAttempt } from "../src/Prompt.js";
 
 import { laneLeg } from "./ciLane.js";
@@ -314,16 +314,19 @@ function renderFiles(
  * been doing, and the mark is what says which ones this tick must resolve.
  */
 function renderBuildRecords(ctx: WindowContext): string {
-  // Read off the map's values and each record's own stated identity, never
-  // off the map key: how the engine composes that key is the engine's, and a
-  // slice that re-spelled it here would mark the wrong records the day it
-  // changed (`.claude/rules/engineering.md`, *A fact the engine holds is
-  // reported, never rediscovered*).
+  // Ordered by each record's own key, asked of the engine rather than joined
+  // from the record's two halves here: how the engine composes that key is
+  // the engine's, and a slice spelling the join itself would order by a
+  // second vocabulary the day the engine changed its first
+  // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+  // never rediscovered*). Read off the values rather than the map's own keys
+  // for the reason the mark below is by identity: the record is what this
+  // block renders, and every fact about it comes off the record.
   const records = [
     ...(ctx.priorAttempts ?? new Map<string, PriorAttempt>()).values(),
   ].sort((a, b) => {
-    const left = `${a.key}:${a.keyedAs}`;
-    const right = `${b.key}:${b.keyedAs}`;
+    const left = recordAttemptKey(a);
+    const right = recordAttemptKey(b);
     return left < right ? -1 : left > right ? 1 : 0;
   });
   if (records.length === 0) return "(no standing prior-attempt records)";
