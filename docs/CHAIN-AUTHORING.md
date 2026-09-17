@@ -1925,11 +1925,14 @@ const chain: Chain = {
   retries it from scratch. `"none"` disables quarantine outright: every
   entry stays pickable every tick regardless of an earlier failure. The
   consecutive-failure backstop below still applies either way — `"none"`
-  only removes the per-entry isolation, not the run-level safety net.
+  only removes the per-entry isolation, not the run-level safety net. Bound
+  **once per run**: the quarantine set is accounting that accumulates across
+  the run.
 - **`abortThreshold`** — the number of consecutive ticks the same
   stage-tagged failure signature must repeat, with no clearing tick
   between them, before the supervisor aborts the run rather than burning
-  the remaining `--max` ticks against the same wall. Default 3.
+  the remaining `--max` ticks against the same wall. Default 3. Bound **once
+  per run** too: the streak is accounting that accumulates across the run.
 - **`killGraceMs`** — milliseconds between the `SIGTERM` a signalled `flume
   tick` sends the agent tree it started and the `SIGKILL` that follows — the
   window an agent mid-invocation gets to finish writing under the state root.
@@ -1943,14 +1946,17 @@ const chain: Chain = {
   of releasing over a live writer, and the operator kills it — the next
   acquirer's liveness probe reclaims the claim. Default 5000. POSIX only:
   win32 maps `SIGTERM` to `TerminateProcess`, which runs no handler, so there
-  is no disposition for a grace to bound.
+  is no disposition for a grace to bound. Read **per tick**, because the timer
+  belongs to the process that can see the tree it is timing: a `flume tick` —
+  bare or loop-spawned — signals the agent it started, and the supervisor
+  above it holds no grace of its own.
 - **`maxParallel`** — how many entry ticks one fanout wave starts at once.
   Default 4. The partition (§3) decides which entries *may* share a wave —
   disjoint declared files — and this decides how many of that set actually
   run together; the rest wait for the next wave. Lower it when the agent seam
   is rate-limited or the machine has fewer cores than the wave has entries,
   raise it when ticks are cheap and cherry-picks land clean. A singleton
-  chain never reads it.
+  chain never reads it. Read **per tick**.
 - **`tickTimeoutMs`** — wall-clock cap on one agent invocation, in
   milliseconds. Default unset: **no cap**, which means the only brake on a
   runaway invocation is an operator watching verdict lines. Exceeded, the
@@ -1958,7 +1964,7 @@ const chain: Chain = {
   tick, so the signature accounting above sees it and the run's `--max`
   budget is not burned silently against a hung agent. Derive the value from
   measured invocations with headroom over the observed maximum — a cap set at
-  the maximum kills the next slow-but-healthy tick.
+  the maximum kills the next slow-but-healthy tick. Read **per tick**.
 - **`partitionIgnore`** — globs, matched by the same matcher `writablePaths`
   goes through (§1), whose paths never count toward the fanout partition's
   collision set. Default `[]`, byte-identical to no filter. A file every
@@ -1967,29 +1973,29 @@ const chain: Chain = {
   a single tick; naming it here keeps the wave wide. This widens only what counts as a *collision*, never a
   permission: the fence, the write guard, and ship detection all still read
   that path in full (`spec/pending.md`, "Fanout partition — disjoint touched
-  paths").
+  paths"). Read **per tick**.
 
 Every field here is optional and independent; a chain declaring none gets the
 engine defaults, byte-identical (`spec/loop.md`, "Repeated identical
 failures — quarantine, then abort").
 
-**The fields split by when they are read, and a self-editing chain feels the
-difference.** `quarantineScope` and `abortThreshold` are bound **once per
-run**: `flume loop`'s supervisor resolves the chain in its own process before
-the first child and nothing re-reads them between ticks, so a tick that
-commits a changed value is governed by the old one until the operator restarts
-the loop — with no indication the new declaration was ignored. That is the
-point rather than an oversight: the quarantine set and the consecutive-failure
-streak are run-scoped accounting that resets per run, and a mid-run change
-would rewrite the rules the accumulated counts were gathered under.
-`killGraceMs`, `maxParallel`, `tickTimeoutMs` and `partitionIgnore` are read
-**per tick**, straight off the tick's own resolved chain — the dispatcher
-reloads `chain.ts` fresh every tick and none of the four accumulates
-run-scoped state, so a mid-run change governs from the next tick onward
-(`spec/chain.md`, "Supervisor policy is a chain-overridable default").
-`killGraceMs` reads there because the timer belongs to the process that can
-see the tree it is timing: a `flume tick` — bare or loop-spawned — signals the
-agent it started, and the supervisor above it holds no grace of its own.
+**The fields split into two binding classes, and a self-editing chain feels
+the difference.** Each bullet above says which class its knob is in; what the
+class costs is the same either way.
+
+A field **bound once per run** is resolved by `flume loop`'s supervisor in its
+own process before the first child, and nothing re-reads it between ticks — so
+a tick that commits a changed value is governed by the old one until the
+operator restarts the loop, with no indication the new declaration was
+ignored. That is the point rather than an oversight: a once-per-run knob
+governs accounting that accumulates across the run, and a mid-run change would
+rewrite the rules the accumulated counts were gathered under.
+
+A field **read per tick** is taken straight off the tick's own resolved chain
+— the dispatcher reloads `chain.ts` fresh every tick and a per-tick knob
+accumulates no run-scoped state — so a mid-run change governs from the next
+tick onward (`spec/chain.md`, "Supervisor policy is a chain-overridable
+default").
 
 A chain that fails to load at supervisor start surfaces nothing new here: the
 defaults apply for that run and the first child tick still reports the load

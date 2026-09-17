@@ -1957,6 +1957,13 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
  * rather than coverage, and the walk is read by `walkOf`
  * (`tests/helpers/docSections.ts`), the one reader the page's walks share.
  *
+ * The second case holds the walk as the section's only naming of the set:
+ * prose re-listing the knobs beside the bullets is a copy no equality read
+ * reaches, so a seventh knob lands in the walk and strands it (*Derived state
+ * is computed, never restated beside its source*). The third reads what the
+ * listing used to carry — each knob's binding class — from the bullet that
+ * decides it, which is where the fact stops being a list.
+ *
  * The knob list is read off the declaration through the repo program, never
  * kept as a second list beside it (*Derived state is computed, never restated
  * beside its source*): a field added to the type without a paragraph reds
@@ -1978,7 +1985,7 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
    * moved out of `src/Phase.ts` would resolve to nothing here rather than
    * quietly to something else, and the vacuity pin below is what reds on it.
    */
-  const supervisorPolicyKnobs = (): string[] => {
+  const policyKnobs = (): string[] => {
     const module = join(REPO_ROOT, "src/Phase.ts");
     const program = ts.createProgram({
       rootNames: [module],
@@ -2007,16 +2014,26 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
     return policy.getProperties().map((knob) => knob.name);
   };
 
-  it("docs/CHAIN-AUTHORING.md's supervisor-policy section names every Chain.supervisorPolicy field the engine reads", () => {
-    const knobs = supervisorPolicyKnobs();
-
-    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
-    // non-vacuous"): a resolution that fell through to an empty property list
-    // would walk zero knobs and pass. One anchor rather than a second copy of
-    // the list — the count is what proves the set is the real one.
+  /**
+   * Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+   * non-vacuous"): a resolution that fell through to an empty property list
+   * would walk zero knobs and pass, and a listing filtered against it would
+   * be empty too. One anchor rather than a second copy of the list — the
+   * count is what proves the set is the real one.
+   */
+  const declaredKnobs = (): string[] => {
+    const knobs = policyKnobs();
     expect(knobs.length).toBeGreaterThan(1);
     expect(knobs).toContain("quarantineScope");
+    return knobs;
+  };
 
+  /**
+   * The section under judgment, anchored before anything is read off it: a
+   * heading match that captured the wrong span would report every knob
+   * missing, or an empty walk against an empty span.
+   */
+  const policySection = (): string => {
     const section = sectionOf(
       readFileSync(
         fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
@@ -2024,15 +2041,72 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
       ),
       /^## \d+\. Supervisor policy \(`supervisorPolicy`\)$/m,
     );
-    // The section is the one it claims to be before a set is read off it: a
-    // heading match that captured the wrong span would report every knob
-    // missing, or an empty walk against an empty span.
     expect(section).toContain("`Chain.supervisorPolicy`");
+    return section;
+  };
+
+  it("docs/CHAIN-AUTHORING.md's supervisor-policy section names every Chain.supervisorPolicy field the engine reads", () => {
+    const knobs = declaredKnobs();
+    const section = policySection();
 
     expect(
       [...walkOf(section, knobs)].sort(),
       "docs/CHAIN-AUTHORING.md's supervisor-policy section walks exactly the knobs `Chain.supervisorPolicy` declares",
     ).toEqual([...knobs].sort());
+  });
+
+  it("docs/CHAIN-AUTHORING.md's supervisor-policy section names the knob set in one place", () => {
+    const knobs = declaredKnobs();
+    const section = policySection();
+
+    // The walk is there before an absence is asserted beside it: over a
+    // section that walks nothing, every listing reads as the only one
+    // (.claude/rules/engineering.md, "A green verdict is proven non-vacuous").
+    expect(
+      walkOf(section, knobs).length,
+      "docs/CHAIN-AUTHORING.md's supervisor-policy section walks the knobs at all",
+    ).toBeGreaterThan(1);
+
+    // The declaration sample is a fenced block naming the knobs unbackticked,
+    // which no naming read reaches; what this catches is prose — a paragraph
+    // sorting the knobs into classes beside the bullets that already carry
+    // them, which is the copy a seventh knob strands.
+    expect(
+      restatementsOf(section, knobs),
+      "docs/CHAIN-AUTHORING.md's supervisor-policy section lists the knobs beside its walk",
+    ).toEqual([]);
+  });
+
+  it("docs/CHAIN-AUTHORING.md's supervisor-policy section says when each knob is bound", () => {
+    const knobs = declaredKnobs();
+    const section = policySection();
+
+    /**
+     * One bullet's body, its lead name through the line before the next
+     * bullet, with the page's own wrapping folded out — the phrases below are
+     * sentences, and where a sentence breaks across lines is the formatter's
+     * business, not the claim's.
+     */
+    const bulletFor = (knob: string): string => {
+      const lead = section.indexOf(`- **\`${knob}\`** —`);
+      expect(lead, `the section walks \`${knob}\``).toBeGreaterThanOrEqual(0);
+      const rest = section.slice(lead + 1);
+      const next = rest.search(/^- \*\*`/m);
+      return (next === -1 ? rest : rest.slice(0, next)).replace(/\s+/g, " ");
+    };
+
+    // Binding time is what the retired listing was for, and it is per-knob
+    // truth: a chain that edits itself mid-run is governed by the old value
+    // of a once-per-run knob with no indication the new one was ignored. A
+    // bullet silent on its class sends that author to the prose the listing
+    // no longer is. Every declared knob answers, so a seventh cannot ship
+    // mute.
+    for (const knob of knobs) {
+      expect(
+        bulletFor(knob),
+        `docs/CHAIN-AUTHORING.md's \`${knob}\` bullet states its binding time`,
+      ).toMatch(/\*\*once per run\*\*|\*\*per tick\*\*/);
+    }
   });
 });
 
