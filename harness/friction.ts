@@ -15,14 +15,14 @@
  * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
  *
  * **What counts as a note is the engine's rule, taken rather than restated.**
- * A direct child that is a file, dot-prefixed names skipped — the same
- * `isDotName` (`src/paths.ts`) the channel's count, its bare listing and its
- * teardown harvest each apply, so this listing and the `friction: N` line
- * `flume status` prints can never disagree about what the channel holds
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). This is
- * the record queue's rule's opposite number and deliberately not a copy of
- * it: a record is `*.md` because the package writes records, and a friction
- * note is whatever the engine and the consumer's loop wrote.
+ * `frictionNotes` (`src/friction.ts`) is the channel's one listing — the same
+ * call the count, the bare `friction` verb and the teardown harvest read — so
+ * this listing and the `friction: N` line `flume status` prints cannot
+ * disagree about what the channel holds (`.claude/rules/engineering.md`, *A
+ * fact the engine holds is reported, never rediscovered*). This is the record
+ * queue's rule's opposite number and deliberately not a copy of it: a record
+ * is `*.md` because the package writes records, and a friction note is
+ * whatever the engine and the consumer's loop wrote.
  *
  * **These answer host-native**, like `recordFiles` (`harness/records.ts`)
  * and for its reason: the caller hands the absolute state root and the declared
@@ -32,10 +32,9 @@
  * is ever a fence glob or a pathspec.
  */
 
-import { readdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 
-import { isDotName, namespacedJoin } from "../src/paths.js";
+import { frictionNotes } from "../src/friction.js";
 
 /**
  * Every note waiting in the declared friction channel under `stateRoot`,
@@ -47,16 +46,12 @@ import { isDotName, namespacedJoin } from "../src/paths.js";
  *
  * A missing directory contributes nothing, exactly as an absent record queue
  * does — the engine creates the channel lazily, so "never written to" and
- * "empty" are one fact. Every **other** listing failure throws: a caller here
- * is about to read these bytes, and a channel that silently lost a note is a
- * finding that never reaches the slice draining it
- * (`.claude/rules/engineering.md`, *Loud or nothing*).
- *
- * The `readdir` goes through `namespacedJoin` because the channel sits under
- * a chain-declared state root and a harvested note's name carries an entry's
- * tag and a stamp (`.claude/rules/platform-facts.md`, *Windows MAX_PATH
- * (~260 chars) breaks fs calls with no long component*). The names handed
- * back stay plain: they are what a prompt renders and a tick opens.
+ * "empty" are one fact. Every **other** listing failure throws, and this
+ * caller lets it: a caller here is about to read these bytes, and a channel
+ * that silently lost a note is a finding that never reaches the slice
+ * draining it (`.claude/rules/engineering.md`, *Loud or nothing*). Both
+ * readings, and the win32 fold the channel's nesting needs, are
+ * `frictionNotes`'s; all this adds is the directory the names sit under.
  *
  * One listing, two readers — {@link frictionPending} below asks whether it
  * is empty, and the inbox window renders these files' bytes. A second walk
@@ -70,18 +65,7 @@ export function frictionFiles(
 ): string[] {
   if (friction === undefined) return [];
   const dir = join(stateRoot, friction);
-  let entries: Dirent[];
-  try {
-    entries = readdirSync(namespacedJoin(dir), { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  return entries
-    .filter((entry) => entry.isFile() && !isDotName(entry.name))
-    .map((entry) => entry.name)
-    .sort()
-    .map((name) => join(dir, name));
+  return frictionNotes(dir).map((name) => join(dir, name));
 }
 
 /**

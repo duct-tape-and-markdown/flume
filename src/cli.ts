@@ -14,7 +14,6 @@
 import { resolve, join, basename, dirname, toNamespacedPath } from "node:path";
 import {
   mkdirSync,
-  readdirSync,
   readFileSync,
   realpathSync,
   statSync,
@@ -22,7 +21,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { Dirent, Stats } from "node:fs";
+import type { Stats } from "node:fs";
 
 import { Baton } from "./Baton.js";
 import {
@@ -63,7 +62,7 @@ import {
   totalAgentUsageByPhase,
   writeTickVerdict,
 } from "./tickVerdict.js";
-import { frictionCountLine } from "./friction.js";
+import { frictionCountLine, frictionNotes } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
@@ -731,8 +730,8 @@ async function main(): Promise<number> {
       const isDirectChild = dirname(candidate) === resolve(frictionDir);
       // And a dot-prefixed note is no note (spec/chain.md, "`Chain.friction`
       // — the declared friction channel"), so naming one reads as absent —
-      // the same `isDotName` (`src/paths.ts`) the listing below and
-      // `countFrictionFiles` (`src/friction.ts`) apply, over the resolved
+      // the same `isDotName` (`src/paths.ts`) the channel's one listing
+      // `frictionNotes` (`src/friction.ts`) applies, over the resolved
       // basename so `./.gitkeep` cannot spell its way past it.
       const isNote = isDirectChild && !isDotName(basename(candidate));
       let bytes: Buffer | undefined;
@@ -759,30 +758,23 @@ async function main(): Promise<number> {
       return 0;
     }
 
-    let entries: Dirent[];
+    // What the channel holds is the engine's one listing, `frictionNotes`
+    // (`src/friction.ts`) — not a walk of this verb's own, so this list and
+    // the `friction: N` line `flume status` prints can never disagree.
+    // A declared-but-absent dir is that listing's empty answer and lists
+    // empty here (spec/cli.md): the directory is created lazily by whichever
+    // engine write needs it first, so its absence is a legitimate, silent,
+    // zero-note state. Every other listing failure throws, and this verb
+    // refuses on it.
+    let files: string[];
     try {
-      entries = readdirSync(namespacedJoin(frictionDir), { withFileTypes: true });
+      files = frictionNotes(frictionDir);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-        console.error(
-          `[flume] friction: '${chain.friction}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return EX_IOERR;
-      }
-      // Declared-but-absent dir lists empty (spec/cli.md): the directory is
-      // created lazily by whichever engine write needs it first, so its
-      // absence here is a legitimate, silent, zero-note state.
-      return 0;
+      console.error(
+        `[flume] friction: '${chain.friction}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_IOERR;
     }
-    // Dot-prefixed names are skipped here for the same reason the count and
-    // the read verb skip them: a placeholder git made the consumer create is
-    // no work (spec/chain.md, "`Chain.friction` — the declared friction
-    // channel"). One test, `isDotName` (`src/paths.ts`), so the listing and
-    // the count can never disagree about what the channel holds.
-    const files = entries
-      .filter((e) => e.isFile() && !isDotName(e.name))
-      .map((e) => e.name)
-      .sort();
     // Every row is stat'd before any is printed: a half-list on stdout
     // followed by a refusal on stderr reads, to anything redirecting the
     // list, as a complete channel. A note readdir enumerated but stat cannot

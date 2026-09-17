@@ -1,15 +1,16 @@
 /**
  * friction — the friction channel's own home: the declaration check that
- * admits a `Chain.friction` value, the file count behind every status surface
- * and the line they print from it, and the teardown harvest that drains a
- * worktree's mirror into the primary dir.
+ * admits a `Chain.friction` value, the one listing of what the channel holds,
+ * the file count behind every status surface and the line they print from it,
+ * and the teardown harvest that drains a worktree's mirror into the primary
+ * dir.
  *
  * Split out of `src/Dispatcher.ts` (`.claude/rules/posture-sweep.md`, "A
  * violation counts only when verified on disk this tick"): one declared
  * directory, one reader, one writer — a job of its own, depending on
  * nothing the dispatcher holds beyond a state root, a state-root-relative
- * path and a logger. The dependency runs one way: the dispatcher and the
- * CLI call in here, nothing here calls back.
+ * path and a logger. The dependency runs one way: the dispatcher, the CLI
+ * and the harness package call in here, nothing here calls back.
  *
  * spec/chain.md "The friction channel" and spec/worktrees.md "Teardown
  * harvest — the delivery guarantee" are the contracts these serve.
@@ -19,7 +20,7 @@
  */
 
 import { readdirSync } from "node:fs";
-import { copyFile, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { copyFile, mkdir, rename, rm } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { join } from "node:path";
 
@@ -57,34 +58,65 @@ export function validateFrictionDeclaration(chain: Chain): void {
 }
 
 /**
- * Files (not subdirs) directly under `dir`, dot-prefixed names skipped — a
- * `.gitkeep` git forced the consumer to create is not a note (spec/chain.md,
- * "`Chain.friction` — the declared friction channel"), and the skip is
- * `isDotName` (`src/paths.ts`), the same test the `friction` verb's listing
- * and read-by-name apply. `0` when `dir` is absent
- * (`ENOENT` — nothing filed is nothing to count, the same reading
- * `readPendingLoose` (`src/pendingLedger.ts`) gives an absent `pending.json`);
- * `null` when `dir` exists but `readdir` fails for any other reason — that
- * failure is a real unresolved input, not a legitimate zero, so it must not
- * read the same as an empty dir (`.claude/rules/engineering.md`, "Loud or
+ * What the friction channel at `dir` holds: its direct-child files,
+ * dot-prefixed names skipped, as plain names sorted by name. This is the
+ * engine's **one** answer to that question — the bare `friction` verb
+ * (`src/cli.ts`), {@link countFrictionFiles} below, {@link harvestFriction}'s
+ * mirror read, and the harness package's `frictionFiles`
+ * (`harness/friction.ts`) all read it rather than walking the dir again
+ * (`.claude/rules/engineering.md`, "A fact the engine holds is reported,
+ * never rediscovered"). A second walk is a surface that can disagree with
+ * the `friction: N` line about what is waiting.
+ *
+ * A `.gitkeep` git forced the consumer to create is not a note
+ * (spec/chain.md, "`Chain.friction` — the declared friction channel"), and
+ * the skip is `isDotName` (`src/paths.ts`).
+ *
+ * An absent dir holds nothing — `ENOENT` is the empty list, the same reading
+ * `readPendingLoose` (`src/pendingLedger.ts`) gives an absent `pending.json`,
+ * because the channel is created lazily by whichever write needs it first.
+ * Every other listing failure **throws**: a dir that is there and cannot be
+ * listed is a real unresolved input, and must not read as an empty channel
+ * (`.claude/rules/engineering.md`, "Loud or nothing"). Each caller states
+ * what it does with that throw — a `null` count, an `EX_IOERR`, a swallowed
+ * harvest — and none of them can mistake it for zero.
+ *
+ * win32 MAX_PATH (`.claude/rules/platform-facts.md`): the fold lives here,
+ * at the one `readdir`, so callers hand a plain path and get plain names
+ * back — `dir` routinely joins a state root or a worktree mirror onto
+ * `chain.friction`, the same construction `writeRevertNote`
+ * (`src/tickAttempt.ts`) guards.
+ */
+export function frictionNotes(dir: string): string[] {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(namespacedJoin(dir), { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  return entries
+    .filter((e) => e.isFile() && !isDotName(e.name))
+    .map((e) => e.name)
+    .sort();
+}
+
+/**
+ * How many notes the channel at `dir` holds, over {@link frictionNotes}
+ * above. `0` when `dir` is absent — nothing filed is nothing to count;
+ * `null` when the listing threw, which is the dir being there and unreadable.
+ * That failure is a real unresolved input, not a legitimate zero, so it must
+ * not read the same as an empty dir (`.claude/rules/engineering.md`, "Loud or
  * nothing").
  *
- * Exported so the `friction` verb (`src/cli.ts`) shares this
- * ENOENT-vs-other split with {@link frictionCountLine} below instead of
- * re-deriving it (`.claude/rules/engineering.md`, "the fix lands at the
- * mechanism").
+ * Exported so a caller wanting the number alone shares this ENOENT-vs-other
+ * split with {@link frictionCountLine} below instead of re-deriving it
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
  */
 export function countFrictionFiles(dir: string): number | null {
   try {
-    // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dir joins a state
-    // root onto chain.friction, the same construction `harvestFriction`
-    // below and `writeRevertNote` (`src/tickAttempt.ts`) guard.
-    // `namespacedJoin` (`src/paths.ts`) is the shared idiom.
-    return readdirSync(namespacedJoin(dir), { withFileTypes: true }).filter(
-      (e) => e.isFile() && !isDotName(e.name),
-    ).length;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    return frictionNotes(dir).length;
+  } catch {
     return null;
   }
 }
@@ -129,13 +161,7 @@ export async function frictionCountLine(
   chain: Chain,
 ): Promise<string | undefined> {
   if (chain.friction === undefined) return undefined;
-  // win32 MAX_PATH (`.claude/rules/platform-facts.md`): same join(stateRoot,
-  // chain.friction) construction `writeRevertNote` (`src/tickAttempt.ts`)
-  // and `harvestFriction` below guard — `namespacedJoin` (`src/paths.ts`)
-  // is the shared idiom.
-  return renderFrictionCount(
-    countFrictionFiles(namespacedJoin(stateRoot, chain.friction)),
-  );
+  return renderFrictionCount(countFrictionFiles(join(stateRoot, chain.friction)));
 }
 
 /**
@@ -223,32 +249,22 @@ export async function harvestFriction(
   if (ctx.stateRootRel === undefined) return;
 
   const mirrorDir = join(worktreePath, ctx.stateRootRel, chain.friction);
-  let entries: Dirent[];
+  // What counts as a note in the mirror is what counts in the primary dir:
+  // {@link frictionNotes} above, so a placeholder relayed here could never
+  // land under a stamped name — the one spelling the count and the read verb
+  // skip on, turned into one they cannot see. An absent dir (no friction
+  // written this tick) is that listing's empty answer and silent here.
+  let candidates: string[];
   try {
-    // win32 MAX_PATH (`.claude/rules/platform-facts.md`): mirrorDir nests
-    // a worktree path under chain.friction. `namespacedJoin`
-    // (`src/paths.ts`) is the shared idiom — same as `writeRevertNote`
-    // (`src/tickAttempt.ts`).
-    entries = await readdir(namespacedJoin(mirrorDir), {
-      withFileTypes: true,
-    });
+    candidates = frictionNotes(mirrorDir);
   } catch (err) {
-    // Absent dir (no friction written this tick) is expected and silent.
-    // Anything else — unreadable dir, e.g. permissions — is the
-    // log-and-continue failure class, not a silent no-op.
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      ctx.log.warn(
-        `[flume] friction harvest: could not read ${mirrorDir}: ${(err as Error).message}`,
-      );
-    }
+    // An unreadable dir, e.g. permissions — the log-and-continue failure
+    // class, not a silent no-op.
+    ctx.log.warn(
+      `[flume] friction harvest: could not read ${mirrorDir}: ${(err as Error).message}`,
+    );
     return;
   }
-  // A dotfile is not a note (spec/chain.md, "`Chain.friction` — the declared
-  // friction channel"): `isDotName` (`src/paths.ts`) is the same name test
-  // the count and the read verb take, and a placeholder relayed here would
-  // land in the primary dir under a stamped name — the one spelling those
-  // surfaces skip on, turned into one they cannot see.
-  const candidates = entries.filter((e) => e.isFile() && !isDotName(e.name));
   if (candidates.length === 0) return;
 
   // Tracked-at-HEAD bound: a file already tracked at the worktree's own
@@ -256,9 +272,9 @@ export async function harvestFriction(
   // agent committed it — is delivered content already, and is left in
   // place rather than re-harvested under a stamped name. Existence only;
   // content is irrelevant to the check.
-  const files: Dirent[] = [];
-  for (const file of candidates) {
-    const relPath = join(ctx.stateRootRel, chain.friction, file.name);
+  const files: string[] = [];
+  for (const name of candidates) {
+    const relPath = join(ctx.stateRootRel, chain.friction, name);
     let atHead: string | null;
     try {
       atHead = await git.readFileAtRef(worktreePath, "HEAD", relPath);
@@ -272,7 +288,7 @@ export async function harvestFriction(
       );
       continue;
     }
-    if (atHead === null) files.push(file);
+    if (atHead === null) files.push(name);
   }
   if (files.length === 0) return;
 
@@ -291,9 +307,9 @@ export async function harvestFriction(
   // file.name, and a shared stamp still separates this call's files from
   // whatever a prior or later retry of the same tag harvests.
   const stamp = fsStamp();
-  for (const file of files) {
-    const src = join(mirrorDir, file.name);
-    const dest = join(primaryDir, harvestedName(tag, stamp, file.name));
+  for (const name of files) {
+    const src = join(mirrorDir, name);
+    const dest = join(primaryDir, harvestedName(tag, stamp, name));
     try {
       await rename(namespacedJoin(src), namespacedJoin(dest));
     } catch (err) {

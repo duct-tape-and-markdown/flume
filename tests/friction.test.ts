@@ -1,7 +1,7 @@
 /**
- * The friction module's own surface: the file count behind every status
- * surface and the line printed from it, and the teardown harvest that fills
- * the dir it counts.
+ * The friction module's own surface: the channel's one listing, the file
+ * count behind every status surface and the line printed from it, and the
+ * teardown harvest that fills the dir it counts.
  *
  * The round-trip below is an agreement gate (`.claude/rules/engineering.md`,
  * *A seam gate reads what the real writer wrote*): the real
@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   countFrictionFiles,
   frictionCountLine,
+  frictionNotes,
   harvestFriction,
 } from "../src/friction.ts";
 import { parsePending, TAG_MAX_LENGTH } from "../src/PendingSchema.ts";
@@ -400,14 +401,54 @@ describe("friction harvest — a dot-prefixed mirror name is not a note", () => 
 });
 
 /**
+ * The channel's one listing. `frictionNotes` is what the bare `friction`
+ * verb prints, what `countFrictionFiles` counts, what the teardown harvest
+ * relays and what `frictionFiles` (`harness/friction.ts`) renders, so the
+ * two halves of its contract are pinned here once rather than four times:
+ * what counts as a note (a direct-child file, `isDotName` skipped, sorted),
+ * and the ENOENT-vs-other split (absent is the empty channel, unreadable
+ * throws rather than reading as empty — `.claude/rules/engineering.md`,
+ * "Loud or nothing").
+ */
+describe("frictionNotes — the channel's one listing", () => {
+  it("names the direct-child files sorted, skipping dot names and subdirs, and throws rather than reading an unlistable dir as empty", async () => {
+    const base = await mkTempDir("flume-friction-notes-");
+    const dir = join(base, "friction");
+    try {
+      // Absent dir is the empty channel, never a throw: the engine creates
+      // it lazily, so "never written to" and "empty" are one fact.
+      expect(frictionNotes(dir)).toEqual([]);
+
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "b.md"), "y\n");
+      await writeFile(join(dir, "a.md"), "x\n");
+      await writeFile(join(dir, "c.txt"), "z\n");
+      // A dot-prefixed name is not a note, and a subdir is not a file.
+      await writeFile(join(dir, ".gitkeep"), "");
+      await mkdir(join(dir, "nested"), { recursive: true });
+      await writeFile(join(dir, "nested", "deep.md"), "no\n");
+
+      // Non-vacuity: the channel lists before it is denied, and the order is
+      // the sort's, not the one the writes happened in.
+      expect(frictionNotes(dir)).toEqual(["a.md", "b.md", "c.txt"]);
+
+      // Deny structurally (`tests/helpers/denial.ts`): readdir now fails
+      // ENOTDIR — the path is there but is not a dir to read — not ENOENT.
+      denyDirectory(dir);
+      expect(() => frictionNotes(dir)).toThrow();
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
  * `countFrictionFiles` gives a failed read the same three-way reading
  * `frictionCountLine` renders above: `0` for an absent dir, a real count for
  * a readable one, and `null` — never a zero — for a dir that is there and
  * cannot be listed (`.claude/rules/engineering.md`, "Loud or nothing"). What
- * counts as a note is `isDotName` (`src/paths.ts`), the one detection the
- * `friction` verb's listing and read-by-name apply too, so the skip is pinned
- * here rather than through the rendered line, which cannot tell a skipped
- * name from an absent one.
+ * counts as a note is `frictionNotes`'s, pinned above; the count adds only
+ * the reading it gives that listing's throw.
  */
 describe("countFrictionFiles — the ENOENT/other split", () => {
   it("counts an absent dir as 0 and an unlistable one as null", async () => {
