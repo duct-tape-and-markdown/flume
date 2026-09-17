@@ -1,109 +1,8 @@
 [
   {
-    "tag": "THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/job.ts",
-          "description": "the four verbs, `validateJobName`, `JobUsageError` and the porcelain wrapper go; the shared primitives stay for now"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "the `job` command arm, the `job run` rewrite and the state-root existence guard"
-        },
-        {
-          "path": "src/cliHelp.ts",
-          "description": "the verb roster and `HELP_JOB`"
-        },
-        {
-          "path": "src/paths.ts",
-          "description": "`jobsRoot`, `jobDir`, `jobDirRel` and the job cites"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "`Chain.seedDir`"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "the job verb sections"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the seedDir and job-verb passages"
-        },
-        {
-          "path": "README.md",
-          "description": "the job verbs in the surface listing"
-        },
-        {
-          "path": "tests/job.test.ts",
-          "description": "the verb suites go; the ignore-set and loose-read pins stay"
-        },
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "the `flume job run` exit-code walk and the help roster"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the job-command dispatch cases"
-        },
-        {
-          "path": "tests/paths.test.ts",
-          "description": "the job accessor cases"
-        },
-        {
-          "path": "tests/chain.test.ts",
-          "description": "the seedDir absence"
-        },
-        {
-          "path": "src/friction.ts",
-          "description": "the count line's job-status cite"
-        },
-        {
-          "path": "src/loopSupervisor.ts",
-          "description": "the repo-resident-never-a-job-dir cite"
-        },
-        {
-          "path": "src/builtinGates.ts",
-          "description": "the per-job declaration example"
-        },
-        {
-          "path": "src/git.ts",
-          "description": "the job-dir pathspec examples and `pinLongPaths`'s job-dir half"
-        }
-      ],
-      "retire": [
-        "src/cliJobVerbs.ts",
-        "tests/cliJobVerbs.test.ts",
-        "tests/job.integration.test.ts"
-      ]
-    },
-    "summary": "the engine still ships `job new|run|rm|status` and the `Chain.seedDir` they seed from — a second state root under one checkout the spec no longer has",
-    "per": {
-      "path": "spec/jobs.md",
-      "section": "The checkout is the unit of isolation"
-    },
-    "acceptance": "`flume job` is an unknown command, `Chain.seedDir` does not exist, and no help page, doc section or paths accessor names a job verb.",
-    "tests": [
-      "flume job is an unknown command and exits 2",
-      "Chain no longer carries seedDir (type-level)",
-      "the top-level help names no job verb"
-    ],
-    "pins": [],
-    "notes": "`src/job.ts` keeps `RUNTIME_IGNORES`, `ensureRuntimeIgnores`, `readPendingLoose`, `countFrictionFiles` and `liveLoopPid`; THE-RUNTIME-IGNORE-SET-LEAVES-SRC-JOB-TS re-homes them after. `docs/CLI.md` § `flume job run` is walked by `tests/cliHelp.test.ts`, so both move together. `pinLongPaths` keeps two callers without `jobNew` — both worktree provisioning sites pin — so only the job-dir half of its doc sentence (`src/git.ts`) dies here."
-  },
-  {
     "tag": "THERE-IS-NO-JOB-SELECTOR",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -256,7 +155,6 @@
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "THE-JOB-VERBS-AND-CHAIN-SEEDDIR-ARE-CUT",
         "THERE-IS-NO-JOB-SELECTOR"
       ]
     },
@@ -280,48 +178,6 @@
     "tests": [],
     "pins": [],
     "notes": "One entry rather than a section per cut entry: the page is a single append-only file, and three entries contending on it is the fanout-width cost the changelog gate was removed for (`spec/cli.md`, *Versioning policy*). The before/after is `flume job run <name>` → a `git worktree add` checkout with its own `.flume`."
-  },
-  {
-    "tag": "THE-DECLARATION-CARRIES-SETUP-SERIALIZE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/declaration.ts",
-          "description": "`serialize` on the setup object"
-        },
-        {
-          "path": "harness/chain.ts",
-          "description": "the provisioning reduction serializes the restore across a wave"
-        },
-        {
-          "path": "tests/harnessDeclaration.test.ts",
-          "description": "the field"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "serialized and concurrent restores across a wave"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "a restore whose shared cache is not safe to warm concurrently has no way to say so; every fanout wave warms every worktree at once",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "What a consumer declares"
-    },
-    "acceptance": "`setup.serialize: true` runs the declared restore one worktree at a time across a fanout wave while the wave's other provisioning stays parallel; absent, restores run as they do now.",
-    "tests": [
-      "setup.serialize runs a fanout wave's restores one worktree at a time",
-      "setup.serialize leaves the wave's other provisioning parallel",
-      "an undeclared serialize runs restores concurrently"
-    ],
-    "pins": [],
-    "notes": "The reduction is `provisioning(api, declaration)` in harness/chain.ts, built once per chain load — so the serialization is that function's own queue, not a second mechanism beside it. The `setup` row of the declaration table already states the behavior."
   },
   {
     "tag": "THE-WIN32-LOADER-FACT-IS-CITED-NOT-RESTATED",
@@ -427,38 +283,5 @@
     "tests": [],
     "pins": [],
     "notes": "Target shape: `frictionNotes(dir)` in src/friction.ts — the sorted direct-child files `isDotName` does not skip. Blocked because `countFrictionFiles` sits in src/job.ts today and src/friction.ts already imports it, so a call the other way closes the job.ts -> chainLoad.ts -> friction.ts cycle; the ignore-set entry moves it into src/friction.ts first."
-  },
-  {
-    "tag": "THE-LONGPATHS-PIN-PRECEDES-THE-WORKTREE-ADD",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/worktrees.test.ts",
-          "description": "the call-order pin over both provisioning sites"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the win32 case stops claiming an order its body never asserts"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "both provisioning sites pin `core.longpaths` before `git worktree add`, but the one case titled for that order asserts the end state alone, on win32 only",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A green verdict is proven non-vacuous"
-    },
-    "acceptance": "a default-lane case asserts the pin runs before the add at both provisioning sites, and no title claims an order its body does not assert.",
-    "tests": [],
-    "pins": [
-      "createWorktree pins core.longpaths before it adds the worktree",
-      "checkoutAt pins core.longpaths before it adds its detached worktree"
-    ],
-    "notes": "The property holds today (`src/worktrees.ts`, both sites), so both lines are `pins[]` — a `tests[]` line green at the base reverts the commit. Decidable off win32: `pinLongPaths` no-ops there but is still called, so the order is a call-sequence spy (`vi.mock` with `importOriginal`, the `tests/git.test.ts` idiom), never a config read. The over-claiming title is the win32-only `Dispatcher fanout — createWorktree pins core.longpaths` case."
   }
 ]
