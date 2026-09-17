@@ -21,7 +21,7 @@ Flume ticks run autonomously via `claude -p`. Each iteration is a fresh process.
 | Engine contract, by topic                       | `spec/*.md`                 |
 | Longer-range design intent                      | `docs/INTENT.md`            |
 
-When a build tick learns something the next plan tick should know about (debt observed, surprising pattern, blocker), it writes a note at `.flume/plan/notes/<TAG>.md` — one file per entry, so parallel ticks never collide (`.flume/PROTOCOL.md`, *Records: one file each*). `open-questions.md` is plan's alone.
+When a build tick learns something the next plan tick should know about (debt observed, surprising pattern, blocker), it writes a note at `.flume/plan/notes/<TAG>.md` — one file per entry, so parallel ticks never collide (`.flume/PROTOCOL.md`, *Records: one file each*). `questions/` is one file per question, drained by plan; any session may add one.
 
 ## Don't
 

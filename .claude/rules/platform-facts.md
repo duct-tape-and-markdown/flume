@@ -135,6 +135,17 @@ match what is on disk either, so the first write is a large unrelated diff.
 Format by hand. Adopting a formatter is a posture decision with its own ask,
 not a side effect of this footgun.
 
+## A reaped pid returns to the host's allocation pool
+
+Never plant a "dead" pid harvested from a child that just exited: between the
+harvest and the read under test the number can name an unrelated live process,
+and the liveness check under test refuses with nothing wrong in the code. Mint
+one above the host's range and probe it with signal 0 at the point of use — one
+helper is the door (`tests/helpers/deadPid.ts`), and its refusal is the whole
+defence, since no decidable scan separates a dead-holder plant from a
+legitimate live-child pid read. win32 recycles soonest, which is why that
+lane reds first.
+
 ## Node caps a captured child stream at 1 MiB, and reports the overrun as a spawn failure
 
 `execFile`, `exec`, and their sync forms keep at most `maxBuffer` bytes of a

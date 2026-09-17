@@ -100,6 +100,11 @@ export const declaration: DeclarationInput = {
   // how win32 support stays real (spec/cli.md, *win32 is a supported host*);
   // the POSIX job carries the integration lane and the publish-acceptance
   // steps, which no tick runs and nothing else reads.
+  // The friction channel, so the reference consumer runs the one findings
+  // source the package reads that fixtures alone had exercised: revert notes
+  // and the teardown harvest land here, and the inbox slice drains them
+  // (spec/harness.md, *Declared findings sources*).
+  friction: "friction",
   ci: [
     {
       name: "windows",

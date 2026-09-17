@@ -10,7 +10,7 @@
 - Propose 2-3 alternatives with tradeoffs. Don't pick on the user's behalf.
 - Be especially loud about API surfaces, error states, naming choices, audience considerations, and edge cases.
 - Treat liberty-taking as a failure mode. If the spec doesn't say, ask.
-- This applies in interactive work AND in autonomous Flume ticks — when a build tick hits a judgment call mid-run, write it into the entry's note (`.flume/plan/notes/<TAG>.md`) instead of deciding silently; plan routes it to `open-questions.md`.
+- This applies in interactive work AND in autonomous Flume ticks — when a build tick hits a judgment call mid-run, write it into the entry's note (`.flume/plan/notes/<TAG>.md`) instead of deciding silently; plan routes it to `questions/`.
 
 ## Inform before parking
 
@@ -29,7 +29,7 @@ If the research yields a clear answer — one option is unambiguously better, or
 A complicated solution is likely chasing a tail — patching downstream of the real defect, or encoding a special case (see engine-boundary.md).
 
 - Prefer the simple solution. When one exists, ship it without ceremony.
-- When every solution on the table is complicated, that is a finding, not an invitation to build the least-bad one. The complexity usually means an upstream decision needs revisiting. Raise a flag — park it in `open-questions.md` (autonomous ticks) or name it out loud (interactive) — with the upstream suspect identified.
+- When every solution on the table is complicated, that is a finding, not an invitation to build the least-bad one. The complexity usually means an upstream decision needs revisiting. Raise a flag — park it in `questions/` (autonomous ticks) or name it out loud (interactive) — with the upstream suspect identified.
 - The bar scales with the layer: engine internals may be intricate, but a spec section, a chain config, or a fix that takes many moving parts to explain is suspect on its face.
 
 **Why:** solution complexity is the cheapest early detector of a wrong turn upstream; building through it converts a signal into debt.
@@ -38,7 +38,7 @@ A complicated solution is likely chasing a tail — patching downstream of the r
 
 Different artifacts ask for different registers. Wrong register makes the artifact harder to use.
 
-**Dialogic — for the human reading.** This-conversation responses, Open Questions in `.flume/plan/open-questions.md`, PR descriptions, commit message bodies. Understandable, reasonably scoped, frame options + tradeoffs, ask. The human is the audience; clarity for them is the bar.
+**Dialogic — for the human reading.** This-conversation responses, a question file under `.flume/plan/questions/`, PR descriptions, commit message bodies. Understandable, reasonably scoped, frame options + tradeoffs, ask. The human is the audience; clarity for them is the bar.
 
 **Telegraphic — for the agent reading itself across ticks.** Pending entries in `.flume/plan/pending.json`, state.md lines, exit log lines. Concise, clear, actionable. Dense with refs the next tick can follow. No ceremony. **You are writing for yourself — write what next-tick-you needs to act, nothing more.** These surfaces are re-read every tick: done items leave the file — git is the log; the file carries only present state.
 
