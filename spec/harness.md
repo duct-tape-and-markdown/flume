@@ -199,8 +199,11 @@ exit at the current HEAD — the same dispatch against an unchanged world is
 the same outcome — read from the mode and the anchor the engine reports on
 the record, never from a heuristic of the package's own. If the pickable set
 cannot carry a per-entry refusal a chain declares, that is a missing engine
-capability, and the harness is its first declarer. A consumer overrides the
-handoff by declaration, not by copying it.
+capability, and the harness is its first declarer. That refusal is the
+package's floor: a consumer's declared `handoff` replaces the ladder above it
+and runs beneath the refusal, because re-dispatching an unchanged world is the
+same outcome whoever orders the phases. A consumer overrides the ladder by
+declaration, not by copying it.
 
 
 ### Committed-path discipline
@@ -253,7 +256,7 @@ declaration already resolves.
 | `agents` | Model per phase, extra agent arguments, and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `shell` | The shell every command line the declaration carries runs under — a shell gate's, a script gate's, `setup.restore` — `sh` by default. Chain load refuses a shell the host does not resolve, naming the site that would have run it, since a win32 host resolves `sh` from one launch shell and not another; a bad shell surfaces at load, never hours in as a worktree that would not provision. |
-| `setup` | Directories to install and a restore command, run under the declared `shell` in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. |
+| `setup` | Directories to install and a restore command, run under the declared `shell` in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. `serialize` is a property of the declared restore: a declaration naming no restore has nothing to serialize, parses, and holds nothing — the engine's own install is never what it covers. |
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |
 | `slots` | Prompt slots the package renders into its prompts: an autonomy dial, domain context. Text only; a slot cannot add a directive the package's discipline already states. |
 | `capabilities` | The capabilities this repository asserts, passed through whole to `Chain.capabilities`; an entry that requires one the declaration does not assert is unpickable, and `flume status` names it. Optional; absent asserts none. |

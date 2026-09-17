@@ -58,7 +58,9 @@ Every check lives at the most deterministic layer that can express it — a
   backticked identifier or a backticked repo-relative path in `src/`,
   `harness/`, or `tests/`, where the program reaches; a `*.md` page name,
   with or without backticks, in any tree the sweep domain names, since a
-  filename resolves on disk and is never a sentence — is not prose: a pin
+  filename resolves on disk and is never a sentence, and the `#fragment` a
+  markdown link carries into such a page, which resolves against that page's
+  own headings the way a `per` cite already does — is not prose: a pin
   may resolve it against the declarations those trees hold and the working
   tree — the token, never its meaning — so a deleted symbol or a renamed
   page cannot leave its citations standing.

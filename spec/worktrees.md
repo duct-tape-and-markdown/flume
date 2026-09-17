@@ -360,9 +360,16 @@ and branch indefinitely. The sweep closes that gap (`spec/loop.md`, *Crash equal
 stop*) at the only moment it is safe to.
 
 - **When:** `flume loop` sweeps once at start, after the tip
-  claim is acquired and before the first tick. Holding the claim is the guard: one
-  flume writer per ref (`spec/loop.md`) means no live sibling — loop or bare tick,
-  both claim-holders now — owns anything under this state root's base. A bare
+  claim is acquired and before the first tick. Holding the claim guards this
+  checkout's own worktrees: one flume writer per ref (`spec/loop.md`) means no
+  live sibling — loop or bare tick, both claim-holders now — of *this* state
+  root owns anything it provisioned. It says nothing about a second checkout
+  of the same repository sharing the base (*Placement*), whose tip differs and
+  whose claim is therefore grantable too, so the sweep's evidence is minted
+  rather than inferred: provisioning stamps every worktree with the state root
+  that created it, the sweep removes only directories stamped by its own root,
+  and a registered directory carrying no stamp is left where it is and named
+  once — never removed on the strength of a registry entry alone. A bare
   `flume tick` does not sweep; its per-wave prune and stale-slug removal are
   unchanged.
 - **Scope is the engine's own residue, exactly.** Every directory under the worktree
