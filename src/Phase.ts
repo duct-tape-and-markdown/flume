@@ -708,8 +708,8 @@ export interface Chain {
   pendingPath?: string;
   /**
    * How this chain computes the directory its worktrees are placed under
-   * (spec/worktrees.md, *Placement — the worktree base and the job
-   * namespace*) — a function of the roots the runtime resolved, evaluated
+   * (spec/worktrees.md, *Placement — the worktree base*) — a function of
+   * the roots the runtime resolved, evaluated
    * once per chain load, never a stored path.
    *
    * A function rather than a string because placement is machine-local —

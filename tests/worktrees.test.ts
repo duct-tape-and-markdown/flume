@@ -6,9 +6,9 @@
  * *A seam gate reads what the real writer wrote*): the real `createWorktree`
  * provisions, and the real `teardownWorktreeInstance` is handed exactly what
  * it returned. The two build the same path and branch from opposite ends —
- * one composes `<base>/<namespace>/<dirName>` and `flume/<namespace>/<slug>`,
- * the other removes whatever it is given — so a one-sided change to the
- * namespacing or the directory bound shows up here as residue left on disk,
+ * one composes `<base>/<dirName>` and `flume/<slug>`, the other removes
+ * whatever it is given — so a one-sided change to the naming or the
+ * directory bound shows up here as residue left on disk,
  * rather than as a wave that quietly accumulates worktrees and `flume/**`
  * branches until the next startup sweep.
  *
@@ -130,7 +130,6 @@ describe("worktrees — one lifecycle over one directory tree", () => {
       repoRoot: fx.repo,
       flumeDir,
       stateRootRel: ".flume",
-      namespace: "job-a",
       log: silent,
     };
     const chain: Chain = { phases: [], humanOnly: [], friction: "friction" };
@@ -142,10 +141,8 @@ describe("worktrees — one lifecycle over one directory tree", () => {
 
     // Both components, composed independently of the writer: the branch
     // keeps the untruncated slug, the directory takes the bound.
-    expect(wt.branch).toBe(`flume/job-a/${slugify(tag)}`);
-    expect(wt.path).toBe(
-      join(worktreesBase(flumeDir), "job-a", worktreeDirName(tag)),
-    );
+    expect(wt.branch).toBe(`flume/${slugify(tag)}`);
+    expect(wt.path).toBe(join(worktreesBase(flumeDir), worktreeDirName(tag)));
     expect(worktreeDirName(tag)).not.toBe(slugify(tag));
 
     // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is
@@ -190,7 +187,7 @@ describe("worktrees — one lifecycle over one directory tree", () => {
 
 /**
  * Single-resolution pin (WORKTREE-BASE-RESOLVED-ONCE, per spec/worktrees.md
- * "Placement — the worktree base and the job namespace": *The base is
+ * "Placement — the worktree base": *The base is
  * resolved once*). `createWorktree` and `sweepStaleWorktrees` each used to
  * spell `FLUME_WORKTREES_DIR ?? join(flumeDir, "worktrees")` for themselves.
  * They agreed only because the two spellings happened to match: a sweep
@@ -250,10 +247,10 @@ describe("worktrees — the base is resolved in one place", () => {
  * existence. `createWorktree` and `sweepStaleWorktrees` read one probe
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*:
  * detection a sibling surface already performs is shared, never re-derived).
- * The sweep already refused to remove a directory git disclaims — most often
- * a sibling namespaced job's live container directory under a shared
- * `FLUME_WORKTREES_DIR` — while provisioning deleted exactly that directory
- * through its rm fallback and then reported success.
+ * The sweep already refused to remove a directory git disclaims — an
+ * operator's own tree under a shared `FLUME_WORKTREES_DIR`, or residue whose
+ * registration git had already pruned — while provisioning deleted exactly
+ * that directory through its rm fallback and then reported success.
  *
  * Both legs are driven through the real entry points against a real git
  * repo: the claim is that one probe decides for both, which a stubbed
@@ -270,7 +267,7 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     await fx.cleanup();
   });
 
-  /** An unnamespaced context over the fixture repo, and its worktree base. */
+  /** A context over the fixture repo, and its worktree base. */
   function contextFor(log: Logger): { ctx: WorktreeContext; base: string } {
     const flumeDir = join(fx.repo, ".flume");
     return {
@@ -278,7 +275,6 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
         repoRoot: fx.repo,
         flumeDir,
         stateRootRel: ".flume",
-        namespace: undefined,
         log,
       },
       base: worktreesBase(flumeDir),
@@ -295,9 +291,9 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
 
   it("createWorktree leaves a directory git does not know as a worktree of this repo in place", async () => {
     const { ctx, base } = contextFor(silent);
-    // Occupying exactly the path provisioning computes — a sibling job's
-    // container directory, an operator's own tree, or residue git has
-    // already pruned the registration for. Indistinguishable by name.
+    // Occupying exactly the path provisioning computes — an operator's own
+    // tree, or residue git has already pruned the registration for.
+    // Indistinguishable by name.
     const occupied = join(base, worktreeDirName("build"));
     await mkdir(occupied, { recursive: true });
     await writeFile(join(occupied, "keep.txt"), "not flume's to delete\n");
@@ -323,7 +319,7 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
   // `existsSync` collapsed every stat failure to `false`, so a path that is
   // on disk but unstattable read as free and provisioning ran straight over
   // it — never reaching the registry judgment above, which is the only thing
-  // standing between a sibling job's live container directory and a blind
+  // standing between a directory git disclaims and a blind
   // `git worktree add`. The probe now splits ENOENT from the rest
   // (`existsLoud`, src/fsProbe.ts).
   it("createWorktree refuses when the worktree path is present but unstattable", async () => {
@@ -447,13 +443,12 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     });
   }
 
-  /** An unnamespaced worktree context over the fixture repo. */
+  /** A worktree context over the fixture repo. */
   function contextFor(): WorktreeContext {
     return {
       repoRoot: fx.repo,
       flumeDir: join(fx.repo, ".flume"),
       stateRootRel: ".flume",
-      namespace: undefined,
       log: silent,
     };
   }
@@ -692,18 +687,14 @@ describe("worktrees — the startup sweep reaps the branches its own directories
     await fx.cleanup();
   });
 
-  /** A context over the fixture repo under `namespace`, and its sweep base. */
-  function contextFor(namespace: string | undefined): {
-    ctx: WorktreeContext;
-    base: string;
-  } {
+  /** A context over the fixture repo, and its sweep base. */
+  function contextFor(): { ctx: WorktreeContext; base: string } {
     const flumeDir = join(fx.repo, ".flume");
     return {
       ctx: {
         repoRoot: fx.repo,
         flumeDir,
         stateRootRel: ".flume",
-        namespace,
         log: silent,
       },
       base: worktreesBase(flumeDir),
@@ -719,13 +710,12 @@ describe("worktrees — the startup sweep reaps the branches its own directories
   }
 
   it("the startup sweep deletes the branch a worktree it removed was checked out on", async () => {
-    // A namespaced instance whose residue is checked out on an
-    // *un*namespaced branch — what a job that declared its namespace after
-    // the tick that died leaves behind, and what any renamed namespace
-    // leaves behind. The directory is squarely this job's: it sits under
-    // this instance's own sweep base, and git registers it.
-    const { ctx, base } = contextFor("alpha");
-    const residue = join(base, "alpha", "orphan");
+    // Residue whose branch is spelled outside whatever glob the instance
+    // would have reached for — what a tick that died under an older branch
+    // grammar leaves behind. The directory is squarely this run's: it sits
+    // under its own sweep base, and git registers it.
+    const { ctx, base } = contextFor();
+    const residue = join(base, "left-behind");
     await plantResidue(residue, "flume/orphan");
 
     // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is proven
@@ -744,7 +734,7 @@ describe("worktrees — the startup sweep reaps the branches its own directories
   });
 
   it("the startup sweep leaves a flume branch no worktree under its base was checked out on standing", async () => {
-    const { ctx, base } = contextFor(undefined);
+    const { ctx, base } = contextFor();
     // This instance's own residue — what the sweep is here for.
     const residue = join(base, "orphan");
     await plantResidue(residue, "flume/orphan");

@@ -146,17 +146,6 @@ export interface DispatcherOptions {
    */
   flumeDir?: string;
   /**
-   * Fanout branch namespace. When set, ephemeral worktree branches
-   * are `flume/<namespace>/<slug>` instead of the repo-global `flume/<slug>`,
-   * and worktree paths are `<wtBase>/<namespace>/<slug>` instead of
-   * `<wtBase>/<slug>`, so two jobs whose pending entries share a tag slug fan
-   * out onto disjoint branches AND disjoint paths (a shared
-   * FLUME_WORKTREES_DIR would otherwise clobber). Resolved by the CLI from
-   * `FLUME_JOB` and passed down explicitly — the dispatcher never sniffs
-   * `flumeDir` for a job name.
-   */
-  namespace?: string;
-  /**
    * Default agent. Per-tick resolution is
    * `phase.agent ?? chainModule.agent ?? this` — a `chain.ts` whose factory
    * returns `agent` overrides this (the agent re-resolves with the chain),
@@ -531,9 +520,8 @@ export class Dispatcher {
 
   /**
    * This dispatcher's view of itself for `src/worktrees.ts` — the repo root,
-   * state root, that root's relative path, the job namespace, the logger the
-   * worktree lifecycle reads, and the chain-declared worktree base as of the
-   * last chain load.
+   * state root, that root's relative path, the logger the worktree lifecycle
+   * reads, and the chain-declared worktree base as of the last chain load.
    *
    * Composed on read rather than stored, because its last field is not
    * construction state: the chain that declares the base is loaded per tick,
@@ -547,7 +535,6 @@ export class Dispatcher {
       repoRoot: this.opts.repoRoot,
       flumeDir: this.flumeDir,
       stateRootRel: this.stateRootRel,
-      namespace: this.opts.namespace,
       log: this.log,
       ...(this.chainWorktreesBase !== undefined
         ? { declaredWorktreesBase: this.chainWorktreesBase }

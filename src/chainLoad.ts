@@ -78,7 +78,7 @@ function validatePendingPathDeclaration(chain: Chain): void {
 
 /**
  * Evaluate a chain's declared worktree base (spec/worktrees.md, *Placement —
- * the worktree base and the job namespace*): `Chain.worktreesBase` is how to
+ * the worktree base*): `Chain.worktreesBase` is how to
  * compute a base, not a base, so the engine runs it **once per chain load**
  * against the roots it resolved and carries the string from there. Every
  * reader — creation, the per-wave stale-slug removal, the startup sweep, a

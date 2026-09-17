@@ -7,9 +7,8 @@
  * violation counts only when verified on disk this tick"): one directory
  * tree, one branch namespace, one naming rule — a job of its own, depending
  * on nothing the dispatcher holds beyond a repo root, a state root, that
- * root's relative path, an optional job namespace and a logger. The
- * dependency runs one way: the dispatcher calls in here, nothing here calls
- * back.
+ * root's relative path and a logger. The dependency runs one way: the
+ * dispatcher calls in here, nothing here calls back.
  *
  * Sibling to `src/setupWorktree.ts`, which owns the other half of the same
  * lifecycle — the lockfile-aware install a chain drops into its
@@ -46,8 +45,7 @@ const execFileP = promisify(execFile);
  * primary repo root every git call runs against, the state root the worktree
  * base hangs off, that root's path relative to the repo root (`undefined`
  * when the state root is relocated outside it — spec/chain.md "What a gate
- * receives"), the job's branch/path namespace when it has one, and where to
- * log the failures this module swallows.
+ * receives"), and where to log the failures this module swallows.
  *
  * One shape for all three entry points rather than three near-copies: they
  * are one job over one directory tree, and a context that splits per
@@ -60,7 +58,6 @@ export interface WorktreeContext {
   repoRoot: string;
   flumeDir: string;
   stateRootRel: string | undefined;
-  namespace: string | undefined;
   log: Logger;
   /**
    * `Chain.worktreesBase` already evaluated — the string the dispatcher got
@@ -81,8 +78,8 @@ export interface WorktreeContext {
  * because git builds that path itself before any Node fs call sees it.
  * `TAG_MAX_LENGTH` (`PendingSchema.ts`) sizes the schema off NAME_MAX (255),
  * a wider ceiling, so a schema-valid tag's raw slug can already exceed this
- * one. Chosen with room to spare under a `wtBase`/namespace prefix, not
- * tuned to the measured ~200-char wall itself.
+ * one. Chosen with room to spare under a `wtBase` prefix, not tuned to the
+ * measured ~200-char wall itself.
  */
 const WORKTREE_DIRNAME_MAX = 48;
 
@@ -225,20 +222,20 @@ interface PlantedCheckout {
 
 /**
  * What a gate's checkout scope takes from the dispatcher that opens it: the
- * two placement facts that decide where {@link checkoutAt} plants — the
- * chain's already-evaluated worktree base and this job's namespace — and the
- * logger the reclamation's swallowed failures go to.
+ * placement fact that decides where {@link checkoutAt} plants — the chain's
+ * already-evaluated worktree base — and the logger the reclamation's
+ * swallowed failures go to.
  *
- * Both placement facts ride the scope rather than `checkoutAt`'s own `opts`
+ * The placement fact rides the scope rather than `checkoutAt`'s own `opts`
  * because that caller is the *gate* — a chain hook, which cannot be asked
  * for a value the engine evaluated for it without re-deriving it
  * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*: a hook
- * receives facts, never re-derives them). The dispatcher knows both, and the
- * gate boundary it already opens is where it hands them over.
+ * receives facts, never re-derives them). The dispatcher knows it, and the
+ * gate boundary it already opens is where it hands it over.
  *
  * A subset of {@link WorktreeContext} rather than a shape of its own, so the
  * dispatcher passes the context it already composes instead of a second copy
- * of three of its fields (`.claude/rules/engineering.md`, *Derived state is
+ * of two of its fields (`.claude/rules/engineering.md`, *Derived state is
  * computed, never restated beside its source*). `repoRoot` and `flumeDir`
  * are deliberately off it: those come from the *gate's* own context at each
  * `checkoutAt` call, since a gate is free to ask for a tree of some repo
@@ -246,7 +243,7 @@ interface PlantedCheckout {
  */
 type GateCheckoutContext = Pick<
   WorktreeContext,
-  "log" | "namespace" | "declaredWorktreesBase"
+  "log" | "declaredWorktreesBase"
 >;
 
 /**
@@ -282,11 +279,10 @@ let checkoutSeq = 0;
  * and the reclamation leaves a directory git registers as a worktree at the
  * exact level {@link sweepStaleWorktrees} reads at the next start, so the
  * residue is reclaimed by machinery that already exists rather than
- * accumulating somewhere nothing looks. Under a job namespace that level is
- * `<base>/<namespace>`, so the checkout carries the namespace exactly as
- * {@link createWorktree}'s path does: planting at the bare base under a
- * namespaced job lands the residue one level above the only sweep that would
- * read it, on the level that sweep steps over as a sibling job's.
+ * accumulating somewhere nothing looks. That level is the base itself — the
+ * engine mints no level beneath it (`spec/worktrees.md`, *Placement — the
+ * worktree base*) — so the checkout plants exactly where
+ * {@link createWorktree}'s path does.
  *
  * **Detached, so there is no ref to clean up**: nothing commits here, and a
  * branch would be a second thing the reclamation could fail to remove.
@@ -320,17 +316,11 @@ export async function checkoutAt(opts: {
   // base included, taken from the gate scope the dispatcher opened rather
   // than from the gate that called in here.
   const base = worktreesBase(opts.flumeDir, scope.declaredWorktreesBase);
-  // Namespaced exactly as `createWorktree`'s path is, from the same value:
-  // `sweepStaleWorktrees` reads `<base>/<namespace>` when a namespace is
-  // set, and treats a directory at the bare base as a sibling job's to leave
-  // standing. Unconditional when set — the redundant level under a
-  // per-job default base is harmless, as it is there.
-  const dir = scope.namespace ? join(base, scope.namespace) : base;
   const path = join(
-    dir,
+    base,
     `checkout-${opts.sha.slice(0, 7)}-${process.pid}-${checkoutSeq++}`,
   );
-  await mkdir(toNamespacedPath(dir), { recursive: true });
+  await mkdir(toNamespacedPath(base), { recursive: true });
   // Same win32 MAX_PATH gap `createWorktree` pins for: this lands at the
   // same depth its siblings do.
   await git.pinLongPaths(opts.repoRoot);
@@ -380,13 +370,12 @@ export async function withGateCheckouts<T>(
 }
 
 /**
- * Provision one worktree, branched `flume/[<namespace>/]<tag>` from
- * `fromRef`. Shared by fanout (`tag` = the entry's own tag) and singleton
- * (`tag` = the phase name — a singleton tick has no entry; spec/worktrees.md
- * "Singleton runs in a worktree" keys its worktree on the phase instead).
- * Both directory-name length-bounding and job-namespace scoping apply
- * identically either way — the caller supplies the identifier, this
- * function doesn't care what it names.
+ * Provision one worktree, branched `flume/<tag>` from `fromRef`. Shared by
+ * fanout (`tag` = the entry's own tag) and singleton (`tag` = the phase
+ * name — a singleton tick has no entry; spec/worktrees.md "Singleton runs in
+ * a worktree" keys its worktree on the phase instead). Directory-name
+ * length-bounding applies identically either way — the caller supplies the
+ * identifier, this function doesn't care what it names.
  */
 export async function createWorktree(
   tag: string,
@@ -394,22 +383,17 @@ export async function createWorktree(
   ctx: WorktreeContext,
 ): Promise<{ path: string; branch: string }> {
   const slug = slugify(tag);
-  // Job-scoped branch namespace: with a namespace, identical slugs across
-  // jobs land on disjoint branches; without one, the repo-global name
-  // stands (bare `.flume` harnesses unchanged).
-  const branch = ctx.namespace
-    ? `flume/${ctx.namespace}/${slug}`
-    : `flume/${slug}`;
+  const branch = `flume/${slug}`;
   // One resolution for the base, shared with the startup sweep
   // (`worktreesBase`, src/paths.ts — which is also where the override's
   // stray-write rationale lives, and where a chain's declared base is
   // ranked against it).
   const wtBase = worktreesBase(ctx.flumeDir, ctx.declaredWorktreesBase);
-  // The path mirrors the branch namespacing: under a shared
-  // FLUME_WORKTREES_DIR two jobs with identical slugs would otherwise
-  // collide on <base>/<dirName>, and the stale-cleanup below would rm the
-  // OTHER job's live worktree. Namespaced unconditionally when set — the
-  // redundant level under a default per-job base is harmless.
+  // The engine mints no level beneath the base (`spec/worktrees.md`,
+  // *Placement — the worktree base*): two efforts are two checkouts, each
+  // with its own state root and so its own base, and a base an operator
+  // deliberately shares between checkouts collides loudly at the registry
+  // judgment below rather than quietly.
   //
   // The fs directory name is length-bounded — git itself refuses a
   // worktree path around 200 chars on win32, below `TAG_MAX_LENGTH`'s
@@ -417,9 +401,7 @@ export async function createWorktree(
   // slug: `tag` stays full-length everywhere except this one directory
   // component. A phase name takes the same bound an entry tag does.
   const dirName = worktreeDirName(tag);
-  const path = ctx.namespace
-    ? join(wtBase, ctx.namespace, dirName)
-    : join(wtBase, dirName);
+  const path = join(wtBase, dirName);
   // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
   // on a path that is present but unstattable, where `existsSync` read it as
   // free and provisioned straight over it — skipping the registry judgment
@@ -428,8 +410,8 @@ export async function createWorktree(
   if (existsLoud(toNamespacedPath(path))) {
     // Occupied. Whether that is this job's own stale worktree from a crashed
     // run is git's registry to answer, never the path's existence: a
-    // directory git disclaims is as easily a sibling namespaced job's
-    // container directory under a shared FLUME_WORKTREES_DIR, or an
+    // directory git disclaims is as easily a sibling checkout's tree under a
+    // shared FLUME_WORKTREES_DIR, or an
     // operator's own tree, and removing one of those is the clobber the
     // startup sweep below already refuses on exactly this evidence. Anything
     // git does not name is refused loudly and left standing for an operator
@@ -527,24 +509,21 @@ export async function teardownWorktreeInstance(
  *
  * Scope is exactly the engine's own residue: every directory directly
  * under the worktree base — the same `worktreesBase` (`src/paths.ts`)
- * `createWorktree` provisions into, namespace-scoped the same way its
- * path is when a namespace is set. Without one,
- * `sweepBase` is the bare worktrees dir, which a shared
- * `FLUME_WORKTREES_DIR` also holds every *namespaced* sibling job's
- * container directory (`<wtBase>/<their-namespace>/`) at that exact same
- * top level — an arbitrary operator-chosen string, indistinguishable by
- * name alone from one of this job's own bounded `dirName` entries. So a
- * bare `readdir` + blind removal would delete a live sibling's entire
- * worktree tree the first time its container directory sits at this
- * level. The disambiguator is git's own registry, not a naming
- * heuristic (`.claude/rules/engine-boundary.md`, "told, not inferred"):
+ * `createWorktree` provisions into, with no level minted beneath it
+ * (`spec/worktrees.md`, *Placement — the worktree base*). That base is
+ * asked to be flume-exclusive, but what sits at that level is still not
+ * the sweep's to guess: an operator's own tree, a directory whose worktree
+ * registration git has already pruned, and this run's abandoned residue
+ * are indistinguishable by name. So a bare `readdir` + blind removal would
+ * delete whatever happened to be there. The disambiguator is git's own
+ * registry, not a naming heuristic
+ * (`.claude/rules/engine-boundary.md`, "told, not inferred"):
  * {@link readWorktreeRegistry} — the same probe {@link createWorktree}
  * clears an occupied path on — names every path git currently considers a
  * worktree, and only entries that are literally one of those paths are
  * this job's own residue to remove through `git.removeWorktree` +
- * win32-fallback (the same path teardown uses) — a sibling's container
- * directory was never itself registered as a worktree, only the paths
- * nested inside it are, so it is left untouched. Then a final `git
+ * win32-fallback (the same path teardown uses) — anything git disclaims is
+ * left untouched. Then a final `git
  * worktree prune`; then the branches those removed directories were checked
  * out on.
  *
@@ -575,10 +554,7 @@ export async function sweepStaleWorktrees(
   ctx: WorktreeContext,
 ): Promise<void> {
   const repoRoot = ctx.repoRoot;
-  const wtBase = worktreesBase(ctx.flumeDir, ctx.declaredWorktreesBase);
-  const sweepBase = ctx.namespace
-    ? join(wtBase, ctx.namespace)
-    : wtBase;
+  const sweepBase = worktreesBase(ctx.flumeDir, ctx.declaredWorktreesBase);
 
   let entries: string[];
   try {
@@ -594,12 +570,9 @@ export async function sweepStaleWorktrees(
     return;
   }
 
-  // Which top-level entries are actually this job's own worktrees, as
-  // opposed to a sibling namespaced job's container directory sitting at
-  // the same level under a shared FLUME_WORKTREES_DIR: git's own registry,
-  // not the entry's name. A container directory was never itself `git
-  // worktree add`ed, so it never appears here — only the paths nested
-  // inside it do.
+  // Which top-level entries are actually this run's own worktrees, as
+  // opposed to an operator's own tree or residue whose registration git has
+  // already pruned: git's own registry, not the entry's name.
   const registry = await readWorktreeRegistry(repoRoot);
   if (!registry.read) {
     // An unreadable registry is not an empty one. With no way to tell this
@@ -622,9 +595,9 @@ export async function sweepStaleWorktrees(
       const path = join(sweepBase, name);
       const resolved = resolve(path);
       if (!registry.worktrees.has(resolved)) {
-        // Not a worktree git knows about — most commonly a sibling
-        // namespaced job's container directory. Not this job's residue;
-        // leave it untouched.
+        // Not a worktree git knows about — an operator's own tree, or
+        // residue whose registration was already pruned. Not this run's to
+        // remove; leave it untouched.
         continue;
       }
       const branch = registry.worktrees.get(resolved);

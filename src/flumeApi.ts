@@ -272,11 +272,10 @@ export interface FlumeApi {
      * out of it, which `readFileAtRef` above already answers.
      *
      * A gate provisions nothing itself. Placement is the engine's own — the
-     * `worktreesBase` resolution and, under `--job`/`FLUME_JOB`, that job's
-     * namespace level beneath it — so an operator's `FLUME_WORKTREES_DIR` is
-     * honored and a run killed mid-gate leaves a directory at the level the
-     * next start's sweep reads and reclaims, whether or not the run was
-     * namespaced. A chain's own temp dir leaves residue in a
+     * `worktreesBase` resolution, with no level minted beneath it — so an
+     * operator's `FLUME_WORKTREES_DIR` is honored and a run killed mid-gate
+     * leaves a directory at the level the next start's sweep reads and
+     * reclaims. A chain's own temp dir leaves residue in a
      * place nothing looks, and a chain's own path convention under the
      * worktree base is a name only the engine owns, restated
      * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,

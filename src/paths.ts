@@ -527,8 +527,7 @@ export function renderedPromptsDir(flumeDir: string): string {
  * The worktree base, every tick's alike, in resolution order:
  * `FLUME_WORKTREES_DIR` when set (resolved absolute), else the chain's
  * declared base when it declared one, else `<flumeDir>/worktrees`
- * (spec/worktrees.md, "Placement — the worktree base and the job
- * namespace").
+ * (spec/worktrees.md, "Placement — the worktree base").
  *
  * **The one resolution in `src/`.** `createWorktree`, the per-wave
  * stale-slug removal it runs, `sweepStaleWorktrees` and `checkoutAt` all

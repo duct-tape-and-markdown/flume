@@ -171,8 +171,8 @@ describe("resolveStateDirs — job resolution", () => {
   it("env FLUME_JOB composes with explicit dirs (the loop → tick boundary): dirs win, job rides along", () => {
     // The parent's write-back sets all three; the child must not classify its
     // own inheritance as a conflict. The dir vars ARE the canonical job
-    // resolution, so they win, and the job name survives for the fanout
-    // namespace.
+    // resolution, so they win, and the job name survives on FLUME_JOB for
+    // the child's own resolution.
     // resolve() drive-qualifies on win32 — the untouched assertion needs a
     // true absolute input. The parent's write-back stamps
     // FLUME_DIR_RESOLVED_FOR alongside the dirs, and it agrees with this
@@ -643,8 +643,8 @@ function jobNewEnvProbeChainSrc(): string {
  * A fanout chain whose agent records the branch of the worktree it
  * was invoked in to `<FLUME_DIR>/observed-branch.txt`. The agent commits
  * nothing (the tick falls through clean), so what lands in the file is purely
- * the branch `createWorktree` named — the namespace claim made observable
- * through the real CLI.
+ * the branch `createWorktree` named — the branch-naming claim made
+ * observable through the real CLI.
  */
 function jobFanoutProbeChainSrc(phaseName: string): string {
   return (
@@ -1008,7 +1008,7 @@ describe("job resolution — real CLI", () => {
   );
 
   it(
-    "fanout under FLUME_JOB names the worktree branch flume/<job>/<slug> — namespace flows CLI → dispatcher",
+    "fanout under FLUME_JOB names the worktree branch flume/<slug> — the job moves the state root, not the branch",
     async () => {
       const repo = await makeJobRepo("job/foo");
       try {
@@ -1052,8 +1052,11 @@ describe("job resolution — real CLI", () => {
         });
         new Baton(jobDir).wake("probe");
 
-        // FLUME_JOB alone, no --job flag: the env-var resolution path must
-        // carry the namespace to the dispatcher identically (same parity).
+        // FLUME_JOB alone, no --job flag. The job resolution retargets the
+        // state root and nothing else: the engine mints no namespace beneath
+        // the worktree base (`spec/worktrees.md`, *Placement — the worktree
+        // base*), so the branch is the repo-global one a bare `.flume`
+        // harness gets.
         const tick = await runCli(repo.dir, ["tick"], {
           ...hermeticEnv(),
           FLUME_JOB: "foo",
@@ -1064,7 +1067,7 @@ describe("job resolution — real CLI", () => {
           join(jobDir, "observed-branch.txt"),
           "utf8",
         );
-        expect(observed).toBe("flume/foo/ns-probe");
+        expect(observed).toBe("flume/ns-probe");
       } finally {
         await repo.cleanup();
       }

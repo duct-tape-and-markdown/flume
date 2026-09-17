@@ -978,10 +978,6 @@ async function main(): Promise<number> {
     agent: claudeCode(),
     ownTipClaimPid,
     stopSignal: stopTick.signal,
-    // Fanout branch namespace: the job resolution above is the one authority;
-    // the dispatcher receives it as an option, never re-derives it from
-    // flumeDir.
-    ...(job !== undefined ? { namespace: job } : {}),
     ...(quarantinedSlugs ? { quarantinedSlugs } : {}),
   });
 

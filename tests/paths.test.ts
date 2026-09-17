@@ -475,7 +475,7 @@ describe("matchesAny — a declared literal path matches only itself", () => {
 });
 
 // Mechanism pin (WORKTREE-BASE-RESOLVED-ONCE, per spec/worktrees.md
-// "Placement — the worktree base and the job namespace"): the worktree base
+// "Placement — the worktree base"): the worktree base
 // used to be resolved at two independent call sites, which agreed only
 // because both happened to spell the same fallback. This pins the single
 // resolver's two branches, and holds the one name that leaked out of it —
@@ -523,8 +523,7 @@ describe("worktreesBase — the one worktree-base resolution", () => {
   });
 
   // The third input: `Chain.worktreesBase` already evaluated
-  // (spec/worktrees.md, "Placement — the worktree base and the job
-  // namespace").
+  // (spec/worktrees.md, "Placement — the worktree base").
   // All three inputs meet at this one function, so the order they outrank
   // each other in is stated once, here, rather than at each reader.
   it("a chain-declared base replaces the state-root default", () => {

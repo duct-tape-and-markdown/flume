@@ -2,6 +2,7 @@ import { existsSync, lstatSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -15,6 +16,7 @@ vi.mock("tsx/esm/api", async (importOriginal) => {
   return { ...actual, tsImport: vi.fn(actual.tsImport) };
 });
 
+import ts from "typescript";
 import { tsImport } from "tsx/esm/api";
 import {
   CjsContextLoadError,
@@ -443,10 +445,10 @@ describe("Dispatcher singleton — commit detected", () => {
 });
 
 // spec/worktrees.md "Singleton runs in a worktree": a singleton tick now
-// provisions and runs in a `flume/[<namespace>/]<phase>` worktree, exactly
-// the machinery a one-entry wave uses — provisioned before the agent runs,
-// torn down (worktree + branch) after the merge step, regardless of outcome.
-describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree (WORKTREE-CORE)", () => {
+// provisions and runs in a `flume/<phase>` worktree, exactly the machinery a
+// one-entry wave uses — provisioned before the agent runs, torn down
+// (worktree + branch) after the merge step, regardless of outcome.
+describe("Dispatcher singleton — runs in a flume/<phase> worktree (WORKTREE-CORE)", () => {
   async function branchIn(cwd: string): Promise<string> {
     const { stdout } = await exec(
       "git",
@@ -506,38 +508,6 @@ describe("Dispatcher singleton — runs in a flume/[namespace/]<phase> worktree 
     const { stdout: branches } = await exec(
       "git",
       ["branch", "--list", "flume/plan"],
-      { cwd: fx.repo },
-    );
-    expect(branches.trim()).toBe("");
-  });
-
-  it("namespace set → worktree branch is flume/<job>/plan; teardown deletes the namespaced branch", async () => {
-    new Baton(join(fx.repo, ".flume")).wake("plan");
-    const phase = makePhase({ name: "plan", concurrency: "singleton" });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    let observedBranch: string | undefined;
-    const agent = singleAgent(async (cwd) => {
-      observedBranch = await branchIn(cwd);
-      await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-      namespace: "alpha",
-    });
-
-    const outcome = await dispatcher.tick();
-
-    expect(outcome.result?.committed).toBe(true);
-    expect(observedBranch).toBe("flume/alpha/plan");
-    const { stdout: branches } = await exec(
-      "git",
-      ["branch", "--list", "flume/alpha/plan"],
       { cwd: fx.repo },
     );
     expect(branches.trim()).toBe("");
@@ -2812,6 +2782,82 @@ describe("Dispatcher fanout — two consecutive ship waves leave an untouched en
 
 // ---------- trunk contract ----------
 
+/**
+ * The engine mints no namespace beneath the worktree base
+ * (`spec/worktrees.md`, *Placement — the worktree base*), so there is no
+ * value for a chain or the CLI to hand it: the option is gone from the
+ * declared surface, not merely unread.
+ *
+ * Judged through the real compiler over the real `src/Dispatcher.ts`, not by
+ * a conditional type alone. A conditional type is erased before vitest runs,
+ * so a suite that only asserted `true` would pass against a tree that still
+ * declares the field — green over the exact regression it names. The excess
+ * property check is what makes the absence observable at runtime here, and
+ * the control literal beside it is what keeps the refusal the field's rather
+ * than the fixture's (`.claude/rules/engineering.md`, *A green verdict is
+ * proven non-vacuous*).
+ */
+describe("Dispatcher options — the fanout namespace is off the surface", () => {
+  const DISPATCHER_SRC = fileURLToPath(
+    new URL("../src/Dispatcher.ts", import.meta.url),
+  );
+  const AGENT_SRC = fileURLToPath(new URL("../src/Agent.ts", import.meta.url));
+
+  /** Type-check one `DispatcherOptions` literal against the real `src/`. */
+  async function diagnose(fields: string): Promise<string> {
+    const dir = await mkTempDir("flume-dispatcher-opts-type-");
+    try {
+      const file = join(dir, "fixture.ts");
+      await writeFile(
+        file,
+        `import type { Agent } from ${JSON.stringify(AGENT_SRC)};\n` +
+          `import type { DispatcherOptions } from ${JSON.stringify(DISPATCHER_SRC)};\n` +
+          `declare const agent: Agent;\n` +
+          `export const opts: DispatcherOptions = { ${fields} };\n`,
+        "utf8",
+      );
+      // The repo's own strictness, so the excess-property check reads the
+      // same way `pnpm tsc` does.
+      const program = ts.createProgram([file], {
+        target: ts.ScriptTarget.ES2023,
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+        strict: true,
+        exactOptionalPropertyTypes: true,
+        allowImportingTsExtensions: true,
+        skipLibCheck: true,
+        noEmit: true,
+      });
+      return program
+        .getSemanticDiagnostics(program.getSourceFile(file))
+        .map((d) => ts.flattenDiagnosticMessageText(d.messageText, " "))
+        .join("\n");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  const REQUIRED = 'repoRoot: "", configDir: "", agent';
+
+  it("DispatcherOptions no longer carries a fanout namespace (type-level)", async () => {
+    // Control first: the same literal without the field compiles clean, so
+    // the refusal below is the field's and not the fixture's.
+    expect(await diagnose(REQUIRED)).toBe("");
+
+    expect(await diagnose(`${REQUIRED}, namespace: "alpha"`)).toContain(
+      "namespace",
+    );
+
+    // And the key itself is gone from the interface, which is what a
+    // `keyof` consumer would see. Erased at runtime, held by `pnpm tsc`.
+    type NamespacePurged = "namespace" extends keyof DispatcherOptions
+      ? never
+      : true;
+    const purged: NamespacePurged = true;
+    expect(purged).toBe(true);
+  });
+});
+
 describe("Trunk contract — HEAD-is-truth, trunkBranch purged", () => {
   it("DispatcherOptions no longer carries trunkBranch (type-level)", () => {
     // Resolves to `never` (unassignable) if the key ever returns.
@@ -2971,7 +3017,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
     expect(existsSync(join(flumeDir, "worktrees", "wt-def"))).toBe(false);
   });
 
-  // spec/worktrees.md "Placement — the worktree base and the job namespace":
+  // spec/worktrees.md "Placement — the worktree base":
   // the third input to the same resolution — a chain declaring *how* to
   // compute its base, evaluated once at chain load against the roots the
   // runtime resolved. Driven through the real dispatcher with a real
@@ -3600,40 +3646,36 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     }
   });
 
-  it("an unnamespaced instance's sweep does not remove a sibling namespaced job's live worktree directory or branches under a shared FLUME_WORKTREES_DIR", async () => {
+  it("the sweep leaves a directory git does not register as a worktree standing, and still removes this run's own registered residue beside it", async () => {
     const savedOverride = process.env.FLUME_WORKTREES_DIR;
-    const container = await mkTempDir("flume-sweep-nsscope-");
+    const container = await mkTempDir("flume-sweep-unregistered-");
     const repoOpts = { cwd: fx.repo };
     const base = join(container, "wt-base");
-    const siblingPath = join(base, "beta", "sib-tag");
+    const foreignPath = join(base, "not-ours");
     try {
       process.env.FLUME_WORKTREES_DIR = base;
 
-      // A live namespaced sibling job's worktree: registered under
-      // <base>/<namespace>/<dirName>, exactly where createWorktree would put
-      // it for a `beta`-namespaced job. Its container directory <base>/beta
-      // sits at the same top level a bare (unnamespaced) sweepBase reads.
-      await mkdir(dirname(siblingPath), { recursive: true });
-      await exec(
-        "git",
-        ["worktree", "add", "-B", "flume/beta/sib-tag", siblingPath, "HEAD"],
-        repoOpts,
-      );
+      // A directory at the exact level the sweep reads that git disclaims:
+      // an operator's own tree under a relocated base, or residue whose
+      // worktree registration git has already pruned. Indistinguishable by
+      // name from one of this run's own bounded `dirName` entries, so a
+      // `readdir` + blind removal would take it.
+      await mkdir(foreignPath, { recursive: true });
+      await writeFile(join(foreignPath, "keep.txt"), "not flume's to delete\n");
 
-      // This job's own abandoned residue, directly under the bare base —
-      // what an unnamespaced sweep IS supposed to remove.
+      // This run's own abandoned residue, at the same level — what the sweep
+      // IS here for.
       const ownPath = join(base, "own-orphan");
       await exec(
         "git",
         ["worktree", "add", "-B", "flume/own-orphan", ownPath, "HEAD"],
         repoOpts,
       );
-      // Vacuity pin: both trees are really registered going in, so the
-      // survives/removed split asserted below is a split rather than two
-      // paths the registry never held.
-      expect(await registeredWorktrees()).toEqual(
-        [resolve(siblingPath), resolve(ownPath)].sort(),
-      );
+      // Vacuity pin: the registered tree really is registered and the
+      // disclaimed one really is not, so the survives/removed split asserted
+      // below is a split rather than two paths the registry never held.
+      expect(await registeredWorktrees()).toEqual([resolve(ownPath)]);
+      expect(existsSync(foreignPath)).toBe(true);
 
       const dispatcher = new Dispatcher({
         repoRoot: fx.repo,
@@ -3644,20 +3686,14 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
 
       await dispatcher.sweepStaleWorktrees();
 
-      // The sibling's live worktree tree and branch survive untouched.
-      expect(existsSync(siblingPath)).toBe(true);
-      const { stdout: siblingBranches } = await exec(
-        "git",
-        ["branch", "--list", "flume/beta/sib-tag"],
-        repoOpts,
+      // The disclaimed directory survives, contents intact.
+      expect(await readFile(join(foreignPath, "keep.txt"), "utf8")).toBe(
+        "not flume's to delete\n",
       );
-      expect(siblingBranches.trim()).not.toBe("");
-      // Exact membership: the sibling is the only path left registered, so
-      // this pins the removal of this job's own residue too.
-      expect(await registeredWorktrees()).toEqual([resolve(siblingPath)]);
 
-      // This job's own residue is still removed.
+      // This run's own residue is removed, directory and branch alike.
       expect(existsSync(ownPath)).toBe(false);
+      expect(await registeredWorktrees()).toEqual([]);
       const { stdout: ownBranches } = await exec(
         "git",
         ["branch", "--list", "flume/own-orphan"],
@@ -3667,12 +3703,8 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     } finally {
       if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
       else process.env.FLUME_WORKTREES_DIR = savedOverride;
-      await exec("git", ["worktree", "remove", "--force", siblingPath], repoOpts).catch(
-        () => {},
-      );
       await rm(container, { recursive: true, force: true });
       await exec("git", ["worktree", "prune"], repoOpts).catch(() => {});
-      await exec("git", ["branch", "-D", "flume/beta/sib-tag"], repoOpts).catch(() => {});
     }
   });
 
@@ -3699,10 +3731,11 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
   it("a directory that cannot be removed (EBUSY) warns once at run level and does not abort the run", async () => {
     const wtPath = join(fx.repo, ".flume", "worktrees", "stuck");
     await mkdir(dirname(wtPath), { recursive: true });
-    // Must be a registered worktree, not a bare directory — the sweep now
-    // only attempts removal on paths git itself lists (the fix for
-    // startup-sweep-namespace-scope), so an unregistered directory would
-    // never reach the mocked `removeWorktree` below.
+    // Must be a registered worktree, not a bare directory — the sweep only
+    // attempts removal on paths git itself lists ("the sweep leaves a
+    // directory git does not register as a worktree standing…", above), so
+    // an unregistered directory would never reach the mocked
+    // `removeWorktree` below.
     await exec(
       "git",
       ["worktree", "add", "-B", "flume/stuck", wtPath, "HEAD"],
@@ -4317,14 +4350,21 @@ describe("Dispatcher fanout — teardown loop warns on deleteBranch failure (GIT
 });
 
 /**
- * Job-scoped fanout branches. The namespace arrives as a
- * `DispatcherOptions.namespace` field (the CLI resolves it from `FLUME_JOB`);
- * with it set, worktree branches are `flume/<namespace>/<slug>`, so two jobs
- * whose pending entries share a tag slug fan out onto disjoint branches.
- * Without it the legacy repo-global `flume/<slug>` stands — bare `.flume`
- * harnesses see no change.
+ * Fanout worktree naming. The engine mints no namespace beneath the
+ * worktree base (`spec/worktrees.md`, *Placement — the worktree base*): a
+ * fanout branch is `flume/<slug>` and its directory is `<base>/<dirName>`,
+ * under every resolution of that base. Two efforts are two checkouts, each
+ * with its own state root and so its own base, so identical tag slugs in two
+ * efforts address two directories without a level between them.
  */
-describe("Dispatcher fanout — job-scoped branch namespace", () => {
+describe("Dispatcher fanout — branch and path take no level beneath the base", () => {
+  const savedOverride = process.env.FLUME_WORKTREES_DIR;
+
+  afterEach(() => {
+    if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
+    else process.env.FLUME_WORKTREES_DIR = savedOverride;
+  });
+
   async function branchIn(cwd: string): Promise<string> {
     const { stdout } = await exec(
       "git",
@@ -4334,8 +4374,8 @@ describe("Dispatcher fanout — job-scoped branch namespace", () => {
     return stdout.trim();
   }
 
-  it("namespace set → worktree branch is flume/<job>/<slug>; teardown deletes the namespaced branch", async () => {
-    await writePending(fx.repo, [makeEntry("NS-FAN", ["src/ns-fan.ts"])]);
+  it("a fanout entry runs on flume/<slug> and teardown deletes that branch", async () => {
+    await writePending(fx.repo, [makeEntry("FAN-BRANCH", ["src/fan-branch.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({ name: "build", concurrency: "fanout" });
@@ -4343,9 +4383,14 @@ describe("Dispatcher fanout — job-scoped branch namespace", () => {
 
     let observedBranch: string | undefined;
     const agent = fanoutAgent({
-      "ns-fan": async (cwd) => {
+      "fan-branch": async (cwd) => {
         observedBranch = await branchIn(cwd);
-        await writeAndCommit(cwd, "src/ns-fan.ts", "ns\n", "build(NS-FAN): ship");
+        await writeAndCommit(
+          cwd,
+          "src/fan-branch.ts",
+          "fan\n",
+          "build(FAN-BRANCH): ship",
+        );
       },
     });
 
@@ -4355,132 +4400,29 @@ describe("Dispatcher fanout — job-scoped branch namespace", () => {
       configDir: fx.configDir,
       agent,
       log: silent,
-      namespace: "alpha",
     });
 
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.committed).toBe(true);
-    expect(outcome.result?.shippedTags).toEqual(["NS-FAN"]);
-    expect(observedBranch).toBe("flume/alpha/ns-fan");
-    // Teardown deleted the branch under its namespaced name — the delete
-    // follows the created name, not a re-derived legacy one.
+    expect(outcome.result?.shippedTags).toEqual(["FAN-BRANCH"]);
+    expect(observedBranch).toBe("flume/fan-branch");
+    // Teardown deleted the branch under the name creation gave it.
     const { stdout: branches } = await exec(
       "git",
-      ["branch", "--list", "flume/alpha/ns-fan"],
+      ["branch", "--list", "flume/fan-branch"],
       { cwd: fx.repo },
     );
     expect(branches.trim()).toBe("");
   });
 
-  it("two state roots with identical tags fan out onto disjoint branches", async () => {
-    const dockA = await mkTempDir("flume-ns-a-");
-    const dockB = await mkTempDir("flume-ns-b-");
-    try {
-      const seed = async (dock: string, editPath: string) => {
-        const pendingPath = join(dock, "plan", "pending.json");
-        await mkdir(dirname(pendingPath), { recursive: true });
-        await writeFile(
-          pendingPath,
-          JSON.stringify([makeEntry("DUP-TAG", [editPath])], null, 2) + "\n",
-          "utf8",
-        );
-        new Baton(dock).wake("build");
-      };
-      await seed(dockA, "src/dup-a.ts");
-      await seed(dockB, "src/dup-b.ts");
-
-      const phase = makePhase({ name: "build", concurrency: "fanout" });
-      const chain: Chain = { phases: [phase], humanOnly: [] };
-
-      const observed: string[] = [];
-      const mkDispatcher = (dock: string, ns: string, file: string) =>
-        new Dispatcher({
-          chainLoader: staticLoader(chain),
-          repoRoot: fx.repo,
-          configDir: fx.configDir,
-          flumeDir: dock,
-          agent: fanoutAgent({
-            "dup-tag": async (cwd) => {
-              observed.push(await branchIn(cwd));
-              await writeAndCommit(cwd, file, "dup\n", `build(DUP-TAG): ship ${ns}`);
-            },
-          }),
-          log: silent,
-          namespace: ns,
-        });
-
-      const a = await mkDispatcher(dockA, "alpha", "src/dup-a.ts").tick();
-      const b = await mkDispatcher(dockB, "beta", "src/dup-b.ts").tick();
-
-      expect(a.result?.shippedTags).toEqual(["DUP-TAG"]);
-      expect(b.result?.shippedTags).toEqual(["DUP-TAG"]);
-      // Identical tag slugs, disjoint branches — no cross-job clobber.
-      expect(observed).toEqual(["flume/alpha/dup-tag", "flume/beta/dup-tag"]);
-    } finally {
-      await rm(dockA, { recursive: true, force: true });
-      await rm(dockB, { recursive: true, force: true });
-    }
-  });
-
-  it("no namespace → legacy repo-global flume/<slug> (bare .flume harnesses unchanged)", async () => {
-    await writePending(fx.repo, [makeEntry("LEGACY-FAN", ["src/legacy-fan.ts"])]);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-
-    const phase = makePhase({ name: "build", concurrency: "fanout" });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    let observedBranch: string | undefined;
-    const agent = fanoutAgent({
-      "legacy-fan": async (cwd) => {
-        observedBranch = await branchIn(cwd);
-        await writeAndCommit(
-          cwd,
-          "src/legacy-fan.ts",
-          "legacy\n",
-          "build(LEGACY-FAN): ship",
-        );
-      },
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-    });
-
-    const outcome = await dispatcher.tick();
-
-    expect(outcome.result?.shippedTags).toEqual(["LEGACY-FAN"]);
-    expect(observedBranch).toBe("flume/legacy-fan");
-  });
-});
-
-/**
- * Residual of the job-scoped branch namespace — job-scoped worktree PATHS. The
- * namespace alone left paths slug-keyed: two jobs sharing a tag slug under one
- * FLUME_WORKTREES_DIR collide on `<base>/<slug>`, and createWorktree's
- * stale-slug cleanup rm's the OTHER job's live worktree. With a namespace the
- * path mirrors the branch: `<base>/<namespace>/<slug>`; without one the legacy
- * `<base>/<slug>` stands.
- */
-describe("Dispatcher fanout — job-scoped worktree paths", () => {
-  const savedOverride = process.env.FLUME_WORKTREES_DIR;
-
-  afterEach(() => {
-    if (savedOverride === undefined) delete process.env.FLUME_WORKTREES_DIR;
-    else process.env.FLUME_WORKTREES_DIR = savedOverride;
-  });
-
-  it("namespace + FLUME_WORKTREES_DIR → worktree at <base>/<namespace>/<slug>; teardown cleans it", async () => {
-    const container = await mkTempDir("flume-nspath-");
+  it("a fanout entry's worktree sits directly under a relocated base", async () => {
+    const container = await mkTempDir("flume-fanpath-");
     try {
       const base = join(container, "wt-base");
       process.env.FLUME_WORKTREES_DIR = base;
 
-      await writePending(fx.repo, [makeEntry("NS-PATH", ["src/ns-path.ts"])]);
+      await writePending(fx.repo, [makeEntry("FAN-PATH", ["src/fan-path.ts"])]);
       new Baton(join(fx.repo, ".flume")).wake("build");
 
       const phase = makePhase({ name: "build", concurrency: "fanout" });
@@ -4488,162 +4430,13 @@ describe("Dispatcher fanout — job-scoped worktree paths", () => {
 
       let observedCwd: string | undefined;
       const agent = fanoutAgent({
-        "ns-path": async (cwd) => {
-          observedCwd = cwd;
-          await writeAndCommit(cwd, "src/ns-path.ts", "ns\n", "build(NS-PATH): ship");
-        },
-      });
-
-      const dispatcher = new Dispatcher({
-        chainLoader: staticLoader(chain),
-        repoRoot: fx.repo,
-        configDir: fx.configDir,
-        agent,
-        log: silent,
-        namespace: "alpha",
-      });
-
-      const outcome = await dispatcher.tick();
-
-      expect(outcome.result?.shippedTags).toEqual(["NS-PATH"]);
-      // The path mirrors the branch namespacing under the shared base …
-      expect(observedCwd).toBe(join(base, "alpha", "ns-path"));
-      // … the legacy slug-keyed location never materializes …
-      expect(existsSync(join(base, "ns-path"))).toBe(false);
-      // … and teardown cleans the namespaced dir.
-      expect(existsSync(join(base, "alpha", "ns-path"))).toBe(false);
-    } finally {
-      await rm(container, { recursive: true, force: true });
-    }
-  });
-
-  it("two namespaces, shared base, identical tag → disjoint paths; neither run rm's the other's live worktree", async () => {
-    const container = await mkTempDir("flume-nspath-shared-");
-    const dockA = await mkTempDir("flume-nspath-a-");
-    const dockB = await mkTempDir("flume-nspath-b-");
-    try {
-      const base = join(container, "wt-base");
-      process.env.FLUME_WORKTREES_DIR = base;
-
-      const seed = async (dock: string, editPath: string) => {
-        const pendingPath = join(dock, "plan", "pending.json");
-        await mkdir(dirname(pendingPath), { recursive: true });
-        await writeFile(
-          pendingPath,
-          JSON.stringify([makeEntry("DUP-TAG", [editPath])], null, 2) + "\n",
-          "utf8",
-        );
-        new Baton(dock).wake("build");
-      };
-      await seed(dockA, "src/dup-a.ts");
-      await seed(dockB, "src/dup-b.ts");
-
-      const phase = makePhase({ name: "build", concurrency: "fanout" });
-      const chain: Chain = { phases: [phase], humanOnly: [] };
-
-      // Interleave: park job A mid-agent with its worktree LIVE, then run
-      // job B's entire tick (create → agent → teardown) against the shared
-      // base. Slug-keyed paths would make B's createWorktree treat
-      // `<base>/dup-tag` as a stale remnant and rm A's live worktree out
-      // from under its parked agent — the exact clobber this closes.
-      let releaseA!: () => void;
-      const gate = new Promise<void>((res) => (releaseA = res));
-      let signalStarted!: () => void;
-      const aStarted = new Promise<void>((res) => (signalStarted = res));
-
-      let cwdA: string | undefined;
-      let cwdB: string | undefined;
-
-      const dispA = new Dispatcher({
-        chainLoader: staticLoader(chain),
-        repoRoot: fx.repo,
-        configDir: fx.configDir,
-        flumeDir: dockA,
-        agent: fanoutAgent({
-          "dup-tag": async (cwd) => {
-            cwdA = cwd;
-            signalStarted();
-            await gate;
-            await writeAndCommit(cwd, "src/dup-a.ts", "A\n", "build(DUP-TAG): ship alpha");
-          },
-        }),
-        log: silent,
-        namespace: "alpha",
-      });
-      const dispB = new Dispatcher({
-        chainLoader: staticLoader(chain),
-        repoRoot: fx.repo,
-        configDir: fx.configDir,
-        flumeDir: dockB,
-        agent: fanoutAgent({
-          "dup-tag": async (cwd) => {
-            cwdB = cwd;
-            await writeAndCommit(cwd, "src/dup-b.ts", "B\n", "build(DUP-TAG): ship beta");
-          },
-        }),
-        log: silent,
-        namespace: "beta",
-      });
-
-      const aTick = dispA.tick();
-      try {
-        await aStarted;
-
-        const bOutcome = await dispB.tick();
-        expect(bOutcome.result?.shippedTags).toEqual(["DUP-TAG"]);
-
-        // Identical tag slugs, disjoint paths under the one shared base.
-        expect(cwdA).toBe(join(base, "alpha", "dup-tag"));
-        expect(cwdB).toBe(join(base, "beta", "dup-tag"));
-        // B's full run — including its stale-slug cleanup and teardown —
-        // left A's live worktree standing.
-        expect(existsSync(join(base, "alpha", "dup-tag"))).toBe(true);
-      } finally {
-        releaseA();
-      }
-
-      const aOutcome = await aTick;
-      // spec/loop.md "Tip verify": neither dispatcher here takes a tip
-      // claim (that guard lives at the `flume tick`/`flume loop` CLI
-      // boundary, spec/loop.md "The loop lock and the tip claim" —
-      // uncoordinated bare ticks are the case the operator avoids by
-      // serializing on it), so B's landed commit carries no live claim and
-      // reads as ordinary foreign history. A's cherry-pick absorbs it — the
-      // two entries' files are disjoint, so git's own conflict detection
-      // lands both.
-      expect(aOutcome.result?.committed).toBe(true);
-      expect(aOutcome.result?.shippedTags).toEqual(["DUP-TAG"]);
-      expect(aOutcome.tipMoved).toBeUndefined();
-      expect(await readFile(join(fx.repo, "src/dup-b.ts"), "utf8")).toBe("B\n");
-      expect(await readFile(join(fx.repo, "src/dup-a.ts"), "utf8")).toBe("A\n");
-    } finally {
-      await rm(container, { recursive: true, force: true });
-      await rm(dockA, { recursive: true, force: true });
-      await rm(dockB, { recursive: true, force: true });
-    }
-  });
-
-  it("no namespace → legacy <base>/<slug> (bare .flume harnesses unchanged)", async () => {
-    const container = await mkTempDir("flume-nspath-legacy-");
-    try {
-      const base = join(container, "wt-base");
-      process.env.FLUME_WORKTREES_DIR = base;
-
-      await writePending(fx.repo, [makeEntry("LEGACY-PATH", ["src/legacy-path.ts"])]);
-      new Baton(join(fx.repo, ".flume")).wake("build");
-
-      const phase = makePhase({ name: "build", concurrency: "fanout" });
-      const chain: Chain = { phases: [phase], humanOnly: [] };
-
-      let observedCwd: string | undefined;
-      const agent = fanoutAgent({
-        "legacy-path": async (cwd) => {
+        "fan-path": async (cwd) => {
           observedCwd = cwd;
           await writeAndCommit(
             cwd,
-            "src/legacy-path.ts",
-            "legacy\n",
-            "build(LEGACY-PATH): ship",
+            "src/fan-path.ts",
+            "fan\n",
+            "build(FAN-PATH): ship",
           );
         },
       });
@@ -4658,8 +4451,11 @@ describe("Dispatcher fanout — job-scoped worktree paths", () => {
 
       const outcome = await dispatcher.tick();
 
-      expect(outcome.result?.shippedTags).toEqual(["LEGACY-PATH"]);
-      expect(observedCwd).toBe(join(base, "legacy-path"));
+      expect(outcome.result?.shippedTags).toEqual(["FAN-PATH"]);
+      // The base itself, with nothing between it and the entry's directory.
+      expect(observedCwd).toBe(join(base, "fan-path"));
+      // … and teardown cleans it.
+      expect(existsSync(join(base, "fan-path"))).toBe(false);
     } finally {
       await rm(container, { recursive: true, force: true });
     }
@@ -15440,8 +15236,8 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
 // long-tag fanout path stays clear of the ~200-char wall `git worktree add`
 // itself refuses at — below MAX_PATH and unaffected by core.longpaths. The
 // createWorktree/prior-attempt cases below stay deep only via
-// chain.friction/namespace nesting that fs operations (not `git worktree
-// add` itself) walk, which core.longpaths does cover.
+// chain.friction nesting that fs operations (not `git worktree add` itself)
+// walk, which core.longpaths does cover.
 describe.runIf(process.platform === "win32")(
   "Dispatcher fanout — createWorktree pins core.longpaths",
   () => {
@@ -15956,10 +15752,10 @@ describe.runIf(process.platform === "win32")(
 
     // WORKTREE-WIN32-PATH-TOTAL-LIMIT (fresh create + stale cleanup)
     // retired: operator ruling on a real win32 host found `git worktree
-    // add` itself refusing a namespace/slug path around ~200 chars
+    // add` itself refusing a worktree path around ~200 chars
     // ("fatal: '$GIT_DIR' too big"), below win32's ~260-char total-path
     // limit and unaffected by core.longpaths — the exact depth these two
-    // cases drove the namespace to in order to exercise createWorktree's
+    // cases drove the base to in order to exercise createWorktree's
     // deep-path handling. The claim they pinned (createWorktree succeeds
     // past 260 chars) is untestable through real fanout on win32; kept in
     // the suite the two cases would run zero-width on any other platform
@@ -17480,61 +17276,6 @@ describe("Dispatcher — a differential gate's checkout: api.git.checkoutAt, rec
     // And it carries the base's bytes, not the tick's — which is the only
     // reason a differential gate wanted a second tree at all.
     expect(bytesThere).toBe("base\n");
-  });
-
-  it("a namespaced job's checkoutAt plants under the namespace directory the startup sweep reads", async () => {
-    // The level matters, not just the base. Under a namespace the startup
-    // sweep reads `<base>/<ns>` and steps over everything at the bare base
-    // as a sibling job's ("an unnamespaced instance's sweep does not remove
-    // a sibling namespaced job's live worktree directory…", above), so a
-    // checkout planted one level up is residue no start reclaims — which is
-    // the whole promise this API makes for a run killed mid-gate.
-    new Baton(join(fx.repo, ".flume")).wake("plan");
-
-    let planted: string | undefined;
-    let flumeDirSeen: string | undefined;
-    let registeredDuringGate: boolean | undefined;
-
-    const gate = differentialGate(
-      async (path, ctx) => {
-        planted = path;
-        flumeDirSeen = ctx.flumeDir;
-        registeredDuringGate = await registered(path);
-      },
-      () => ({ ok: true, message: "differed" }),
-    );
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader({
-        phases: [makePhase({ name: "plan", gates: [gate] })],
-        humanOnly: [],
-      }),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent: singleAgent((cwd) =>
-        writeAndCommit(cwd, "src/out.ts", "ok\n", "plan: derive"),
-      ),
-      log: silent,
-      namespace: "alpha",
-    });
-
-    const outcome = await dispatcher.tick();
-
-    // Non-vacuity: the gate ran on a span that committed, and what it asked
-    // for was a tree git actually registered — so the path asserted below is
-    // one a real checkout stood at.
-    expect(outcome.result?.committed).toBe(true);
-    expect(outcome.result?.gateResults.map((g) => g.gate)).toContain(
-      "differential",
-    );
-    expect(planted).toBeDefined();
-    expect(registeredDuringGate).toBe(true);
-
-    // The namespace level, mirroring the worktree path a namespaced job's
-    // own tick lands at — not the bare base.
-    const base = worktreesBase(flumeDirSeen!);
-    expect(dirname(planted!)).toBe(join(base, "alpha"));
-    expect(dirname(planted!)).not.toBe(base);
   });
 
   it("the engine removes a gate's checkout when the gate returns", async () => {

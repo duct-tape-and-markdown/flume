@@ -49,9 +49,9 @@ export interface GateRunScope {
  * differential gate that crashed mid-run cannot leak the tree it was
  * reading (spec/chain.md "What a gate receives"). The scope takes the same
  * `worktreeCtx` every other worktree call site the caller makes reads, so
- * where a gate's checkout lands — declared base and job namespace both — is
- * the placement the startup sweep goes on to read, never a second
- * composition of it.
+ * where a gate's checkout lands — the declared base, and no level minted
+ * beneath it — is the placement the startup sweep goes on to read, never a
+ * second composition of it.
  */
 export async function runGate(
   gate: Gate,

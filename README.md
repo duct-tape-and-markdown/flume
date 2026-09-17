@@ -184,9 +184,10 @@ commit order and runs `afterMerge` gates against the merged state. A cherry-pick
 conflict keeps that entry in pending; an `afterMerge` failure reverts the
 whole wave.
 
-Worktree branches are named `flume/<entry-slug>`; under a job (below) they
-are namespaced `flume/<job>/<slug>`, so two jobs sharing an entry tag never
-clobber each other's branches.
+Worktree branches are named `flume/<entry-slug>`, and the engine mints no
+level beneath the worktree base. Two efforts are two checkouts, each with its
+own state root and so its own base, so identical entry tags in two efforts
+already address two directories.
 
 Worktrees are the only isolation primitive the harness ships. Docker / sandbox
 layers are deferred until a chain needs a boundary a worktree cannot draw.

@@ -1338,7 +1338,7 @@ describe.runIf(process.platform === "win32")("pinLongPaths", () => {
 
 // win32 total-path limit: tipClaimPath mirrors refPath as nested
 // directories under commonDir/flume/tip-claims — the same shape
-// createWorktree's own branch naming (flume/<namespace>/slugify(entry.tag))
+// createWorktree's own branch naming (flume/slugify(entry.tag))
 // already needed toNamespacedPath for (WORKTREE-WIN32-PATH-TOTAL-LIMIT). A
 // refPath this deep pushes the claim path past win32's ~260-char limit.
 describe.runIf(process.platform === "win32")(
