@@ -1,1 +1,59 @@
-[]
+[
+  {
+    "tag": "LOOP-PID-REFUSALS-NAME-THE-RESOLVED-LOCK-PATH",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "the two `loop.pid` EX_IOERR arms (`status`, `loop`) and the comment above each"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "driven arm per verb; the two existing name-only assertions move with the message"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Name the resolved loop.pid path in the `status` and `loop` EX_IOERR refusals, as their stop-flag and merging-dir siblings already do",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "Both arms print the lock path the verb resolved, and the comment asserting the I/O error carries it is gone — shrunk to what the message now holds.",
+    "tests": [
+      "flume loop refuses an unreadable loop.pid naming the resolved lock path",
+      "flume status refuses an unreadable loop.pid naming the resolved lock path"
+    ],
+    "pins": [],
+    "notes": "Measured while driving loop's three 74 arms: node's EISDIR from reading a directory carries no path, so the operator gets `loop.pid failed to read: EISDIR: illegal operation on a directory, read` — a state-root-relative name under a root that may be relocated. Both call sites already hold the path (`loopLockPath(flumeDir)`). Sibling shape is `<thing> at ${path} failed to ...`. The tick-verdicts arms name-only too, but carry no such claim; out of scope."
+  },
+  {
+    "tag": "SCRATCH-REPO-ADOPTED-BY-THE-UNIT-LANE-CLI-SUITES",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "drop the local `makeRepo`; call `makeScratchRepo` with the suite's prefix"
+        },
+        {
+          "path": "tests/cliStateDirs.test.ts",
+          "description": "same adoption; the no-ancestor-fallback fixture stays unrooted"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Adopt `makeScratchRepo` (`tests/helpers/scratchRepo.ts`) in the two unit-lane suites whose `makeRepo` is it modulo the fixture prefix",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "Neither suite declares a scratch-git-repo maker of its own; the default lane is green and tsc clean.",
+    "tests": [],
+    "pins": [],
+    "notes": "Copies at tests/cli.test.ts:986 and tests/cliStateDirs.test.ts:418 are byte-identical to the helper but for `mkFixtureRoot`'s prefix. The other four are not this shape: runtimeIgnores and examples.integration are never a CLI cwd, which `mkFixtureRoot`'s own doc keeps on `mkTempDir`; tip-claim.integration and loop-process-boundary.integration root on `mkTempDir` and add their own git config. Out of scope here."
+  }
+]
