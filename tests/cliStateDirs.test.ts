@@ -25,9 +25,9 @@ import { Baton } from "../src/Baton.ts";
 import { EX_IOERR } from "../src/cli.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
+import { makeScratchRepo } from "./helpers/scratchRepo.ts";
 import {
   SPAWN_BUDGET_MS,
-  exec,
   runCli,
   runCliStreams,
 } from "./helpers/subprocess.ts";
@@ -414,23 +414,6 @@ describe("resolveRepoRoot — bay discovery walk-up", () => {
   );
 });
 
-/** Scratch git repo on a chosen branch. */
-async function makeRepo(branch: string): Promise<{
-  dir: string;
-  cleanup: () => Promise<void>;
-}> {
-  const dir = await mkFixtureRoot("flume-state-dirs-");
-  const opts = { cwd: dir };
-  await exec("git", ["init", "-q", "-b", branch], opts);
-  await exec("git", ["config", "user.email", "test@example.com"], opts);
-  await exec("git", ["config", "user.name", "Test User"], opts);
-  await exec("git", ["config", "commit.gpgsign", "false"], opts);
-  await writeFile(join(dir, "README.md"), "seed\n");
-  await exec("git", ["add", "."], opts);
-  await exec("git", ["commit", "-q", "-m", "seed"], opts);
-  return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
-}
-
 /**
  * Materialize the repo-resident config: `chain.ts` at
  * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
@@ -542,7 +525,7 @@ describe("state-dir resolution — real CLI", () => {
   it(
     "the CLI resolves flumeDir/configDir ahead of dispatch: a chain factory reading process.env.FLUME_DIR sees the canonicalized value, not the caller's raw relative one (CLI-STATEROOT-RESOLVE-BEFORE-DISPATCH)",
     async () => {
-      const repo = await makeRepo("main");
+      const repo = await makeScratchRepo("flume-state-dirs-", "main");
       try {
         await writeRepoConfig(repo.dir, loadTimeProbeChainSrc());
         const observedPath = join(repo.dir, "observed-flume-dir.json");
@@ -577,7 +560,7 @@ describe("state-dir resolution — real CLI", () => {
   it(
     "an invocation carrying --job exits 2",
     async () => {
-      const repo = await makeRepo("main");
+      const repo = await makeScratchRepo("flume-state-dirs-", "main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
         // The state root `--job foo` used to resolve: on disk, so the refusal
@@ -622,7 +605,7 @@ describe("state-dir resolution — real CLI", () => {
   it(
     "FLUME_JOB is not written back into a spawned tick's environment",
     async () => {
-      const repo = await makeRepo("main");
+      const repo = await makeScratchRepo("flume-state-dirs-", "main");
       try {
         await writeRepoConfig(repo.dir, envProbeChainSrc("probe"));
         const bay = join(repo.dir, ".flume");
@@ -663,8 +646,8 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
   it(
     "a flume invocation inheriting another repo's FLUME_DIR + FLUME_DIR_RESOLVED_FOR stamp refuses instead of writing to it",
     async () => {
-      const outer = await makeRepo("main");
-      const inner = await makeRepo("main");
+      const outer = await makeScratchRepo("flume-state-dirs-", "main");
+      const inner = await makeScratchRepo("flume-state-dirs-", "main");
       try {
         const outerFlumeDir = join(outer.dir, ".flume");
         await mkdir(outerFlumeDir, { recursive: true });
@@ -695,8 +678,8 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
   it(
     "a bare absolute FLUME_DIR shaped like another repo's .flume, with no stamp, composes rather than refusing (misfire repro)",
     async () => {
-      const outer = await makeRepo("main");
-      const inner = await makeRepo("main");
+      const outer = await makeScratchRepo("flume-state-dirs-", "main");
+      const inner = await makeScratchRepo("flume-state-dirs-", "main");
       try {
         const outerFlumeDir = join(outer.dir, ".flume");
         await mkdir(outerFlumeDir, { recursive: true });
