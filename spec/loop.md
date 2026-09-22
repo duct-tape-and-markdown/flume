@@ -661,6 +661,11 @@ store until gc, and the verdict is the only place their sha outlives the branch.
 
 Classification happens at the process boundary so a caller never has to read logs.
 
+`EX_IOERR` (74) is cross-cutting rather than any one verb's: every verb returns it
+when a file it must read is present and unreadable, and each verb's `--help` names
+the files that reach it. Absence is never 74 — an absent file is silence or a
+report — and a present file that will not open is never read as absent.
+
 `flume tick`:
 
 | code | meaning |
@@ -668,6 +673,7 @@ Classification happens at the process boundary so a caller never has to read log
 | 0 | work done, or clean hibernation |
 | 1 | harness error, HEAD detached, or another live process holds the tip claim |
 | 2 | usage — including the CJS-context host refusal, a nameable fix rather than a dead chain (`spec/chain.md`) |
+| 74 | `EX_IOERR` — a file the tick must read is present and unreadable: the state root at discovery, or the verdict history when the tick records its own verdict. In the second case the tick's work has already landed; the code names the recording failure, and the tick's own outcome is in the log |
 | 69 | `EX_MOUNT_DEAD` — the chain module could not load, its state root is missing, or its declaration is invalid (no agent ran); or `pending.json` failed to parse (see below) |
 | 78 | `EX_TERMINAL_MISCONFIG` — the chain resolved but declares an inconsistent world (below) |
 

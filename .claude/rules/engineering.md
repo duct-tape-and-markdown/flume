@@ -54,16 +54,25 @@ Every check lives at the most deterministic layer that can express it — a
   page name such a passage cites resolves on disk, as a page name does
   anywhere, so a note that names its neighbour in a series names one that
   exists.
-  And a reference in a comment — a
-  backticked identifier or a backticked repo-relative path in `src/`,
-  `harness/`, or `tests/`, where the program reaches; a `*.md` page name,
-  with or without backticks, in any tree the sweep domain names, since a
-  filename resolves on disk and is never a sentence, and the `#fragment` a
-  markdown link carries into such a page, which resolves against that page's
-  own headings the way a `per` cite already does — is not prose: a pin
-  may resolve it against the declarations those trees hold and the working
-  tree — the token, never its meaning — so a deleted symbol or a renamed
-  page cannot leave its citations standing.
+  And a reference in a comment is not prose when it is a token the working
+  tree or the program can answer, read as the token and never its meaning —
+  that predicate is the rule, and the classes the suite resolves today are
+  its instances: a backticked identifier or a backticked repo-relative path
+  in `src/`, `harness/`, or `tests/`, where the program reaches; a `*.md`
+  page name, with or without backticks, in any tree the sweep domain names,
+  since a filename resolves on disk and is never a sentence; the `#fragment`
+  a markdown link carries into such a page, which resolves against that
+  page's own headings the way a `per` cite already does; the italicized
+  section half of a `` (`page.md`, *Section*) `` pair, resolved against that
+  page's headings and bolded bullet leads, exact after backtick
+  normalization — no prefix arm, so an abbreviation is a rewrite, not a
+  match; and a `§ N` cross-reference on a `docs/` page, resolved against
+  that page's own numbered headings where it has any and left as prose where
+  it has none. A pin may resolve each against the declarations those trees
+  hold and the working tree, so a deleted symbol, a renamed page, or a
+  renumbered section cannot leave its citations standing. A class this
+  predicate admits and the suite does not yet resolve is a plan entry, not a
+  question.
   An identifier the citation pairs with a path, `` `name` (`src/file.ts`) ``,
   resolves in that file: where a declaration lives is the token's fact, not
   its meaning, and a split that moves the job moves the pair or is caught.

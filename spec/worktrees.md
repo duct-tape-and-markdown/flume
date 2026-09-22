@@ -79,10 +79,15 @@ an environment variable set before the engine's own module loads.
 
 **The base must be flume-exclusive.** Before `worktree add`, `createWorktree` clears the
 computed `<base>/<dirName>` path only when git's own worktree registry names it
-as a worktree of this repo — `git worktree remove --force` first (`removeWorktree`), a
-recursive filesystem delete as the fallback. An occupant the registry does not name, or a
-registry that cannot be read, refuses the tick naming the path and provisions nothing;
-nothing unregistered is ever deleted. Exclusivity is still asked of the operator: content of
+as a worktree of this repo *and* the stamp that worktree carries names this state
+root — the evidence provisioning mints and the startup sweep reads (*Startup sweep*,
+below) — `git worktree remove --force` first (`removeWorktree`), a recursive
+filesystem delete as the fallback. An occupant the registry does not name, a
+registered worktree this state root did not stamp, or a registry that cannot be read,
+refuses the tick naming the path and provisions nothing; nothing unregistered or
+unstamped is ever deleted. Residue predating the stamp, and residue from a
+provisioning that died between the `worktree add` and the stamp, are cleared by
+hand — the trade the sweep takes for the same reason. Exclusivity is still asked of the operator: content of
 their own under the base is no longer lost, but it stalls provisioning loudly the first time
 an entry's bounded directory name matches — a weaker promise than deletion was, not a
 retracted one.
@@ -91,9 +96,11 @@ The engine mints no namespace beneath the base. Two efforts are two checkouts
 (`spec/jobs.md`, *The checkout is the unit of isolation*), each with its own
 state root and therefore its own base, so identical tag slugs in two efforts
 address two directories already. Under a `FLUME_WORKTREES_DIR` the operator
-deliberately shares between checkouts they collide, and the registry check
-above refuses the tick naming the path rather than removing the occupant —
-loud, and the operator's to resolve by not sharing the base.
+deliberately shares between checkouts they collide, and the stamp check
+above refuses the tick naming the path rather than removing the occupant — the
+registry alone could not, since it names every worktree of the *repository*, a
+sibling checkout's live tree included — loud, and the operator's to resolve by
+not sharing the base.
 
 ## Worktree directory names are length-bounded
 
