@@ -13,7 +13,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -22,11 +22,13 @@ import { EX_IOERR } from "../src/cli.ts";
 import { EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import { HELP_TOP, helpPageFor } from "../src/cliHelp.ts";
 import {
+  STATE_ROOT_DIRNAME,
   STATE_ROOT_NAMES,
   loopLockPath,
   mergingDir,
   stopFlagPath,
 } from "../src/paths.ts";
+import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import {
   loopCompletionSummary,
@@ -1528,6 +1530,24 @@ describe("flume help <name> and flume --help <name> — the trailing name throug
 });
 
 /**
+ * One verb's `docs/CLI.md` section names 74, among a range the reader really
+ * read — the whole of what "the page states this verb's I/O refusal" is, and
+ * one home for it across every case below that makes the claim about a verb
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ */
+function expectSectionNamesIoRefusal(page: string, verb: string): void {
+  const section = sectionOf(page, new RegExp(`^## \`flume ${verb}\\b`));
+  expect(section.length, verb).toBeGreaterThan(0);
+
+  // Vacuity: a section whose range was not read at all — a heading that
+  // moved, a phrasing the reader no longer keys on — would leave the
+  // membership below asserting over the empty set.
+  const codes = namedExitCodes(section);
+  expect(codes.length, verb).toBeGreaterThan(1);
+  expect(codes, verb).toContain(EX_IOERR);
+}
+
+/**
  * EVERY-VERBS-HELP-NAMES-THE-IO-REFUSAL — `EX_IOERR` is cross-cutting rather
  * than any one verb's: bay discovery stats the nearest state root at the top
  * of `main`, before dispatch, so every verb's process can return 74
@@ -1562,15 +1582,267 @@ describe("the cross-cutting I/O refusal on every verb's page (EVERY-VERBS-HELP-N
   it("docs/CLI.md's wake, sleep, stop and render sections name exit 74", async () => {
     const page = await readCliDoc();
     for (const verb of ["wake", "sleep", "stop", "render"]) {
-      const section = sectionOf(page, new RegExp(`^## \`flume ${verb}\\b`));
-      expect(section.length, verb).toBeGreaterThan(0);
-
-      // Vacuity: a section whose range was not read at all — a heading that
-      // moved, a phrasing the reader no longer keys on — would leave the
-      // membership below asserting over the empty set.
-      const codes = namedExitCodes(section);
-      expect(codes.length, verb).toBeGreaterThan(1);
-      expect(codes, verb).toContain(EX_IOERR);
+      expectSectionNamesIoRefusal(page, verb);
     }
   });
+});
+
+/*
+ * CLI-DOC-CHECK-AND-STATUS-IO-REFUSALS-PINNED — the two `docs/CLI.md` claims
+ * the sweep above fixed and left unpinned. `flume check`'s section named no
+ * 74 at all though the verb has returned one since its pending-read refusal,
+ * and `flume status`'s section enumerated 74's *causes* without the discovery
+ * read every verb starts with. Neither was reachable from a pin already here:
+ * the verb-page case names four other verbs, and a range pin compares code
+ * sets, which a cause list is invisible to.
+ *
+ * `check` joins the range read; `status` is pinned the way loop's cause list
+ * is — every arm driven for real, one `flume status` run apiece, and the
+ * artifact each refusal reports read off the run rather than spelled again by
+ * the tester's hand (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*).
+ *
+ * The bound, declared rather than left implicit: an arm nobody wrote is
+ * invisible here, exactly as it is for the driven loop and status/log ranges
+ * above, and the claim is the one direction its title states — the page names
+ * every artifact a driven refusal reports. A cause the page names that no arm
+ * produces is out of this pin's sight, because two of status's five reads are
+ * named in bare prose and the "no others" direction needs a vocabulary that
+ * can tell a documented cause from a sentence about one.
+ */
+
+/**
+ * How a refusal names the artifact it is about: the subject it leads with,
+ * from the `[flume]` prefix through whatever the line says it could not do —
+ * `loop lock at <path> failed to read`, `tick-verdicts.jsonl failed to read`,
+ * `bay discovery from <cwd> failed to stat an ancestor bay`. Read off the
+ * line rather than declared per arm, so a reworded refusal reds here instead
+ * of being matched by a copy that moved with it.
+ */
+const REFUSAL_SUBJECT = /^\[flume\] (?:status: )?(.+?)(?: (?:at|from) \S+)? failed to (\w+)/;
+
+/** Where one `flume status` refusal arm is armed. */
+interface StatusFixture {
+  /** The scratch repository the verb runs in. */
+  readonly repoDir: string;
+  /** Its state root. */
+  readonly flumeDir: string;
+  /** The tip claim for its HEAD ref, which lives outside that state root. */
+  readonly claimPath: string;
+}
+
+/**
+ * One start-up-to-spend-line I/O refusal `flume status` can take: the arm's
+ * name for a failure message, the engine's filename for the artifact where
+ * the state root holds one, and the run that arms the refusal and takes it.
+ */
+interface StatusIoRefusal {
+  /** The arm, named for a failure message. */
+  readonly arm: string;
+  /**
+   * The engine's own filename for the artifact, off the state root's table —
+   * the second name a page may use where the refusal's subject is a phrase
+   * (`loop lock` on stderr is `loop.pid` on the page). Absent for an artifact
+   * the state root does not hold.
+   */
+  readonly fileName?: string;
+  /**
+   * Arm the refusal, run the verb over it, and leave the fixture as it was
+   * found — the arms are ordered as the verb reaches them, so one left
+   * standing refuses again and the arm behind it is never reached. Answers
+   * the run and the path it denied, which the drive below reads the refusal
+   * back against.
+   */
+  readonly drive: (
+    fixture: StatusFixture,
+  ) => Promise<{ out: string; code: number; denied: string }>;
+}
+
+/**
+ * Every file `flume status` refuses over, in the order the verb reaches them:
+ * the bay it is discovered through, the lock, the stop flag, the tip claim,
+ * and — under a live supervisor alone — the verdict history its spend line
+ * totals.
+ */
+const STATUS_IO_REFUSALS: readonly StatusIoRefusal[] = [
+  {
+    arm: "a state root that will not stat at bay discovery",
+    fileName: STATE_ROOT_DIRNAME,
+    drive: async () => {
+      // A root of its own: this arm's subject is a bay that cannot be
+      // stat'd at all, and the shared fixture's has to stay readable for
+      // every arm below it.
+      const bay = await mkFixtureRoot("flume-doc-status-74-bay-");
+      const denied = join(bay, STATE_ROOT_DIRNAME);
+      try {
+        // A self-referential link, as `tests/cli.test.ts` arms this same
+        // read: ELOOP is the non-ENOENT stat failure, and a structural
+        // denial (`tests/helpers/denial.ts`) cannot reach it — a directory
+        // at the path is exactly what discovery is looking for.
+        await rm(denied, { recursive: true, force: true });
+        await symlink(STATE_ROOT_DIRNAME, denied);
+        return { ...(await runCli(bay, ["status"])), denied };
+      } finally {
+        await rm(bay, { recursive: true, force: true });
+      }
+    },
+  },
+  {
+    arm: "a loop lock that stats and will not open",
+    fileName: STATE_ROOT_NAMES.loopLock,
+    drive: async ({ repoDir, flumeDir }) => {
+      const denied = loopLockPath(flumeDir);
+      denyFile(denied);
+      try {
+        return { ...(await runCli(repoDir, ["status"])), denied };
+      } finally {
+        await rm(denied, { recursive: true, force: true });
+      }
+    },
+  },
+  {
+    arm: "a stop flag that will not stat",
+    fileName: STATE_ROOT_NAMES.stopFlag,
+    drive: async ({ repoDir, flumeDir }) => {
+      const denied = stopFlagPath(flumeDir);
+      // ELOOP again, for the reason the bay arm states: this read is an
+      // existence probe, and a directory at the path stats clean.
+      await symlink(denied, denied);
+      try {
+        return { ...(await runCli(repoDir, ["status"])), denied };
+      } finally {
+        await rm(denied, { recursive: true, force: true });
+      }
+    },
+  },
+  {
+    arm: "a tip claim that stats and will not open",
+    drive: async ({ repoDir, claimPath }) => {
+      await mkdir(dirname(claimPath), { recursive: true });
+      denyFile(claimPath);
+      try {
+        return { ...(await runCli(repoDir, ["status"])), denied: claimPath };
+      } finally {
+        await rm(claimPath, { recursive: true, force: true });
+      }
+    },
+  },
+  {
+    arm: "a verdict history the live run's spend line cannot read",
+    fileName: STATE_ROOT_NAMES.tickVerdictsLog,
+    drive: async ({ repoDir, flumeDir }) => {
+      const lock = loopLockPath(flumeDir);
+      const denied = tickVerdictsLogPath(flumeDir);
+      // The spend line runs under a live supervisor alone, so this arm has
+      // to plant one. The lock is composed by the real writer of that
+      // statement (`renderPidClaim`, `src/pidClaim.ts`) rather than
+      // hand-spelled — a hand copy would agree with a reader that had
+      // changed.
+      await writeFile(lock, renderPidClaim(process.pid, new Date()), "utf8");
+      denyFile(denied);
+      try {
+        return { ...(await runCli(repoDir, ["status"])), denied };
+      } finally {
+        await rm(denied, { recursive: true, force: true });
+        await rm(lock, { recursive: true, force: true });
+      }
+    },
+  },
+];
+
+/**
+ * Drive every arm above for real, one `flume status` run each, and answer the
+ * names each refusal gave its artifact — the subject it printed, plus the
+ * engine's filename for it where the state root holds one.
+ *
+ * A real repository on a named branch, because the last two arms sit past
+ * reads that need one: the tip claim is keyed on HEAD's ref, and the spend
+ * line is past the chain load a bare directory still reaches.
+ *
+ * Each arm pins its own non-vacuity: a run that never reached the read — a
+ * refusal taken ahead of it, a denial armed at the wrong path — exits some
+ * plausible code and would agree with prose naming almost anything, so the
+ * run is asserted to have refused, and to have refused *over the path this
+ * arm denied*, before its names count (`.claude/rules/engineering.md`, *A
+ * green verdict is proven non-vacuous*).
+ */
+async function driveStatusIoRefusals(): Promise<string[][]> {
+  const repo = await makeScratchRepo("flume-doc-status-74-", "main");
+  const head = await currentRefPath(repo.dir);
+  if (head.kind !== "ref") {
+    throw new Error(`the fixture repository is not on a branch: ${head.kind}`);
+  }
+  const fixture: StatusFixture = {
+    repoDir: repo.dir,
+    flumeDir: join(repo.dir, ".flume"),
+    claimPath: tipClaimPath(await gitCommonDir(repo.dir), head.path),
+  };
+
+  try {
+    const stated: string[][] = [];
+    for (const refusal of STATUS_IO_REFUSALS) {
+      const { out, code, denied } = await refusal.drive(fixture);
+      expect(code, refusal.arm).toBe(EX_IOERR);
+
+      // The refusal is the last thing the verb writes before it returns, and
+      // stderr trails stdout in the combined output, so it is the last line —
+      // which is what tells it from the chain-load report `status` prints
+      // ahead of its own reads on a fixture carrying no chain.
+      const line = out.trimEnd().split("\n").at(-1) ?? "";
+      const subject = REFUSAL_SUBJECT.exec(line);
+      expect(subject, `${refusal.arm}: ${line}`).not.toBeNull();
+      // And it is *this* arm's refusal: the artifact it names is the one this
+      // arm denied, by the name the engine's own accessor gave that path.
+      expect(line, refusal.arm).toContain(basename(denied));
+
+      stated.push([
+        subject![1]!,
+        ...(refusal.fileName === undefined ? [] : [refusal.fileName]),
+      ]);
+    }
+    return stated;
+  } finally {
+    await repo.cleanup();
+  }
+}
+
+describe("docs/CLI.md's check and status I/O refusals (CLI-DOC-CHECK-AND-STATUS-IO-REFUSALS-PINNED)", () => {
+  it("docs/CLI.md's flume check section names exit 74", async () => {
+    expectSectionNamesIoRefusal(await readCliDoc(), "check");
+  });
+
+  it("docs/CLI.md's flume status section names every artifact a real status I/O refusal reports", async () => {
+    const stated = await driveStatusIoRefusals();
+    // Vacuity: one arm that happened to fire agrees with a sentence naming
+    // one cause, whichever it is — and two arms that took the same refusal
+    // would count twice while covering one read, which distinct subjects is
+    // what rules out.
+    expect(stated.length).toBe(STATUS_IO_REFUSALS.length);
+    expect(stated.length).toBeGreaterThan(1);
+    expect(new Set(stated.map((names) => names[0])).size).toBe(stated.length);
+
+    const section = sectionOf(await readCliDoc(), /^## `flume status\b/);
+    expect(section.length).toBeGreaterThan(0);
+    const ioWindow = sentencesNamingExitCode(section, EX_IOERR).join("\n");
+
+    // The window is scoped to this code rather than to the section: `status`
+    // spends most of its section on the listing it prints, naming artifacts
+    // no refusal is about, so a reader handing back the whole section would
+    // pass over a 74 sentence that had gone silent.
+    const outside = artifactsNamedIn(section).filter(
+      (name) => !artifactsNamedIn(ioWindow).includes(name),
+    );
+    expect(
+      outside.length,
+      "the 74 window read back the whole section",
+    ).toBeGreaterThan(0);
+
+    // Each artifact by one of the two names the engine has for it — the
+    // subject its refusal printed, or the state root's own filename, since
+    // the page spells `loop.pid` where the refusal says "loop lock".
+    const unnamed = stated.filter(
+      (names) => !names.some((name) => ioWindow.includes(name)),
+    );
+    expect(unnamed, "artifacts the 74 sentence does not name").toEqual([]);
+  }, SPAWN_BUDGET_MS);
 });
