@@ -1108,6 +1108,64 @@ describe("worktrees — the startup sweep removes on the stamp provisioning mint
     );
   });
 
+  /**
+   * The 0.17 migration note tells an operator which file to look for when the
+   * sweep declines a directory and a tick refuses an occupied path
+   * (`docs/MIGRATING-0.17.md`, § 10) — a page stating what a shipped
+   * interface writes, and so pinnable against that interface
+   * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+   *
+   * An agreement gate, not a literal comparison (*A seam gate reads what the
+   * real writer wrote*): the real `createWorktree` provisions, and the stamp
+   * is located by the one property the note claims for it — the file in git's
+   * admin directory holding this state root — rather than by a name spelled
+   * here. A rename of the writer's constant therefore reds the page that
+   * still names the old file, which comparing two hand-written literals
+   * could not.
+   */
+  it("the 0.17 migration note names the state-root stamp filename the worktree source writes", async () => {
+    const { own } = twoRoots(silent);
+    const wt = await createWorktree(
+      "STAMP-FILENAME-IN-THE-NOTE",
+      await head(),
+      own,
+    );
+
+    const { stdout } = await exec("git", ["rev-parse", "--absolute-git-dir"], {
+      cwd: wt.path,
+    });
+    const adminDir = stdout.trim();
+    const stamps: string[] = [];
+    for (const name of await readdir(adminDir)) {
+      const file = join(adminDir, name);
+      if (!(await lstat(file)).isFile()) continue;
+      let text: string;
+      try {
+        text = await readFile(file, "utf8");
+      } catch {
+        continue;
+      }
+      if (text.trim() === resolve(own.flumeDir)) stamps.push(name);
+    }
+
+    // Vacuity pin (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*): exactly one file in git's admin directory holds this
+    // state root, so the name asserted below is one the writer really wrote
+    // and not an empty scan agreeing with any page at all.
+    expect(stamps).toHaveLength(1);
+
+    const note = await readFile(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "..",
+        "docs",
+        "MIGRATING-0.17.md",
+      ),
+      "utf8",
+    );
+    expect(note).toContain(stamps[0]);
+  });
+
   it("the startup sweep removes only worktree directories stamped by its own state root", async () => {
     const log = collectingLogger();
     const { own, sibling } = twoRoots(log);

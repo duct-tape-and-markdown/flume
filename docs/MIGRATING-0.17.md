@@ -9,17 +9,18 @@ due whether or not you take this upgrade is its § 0, the `package.json`
 beside your `chain.ts`, without which an ESM-only package stops loading under
 `tsx` on node 22.23 and later.
 
-From **0.16.x**. **Seven breaking changes, and four of them are the job
+From **0.16.x**. **Eight breaking changes, and four of them are the job
 surface coming out.** Three are in the API, and the compiler catches every
 one: one field off a result type (§ 5), one off `Chain` (§ 8), one off
 `DispatcherOptions` (§ 9) — no type moves, and nothing is renamed. Two are
 the command line, where nothing catches them for you: four `job` verbs and
 two state-root selectors, each now an exit `2` (§§ 6–7) except the one env
-half that fails silently. The last two touch neither: the on-disk format of
-two files the engine writes to guard a running loop — so that break is
-between *versions sharing a state root*, not between your chain and the
-package — and, for a consumer of the harness package, where its plan slices
-keep open questions.
+half that fails silently. The last three touch neither: the on-disk format of
+two files the engine writes to guard a running loop, a break between
+*versions sharing a state root* rather than between your chain and the
+package; what the engine will now decline to destroy under a worktree base,
+now that provisioning stamps which state root owns a tree (§ 10); and, for a
+consumer of the harness package, where its plan slices keep open questions.
 
 **§§ 6–9 are one cut seen from four sides.** The engine partitions no state
 below a checkout any more: it mints no per-effort state root, seeds none
@@ -43,6 +44,7 @@ ls "$(git rev-parse --show-toplevel)"/.flume/jobs                         # § 6
 grep -rn -e 'flume job' -e '--job' -e FLUME_JOB --exclude-dir=.git .      # §§ 6–7
 grep -n "seedDir" .flume/chain.ts                                         # § 8
 grep -rn "new Dispatcher" --include='*.ts' .                              # § 9
+git worktree list                                                         # § 10
 ```
 
 § 1 applies to every consumer and has no symbol to grep for: it is about how
@@ -62,8 +64,12 @@ hunting hardest: it is the one that now does nothing rather than refusing.
 § 8 applies to a chain declaring `seedDir`. § 9 applies to an embedder
 constructing a `Dispatcher` itself, and — with no symbol to grep for — to
 anything of yours that spells a fanout branch or worktree path, which lose a
-level; read it too if a 0.16 run left worktrees on disk. Your typecheck names
-§§ 5, 8, and 9's call sites whether or not the greps do.
+level. § 10 applies to every consumer whose worktree base still holds a tree
+a `0.16` run provisioned, whether or not a namespace or a job was ever in
+play — the `git worktree list` above is the whole check, and a namespaced
+base hides those trees one level down (§ 9) — and to anyone sharing one
+worktree base between two checkouts. Your typecheck names §§ 5, 8, and 9's
+call sites whether or not the greps do.
 
 ## 1. Stop every running loop before you upgrade a shared state root
 
@@ -445,35 +451,19 @@ collision one directory down.
 
 **If you share one `FLUME_WORKTREES_DIR` between checkouts**, that collision
 is now at the surface: the tick whose path is already occupied fails, naming
-the path, rather than taking a live sibling's checkout down. Two judgments
-produce that refusal, and only the second reaches this case. `createWorktree`
-asks git's registry first, which refuses an occupant git disclaims — but the
-registry names every worktree of the *repository*, a second checkout's live
-tree included, so a shared-base collision passes it. What refuses there is
-the **stamp**: provisioning writes the creating state root into the
-worktree's own git admin directory
-(`.git/worktrees/<name>/flume-state-root`), and a registered path stamped by
-another root — or carrying no stamp at all — fails the tick and is left
-standing. That is the same evidence the startup sweep removes on. Give each
-checkout its own base — the default, `<flumeDir>/worktrees/`, already is one.
+the path, rather than taking a live sibling's checkout down. What refuses it
+is not git's registry — that names every worktree of the *repository*, a
+second checkout's live tree included, so a shared-base collision passes it —
+but the state-root stamp § 10 walks, which is also what leaves the occupant
+standing for you to clear. Give each checkout its own base: the default,
+`<flumeDir>/worktrees/`, already is one.
 
-**What the stamp arm costs is a hand-clearance.** Nothing occupying the
-computed path is cleared for you unless this state root stamped it — not a
-sibling's live tree, not a worktree left by a run that predates the stamp
-(every `0.16` one), not one whose provisioning died between the `git worktree
-add` and the stamp. The tick fails, the directory stands, and clearing it is
-yours: `git worktree remove <path>` for a tree git still registers, `rm -rf`
-plus `git worktree prune` for one it has already forgotten.
-
-**A `0.16` run's worktrees are residue the `0.17` sweep will not reach.** The
-startup sweep reads the *top-level* entries of its base and removes the ones
-git registers as worktrees of this repository *and* whose stamp names this
-state root. A `0.16` tree carries no stamp — its provisioning wrote none — so
-even one sitting at the top level of the base is named in a warning and left
-where it is. A namespaced tree is out of reach twice over: it sits one level
-down, so the sweep sees only `<base>/<namespace>/` — a plain directory git
-calls no worktree of anything — and leaves the subtree standing, along with
-the branches those trees hold. Clear it once, before or after the upgrade:
+**A namespaced run's worktrees are residue the `0.17` sweep will not reach.**
+The startup sweep reads the *top-level* entries of its base, and a namespaced
+tree sits one level down — the sweep sees only `<base>/<namespace>/`, a plain
+directory git calls no worktree of anything, so it leaves the whole subtree
+standing along with the branches those trees hold. Clear it once, before or
+after the upgrade:
 
 ```sh
 git worktree list                                  # what git still registers
@@ -481,3 +471,61 @@ git worktree remove <base>/<namespace>/<dirName>   # per surviving tree
 git worktree prune
 git branch -D flume/<namespace>/<slug>             # per branch they held
 ```
+
+A tree a `0.16` run left is out of the sweep's reach a second way, namespace
+or none: it carries no stamp, so even one sitting at the top level of the
+base is left standing. That is § 10, and it is due whether or not you ever
+set a namespace.
+
+## 10. A worktree is stamped with the state root that provisioned it
+
+**Affects** every consumer whose worktree base still holds a tree a `0.16`
+run provisioned — under any base, and whether or not a namespace or a `job`
+verb was ever in play — plus, from here on, any run whose provisioning dies
+between the `git worktree add` and the stamp. Nothing in the engine's API is
+involved and no invocation starts refusing, which is why neither the compiler
+nor a grep finds this one: what changed is what the engine will now decline
+to destroy.
+
+**What changed.** Provisioning records the state root that created a worktree
+in that worktree's own git admin directory,
+`.git/worktrees/<name>/flume-state-root` — git's per-worktree scratch rather
+than the checkout, so the stamp is invisible to a tick's clean-tree gate and
+git drops it with the worktree it describes, on `worktree remove` and
+`worktree prune` alike. Both sides that would destroy a directory under the
+worktree base now read it:
+
+| | `0.16` | `0.17` |
+| --- | --- | --- |
+| startup sweep | removes each top-level entry of the base git registers as a worktree of this repository | that, **and** whose stamp names this state root; the rest are counted in one warning naming them, and left standing |
+| an occupied provisioning path | removes the occupant if git registers it | that, **and** only if the stamp names this state root; otherwise the tick fails, naming the path |
+
+**Why.** The registry cannot carry the claim. It names every worktree of the
+*repository*, a second checkout's live tree included, so two checkouts
+sharing one worktree base (§ 9) each read the other's live trees as their own
+residue — and removed them. The stamp is minted at provisioning, so the
+evidence says which state root owns a tree rather than which repository does.
+
+**What to do — clear pre-`0.17` trees by hand, because nothing else will.** A
+`0.16` tree carries no stamp: the sweep names it in a warning and leaves it
+where it is, every start, and a tick whose computed path lands on it fails
+rather than clobbering it.
+
+```sh
+git worktree list                     # what git still registers
+git worktree remove <base>/<dirName>  # per surviving tree
+git worktree prune
+git branch -D flume/<slug>            # per branch they held
+```
+
+A directory git has already forgotten takes `rm -rf` and then the `prune`.
+Under a namespaced base the trees sit one level down, and § 9 has that
+spelling.
+
+**The hand-clearance is a standing cost, not only an upgrade step.** Nothing
+occupying a computed worktree path is cleared for you unless this state root
+stamped it — not a sibling checkout's live tree, and not a tree of your own
+whose provisioning died between the `git worktree add` and the stamp, which
+is a `0.17` tick's own residue rather than anything the upgrade left behind.
+The tick fails, the directory stands, and the two commands above are the
+clearance.
