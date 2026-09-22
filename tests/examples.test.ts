@@ -49,7 +49,7 @@ import {
   type FlumePaths,
 } from "../src/flumeApi.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
-import { bulletOf, restatementsOf, sectionOf, walkOf } from "./helpers/docSections.ts";
+import { bulletOf, restatementsOf, walkOf } from "./helpers/docSections.ts";
 import { docWalk, type DocWalkRequest } from "./helpers/docWalk.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
@@ -1947,21 +1947,6 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
 });
 
 /**
- * *Use the built-ins first*, cut from the page — the one read the two cases
- * below share, each anchoring the cut on the claim it judges. `sectionOf`
- * (`tests/helpers/docSections.ts`) is the suite's one cutter.
- */
-function builtInsSection(): string {
-  return sectionOf(
-    readFileSync(
-      fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
-      "utf8",
-    ),
-    "### Use the built-ins first",
-  );
-}
-
-/**
  * Doc-surface pin (`.claude/rules/engineering.md`, *Narration is the ladder's
  * bottom rung*, the `docs/` carve-out): *Use the built-ins first* is the
  * inventory a chain author reads before any hover text, and a built-in the
@@ -1970,112 +1955,138 @@ function builtInsSection(): string {
  * instruction to reach for something that is not there, so the claim is
  * equality rather than coverage and either side moving alone reds.
  *
- * The set is the module's own runtime exports, read off the namespace rather
- * than listed here (*Derived state is computed, never restated beside its
- * source*): a gate added to `src/builtinGates.ts` joins it without anyone
- * extending a list, and the case below has already classified every one of
- * them as a gate or the factory for one. The walk comes off the page through
- * `walkOf` (`tests/helpers/docSections.ts`), the reader this page's other
- * walks share, so a name the page mentions in passing is not a listing of it.
- */
-it("docs/CHAIN-AUTHORING.md names every gate src/builtinGates.ts exports", () => {
-  const exported = Object.keys(builtinGates).sort();
-  // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
-  // non-vacuous"): a namespace that resolved to nothing is walked in full by
-  // any listing at all, including one that names nothing. One anchor plus the
-  // count, never a second copy of the set beside it.
-  expect(exported, "the builtin gate module exports the chain-load gate").toContain(
-    "chainLoadGate",
-  );
-  expect(exported.length).toBeGreaterThan(1);
-
-  const section = builtInsSection();
-  // The cut landed on the list: without this a renamed heading reports every
-  // built-in missing over no text at all.
-  expect(section).toContain("- `tscGate` —");
-
-  expect(
-    walkOf(section, exported).sort(),
-    "docs/CHAIN-AUTHORING.md gives every gate `src/builtinGates.ts` exports a bullet of its own",
-  ).toEqual(exported);
-});
-
-/**
- * Doc-surface pin (`.claude/rules/engineering.md`, *Narration is the ladder's
- * bottom rung*, the `docs/` carve-out): the built-ins list is the inventory a
- * chain author reads before the hover text, and its `shellGate` bullet says
- * which of those built-ins `shellGate` composes. Spelled as a count — "the
- * four built-ins above" — that claim resolved against nothing, and was wrong
- * over five bullets, only three of which `shellGate` builds. So the bullet
- * names its members, and the names are read back against
- * `src/builtinGates.ts` rather than kept true by discipline.
+ * The second case holds the walk as the section's only naming of the set:
+ * prose re-listing the gates beside the bullets is a copy no equality read
+ * reaches, so an eighth built-in lands in the walk and strands it (*Derived
+ * state is computed, never restated beside its source*). The third reads what
+ * the `shellGate` bullet claims about the rest, which is where the listing
+ * stops being a listing.
  *
- * Composition is read off the program, not off the page's vocabulary: a
- * `shellGate`-built gate's `run` *is* the closure `shellGate` returns, so an
- * export whose `run` source matches a probe instance's is one `shellGate`
- * composed. `command` is the evidence the bullet offers a reader, not this
- * test's — any hand-rolled gate may set it.
+ * The set is the module's own runtime exports, read off the namespace rather
+ * than listed here (same section): a gate added to `src/builtinGates.ts`
+ * joins it without anyone extending a list, and the third case has already
+ * classified every one of them as a gate or the factory for one.
  */
-it("docs/CHAIN-AUTHORING.md names exactly the built-in gates shellGate composes", () => {
-  const probe = builtinGates.shellGate({
-    name: "probe",
-    when: "afterCommit",
-    cmd: "true",
-    args: [],
-  });
-  /** Every runtime export of the module, as the gate it is or the one it builds. */
-  const instances: Record<string, Gate> = {
-    shellGate: probe,
-    tscGate: builtinGates.tscGate,
-    vitestGate: builtinGates.vitestGate,
-    eslintGate: builtinGates.eslintGate,
-    chainLoadGate: builtinGates.chainLoadGate,
-    pendingGate: builtinGates.pendingGate({
-      targetFence: { writablePaths: [], entryChannelPaths: [] },
-    }),
-    writablePathsGate: builtinGates.writablePathsGate([]),
+describe("docs/CHAIN-AUTHORING.md — the built-ins list walks the gate module", () => {
+  /**
+   * The gates `src/builtinGates.ts` exports, against the section that lists
+   * them — armed by `docWalk` (`tests/helpers/docWalk.ts`), the reader this
+   * page's other three walks arm through, so the vacuity anchor and the
+   * section's own anchor are spelled once rather than once per case.
+   *
+   * This is the supplied arm: a built-in is a `const` on a namespace, not a
+   * member of an interface, so no checker reaches the set. It stays computed
+   * all the same — `Object.keys`, never a list spelled out beside the module.
+   */
+  const BUILT_INS: DocWalkRequest = {
+    members: Object.keys(builtinGates),
+    member: "chainLoadGate",
+    page: "docs/CHAIN-AUTHORING.md",
+    heading: "### Use the built-ins first",
+    anchor: "- `tscGate` —",
   };
-  // A gate added to the module is classified here before the composed set
-  // below can quietly omit it.
-  expect(Object.keys(instances).sort()).toEqual(Object.keys(builtinGates).sort());
 
-  const fingerprint = probe.run.toString();
-  const composed = Object.keys(instances)
-    .filter(
-      (name) =>
-        name !== "shellGate" && instances[name]!.run.toString() === fingerprint,
-    )
-    .sort();
-  // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
-  // non-vacuous"): an empty composed set is named in full by any bullet at
-  // all, including one that names nothing.
-  expect(composed.length).toBeGreaterThan(0);
+  it("docs/CHAIN-AUTHORING.md names every gate src/builtinGates.ts exports", () => {
+    const { members: exported, section } = docWalk(BUILT_INS);
 
-  const section = builtInsSection();
-  // The cut landed on the list: without this a renamed heading reports no
-  // missing name over no text at all.
-  expect(section).toContain("- `shellGate` —");
+    expect(
+      walkOf(section, exported).sort(),
+      "docs/CHAIN-AUTHORING.md gives every gate `src/builtinGates.ts` exports a bullet of its own",
+    ).toEqual([...exported].sort());
+  });
 
-  // The one bullet, through the next list item or the section's end, read as
-  // a single line — the claim wraps across source lines.
-  const bullet = bulletOf(section, "- `shellGate` —");
-  const CLAIM = "are `shellGate` instances";
-  expect(
-    bullet,
-    "the `shellGate` bullet names which built-ins it composes",
-  ).toContain(CLAIM);
+  it("docs/CHAIN-AUTHORING.md's built-ins section names the gate set in one place", () => {
+    const { members: exported, section } = docWalk(BUILT_INS);
 
-  const named = [
-    ...new Set(
-      [...bullet.slice(0, bullet.indexOf(CLAIM)).matchAll(/`(\w+Gate)`/g)].map(
-        (m) => m[1]!,
+    // The walk is there before an absence is asserted beside it: over a
+    // section that walks nothing, every listing reads as the only one
+    // (.claude/rules/engineering.md, "A green verdict is proven non-vacuous").
+    expect(
+      walkOf(section, exported).length,
+      "docs/CHAIN-AUTHORING.md's built-ins section walks the gates at all",
+    ).toBeGreaterThan(1);
+
+    // The sample fence destructures the gates unbackticked, which no naming
+    // read reaches; what this catches is prose — a paragraph sorting the
+    // built-ins into classes beside the bullets that already carry them,
+    // which is the copy an eighth gate strands.
+    expect(
+      restatementsOf(section, exported),
+      "docs/CHAIN-AUTHORING.md's built-ins section lists the gates beside its walk",
+    ).toEqual([]);
+  });
+
+  /**
+   * The list's `shellGate` bullet says which of those built-ins `shellGate`
+   * composes. Spelled as a count — "the four built-ins above" — that claim
+   * resolved against nothing, and was wrong over five bullets, only three of
+   * which `shellGate` builds. So the bullet names its members, and the names
+   * are read back against `src/builtinGates.ts` rather than kept true by
+   * discipline.
+   *
+   * Composition is read off the program, not off the page's vocabulary: a
+   * `shellGate`-built gate's `run` *is* the closure `shellGate` returns, so an
+   * export whose `run` source matches a probe instance's is one `shellGate`
+   * composed. `command` is the evidence the bullet offers a reader, not this
+   * test's — any hand-rolled gate may set it.
+   */
+  it("docs/CHAIN-AUTHORING.md names exactly the built-in gates shellGate composes", () => {
+    const { members: exported, section } = docWalk(BUILT_INS);
+    const probe = builtinGates.shellGate({
+      name: "probe",
+      when: "afterCommit",
+      cmd: "true",
+      args: [],
+    });
+    /** Every runtime export of the module, as the gate it is or the one it builds. */
+    const instances: Record<string, Gate> = {
+      shellGate: probe,
+      tscGate: builtinGates.tscGate,
+      vitestGate: builtinGates.vitestGate,
+      eslintGate: builtinGates.eslintGate,
+      chainLoadGate: builtinGates.chainLoadGate,
+      pendingGate: builtinGates.pendingGate({
+        targetFence: { writablePaths: [], entryChannelPaths: [] },
+      }),
+      writablePathsGate: builtinGates.writablePathsGate([]),
+    };
+    // A gate added to the module is classified here before the composed set
+    // below can quietly omit it.
+    expect(Object.keys(instances).sort()).toEqual([...exported].sort());
+
+    const fingerprint = probe.run.toString();
+    const composed = Object.keys(instances)
+      .filter(
+        (name) =>
+          name !== "shellGate" && instances[name]!.run.toString() === fingerprint,
+      )
+      .sort();
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an empty composed set is named in full by any bullet at
+    // all, including one that names nothing.
+    expect(composed.length).toBeGreaterThan(0);
+
+    // The one bullet, through the next list item or the section's end, read as
+    // a single line — the claim wraps across source lines.
+    const bullet = bulletOf(section, "- `shellGate` —");
+    const CLAIM = "are `shellGate` instances";
+    expect(
+      bullet,
+      "the `shellGate` bullet names which built-ins it composes",
+    ).toContain(CLAIM);
+
+    const named = [
+      ...new Set(
+        [...bullet.slice(0, bullet.indexOf(CLAIM)).matchAll(/`(\w+Gate)`/g)].map(
+          (m) => m[1]!,
+        ),
       ),
-    ),
-  ]
-    .filter((name) => name !== "shellGate")
-    .sort();
+    ]
+      .filter((name) => name !== "shellGate")
+      .sort();
 
-  expect(named).toEqual(composed);
+    expect(named).toEqual(composed);
+  });
 });
 
 /**

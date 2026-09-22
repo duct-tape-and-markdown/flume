@@ -1,24 +1,28 @@
 /**
  * Arming a doc walk — one home for the sequence every `docs/CHAIN-AUTHORING.md`
- * walk runs before it judges anything: resolve the set a declaration declares,
- * prove the resolution is the real one, and cut the section claimed to walk it,
- * anchored on a phrase that proves the cut landed.
+ * walk runs before it judges anything: get the set the page claims to walk,
+ * prove it is the real one, and cut the section claimed to walk it, anchored
+ * on a phrase that proves the cut landed.
  *
  * Three describes in `tests/examples.test.ts` spelled that sequence three ways
  * at ~90 lines each (`.claude/rules/engineering.md`, *A module is one job*),
- * and a fourth walk would have copied whichever was nearest, as eight
- * `sectionOf` copies did before `docSections.ts`. The cut itself stays there:
- * this module arms a walk and reads the page through `sectionOf`
- * (`tests/helpers/docSections.ts`), which is still the suite's one cutter.
+ * and the fourth — the built-ins inventory, whose set is a namespace's keys
+ * rather than an interface's members — would otherwise have copied whichever
+ * was nearest, as eight `sectionOf` copies did before `docSections.ts`. So
+ * where the set comes from is an arm of the request, not a reason for a
+ * fourth spelling. The cut itself stays there: this module arms a walk and
+ * reads the page through `sectionOf` (`tests/helpers/docSections.ts`), which
+ * is still the suite's one cutter.
  *
- * The program is the cheap tier — one module, no lib, no resolution, no
- * `@types`. Every subject is one interface in one module, and a checker over
- * that module alone answers in a tenth of the time the repo program takes to
- * start, which is what keeps these cases in the fast lane (spec/worktrees.md,
- * *The default test lane must stay fast*). The tier stays here rather than in
- * `tests/helpers/repoProgram.ts` on that module's own condition: a tier moves
- * there at its **second** consumer, and folding three copies into this one
- * leaves it with one.
+ * The checker runs only for the declared arm, and on the cheap tier — one
+ * module, no lib, no resolution, no `@types`. Every such subject is one
+ * interface in one module, and a checker over that module alone answers in a
+ * tenth of the time the repo program takes to start, which is what keeps
+ * these cases in the fast lane (spec/worktrees.md, *The default test lane
+ * must stay fast*); a supplied set starts no program at all. The tier stays
+ * here rather than in `tests/helpers/repoProgram.ts` on that module's own
+ * condition: a tier moves there at its **second** consumer, and folding the
+ * copies into this one leaves it with one.
  *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
@@ -32,8 +36,11 @@ import { expect } from "vitest";
 import { sectionOf } from "./docSections.ts";
 import { REPO_ROOT } from "./repoProgram.ts";
 
-/** What a walk is armed from: where the set is declared, and where it is walked. */
-export interface DocWalkRequest {
+/**
+ * Where a walk's set comes from when a TypeScript declaration holds it: the
+ * checker resolves it, so a member the type gained and the page skipped reds.
+ */
+interface DeclaredSet {
   /** Repo-relative module holding the declaration — `src/Gate.ts`. */
   readonly module: string;
   /** The interface that module declares. */
@@ -44,15 +51,34 @@ export interface DocWalkRequest {
    * Omitted, the interface's own properties are the set.
    */
   readonly through?: string;
+}
+
+/**
+ * Where a walk's set comes from when no declaration holds it — a module's
+ * runtime exports, say, which live on a namespace rather than an interface.
+ *
+ * Still computed by the caller, never a hand list beside the module
+ * (*Derived state is computed, never restated beside its source*): the arm
+ * exists so a set the checker cannot reach can still be walked, not so a set
+ * can be spelled twice. A caller passing a literal list has written the copy
+ * this whole module exists to avoid.
+ */
+interface SuppliedSet {
+  /** The set, as the caller computed it. */
+  readonly members: readonly string[];
+}
+
+/** What a walk judges, beside whichever arm supplied its set. */
+interface DocWalkAnchors {
   /**
    * One member the set must carry — the vacuity anchor
    * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
-   * A resolution that fell through to an empty property list would walk zero
-   * members and pass, and every listing filtered against it would be empty
-   * too. One anchor rather than a second copy of the list beside the
-   * declaration (*Derived state is computed, never restated beside its
-   * source*) — the anchor plus the count is what proves the set is the real
-   * one.
+   * A resolution that fell through to an empty property list, or a namespace
+   * that imported as nothing, would walk zero members and pass, and every
+   * listing filtered against it would be empty too. One anchor rather than a
+   * second copy of the list beside the declaration (*Derived state is
+   * computed, never restated beside its source*) — the anchor plus the count
+   * is what proves the set is the real one.
    */
   readonly member: string;
   /** Repo-relative page the walk lives on. */
@@ -67,23 +93,48 @@ export interface DocWalkRequest {
   readonly anchor: string;
 }
 
+/** What a walk is armed from: where the set comes from, and where it is walked. */
+export type DocWalkRequest =
+  | (DeclaredSet & DocWalkAnchors)
+  | (SuppliedSet & DocWalkAnchors);
+
 /** The two sides a walk's cases compare. */
 export interface DocWalk {
-  /** Every member the declaration declares, in declaration order. */
+  /** Every member of the set, in the order its source states them. */
   readonly members: string[];
   /** The anchored section, for `walkOf`/`restatementsOf` to read. */
   readonly section: string;
 }
 
 /**
- * The declared set and the section that claims to walk it, each proven to be
- * the thing the caller named before either is compared against the other.
+ * The set and the section that claims to walk it, each proven to be the thing
+ * the caller named before either is compared against the other.
  */
 export function docWalk(request: DocWalkRequest): DocWalk {
   return {
-    members: declaredMembers(request),
+    members: walkedMembers(request),
     section: anchoredSection(request),
   };
+}
+
+/**
+ * The set the page is judged against, proven non-empty and proven to be the
+ * caller's before either side is compared. Both arms answer here, so the
+ * vacuity anchor and the count are spelled once rather than once per arm: a
+ * declaration that moved out of its module resolves to nothing, and a
+ * namespace that imported as nothing computes to nothing, and neither can
+ * walk a page green.
+ */
+function walkedMembers(request: DocWalkRequest): string[] {
+  const members =
+    "members" in request ? [...request.members] : declaredMembers(request);
+
+  expect(members.length).toBeGreaterThan(1);
+  expect(
+    members,
+    `the walked set carries \`${request.member}\``,
+  ).toContain(request.member);
+  return members;
 }
 
 /**
@@ -92,9 +143,9 @@ export function docWalk(request: DocWalkRequest): DocWalk {
  * member the type gained and the page skipped reds, which a hand-kept list
  * could only do if someone remembered to extend it. A declaration that moved
  * out of its module resolves to nothing here rather than quietly to something
- * else, and the vacuity assertions are what red on that.
+ * else, and `walkedMembers` is what reds on that.
  */
-function declaredMembers(request: DocWalkRequest): string[] {
+function declaredMembers(request: DeclaredSet & DocWalkAnchors): string[] {
   const module = join(REPO_ROOT, request.module);
   const program = ts.createProgram({
     rootNames: [module],
@@ -132,14 +183,11 @@ function declaredMembers(request: DocWalkRequest): string[] {
     );
   }
 
-  const members = declaring.getProperties().map((member) => member.name);
-  expect(members.length).toBeGreaterThan(1);
-  expect(members).toContain(request.member);
-  return members;
+  return declaring.getProperties().map((member) => member.name);
 }
 
 /** The section under judgment, anchored before anything is read off it. */
-function anchoredSection(request: DocWalkRequest): string {
+function anchoredSection(request: DocWalkAnchors): string {
   const section = sectionOf(
     readFileSync(join(REPO_ROOT, request.page), "utf8"),
     request.heading,
