@@ -679,6 +679,34 @@ it("a declaration naming no capabilities leaves Chain.capabilities unasserted", 
   expect(chainFor().capabilities).toBeUndefined();
 });
 
+it("a declared worktreesBase reaches Chain.worktreesBase unchanged", () => {
+  // The shared fixture declares none, so this case states its own — which is
+  // also what keeps the absence pin below reading the fixture rather than a
+  // field this case deleted from it.
+  const worktreesBase: NonNullable<Chain["worktreesBase"]> = (paths) =>
+    join(paths.repoRoot, "..", "flume-worktrees");
+
+  // The function itself, not a base this factory evaluated: the engine runs
+  // it once per chain load against the roots it resolved, which is the only
+  // place the roots exist.
+  expect(chainFor({ ...DECLARATION, worktreesBase }).worktreesBase).toBe(
+    worktreesBase,
+  );
+});
+
+it("a declaration naming no worktreesBase leaves Chain.worktreesBase absent", () => {
+  // Non-vacuity: the fixture is the declaration that names no base, so a
+  // fixture that grew the field would make the assertion below hold for the
+  // wrong reason.
+  expect(DECLARATION).not.toHaveProperty("worktreesBase");
+
+  // Undeclared stays undeclared. The engine reads an absent base as its own
+  // `<flumeDir>/worktrees` (`worktreesBase`, `src/paths.ts`), so a factory
+  // that supplied one here would place a silent consumer's worktrees
+  // somewhere they would have to discover to move.
+  expect(chainFor().worktreesBase).toBeUndefined();
+});
+
 it("a declared friction directory reaches Chain.friction", () => {
   // The shared fixture declares none, so this case states its own — which is
   // also what keeps the absence arm below reading the fixture rather than a

@@ -31,6 +31,7 @@ import type {
   RunnerFactory,
   SectionResolver,
 } from "../harness/index.ts";
+import type { Chain } from "../src/Phase.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 
@@ -55,6 +56,16 @@ const stubResolver: SectionResolver = (cite) => cite.section;
  * package's default for `build` and leaves the plan slices on it.
  */
 const stubHandoff: Handoff = () => ["plan-inbox"];
+
+/**
+ * A worktree base, declared as a value for the runner's reason: where a
+ * checkout is planted is machine-local, so a committed declaration computes
+ * it from the roots the engine resolved rather than spelling one host's path.
+ * The schema checks that it is a function; whether it answers an absolute
+ * directory is the engine's own refusal, at the same load.
+ */
+const stubWorktreesBase: NonNullable<Chain["worktreesBase"]> = (paths) =>
+  `${paths.repoRoot}/../flume-worktrees`;
 
 /** The fields `spec/harness.md` names, every one of them populated. */
 const fullDeclaration = (): Record<string, unknown> => ({
@@ -107,6 +118,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
   slots: { autonomy: "ship without asking", domain: "an AI-derivation harness" },
   capabilities: ["network", "docker"],
   friction: "friction",
+  worktreesBase: stubWorktreesBase,
   ci: [
     { name: "windows", workflow: "ci.yml", job: "test (windows-latest)" },
     { name: "linux", workflow: "ci.yml", job: "test (ubuntu-latest)" },
@@ -162,7 +174,7 @@ describe("the harness declaration schema", () => {
     expect(Object.keys(declared).sort()).toEqual(
       Object.keys(DeclarationSchema.shape).sort(),
     );
-    expect(Object.keys(declared)).toHaveLength(17);
+    expect(Object.keys(declared)).toHaveLength(18);
 
     const parsed: Declaration = parseDeclaration(declared);
 
@@ -196,6 +208,9 @@ describe("the harness declaration schema", () => {
     expect(parsed.slots?.autonomy).toBe("ship without asking");
     expect(parsed.capabilities).toEqual(["network", "docker"]);
     expect(parsed.friction).toBe("friction");
+    // And the base: the engine evaluates it once per chain load, so what
+    // survives the parse is the function, never a path this schema ran.
+    expect(parsed.worktreesBase).toBe(stubWorktreesBase);
     expect(parsed.ci?.[0]).toEqual({
       name: "windows",
       workflow: "ci.yml",
@@ -373,6 +388,19 @@ describe("the harness declaration schema", () => {
 
     expect(message).toContain("resolver");
     expect(message).toContain("The cite resolver");
+  });
+
+  it("a worktreesBase declared as a path string is refused, naming the field", () => {
+    const declared = fullDeclaration();
+    // The near-miss a consumer writes: the base itself, which a committed
+    // declaration cannot hold — placement is machine-local, and the roots it
+    // is computed from exist only at the engine's load.
+    declared["worktreesBase"] = "/srv/flume-worktrees";
+
+    const message = refusalFor(declared);
+
+    expect(message).toContain("worktreesBase");
+    expect(message).toContain("Placement");
   });
 
   it("a declaration whose runner is a Runner value rather than a factory is refused at load naming the field", () => {

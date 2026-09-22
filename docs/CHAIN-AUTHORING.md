@@ -155,11 +155,19 @@ wakes the slice once per failing run), and `friction` (the state-root-relative
 directory naming the engine's friction channel, passed through whole to
 `Chain.friction`; declared here rather than left to the engine because it is
 a findings source — the inbox slice reads its files as it reads the inbox,
-one record per file, and routes and removes each the same way).
+one record per file, and routes and removes each the same way), and
+`worktreesBase` (a function of the roots the engine resolved, answering the
+absolute directory this repository's worktrees are planted under, passed
+through whole to `Chain.worktreesBase` and evaluated once per chain load; a
+function rather than a path because placement is machine-local and the
+declaration is committed. Absent leaves the engine's `<stateRoot>/worktrees`,
+and an operator's `FLUME_WORKTREES_DIR` outranks a declared base either way).
 
-It is a TypeScript module rather than JSON because three of those fields are
-values with behavior. An unknown field, or a required one missing, refuses
-the chain load naming the field and the valid set. Nothing in it names an
+It is a TypeScript module rather than JSON because some of those fields are
+values with behavior rather than data — `runner`, `resolver`, `handoff` and
+`worktreesBase`, and a lane's `titles` inside `ci`. An unknown field, or a
+required one missing, refuses the chain load naming the field and the valid
+set. Nothing in it names an
 engine artifact path, a verdict field, or a prior-attempt mode: those are the
 engine's to report and the package's to read.
 

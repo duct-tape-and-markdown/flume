@@ -217,6 +217,40 @@ const HandoffValue = z.custom<Handoff>(
 type DeclaredSupervisor = NonNullable<Chain["supervisorPolicy"]>;
 
 /**
+ * The engine's own worktree-base field, aliased rather than respelled: what
+ * a base is handed and what it must answer is the engine's contract
+ * (`Chain.worktreesBase`, `src/Phase.ts`), so a change to either fails
+ * typecheck at the consumers who declare one instead of leaving a
+ * declaration the engine no longer calls that way.
+ */
+type DeclaredWorktreesBase = NonNullable<Chain["worktreesBase"]>;
+
+/**
+ * Where this consumer's worktrees are planted (`spec/worktrees.md`,
+ * *Placement — the worktree base*) — a declared value with behavior beside
+ * the runner, the resolver, the handoff and a lane's title reader, and a
+ * function for the engine's own reason: placement is machine-local while a
+ * `declaration.ts` is committed, so the base is computed at load from the
+ * roots the runtime resolved rather than frozen as a path one host holds.
+ *
+ * Checked as a function and nothing more, for the resolver's reason: whether
+ * what it answers is a non-empty absolute directory is the engine's refusal
+ * at this same load (`resolveWorktreesBaseDeclaration`, `src/chainLoad.ts`),
+ * which is the only thing that can tell — it runs the function once against
+ * roots this schema has never seen — and re-deriving the walk here would be
+ * the same guard in two places, disagreeing the day either moves.
+ */
+const WorktreesBaseValue = z.custom<DeclaredWorktreesBase>(
+  (value): boolean => typeof value === "function",
+  {
+    error:
+      "must be a function over the resolved roots answering an absolute " +
+      "directory to plant worktrees under — a path string is not one " +
+      "(spec/worktrees.md, Placement — the worktree base)",
+  },
+);
+
+/**
  * `quarantineScope` names its two values rather than taking any string: the
  * engine's policy types it as a closed pair, so a third spelling is a
  * consumer's typo that would otherwise fall through to the engine's default
@@ -511,6 +545,25 @@ export const DeclarationSchema = strict({
    * not a default this schema supplies.
    */
   friction: z.string().min(1).optional(),
+  /**
+   * The directory this consumer's worktrees are planted under, passed
+   * through whole to `Chain.worktreesBase` and evaluated by the engine once
+   * per chain load.
+   *
+   * Declared here because a consumer whose worktrees belong off-repo has had
+   * nowhere else to say so: the engine offers the field, and a package
+   * consumer's whole authored surface is this module, so without a row the
+   * only reach left is `FLUME_WORKTREES_DIR` — an operator's env var, per
+   * host and per shell, where the placement is a property of the repository.
+   *
+   * Passed through whole, with no default: the engine's own
+   * `<flumeDir>/worktrees` is what an undeclared base resolves to, and
+   * `FLUME_WORKTREES_DIR` still outranks a declared one, because the
+   * declaration is committed and the host is not
+   * (`worktreesBase`, `src/paths.ts` — the one resolution every reader takes
+   * the base from).
+   */
+  worktreesBase: WorktreesBaseValue.optional(),
   /**
    * The CI lanes the inbox slice reads as findings sources beside the
    * records. Optional — a consumer with no forge, or one whose CI it does

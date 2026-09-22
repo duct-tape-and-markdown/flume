@@ -372,6 +372,15 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     ...(declaration.friction !== undefined
       ? { friction: declaration.friction }
       : {}),
+    // The declared base as the function it was declared as, not a path this
+    // factory evaluated: the engine runs it once per load against the roots
+    // it resolved, and an operator's `FLUME_WORKTREES_DIR` outranks whatever
+    // it answers. Absent stays absent — the engine's own
+    // `<flumeDir>/worktrees` is an undeclared base's reading, never a
+    // placement this factory picked for a consumer that named none.
+    ...(declaration.worktreesBase !== undefined
+      ? { worktreesBase: declaration.worktreesBase }
+      : {}),
     ...(policy ? { supervisorPolicy: policy } : {}),
   };
 }
