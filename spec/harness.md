@@ -227,8 +227,9 @@ consumer never hand-maintains a list against paths it does not own.
 ## What a consumer declares
 
 One declaration module beside the consumer's state root — `declaration.ts`,
-a TypeScript module, because three of its fields are values with behavior (the
-runner, the resolver, and a handoff override) — validated by the package's strict schema at chain
+a TypeScript module, because some of its fields are values with behavior (the
+runner, the resolver, a handoff override, a lane's title reader, and the
+worktree base) — validated by the package's strict schema at chain
 load; an unknown field or a missing required
 one refuses the load naming the field and the valid set.
 
@@ -262,6 +263,7 @@ declaration already resolves.
 | `capabilities` | The capabilities this repository asserts, passed through whole to `Chain.capabilities`; an entry that requires one the declaration does not assert is unpickable, and `flume status` names it. Optional; absent asserts none. |
 | `ci` | CI lanes the inbox slice reads as findings sources — each a workflow file, a job name, the lane name its findings carry, and optionally a title reader (a pattern or a function over the run's log) that gives the liveness rule its failing-title set — see *CI lanes as a findings source*. Optional. |
 | `friction` | The friction directory, state-root-relative, passed through to `Chain.friction` and read by the inbox slice as a findings source — see *Declared findings sources*. Optional; absent disables the channel. |
+| `worktreesBase` | Where this consumer's worktrees are planted: a function over the resolved roots answering an absolute directory, passed through whole to `Chain.worktreesBase` (`spec/worktrees.md`, *Placement — the worktree base*). The operator's `FLUME_WORKTREES_DIR` still outranks it. Optional; absent takes the engine's `<flumeDir>/worktrees` default. |
 
 Nothing in the declaration names an engine artifact path, a verdict field, or a
 prior-attempt mode. Those are the engine's to report and the package's to read.
