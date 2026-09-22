@@ -105,14 +105,13 @@ export interface AttemptContext {
  * no-commit classification consults this distinction only when the tick
  * produced nothing usable.
  *
- * When a commit lands, `runFanout`'s ship classification consults it too
- * (spec/pending.md "Ship detection trusts the agent's own account", ruling
- * 2026-08-03): a `clean` termination's final message is the agent's own
- * account of what it did, so a stated park there still keeps the entry out
- * of `shipped` even though its commit landed and its gates passed. A
- * `process-failure` never "says" anything of its own — `failureClass` is
- * engine-authored, not agent prose — so it never blocks shipping on that
- * basis; a commit it left behind is honored exactly as a clean one would be.
+ * `finalMessage` has two readers and no others: the clean-exit record
+ * `classifyNoCommit` writes, and that record's render into the retry's
+ * prompt (`src/Prompt.ts`). When a commit lands it reaches nothing —
+ * `ShipContext` (`src/Phase.ts`) carries neither the message nor the
+ * termination, because a landed commit is classified from what is on disk
+ * rather than from what the process said (spec/pending.md "Ship detection
+ * trusts the agent's own account").
  *
  * `promptPath` is the persisted rendered prompt the run was handed
  * (spec/prompt.md "The rendered prompt is persisted before the agent runs").

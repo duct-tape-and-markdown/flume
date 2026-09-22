@@ -1318,6 +1318,68 @@ describe("hook-side gate results — the reported row, not a narrowed copy", () 
   });
 });
 
+// ---------- ShipContext's key set (spec/pending.md "Ship detection trusts
+// the agent's own account") ----------
+
+describe("ShipContext — the facts the engine hands the ship predicate, and no more", () => {
+  it("ShipContext carries no field holding the agent's final message or termination", async () => {
+    await writePending(fx.repo, [makeEntry("SAYS-SO", ["src/says-so.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // The agent closes with an account of its own — the one thing the
+    // predicate must not be able to read, since "nothing is inferred ... not
+    // from the agent's output stream" is what the seam rests on.
+    const account = "Parked: the entry's premise is contradicted by the tree.";
+    let agentSaid: string | undefined;
+    const talkative: Agent = {
+      name: "fake-fanout-with-an-account",
+      async invoke(inv) {
+        await writeAndCommit(inv.cwd, "src/says-so.ts", "x\n", "build(SAYS-SO)");
+        agentSaid = account;
+        return { exitCode: 0, stdout: account, stderr: "", finalMessage: account };
+      },
+    };
+
+    let seenKeys: string[] | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      shipped: (ctx) => {
+        seenKeys = Object.keys(ctx).sort();
+        return true;
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: talkative,
+      log: silent,
+      maxParallel: 1,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity pins: the agent really ran and really closed with prose, and
+    // the predicate really was handed a landed commit to classify.
+    expect(agentSaid).toBe(account);
+    expect(outcome.result?.shippedTags).toEqual(["SAYS-SO"]);
+    expect(seenKeys).toBeDefined();
+    // Exhaustive rather than a spot check: naming the whole key set is what
+    // makes this decidable — a `finalMessage` or `termination` field added
+    // to the shape cannot reach the predicate without reddening this line.
+    expect(seenKeys).toEqual([
+      "baseSha",
+      "entry",
+      "gateResults",
+      "mergedSha",
+      "repoRoot",
+      "touchedPaths",
+      "worktreePath",
+    ]);
+  });
+});
+
 // ---------- GateResult.failingFiles → ReportedGateResult.failingFiles
 // (VERDICT-GATE-ROW-CARRIES-THE-GATES-FAILING-FILES, spec/loop.md "The tick
 // verdict — one facts artifact") ----------
