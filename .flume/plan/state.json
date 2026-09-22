@@ -125,7 +125,13 @@
       "src/mergingMarkers.ts",
       "src/pendingLedger.ts",
       "src/selection.ts",
-      "src/tickAttempt.ts"
+      "src/tickAttempt.ts",
+      "harness/inboxWindow.ts",
+      "harness/ciLane.ts",
+      "harness/cursorWindow.ts",
+      "harness/friction.ts",
+      "harness/gitRange.ts",
+      "harness/sliceWindow.ts"
     ]
   },
   "drainedRuns": {
