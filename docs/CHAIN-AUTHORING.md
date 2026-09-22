@@ -646,7 +646,8 @@ says so below.
 
 ```ts
 const factory: ChainFactory = (flume) => {
-  const { shellGate, tscGate, vitestGate, eslintGate, pendingGate } = flume;
+  const { shellGate, tscGate, vitestGate, eslintGate, chainLoadGate, pendingGate } =
+    flume;
 
   // ...
 };
@@ -661,16 +662,25 @@ const factory: ChainFactory = (flume) => {
   "tsc", "--noEmit"] }`) or placed at the other gate point
   (`{ when: "afterMerge" }`, see *Where to place a gate* below). Used bare
   (`gates: [tscGate]`) each *is* the pnpm-flavored `afterCommit` gate.
+- `chainLoadGate` — validates a committed `chain.ts` by calling the same
+  load+validate path a tick's own resolution calls, so a phase that rewrites
+  its own chain cannot break it silently: a syntax error, a missing default
+  export or an absent `phases[]` fails the gate, the revert drops the commit,
+  and the loop continues against the last-good chain. Declare it on any phase
+  that can write `chain.ts` — it is not attached for you, and it skips as a
+  pass on every commit that touched no chain file. It takes no options: a
+  plain `Gate`, spread to move its gate point
+  (`{ ...chainLoadGate, when: "afterMerge" }`).
 - `writablePathsGate` — attached automatically by the dispatcher from each
   phase's `writablePaths`. Don't list manually.
-- `pendingGate({ targetFence, extension?, fenceWhen?, hint? })` —
+- `pendingGate` — `pendingGate({ targetFence, extension?, fenceWhen?, hint? })`:
   composed `pending.json` validation plus a plan-time fence pre-check
   against the target phase. See below.
-- `shellGate({ name, when, cmd, args, failHint? })` — escape hatch for "run
-  a command, fail on non-zero". `tscGate`, `vitestGate` and `eslintGate` are
-  `shellGate` instances, built through one shared package-manager factory —
-  which is why each carries a `command` string. `writablePathsGate` and
-  `pendingGate` run their own checks.
+- `shellGate` — `shellGate({ name, when, cmd, args, failHint? })`, the escape
+  hatch for "run a command, fail on non-zero". `tscGate`, `vitestGate` and
+  `eslintGate` are `shellGate` instances, built through one shared
+  package-manager factory — which is why each carries a `command` string.
+  `chainLoadGate`, `writablePathsGate` and `pendingGate` run their own checks.
 
 ### `pendingGate`: composed validation + fence pre-check
 

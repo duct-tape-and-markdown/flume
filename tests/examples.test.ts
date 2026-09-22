@@ -1947,6 +1947,60 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
 });
 
 /**
+ * *Use the built-ins first*, cut from the page — the one read the two cases
+ * below share, each anchoring the cut on the claim it judges. `sectionOf`
+ * (`tests/helpers/docSections.ts`) is the suite's one cutter.
+ */
+function builtInsSection(): string {
+  return sectionOf(
+    readFileSync(
+      fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
+      "utf8",
+    ),
+    "### Use the built-ins first",
+  );
+}
+
+/**
+ * Doc-surface pin (`.claude/rules/engineering.md`, *Narration is the ladder's
+ * bottom rung*, the `docs/` carve-out): *Use the built-ins first* is the
+ * inventory a chain author reads before any hover text, and a built-in the
+ * list skips is one nobody finds — `chainLoadGate` shipped on `FlumeApi` with
+ * zero hits on this whole page. A bullet the module no longer exports is an
+ * instruction to reach for something that is not there, so the claim is
+ * equality rather than coverage and either side moving alone reds.
+ *
+ * The set is the module's own runtime exports, read off the namespace rather
+ * than listed here (*Derived state is computed, never restated beside its
+ * source*): a gate added to `src/builtinGates.ts` joins it without anyone
+ * extending a list, and the case below has already classified every one of
+ * them as a gate or the factory for one. The walk comes off the page through
+ * `walkOf` (`tests/helpers/docSections.ts`), the reader this page's other
+ * walks share, so a name the page mentions in passing is not a listing of it.
+ */
+it("docs/CHAIN-AUTHORING.md names every gate src/builtinGates.ts exports", () => {
+  const exported = Object.keys(builtinGates).sort();
+  // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+  // non-vacuous"): a namespace that resolved to nothing is walked in full by
+  // any listing at all, including one that names nothing. One anchor plus the
+  // count, never a second copy of the set beside it.
+  expect(exported, "the builtin gate module exports the chain-load gate").toContain(
+    "chainLoadGate",
+  );
+  expect(exported.length).toBeGreaterThan(1);
+
+  const section = builtInsSection();
+  // The cut landed on the list: without this a renamed heading reports every
+  // built-in missing over no text at all.
+  expect(section).toContain("- `tscGate` —");
+
+  expect(
+    walkOf(section, exported).sort(),
+    "docs/CHAIN-AUTHORING.md gives every gate `src/builtinGates.ts` exports a bullet of its own",
+  ).toEqual(exported);
+});
+
+/**
  * Doc-surface pin (`.claude/rules/engineering.md`, *Narration is the ladder's
  * bottom rung*, the `docs/` carve-out): the built-ins list is the inventory a
  * chain author reads before the hover text, and its `shellGate` bullet says
@@ -1997,21 +2051,15 @@ it("docs/CHAIN-AUTHORING.md names exactly the built-in gates shellGate composes"
   // all, including one that names nothing.
   expect(composed.length).toBeGreaterThan(0);
 
-  const section = sectionOf(
-    readFileSync(
-      fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
-      "utf8",
-    ),
-    "### Use the built-ins first",
-  );
+  const section = builtInsSection();
   // The cut landed on the list: without this a renamed heading reports no
   // missing name over no text at all.
-  expect(section).toContain("- `shellGate({");
+  expect(section).toContain("- `shellGate` —");
 
   // The one bullet, through the next list item or the section's end, read as
   // a single line — the claim wraps across source lines.
   const bullet = section
-    .slice(section.indexOf("- `shellGate({"))
+    .slice(section.indexOf("- `shellGate` —"))
     .split(/\n-\s/)[0]!
     .replace(/\s+/g, " ");
   const CLAIM = "are `shellGate` instances";
