@@ -1,34 +1,12 @@
 [
   {
-    "tag": "CJS-REFUSAL-MATCHES-THE-LITERAL-NAMESPACE-QUERY",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        {
-          "path": "src/chainLoad.ts",
-          "description": "widen CJS_CONTEXT_NAMESPACE_QUERY to both spellings of the query"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the literal-spelling case beside the percent-encoded one"
-        }
-      ]
-    },
-    "summary": "CjsContextLoadError misses tsx's literal `?namespace=` query, so a win32 consumer gets the raw loader stack instead of the named fix",
-    "per": {
-      "path": "spec/chain.md",
-      "section": "A broken chain fails loudly, at two layers"
-    },
-    "acceptance": "an ERR_MODULE_NOT_FOUND carrying the query in either spelling refuses with the named fix; a bare one still passes through unchanged",
-    "tests": [
-      "tsx 4.23 signature — ERR_MODULE_NOT_FOUND with a literal ?namespace= query throws CjsContextLoadError naming the fix"
-    ],
-    "notes": "Downstream report, 0.17.0 on win32. The class doc already says the path may arrive percent-encoded — reads as 'sometimes' — so the regex was narrower than its own narration. The one pinning case plants the encoded spelling alone."
-  },
-  {
     "tag": "CITATION-VERDICTS-NAME-THEIR-SITES-IN-THE-FIRST-LINE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "tests/helpers/commentCitations.ts",
@@ -38,7 +16,8 @@
           "path": "tests/commentCitations.test.ts",
           "description": "every live-tree verdict asserts the rendered form, not an array"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "Live-tree citation verdicts assert an array empty, so the failure's first line elides which site dangled and a retry must re-run the suite to learn it",
     "per": {
@@ -49,12 +28,22 @@
     "tests": [
       "the citation scan's findings render to one line naming every dangling site"
     ],
-    "notes": "Measured: three entries in one wave reverted with detail `expected [ Array(1) ] to deeply equal []` and no site. TestFailure.message is the first line by contract (harness/runner.ts); sibling assertions in the same tests already use the string form."
+    "pins": [],
+    "notes": "Measured: three entries in one wave reverted with detail `expected [ Array(1) ] to deeply equal []` and no site. TestFailure.message is the first line by contract (harness/runner.ts); sibling assertions in the same tests already use the string form.",
+    "observedFiles": [
+      ".flume/plan/notes/CITATION-VERDICTS-NAME-THEIR-SITES-IN-THE-FIRST-LINE.md",
+      "tests/commentCitations.test.ts",
+      "tests/helpers/commentCitations.ts"
+    ]
   },
   {
     "tag": "LAYERS-NAMES-NO-RETIRED-DECLARATION-FIELD",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "docs/LAYERS.md",
@@ -64,7 +53,8 @@
           "path": "tests/harnessDeclaration.test.ts",
           "description": "the page-to-schema direction beside the schema-to-page one"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "docs/LAYERS.md names `jobs` as a declaration field the job cut retired; the field pin reads schema-to-page only, so the stale claim stays green",
     "per": {
@@ -75,29 +65,13 @@
     "tests": [
       "docs/LAYERS.md names no declaration field DeclarationSchema does not declare"
     ],
-    "notes": "Downstream report, 0.17.0. `harness/declaration.ts` carries no `jobs`: the cut made an effort a checkout (spec/jobs.md, The checkout is the unit of isolation). The consumer's per-checkout fence need is parked separately, not answered here."
-  },
-  {
-    "tag": "CLI-DOC-CHECK-AND-STATUS-IO-REFUSALS-PINNED",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "check joins the 74-naming pin; status gains the artifact-enumeration pin the loop section already has"
-        }
-      ]
-    },
-    "summary": "The 74 text `flume check` and `flume status` gained in docs/CLI.md shipped unpinned — the 74 pin skips check, and no pin reads status's cause list",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "A fix ships the test that would have caught it"
-    },
-    "acceptance": "removing either doc claim reds the default lane",
-    "pins": [
-      "docs/CLI.md's flume check section names exit 74",
-      "docs/CLI.md's flume status section names every artifact a real status I/O refusal reports"
-    ],
-    "notes": "Both claims were fixed unpinned in 89002a45 (note EVERY-VERBS-HELP-NAMES-THE-IO-REFUSAL). Templates already in the file: the wake/sleep/stop/render 74 pin, and loop's start-up-artifact pin."
+    "pins": [],
+    "notes": "Downstream report, 0.17.0. `harness/declaration.ts` carries no `jobs`: the cut made an effort a checkout (spec/jobs.md, The checkout is the unit of isolation). The consumer's per-checkout fence need is parked separately, not answered here.",
+    "observedFiles": [
+      ".flume/plan/notes/LAYERS-NAMES-NO-RETIRED-DECLARATION-FIELD.md",
+      "docs/LAYERS.md",
+      "tests/harnessDeclaration.test.ts",
+      "tests/helpers/docSections.ts"
+    ]
   }
 ]
