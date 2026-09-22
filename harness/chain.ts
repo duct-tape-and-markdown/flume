@@ -317,7 +317,8 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // would have the refusal reverted by the fence meant to carry it. On an
     // unscoped tick the fence above already admits them, and the engine
     // refuses a channel declared where nothing consults it
-    // (`spec/pending.md`, *The entry-scoped write guard is opt-in*).
+    // (`spec/pending.md`, *The entry-scoped write guard is opt-in, and off by
+    // default*).
     ...(declaration.scopeWritesToEntry
       ? {
           scopeWritesToEntry: true,
@@ -469,10 +470,10 @@ function provisioning(
  *
  * Settled, not fulfilled. A restore that throws is that entry's provisioning
  * failure and parks it alone (`spec/worktrees.md`, *`setupWorktree` and
- * `teardownWorktree`*), so the rejection reaches the caller who queued it and
- * the queue itself keeps its own tail resolved — a wave whose first restore
- * failed still hands the next worktree its turn rather than rejecting every
- * one behind it.
+ * `teardownWorktree` — the chain's provisioning hooks*), so the rejection
+ * reaches the caller who queued it and the queue itself keeps its own tail
+ * resolved — a wave whose first restore failed still hands the next worktree
+ * its turn rather than rejecting every one behind it.
  */
 function oneAtATime(): (job: () => Promise<void>) => Promise<void> {
   let tail: Promise<void> = Promise.resolve();
@@ -528,8 +529,8 @@ function installing(
  * the engine skips the step rather than installing on its own authority.
  *
  * A throw here parks that one entry rather than the wave
- * (`spec/worktrees.md`, *Provisioning failure is isolated to the entry that
- * hit it*).
+ * (`spec/worktrees.md`, *Every `.git/worktrees` mutation is serialized; the
+ * agent fanout is not*).
  */
 function worktreeSetup(
   declaration: Declaration,

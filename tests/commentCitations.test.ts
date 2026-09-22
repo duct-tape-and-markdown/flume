@@ -119,6 +119,26 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
   }),
   "docs/guide.md": "# a page a comment cites without fencing it\n",
   "docs/paired.md": "# the page a comment closes a name's parenthetical with\n",
+  "docs/sections.md": [
+    "# The page whose sections a comment cites",
+    "",
+    "## Loud or nothing",
+    "",
+    "A heading is a title, cited whole.",
+    "",
+    "## Derived state is computed, never restated beside its source",
+    "",
+    "- **Verbatim copying is the detector.** A bolded bullet lead is a title",
+    "  too, and the sentence punctuation its own emphasis covers is the",
+    "  prose's rather than the title's.",
+    "",
+    "```",
+    "# A fenced heading mints no title",
+    "",
+    "- **A fenced lead mints none either.** a sample",
+    "```",
+    "",
+  ].join("\n"),
   "guide.md": "# the root-level page a broken cite's tail answers instead\n",
   "release-notes.md": "# the root-level page a fenced cite names by hyphen\n",
   "lib/dataShapes.ts": [
@@ -238,6 +258,36 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// \`WeakMap\` (\`docs/absent.md\`) is that shape over a page this tree does`,
     `// not hold, which reds as the page it is rather than as a home.`,
     `export const PAGED = 11;`,
+    ``,
+    `// A section cite names a page and a section of it, at either altitude`,
+    `// the page states one: a heading (\`docs/sections.md\`, *Loud or`,
+    `// nothing*) and a bolded bullet lead (docs/sections.md, *Verbatim`,
+    `// copying is the detector*), the page half backticked or bare. A page`,
+    `// this tree does not hold titles nothing, so a cite into one reds where`,
+    `// the page name already does: (\`docs/absent.md\`, *Loud or nothing*).`,
+    `export const SECTIONS = 12;`,
+    ``,
+    `// An abbreviation is a rewrite rather than a match, though the page`,
+    `// opens a heading with those very words:`,
+    `// (\`docs/sections.md\`, *Derived state is computed*).`,
+    `export const ABBREVIATED = 13;`,
+    ``,
+    `// The section half is a phrase, so a comment line breaks it wherever`,
+    `// the wrapping falls and the renderer puts the space back:`,
+    `// (\`docs/sections.md\`, *Derived state is computed, never restated`,
+    `// beside its source*) closes to the heading it names, where a broken`,
+    `// token closes to nothing.`,
+    `export const WRAPPED_SECTION = 14;`,
+    ``,
+    `// A fenced sample of that page mints no title, the way its fenced \`# \``,
+    `// line mints no heading: (\`docs/sections.md\`, *A fenced lead mints`,
+    `// none either*).`,
+    `export const FENCED_SECTION = 15;`,
+    ``,
+    `// Nothing else is a cite: (\`docs/sections.md\`, *Loud or nothing* and`,
+    `// an aside) leaves the parenthetical open past the italics, and`,
+    `// (\`docs/sections.md\`) claims no section at all.`,
+    `export const UNCITED = 16;`,
     ``,
   ].join("\n"),
   "docs/carried.md": "# the page a tree outside the tsconfig cites\n",
@@ -374,6 +424,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "docs/guide.md",
     "docs/paired.md",
     "docs/retired.md",
+    "docs/sections.md",
     "docs/vanished.md",
     "docs/withdrawn.md",
     "lib/dataShapes.ts",
@@ -402,6 +453,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:91 Holder",
     "lib/surface.ts:93 WeakMap",
     "lib/surface.ts:107 docs/absent.md",
+    "lib/surface.ts:116 docs/absent.md",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
@@ -415,6 +467,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "dataShapes.ts",
     "docs/guide.md",
     "docs/paired.md",
+    "docs/sections.md",
     "lib/dataShapes.ts",
     "lib/retired.ts",
     "release-notes.md",
@@ -678,6 +731,7 @@ it("the citation scan judges an unbackticked *.md page name in a comment", () =>
     "lib/surface.ts:58 <area>/notes.md",
     "lib/surface.ts:58 docs/*.md",
     "lib/surface.ts:85 docs/withdrawn.md",
+    "lib/surface.ts:113 docs/sections.md",
   ]);
 
   // Judged, and judged in both directions by the arm the fenced paths go
@@ -834,6 +888,70 @@ it("an identifier a comment pairs with a .md page resolves repo-wide rather than
   expect(resolved).toContain("lib/surface.ts:107 WeakMap");
   expect(resolved).toContain("lib/surface.ts:104 docs/paired.md");
   expect(pairedFindings).toContain("lib/surface.ts:107 docs/absent.md");
+});
+
+// --- the section, which the named page's own titles answer ---------------
+
+it("a comment's (`<page>.md`, *Section*) pair resolves its section half against the page's headings and bolded bullet leads", () => {
+  // Vacuity guard: every cite the fixture authored was drawn, and no other,
+  // before a verdict is read off any of them — both fencings of the page
+  // half, both altitudes the page states a title at, and the wrap the
+  // renderer closes. The two spellings below the last of these are the
+  // refusals: a parenthetical the italics do not close, and one carrying no
+  // section at all, neither of which appears here.
+  expect(
+    fixtureScan.sections.scanned.map(
+      (site) => `${formatCitation(site)} -> ${site.page}`,
+    ),
+  ).toEqual([
+    "lib/surface.ts:112 Loud or nothing -> docs/sections.md",
+    "lib/surface.ts:113 Verbatim copying is the detector -> docs/sections.md",
+    "lib/surface.ts:116 Loud or nothing -> docs/absent.md",
+    "lib/surface.ts:121 Derived state is computed -> docs/sections.md",
+    "lib/surface.ts:126 Derived state is computed, never restated beside its source -> docs/sections.md",
+    "lib/surface.ts:132 A fenced lead mints none either -> docs/sections.md",
+  ]);
+
+  // The verdict: a heading answers a cite, a bolded bullet lead answers one
+  // too — the page half bare there, so the fence is the author's and not the
+  // rule's — and a phrase the comment line broke is closed the way markdown
+  // closes it rather than lost the way a broken token is.
+  const findings = fixtureScan.sections.findings.map(formatCitation);
+  expect(findings).not.toContain("lib/surface.ts:112 Loud or nothing");
+  expect(findings).not.toContain(
+    "lib/surface.ts:113 Verbatim copying is the detector",
+  );
+  expect(findings).not.toContain(
+    "lib/surface.ts:126 Derived state is computed, never restated beside its source",
+  );
+
+  // And the named page is what answers. The same section spelled at a page
+  // this tree does not hold reds, so the arm reads the page the cite names
+  // rather than whichever page of the tree happens to carry the title.
+  expect(findings).toContain("lib/surface.ts:116 Loud or nothing");
+
+  // A title only a fenced sample of that page carries is no title, on the
+  // rule that makes a fenced `# ` line no heading.
+  expect(findings).toContain(
+    "lib/surface.ts:132 A fenced lead mints none either",
+  );
+});
+
+it("an abbreviated section half is reported unresolved rather than matched as a prefix", () => {
+  // Vacuity guard: the cite was drawn, the page does open a heading with
+  // those very words, and the cite spelling that heading whole resolves a
+  // few lines down. So the finding below is the exactness rule and not a
+  // page that lost the section or a reader that never saw the cite.
+  const drawn = fixtureScan.sections.scanned.map(formatCitation);
+  expect(drawn).toContain("lib/surface.ts:121 Derived state is computed");
+  const findings = fixtureScan.sections.findings.map(formatCitation);
+  expect(findings).not.toContain(
+    "lib/surface.ts:126 Derived state is computed, never restated beside its source",
+  );
+
+  // The verdict: a prefix of a title is a title the page does not carry, so
+  // the abbreviation is a rewrite the citing comment has to follow.
+  expect(findings).toContain("lib/surface.ts:121 Derived state is computed");
 });
 
 // --- the title, which carries the page-name arm alone --------------------
@@ -1186,6 +1304,38 @@ it("the repo citation pin refuses any citation broken across a comment line", ()
   expect(repoScan.wraps.findings.map(formatCitation)).toEqual([]);
 });
 
+it("every section a src/, harness/ or tests/ comment cites is a section its page still carries", () => {
+  // Vacuity guard: these comments cite sections in quantity before the
+  // emptiness below is read off them. A reader that stopped drawing the
+  // shape would report a clean tree over zero cites.
+  expect(repoScan.sections.scanned.length).toBeGreaterThan(600);
+
+  // Judged at both altitudes a page states a title at — a heading and a
+  // bolded bullet lead — so a heading rewritten or a lead respelled reds
+  // here rather than leaving every comment citing it standing.
+  const dangling = new Set(repoScan.sections.findings);
+  const resolved = new Set(
+    repoScan.sections.scanned
+      .filter((site) => !dangling.has(site))
+      .map((site) => `${site.page} :: ${site.text}`),
+  );
+  for (const cite of [
+    ".claude/rules/engineering.md :: Loud or nothing",
+    "spec/loop.md :: No false signal",
+  ]) {
+    expect(`${cite} -> ${resolved.has(cite)}`).toBe(`${cite} -> true`);
+  }
+
+  // The verdict. Spell the section as its page titles it: the match is exact
+  // once backticks and the renderer's wrapping are folded out, and there is
+  // no prefix arm for an abbreviation to land on.
+  expect(
+    repoScan.sections.findings.map(
+      (site) => `${formatCitation(site)} -> ${site.page}`,
+    ),
+  ).toEqual([]);
+});
+
 it("every *.md page name a src/, harness/ or tests/ title carries names a file the working tree holds", () => {
   // Vacuity guard: the titles were read in quantity and the page names among
   // them are judged in quantity, before the emptiness below is read off
@@ -1278,4 +1428,28 @@ it("every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.t
   expect(
     repoPageScan.findings.filter((site) => excluded.includes(site.text)).length,
   ).toBeGreaterThan(0);
+});
+
+it("every section a comment in bin/, examples/, scripts/ or .flume/chain.ts cites is a section its page still carries", () => {
+  // Vacuity guard: these comments cite sections in quantity before the
+  // emptiness below is read off them, and the arm reaching here at all is
+  // the point — a page's own titles answer a cite with no program to
+  // consult, exactly as the page name beside it is answered.
+  expect(repoPageScan.sections.scanned.length).toBeGreaterThan(15);
+
+  const dangling = new Set(repoPageScan.sections.findings);
+  const resolved = new Set(
+    repoPageScan.sections.scanned
+      .filter((site) => !dangling.has(site))
+      .map((site) => `${site.page} :: ${site.text}`),
+  );
+  const cite = "spec/harness.md :: What this repo is";
+  expect(`${cite} -> ${resolved.has(cite)}`).toBe(`${cite} -> true`);
+
+  // The verdict, on the terms the program-backed scan is held to.
+  expect(
+    repoPageScan.sections.findings.map(
+      (site) => `${formatCitation(site)} -> ${site.page}`,
+    ),
+  ).toEqual([]);
 });

@@ -86,6 +86,84 @@ export function headingLines(page: string): string[] {
   return headingsOf(page.split(/\r?\n/)).map((found) => found.line);
 }
 
+/** The `#` run a heading opens with, and the space between it and its text. */
+const HEADING_OPENING = /^#{1,6} +/;
+
+/**
+ * A bullet whose lead the page bolds — the list marker through the `**` that
+ * opens the lead. The same list markers `walkOf` reads, because a section
+ * names its members one way whether or not a citation points at one of them.
+ */
+const BOLD_BULLET = /^[ \t]*[-*] +\*\*/;
+
+/**
+ * One bolded bullet lead, from the `**` at `opened` through the `**` that
+ * closes it, with the page's own wrapping folded out — a lead is a phrase,
+ * and where a phrase breaks across source lines is the formatter's business.
+ *
+ * A lead nothing closes before the block ends yields nothing rather than
+ * running to the end of the page: a `**` the author never closed is emphasis
+ * the renderer drops, not a title anything cites.
+ */
+function boldLeadAt(
+  lines: readonly string[],
+  from: number,
+  opened: number,
+): string | undefined {
+  let joined = (lines[from] ?? "").slice(opened).trimEnd();
+  for (let at = from; ; ) {
+    const closes = joined.indexOf("**");
+    if (closes !== -1) return joined.slice(0, closes);
+    at += 1;
+    const next = lines[at];
+    if (next === undefined || next.trim() === "" || FENCE.test(next)) return undefined;
+    joined = `${joined} ${next.trim()}`;
+  }
+}
+
+/** The sentence punctuation a bolded lead's own `**` happens to cover. */
+const LEAD_TERMINATOR = /[.:;,]+$/;
+
+/**
+ * Every title the page's own structure offers a citation: each heading's
+ * text, and the bolded lead of each bullet. Both in page order, headings
+ * first.
+ *
+ * A page states a claim at two altitudes and a comment cites it at either —
+ * `## Loud or nothing` is a section, `- **Verbatim copying is the
+ * detector.**` is a bullet inside one, and each is the whole of what a cite
+ * names. Fenced blocks are skipped on the rule `headingsOf` already carries,
+ * so a shell sample's `# ` line mints no title and a bulleted list inside one
+ * mints no lead.
+ *
+ * A lead's title stops before the sentence punctuation its `**` covers: a
+ * bullet leads with a fragment and the page punctuates it as a sentence, so
+ * the period in `- **Prefer the condition to the era.**` belongs to the
+ * prose rather than to the title a reader cites. A heading carries no such
+ * punctuation and is taken whole, ordinal and all.
+ */
+export function sectionTitles(page: string): string[] {
+  const lines = page.split(/\r?\n/);
+  const titles = headingsOf(lines).map((found) =>
+    found.line.replace(HEADING_OPENING, "").trim(),
+  );
+
+  let fenced = false;
+  for (const [index, line] of lines.entries()) {
+    if (FENCE.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    const opening = BOLD_BULLET.exec(line);
+    if (!opening) continue;
+    const lead = boldLeadAt(lines, index, opening[0].length);
+    if (lead !== undefined) titles.push(lead.trim().replace(LEAD_TERMINATOR, ""));
+  }
+
+  return titles;
+}
+
 /**
  * A string heading is the heading line exactly; a pattern is matched against
  * one line at a time, so the global and sticky flags are dropped — a match

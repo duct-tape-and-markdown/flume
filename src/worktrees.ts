@@ -174,8 +174,9 @@ async function worktreeAdminDir(worktreePath: string): Promise<string> {
 /**
  * Record which state root provisioned the worktree at `worktreePath` — the
  * evidence {@link sweepStaleWorktrees} removes on (`spec/worktrees.md`,
- * *Startup sweep*), and the same evidence {@link createWorktree} clears an
- * occupied path on (*Placement — the worktree base*).
+ * *Startup sweep — a dead wave's residue is removed at the next start*),
+ * and the same evidence {@link createWorktree} clears an occupied path on
+ * (*Placement — the worktree base*).
  *
  * The registry alone cannot carry that claim. It names every worktree of the
  * *repository*, and a second checkout of one repository holds a different tip
@@ -198,9 +199,9 @@ async function worktreeAdminDir(worktreePath: string): Promise<string> {
  *
  * A failure here propagates. It is the caller's provisioning failure, isolated
  * the way any other is (`spec/worktrees.md`, *Every `.git/worktrees` mutation
- * is serialized*), rather than a worktree that reads as provisioned while
- * nothing will ever reclaim it (`.claude/rules/engineering.md`, *Loud or
- * nothing*).
+ * is serialized; the agent fanout is not*), rather than a worktree that reads
+ * as provisioned while nothing will ever reclaim it
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 export async function stampWorktree(
   worktreePath: string,

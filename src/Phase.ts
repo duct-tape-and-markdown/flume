@@ -198,7 +198,7 @@ export interface TickContext {
    * renders the errors as the tick's input, since the rewrite it is about to
    * produce is the repair. Reported as a fact, never a verdict: what to do
    * about it is the chain's (`.claude/rules/engine-boundary.md`, *Routing
-   * rule*).
+   * rule (plan, build, and interactive sessions)*).
    */
   queueParseFailure?: QueueParseFailure;
 }
@@ -411,7 +411,8 @@ export interface TickResult {
    *
    * A fact, never a verdict: the engine says which entries the chain's own
    * predicate declined, and nothing about why or what to do next
-   * (`.claude/rules/engine-boundary.md`, *Routing rule*).
+   * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+   * interactive sessions)*).
    */
   refusedTags?: readonly string[];
   /**

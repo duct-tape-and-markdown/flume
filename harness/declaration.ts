@@ -211,7 +211,8 @@ const HandoffValue = z.custom<Handoff>(
  * check refuses one the engine does not, so a knob the engine adds, renames
  * or retires fails typecheck here rather than leaving a consumer declaring a
  * value nothing reads — or unable to declare one the engine reads
- * (`.claude/rules/engineering.md`, *Derived state is computed*).
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
  */
 type DeclaredSupervisor = NonNullable<Chain["supervisorPolicy"]>;
 

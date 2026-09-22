@@ -173,7 +173,8 @@ const pathsIn = (commit: RangeCommit, globs: string[]): readonly string[] =>
 /**
  * The spec-locus lines deleted across the window — the sentences a doc
  * comment, a docs page or a README section may still assert
- * (`.claude/rules/posture-sweep.md`, *The frontier is decidable*).
+ * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*).
  *
  * The paths are the locus paths the range touched, so the diff is narrowed to
  * files the window actually names rather than to the whole locus.

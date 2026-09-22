@@ -70,8 +70,8 @@ export type ProvisionFailure = StageFailureEntry & {
  *   `FLUME_QUARANTINED_SLUGS`. Reported rather than recomputed: the
  *   supervisor holds only the verdict, and a second read of `pending.json`
  *   there would key the hold on bytes a *later* tick wrote
- *   (`.claude/rules/engineering.md`, *A fact the engine holds is
- *   reported*).
+ *   (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ *   never rediscovered*).
  */
 export type StageFailureEntry =
   | { tag: string; quarantineKey: string }
@@ -112,9 +112,10 @@ export type GateFailure = StageFailureEntry & {
  * `shipped` (`./Phase.js`, spec/chain.md "What a hook receives"). One shape,
  * so a hook reads the same fields a verdict reader does and never
  * pattern-matches `message` for a discriminant its own chain authored
- * (`.claude/rules/engineering.md`, *A fact the engine holds is reported*).
- * It doubles as the local accumulator the gate loops push into: the fields
- * are mutable, so nothing widens or narrows on the way out.
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). It doubles as the local accumulator the gate loops
+ * push into: the fields are mutable, so nothing widens or narrows on the way
+ * out.
  */
 export interface ReportedGateResult {
   gate: string;

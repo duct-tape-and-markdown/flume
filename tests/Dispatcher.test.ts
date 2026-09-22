@@ -3628,10 +3628,10 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
    * registry alone cannot say who provisioned a directory — it names every
    * worktree of the *repository*, a second checkout's live trees included —
    * so the stamp is what the sweep removes on (`spec/worktrees.md`, *Startup
-   * sweep*). Written by the real `stampWorktree` rather than spelled here, so
-   * a fixture cannot agree with a reader that drifted
-   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
-   * wrote*).
+   * sweep — a dead wave's residue is removed at the next start*). Written by
+   * the real `stampWorktree` rather than spelled here, so a fixture cannot
+   * agree with a reader that drifted (`.claude/rules/engineering.md`, *A seam
+   * gate reads what the real writer wrote*).
    */
   async function plantResidue(path: string, branch: string): Promise<void> {
     await exec("git", ["worktree", "add", "-B", branch, path, "HEAD"], {

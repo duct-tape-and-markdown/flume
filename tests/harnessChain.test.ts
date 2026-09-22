@@ -692,9 +692,9 @@ it("a declared friction directory reaches Chain.friction", () => {
   );
 
   // Undeclared stays undeclared. The engine reads an absent `friction` as the
-  // whole channel off (`spec/chain.md`, *`Chain.friction`*), so a factory that
-  // supplied one here would turn a consumer's silence into a directory it
-  // has to discover to switch off.
+  // whole channel off (`spec/chain.md`, *`Chain.friction` — the declared
+  // friction channel*), so a factory that supplied one here would turn a
+  // consumer's silence into a directory it has to discover to switch off.
   expect(chainFor().friction).toBeUndefined();
 });
 
@@ -1755,7 +1755,7 @@ async function spanningRestore(dir: string, log: string): Promise<string> {
  * {@link WAVE} worktrees under `dir`, provisioned through `hook` at once —
  * the shape a fanout wave provisions in, where the engine runs every
  * entry's hook concurrently (`spec/worktrees.md`, *`setupWorktree` and
- * `teardownWorktree`*).
+ * `teardownWorktree` — the chain's provisioning hooks*).
  */
 async function provisionWave(
   hook: NonNullable<Phase["setupWorktree"]>,

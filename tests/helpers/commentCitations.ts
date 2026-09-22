@@ -23,11 +23,11 @@
  * The pair is the whole parenthetical and nothing else: the open paren is all
  * that sits between the two spans, and the path closes it. A path a sentence
  * merely follows a name with, and a parenthetical carrying a path plus an
- * aside — the section cite `` (`spec/loop.md`, *Section*) `` among them — are
- * context, and drawing a home out of either would red a comment that claimed
- * none. Nor is a home a page: a tight-closed pair whose path is a `*.md` name
- * draws none either, because no declaration lives in a page, so a home like
- * that would red every name cited at it. Both spans keep the arms they have.
+ * aside, are context, and drawing a home out of either would red a comment
+ * that claimed none. Nor is a home a page: a tight-closed pair whose path is a
+ * `*.md` name draws none either, because no declaration lives in a page, so a
+ * home like that would red every name cited at it. Both spans keep the arms
+ * they have.
  *
  * A `*.md` page name is a citation backticked or not, because a filename is
  * never a sentence: the extension is the whole claim, so no surrounding prose
@@ -55,6 +55,24 @@
  * path, a prompt's own prose, a message a suite asserts on. Answered by such
  * a literal, a comment naming a page the repo has since renamed away keeps
  * resolving, which is the reading the carve-out exists to refuse.
+ *
+ * A page name a comment writes a section behind — `` (`<page>.md`,
+ * *Section*) `` — has said the same thing one step further in, and the named
+ * page answers that too: a section is a heading the page opens or a bullet
+ * lead it bolds, and whether the page still carries one is a read of the
+ * working tree, never of what the citing sentence meant. So the section half
+ * is its own judged set, resolved against that page's own titles the way a
+ * `per` cite already is. The match is exact once backticks and the
+ * renderer's wrapping are folded out, with no prefix arm: a heading that grew
+ * a clause is a rewrite the citing comment has to follow, and an abbreviation
+ * that kept resolving would be the arm answering a citation nobody checked.
+ *
+ * That half is read off the run as markdown renders it rather than off the
+ * backtick pairing, because it is a phrase and not a token: a comment line
+ * breaks it wherever the wrapping falls, and the renderer puts back the one
+ * space its own words already sit behind. A wrapped *token* is reported as a
+ * wrap for the opposite reason — the break puts a space where the spelling
+ * admits none.
  *
  * Both the comments and the identifier half of the verdict go through the
  * TypeScript program. The comments are read off real trivia ranges rather
@@ -88,11 +106,12 @@
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import ts from "typescript";
 
+import { sectionTitles } from "./docSections.ts";
 import {
   eachToken,
   modulesUnder,
@@ -145,6 +164,15 @@ export interface WrappedCitation extends CitationSite {
 export interface PairedCitation extends CitationSite {
   /** The repo-relative path the pair named — where the token must be declared. */
   readonly home: string;
+}
+
+/**
+ * A section cite: the italicized half of a `` (`<page>.md`, *Section*) ``
+ * pair, and the page it is resolved against.
+ */
+export interface SectionCitation extends CitationSite {
+  /** The page whose own titles answer it, repo-relative and posix-separated. */
+  readonly page: string;
 }
 
 /**
@@ -203,6 +231,11 @@ export interface CitationScan extends Scan<CitationSite> {
    * citation itself.
    */
   readonly titles: Scan<CitationSite>;
+  /**
+   * The fourth verdict, over a fourth judged set: the section halves those
+   * comments cite, and among them the ones their page no longer titles.
+   */
+  readonly sections: Scan<SectionCitation>;
 }
 
 /**
@@ -521,12 +554,12 @@ const commentLines = (sf: ts.SourceFile): readonly CommentLine[] => {
 };
 
 /**
- * The comment furniture a continuation line opens with — a block comment's
- * `*` margin, the `//` of the next line comment in a run. Markdown never
- * renders it, so a span the wrap carried across the break does not hold it
- * either.
+ * The comment furniture a line opens with — a block comment's `/**` opening or
+ * `*` margin, the `//` of a line comment. Markdown never renders any of it, so
+ * neither a span a wrap carried across the break nor the rendered run below
+ * holds it.
  */
-const CONTINUATION_MARGIN = /^\s*(?:\/\/+|\*+)\s*/;
+const CONTINUATION_MARGIN = /^\s*(?:\/\/+|\/?\*+)\s*/;
 
 /**
  * The furniture a block comment closes with, stripped from a line's right
@@ -549,6 +582,57 @@ const WRAP_HEAD = /\S+\/$/;
  * as `BARE_PAGE` — `.mdx` is a page name of its own, not this one truncated.
  */
 const WRAP_TAIL = /^\S*\.md(?![A-Za-z0-9_-])/;
+
+/**
+ * One run of comment lines as markdown renders it: every line's furniture
+ * off, every break folded to the one space the renderer puts there.
+ *
+ * The backticked arms read `joined` instead, where a break is still a break,
+ * because a wrap splits a *token* into something no subject spelling admits.
+ * A section cite's italicized half is a phrase, and a phrase's break renders
+ * as the space its own words already sit behind — so it is read here, where
+ * the wrap has already closed the way a reader sees it close.
+ */
+interface RenderedRun {
+  /** The run's text, margins off and breaks folded. */
+  readonly text: string;
+  /** The 1-based source line the character at an offset came from. */
+  lineAt(offset: number): number;
+}
+
+/** Render one run of comment lines, keeping each piece's source line. */
+const renderRun = (run: readonly CommentLine[]): RenderedRun => {
+  const pieces = run.map((entry) =>
+    entry.text.replace(CONTINUATION_MARGIN, "").replace(BLOCK_TERMINATOR, "").trim(),
+  );
+  /** Where each piece ends in the joined text, the joining space included. */
+  const ends: number[] = [];
+  let at = 0;
+  for (const piece of pieces) {
+    at += piece.length + 1;
+    ends.push(at);
+  }
+
+  return {
+    text: pieces.join(" "),
+    lineAt: (offset) => {
+      const index = ends.findIndex((end) => offset < end);
+      return (index === -1 ? run[run.length - 1] : run[index])?.line ?? 0;
+    },
+  };
+};
+
+/**
+ * A section cite: a page and the section of it a comment names, written as
+ * `` (`<page>.md`, *Section*) ``. The page half is read backticked or bare,
+ * the way every other page name is — the fence is the author's, never the
+ * rule's.
+ *
+ * The parenthetical closes on the italicized half, so a sentence that merely
+ * follows a page with an aside draws no cite and a comment that claimed no
+ * section is never held to one.
+ */
+const SECTION_CITE = /\(`?([^\s`(),]+\.md)`?,\s+\*([^*]+)\*\)/g;
 
 /**
  * A wrapped span read across its break. The line break and the next line's
@@ -593,11 +677,13 @@ const commentSpans = (
   readonly bare: CitationSite[];
   readonly wrapped: WrappedCitation[];
   readonly paired: Array<{ site: CitationSite; home: string }>;
+  readonly sections: SectionCitation[];
 } => {
   const closed: CitationSite[] = [];
   const bare: CitationSite[] = [];
   const wrapped: WrappedCitation[] = [];
   const paired: Array<{ site: CitationSite; home: string }> = [];
+  const sections: SectionCitation[] = [];
 
   const read = (run: readonly CommentLine[]): void => {
     if (run.length === 0) return;
@@ -736,6 +822,23 @@ const commentSpans = (
       const text = match[0].replace(OPENING_PUNCTUATION, "");
       bare.push({ module, line: lineAt(start), text });
     }
+
+    // The section cite, read off the run as markdown renders it rather than
+    // off the span extents above: the italicized half is a phrase, so a
+    // comment line breaks it wherever the wrapping falls and the renderer
+    // puts back the one space its own words already sit behind. Read in
+    // `joined`'s alphabet it would be a different string on every rewrap.
+    const rendered = renderRun(run);
+    for (const match of rendered.text.matchAll(SECTION_CITE)) {
+      const page = match[1] ?? "";
+      if (!isPageName(page)) continue;
+      sections.push({
+        module,
+        line: rendered.lineAt(match.index),
+        text: match[2] ?? "",
+        page,
+      });
+    }
   };
 
   let run: CommentLine[] = [];
@@ -749,7 +852,7 @@ const commentSpans = (
   }
   read(run);
 
-  return { closed, bare, wrapped, paired };
+  return { closed, bare, wrapped, paired, sections };
 };
 
 /**
@@ -762,6 +865,51 @@ const commentSpans = (
  */
 const holdsFile = (root: string, text: string): boolean =>
   existsSync(resolve(root, text));
+
+/**
+ * A section title as markdown renders it: fences off, wrapping folded to one
+ * space. The cite and the page's own title are both read this way, so a
+ * backtick one side spells and the other does not, and a break either side
+ * happens to fall on, cannot separate a title from itself.
+ *
+ * Nothing else is normalized. The match is exact from here, with no prefix
+ * arm: an abbreviated cite names a title the page does not carry, and a page
+ * whose heading grew a clause is a rewrite the citing comment has to follow
+ * rather than a match it keeps by accident.
+ */
+const renderTitle = (text: string): string =>
+  text.replace(/`/g, "").replace(/\s+/g, " ").trim();
+
+/**
+ * Whether a page titles the section a cite names, over one scan's reads.
+ *
+ * A page the working tree does not hold titles nothing, so a cite into one
+ * reds here as it already reds at the page half — a section cite into a
+ * missing page is the same dead citation one step earlier
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * The page's titles come off the shared reader (`sectionTitles`,
+ * `tests/helpers/docSections.ts`): one rule for what a page's structure
+ * offers, so a fenced `# ` line mints no title here that the renderer would
+ * not show a reader.
+ */
+const sectionReader = (root: string): ((site: SectionCitation) => boolean) => {
+  const read = new Map<string, ReadonlySet<string>>();
+  const titlesOf = (page: string): ReadonlySet<string> => {
+    const held = read.get(page);
+    if (held) return held;
+    const path = resolve(root, page);
+    const found = new Set(
+      existsSync(path)
+        ? sectionTitles(readFileSync(path, "utf8")).map(renderTitle)
+        : [],
+    );
+    read.set(page, found);
+    return found;
+  };
+
+  return (site) => titlesOf(site.page).has(renderTitle(site.text));
+};
 
 /**
  * Scan a program's comments for citations naming nothing the judged trees
@@ -850,6 +998,7 @@ export const scanCommentCitations = (
   const wrapped: WrappedCitation[] = [];
   const scanned: CitationSite[] = [];
   const titled: CitationSite[] = [];
+  const sections: SectionCitation[] = [];
   /** The home each paired citation named, keyed by the very site judged. */
   const pairedHome = new Map<CitationSite, string>();
   for (const sf of sources) {
@@ -858,6 +1007,7 @@ export const scanCommentCitations = (
     backticked.push(...spans.closed);
     bare.push(...spans.bare);
     wrapped.push(...spans.wrapped);
+    sections.push(...spans.sections);
     for (const pair of spans.paired) pairedHome.set(pair.site, pair.home);
     scanned.push(
       ...[
@@ -909,6 +1059,11 @@ export const scanCommentCitations = (
     .flatMap(titlePages)
     .filter((site) => isPageName(site.text));
 
+  // The section arm is answered by the working tree the way the page-name arm
+  // is, one step further in — by what the named page titles — so it reads the
+  // declarations not at all.
+  const titles = sectionReader(root);
+
   return {
     modules: [...modules],
     backticked,
@@ -923,6 +1078,10 @@ export const scanCommentCitations = (
     titles: {
       scanned: titlePageNames,
       findings: titlePageNames.filter((site) => !onDisk(site.text)),
+    },
+    sections: {
+      scanned: sections,
+      findings: sections.filter((site) => !titles(site)),
     },
     pairs: scanned
       .filter((site) => pairedHome.has(site))
@@ -977,6 +1136,13 @@ export interface PageCitationScan extends Scan<CitationSite> {
    * nothing*).
    */
   readonly wraps: Scan<WrappedCitation>;
+  /**
+   * The section halves these comments cite, and among them the ones their
+   * page no longer titles. The same arm the program-backed scan runs, for the
+   * same reason the page name reaches here: a page's own headings answer it,
+   * and no declaration is consulted either way.
+   */
+  readonly sections: Scan<SectionCitation>;
 }
 
 /**
@@ -1005,6 +1171,7 @@ export const scanPageCitations = (
   const bare: CitationSite[] = [];
   const wrapped: WrappedCitation[] = [];
   const scanned: CitationSite[] = [];
+  const sections: SectionCitation[] = [];
 
   for (const path of modulesUnder(root, request.domain)) {
     const module = relPath(root, path);
@@ -1015,10 +1182,12 @@ export const scanPageCitations = (
     backticked.push(...fenced);
     bare.push(...unfenced);
     wrapped.push(...spans.wrapped);
+    sections.push(...spans.sections);
     scanned.push(...[...fenced, ...unfenced].sort((a, b) => a.line - b.line));
   }
 
   const answered = (site: CitationSite): boolean => holdsFile(root, site.text);
+  const titles = sectionReader(root);
 
   return {
     modules,
@@ -1027,6 +1196,10 @@ export const scanPageCitations = (
     wraps: {
       scanned: wrapped,
       findings: wrapped.filter((site) => isPageName(site.closed)),
+    },
+    sections: {
+      scanned: sections,
+      findings: sections.filter((site) => !titles(site)),
     },
     scanned,
     resolved: scanned.filter(answered),

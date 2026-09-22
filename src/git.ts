@@ -781,7 +781,8 @@ export async function acquireTipClaim(
  *
  * The record's own two fields and nothing derived from them: what git said
  * about a path, never what a caller should do about it
- * (`.claude/rules/engineering.md`, *A fact the engine holds is reported*).
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
  */
 export interface GitStatusRecord {
   /**
@@ -873,7 +874,8 @@ export const WORKTREE_LIST_Z_FLOOR = { major: 2, minor: 36 } as const;
  *
  * A fact, never a verdict: this says which git answered and whether it
  * carries the option the engine reads, not what a caller should do about it
- * (`.claude/rules/engineering.md`, *A fact the engine holds is reported*).
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
  */
 export type GitVersion =
   | {

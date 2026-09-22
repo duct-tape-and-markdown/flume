@@ -178,8 +178,8 @@ it("flume job is an unknown command and exits 2", async () => {
  * the listing must not advertise a verb the dispatch refuses. Scoped to the
  * `Commands:` block alone, which is the listing the claim is about — a
  * negative read of the whole rendered page would turn on whatever else it
- * happens to quote (`.claude/rules/posture-sweep.md`, *a negative assertion
- * over a whole rendered artifact*).
+ * happens to quote (`.claude/rules/posture-sweep.md`, *A violation counts
+ * only when verified on disk this tick*).
  */
 it("the top-level help names no job verb", () => {
   const names = topLevelCommandNames();
@@ -504,8 +504,8 @@ function namedExitCodes(section: string): number[] {
  * Scoped rather than section-wide on purpose: a section documents a verb's
  * whole range, so a set read off all of it turns on whatever the neighbouring
  * arms happen to quote rather than on the arm the case is about
- * (`.claude/rules/posture-sweep.md`, *a negative assertion over a whole
- * rendered artifact*). A sentence ends at a period followed by the opening of
+ * (`.claude/rules/posture-sweep.md`, *A violation counts only when verified
+ * on disk this tick*). A sentence ends at a period followed by the opening of
  * the next — the page's own arms are one sentence each, semicolons and
  * em-dashes included.
  */

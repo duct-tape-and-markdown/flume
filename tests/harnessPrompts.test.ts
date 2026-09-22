@@ -752,8 +752,8 @@ it("a cold state root renders every plan slice prompt's placeholder as its block
  * Read as the whole block rather than searched for a substring: what the
  * slice is shown is exactly the open set, and a case asserting only that a
  * path appears somewhere would pass over a block that also claims nothing is
- * open (`.claude/rules/posture-sweep.md`, *a negative assertion over a whole
- * rendered artifact*).
+ * open (`.claude/rules/posture-sweep.md`, *A violation counts only when
+ * verified on disk this tick*).
  */
 function questionsBlock(rendered: string, label: string): string[] {
   const lines = rendered.split("\n").map((l) => l.trimEnd());

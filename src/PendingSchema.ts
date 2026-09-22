@@ -477,8 +477,9 @@ function issuesToParseErrors(issues: z.core.$ZodIssue[]): ParseError[] {
  * `TickResult.queueParseFailure`, in place of the throw below.
  *
  * A fact, never a verdict (`.claude/rules/engine-boundary.md`, *Routing
- * rule*): the engine states which file did not resolve and what the parse
- * said about it, and what to do about that stays the phase's.
+ * rule (plan, build, and interactive sessions)*): the engine states which
+ * file did not resolve and what the parse said about it, and what to do
+ * about that stays the phase's.
  */
 export interface QueueParseFailure {
   /**

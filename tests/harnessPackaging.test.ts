@@ -118,7 +118,8 @@ function harnessVerbHeading(verb: string): string {
  * Every consumer-facing page a verb can be named on: the README and every
  * markdown page under `docs/`, read off the tree rather than listed here so
  * a page added to the set is scanned without this file being touched
- * (`.claude/rules/engineering.md`, *Derived state is computed*).
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
  */
 async function consumerDocPages(): Promise<{ page: string; body: string }[]> {
   const pages = [
@@ -287,7 +288,8 @@ async function filesUnder(dir: string, prefix: string): Promise<string[]> {
  * string leaf of the `exports` map, whatever subpaths and conditions it
  * grows. Read off the manifest rather than listed here, so a subpath added
  * without its emit following is caught by the same assertion
- * (`.claude/rules/engineering.md`, *Derived state is computed*).
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
  */
 function entryPathsOf(pkg: Manifest): string[] {
   const out: string[] = [];
@@ -622,7 +624,8 @@ it("the flume-harness bin adopts an empty repository against the published emit"
  * The asset set is read off the emit by what it is *not* — a compiled
  * output — rather than by a list of directory names here, so an asset
  * directory added to the package is covered by this case without it being
- * touched (`.claude/rules/engineering.md`, *Derived state is computed*).
+ * touched (`.claude/rules/engineering.md`, *Derived state is computed,
+ * never restated beside its source*).
  *
  * npm's own packer is the reader: its ignore semantics (the `files`
  * allowlist, the always-excluded set, the negations) are not something a
@@ -1038,10 +1041,11 @@ function namesMinor(prose: string, minor: string): boolean {
  * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
  *
  * The gap is derived, never listed here (`.claude/rules/engineering.md`,
- * *Derived state is computed*): the note set comes off the tree, the
- * released minors off `CHANGELOG.md`'s own version headings, and a note's
- * gap is the released minors between it and the previous note in the series.
- * A note added, or a minor cut, moves the verdict with no edit to this file.
+ * *Derived state is computed, never restated beside its source*): the note
+ * set comes off the tree, the released minors off `CHANGELOG.md`'s own
+ * version headings, and a note's gap is the released minors between it and
+ * the previous note in the series. A note added, or a minor cut, moves the
+ * verdict with no edit to this file.
  *
  * The gap is read against the head alone — everything before the first
  * section heading — and within the head only against the paragraphs that

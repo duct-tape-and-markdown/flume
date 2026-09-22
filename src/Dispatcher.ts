@@ -407,8 +407,9 @@ export interface RenderRequest {
 
 /**
  * What {@link Dispatcher.render} resolved. Facts, never a verdict
- * (`.claude/rules/engine-boundary.md`, *Routing rule*): the caller decides
- * what to print and what to exit with.
+ * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+ * interactive sessions)*): the caller decides what to print and what to
+ * exit with.
  */
 export interface RenderResolution {
   /** The phase, as the chain spells it. */
@@ -480,7 +481,8 @@ export class Dispatcher {
    * `Chain.worktreesBase` evaluated, for the chain this dispatcher last
    * loaded — `undefined` until one is loaded, and whenever the chain
    * declares none. Held rather than re-evaluated per worktree, which is what
-   * "evaluated at load" buys (spec/worktrees.md, *Placement*).
+   * "evaluated at load" buys (spec/worktrees.md, *Placement — the worktree
+   * base*).
    */
   private chainWorktreesBase: string | undefined;
   private pendingPath: string;

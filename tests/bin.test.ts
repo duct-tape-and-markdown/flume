@@ -309,7 +309,8 @@ describe("bin/flume.js — the published bin.flume entry", () => {
  *
  * Read off the map rather than from a list here, so a third entry added
  * without its shebang is caught by the same case
- * (`.claude/rules/engineering.md`, *Derived state is computed*).
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
  */
 it("the flume-harness bin is a Node script whose first line is the env-node shebang", async () => {
   const manifest = JSON.parse(

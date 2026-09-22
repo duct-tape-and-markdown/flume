@@ -54,11 +54,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /**
  * The state root a consumer gets unless it says otherwise — the bay name the
  * engine resolves from a repository root when nothing overrides it
- * (`spec/cli.md`, *Bay discovery*). Taken from the engine rather than
- * restated: init's default and the dir the engine's own discovery walk looks
- * for are one fact, and a second spelling here would write an adoption the
- * engine then fails to find (`.claude/rules/engineering.md`, *Derived state
- * is computed, never restated beside its source*).
+ * (`spec/cli.md`, *Bay discovery walks up to the nearest `.flume`*). Taken
+ * from the engine rather than restated: init's default and the dir the
+ * engine's own discovery walk looks for are one fact, and a second spelling
+ * here would write an adoption the engine then fails to find
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
  *
  * Spelled as a default rather than baked in: everything this module composes
  * takes the root as a parameter, so a consumer adopting into a different one
@@ -72,8 +73,8 @@ const DECLARATION_REL = "declaration.ts";
 
 /**
  * Where the chain the engine loads sits — `<configDir>/chain.ts` and nowhere
- * else (`spec/chain.md`, *Chain residency*), which for a consumer adopting
- * the package is the state root init just made.
+ * else (`spec/chain.md`, *Chain residency — one chain per `.flume`*), which
+ * for a consumer adopting the package is the state root init just made.
  */
 const CHAIN_REL = "chain.ts";
 

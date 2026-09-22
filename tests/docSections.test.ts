@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { sectionOf } from "./helpers/docSections.ts";
+import { sectionOf, sectionTitles } from "./helpers/docSections.ts";
 
 const PAGE = [
   "# Title",
@@ -87,5 +87,63 @@ describe("sectionOf", () => {
     const heading = /^## First$/gm;
     expect(sectionOf(PAGE, heading)).toContain("opening prose");
     expect(sectionOf(PAGE, heading)).toContain("opening prose");
+  });
+});
+
+describe("sectionTitles", () => {
+  const TITLED = [
+    "# Title",
+    "",
+    "## Loud or nothing",
+    "",
+    "- **Prefer the condition to the era.** a bullet whose lead the page",
+    "  bolds, wrapped the way a lead wraps.",
+    "- a bullet with no bolded lead at all",
+    "- **When:** a lead the page ends with a colon",
+    "",
+    "```",
+    "# A fenced heading",
+    "- **A fenced lead.** a sample",
+    "```",
+    "",
+    "prose carrying a **bolded run** that leads no bullet",
+    "",
+  ].join("\n");
+
+  it("a page's titles are its headings and its bolded bullet leads", () => {
+    expect(sectionTitles(TITLED)).toEqual([
+      "Title",
+      "Loud or nothing",
+      "Prefer the condition to the era",
+      "When",
+    ]);
+  });
+
+  it("a title stops before the sentence punctuation its own emphasis covers", () => {
+    // Vacuity guard: the page bolds both leads with their punctuation inside
+    // the `**`, so the titles below are the read dropping it rather than a
+    // page that never wrote it.
+    expect(TITLED).toContain("**Prefer the condition to the era.**");
+    expect(TITLED).toContain("**When:**");
+
+    const titles = sectionTitles(TITLED);
+    expect(titles).toContain("Prefer the condition to the era");
+    expect(titles).toContain("When");
+  });
+
+  it("neither a fenced heading nor a fenced bullet lead is a title", () => {
+    // Vacuity guard: the fence carries both shapes, and the same page's
+    // unfenced ones are titles, so the absences below are the fence rule.
+    expect(TITLED).toContain("# A fenced heading");
+    expect(TITLED).toContain("**A fenced lead.**");
+    expect(sectionTitles(TITLED).length).toBeGreaterThan(0);
+
+    expect(sectionTitles(TITLED)).not.toContain("A fenced heading");
+    expect(sectionTitles(TITLED)).not.toContain("A fenced lead");
+  });
+
+  it("a bolded run that leads no bullet is prose, not a title", () => {
+    expect(TITLED).toContain("**bolded run**");
+    expect(sectionTitles(TITLED)).not.toContain("bolded run");
   });
 });

@@ -884,7 +884,7 @@ describe("example chains — the engine arrives on the api, never through a valu
 
 /**
  * `phases[0]` is a chain's entry point by position (docs/CHAIN-AUTHORING.md,
- * *Declaring a Phase*), so a chain whose entry phase is also in its own
+ * *1. Declaring a Phase*), so a chain whose entry phase is also in its own
  * `humanOnly` list declares a state root that can never cold-start on its
  * own machinery: a human has to wake it on tick one, every time. Every chain
  * under `examples/` is a "read this to learn the shape" artifact, so this

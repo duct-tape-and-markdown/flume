@@ -503,8 +503,9 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     // Residue from a run that predates the stamp, or a provisioning that
     // died between the add and the stamp: registered, unstamped, and the
     // same refusal the sweep takes on it (`spec/worktrees.md`, *Startup
-    // sweep*) — the pre-stamp tree now needs a hand rather than being
-    // cleared on the registry's word.
+    // sweep — a dead wave's residue is removed at the next start*) — the
+    // pre-stamp tree now needs a hand rather than being cleared on the
+    // registry's word.
     const unstamped = join(base, worktreeDirName("build"));
     await mkdir(dirname(unstamped), { recursive: true });
     await exec(
@@ -858,10 +859,11 @@ describe("worktrees — the startup sweep reaps the branches its own directories
    * Residue a killed tick left: a registered worktree at `path`, on `branch`,
    * stamped with the state root that would have provisioned it. The stamp is
    * written by the real `stampWorktree` rather than by hand — it is the
-   * evidence the sweep removes on (`spec/worktrees.md`, *Startup sweep*), and
-   * a fixture spelling it itself would agree with whatever the reader
-   * believed (`.claude/rules/engineering.md`, *A seam gate reads what the
-   * real writer wrote*).
+   * evidence the sweep removes on (`spec/worktrees.md`, *Startup sweep — a
+   * dead wave's residue is removed at the next start*), and a fixture
+   * spelling it itself would agree with whatever the reader believed
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*).
    */
   async function plantResidue(path: string, branch: string): Promise<void> {
     await mkdir(dirname(path), { recursive: true });
@@ -1002,12 +1004,13 @@ describe("worktrees — the longpaths pin precedes the add", () => {
 /**
  * THE-STARTUP-SWEEP-REMOVES-ONLY-ITS-OWN-STAMPED-WORKTREES — the sweep's
  * evidence is minted at provisioning, not inferred from the registry
- * (`spec/worktrees.md`, *Startup sweep*). The registry names every worktree
- * of the *repository*, which is a wider claim than "this state root made
- * it": a second checkout of one repository holds a different tip, so its tip
- * claim is grantable beside this one, and under a shared base its live trees
- * sit at exactly the level the sweep reads. Removing one on the registry's
- * word alone takes a running sibling's worktree out from under it.
+ * (`spec/worktrees.md`, *Startup sweep — a dead wave's residue is removed at
+ * the next start*). The registry names every worktree of the *repository*,
+ * which is a wider claim than "this state root made it": a second checkout
+ * of one repository holds a different tip, so its tip claim is grantable
+ * beside this one, and under a shared base its live trees sit at exactly the
+ * level the sweep reads. Removing one on the registry's word alone takes a
+ * running sibling's worktree out from under it.
  *
  * Both sides of the seam are the real ones (`.claude/rules/engineering.md`,
  * *A seam gate reads what the real writer wrote*): `createWorktree` is the
