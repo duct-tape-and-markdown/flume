@@ -38,8 +38,17 @@ import {
   type TickVerdict,
 } from "../src/tickVerdict.ts";
 import { frictionCountLine } from "../src/friction.ts";
-import { readWorktreeRegistry, worktreeDirName } from "../src/worktrees.ts";
-import { mergingDir, slugify, worktreesBase } from "../src/paths.ts";
+import {
+  readWorktreeRegistry,
+  stampWorktree,
+  worktreeDirName,
+} from "../src/worktrees.ts";
+import {
+  defaultStateRoot,
+  mergingDir,
+  slugify,
+  worktreesBase,
+} from "../src/paths.ts";
 import {
   priorAttemptPath,
   priorAttemptRef,
@@ -3543,6 +3552,24 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     vi.restoreAllMocks();
   });
 
+  /**
+   * Residue a killed tick left at `path`, on `branch`: a registered worktree
+   * carrying the stamp of the state root these dispatchers sweep for. The
+   * registry alone cannot say who provisioned a directory — it names every
+   * worktree of the *repository*, a second checkout's live trees included —
+   * so the stamp is what the sweep removes on (`spec/worktrees.md`, *Startup
+   * sweep*). Written by the real `stampWorktree` rather than spelled here, so
+   * a fixture cannot agree with a reader that drifted
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*).
+   */
+  async function plantResidue(path: string, branch: string): Promise<void> {
+    await exec("git", ["worktree", "add", "-B", branch, path, "HEAD"], {
+      cwd: fx.repo,
+    });
+    await stampWorktree(path, defaultStateRoot(fx.repo));
+  }
+
   it("a worktree/branch abandoned by a killed tick, whose entry is no longer pending, is removed at the next loop start: the startup sweep leaves the orphan's path out of the repo's worktree registry", async () => {
     const repoOpts = { cwd: fx.repo };
     const wtPath = join(fx.repo, ".flume", "worktrees", "orphan");
@@ -3550,11 +3577,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     // Exactly what a killed fanout tick leaves behind: a registered git
     // worktree on a flume/** branch, teardown never having run, and no
     // pending entry naming it (a dropped entry left the queue entirely).
-    await exec(
-      "git",
-      ["worktree", "add", "-B", "flume/orphan", wtPath, "HEAD"],
-      repoOpts,
-    );
+    await plantResidue(wtPath, "flume/orphan");
     // Vacuity pin: the orphan is really in the registry going in, so the
     // absence asserted after the sweep is a removal and not a path git
     // never named.
@@ -3596,11 +3619,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     const orphan = join(base, "orphan");
     try {
       await mkdir(base, { recursive: true });
-      await exec(
-        "git",
-        ["worktree", "add", "-B", "flume/orphan", orphan, "HEAD"],
-        repoOpts,
-      );
+      await plantResidue(orphan, "flume/orphan");
 
       // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is
       // proven non-vacuous"): the residue is really there, really
@@ -3666,11 +3685,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
       // This run's own abandoned residue, at the same level — what the sweep
       // IS here for.
       const ownPath = join(base, "own-orphan");
-      await exec(
-        "git",
-        ["worktree", "add", "-B", "flume/own-orphan", ownPath, "HEAD"],
-        repoOpts,
-      );
+      await plantResidue(ownPath, "flume/own-orphan");
       // Vacuity pin: the registered tree really is registered and the
       // disclaimed one really is not, so the survives/removed split asserted
       // below is a split rather than two paths the registry never held.
@@ -3736,11 +3751,7 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     // directory git does not register as a worktree standing…", above), so
     // an unregistered directory would never reach the mocked
     // `removeWorktree` below.
-    await exec(
-      "git",
-      ["worktree", "add", "-B", "flume/stuck", wtPath, "HEAD"],
-      { cwd: fx.repo },
-    );
+    await plantResidue(wtPath, "flume/stuck");
 
     // Stands in for the win32 EBUSY/locked-handle class the real
     // removal-fallback exhausts on (`removeWorktree`) — the sweep

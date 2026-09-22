@@ -22,7 +22,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile } from "node:child_process";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
@@ -133,6 +133,110 @@ const WORKTREE_FIELD = "worktree ";
  * detached record carries `detached` instead and matches nothing here.
  */
 const BRANCH_FIELD = "branch refs/heads/";
+
+/**
+ * The file `stampWorktree` writes inside a worktree's own git admin
+ * directory, naming the state root that provisioned it.
+ *
+ * **Inside the admin directory, not the working tree.** A tick's own
+ * clean-tree gate reads the worktree it runs in, so a stamp dropped in the
+ * checkout would be the tick's first uncommitted file. `.git/worktrees/<name>/`
+ * is git's per-worktree scratch, invisible to `status`, and git removes it
+ * with the worktree — `worktree remove` and `worktree prune` alike — so the
+ * stamp has exactly the lifetime of the thing it describes and no reaper of
+ * its own.
+ */
+const STATE_ROOT_STAMP = "flume-state-root";
+
+/**
+ * Where git keeps the admin directory for the worktree checked out at
+ * `worktreePath` — asked of git rather than composed from the base name it
+ * usually derives it from, which git is free to disambiguate (`<name>1`) when
+ * two worktrees share one basename
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ */
+async function worktreeAdminDir(worktreePath: string): Promise<string> {
+  const { stdout } = await execFileP(
+    "git",
+    ["rev-parse", "--absolute-git-dir"],
+    {
+      cwd: worktreePath,
+      // One absolute path and a newline — orders of magnitude under this,
+      // and the cap is declared rather than inherited
+      // (`.claude/rules/platform-facts.md`, *Node caps a captured child
+      // stream at 1 MiB, and reports the overrun as a spawn failure*).
+      maxBuffer: 64 * 1024,
+    },
+  );
+  return stdout.trim();
+}
+
+/**
+ * Record which state root provisioned the worktree at `worktreePath` — the
+ * evidence {@link sweepStaleWorktrees} removes on
+ * (`spec/worktrees.md`, *Startup sweep*).
+ *
+ * The registry alone cannot carry that claim. It names every worktree of the
+ * *repository*, and a second checkout of one repository holds a different tip
+ * and is therefore grantable a tip claim of its own, so two live flume
+ * instances can share one worktree base (*Placement*) and each read the
+ * other's live trees as its own residue. The tip claim guards this state
+ * root's worktrees and says nothing about a sibling's, so the sweep's
+ * evidence is minted at provisioning rather than inferred from a registry
+ * entry.
+ *
+ * Both sites that plant under the base stamp — {@link createWorktree} for a
+ * tick's tree and {@link checkoutAt} for a differential gate's detached one —
+ * because the sweep is the only reclamation either has when the run dies, and
+ * an unstamped tree is one the sweep will decline forever.
+ *
+ * Exported for the suites that plant a dead run's residue: the sweep's claim
+ * is that the two sides of this seam agree, which a hand-written stamp beside
+ * it could not show (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*).
+ *
+ * A failure here propagates. It is the caller's provisioning failure, isolated
+ * the way any other is (`spec/worktrees.md`, *Every `.git/worktrees` mutation
+ * is serialized*), rather than a worktree that reads as provisioned while
+ * nothing will ever reclaim it (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ */
+export async function stampWorktree(
+  worktreePath: string,
+  flumeDir: string,
+): Promise<void> {
+  const adminDir = await worktreeAdminDir(worktreePath);
+  await writeFile(
+    namespacedJoin(adminDir, STATE_ROOT_STAMP),
+    `${resolve(flumeDir)}\n`,
+    "utf8",
+  );
+}
+
+/**
+ * The state root that stamped the worktree at `worktreePath`, or `undefined`
+ * where none did.
+ *
+ * Every failure reads as "no stamp": an admin directory git will not name, an
+ * absent or unreadable file, a file holding nothing. None of them is this
+ * root's evidence, and the sweep's verdict on all of them is identical —
+ * leave the directory standing and name it. The refusal is the floor here,
+ * not a degradation: the one action a missing stamp permits is the one that
+ * destroys nothing, and the sweep says out loud what it left.
+ */
+async function stampedStateRoot(
+  worktreePath: string,
+): Promise<string | undefined> {
+  let text: string;
+  try {
+    const adminDir = await worktreeAdminDir(worktreePath);
+    text = await readFile(namespacedJoin(adminDir, STATE_ROOT_STAMP), "utf8");
+  } catch {
+    return undefined;
+  }
+  const stamp = text.trim();
+  return stamp.length > 0 ? stamp : undefined;
+}
 
 /**
  * The one probe of git's worktree registry, reached by every caller that
@@ -329,6 +433,10 @@ export async function checkoutAt(opts: {
   // leave it standing.
   scope.planted.push({ repoRoot: opts.repoRoot, path });
   await git.addWorktree({ repoRoot: opts.repoRoot, path, fromRef: opts.sha });
+  // Stamped like any other tree planted under the base: the gate boundary
+  // reclaims this one, but a run killed mid-gate leaves it for the next
+  // start's sweep, which removes only what its own state root stamped.
+  await stampWorktree(path, opts.flumeDir);
   return path;
 }
 
@@ -441,6 +549,11 @@ export async function createWorktree(
     branch,
     fromRef,
   });
+  // The evidence the next start's sweep removes on. Written after the add,
+  // which is the first moment git has an admin directory to hold it, and
+  // before the caller is told the worktree exists: a tree this call handed
+  // back unstamped is one the sweep would decline forever.
+  await stampWorktree(path, ctx.flumeDir);
   return { path, branch };
 }
 
@@ -502,8 +615,11 @@ export async function teardownWorktreeInstance(
  * `flume loop` calls this once through
  * `Dispatcher.sweepStaleWorktrees`, after the tip claim is
  * acquired and before the first tick (`src/cli.ts`) — holding the claim
- * is the guard: one flume writer per ref means no live sibling owns
- * anything under this state root's worktree base. A bare `flume tick`
+ * is the guard, and it reaches exactly this state root: one flume writer
+ * per ref means no live sibling of *this* root owns anything it
+ * provisioned. It says nothing about a second checkout of the same
+ * repository, whose tip differs and whose claim is therefore grantable
+ * beside this one. A bare `flume tick`
  * never calls this; its per-wave prune and stale-slug removal are
  * unchanged.
  *
@@ -515,15 +631,28 @@ export async function teardownWorktreeInstance(
  * the sweep's to guess: an operator's own tree, a directory whose worktree
  * registration git has already pruned, and this run's abandoned residue
  * are indistinguishable by name. So a bare `readdir` + blind removal would
- * delete whatever happened to be there. The disambiguator is git's own
- * registry, not a naming heuristic
- * (`.claude/rules/engine-boundary.md`, "told, not inferred"):
- * {@link readWorktreeRegistry} — the same probe {@link createWorktree}
- * clears an occupied path on — names every path git currently considers a
- * worktree, and only entries that are literally one of those paths are
- * this job's own residue to remove through `git.removeWorktree` +
- * win32-fallback (the same path teardown uses) — anything git disclaims is
- * left untouched. Then a final `git
+ * delete whatever happened to be there. Two facts disambiguate, and neither
+ * is a naming heuristic (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
+ *
+ * The first is git's own registry: {@link readWorktreeRegistry} — the same
+ * probe {@link createWorktree} clears an occupied path on — names every path
+ * git currently considers a worktree of this repo, and anything git disclaims
+ * is left untouched.
+ *
+ * The second is the sweep's own evidence, minted at provisioning rather than
+ * inferred from that registry: the registry names every worktree of the
+ * *repository*, which is a wider claim than "this state root made it". A
+ * second checkout of one repository holds a different tip, so its tip claim
+ * is grantable beside this one, and under a shared `FLUME_WORKTREES_DIR`
+ * (*Placement*) its live trees sit at exactly the level read here. So a
+ * registered directory is removed only where {@link stampWorktree}'s stamp
+ * names this state root; one carrying no stamp — a sibling's tree, or residue
+ * from a run that predates the stamp — is left where it is and named once,
+ * never removed on a registry entry alone.
+ *
+ * What survives both tests goes through `git.removeWorktree` +
+ * win32-fallback (the same path teardown uses). Then a final `git
  * worktree prune`; then the branches those removed directories were checked
  * out on.
  *
@@ -540,15 +669,17 @@ export async function teardownWorktreeInstance(
  * git had already pruned the registration for: nothing pairs it, so it stays
  * for an operator, the same trade the directory leg takes above.
  *
- * Never throws: an unreadable or absent base, an unreadable registry, a
- * surviving worktree directory (locked handle, EBUSY), a prune failure, or a
- * branch that won't delete are each logged and swallowed rather than
- * propagated — a sweep that could abort the run would convert dead residue
- * into a denial of service on the live queue. Silent on an absent or empty
- * base, the normal case; a surviving worktree path is warned once for
- * the whole run, not once per directory. A registry the probe could not read
- * removes nothing and says so: an unreadable registry is not a base with
- * nothing registered in it, and the two must not print the same silence.
+ * Never throws: an unreadable or absent base, an unreadable registry, an
+ * unreadable stamp, a surviving worktree directory (locked handle, EBUSY), a
+ * prune failure, or a branch that won't delete are each logged and swallowed
+ * rather than propagated — a sweep that could abort the run would convert
+ * dead residue into a denial of service on the live queue. Silent on an
+ * absent or empty base, the normal case; a surviving worktree path and a
+ * registered directory left standing for want of this root's stamp are each
+ * warned once for the whole run, not once per directory. A registry the probe
+ * could not read removes nothing and says so: an unreadable registry is not a
+ * base with nothing registered in it, and the two must not print the same
+ * silence.
  */
 export async function sweepStaleWorktrees(
   ctx: WorktreeContext,
@@ -585,6 +716,14 @@ export async function sweepStaleWorktrees(
   }
 
   const survivingPaths: string[] = [];
+  // Registered directories this state root did not stamp: a second checkout's
+  // live worktree under a shared base, or residue from a run that predates
+  // the stamp. Left standing, and named once at the end — the registry says
+  // git owns them, and nothing says this root provisioned them.
+  const unstamped: string[] = [];
+  // The state root whose worktrees this sweep owns, in the spelling
+  // `stampWorktree` wrote.
+  const ownStateRoot = resolve(ctx.flumeDir);
   // The branches the removed directories were checked out on — collected as
   // each removal succeeds, so the leg below reaps what this sweep just took
   // down and nothing else. A detached tree (a gate's `checkoutAt` residue)
@@ -598,6 +737,16 @@ export async function sweepStaleWorktrees(
         // Not a worktree git knows about — an operator's own tree, or
         // residue whose registration was already pruned. Not this run's to
         // remove; leave it untouched.
+        continue;
+      }
+      if ((await stampedStateRoot(path)) !== ownStateRoot) {
+        // Registered, but not on this root's evidence. The tip claim this
+        // sweep holds guards this state root's worktrees alone: a second
+        // checkout of the same repository has a different tip, so its claim
+        // is grantable too, and under a shared base its live trees sit at
+        // exactly this level. Removing one on the registry's word would take
+        // a running sibling's worktree out from under it.
+        unstamped.push(path);
         continue;
       }
       const branch = registry.worktrees.get(resolved);
@@ -630,6 +779,12 @@ export async function sweepStaleWorktrees(
         `[flume] startup sweep: deleteBranch failed for ${branch}: ${(err as Error).message}`,
       );
     }
+  }
+
+  if (unstamped.length > 0) {
+    ctx.log.warn(
+      `[flume] startup sweep: ${unstamped.length} registered worktree(s) under ${sweepBase} carry no stamp from this state root (${ownStateRoot}) and were left standing: ${unstamped.join(", ")}`,
+    );
   }
 
   if (survivingPaths.length > 0) {

@@ -33,6 +33,7 @@ import {
   checkoutAt,
   createWorktree,
   readWorktreeRegistry,
+  stampWorktree,
   sweepStaleWorktrees,
   teardownWorktreeInstance,
   withGateCheckouts,
@@ -739,12 +740,21 @@ describe("worktrees — the startup sweep reaps the branches its own directories
     };
   }
 
-  /** Residue a killed tick left: a registered worktree at `path`, on `branch`. */
+  /**
+   * Residue a killed tick left: a registered worktree at `path`, on `branch`,
+   * stamped with the state root that would have provisioned it. The stamp is
+   * written by the real `stampWorktree` rather than by hand — it is the
+   * evidence the sweep removes on (`spec/worktrees.md`, *Startup sweep*), and
+   * a fixture spelling it itself would agree with whatever the reader
+   * believed (`.claude/rules/engineering.md`, *A seam gate reads what the
+   * real writer wrote*).
+   */
   async function plantResidue(path: string, branch: string): Promise<void> {
     await mkdir(dirname(path), { recursive: true });
     await exec("git", ["worktree", "add", "-B", branch, path, "HEAD"], {
       cwd: fx.repo,
     });
+    await stampWorktree(path, contextFor().ctx.flumeDir);
   }
 
   it("the startup sweep deletes the branch a worktree it removed was checked out on", async () => {
@@ -872,5 +882,218 @@ describe("worktrees — the longpaths pin precedes the add", () => {
     });
 
     expect(existsSync(planted)).toBe(false);
+  });
+});
+
+/**
+ * THE-STARTUP-SWEEP-REMOVES-ONLY-ITS-OWN-STAMPED-WORKTREES — the sweep's
+ * evidence is minted at provisioning, not inferred from the registry
+ * (`spec/worktrees.md`, *Startup sweep*). The registry names every worktree
+ * of the *repository*, which is a wider claim than "this state root made
+ * it": a second checkout of one repository holds a different tip, so its tip
+ * claim is grantable beside this one, and under a shared base its live trees
+ * sit at exactly the level the sweep reads. Removing one on the registry's
+ * word alone takes a running sibling's worktree out from under it.
+ *
+ * Both sides of the seam are the real ones (`.claude/rules/engineering.md`,
+ * *A seam gate reads what the real writer wrote*): `createWorktree` is the
+ * writer whose stamp the real `sweepStaleWorktrees` reads back, and the
+ * second state root's tree is provisioned through that same writer rather
+ * than hand-stamped — a hand-authored stamp would agree with whatever the
+ * sweep believed, including agreeing that there is no stamp at all.
+ */
+describe("worktrees — the startup sweep removes on the stamp provisioning minted", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  /** The fixture repo's current HEAD, the ref every provisioning branches from. */
+  async function head(): Promise<string> {
+    const { stdout } = await exec("git", ["rev-parse", "HEAD"], {
+      cwd: fx.repo,
+    });
+    return stdout.trim();
+  }
+
+  /**
+   * The state root named by the stamp on the worktree at `path`, read
+   * independently of the module under test: git is asked where it keeps the
+   * worktree's admin directory, and the filename is spelled here rather than
+   * imported. Importing the writer's constant would make the name agree with
+   * itself, which is the one thing this seam cannot afford.
+   */
+  async function stampAt(path: string): Promise<string | undefined> {
+    const { stdout } = await exec("git", ["rev-parse", "--absolute-git-dir"], {
+      cwd: path,
+    });
+    try {
+      return (
+        await readFile(join(stdout.trim(), "flume-state-root"), "utf8")
+      ).trim();
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Two state roots over this repository, provisioning into one base — the
+   * placement a sibling checkout sharing `FLUME_WORKTREES_DIR` produces, with
+   * both roots' trees landing in the one registry each of them reads. The
+   * base is declared on both contexts, so the pair share whichever base
+   * resolution wins on this host.
+   */
+  function twoRoots(log: Logger): {
+    own: WorktreeContext;
+    sibling: WorktreeContext;
+    base: string;
+  } {
+    const ownRoot = join(fx.repo, ".flume");
+    const base = worktreesBase(ownRoot);
+    return {
+      own: {
+        repoRoot: fx.repo,
+        flumeDir: ownRoot,
+        stateRootRel: ".flume",
+        log,
+        declaredWorktreesBase: base,
+      },
+      sibling: {
+        repoRoot: fx.repo,
+        flumeDir: join(fx.repo, ".flume-sibling"),
+        stateRootRel: ".flume-sibling",
+        log,
+        declaredWorktreesBase: base,
+      },
+      base,
+    };
+  }
+
+  it("provisioning stamps every worktree with the state root that created it", async () => {
+    const { own } = twoRoots(silent);
+
+    // A tick's own tree.
+    const wt = await createWorktree("STAMP-AT-PROVISION", await head(), own);
+
+    // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is proven
+    // non-vacuous"): the worktree really was planted and really is
+    // registered, so the stamp below is read off a live tree rather than
+    // agreeing with an empty fixture.
+    expect(existsSync(wt.path)).toBe(true);
+    expect(await registeredWorktrees(fx.repo)).toContain(wt.path);
+
+    expect(await stampAt(wt.path)).toBe(resolve(own.flumeDir));
+    // And nowhere in the working tree: the tick's own clean-tree gate reads
+    // this checkout, so a stamp the agent's commit would have to carry is a
+    // stamp that breaks every tick.
+    const { stdout: status } = await exec(
+      "git",
+      ["status", "--porcelain", "-z"],
+      { cwd: wt.path },
+    );
+    expect(status).toBe("");
+
+    // And a differential gate's detached tree, which plants at the same level
+    // and is reclaimed by the same sweep when the run dies mid-gate.
+    await withGateCheckouts(
+      { log: silent, declaredWorktreesBase: own.declaredWorktreesBase! },
+      async () => {
+        const checkout = await checkoutAt({
+          repoRoot: fx.repo,
+          flumeDir: own.flumeDir,
+          sha: await head(),
+        });
+        expect(await registeredWorktrees(fx.repo)).toContain(resolve(checkout));
+        expect(await stampAt(checkout)).toBe(resolve(own.flumeDir));
+      },
+    );
+  });
+
+  it("the startup sweep removes only worktree directories stamped by its own state root", async () => {
+    const log = collectingLogger();
+    const { own, sibling } = twoRoots(log);
+    const ref = await head();
+
+    // This root's abandoned residue: provisioned, then never torn down —
+    // what a killed tick leaves.
+    const ours = await createWorktree("SWEEP-OWN-RESIDUE", ref, own);
+    // The second state root's tree, live and provisioned by the same writer.
+    const theirs = await createWorktree("SWEEP-SIBLING-LIVE", ref, sibling);
+
+    // Vacuity pin: both sit under the one base this sweep reads, both are
+    // registered, and the two stamps differ — so the split asserted below is
+    // a split, not two paths the registry never held.
+    const registered = await registeredWorktrees(fx.repo);
+    expect(registered).toContain(ours.path);
+    expect(registered).toContain(theirs.path);
+    expect(await stampAt(ours.path)).toBe(resolve(own.flumeDir));
+    expect(await stampAt(theirs.path)).toBe(resolve(sibling.flumeDir));
+    expect(await flumeBranches(fx.repo)).toEqual(
+      [ours.branch, theirs.branch].sort(),
+    );
+
+    await sweepStaleWorktrees(own);
+
+    // Its own residue, directory and branch alike.
+    expect(existsSync(ours.path)).toBe(false);
+    expect(await registeredWorktrees(fx.repo)).not.toContain(ours.path);
+
+    // The sibling's live tree stands, still registered, still on its branch —
+    // and the sweep says it left it.
+    expect(existsSync(theirs.path)).toBe(true);
+    expect(await registeredWorktrees(fx.repo)).toContain(theirs.path);
+    expect(await flumeBranches(fx.repo)).toEqual([theirs.branch]);
+    expect(
+      log.warnings.filter((w) => w.includes(theirs.path)),
+    ).toHaveLength(1);
+  });
+
+  it("the startup sweep leaves a registered directory carrying no stamp and names it once", async () => {
+    const log = collectingLogger();
+    const { own, base } = twoRoots(log);
+    const ref = await head();
+
+    // A registered worktree under this base that provisioning never stamped:
+    // residue from a run that predates the stamp, or a sibling whose own
+    // provisioning failed between the add and the stamp. The registry names
+    // it exactly as it names this root's own trees.
+    const unstamped = join(base, "unstamped");
+    await mkdir(dirname(unstamped), { recursive: true });
+    await exec(
+      "git",
+      ["worktree", "add", "-B", "flume/unstamped", unstamped, ref],
+      { cwd: fx.repo },
+    );
+    // This root's own residue beside it — the sweep is still the sweep.
+    const ours = await createWorktree("SWEEP-STAMPED-RESIDUE", ref, own);
+
+    // Vacuity pin: git registers both, and exactly one of them carries a
+    // stamp — so "left standing" below is a refusal rather than a path the
+    // sweep never reached.
+    const registered = await registeredWorktrees(fx.repo);
+    expect(registered).toContain(resolve(unstamped));
+    expect(registered).toContain(ours.path);
+    expect(await stampAt(unstamped)).toBeUndefined();
+    expect(await stampAt(ours.path)).toBe(resolve(own.flumeDir));
+
+    await sweepStaleWorktrees(own);
+
+    expect(existsSync(ours.path)).toBe(false);
+    expect(existsSync(unstamped)).toBe(true);
+    const after = await registeredWorktrees(fx.repo);
+    expect(after).toContain(resolve(unstamped));
+    expect(after).not.toContain(ours.path);
+    // Its branch stays with it: the branch leg reaps what the directory leg
+    // removed, and this directory was never removed.
+    expect(await flumeBranches(fx.repo)).toEqual(["flume/unstamped"]);
+    // Named once for the whole run, not once per directory.
+    const named = log.warnings.filter((w) => w.includes(unstamped));
+    expect(named).toHaveLength(1);
+    expect(named[0]).toContain("no stamp from this state root");
   });
 });
