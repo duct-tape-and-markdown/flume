@@ -182,7 +182,7 @@ inside zod's internals.
 `flume job extract` — along with its only consumer, `Chain.harvest` — is
 removed outright. A job is now exactly `.flume/jobs/<name>/`, on whatever
 branch the operator happens to be on. See
-[`spec/jobs.md` § A job is a state root](../spec/jobs.md#a-job-is-a-state-root).
+[`spec/jobs.md` § The checkout is the unit of isolation](../spec/jobs.md#the-checkout-is-the-unit-of-isolation).
 
 `tick`/`loop` no longer refuse under `--job` when HEAD isn't `job/<name>` —
 that preflight is gone with the grammar.

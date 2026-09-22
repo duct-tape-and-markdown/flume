@@ -1,7 +1,7 @@
 /**
- * The markdown section cutter — one home for the read every doc pin in this
- * suite makes: a heading line through the line before the next heading that
- * closes it (`.claude/rules/engineering.md`, *A module is one job*). Eight
+ * The markdown heading reader — one home for the read every doc pin in this
+ * suite makes: which lines of a page are headings, and the section one of
+ * them opens (`.claude/rules/engineering.md`, *A module is one job*). Eight
  * copies across five test files preceded it, each new pin copying whichever
  * was nearest, and they disagreed on both rules below — what closes a
  * section, and whether a fenced `# ` line is a heading at all.
@@ -34,12 +34,36 @@ const FENCE = /^\s*(?:```|~~~)/;
 export function sectionOf(page: string, heading: string | RegExp): string {
   const lines = page.split(/\r?\n/);
   const matches = headingMatcher(heading);
-  let start = -1;
-  let depth = 0;
-  let end = lines.length;
+  const headings = headingsOf(lines);
+
+  const at = headings.findIndex((found) => matches(found.line.trimEnd()));
+  if (at === -1) return "";
+  const opened = headings[at]!;
+  const closer = headings.slice(at + 1).find((found) => found.level <= opened.level);
+
+  return lines.slice(opened.index, closer?.index ?? lines.length).join("\n");
+}
+
+/** One heading the page opens, at the line it sits on. */
+interface HeadingLine {
+  /** The line's 0-based index into the page. */
+  readonly index: number;
+  /** How many `#` the heading opens with. */
+  readonly level: number;
+  /** The heading line verbatim, fence and text together. */
+  readonly line: string;
+}
+
+/**
+ * Every heading the page opens, in page order, fenced blocks skipped by the
+ * rule above. One walk, so a cut and a heading read of the same page agree on
+ * what a heading is.
+ */
+function headingsOf(lines: readonly string[]): HeadingLine[] {
+  const found: HeadingLine[] = [];
   let fenced = false;
 
-  for (const [i, line] of lines.entries()) {
+  for (const [index, line] of lines.entries()) {
     if (FENCE.test(line)) {
       fenced = !fenced;
       continue;
@@ -47,20 +71,19 @@ export function sectionOf(page: string, heading: string | RegExp): string {
     if (fenced) continue;
     const level = HEADING.exec(line)?.[1]?.length;
     if (level === undefined) continue;
-    if (start === -1) {
-      if (matches(line.trimEnd())) {
-        start = i;
-        depth = level;
-      }
-      continue;
-    }
-    if (level <= depth) {
-      end = i;
-      break;
-    }
+    found.push({ index, level, line });
   }
 
-  return start === -1 ? "" : lines.slice(start, end).join("\n");
+  return found;
+}
+
+/**
+ * Every heading line of a page, verbatim and in page order — what an anchor
+ * read needs (`tests/helpers/pageAnchors.ts`), which is the same set the cut
+ * above walks rather than a second reading of what a heading is.
+ */
+export function headingLines(page: string): string[] {
+  return headingsOf(page.split(/\r?\n/)).map((found) => found.line);
 }
 
 /**

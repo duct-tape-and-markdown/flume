@@ -32,6 +32,7 @@ import { resolvePackageJson } from "../src/selfPackage.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
+import { markdownLinks } from "./helpers/pageAnchors.ts";
 import {
   SPAWN_BUDGET_MS,
   exec,
@@ -141,18 +142,17 @@ async function consumerDocPages(): Promise<{ page: string; body: string }[]> {
 const DOC_ROOTS = ["README.md", "CHANGELOG.md"];
 
 /**
- * Every link destination a markdown page states — inline `[text](target)`
- * and the reference definition `[label]: target` — with any `#anchor`
- * dropped. A destination that names nothing on the tree (a URL, a bare
- * anchor) is left in rather than filtered: the caller resolves, and a
+ * Every link destination a markdown page states, with any `#anchor` dropped —
+ * the half of a link this scan reads, off the suite's one link reader
+ * (`markdownLinks`, `tests/helpers/pageAnchors.ts`), whose other half the
+ * anchor arm resolves. A destination that names nothing on the tree (a URL, a
+ * bare anchor) is left in rather than filtered: the caller resolves, and a
  * target naming no file simply matches no page.
  */
 function markdownLinkTargets(body: string): string[] {
-  const targets = [
-    ...[...body.matchAll(/\[[^\]]*\]\(\s*([^)\s]+)/g)].map((m) => m[1] ?? ""),
-    ...[...body.matchAll(/^\[[^\]]+\]:\s*(\S+)/gm)].map((m) => m[1] ?? ""),
-  ];
-  return targets.map((t) => t.split("#")[0] ?? "").filter((t) => t !== "");
+  return markdownLinks(body)
+    .map((link) => link.destination)
+    .filter((destination) => destination !== "");
 }
 
 /**
