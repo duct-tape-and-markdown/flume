@@ -10,6 +10,7 @@ import {
   readdir,
   readFile,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
@@ -18,8 +19,14 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { EX_IOERR } from "../src/cli.ts";
+import { EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import { HELP_TOP, helpPageFor } from "../src/cliHelp.ts";
-import { loopLockPath } from "../src/paths.ts";
+import {
+  STATE_ROOT_NAMES,
+  loopLockPath,
+  mergingDir,
+  stopFlagPath,
+} from "../src/paths.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import {
   loopCompletionSummary,
@@ -37,9 +44,10 @@ import {
   type TickVerdict,
 } from "../src/tickVerdict.ts";
 import type { TickResult } from "../src/Phase.ts";
-import { denyFile } from "./helpers/denial.ts";
+import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
+import { makeScratchRepo } from "./helpers/scratchRepo.ts";
 import {
   SPAWN_BUDGET_MS,
   runCli,
@@ -52,23 +60,48 @@ import {
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 /**
- * The codes a `--help` text's own "Exit codes:" block lists — read off the
- * real help output, never restated, so both suites below compare a real
- * producer against the shipped prose rather than against a hand copy.
+ * A `--help` text's own "Exit codes:" block, one entry per code, carrying
+ * everything that code's row says — its first line through the wrapped
+ * continuations beneath it, folded to one line, since where a row breaks
+ * across help-text lines is the formatter's business and not the row's.
+ *
+ * Read off the real help output, never restated, so every suite below
+ * compares a real producer against the shipped prose rather than against a
+ * hand copy. One walk, so the range read and the per-row read below agree on
+ * what a row is (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
  */
-function documentedExitCodes(help: string): Set<number> {
+function documentedExitCodeRows(help: string): Map<number, string> {
   const start = help.indexOf("Exit codes:\n");
   expect(start).toBeGreaterThan(-1);
-  const codes = new Set<number>();
+  const rows = new Map<number, string>();
+  let open: number | undefined;
+  const extend = (code: number, text: string): void => {
+    const held = rows.get(code);
+    rows.set(code, held === undefined ? text : `${held} ${text}`);
+  };
   for (const line of help.slice(start).split("\n").slice(1)) {
     if (line.trim() === "") continue;
     // A continuation line is indented past its code; anything unindented
     // ended the block.
     if (!line.startsWith("  ")) break;
-    const listed = /^ {2}(\d+) {2,}\S/.exec(line);
-    if (listed) codes.add(Number(listed[1]));
+    const listed = /^ {2}(\d+) {2,}(\S.*)$/.exec(line);
+    if (listed) {
+      open = Number(listed[1]);
+      extend(open, listed[2]!);
+      continue;
+    }
+    if (open !== undefined) extend(open, line.trim());
   }
-  return codes;
+  return rows;
+}
+
+/**
+ * The codes a `--help` text's own "Exit codes:" block lists — the rows above,
+ * read for their codes alone.
+ */
+function documentedExitCodes(help: string): Set<number> {
+  return new Set(documentedExitCodeRows(help).keys());
 }
 
 const ascending = (codes: Iterable<number>): number[] =>
@@ -201,7 +234,8 @@ const LOOP_PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
   [2, "a bad --max value, or a stray positional past --max <value>"],
   [
     74,
-    "the stop flag or the merging-marker dir exists but could not be read",
+    "the stop flag, the loop lock, or the merging-marker dir exists but " +
+      "could not be read",
   ],
 ]);
 
@@ -433,22 +467,51 @@ function backtickedIntegers(section: string): number[] {
 }
 
 /**
- * The exit codes a `docs/CLI.md` section names. The page writes a code as a
- * backticked bare integer introduced by the word "exit" — "exits `69`",
- * "refuses (exit `1`)", "Exit code stays `0`" — and that context is what
- * makes the read a claim about the verb's range rather than about any
- * number the prose happens to backtick. These sections also backtick
- * integers that are values (`--max`'s default), and a value read as a code
- * would put the page permanently at odds with every producer. The window
- * between the word and the code admits no backtick, so the two must sit in
- * one clause.
+ * How a `docs/CLI.md` section names an exit code: a backticked bare integer
+ * introduced by the word "exit" — "exits `69`", "refuses (exit `1`)", "Exit
+ * code stays `0`" — and that context is what makes a read of it a claim about
+ * the verb's range rather than about any number the prose happens to
+ * backtick. These sections also backtick integers that are values (`--max`'s
+ * default), and a value read as a code would put the page permanently at odds
+ * with every producer. The window between the word and the code admits no
+ * backtick, so the two must sit in one clause.
+ *
+ * One home for the two reads below — the whole range a section names, and the
+ * sentences it spends on one code (`.claude/rules/engineering.md`, *The fix
+ * lands at the mechanism*). `matchAll` works over a clone, so this global
+ * pattern carries no match position between calls.
  */
+const NAMED_EXIT_CODE = /\bexits?\b[^`\n]{0,24}`(\d+)`/gi;
+
+/** The exit codes a `docs/CLI.md` section names, read by the rule above. */
 function namedExitCodes(section: string): number[] {
   const codes = new Set<number>();
-  for (const [, code] of section.matchAll(/\bexits?\b[^`\n]{0,24}`(\d+)`/gi)) {
+  for (const [, code] of section.matchAll(NAMED_EXIT_CODE)) {
     codes.add(Number(code));
   }
   return ascending(codes);
+}
+
+/**
+ * The sentences of a `docs/CLI.md` section that name one exit code — the
+ * window a claim about *that* code's causes is read from.
+ *
+ * Scoped rather than section-wide on purpose: a section documents a verb's
+ * whole range, so a set read off all of it turns on whatever the neighbouring
+ * arms happen to quote rather than on the arm the case is about
+ * (`.claude/rules/posture-sweep.md`, *a negative assertion over a whole
+ * rendered artifact*). A sentence ends at a period followed by the opening of
+ * the next — the page's own arms are one sentence each, semicolons and
+ * em-dashes included.
+ */
+function sentencesNamingExitCode(section: string, code: number): string[] {
+  return section
+    .split(/(?<=\.)\s+(?=[A-Z`(])/)
+    .filter((sentence) =>
+      [...sentence.matchAll(NAMED_EXIT_CODE)].some(
+        ([, named]) => Number(named) === code,
+      ),
+    );
 }
 
 /** `docs/CLI.md` as the working tree holds it. */
@@ -782,6 +845,236 @@ describe("the --help block that restates the loop range, against loopExitCode's 
   it("flume loop --help names every exit code the loop range produces, beside its named start-up set", async () => {
     await expectHelpNamesTheLoopRange(["loop", "--help"]);
   }, SPAWN_BUDGET_MS);
+});
+
+/*
+ * LOOP-74-CAUSE-LIST-PINNED-PER-ARM — the loop range's 74 row is a *cause
+ * list*, and a range pin cannot see it: the two pins above compare code sets,
+ * so both stay green while a row that names 74 forgets one of the three
+ * artifacts an operator can hit it on. The row itself, and the same list in
+ * `docs/CLI.md`, are pinned here against the real refusals — each of loop's
+ * three start-up I/O arms driven for real, one run apiece, and the artifact
+ * each one reports taken off the engine's own name for it
+ * (`STATE_ROOT_NAMES`, `src/paths.ts`) rather than spelled again by the
+ * tester's hand (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*).
+ *
+ * The bound, declared rather than left implicit: an arm nobody wrote is
+ * invisible here, exactly as it is for the driven status/log ranges above, and
+ * the "and no others" direction reaches the engine's own artifact vocabulary —
+ * a cause the page names that is no state-root artifact at all is out of this
+ * pin's sight.
+ */
+
+/**
+ * The state-root artifacts the engine has names for. The "no others"
+ * direction is read against this vocabulary, so it comes off the engine's own
+ * table rather than a list of the three arms' names restated as their own
+ * complement.
+ */
+const STATE_ROOT_ARTIFACTS: readonly string[] = Object.values(STATE_ROOT_NAMES);
+
+/**
+ * The state-root artifacts a passage of prose names. A page names one as a
+ * backticked path — `` `.flume/stop` ``, `` `loop.pid` ``, `` `.flume/merging/` ``
+ * — so the read takes the last segment of every backticked token and keeps
+ * whatever the engine has a name for. A bare word is never read: "the stop
+ * flag" and "a graceful stop" are prose about an artifact, and a passage that
+ * merely mentions one is not the passage that documents it.
+ */
+function artifactsNamedIn(prose: string): string[] {
+  const named = new Set<string>();
+  for (const [, token] of prose.matchAll(/`([^`\n]+)`/g)) {
+    // The separator here is markdown's, never the host's: these are paths the
+    // page spells, not paths this process composed.
+    const segment = token?.replace(/\/+$/, "").split("/").at(-1);
+    if (segment !== undefined && STATE_ROOT_ARTIFACTS.includes(segment)) {
+      named.add(segment);
+    }
+  }
+  return [...named].sort();
+}
+
+/**
+ * One start-up I/O refusal `flume loop` takes before any tick runs: the
+ * engine's own name for the artifact it reports, the engine's own accessor for
+ * that artifact's path, what the refusal says it could not do, and the denial
+ * that makes the read fail for a reason other than absence.
+ */
+interface StartupIoRefusal {
+  /** The reported artifact, off `STATE_ROOT_NAMES`. */
+  readonly artifact: string;
+  readonly path: (flumeDir: string) => string;
+  /** The refusal's own verb — what it could not do to the artifact. */
+  readonly failed: string;
+  readonly deny: (path: string) => Promise<void> | void;
+}
+
+/**
+ * Every arm of `flume loop`'s start-up 74, in the order the run reaches them
+ * — the stop-flag probe, the lock's liveness read, the merging-marker listing.
+ * Each is driven by {@link driveStartupIoRefusals} below; a fourth arm added
+ * to the run and not here is the bound this pin declares, not a silent pass.
+ */
+const LOOP_STARTUP_IO_REFUSALS: readonly StartupIoRefusal[] = [
+  {
+    artifact: STATE_ROOT_NAMES.stopFlag,
+    path: stopFlagPath,
+    failed: "failed to stat",
+    // A self-referential symlink, as `tests/cli.test.ts` arms this same arm:
+    // ELOOP is the non-ENOENT stat failure, and a structural denial
+    // (`tests/helpers/denial.ts`) cannot reach it — a directory at the path
+    // stats clean and reads as a flag that *is* present, which is the exit-1
+    // arm and not this one.
+    deny: (path) => symlink(path, path),
+  },
+  {
+    artifact: STATE_ROOT_NAMES.loopLock,
+    path: loopLockPath,
+    failed: "failed to read",
+    deny: denyFile,
+  },
+  {
+    artifact: STATE_ROOT_NAMES.merging,
+    path: mergingDir,
+    failed: "failed to list",
+    deny: denyDirectory,
+  },
+];
+
+/**
+ * Drive every arm above for real, one `flume loop` run each over one scratch
+ * repository, and return the artifacts those refusals reported.
+ *
+ * A real repository on a named branch, because two of the three arms sit past
+ * refusals that need one: the lock read is past the detached-HEAD refusal, and
+ * the marker listing is past the tip claim.
+ *
+ * Each arm pins its own non-vacuity: a run that never reached the read — a
+ * refusal taken ahead of it, a denial armed at the wrong path — exits some
+ * plausible code and would agree with prose naming almost anything, so the
+ * run's own output is asserted to name the artifact and the read it failed at
+ * before that artifact counts (`.claude/rules/engineering.md`, *A green
+ * verdict is proven non-vacuous*).
+ */
+async function driveStartupIoRefusals(): Promise<string[]> {
+  const repo = await makeScratchRepo("flume-loop-74-arms-", "main");
+  const flumeDir = join(repo.dir, ".flume");
+  try {
+    const reported = new Set<string>();
+    for (const refusal of LOOP_STARTUP_IO_REFUSALS) {
+      const path = refusal.path(flumeDir);
+      await refusal.deny(path);
+
+      const { out, code } = await runCli(repo.dir, ["loop", "--max", "0"]);
+
+      expect(code, refusal.artifact).toBe(EX_IOERR);
+      // The artifact, by the engine's own name for it, and the read it
+      // failed at. The name rather than the path: two of these refusals
+      // state the path and the lock's states the artifact and lets the
+      // errno carry the rest, so the name is what all three report.
+      expect(out, refusal.artifact).toContain(refusal.artifact);
+      expect(out, refusal.artifact).toContain(refusal.failed);
+      // And the refusal was taken instead of a run, not beside one.
+      expect(out, refusal.artifact).not.toContain("reached --max");
+      reported.add(refusal.artifact);
+
+      // This arm's denial comes off the disk before the next is armed: the
+      // arms are ordered as the run reaches them, so one left standing
+      // refuses again and the arm behind it is never reached.
+      await rm(path, { recursive: true, force: true });
+    }
+    // Vacuity: one arm that happened to fire agrees with a row naming one
+    // artifact, whichever it is.
+    expect(reported.size).toBe(LOOP_STARTUP_IO_REFUSALS.length);
+    expect(reported.size).toBeGreaterThan(1);
+    return [...reported].sort();
+  } finally {
+    await repo.cleanup();
+  }
+}
+
+describe("the loop 74 row's cause list, against the start-up refusals that really report one (LOOP-74-CAUSE-LIST-PINNED-PER-ARM)", () => {
+  /**
+   * The driven artifacts, produced once for the suite: three real `flume loop`
+   * runs against one scratch repository, which rides the hook's budget rather
+   * than making either case below a four-spawn test (spec/worktrees.md, *The
+   * default test lane must stay fast*).
+   */
+  let reported: string[];
+  beforeAll(async () => {
+    reported = await driveStartupIoRefusals();
+  }, SPAWN_BUDGET_MS);
+
+  /**
+   * The vocabulary the "and no others" direction is read against is wider
+   * than the arms, in both cases below: an artifact the engine names and no
+   * start-up refusal reports is what a prose copy can wrongly claim, and a
+   * complement that had collapsed to nothing would leave that direction
+   * asserting over the empty set.
+   */
+  function expectTheVocabularyIsWiderThanTheArms(): void {
+    expect(reported.length).toBeGreaterThan(1);
+    expect(
+      STATE_ROOT_ARTIFACTS.filter((name) => !reported.includes(name)).length,
+    ).toBeGreaterThan(0);
+  }
+
+  it("flume loop --help's exit 74 row names every artifact a real start-up I/O refusal reports, and no others", async () => {
+    expectTheVocabularyIsWiderThanTheArms();
+
+    const { out, code } = await runCli(process.cwd(), ["loop", "--help"]);
+    expect(code).toBe(0);
+    const rows = documentedExitCodeRows(out);
+    const ioRow = rows.get(EX_IOERR);
+    expect(ioRow, `the block lists no ${EX_IOERR} row`).toBeDefined();
+
+    // The read is one row, not the block: the exit-1 row names an artifact of
+    // its own — the stop flag it refuses over when the flag is merely present
+    // — and a reader handing back the whole block would hold the same set for
+    // both rows.
+    const refusalRow = artifactsNamedIn(rows.get(1) ?? "");
+    expect(refusalRow.length, "the exit-1 row names no artifact").toBeGreaterThan(0);
+    expect(
+      refusalRow,
+      "the row read handed back the same set for two rows",
+    ).not.toEqual(reported);
+
+    // Exactly the driven set, in both directions: an arm the run gained and
+    // the row never named is red, and so is an artifact the row names that no
+    // start-up refusal reports.
+    expect(artifactsNamedIn(ioRow!)).toEqual(reported);
+  }, SPAWN_BUDGET_MS);
+
+  it("docs/CLI.md's flume loop section names every artifact a real start-up I/O refusal reports, and no others", async () => {
+    expectTheVocabularyIsWiderThanTheArms();
+
+    const section = sectionOf(await readCliDoc(), /^## `flume loop\b/);
+    expect(section.length).toBeGreaterThan(0);
+
+    const ioSentences = sentencesNamingExitCode(section, EX_IOERR);
+    // Vacuity: a window that collapsed to one sentence, or to none, agrees
+    // with a page that documents one cause or no causes at all.
+    expect(ioSentences.length).toBeGreaterThan(1);
+
+    // The window is scoped to this code rather than to the section: the
+    // terminal-misconfiguration arm names an artifact too, and names fewer of
+    // them, so a reader handing back the whole section cannot pass here.
+    const misconfigured = artifactsNamedIn(
+      sentencesNamingExitCode(section, EX_TERMINAL_MISCONFIG).join("\n"),
+    );
+    expect(
+      misconfigured.length,
+      `the ${EX_TERMINAL_MISCONFIG} window names no state-root artifact`,
+    ).toBeGreaterThan(0);
+    expect(
+      misconfigured,
+      "the per-code read handed back the same set for two codes",
+    ).not.toEqual(reported);
+
+    // Exactly the driven set, in both directions, as above.
+    expect(artifactsNamedIn(ioSentences.join("\n"))).toEqual(reported);
+  });
 });
 
 /**
