@@ -6,6 +6,7 @@
  */
 
 import { DEFAULT_ABORT_THRESHOLD } from "./loopSupervisor.js";
+import { STATE_ROOT_DIRNAME } from "./paths.js";
 
 const SUBCOMMANDS = [
   "status",
@@ -20,6 +21,49 @@ const SUBCOMMANDS = [
   "friction",
 ] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
+
+/**
+ * The `EX_IOERR` cause every verb shares, worded once. Bay discovery stats
+ * the nearest state root before any verb reaches work of its own, so every
+ * page's `74` row carries this and no page states a narrower range than its
+ * own process can return (`spec/loop.md`, *Exit codes — the run never lies
+ * to CI*).
+ */
+const BAY_DISCOVERY_LINES = [
+  `The state root (\`${STATE_ROOT_DIRNAME}\`) is present but will not stat at the bay`,
+  "discovery every verb starts with — a symlink loop, a permission-denied",
+  "parent. Refused rather than walked past to an unrelated ancestor's",
+  "bay, naming the cwd the walk began at and the underlying error.",
+];
+
+/**
+ * The clause above, wrapped into a page's own exit-code block. `indent` is
+ * that block's continuation column — a block aligns its rows to the widest
+ * code it lists, so `check`'s sits one past everyone else's.
+ *
+ * Rendered rather than spelled once per page: ten hand copies of one
+ * sentence is the shape that leaves nine of them stale
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ */
+function bayDiscoveryRefusal(indent: number): string {
+  return BAY_DISCOVERY_LINES.join(`\n${" ".repeat(indent)}`);
+}
+
+/**
+ * The whole `74` row for a verb that reads the state root and nothing else
+ * before it answers — `wake`, `sleep`, `stop`, `render`. Their every other
+ * refusal is usage-shaped or a chain that would not come up, so discovery is
+ * the only file read they can take.
+ */
+function bayDiscoveryRow(indent: number): string {
+  const pad = " ".repeat(indent);
+  return (
+    `  74${" ".repeat(indent - 4)}I/O error (EX_IOERR): the one refusal every verb shares,\n` +
+    `${pad}and this verb's only one.\n` +
+    `${pad}${bayDiscoveryRefusal(indent)}`
+  );
+}
 
 export const HELP_TOP = `flume — a disciplined harness for AI-derivation pipelines.
 
@@ -94,6 +138,7 @@ Exit codes:
       supervisor, tick-verdicts.jsonl exists but could not be read: the
       spend line is refused rather than withheld, since withholding it
       states a run that has spent nothing.
+      ${bayDiscoveryRefusal(6)}
 `,
   tick: `Usage: flume tick
 
@@ -114,13 +159,13 @@ Exit codes:
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
       fix the chain (or its state root) and re-run.
-  74  I/O error (EX_IOERR): a file the tick must read is present and
-      unreadable — the state root (\`.flume\`), at the bay discovery every
-      verb starts with; or the verdict history
-      (\`.flume/tick-verdicts.jsonl\`), which the tick reads before appending
-      its own record. In the second case the tick's work has already landed
-      and the tick printed its own summary — recording it is what failed, so
-      there is nothing to re-run. Naming the file and the underlying error.
+  74  I/O error (EX_IOERR): the verdict history
+      (\`.flume/tick-verdicts.jsonl\`) is present and unreadable — the tick
+      reads it before appending its own record, so its work has already
+      landed and it has printed its own summary; recording is what failed
+      and there is nothing to re-run. Naming the file and the underlying
+      error.
+      ${bayDiscoveryRefusal(6)}
   78  Terminal misconfiguration (EX_CONFIG): every awake flag names a phase
       the chain does not declare. The flags are left on disk — inspect, then
       \`flume sleep <phase>\` or fix the chain.
@@ -164,6 +209,7 @@ Exit codes:
       claiming it. Also, the merging-marker dir (\`.flume/merging/\`)
       exists but could not be listed: whether a marker stands is
       unknown, so the run refuses rather than reading it as none.
+      ${bayDiscoveryRefusal(6)}
   69  Stopped on a child tick's mount-dead failure (see \`flume tick
       --help\`): the chain never resolved. The run aborts after that one
       tick instead of burning the remaining --max ticks against the same
@@ -193,6 +239,7 @@ Exit codes:
   0   Success.
   2   Missing <phase> argument, an extra positional past <phase>, or <phase>
       names a phase the loaded chain does not declare. No flag is written.
+${bayDiscoveryRow(6)}
 `,
   sleep: `Usage: flume sleep <phase>
 
@@ -205,6 +252,7 @@ Exit codes:
   0   Success (no-op if already hibernating).
   2   Missing <phase> argument, an extra positional past <phase>, or <phase>
       names a phase the loaded chain does not declare.
+${bayDiscoveryRow(6)}
 `,
   stop: `Usage: flume stop
 
@@ -223,6 +271,7 @@ Exit codes:
   0   Always — including when the flag was already present.
   2   Usage: a stray trailing positional (\`stop\` consumes none). No flag is
       written.
+${bayDiscoveryRow(6)}
 `,
   log: `Usage: flume log [-n N] [--json]
 
@@ -243,6 +292,7 @@ Exit codes:
       Refused rather than printed as an empty history — exit 0 over silence
       means the log is not there, never that it could not be opened. Naming
       the file and the underlying error.
+      ${bayDiscoveryRefusal(6)}
 `,
   check: `Usage: flume check
 
@@ -273,6 +323,7 @@ Exit codes:
   74   I/O error (EX_IOERR): plan/pending.json exists but could not be read
        (permission denied, a path too long for the platform, …). Naming
        the underlying error.
+       ${bayDiscoveryRefusal(7)}
 `,
   render: `Usage: flume render <phase> [--entry <tag>]
 
@@ -311,6 +362,7 @@ Exit codes:
   69  Mount-dead (EX_UNAVAILABLE): the chain could not be brought up for any
       other reason — it failed to load, the queue at HEAD failed to parse,
       or the declared prompt file is not on disk. Nothing was rendered.
+${bayDiscoveryRow(6)}
 `,
   friction: `Usage: flume friction [name]
 
@@ -340,6 +392,7 @@ Exit codes:
       — that reading would tell the operator there is no friction to route
       when there may be some. The bare list prints no rows at all on a
       refusal, never a partial listing.
+      ${bayDiscoveryRefusal(6)}
 `,
 };
 

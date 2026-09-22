@@ -23,7 +23,7 @@ FLUME_DIR=/var/lib/flume/state flume loop   # state out of the working tree
 
 ## `flume status`
 
-Prints baton state: the list of awake phases (or `hibernating` if none) read from `.flume/awake/`; then, when `.flume/loop.pid` exists, supervisor liveness (`supervisor pid N live`, or `loop.pid present, process dead — stale`; no pidfile prints nothing extra); then, when HEAD names a ref and a tip claim exists for it (`spec/loop.md`, "The loop lock and the tip claim"), that claim's holder (`tip claimed by pid N`, or `tip claim present, process dead — stale`; a detached HEAD or no claim file prints nothing extra); then the pending entry count read from `.flume/plan/pending.json` (`pending: N`; `pending: 0` when the file is absent; `pending: unparsable` when it exists but fails to parse); then, behind a best-effort chain load, chain-derived lines — a friction count when `Chain.friction` is declared and its dir holds notes, and one line per pending entry gated on a capability the chain hasn't asserted; then, last, when a supervisor is live, what that run has spent on agents so far (`agent usage this run: <phase> ×N (turns, duration, tokens, cost)`, one entry per phase whose ticks invoked an agent at or after the instant `.flume/loop.pid` states the run took the lock, summed from the usage rows those ticks wrote to `.flume/tick-verdicts.jsonl` — the same totals `flume loop` prints when the run ends, read without ending it). No live supervisor prints nothing extra, and so does a live run whose ticks have invoked no agent yet: a phase that spent nothing is absent rather than listed at zero. A lock that states no instant — written by a flume before `0.17` — bounds no window, so the line is withheld and the reason goes to stderr rather than every previous run's spend being folded into this one's. A missing or broken chain can never fail status and withholds nothing above that line: it withholds those two, leaves the pending count reading the default `.flume/plan/pending.json` even where the chain declares another `Chain.pendingPath`, and says so twice. Once as a row of this listing — `chain: failed to load — <reason>`, printed on stdout with every other line and ahead of the count it explains, so a status over a chain that did not load never has the shape of a healthy one. Once on stderr, where the load names the failure, what it cost, and the refusals that bound it (`flume tick` and `flume check` exit non-zero on this same load). Degraded, never silent: a prompt or watch loop parsing the stdout listing reads that extra row, not a count with nothing to say it had been rebased. Observational only — nothing on disk changes. Exits `0` for every state it observes — a dead supervisor, a corrupt queue, a detached HEAD, a chain that will not load are all reports rather than failures — and exits `74` (`EX_IOERR`) only when a file it must read is present and unreadable (`loop.pid`, the stop flag, the tip claim, or, under a live supervisor, `tick-verdicts.jsonl`), so no observation is ever printed as its opposite. Status is the right call to bake into shell prompts or watch loops without risk of side effects.
+Prints baton state: the list of awake phases (or `hibernating` if none) read from `.flume/awake/`; then, when `.flume/loop.pid` exists, supervisor liveness (`supervisor pid N live`, or `loop.pid present, process dead — stale`; no pidfile prints nothing extra); then, when HEAD names a ref and a tip claim exists for it (`spec/loop.md`, "The loop lock and the tip claim"), that claim's holder (`tip claimed by pid N`, or `tip claim present, process dead — stale`; a detached HEAD or no claim file prints nothing extra); then the pending entry count read from `.flume/plan/pending.json` (`pending: N`; `pending: 0` when the file is absent; `pending: unparsable` when it exists but fails to parse); then, behind a best-effort chain load, chain-derived lines — a friction count when `Chain.friction` is declared and its dir holds notes, and one line per pending entry gated on a capability the chain hasn't asserted; then, last, when a supervisor is live, what that run has spent on agents so far (`agent usage this run: <phase> ×N (turns, duration, tokens, cost)`, one entry per phase whose ticks invoked an agent at or after the instant `.flume/loop.pid` states the run took the lock, summed from the usage rows those ticks wrote to `.flume/tick-verdicts.jsonl` — the same totals `flume loop` prints when the run ends, read without ending it). No live supervisor prints nothing extra, and so does a live run whose ticks have invoked no agent yet: a phase that spent nothing is absent rather than listed at zero. A lock that states no instant — written by a flume before `0.17` — bounds no window, so the line is withheld and the reason goes to stderr rather than every previous run's spend being folded into this one's. A missing or broken chain can never fail status and withholds nothing above that line: it withholds those two, leaves the pending count reading the default `.flume/plan/pending.json` even where the chain declares another `Chain.pendingPath`, and says so twice. Once as a row of this listing — `chain: failed to load — <reason>`, printed on stdout with every other line and ahead of the count it explains, so a status over a chain that did not load never has the shape of a healthy one. Once on stderr, where the load names the failure, what it cost, and the refusals that bound it (`flume tick` and `flume check` exit non-zero on this same load). Degraded, never silent: a prompt or watch loop parsing the stdout listing reads that extra row, not a count with nothing to say it had been rebased. Observational only — nothing on disk changes. Exits `0` for every state it observes — a dead supervisor, a corrupt queue, a detached HEAD, a chain that will not load are all reports rather than failures — and exits `74` (`EX_IOERR`) only when a file it must read is present and unreadable (the state root (`.flume`) itself, at the bay discovery every verb starts with; `loop.pid`, the stop flag, the tip claim, or, under a live supervisor, `tick-verdicts.jsonl`), so no observation is ever printed as its opposite. Status is the right call to bake into shell prompts or watch loops without risk of side effects.
 
 ```sh
 flume status
@@ -58,7 +58,7 @@ flume loop --max 20
 
 ## `flume wake <phase>`
 
-Marks the named phase awake by touching `.flume/awake/<phase>`. The next `flume tick` (or `flume loop`) will schedule that phase. The phase name is validated against the repo chain's declared phases behind the same best-effort load `flume status` takes: a chain that loads and does not declare `<phase>` refuses with exit `2` before the flag is written, while a missing or broken chain never blocks the flag — it reports the failure and what it cost (nothing checked the phase name, so a typo lands a marker no phase will ever read) on stderr, never silently. The chain is repo-resident: only `FLUME_CONFIG_DIR` moves the dir it loads from. Exits `0` on success; exits `2` if the `<phase>` argument is missing, if an extra positional follows it, or on an undeclared phase.
+Marks the named phase awake by touching `.flume/awake/<phase>`. The next `flume tick` (or `flume loop`) will schedule that phase. The phase name is validated against the repo chain's declared phases behind the same best-effort load `flume status` takes: a chain that loads and does not declare `<phase>` refuses with exit `2` before the flag is written, while a missing or broken chain never blocks the flag — it reports the failure and what it cost (nothing checked the phase name, so a typo lands a marker no phase will ever read) on stderr, never silently. The chain is repo-resident: only `FLUME_CONFIG_DIR` moves the dir it loads from. Exits `0` on success; exits `2` if the `<phase>` argument is missing, if an extra positional follows it, or on an undeclared phase; exits `74` (`EX_IOERR`) when the state root (`.flume`) is present but will not stat at the bay discovery every verb starts with — an unstattable bay is refused rather than walked past to an unrelated ancestor's, naming the cwd the walk began at and the underlying error.
 
 ```sh
 flume wake plan
@@ -66,7 +66,7 @@ flume wake plan
 
 ## `flume sleep <phase>`
 
-Removes `.flume/awake/<phase>`, taking the named phase out of the awake set. No-op if the flag file is already absent. The phase name is validated exactly as `wake` validates it, through the same best-effort chain load and with the same stderr report on a chain that fails to load. Use this to force-hibernate a phase mid-run, e.g. to pause an autonomous loop while inspecting state. Exits `0` on success (including the no-op case); exits `2` if `<phase>` is missing, if an extra positional follows it, or on an undeclared phase.
+Removes `.flume/awake/<phase>`, taking the named phase out of the awake set. No-op if the flag file is already absent. The phase name is validated exactly as `wake` validates it, through the same best-effort chain load and with the same stderr report on a chain that fails to load. Use this to force-hibernate a phase mid-run, e.g. to pause an autonomous loop while inspecting state. Exits `0` on success (including the no-op case); exits `2` if `<phase>` is missing, if an extra positional follows it, or on an undeclared phase; exits `74` (`EX_IOERR`) when the state root (`.flume`) is present but will not stat at the bay discovery every verb starts with — an unstattable bay is refused rather than walked past to an unrelated ancestor's, naming the cwd the walk began at and the underlying error.
 
 ```sh
 flume sleep plan
@@ -83,7 +83,11 @@ is equally the interface, and nothing distinguishes the two writers. There is
 deliberately no `unstop` / `resume` verb — removing the flag is the operator's own
 acknowledgement that they saw the stop, and an engine verb that removed it would let
 a script ack a stop no human saw. Consumes no positionals; a trailing argument is
-refused before the flag is written. Exits `0` always; `2` if given any argument.
+refused before the flag is written. Exits `0` always; exits `2` if given any
+argument; exits `74` (`EX_IOERR`) when the state root (`.flume`) is present but
+will not stat at the bay discovery every verb starts with — an unstattable bay
+is refused rather than walked past to an unrelated ancestor's, naming the cwd
+the walk began at and the underlying error.
 
 ```sh
 flume stop
@@ -135,8 +139,10 @@ declared path. Consumes no positionals. Exits `0` when the file parses and every
 entry's paths clear the fence (and on either skip above); exits `65`
 (`EX_DATAERR`) on a parse failure or a fence violation, naming the
 offending entry and paths — the same refusal the next tick would otherwise have
-spent an invocation to discover; exits `2` if given any argument, or `69`
-(`EX_MOUNT_DEAD`) if the chain itself fails to load.
+spent an invocation to discover; exits `2` if given any argument; exits `69`
+(`EX_MOUNT_DEAD`) if the chain itself fails to load; and exits `74` (`EX_IOERR`)
+when `plan/pending.json` is present but cannot be read, or when the state root
+(`.flume`) will not stat at the bay discovery every verb starts with.
 
 ```sh
 flume check
@@ -190,7 +196,12 @@ resolved — an inline-exec span that exited non-zero, named with its stderr, or
 `promptArgs` hook that threw, which is the same `render-refused` class a tick
 would have spent an invocation to reach; `69` (`EX_MOUNT_DEAD`) when the chain
 could not be brought up at all — it failed to load, the queue at HEAD failed to
-parse, or the declared prompt file is not on disk.
+parse, or the declared prompt file is not on disk. And it exits `74`
+(`EX_IOERR`) — the one refusal every verb shares, and this verb's only one —
+when the state root (`.flume`) is present but will not stat at the bay
+discovery every verb starts with, an unstattable bay being refused rather than
+walked past to an unrelated ancestor's, naming the cwd the walk began at and
+the underlying error.
 
 ```sh
 flume render plan

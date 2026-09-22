@@ -1589,3 +1589,51 @@ describe("flume help <name> and flume --help <name> — the trailing name throug
     expect(names.filter((name) => helpPageFor(name) === undefined)).toEqual([]);
   });
 });
+
+/**
+ * EVERY-VERBS-HELP-NAMES-THE-IO-REFUSAL — `EX_IOERR` is cross-cutting rather
+ * than any one verb's: bay discovery stats the nearest state root at the top
+ * of `main`, before dispatch, so every verb's process can return 74
+ * (spec/loop.md, *Exit codes — the run never lies to CI*). Four pages —
+ * `wake`, `sleep`, `stop`, `render` — listed no 74 row at all and so
+ * understated their own range.
+ *
+ * Both cases read the verb set off the surface rather than restating it, so
+ * a verb added later is judged here the tick it is added rather than the
+ * tick someone remembers to extend a list.
+ */
+describe("the cross-cutting I/O refusal on every verb's page (EVERY-VERBS-HELP-NAMES-THE-IO-REFUSAL)", () => {
+  it("every subcommand's --help names exit 74", () => {
+    const names = topLevelCommandNames();
+    // Vacuity: an unparsed listing would hold the emptiness below over zero
+    // verbs, and the named one is a page that carried no 74 row before this
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(names.length).toBeGreaterThan(1);
+    expect(names).toContain("wake");
+
+    // A verb whose page this surface does not answer is a silence of its own
+    // — there is no exit-code block to read — so it fails here rather than
+    // being skipped.
+    const silent = names.filter((name) => {
+      const page = helpPageFor(name);
+      return page === undefined || !documentedExitCodes(page).has(EX_IOERR);
+    });
+    expect(silent).toEqual([]);
+  });
+
+  it("docs/CLI.md's wake, sleep, stop and render sections name exit 74", async () => {
+    const page = await readCliDoc();
+    for (const verb of ["wake", "sleep", "stop", "render"]) {
+      const section = sectionOf(page, new RegExp(`^## \`flume ${verb}\\b`));
+      expect(section.length, verb).toBeGreaterThan(0);
+
+      // Vacuity: a section whose range was not read at all — a heading that
+      // moved, a phrasing the reader no longer keys on — would leave the
+      // membership below asserting over the empty set.
+      const codes = namedExitCodes(section);
+      expect(codes.length, verb).toBeGreaterThan(1);
+      expect(codes, verb).toContain(EX_IOERR);
+    }
+  });
+});
