@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "LOOP-74-CAUSE-LIST-PINNED-PER-ARM",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "per-arm driven pin for loop's 74 cause list, beside the range pins that compare code sets"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Pin both prose copies of `flume loop`'s exit-74 cause list against the real start-up refusals, one driven arm each",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A seam gate reads what the real writer wrote"
+    },
+    "acceptance": "Each of loop's three start-up 74 arms — stop flag, loop.pid, merging dir — is driven for real, and dropping any one artifact from either prose copy reds the default lane.",
+    "tests": [],
+    "pins": [
+      "flume loop --help's exit 74 row names every artifact a real start-up I/O refusal reports, and no others",
+      "docs/CLI.md's flume loop section names every artifact a real start-up I/O refusal reports, and no others"
+    ],
+    "notes": "Drivers for each arm already exist in tests/cli.test.ts (makeRepo/denyFile); artifact names come off the engine's own constants, never hand-copied. Also refresh LOOP_PROCESS_LEVEL_EXIT_CODES's 74 description in tests/cliHelp.test.ts, which still names two of the three arms. Scope is loop's 74 row alone; tick/status/log cause lists are the same hole, deferred."
+  }
+]
