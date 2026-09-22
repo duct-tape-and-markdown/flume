@@ -1,1 +1,19 @@
-[]
+[
+  {
+    "tag": "LOOP-CLASSIFIES-AN-UNREADABLE-LOOP-PID",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        { "path": "src/cli.ts", "description": "classify the `loop` arm's `liveLoopPid` read like its stop-flag sibling above it" },
+        { "path": "tests/cli.test.ts", "description": "refusal case beside the loop stop-flag one" }
+      ]
+    },
+    "summary": "`flume loop`'s prior-holder probe classifies a present-but-unreadable loop.pid instead of exiting 1 over a raw stack",
+    "per": { "path": ".claude/rules/platform-facts.md", "section": "Exit codes come from `sysexits.h`" },
+    "acceptance": "`flume loop` against a loop.pid that stats and will not open prints a `[flume] loop refuses:` line naming the read failure and exits EX_IOERR; no lock and no tip claim are left behind",
+    "tests": [
+      "`flume loop` refuses naming the error when loop.pid is present but unreadable, instead of exiting 1 over a raw stack"
+    ],
+    "notes": "src/cli.ts:1250 calls `liveLoopPid` outside any try; it answers null for absent and rethrows every other read failure, so EISDIR reaches `main()`'s catch — exit 1, the same code as `another loop (pid N) already runs`, with no pid named. Sibling stop-flag guard ~110 lines up already returns EX_IOERR, and `flume status` shipped the identical shape for the same file. Independent of questions/does-flume-tick-s-exit-range-admit-ex-ioerr.md: loop already returns 74 here."
+  }
+]
