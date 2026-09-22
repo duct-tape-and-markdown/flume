@@ -11,6 +11,179 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-22
+
+The checkout release: **an effort is a checkout, and the job surface comes
+out.** The engine mints no state root beneath a checkout, seeds none from a
+chain, removes none, and folds no per-effort level into a branch or worktree
+path — a repository running several efforts gives each its own checkout, and
+git does the rest. Around that cut: a chain can refuse one entry instead of
+a whole phase, a declared command gate is handed the engine's facts, a
+validator outside the JS ecosystem is a one-line runner declaration, the
+run's agent spend is reported where its outcome is, and a worktree carries
+the state root that provisioned it so a start never destroys a sibling's
+tree. `docs/MIGRATING-0.17.md` walks the eight breaks; the migration series
+is contiguous from 0.10. Ninety-five entries.
+
+### Breaking
+
+Each break is walked with before/after in `docs/MIGRATING-0.17.md`. The
+first is the one to read before upgrading a state root two versions can
+reach.
+
+- **`loop.pid` and a tip claim state two lines: the holder's pid, then the
+  ISO-8601 instant it took the guard.** A 0.16 reader numbers the whole file,
+  gets `NaN`, reads that as a stale guard and **reclaims it out from under a
+  live 0.17 run**. Drain every checkout that shares the state root or the
+  `.git`, upgrade them in one go, then start again; the reverse direction is
+  safe. A chain or script that reads either file itself takes the first line.
+- **The four `job` verbs are gone.** `flume job new|run|rm|status` is an
+  unknown command (exit 2). A job dir on disk is an ordinary state root:
+  `FLUME_DIR` pointed at it keeps it running verbatim, and the move is a
+  `git worktree add` whose tree carries its own `.flume/`.
+- **`--job` and `FLUME_JOB` select nothing; `FLUME_DIR` is the only
+  relocator.** The flag refuses where it led or trailed. **`FLUME_JOB` is the
+  quiet one**: a runner exporting it now writes into the default state root
+  with no error at all — grep for it before upgrading, not after.
+- **`Chain.seedDir` is off the chain surface.** The compiler names the
+  literal. What `job new` copied is a `cp -rn` you run.
+- **`DispatcherOptions.namespace` is gone**; a fanout branch is
+  `flume/<slug>` and a worktree is `<base>/<dirName>`, one level shallower.
+  A namespaced run's trees sit where the startup sweep no longer looks —
+  clear them once by hand.
+- **`readWorktreeRegistry` reports `{ read: true, worktrees }`**, a map from
+  the same resolved paths to the branch each is checked out on (`undefined`
+  when detached), in place of `paths`. Membership is still `has`; the
+  compiler names every call site. The startup sweep reaps exactly the
+  branches of the directories it removed, so two checkouts sharing one ref
+  namespace no longer delete each other's live branches by glob.
+- **A worktree is stamped with the state root that provisioned it**, in
+  git's own per-worktree admin directory, and both sides that destroy under
+  the worktree base read it: the startup sweep removes only what this root
+  stamped, and an occupied provisioning path stamped by another root — or by
+  nothing — fails the tick naming the path rather than clobbering the
+  occupant. A tree a 0.16 run left carries no stamp and is named once per
+  start and left standing; clear it by hand.
+- **Open questions are one file each under `plan/questions/`** (harness
+  package). Presence is the state: a question is a file while open and
+  deleted when answered, so two sessions never conflict on one page and no
+  slice reads a status out of a heading. The plan fence still admits
+  `plan/open-questions.md` for the one commit that drains it; that allowance
+  is retired in the next release.
+
+### Added
+
+- **A chain refuses one entry, not a phase.** `Chain.refusesEntry` is
+  consulted at selection for every entry the gate switch and quarantine leave
+  standing, handed `EntryRefusalContext` — the entry, its standing record,
+  the tip the selection was taken at — and a refused entry costs a predicate
+  call, never a worktree. What was held back rides `TickResult.refusedTags`,
+  so a shrunken `pickableAfter` cannot read as a drained queue. The harness
+  package is the first declarer: it declines an entry whose latest prior
+  attempt is a clean exit at this tick's own HEAD, and that refusal is the
+  floor beneath a consumer's declared `handoff`.
+- **A declared command gate inherits the engine's gate facts** as
+  `FLUME_COMMIT_SHA`, `FLUME_BASE_SHA`, `FLUME_LANDED_ON_SHA` (`afterMerge`
+  only), `FLUME_STATE_ROOT`, `FLUME_STATE_ROOT_REL` and
+  `FLUME_TOUCHED_PATHS`; absence carries the context field's own meaning.
+  `GateContext.landedOnSha` is new: the trunk tip a span was cherry-picked
+  onto, distinct from `baseSha`, which every wave sibling shares.
+- **`scriptRunner({ command, read? })`** ships beside the vitest runner. The
+  command runs once per operation with the judged names as arguments and
+  answers one verdict line per name; a consumer whose validator already
+  reports a document declares `read` over its stdout instead of a second
+  program. `ScriptReader` and `ScriptReport` ship from the harness entry.
+- **The declaration names its `shell`**, probed once at chain load the way a
+  gate will run it, covering shell gates, script gates and `setup.restore`;
+  absent, `sh`. **`setup.serialize: true`** queues a wave's restores one
+  worktree at a time, base checkout included, for a cache unsafe to warm
+  concurrently. **`capabilities`** reaches `Chain.capabilities` whole.
+  **`friction`** names the engine's friction channel, which the inbox slice
+  reads as a fourth findings source.
+- **A CI lane declares `titles`**, a pattern or function over the failing
+  job's log; the drained-run stamp carries the run and that set, so a red
+  that persists unchanged no longer wakes plan every run.
+- **An unparseable queue is a tick fact, not a wall.** The one phase whose
+  declared fence admits the ledger runs with an empty queue and
+  `TickContext.queueParseFailure`; every other phase is refused naming the
+  fence verdict. The harness slices open the inbox on it with the file and
+  the engine's own errors, and the two derived-queue slices shut behind it,
+  so a broken queue is repaired by a tick instead of by hand.
+- **A fifth discipline gate, `derive cursor`**, holds a plan commit's
+  `derivedThrough` to an ancestor of the gated commit and a descendant of
+  the value it read, via `api.git.isAncestor` (new). The inbox drain may
+  advance the cursor to a sha its own window named, so a routed derivation
+  no longer costs a second tick.
+- **Agent spend is reported.** `SuperviseResult.agentUsageByPhase` totals
+  this run's usage rows; the loop completion summary renders it last, and
+  `flume status` prints `agent usage this run:` bounded by the instant the
+  lock states.
+- **`flume help <name>`, `flume --help <name>` and `flume -h <name>`** each
+  answer that command's own page; an unknown name refuses usage-shaped.
+- **`flume loop` warns once below the git floor** (2.36, for
+  `worktree list --porcelain -z`), naming the version, the floor and what
+  degrades — reclamation only — and warns when the version cannot be read
+  rather than reading silence as met.
+- **The prior-attempt keyers ride `FlumeApi`**: `entryAttemptKey`,
+  `recordAttemptKey` and the new `phaseAttemptKey`, so a chain never joins
+  `<keyspace>:<identity>` by hand. Also exported from the package root.
+- **A build tick parks by path** (harness package): a note under
+  `plan/notes/parked/<TAG>.md` is the park, whatever else the commit
+  touched; `plan/notes/<TAG>.md` is an observation and its entry ships.
+- **Migration notes for 0.13, 0.14 and 0.15**, each walking its breaks with
+  before and after; the series is contiguous and every note's previous-note
+  pointer resolves against disk.
+- **The chain-authoring page walks `GateContext`'s fields, the gate-fact
+  table, every built-in gate, the harness declaration's fields and the
+  runner's operations**, each read against the interface or the real child
+  it describes, so a field the engine gains and the page skips reds.
+
+### Fixed
+
+- **A tick verdict that is present and unreadable refuses.** The three
+  verdict readers proved absence from the path and swallowed nothing past
+  it; `flume log` and `flume status` exit `EX_IOERR` naming the file, and
+  the loop ends the run with its totals intact instead of hot-spinning to
+  `--max`. Exit 0 over silence now means the log is not there.
+- **Two checkouts sharing one worktree base no longer destroy each other's
+  trees**, at the startup sweep and at an occupied provisioning path alike
+  (the stamp, above).
+- **A `.gitkeep` in the friction channel is not a note.** Every reader —
+  the status count, the `friction` listing, read-by-name, the teardown
+  harvest — skips a dot-prefixed name, by name alone; the channel's listing
+  has one home.
+- **The inbox slice yields to pickable work**: a waiting record no longer
+  holds the baton against a shippable queue. Its standing-refusal leg keys
+  records by the engine's own key rather than a re-spelled one.
+- **The sweep's retired-claim delta reads git's own deletion mark**
+  (`--output-indicator-old`), so a deleted spec line whose text begins with
+  `--` is no longer dropped as a diff header.
+- **The hover text and pages stopped contradicting the engine.**
+  `afterMerge` runs on the trunk once any tick's span lands, singleton or
+  fanout, in `GatePhase`, the gate chapter and its placement guide;
+  `TickVerdict.mergeOutcomes` is not fanout-only; `AgentTermination` no
+  longer claims the ship classification reads the agent's final message;
+  `flume status` documents its stdout row for a failed chain load; the
+  shared-base refusal is attributed to the stamp.
+- **The windows lane's pidfile cases no longer flake on a recycled pid**:
+  a dead holder's pid is minted above the host's range and probed, never
+  harvested from a just-reaped child. Every sync capture in the suite runs
+  under the declared output cap and refuses an overrun by name.
+
+### Changed
+
+- **The dispatcher is five modules**: selection, the attempt sequence, the
+  singleton and wave legs, the pending ledger's I/O and the gate runner each
+  have a file named for the job; `src/job.ts` and the job CLI modules are
+  retired and their survivors re-homed. Behavior-free, held by the typecheck,
+  the suite and the export and citation pins.
+- **The citation pin resolves more of what a comment cites**: a page name in
+  every tree the sweep domain names, a markdown link's `#fragment` against
+  the target page's headings, and a `name (file)` pair in the file it names.
+- **The shell field's hover, the declaration's shell default, and the
+  gate-set and runner-operation cardinals** are stated once, at the site
+  that owns the fact.
+
 ## [0.16.1] - 2026-09-16
 
 The first pilot's release. A downstream consumer adopting and upgrading on
