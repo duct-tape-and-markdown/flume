@@ -1,53 +1,10 @@
 [
   {
-    "tag": "VERDICT-READERS-PROVE-ABSENCE",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/tickVerdict.ts",
-          "description": "the three verdict readers: existsLoud for the probe, refuse the non-ENOENT read"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "status/log answer the refusal (EX_IOERR), per spec/cli.md's status bullet"
-        },
-        {
-          "path": "src/loopSupervisor.ts",
-          "description": "the between-children read answers the refusal instead of crashing the run"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the three reader cases, denied by shape (tests/helpers/denial.ts)"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "status/log exit classification over an unreadable log"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "tick-verdict readers report empty history over a present-but-unreadable verdict file; prove absence and refuse the rest",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "acceptance": "No verdict reader answers 'no history' for a file it could not read; src/tickVerdict.ts holds no bare existsSync, the last three in src/.",
-    "tests": [
-      "readTickVerdicts refuses a verdict history log that is present and unreadable",
-      "readLatestVerdictsSync refuses a verdict history log that is present and unreadable",
-      "readTickVerdict refuses a latest-tick verdict file that is present and unreadable"
-    ],
-    "notes": "Sites: src/tickVerdict.ts:743,763,798 (existsSync) and the catch arms at 747,767,802. existsLoud/statLoud is src/fsProbe.ts; readPendingTolerant (src/pendingLedger.ts) is the shape precedent. spec/cli.md already forbids the printed opposite: status refuses EX_IOERR on a present-unreadable file, log's exit-0 arm is absence only. Callers needing the answer: src/cli.ts:496,589 and src/loopSupervisor.ts:380."
-  },
-  {
     "tag": "VERDICT-MERGEOUTCOMES-DOC-NOT-FANOUT-ONLY",
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
       "new": [],
       "edit": [
@@ -64,6 +21,8 @@
       "section": "Narration is the ladder's bottom rung"
     },
     "acceptance": "The member doc no longer states a per-concurrency presence rule; TickVerdictMergeOutcome's own doc is the single home and the member points at it.",
+    "tests": [],
+    "pins": [],
     "notes": "src/tickVerdict.ts:585. Contradicted in the same file by TickVerdictMergeOutcome's own doc ('per entry under fanout, the phase's own single span under singleton'), by src/singletonTick.ts:245,535, by src/Dispatcher.ts:900, and pinned false by tests/Dispatcher.test.ts:16434 'a singleton tick reverted by an afterCommit gate leaves a span row naming both shas'. Barrel-exported (src/index.ts:149), so it is hover text a chain author reads. No tests[]: the behavior is pinned; only the prose is wrong."
   }
 ]
