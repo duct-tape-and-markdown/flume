@@ -1,5 +1,84 @@
 [
   {
+    "tag": "THE-STARTUP-SWEEP-REMOVES-ONLY-ITS-OWN-STAMPED-WORKTREES",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/worktrees.ts",
+          "description": "provisioning stamps the creating state root; the sweep reads it, leaves the unstamped"
+        },
+        {
+          "path": "tests/worktrees.test.ts",
+          "description": "the stamp's three legs against a real repo"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the sweep cases plant residue by hand — the stamp goes with it"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The startup sweep removes a registered directory on the registry's evidence alone; stamp each worktree with its state root and sweep only its own",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Startup sweep — a dead wave's residue is removed at the next start"
+    },
+    "acceptance": "A sweep run over a base holding a second state root's live worktree leaves it standing and names it, and still removes its own residue.",
+    "tests": [
+      "the startup sweep removes only worktree directories stamped by its own state root",
+      "the startup sweep leaves a registered directory carrying no stamp and names it once",
+      "provisioning stamps every worktree with the state root that created it"
+    ],
+    "pins": [],
+    "notes": "Ruled (a) in the-startup-sweep-assumes-one-checkout-per-worktree-base.md. `createWorktree` and `checkoutAt` both plant under the base the sweep reads, so both stamp or gate-checkout residue stops being reclaimed. Where the stamp lands is build's: it must not dirty the worktree's working tree, which the tick's own clean-tree gate reads."
+  },
+  {
+    "tag": "THE-CITATION-PIN-RESOLVES-A-LINKS-FRAGMENT",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/helpers/pageAnchors.ts",
+          "description": "link destination + fragment off a page, resolved against the target's headings"
+        },
+        {
+          "path": "tests/pageAnchors.test.ts",
+          "description": "the arm's own cases, and the repo verdict"
+        }
+      ],
+      "edit": [
+        {
+          "path": "docs/MIGRATING-0.10.md",
+          "description": "the one dead anchor on the tree"
+        },
+        {
+          "path": "tests/harnessPackaging.test.ts",
+          "description": "`markdownLinkTargets` folds onto the shared reader"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "A markdown link's #fragment resolves against nothing today; add the anchor arm to the citation pin and fix the one dead link it reds",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "A link into a page whose heading has gone reds the default lane, and MIGRATING-0.10's jobs link resolves.",
+    "tests": [
+      "every markdown link's #fragment resolves against the cited page's own headings"
+    ],
+    "pins": [],
+    "notes": "One red today: docs/MIGRATING-0.10.md:185 → ../spec/jobs.md#a-job-is-a-state-root, a heading the jobs cut took; the other three fragment links on the tree resolve. Link extraction already exists as `markdownLinkTargets` (tests/harnessPackaging.test.ts) and drops the fragment — one reader handing back destination and fragment, two callers. Heading match is slugged, the way GitHub anchors a heading."
+  },
+  {
     "tag": "THE-BUILT-INS-LIST-NAMES-EVERY-BUILTIN-GATE",
     "gate": {
       "kind": "open"
@@ -60,5 +139,37 @@
     "tests": [],
     "pins": [],
     "notes": "Note THE-CHAIN-AUTHORING-WALKS-SHARE-ONE-READER, verified wider on disk: three copies, not two — the supervisor-policy local (`- **`x`** —`), the gate-field local (`- `x` —`), and the shellGate bullet sliced inline. Behavior-free; the typecheck and the existing cases hold it, so it claims no property."
+  },
+  {
+    "tag": "THE-REFUSAL-IS-THE-FLOOR-UNDER-A-DECLARED-HANDOFF",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/chain.ts",
+          "description": "the unconditional-refusal rationale shrinks to a pointer at the section"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the floor read off a handoff-declaring declaration"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The section now states the package's per-entry refusal as the floor beneath a declared handoff; pin it on a declaring chain and shrink the factory's argument",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The default `handoff`"
+    },
+    "acceptance": "The refusal is read off a chain built from a handoff-declaring declaration, and chain.ts points at the section instead of arguing it.",
+    "pins": [
+      "a chain declaring its own build handoff still carries the package's per-entry refusal"
+    ],
+    "tests": [],
+    "notes": "Ruled (a) in a-declared-handoff-still-rides-the-packages-refusal.md, now said in the section. Today's case (`the chain the factory builds declines a clean exit at the tick's own HEAD`) drives the default declaration alone, so the clause's own arm — declared ladder, package floor — is unpinned. The factory comment's \"no per-entry knob\" rationale is the prose the section now holds."
   }
 ]
