@@ -148,6 +148,31 @@ async function registeredWorktrees(repo: string): Promise<string[]> {
     .map((f) => resolve(f.slice("worktree ".length)));
 }
 
+/**
+ * The state root named by the stamp on the worktree at `path`, read
+ * independently of the module under test: git is asked where it keeps the
+ * worktree's admin directory, and the filename is spelled here rather than
+ * imported. Importing the writer's constant would make the name agree with
+ * itself, which is the one thing this seam cannot afford.
+ *
+ * One home for both suites that read a stamp — the sweep's evidence and
+ * provisioning's occupied-path judgment read the same file, and a second
+ * spelling is how one of them comes to read a name the writer never wrote
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ */
+async function stampAt(path: string): Promise<string | undefined> {
+  const { stdout } = await exec("git", ["rev-parse", "--absolute-git-dir"], {
+    cwd: path,
+  });
+  try {
+    return (
+      await readFile(join(stdout.trim(), "flume-state-root"), "utf8")
+    ).trim();
+  } catch {
+    return undefined;
+  }
+}
+
 describe("worktrees — one lifecycle over one directory tree", () => {
   let fx: Fixture;
 
@@ -282,18 +307,23 @@ describe("worktrees — the base is resolved in one place", () => {
 
 /**
  * WORKTREE-STALE-DIR-DISCLAIMED-BY-GIT — what occupies the path a tick is
- * about to provision is git's registry to judge, never the path's mere
- * existence. `createWorktree` and `sweepStaleWorktrees` read one probe
+ * about to provision is judged on the two pieces of evidence
+ * `sweepStaleWorktrees` judges a dead run's residue on, never the path's
+ * mere existence: git's registry, then this state root's own stamp
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*:
  * detection a sibling surface already performs is shared, never re-derived).
- * The sweep already refused to remove a directory git disclaims — an
- * operator's own tree under a shared `FLUME_WORKTREES_DIR`, or residue whose
- * registration git had already pruned — while provisioning deleted exactly
- * that directory through its rm fallback and then reported success.
  *
- * Both legs are driven through the real entry points against a real git
- * repo: the claim is that one probe decides for both, which a stubbed
- * registry could not distinguish from two agreeing copies.
+ * The sweep already refused on both — a directory git disclaims is an
+ * operator's own tree or residue whose registration git had already pruned;
+ * a registered directory this root never stamped is a second checkout's live
+ * tree under a base the operator deliberately shares (`spec/worktrees.md`,
+ * *Placement — the worktree base*). Provisioning deleted each of them
+ * through its rm fallback and then reported success, so a colliding
+ * `dirName` took a running sibling's worktree out from under it.
+ *
+ * Every leg is driven through the real entry points against a real git repo:
+ * the claim is that one probe and one stamp read decide for both sites,
+ * which a stubbed registry could not distinguish from two agreeing copies.
  */
 describe("worktrees — an occupied path is judged by git's registry", () => {
   let fx: Fixture;
@@ -317,6 +347,23 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
         log,
       },
       base: worktreesBase(flumeDir),
+    };
+  }
+
+  /**
+   * A second state root over the same repository, provisioning into the
+   * first's base — the placement a sibling checkout sharing
+   * `FLUME_WORKTREES_DIR` produces, where both roots' trees land in the one
+   * registry each of them reads and a shared tag collides on one directory
+   * name.
+   */
+  function siblingRootAt(base: string, log: Logger): WorktreeContext {
+    return {
+      repoRoot: fx.repo,
+      flumeDir: join(fx.repo, ".flume-sibling"),
+      stateRootRel: ".flume-sibling",
+      log,
+      declaredWorktreesBase: base,
     };
   }
 
@@ -386,29 +433,96 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     expect(await flumeBranches(fx.repo)).toEqual([]);
   });
 
-  it("createWorktree removes a stale worktree directory git still has registered", async () => {
-    const { ctx, base } = contextFor(silent);
+  it("createWorktree clears an occupied worktree path this state root stamped", async () => {
+    const { ctx } = contextFor(silent);
     // What a crashed run actually leaves: a registered worktree at the path
-    // this entry is about to be provisioned into, plus its untracked residue.
-    const stale = join(base, worktreeDirName("build"));
-    await mkdir(dirname(stale), { recursive: true });
-    await exec(
-      "git",
-      ["worktree", "add", "-B", "stale/build", stale, "HEAD"],
-      { cwd: fx.repo },
-    );
-    await writeFile(join(stale, "crashed.txt"), "residue\n");
-    expect(await registeredWorktrees(fx.repo)).toContain(stale);
+    // this entry is about to be provisioned into, plus its untracked
+    // residue. Planted through the real writer, so the stamp the judgment
+    // below reads is the one provisioning actually mints — a hand-run
+    // `worktree add` would agree with whatever this test believed, including
+    // that there is no stamp at all (`.claude/rules/engineering.md`, *A seam
+    // gate reads what the real writer wrote*).
+    const stale = await createWorktree("build", await head(), ctx);
+    await writeFile(join(stale.path, "crashed.txt"), "residue\n");
+
+    // Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): the path really is occupied, really is
+    // registered, and really carries this root's stamp — the three facts the
+    // clearance below turns on.
+    expect(existsSync(join(stale.path, "crashed.txt"))).toBe(true);
+    expect(await registeredWorktrees(fx.repo)).toContain(stale.path);
+    expect(await stampAt(stale.path)).toBe(resolve(ctx.flumeDir));
 
     const wt = await createWorktree("build", await head(), ctx);
 
-    expect(wt.path).toBe(stale);
+    expect(wt.path).toBe(stale.path);
     // Removed and re-provisioned rather than reused: the crashed run's
     // residue is gone and the path is registered on the branch this call
-    // named, not on the one it displaced.
-    expect(existsSync(join(stale, "crashed.txt"))).toBe(false);
-    expect(await registeredWorktrees(fx.repo)).toContain(stale);
+    // named.
+    expect(existsSync(join(stale.path, "crashed.txt"))).toBe(false);
+    expect(await registeredWorktrees(fx.repo)).toContain(wt.path);
     expect(await flumeBranches(fx.repo)).toEqual([wt.branch]);
+    expect(await stampAt(wt.path)).toBe(resolve(ctx.flumeDir));
+  });
+
+  it("createWorktree refuses an occupied worktree path git registers but this state root did not stamp", async () => {
+    const { ctx, base } = contextFor(silent);
+    // The collision *Placement* names: a second checkout's live worktree,
+    // provisioned by the same writer into a base the operator shares, on a
+    // tag whose bounded directory name matches this tick's. git registers it
+    // as a worktree of this repository exactly as it registers this root's
+    // own trees, so the registry alone cannot tell them apart.
+    const sibling = siblingRootAt(base, silent);
+    const theirs = await createWorktree("build", await head(), sibling);
+    await writeFile(join(theirs.path, "live.txt"), "a running tick's tree\n");
+
+    // Vacuity pin: the path this tick would provision into is exactly the
+    // sibling's, git names it, and the stamp on it is the sibling's rather
+    // than this root's — so the refusal below is the stamp's verdict, not a
+    // path provisioning never reached.
+    expect(theirs.path).toBe(join(base, worktreeDirName("build")));
+    expect(await registeredWorktrees(fx.repo)).toContain(theirs.path);
+    expect(await stampAt(theirs.path)).toBe(resolve(sibling.flumeDir));
+    expect(await stampAt(theirs.path)).not.toBe(resolve(ctx.flumeDir));
+
+    await expect(createWorktree("build", await head(), ctx)).rejects.toThrow(
+      /did not provision/,
+    );
+
+    // The sibling's tick still has its tree, its residue and its branch, and
+    // this tick failed rather than succeeding over it.
+    expect(await readFile(join(theirs.path, "live.txt"), "utf8")).toBe(
+      "a running tick's tree\n",
+    );
+    expect(await registeredWorktrees(fx.repo)).toContain(theirs.path);
+    expect(await flumeBranches(fx.repo)).toEqual([theirs.branch]);
+  });
+
+  it("createWorktree refuses an occupied registered worktree carrying no stamp at all", async () => {
+    const { ctx, base } = contextFor(silent);
+    // Residue from a run that predates the stamp, or a provisioning that
+    // died between the add and the stamp: registered, unstamped, and the
+    // same refusal the sweep takes on it (`spec/worktrees.md`, *Startup
+    // sweep*) — the pre-stamp tree now needs a hand rather than being
+    // cleared on the registry's word.
+    const unstamped = join(base, worktreeDirName("build"));
+    await mkdir(dirname(unstamped), { recursive: true });
+    await exec(
+      "git",
+      ["worktree", "add", "-B", "flume/build", unstamped, "HEAD"],
+      { cwd: fx.repo },
+    );
+
+    // Vacuity pin: git registers the path, and nothing stamped it.
+    expect(await registeredWorktrees(fx.repo)).toContain(unstamped);
+    expect(await stampAt(unstamped)).toBeUndefined();
+
+    await expect(createWorktree("build", await head(), ctx)).rejects.toThrow(
+      /no stamp/,
+    );
+
+    expect(existsSync(unstamped)).toBe(true);
+    expect(await registeredWorktrees(fx.repo)).toContain(unstamped);
   });
 
   it("the startup sweep warns that it removed nothing when the worktree registry cannot be read", async () => {
@@ -919,26 +1033,6 @@ describe("worktrees — the startup sweep removes on the stamp provisioning mint
       cwd: fx.repo,
     });
     return stdout.trim();
-  }
-
-  /**
-   * The state root named by the stamp on the worktree at `path`, read
-   * independently of the module under test: git is asked where it keeps the
-   * worktree's admin directory, and the filename is spelled here rather than
-   * imported. Importing the writer's constant would make the name agree with
-   * itself, which is the one thing this seam cannot afford.
-   */
-  async function stampAt(path: string): Promise<string | undefined> {
-    const { stdout } = await exec("git", ["rev-parse", "--absolute-git-dir"], {
-      cwd: path,
-    });
-    try {
-      return (
-        await readFile(join(stdout.trim(), "flume-state-root"), "utf8")
-      ).trim();
-    } catch {
-      return undefined;
-    }
   }
 
   /**

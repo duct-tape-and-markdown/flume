@@ -173,8 +173,9 @@ async function worktreeAdminDir(worktreePath: string): Promise<string> {
 
 /**
  * Record which state root provisioned the worktree at `worktreePath` — the
- * evidence {@link sweepStaleWorktrees} removes on
- * (`spec/worktrees.md`, *Startup sweep*).
+ * evidence {@link sweepStaleWorktrees} removes on (`spec/worktrees.md`,
+ * *Startup sweep*), and the same evidence {@link createWorktree} clears an
+ * occupied path on (*Placement — the worktree base*).
  *
  * The registry alone cannot carry that claim. It names every worktree of the
  * *repository*, and a second checkout of one repository holds a different tip
@@ -215,14 +216,19 @@ export async function stampWorktree(
 
 /**
  * The state root that stamped the worktree at `worktreePath`, or `undefined`
- * where none did.
+ * where none did — read by both sides that would destroy a directory under
+ * the base: {@link sweepStaleWorktrees} deciding a dead run's residue, and
+ * {@link createWorktree} deciding an occupied path. One read for both, so the
+ * two cannot come to disagree about what counts as this root's tree
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
  * Every failure reads as "no stamp": an admin directory git will not name, an
  * absent or unreadable file, a file holding nothing. None of them is this
- * root's evidence, and the sweep's verdict on all of them is identical —
- * leave the directory standing and name it. The refusal is the floor here,
+ * root's evidence, and both callers' verdict on all of them is identical —
+ * leave the directory standing and say so. The refusal is the floor here,
  * not a degradation: the one action a missing stamp permits is the one that
- * destroys nothing, and the sweep says out loud what it left.
+ * destroys nothing, and each caller says out loud what it left — the sweep in
+ * a warning, provisioning by failing the tick that named the path.
  */
 async function stampedStateRoot(
   worktreePath: string,
@@ -517,14 +523,16 @@ export async function createWorktree(
   // does not own.
   if (existsLoud(toNamespacedPath(path))) {
     // Occupied. Whether that is this job's own stale worktree from a crashed
-    // run is git's registry to answer, never the path's existence: a
-    // directory git disclaims is as easily a sibling checkout's tree under a
-    // shared FLUME_WORKTREES_DIR, or an
-    // operator's own tree, and removing one of those is the clobber the
-    // startup sweep below already refuses on exactly this evidence. Anything
-    // git does not name is refused loudly and left standing for an operator
-    // to judge — the cost is that residue whose registration was already
-    // pruned needs a hand, which is the trade the sweep took.
+    // run is decided on the same two pieces of evidence
+    // {@link sweepStaleWorktrees} decides on, never the path's existence,
+    // because the two are one judgment over one directory tree reached from
+    // two moments (`.claude/rules/engineering.md`, *The fix lands at the
+    // mechanism*: detection a sibling surface already performs is shared,
+    // never re-derived).
+    //
+    // First git's registry: a directory git disclaims is as easily an
+    // operator's own tree, or residue whose registration git has already
+    // pruned.
     const registry = await readWorktreeRegistry(ctx.repoRoot);
     if (!registry.read) {
       throw new Error(
@@ -534,6 +542,21 @@ export async function createWorktree(
     if (!registry.worktrees.has(resolve(path))) {
       throw new Error(
         `worktree path is occupied by a directory git does not register as a worktree of ${ctx.repoRoot}; refusing to remove it — clear it by hand if it is flume residue: ${path}`,
+      );
+    }
+    // Then this root's own stamp. The registry names every worktree of the
+    // *repository*, which is wider than "this state root made it": under a
+    // base an operator deliberately shares between checkouts
+    // (`spec/worktrees.md`, *Placement — the worktree base*), a sibling's
+    // live tree registers exactly here, and a colliding `dirName` would take
+    // it out from under a running sibling on the registry's word alone.
+    const ownStateRoot = resolve(ctx.flumeDir);
+    const stamped = await stampedStateRoot(path);
+    if (stamped !== ownStateRoot) {
+      throw new Error(
+        `worktree path is occupied by a registered worktree this state root (${ownStateRoot}) did not provision ` +
+          `(${stamped === undefined ? "no stamp" : `stamped ${stamped}`}); refusing to remove it — ` +
+          `a second checkout sharing this worktree base is the likely occupant: ${path}`,
       );
     }
     await git.removeWorktree(ctx.repoRoot, path);
@@ -549,10 +572,12 @@ export async function createWorktree(
     branch,
     fromRef,
   });
-  // The evidence the next start's sweep removes on. Written after the add,
-  // which is the first moment git has an admin directory to hold it, and
-  // before the caller is told the worktree exists: a tree this call handed
-  // back unstamped is one the sweep would decline forever.
+  // The evidence the next start's sweep — and the occupied-path judgment
+  // above, on the next tick that computes this same path — removes on.
+  // Written after the add, which is the first moment git has an admin
+  // directory to hold it, and before the caller is told the worktree exists:
+  // a tree this call handed back unstamped is one both would decline
+  // forever.
   await stampWorktree(path, ctx.flumeDir);
   return { path, branch };
 }

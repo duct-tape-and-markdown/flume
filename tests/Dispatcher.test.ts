@@ -3465,11 +3465,17 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
 
     // Seed a stale slug for BOTH entries, exactly as a prior crashed run
     // leaves it: a *registered* `git worktree` at `.flume/worktrees/<slug>`
-    // (so both `.git/worktrees/<slug>/` metadata and the dir exist). The
-    // wave's createWorktree must `git worktree remove --force` each, then
-    // re-`add` — the precise remove+add pair that, run N-wide in parallel
-    // against the shared `.git/worktrees/` dir, fails a sibling's add
-    // mid-validation. Serialized, every add lands.
+    // (so both `.git/worktrees/<slug>/` metadata and the dir exist),
+    // carrying this state root's own provisioning stamp — the evidence
+    // `createWorktree` clears an occupied path on, beside the registry
+    // (`spec/worktrees.md`, *Placement — the worktree base*). Written by the
+    // real `stampWorktree` rather than spelled here
+    // (`.claude/rules/engineering.md`, *A seam gate reads what the real
+    // writer wrote*). The wave's createWorktree must
+    // `git worktree remove --force` each, then re-`add` — the precise
+    // remove+add pair that, run N-wide in parallel against the shared
+    // `.git/worktrees/` dir, fails a sibling's add mid-validation.
+    // Serialized, every add lands.
     for (const slug of ["race-a", "race-b"]) {
       const wtPath = join(fx.repo, ".flume", "worktrees", slug);
       await mkdir(dirname(wtPath), { recursive: true });
@@ -3478,6 +3484,7 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
         ["worktree", "add", "-B", `stale/${slug}`, wtPath, "HEAD"],
         repoOpts,
       );
+      await stampWorktree(wtPath, defaultStateRoot(fx.repo));
     }
     // Precondition: the stale worktrees are genuinely registered with git
     // (not just bare dirs) — proving the wave exercises the
