@@ -583,7 +583,12 @@ export interface TickVerdict {
   gateResults: ReportedGateResult[];
   /** Entry tags shipped by this tick (entries the phase's `shipped` predicate rejected already excluded); empty for a singleton phase. */
   shippedTags: string[];
-  /** Fanout only; empty for a singleton phase or a wave with nothing provisioned. */
+  /**
+   * One row per provisioned span that reached a merge fate. Which spans those
+   * are is {@link TickVerdictMergeOutcome}'s own doc to state. Empty when no
+   * span reached a fate this tick — nothing provisioned, or every span stopped
+   * short of one (declined, render-refused, or no commit to cherry-pick).
+   */
   mergeOutcomes: TickVerdictMergeOutcome[];
   /**
    * spec/loop.md "The tick verdict", "Every agent invocation leaves a usage
