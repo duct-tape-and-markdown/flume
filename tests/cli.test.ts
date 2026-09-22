@@ -888,9 +888,32 @@ describe("flume status — supervisor liveness", () => {
 
       expect(r.code).toBe(EX_IOERR);
       expect(r.out).toContain("loop.pid");
-      expect(r.out).toContain("failed to stat");
+      expect(r.out).toContain("failed to read");
       expect(r.out).not.toContain("supervisor pid");
       expect(r.out).not.toContain("stale");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("flume status exits 74 when loop.pid is present but cannot be read", async () => {
+    const dir = await mkFixtureRoot("flume-status-unreadable-pid-");
+    try {
+      const flumeDir = join(dir, ".flume");
+      // A directory at the path stats fine and refuses to open (EISDIR), so
+      // it separates the presence probe from the claim read the way a symlink
+      // loop cannot: the case above never reached `liveLoopClaim`, and this
+      // one is the whole of what that reader decides. Before the read joined
+      // the probe's guard it threw past the verb into `main()`'s catch — a
+      // raw stack and exit 1, the one exit `status` is specced never to take.
+      await mkdir(join(flumeDir, "loop.pid"));
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(EX_IOERR);
+      expect(r.out).toContain("[flume] status: loop.pid failed to read");
+      expect(r.out).not.toContain("supervisor pid");
+      expect(r.out).not.toContain("process dead — stale");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1749,7 +1772,29 @@ describe("flume status — tip claim line (spec/cli.md \"flume status owes exact
 
       expect(r.code).toBe(EX_IOERR);
       expect(r.out).toContain(claimPath);
-      expect(r.out).toContain("failed to stat");
+      expect(r.out).toContain("failed to read");
+      expect(r.out).not.toContain("tip claimed by pid");
+      expect(r.out).not.toContain("tip claim present, process dead");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("flume status exits 74 when the tip claim is present but cannot be read", async () => {
+    const repo = await makeRepo("main");
+    try {
+      const claimPath = tipClaimPath(
+        await gitCommonDir(repo.dir),
+        "refs/heads/main",
+      );
+      await mkdir(claimPath, { recursive: true });
+
+      const r = await runCli(repo.dir, ["status"]);
+
+      expect(r.code).toBe(EX_IOERR);
+      expect(r.out).toContain(
+        `[flume] status: tip claim at ${claimPath} failed to read`,
+      );
       expect(r.out).not.toContain("tip claimed by pid");
       expect(r.out).not.toContain("tip claim present, process dead");
     } finally {

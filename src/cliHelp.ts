@@ -84,8 +84,10 @@ Exit codes:
   0   Every observation above succeeded — including "nothing to report" for
       each optional line.
   74  I/O error (EX_IOERR): loop.pid, the stop flag, or the tip claim file
-      exists but could not be stat'd (permission denied, a symlink loop, a
-      path too long for the platform, ...). Refused rather than printed as
+      exists but could not be read (permission denied, a symlink loop, a
+      directory standing at the path, a path too long for the platform, ...)
+      — the presence probe and, for the two claim files, the read of the
+      pid they state. Refused rather than printed as
       absent — that reading would tell the operator there is no live
       supervisor, no pending stop, or no claim holder when there may be one.
       Naming the file and the underlying error. Also, under a live

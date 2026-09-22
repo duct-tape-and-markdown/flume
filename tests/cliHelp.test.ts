@@ -979,6 +979,43 @@ describe("flume loop --help — the backstop threshold names its knob (HELP-ABOR
 });
 
 /**
+ * `flume status --help`'s exit-code block against the code the verb's own
+ * claim reads really return. The help's 74 row described a stat that failed,
+ * and only the presence probe could produce one: a claim file that stats and
+ * will not open threw past the verb, so the exit an operator met was 1 with a
+ * raw stack under a row promising 74. The fixture drives the real refusal and
+ * reads the documented set off the real help text, never a copy
+ * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+ * wrote").
+ */
+describe("flume status --help — the exit-code list against the verb's own claim reads", () => {
+  it("flume status --help names exit 74 for a claim file that cannot be read", async () => {
+    const root = await mkFixtureRoot("flume-status-help-");
+    try {
+      // Non-vacuity: the verb really observes this bay before the claim file
+      // is planted, so the refusal below is the unreadable claim's and not a
+      // fixture that never reached the read.
+      const printed = await runCli(root, ["status"]);
+      expect(printed.code).toBe(0);
+      expect(printed.out).toContain("hibernating");
+
+      // A directory at the lock path: present to the probe, EISDIR to the
+      // read that decodes the claim it states.
+      await mkdir(loopLockPath(join(root, ".flume")));
+      const refusal = await runCli(root, ["status"]);
+      expect(refusal.out).toContain("failed to read");
+      expect(refusal.code).toBe(EX_IOERR);
+
+      const { out, code } = await runCli(root, ["status", "--help"]);
+      expect(code).toBe(0);
+      expect(ascending(documentedExitCodes(out))).toContain(refusal.code);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+});
+
+/**
  * `flume log --help`'s exit-code block against the code the verb's own I/O
  * refusal really returns. The verb's quiet arm is absence alone — no
  * tick-verdicts.jsonl prints nothing and exits 0 — so the refusal over a log

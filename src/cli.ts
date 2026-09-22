@@ -321,9 +321,10 @@ async function main(): Promise<number> {
     // the output as it read before this line existed.
     // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) refuses
     // a `loop.pid` that is present but unstattable (a symlink loop, a
-    // permission-denied parent) rather than reading it as absent and printing
-    // no supervisor line over a possibly-live loop
-    // (`.claude/rules/engineering.md`, "Loud or nothing").
+    // permission-denied parent), and the claim read below refuses one that
+    // stats but will not open (a directory at the path), rather than either
+    // reading as absent and printing no supervisor line over a possibly-live
+    // loop (`.claude/rules/engineering.md`, "Loud or nothing").
     //
     // The whole claim, not just the holder's pid: a live holder's `loop.pid`
     // also states *when* this run began, on its second line, and that instant
@@ -334,22 +335,30 @@ async function main(): Promise<number> {
     // moves under a running loop. One read answers both.
     let supervisor: PidClaim | undefined;
     let loopLockPresent: boolean;
+    let loopClaim: PidClaim | null = null;
     try {
       loopLockPresent = existsLoud(namespacedJoin(loopLockPath(flumeDir)));
+      // The claim read sits inside this guard, not after it: `liveLoopClaim`
+      // answers `null` for absent and throws for every other read failure, so
+      // a `loop.pid` that stats but will not open (a directory at the path, a
+      // permission-denied file) is this verb's refusal to classify. Outside
+      // the guard it escaped to `main()`'s catch as a raw stack and exit 1 —
+      // the one exit `status` is specced never to take (spec/cli.md,
+      // "Subcommand surface").
+      if (loopLockPresent) loopClaim = await liveLoopClaim(flumeDir);
     } catch (err) {
-      // The stat error carries the offending path itself; the name here comes
+      // The I/O error carries the offending path itself; the name here comes
       // from the accessor's own table, never a second spelling of "loop.pid".
       console.error(
-        `[flume] status: ${STATE_ROOT_NAMES.loopLock} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] status: ${STATE_ROOT_NAMES.loopLock} failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }
     if (loopLockPresent) {
-      const claim = await liveLoopClaim(flumeDir);
-      if (claim !== null) supervisor = claim;
+      if (loopClaim !== null) supervisor = loopClaim;
       console.log(
-        claim !== null
-          ? `supervisor pid ${claim.pid} live`
+        loopClaim !== null
+          ? `supervisor pid ${loopClaim.pid} live`
           : "loop.pid present, process dead — stale",
       );
     }
@@ -397,16 +406,21 @@ async function main(): Promise<number> {
         headRefForStatus.path,
       );
       let claimPresent: boolean;
+      let holder: number | null = null;
       try {
         claimPresent = existsLoud(namespacedJoin(claimPath));
+        // Inside the guard for the same reason as the loop lock's claim read
+        // above: `liveTipClaimPid` throws on any read failure past absent, and
+        // a claim file that will not open is a tip whose holder is unknown,
+        // never an unclaimed one.
+        if (claimPresent) holder = await liveTipClaimPid(claimPath);
       } catch (err) {
         console.error(
-          `[flume] status: tip claim at ${claimPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+          `[flume] status: tip claim at ${claimPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
         );
         return EX_IOERR;
       }
       if (claimPresent) {
-        const holder = await liveTipClaimPid(claimPath);
         console.log(
           holder !== null
             ? `tip claimed by pid ${holder}`
