@@ -562,13 +562,28 @@ export async function checkpointBystanderState(
 }
 
 /**
- * Stage a specific set of paths and commit.
+ * Stage a specific set of paths and commit those paths alone.
  *
- * `paths` are staged as the paths they are, never as patterns: the stage
- * runs under {@link literalPathspecEnv}, so an artifact whose name carries a
- * glob metacharacter stages itself alone rather than itself plus every
- * sibling it happens to match. The commit takes no pathspec of its own, so
- * an over-matched sibling would ride along in full.
+ * `paths` are staged as the paths they are, never as patterns: both legs run
+ * under {@link literalPathspecEnv}, so an artifact whose name carries a glob
+ * metacharacter stages and commits itself alone rather than itself plus every
+ * sibling it happens to match.
+ *
+ * The commit leg repeats the pathspec — `git commit --only -m <msg> --
+ * <paths>`, the message before the `--` because git reads everything after it
+ * as a pathspec — so whatever else the operator had staged on this checkout
+ * stays staged and uncommitted rather than riding into a harness commit it was
+ * never named in. The staging leg still runs first: a partial commit's
+ * pathspec must match something git already knows, so a path this harness is
+ * creating for the first time has to reach the index before it can be
+ * committed from it.
+ *
+ * Two refusals come with the partial commit, both taken deliberately. Git
+ * refuses a partial commit mid-merge or mid-cherry-pick, where a bare commit
+ * would instead conclude the operator's in-progress sequence under the
+ * harness's own message. And it refuses when the named paths carry no change,
+ * whatever else is staged — so a caller that skips an unchanged artifact is no
+ * longer carried past that skip by a bystander's staged edit.
  */
 export async function commitPaths(opts: {
   cwd: string;
@@ -579,7 +594,14 @@ export async function commitPaths(opts: {
     throw new Error("commitPaths requires at least one path");
   }
   await run(opts.cwd, ["add", "--", ...opts.paths]);
-  await run(opts.cwd, ["commit", "-m", opts.message]);
+  await run(opts.cwd, [
+    "commit",
+    "--only",
+    "-m",
+    opts.message,
+    "--",
+    ...opts.paths,
+  ]);
   return revParse(opts.cwd);
 }
 

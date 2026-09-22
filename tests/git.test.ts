@@ -292,9 +292,9 @@ describe("commitPaths", () => {
 it.runIf(process.platform !== "win32")(
   "commitPaths stages only its given path when a sibling name glob-matches it",
   async () => {
-    // Two tracked files whose names glob-match one another, both dirty. The
-    // commit leg takes no pathspec of its own, so anything the staging leg
-    // over-matches rides into the commit whole.
+    // Two tracked files whose names glob-match one another, both dirty. Both
+    // legs carry the pathspec, so an over-match on either one would put the
+    // sibling in the commit.
     await writeFile(join(repo, "a*.txt"), "one\n");
     await writeFile(join(repo, "ab.txt"), "two\n");
     await exec("git", ["add", "--all"], { cwd: repo });
@@ -328,6 +328,82 @@ it.runIf(process.platform !== "win32")(
     expect(lines(status)).toEqual(["M ab.txt"]);
   },
 );
+
+/**
+ * A checkout carrying the harness's own artifact and an operator's unrelated
+ * edit, the edit already staged — the primary-checkout shape the two cases
+ * below are about. Both files are tracked and both are dirty; only the
+ * bystander is in the index.
+ */
+async function stageABystander(): Promise<void> {
+  await writeFile(join(repo, "ledger.json"), "one\n");
+  await writeFile(join(repo, "bystander.md"), "operator's draft\n");
+  await exec("git", ["add", "--all"], { cwd: repo });
+  await exec("git", ["commit", "-q", "-m", "both files"], { cwd: repo });
+  await writeFile(join(repo, "bystander.md"), "operator's edit\n");
+  await exec("git", ["add", "--", "bystander.md"], { cwd: repo });
+}
+
+/** Paths the index holds a change for, relative to HEAD. */
+async function stagedPaths(): Promise<string[]> {
+  const { stdout } = await exec("git", ["diff", "--cached", "--name-only"], {
+    cwd: repo,
+  });
+  return lines(stdout);
+}
+
+// Deliberately top-level rather than inside the describe above: these titles
+// are queue entries' own `tests[]` lines, matched on the full name.
+it("commitPaths commits only its named paths when an unrelated change is staged", async () => {
+  await stageABystander();
+  await writeFile(join(repo, "ledger.json"), "two\n");
+
+  // Vacuity pin: the bystander really is staged going in, which is what makes
+  // "only its named paths" a claim about a populated index rather than about
+  // an empty one.
+  expect(await stagedPaths()).toEqual(["bystander.md"]);
+
+  await commitPaths({
+    cwd: repo,
+    message: "chore(flume): ship the ledger",
+    paths: ["ledger.json"],
+  });
+
+  const { stdout: changed } = await exec(
+    "git",
+    ["show", "--name-only", "--pretty=format:", "HEAD"],
+    { cwd: repo },
+  );
+  expect(lines(changed)).toEqual(["ledger.json"]);
+  // The operator's staging survives the harness commit exactly as it was.
+  expect(await stagedPaths()).toEqual(["bystander.md"]);
+  const { stdout: staged } = await exec(
+    "git",
+    ["show", ":bystander.md"],
+    { cwd: repo },
+  );
+  expect(staged).toBe("operator's edit\n");
+});
+
+it("commitPaths refuses when its named paths hold no change and an unrelated change is staged", async () => {
+  await stageABystander();
+  // `ledger.json` is untouched since the seed commit; only the bystander is
+  // dirty. A commit that read the whole index would find something to commit
+  // and conclude — which is the skip this refusal restores.
+  expect(await stagedPaths()).toEqual(["bystander.md"]);
+  const before = await revParse(repo);
+
+  await expect(
+    commitPaths({
+      cwd: repo,
+      message: "chore(flume): ship nothing",
+      paths: ["ledger.json"],
+    }),
+  ).rejects.toThrow();
+
+  expect(await revParse(repo)).toBe(before);
+  expect(await stagedPaths()).toEqual(["bystander.md"]);
+});
 
 /** Non-empty, trimmed lines of a git listing. */
 function lines(stdout: string): string[] {
