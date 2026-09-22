@@ -500,9 +500,9 @@ async function main(): Promise<number> {
     const startedAtMs = supervisor?.atMs;
     if (supervisor !== undefined && startedAtMs === undefined) {
       console.error(
-        `[flume] status: ${STATE_ROOT_NAMES.loopLock} states no claim ` +
-          "instant (written by flume before 0.17?) — withholding this run's " +
-          "agent spend rather than totalling another run's with it",
+        `[flume] status: loop lock at ${plainPath(statusLockPath)} states no ` +
+          "claim instant (written by flume before 0.17?) — withholding this " +
+          "run's agent spend rather than totalling another run's with it",
       );
     }
     if (startedAtMs !== undefined) {

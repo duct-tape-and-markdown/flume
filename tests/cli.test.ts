@@ -2083,16 +2083,20 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
    * The lock a flume before 0.17 wrote states no instant, so there is no
    * window — and a live run's spend is withheld with a word on stderr rather
    * than totalled over every run the log holds (`docs/MIGRATING-0.17.md`).
+   *
+   * The word names the lock it read by path, the way this verb's own
+   * loop-lock refusal does: the operator is being told to go roll a file, and
+   * a relocatable state root means the artifact's bare name does not say
+   * which one.
    */
-  it("flume status withholds the spend line over a lock that states no claim instant, and says so", async () => {
+  it("flume status names the resolved loop-lock path when it withholds the spend line", async () => {
     const { dir } = await fixture("flume-status-spend-bare-", process.pid);
     try {
+      // The path the verb itself resolves, off the engine's own accessor —
+      // never a second spelling by the tester's hand.
+      const pidPath = loopLockPath(join(dir, ".flume"));
       // What the pre-0.17 supervisor left: the pid, and nothing under it.
-      await writeFile(
-        join(dir, ".flume", "loop.pid"),
-        String(process.pid),
-        "utf8",
-      );
+      await writeFile(pidPath, String(process.pid), "utf8");
 
       const r = await runCli(dir, ["status"]);
 
@@ -2102,7 +2106,14 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
       // Withheld, and named: never a total over an unbounded log, never
       // silence either (`.claude/rules/engineering.md`, "Loud or nothing").
       expect(spendLines(r.out)).toEqual([]);
-      expect(r.out).toContain("states no claim instant");
+      // The state root is relocatable, so the artifact's bare name leaves the
+      // operator to guess which root the unbounded lock sits in — and nothing
+      // else in this listing quotes the path for it, unlike the errno-carried
+      // refusals above. The same spelling this verb's loop-lock refusal
+      // prints, so one artifact reads one way throughout.
+      expect(r.out).toContain(
+        `[flume] status: loop lock at ${pidPath} states no claim instant`,
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
