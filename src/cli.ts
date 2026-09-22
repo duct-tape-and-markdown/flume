@@ -1247,7 +1247,26 @@ async function main(): Promise<number> {
     process.on("SIGINT", () => void releaseAndExit(130));
     process.on("SIGTERM", () => void releaseAndExit(143));
     mkdirSync(toNamespacedPath(flumeDir), { recursive: true });
-    const priorPid = await liveLoopPid(flumeDir);
+    // Absent is the only silent reading: `liveLoopPid` (`src/pidClaim.ts`)
+    // answers `null` for no pidfile and throws for every other read failure —
+    // a directory at the path, a permission-denied file — so a lock that is
+    // present but will not open is this arm's refusal to classify, exactly as
+    // the stop-flag guard above classifies its own probe. Outside a guard the
+    // throw escaped to `main()`'s catch as a raw stack and exit 1: the same
+    // code `another loop ... already runs` takes, naming no pid, over a lock
+    // whose holder is unknown rather than absent
+    // (`.claude/rules/engineering.md`, "Loud or nothing").
+    let priorPid: number | null;
+    try {
+      priorPid = await liveLoopPid(flumeDir);
+    } catch (err) {
+      // The I/O error carries the offending path itself; the name here comes
+      // from the accessor's own table, never a second spelling of "loop.pid".
+      console.error(
+        `[flume] loop refuses: ${STATE_ROOT_NAMES.loopLock} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_IOERR;
+    }
     if (priorPid !== null) {
       console.error(
         `[flume] another loop (pid ${priorPid}) already runs against ${flumeDir}; refusing`,

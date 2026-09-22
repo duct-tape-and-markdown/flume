@@ -151,9 +151,12 @@ Exit codes:
       exists but could not be stat'd (permission denied, a symlink
       loop, ...). Refused rather than started — an unreadable flag is
       not an absent one. Naming the path and the underlying error. Also,
-      the merging-marker dir (\`.flume/merging/\`) exists but could not be
-      listed: whether a marker stands is unknown, so the run refuses
-      rather than reading it as none.
+      the lock file (\`.flume/loop.pid\`) exists but could not be read
+      (a directory at the path, permission denied, ...): a lock whose
+      holder is unknown is not a free one, so the run refuses instead of
+      claiming it. Also, the merging-marker dir (\`.flume/merging/\`)
+      exists but could not be listed: whether a marker stands is
+      unknown, so the run refuses rather than reading it as none.
   69  Stopped on a child tick's mount-dead failure (see \`flume tick
       --help\`): the chain never resolved. The run aborts after that one
       tick instead of burning the remaining --max ticks against the same

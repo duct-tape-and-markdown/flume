@@ -467,6 +467,49 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
   );
 
   it(
+    "`flume loop` refuses naming the error when loop.pid is present but unreadable, instead of exiting 1 over a raw stack",
+    async () => {
+      const repo = await makeRepo("main");
+      try {
+        const flumeDir = join(repo.dir, ".flume");
+        const pidPath = join(flumeDir, "loop.pid");
+        await mkdir(flumeDir, { recursive: true });
+        // Structural denial of the lock file: it stats present and refuses to
+        // open, which is the one split the liveness read decides and the
+        // probe above cannot reach. Before that read had a guard the throw
+        // escaped to `main()`'s catch — a raw stack under exit 1, the same
+        // code the live-holder refusal above takes while naming a pid this
+        // case has none of.
+        denyFile(pidPath);
+
+        const r = await runCli(repo.dir, ["loop", "--max", "0"]);
+
+        expect(r.code).toBe(EX_IOERR);
+        expect(r.out).toContain(
+          "[flume] loop refuses: loop.pid failed to read",
+        );
+        // An unknown holder is never reported as a known one, and no run
+        // started over the lock.
+        expect(r.out).not.toContain("already runs");
+        expect(r.out).not.toContain("reached --max");
+        // Neither guard is left behind: the lock path still holds exactly
+        // what the fixture planted (a claim written over it would have had
+        // to remove the directory first), and the tip claim is acquired only
+        // past this refusal.
+        expect(readdirSync(pidPath)).toEqual([]);
+        const claimPath = tipClaimPath(
+          await gitCommonDir(repo.dir),
+          "refs/heads/main",
+        );
+        expect(existsSync(claimPath)).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
     "reclaims a stale pidfile (dead pid): the loop runs and drops the lock on exit",
     async () => {
       const repo = await makeRepo("main");
