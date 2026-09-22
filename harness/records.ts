@@ -48,8 +48,14 @@ import { RECORD_DIR_NAMES, RECORD_EXT } from "./layout.js";
  * for the drain to name in the plan commit body — so the overrun is loud at
  * the prose channel it belongs to rather than costing the code beside it
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * 2,000 rather than the 1,200 it opened at: a record carrying its measured
+ * evidence — the shas it verified, the file and line, the one command that
+ * reproduces it — ran 1,200 to 1,350 bytes in practice and was trimmed of
+ * exactly that evidence to fit. This admits the evidence and still refuses a
+ * design document.
  */
-export const RECORD_MAX_BYTES = 1200;
+export const RECORD_MAX_BYTES = 2000;
 
 /**
  * Every record waiting under `stateRoot`, as **host-native paths** in queue

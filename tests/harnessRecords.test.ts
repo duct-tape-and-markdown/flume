@@ -153,5 +153,5 @@ it("a record's byte cap is the package's own value, not a per-consumer knob", ()
   // against it and the build prompt announces it, and no declaration field
   // lets an environment raise it. Pinned so widening the package's
   // discipline is a deliberate edit rather than a number that drifted.
-  expect(RECORD_MAX_BYTES).toBe(1200);
+  expect(RECORD_MAX_BYTES).toBe(2000);
 });

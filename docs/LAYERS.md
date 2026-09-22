@@ -88,7 +88,7 @@ the field exists the block is a position held rather than drift
 (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
 
 **Which way a finding travels.** Into `.flume/inbox/` here, one record per
-finding, under 1,200 bytes, saying what was observed, where, and why it
+finding, under 2,000 bytes, saying what was observed, where, and why it
 matters (`.flume/PROTOCOL.md`, *Records: one file each*). The plan slice
 drains it into an entry, a question for the operator, or a declined line
 with its reason, and the record is deleted. The repository is public: a
