@@ -970,9 +970,9 @@ async function driveStartupIoRefusals(): Promise<string[]> {
 
       expect(code, refusal.artifact).toBe(EX_IOERR);
       // The artifact, by the engine's own name for it, and the read it
-      // failed at. The name rather than the path: two of these refusals
-      // state the path and the lock's states the artifact and lets the
-      // errno carry the rest, so the name is what all three report.
+      // failed at. The name rather than the path: all three refusals state
+      // the path they resolved, and the name is the last segment of each, so
+      // the name is what all three report however the root is placed.
       expect(out, refusal.artifact).toContain(refusal.artifact);
       expect(out, refusal.artifact).toContain(refusal.failed);
       // And the refusal was taken instead of a run, not beside one.

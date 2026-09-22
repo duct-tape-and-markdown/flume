@@ -336,8 +336,9 @@ async function main(): Promise<number> {
     let supervisor: PidClaim | undefined;
     let loopLockPresent: boolean;
     let loopClaim: PidClaim | null = null;
+    const statusLockPath = namespacedJoin(loopLockPath(flumeDir));
     try {
-      loopLockPresent = existsLoud(namespacedJoin(loopLockPath(flumeDir)));
+      loopLockPresent = existsLoud(statusLockPath);
       // The claim read sits inside this guard, not after it: `liveLoopClaim`
       // answers `null` for absent and throws for every other read failure, so
       // a `loop.pid` that stats but will not open (a directory at the path, a
@@ -347,10 +348,8 @@ async function main(): Promise<number> {
       // "Subcommand surface").
       if (loopLockPresent) loopClaim = await liveLoopClaim(flumeDir);
     } catch (err) {
-      // The I/O error carries the offending path itself; the name here comes
-      // from the accessor's own table, never a second spelling of "loop.pid".
       console.error(
-        `[flume] status: ${STATE_ROOT_NAMES.loopLock} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] status: loop lock at ${plainPath(statusLockPath)} failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }
@@ -1260,10 +1259,8 @@ async function main(): Promise<number> {
     try {
       priorPid = await liveLoopPid(flumeDir);
     } catch (err) {
-      // The I/O error carries the offending path itself; the name here comes
-      // from the accessor's own table, never a second spelling of "loop.pid".
       console.error(
-        `[flume] loop refuses: ${STATE_ROOT_NAMES.loopLock} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] loop refuses: loop lock at ${plainPath(lockPath)} failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }

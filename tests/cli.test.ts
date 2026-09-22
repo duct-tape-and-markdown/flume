@@ -50,6 +50,7 @@ import { RUNTIME_IGNORES } from "../src/runtimeIgnores.ts";
 import {
   computeStateRootRel,
   DEFAULT_PENDING_REL,
+  loopLockPath,
   resolvePendingPath,
 } from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
@@ -467,26 +468,30 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
   );
 
   it(
-    "`flume loop` refuses naming the error when loop.pid is present but unreadable, instead of exiting 1 over a raw stack",
+    "flume loop refuses an unreadable loop.pid naming the resolved lock path",
     async () => {
       const repo = await makeRepo("main");
       try {
         const flumeDir = join(repo.dir, ".flume");
-        const pidPath = join(flumeDir, "loop.pid");
+        // The path the verb itself resolves, off the engine's own accessor —
+        // never a second spelling by the tester's hand.
+        const pidPath = loopLockPath(flumeDir);
         await mkdir(flumeDir, { recursive: true });
         // Structural denial of the lock file: it stats present and refuses to
         // open, which is the one split the liveness read decides and the
         // probe above cannot reach. Before that read had a guard the throw
         // escaped to `main()`'s catch — a raw stack under exit 1, the same
         // code the live-holder refusal above takes while naming a pid this
-        // case has none of.
+        // case has none of. EISDIR carries no path of its own, so the
+        // refusal states the one it read or the operator gets a bare name
+        // under a state root that may be relocated.
         denyFile(pidPath);
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);
 
         expect(r.code).toBe(EX_IOERR);
         expect(r.out).toContain(
-          "[flume] loop refuses: loop.pid failed to read",
+          `[flume] loop refuses: loop lock at ${pidPath} failed to read`,
         );
         // An unknown holder is never reported as a known one, and no run
         // started over the lock.
@@ -939,22 +944,30 @@ describe("flume status — supervisor liveness", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it("flume status exits 74 when loop.pid is present but cannot be read", async () => {
+  it("flume status refuses an unreadable loop.pid naming the resolved lock path", async () => {
     const dir = await mkFixtureRoot("flume-status-unreadable-pid-");
     try {
       const flumeDir = join(dir, ".flume");
+      // The path the verb itself resolves, off the engine's own accessor —
+      // never a second spelling by the tester's hand.
+      const pidPath = loopLockPath(flumeDir);
       // A directory at the path stats fine and refuses to open (EISDIR), so
       // it separates the presence probe from the claim read the way a symlink
       // loop cannot: the case above never reached `liveLoopClaim`, and this
       // one is the whole of what that reader decides. Before the read joined
       // the probe's guard it threw past the verb into `main()`'s catch — a
       // raw stack and exit 1, the one exit `status` is specced never to take.
-      await mkdir(join(flumeDir, "loop.pid"));
+      // EISDIR carries no path of its own, so the refusal states the one it
+      // read or the operator gets a bare name under a state root that may be
+      // relocated.
+      await mkdir(pidPath);
 
       const r = await runCli(dir, ["status"]);
 
       expect(r.code).toBe(EX_IOERR);
-      expect(r.out).toContain("[flume] status: loop.pid failed to read");
+      expect(r.out).toContain(
+        `[flume] status: loop lock at ${pidPath} failed to read`,
+      );
       expect(r.out).not.toContain("supervisor pid");
       expect(r.out).not.toContain("process dead — stale");
     } finally {
@@ -4431,8 +4444,11 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
   // accessor being wrapped, not on a filename spelled here.
   const src = readFileSync(CLI_SRC_PATH, "utf8");
 
-  it("builds the status-check loop-lock path (existsLoud) through namespacedJoin", () => {
-    expect(src).toMatch(/existsLoud\(namespacedJoin\(loopLockPath\(flumeDir\)\)\)/);
+  it("builds the status-check loop-lock path (statusLockPath) through namespacedJoin, and existsLoud reads it from statusLockPath", () => {
+    expect(src).toMatch(
+      /const statusLockPath = namespacedJoin\(loopLockPath\(flumeDir\)\);/,
+    );
+    expect(src).toMatch(/existsLoud\(statusLockPath\)/);
   });
 
   it("builds the loop-lock path (lockPath) through namespacedJoin, and writeFileSync/unlinkSync both read it from lockPath", () => {
