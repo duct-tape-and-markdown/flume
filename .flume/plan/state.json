@@ -131,7 +131,9 @@
       "harness/cursorWindow.ts",
       "harness/friction.ts",
       "harness/gitRange.ts",
-      "harness/sliceWindow.ts"
+      "harness/sliceWindow.ts",
+      "src/singletonTick.ts",
+      "src/tickVerdict.ts"
     ]
   },
   "drainedRuns": {
