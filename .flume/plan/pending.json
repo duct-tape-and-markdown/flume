@@ -1,1 +1,61 @@
-[]
+[
+  {
+    "tag": "THE-OCCUPIED-PATH-LEG-READS-THE-SWEEPS-STAMP",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/worktrees.ts",
+          "description": "occupied-path leg judges on the stamp beside the registry, per the cite"
+        },
+        {
+          "path": "tests/worktrees.test.ts",
+          "description": "the refusal case and its stamped-path counterpart"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Share the sweep's stamp evidence with createWorktree's occupied-path leg: clear a registered path only where this state root stamped it, else refuse",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "Placement — the worktree base"
+    },
+    "acceptance": "A registered worktree path this state root did not stamp refuses the tick naming the path; one it did stamp is still cleared before `worktree add`.",
+    "tests": [
+      "createWorktree refuses an occupied worktree path git registers but this state root did not stamp"
+    ],
+    "pins": [
+      "createWorktree clears an occupied worktree path this state root stamped"
+    ],
+    "notes": "The two sides disagree today: the sweep removes only what `stampWorktree` named for this root, while the occupied-path leg removes on the registry alone — so a colliding dirName under a shared base takes a sibling's live tree out from under it. `stampedStateRoot` is the read to share. Pre-stamp residue now refuses rather than being cleared: the same trade *Startup sweep* already took."
+  },
+  {
+    "tag": "THE-BUILT-INS-WALK-IS-ARMED-LIKE-ITS-SIBLINGS",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/docWalk.ts",
+          "description": "a supplied-member arm beside the declaration-resolved one"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "built-ins walk moves onto docWalk; restatement case added"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Arm the built-ins walk through docWalk with a supplied member set, and pair it with the restatement case its three siblings carry",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "The built-ins walk arms through `docWalk` like the page's other three, and a second inventory of the gate set beside the bullets reds.",
+    "pins": [
+      "docs/CHAIN-AUTHORING.md's built-ins section names the gate set in one place"
+    ],
+    "notes": "`builtInsSection()` plus the two cases' own vacuity and anchor asserts is the fourth hand-spelling of what `docWalk` holds; it cannot use it because the set comes off `Object.keys(builtinGates)`, not a TS interface. The supplied set stays computed — never a hand list beside the module (*Derived state is computed, never restated beside its source*) — and keeps the `member` anchor."
+  }
+]
