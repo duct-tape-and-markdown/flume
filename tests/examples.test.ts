@@ -2038,7 +2038,26 @@ describe("docs/CHAIN-AUTHORING.md — the built-ins list walks the gate module",
       cmd: "true",
       args: [],
     });
-    /** Every runtime export of the module, as the gate it is or the one it builds. */
+    /**
+     * Every runtime export of the module, as the gate it is or the one it
+     * builds. Declared divergence from `.claude/rules/engineering.md`,
+     * *Derived state is computed, never restated beside its source*: this is
+     * a hand-spelled second listing of a set `Object.keys(builtinGates)`
+     * already yields, and the sibling case walking that namespace is the
+     * reason a reader arrives here expecting no such list.
+     *
+     * The divergence is the right depth because the copy is not the set — it
+     * is the classification. Regenerating it is not mechanical: a factory
+     * export has to be *called*, with arguments only a reader who knows that
+     * gate can supply, and which exports are factories is precisely what this
+     * case exists to judge. Deriving it would make the subject an assumption.
+     *
+     * The refusal that bounds it is the `toEqual` immediately below
+     * (*Loud or nothing*): the keys are read back against the walked exports
+     * before the composed set is computed, so a gate added to the module reds
+     * here rather than dropping out of the comparison. The copy cannot go
+     * stale silently — only loudly.
+     */
     const instances: Record<string, Gate> = {
       shellGate: probe,
       tscGate: builtinGates.tscGate,
