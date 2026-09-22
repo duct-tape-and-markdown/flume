@@ -148,9 +148,11 @@ function validateNoDeadDeclarations(chain: Chain): void {
  * tsx 4.21 falls through to a CJS parse of the compiled output and Node's
  * CJS loader rejects the `import`/`export` syntax outright; tsx 4.23
  * instead fails resolution one step earlier, `ERR_MODULE_NOT_FOUND` against
- * a path carrying its internal `tsImport` `?namespace=` query, percent-
- * encoded because the failed resolution treated the query as part of a
- * literal file path. Declining to support CJS-context hosts; this
+ * a path carrying its internal `tsImport` `?namespace=` query. That query
+ * reaches the message in either spelling — literal where the resolver
+ * reports the specifier as written, percent-encoded where it round-tripped
+ * the specifier through a URL first — and a win32 host reported the literal
+ * one, so both are matched. Declining to support CJS-context hosts; this
  * class exists only so `loadChainModule`'s caller can refuse with a fix
  * instead of relaying either raw shape as a stack trace.
  */
@@ -169,7 +171,7 @@ export class CjsContextLoadError extends Error {
 
 const CJS_CONTEXT_IMPORT_OUTSIDE_MODULE =
   /Cannot use import statement outside a module/;
-const CJS_CONTEXT_NAMESPACE_QUERY = /%3Fnamespace%3D/i;
+const CJS_CONTEXT_NAMESPACE_QUERY = /(?:\?|%3F)namespace(?:=|%3D)/i;
 
 /**
  * Empirical match only — never a false positive at the cost of missing

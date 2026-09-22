@@ -14491,15 +14491,17 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
  * A CJS-context host (package.json lacking `"type": "module"`)
  * must refuse chain load with a usage-shaped `CjsContextLoadError`, not
  * relay tsx's raw loader stack. Two empirical signatures (build's own
- * `isCjsContextLoadFailure`, `Dispatcher.ts`): tsx 4.21's CJS-fallback parse
- * failure ("Cannot use import statement outside a module") — real, this
- * installed tsx (4.21.0) reproduces it directly — and tsx 4.23's
- * `ERR_MODULE_NOT_FOUND` against a path carrying its percent-encoded
- * `?namespace=` query, which this installed tsx never emits on its own and
- * so is exercised via the `tsx/esm/api` partial mock declared at the top of
- * this file. A third case proves the detector isn't trigger-happy: a
- * genuinely missing dependency (plain `ERR_MODULE_NOT_FOUND`, no namespace
- * artifact) must surface unshadowed.
+ * `isCjsContextLoadFailure` (`src/chainLoad.ts`)): tsx 4.21's CJS-fallback
+ * parse failure ("Cannot use import statement outside a module") — real,
+ * this installed tsx (4.21.0) reproduces it directly — and tsx 4.23's
+ * `ERR_MODULE_NOT_FOUND` against a path carrying its `?namespace=` query,
+ * which this installed tsx never emits on its own and so is exercised via
+ * the `tsx/esm/api` partial mock declared at the top of this file. That
+ * query arrives in either spelling — a win32 consumer reported the literal
+ * one, node percent-encodes it where the specifier round-tripped through a
+ * URL — so each spelling gets its own case. A final case proves the
+ * detector isn't trigger-happy: a genuinely missing dependency (plain
+ * `ERR_MODULE_NOT_FOUND`, no namespace artifact) must surface unshadowed.
  */
 describe("Dispatcher — CJS-context host chain-load refusal", () => {
   async function writeCfg(cfg: string, chainSrc: string): Promise<void> {
@@ -14538,6 +14540,30 @@ describe("Dispatcher — CJS-context host chain-load refusal", () => {
       const namespaceErr = Object.assign(
         new Error(
           `Cannot find module '${join(cfg, "chain.ts")}%3Fnamespace%3D1234567890' ` +
+            `imported from somewhere`,
+        ),
+        { code: "ERR_MODULE_NOT_FOUND" },
+      );
+      vi.mocked(tsImport).mockRejectedValueOnce(namespaceErr);
+
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toMatchObject({
+        name: "CjsContextLoadError",
+        message: expect.stringContaining('"type": "module"'),
+      });
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("tsx 4.23 signature — ERR_MODULE_NOT_FOUND with a literal ?namespace= query throws CjsContextLoadError naming the fix", async () => {
+    const cfg = await mkTempDir("flume-cfg-cjs-namespace-literal-");
+    try {
+      await writeCfg(cfg, `export default {};\n`);
+      // The spelling the win32 consumer reported on 0.17.0: the resolver
+      // names the specifier as tsx appended it, unencoded.
+      const namespaceErr = Object.assign(
+        new Error(
+          `Cannot find module '${join(cfg, "chain.ts")}?namespace=1234567890' ` +
             `imported from somewhere`,
         ),
         { code: "ERR_MODULE_NOT_FOUND" },
