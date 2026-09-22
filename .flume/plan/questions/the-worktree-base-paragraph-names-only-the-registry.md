@@ -48,5 +48,6 @@ artifact is yours. If you would rather the section name one combined
 wording follows.
 
 The consumer-facing twin of this — `docs/MIGRATING-0.17.md`'s shared-base
-paragraph, which attributes the same refusal to the registry judgment — is
-in build's fence and is queued as `THE-SHARED-BASE-REFUSAL-NAMES-THE-STAMP`.
+paragraph — has shipped: it now attributes the refusal to the stamp and names
+the hand-clearance that arm costs. So the note and this section disagree until
+this one is edited.
