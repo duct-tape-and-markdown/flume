@@ -34,7 +34,15 @@
       "a ledger-commit refusal outside a parse failure is a failed tick, not a throw out of Dispatcher.tick"
     ],
     "pins": [],
-    "notes": "commitPaths now runs `git commit --only`, which refuses on named paths with no change and on a partial commit under a paused merge or cherry-pick — both reachable from ordinary operator state, both landing on the catch that folds the verdict for PendingParseFailure alone and re-throws bare otherwise, losing tags already on trunk. Widen the carry rather than classify the cause: a disk error and an index.lock always took that arm too."
+    "notes": "commitPaths now runs `git commit --only`, which refuses on named paths with no change and on a partial commit under a paused merge or cherry-pick — both reachable from ordinary operator state, both landing on the catch that folds the verdict for PendingParseFailure alone and re-throws bare otherwise, losing tags already on trunk. Widen the carry rather than classify the cause: a disk error and an index.lock always took that arm too.",
+    "observedFiles": [
+      ".flume/plan/notes/WAVE-VERDICT-SURVIVES-ANY-LEDGER-COMMIT-REFUSAL.md",
+      "src/Dispatcher.ts",
+      "src/PendingSchema.ts",
+      "src/waveTick.ts",
+      "tests/Dispatcher.test.ts",
+      "tests/cli.test.ts"
+    ]
   },
   {
     "tag": "HARNESS-DECLARATION-CARRIES-WORKTREES-BASE",
@@ -84,86 +92,16 @@
     "pins": [
       "a declaration naming no worktreesBase leaves Chain.worktreesBase absent"
     ],
-    "notes": "Downstream report (temper, on 0.17): it places worktrees off-repo for the vector `spec/worktrees.md`, *Placement — the worktree base* names, and only FLUME_WORKTREES_DIR reaches that today. Pass through whole, no default. Both docs lists are pinned against DeclarationSchema's field set (tests/harnessDeclaration.test.ts), so each follows or reds. The spec table's row — and its count of fields that are values with behavior — is the human's."
-  },
-  {
-    "tag": "CITATION-PIN-RESOLVES-A-DOCS-PAGE-SECTION-SIGN",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "tests/helpers/pageAnchors.ts",
-          "description": "the `§ N` arm beside the fragment arm, off the same heading reader"
-        },
-        {
-          "path": "tests/pageAnchors.test.ts",
-          "description": "the two cases below"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "A `§ N` cross-reference on a docs page resolves against that page's own numbered headings, and is prose on a page that has none",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "A renumbered docs section cannot leave a `§ N` on its own page standing, and a page with no numbered headings is silent rather than red.",
-    "tests": [
-      "a `§ N` on a docs page resolves against that page's own numbered headings",
-      "a docs page with no numbered headings leaves its `§ N` as prose"
-    ],
-    "pins": [],
-    "notes": "Ten docs pages carry numbered headings and `§ N` refs; CLI.md, INTENT.md and LAYERS.md carry none and take the prose arm. Refs aiming at another page's numbering (MIGRATING-0.11.md, CASCADE-DRY-RUN.md) are judged against their own page, the reading the rule states. The prior attempt reverted on the section-cite pin, not on its own work: its new comment illustrated the shape as a literal page-and-section pair, which that arm now reds — spell the placeholder `<page>.md`.",
+    "notes": "Downstream report (temper, on 0.17): it places worktrees off-repo for the vector `spec/worktrees.md`, *Placement — the worktree base* names, and only FLUME_WORKTREES_DIR reaches that today. Pass through whole, no default. Both docs lists are pinned against DeclarationSchema's field set (tests/harnessDeclaration.test.ts), so each follows or reds. The spec table's row — and its count of fields that are values with behavior — is the human's.",
     "observedFiles": [
-      ".flume/plan/notes/CITATION-PIN-RESOLVES-A-DOCS-PAGE-SECTION-SIGN.md",
-      "docs/MIGRATING-0.15.md",
-      "docs/MIGRATING-0.16.md",
-      "docs/MIGRATING-0.17.md",
-      "docs/PRD-dock-collapse.md",
-      "tests/helpers/pageAnchors.ts",
-      "tests/pageAnchors.test.ts"
+      ".flume/plan/notes/HARNESS-DECLARATION-CARRIES-WORKTREES-BASE.md",
+      "docs/CHAIN-AUTHORING.md",
+      "docs/LAYERS.md",
+      "harness/chain.ts",
+      "harness/declaration.ts",
+      "tests/harnessChain.test.ts",
+      "tests/harnessDeclaration.test.ts"
     ]
-  },
-  {
-    "tag": "EVERY-VERBS-HELP-NAMES-THE-IO-REFUSAL",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/cliHelp.ts",
-          "description": "wake, sleep, stop and render gain a 74 row; the five pages that carry one name the discovery read too"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "the same four verb sections, which state their ranges in prose"
-        },
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "the two cases below"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Every subcommand's --help names EX_IOERR and the files that reach it, the state root at discovery included",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Exit codes — the run never lies to CI"
-    },
-    "acceptance": "No subcommand page omits the code its own process can return, and the pin holds for a verb added later.",
-    "tests": [
-      "every subcommand's --help names exit 74",
-      "docs/CLI.md's wake, sleep, stop and render sections name exit 74"
-    ],
-    "pins": [],
-    "notes": "Bay discovery (`resolveRepoRoot`, top of `main`) returns 74 for every verb, so the four silent pages — wake, sleep, stop, render — already understate their range, and the four docs sections state exit ranges that omit it outright."
   },
   {
     "tag": "TEST-FIXTURE-HOMES-FOR-THE-REPO-CHAIN-AND-THE-HELP-ROWS",
