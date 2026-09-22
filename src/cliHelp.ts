@@ -114,6 +114,13 @@ Exit codes:
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
       fix the chain (or its state root) and re-run.
+  74  I/O error (EX_IOERR): a file the tick must read is present and
+      unreadable — the state root (\`.flume\`), at the bay discovery every
+      verb starts with; or the verdict history
+      (\`.flume/tick-verdicts.jsonl\`), which the tick reads before appending
+      its own record. In the second case the tick's work has already landed
+      and the tick printed its own summary — recording it is what failed, so
+      there is nothing to re-run. Naming the file and the underlying error.
   78  Terminal misconfiguration (EX_CONFIG): every awake flag names a phase
       the chain does not declare. The flags are left on disk — inspect, then
       \`flume sleep <phase>\` or fix the chain.

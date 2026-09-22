@@ -60,6 +60,7 @@ import {
   clearTickVerdict,
   readTickVerdicts,
   totalAgentUsageByPhase,
+  VerdictHistoryUnreadableError,
   writeTickVerdict,
   type TickVerdict,
 } from "./tickVerdict.js";
@@ -1092,7 +1093,34 @@ async function main(): Promise<number> {
       const outcome = await tickRun;
       console.log(outcome.summary);
       if (outcome.verdict) {
-        await writeTickVerdict(flumeDir, outcome.verdict);
+        // The verdict record's own read refusal, mapped at the same boundary
+        // as every other stat refusal in this file: `writeTickVerdict` reads
+        // the history before appending to it, and a history that is present
+        // and unreadable refuses there rather than reporting a repo that has
+        // never ticked (src/tickVerdict.ts). Uncaught, that throw reached
+        // `main().catch` and left the operator a raw stack and an exit 1 —
+        // the tick's own work misread as a harness error
+        // (`.claude/rules/platform-facts.md`, "Exit codes come from
+        // `sysexits.h`"). The class is what makes this a statement rather
+        // than a guess at an errno's prose: everything else out of the call
+        // is an ordinary throw and keeps the exit-1 harness-error route.
+        try {
+          await writeTickVerdict(flumeDir, outcome.verdict);
+        } catch (err) {
+          if (!(err instanceof VerdictHistoryUnreadableError)) throw err;
+          console.error(
+            `[flume] tick: ${STATE_ROOT_NAMES.tickVerdictsLog} failed to read: ${err.message}`,
+          );
+          // What the code does *not* mean, said outright: the tick ran, its
+          // commits are on the tip, and the summary printed above is its
+          // outcome. Only the recording of that outcome failed, so an
+          // operator reading 74 never goes looking for work to re-run.
+          console.error(
+            "[flume] tick: this tick's own work already landed — the summary " +
+              "above is its outcome, and recording it is what failed.",
+          );
+          return EX_IOERR;
+        }
       }
       // Fail loudly on the classifying exits so the supervisor — and any human
       // watching exit codes — classifies the failure without reading logs.

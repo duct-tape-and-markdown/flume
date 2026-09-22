@@ -697,11 +697,47 @@ function isTickVerdict(rec: unknown): rec is TickVerdict {
 }
 
 /**
+ * The history log was present and unreadable when a tick went to record its
+ * own verdict — the one failure {@link writeTickVerdict} reports as a class
+ * of its own rather than letting escape as a bare I/O throw.
+ *
+ * A class because the caller's answer to it is an exit code, not a stack:
+ * `flume tick` maps it to `EX_IOERR` at the process boundary (spec/loop.md,
+ * *Exit codes — the run never lies to CI*), and a thrown type is what lets
+ * that mapping read a statement instead of pattern-matching an errno's prose
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). Every other
+ * failure out of that call — the state root's mkdir, either write — stays an
+ * ordinary throw and reaches the harness-error exit, because neither is a
+ * file that was read.
+ *
+ * Thrown only past the latest-tick write, so a caller holding one has a tick
+ * whose work already landed and whose outcome it has already reported; what
+ * failed is the recording.
+ */
+export class VerdictHistoryUnreadableError extends Error {
+  /** The history log the read refused on, resolved. */
+  readonly path: string;
+
+  constructor(path: string, cause: unknown) {
+    super(`${path}: ${cause instanceof Error ? cause.message : String(cause)}`, {
+      cause,
+    });
+    this.name = "VerdictHistoryUnreadableError";
+    this.path = path;
+  }
+}
+
+/**
  * Write this tick's verdict: overwrite the latest-tick file `superviseLoop`
  * reads between iterations, and append the same record to the bounded
  * history log the exported `readTickVerdicts` accessor serves. Called by
  * the CLI's `tick` command, once per real process, from the `TickVerdict`
  * its own `dispatcher.tick()` call returned.
+ *
+ * Throws {@link VerdictHistoryUnreadableError} when the history read below
+ * refuses — the append cannot proceed over a log it never resolved, and
+ * treating the refusal as an empty history would overwrite every record the
+ * file holds with this one (`readTickVerdicts`, below).
  */
 export async function writeTickVerdict(
   flumeDir: string,
@@ -715,7 +751,12 @@ export async function writeTickVerdict(
     JSON.stringify(verdict),
     "utf8",
   );
-  const history = await readTickVerdicts(flumeDir);
+  let history: TickVerdict[];
+  try {
+    history = await readTickVerdicts(flumeDir);
+  } catch (err) {
+    throw new VerdictHistoryUnreadableError(tickVerdictsLogPath(flumeDir), err);
+  }
   const bounded = [...history, verdict].slice(-MAX_TICK_VERDICTS);
   await writeFile(
     namespacedJoin(tickVerdictsLogPath(flumeDir)),
@@ -775,10 +816,12 @@ export async function readTickVerdict(
  * the read past it carries no catch, so a history log that is present and
  * unreadable refuses rather than answering "no history" — the one answer
  * that is indistinguishable from a repo that has never ticked
- * (`.claude/rules/engineering.md`, *Loud or nothing*). `flume log` and
- * `flume status` classify that refusal as `EX_IOERR` (spec/cli.md);
- * `writeTickVerdict` above lets it stand, because reading the log as empty
- * there would overwrite the whole history with this one record.
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). `flume log`,
+ * `flume status` and `flume tick` each classify that refusal as `EX_IOERR`
+ * (spec/cli.md; spec/loop.md, *Exit codes — the run never lies to CI*);
+ * `writeTickVerdict` above re-throws it as
+ * {@link VerdictHistoryUnreadableError} rather than reading the log as
+ * empty, which would overwrite the whole history with this one record.
  */
 export async function readTickVerdicts(
   flumeDir: string,

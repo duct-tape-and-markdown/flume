@@ -26,7 +26,7 @@ import { delimiter, dirname, join, relative, win32 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   CLI_MODULE_IDENTITY,
@@ -52,6 +52,8 @@ import {
   DEFAULT_PENDING_REL,
   loopLockPath,
   resolvePendingPath,
+  STATE_ROOT_DIRNAME,
+  STATE_ROOT_NAMES,
   stopFlagPath,
 } from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
@@ -68,7 +70,7 @@ import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { HERMETIC_ENV_STRIP_KEYS, hermeticEnv } from "./helpers/gitEnv.ts";
-import { makeScratchRepo } from "./helpers/scratchRepo.ts";
+import { makeScratchRepo, type ScratchRepo } from "./helpers/scratchRepo.ts";
 import {
   CLI,
   SPAWN_BUDGET_MS,
@@ -3265,6 +3267,147 @@ describe("flume tick — one chain application per process (ONE-CHAIN-APPLICATIO
     },
     SPAWN_BUDGET_MS,
   );
+});
+
+/**
+ * One `--help` exit-code row, folded to a single line: the row `code` opens
+ * through the wrapped continuations beneath it, ending where the next code
+ * the block lists begins.
+ *
+ * One row rather than the block, because the claim below is about one row's
+ * cause list — a read handing back the whole block would turn on whatever
+ * the neighbouring rows happen to quote (`.claude/rules/posture-sweep.md`,
+ * *a negative assertion over a whole rendered artifact*). The block-wide
+ * reader lives beside the range pins it serves, in `tests/cliHelp.test.ts`.
+ */
+function helpExitCodeRow(help: string, code: number): string {
+  const at = help.indexOf(`\n  ${code}  `);
+  expect(at, `the block lists no ${code} row`).toBeGreaterThan(-1);
+  const [opening, ...rest] = help.slice(at + 1).split("\n");
+  const row = [opening!];
+  for (const line of rest) {
+    // A continuation is indented past the column a code sits in; the next
+    // code, and anything unindented, ends the row.
+    if (!/^ {6}\S/.test(line)) break;
+    row.push(line.trim());
+  }
+  return row.join(" ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * spec/loop.md "Exit codes — the run never lies to CI": `EX_IOERR` is
+ * cross-cutting, and `flume tick` reaches it on two files. The state root at
+ * bay discovery is the one the verb already classified; the verdict history
+ * is this suite's subject — `writeTickVerdict` reads that log before
+ * appending the tick's own record, and `readTickVerdicts` refuses a log that
+ * is present and unreadable rather than answering "no history"
+ * (src/tickVerdict.ts). Uncaught, that throw escaped to `main().catch` and
+ * an operator read a raw stack and an exit 1 over a tick whose work had
+ * already landed.
+ *
+ * Every arm is driven for real, once for the suite: two `flume tick` runs
+ * that reach the two reads, and one `flume tick --help`, so the row an
+ * operator reads is compared against the refusals the verb really takes
+ * rather than against a hand copy (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*).
+ */
+describe("flume tick — EX_IOERR over an unreadable verdict history (spec/loop.md \"Exit codes — the run never lies to CI\")", () => {
+  let repo: ScratchRepo;
+  /** The tick that recorded cleanly, before the history was denied. */
+  let recorded: { out: string; code: number };
+  /** Whether that tick left a history log behind — the denial's subject. */
+  let historyRecorded = false;
+  /** The same tick again, over a history denied at its own read path. */
+  let refused: { out: string; code: number };
+  /** A tick whose bay discovery cannot stat the state root. */
+  let undiscoverable: { out: string; code: number };
+  /** What `flume tick --help` really printed. */
+  let helpOut = "";
+
+  beforeAll(async () => {
+    repo = await makeScratchRepo("flume-tick-verdict-io-", "main");
+    await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+    const flumeDir = join(repo.dir, ".flume");
+
+    new Baton(flumeDir).wake("probe");
+    recorded = await runCli(repo.dir, ["tick"]);
+    historyRecorded = existsSync(tickVerdictsLogPath(flumeDir));
+
+    // Denied at the read path itself (`tests/helpers/denial.ts`): the stat
+    // still finds the entry and the read fails non-ENOENT, which is the
+    // split `readTickVerdicts` must refuse on. The phase is woken again
+    // because the chain's handoff declares nothing.
+    denyFile(tickVerdictsLogPath(flumeDir));
+    new Baton(flumeDir).wake("probe");
+    refused = await runCli(repo.dir, ["tick"]);
+
+    // The other file the row names, in a fixture of its own: a
+    // self-referential state root raises ELOOP at the first stat bay
+    // discovery makes, which no chain load or baton read is reached past.
+    const bay = await mkFixtureRoot("flume-tick-bay-io-");
+    try {
+      // The root plants a real bay of its own; this arm's subject is a bay
+      // that cannot be stat'd at all, so the planted one is replaced rather
+      // than nested under.
+      const bayPath = join(bay, STATE_ROOT_DIRNAME);
+      await rm(bayPath, { recursive: true, force: true });
+      await symlink(STATE_ROOT_DIRNAME, bayPath);
+      undiscoverable = await runCli(bay, ["tick"]);
+    } finally {
+      await rm(bay, { recursive: true, force: true });
+    }
+
+    helpOut = (await runCli(process.cwd(), ["tick", "--help"])).out;
+  }, SPAWN_BUDGET_MS);
+
+  afterAll(async () => {
+    await repo?.cleanup();
+  });
+
+  it("flume tick exits 74 when the verdict history is present and unreadable", () => {
+    // Non-vacuity: the same chain over a readable history ran its phase and
+    // recorded one, so the refusal below is the denial's and not a tick that
+    // never got as far as its own verdict (`.claude/rules/engineering.md`,
+    // *A green verdict is proven non-vacuous*).
+    expect(recorded.code).toBe(0);
+    expect(recorded.out).toMatch(/tick → probe/);
+    expect(historyRecorded).toBe(true);
+
+    expect(refused.code).toBe(EX_IOERR);
+  });
+
+  it("flume tick's verdict refusal names the history file and says the tick's own work already landed", () => {
+    expect(refused.code).toBe(EX_IOERR);
+    // The engine's own name for the artifact, never a second spelling here.
+    expect(refused.out).toContain(STATE_ROOT_NAMES.tickVerdictsLog);
+    expect(refused.out).toContain("failed to read");
+    // And what 74 does not mean: the phase ran and its summary is in this
+    // same output, so the refusal has work to disclaim.
+    expect(refused.out).toMatch(/tick → probe/);
+    expect(refused.out).toContain("already landed");
+  });
+
+  it("flume tick --help names exit 74 and the files that reach it", () => {
+    // Both arms reached their read for real, so the row is compared against
+    // causes the verb really has.
+    expect(undiscoverable.code).toBe(EX_IOERR);
+    expect(undiscoverable.out).toContain("bay discovery");
+    expect(refused.code).toBe(EX_IOERR);
+
+    const row = helpExitCodeRow(helpOut, EX_IOERR);
+    // Each file as the row spells it — the separator is the help text's,
+    // never this host's, since these are paths the page writes and not paths
+    // this process composed. The state root is read as its own backticked
+    // token, so the log's own path cannot stand in for it.
+    expect(row).toContain(`\`${STATE_ROOT_DIRNAME}\``);
+    expect(row).toContain(
+      `${STATE_ROOT_DIRNAME}/${STATE_ROOT_NAMES.tickVerdictsLog}`,
+    );
+    // The read is this row's, not the block's: the neighbouring rows carry
+    // causes of their own, and a reader handing back everything would pass
+    // here over a 74 row that named nothing.
+    expect(row).not.toContain("Mount-dead");
+  });
 });
 
 describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful stop — the stop flag\")", () => {

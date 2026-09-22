@@ -211,6 +211,11 @@ it("the top-level help names no job verb", () => {
  */
 const TICK_PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
   [1, "detached HEAD or held tip claim refusal, or a harness error"],
+  [
+    74,
+    "the state root at bay discovery, or the verdict history the tick " +
+      "records into, is present and unreadable",
+  ],
 ]);
 
 /*
