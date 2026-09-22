@@ -377,7 +377,7 @@ async function main(): Promise<number> {
       stopFlagPresent = existsLoud(namespacedJoin(statusStopPath));
     } catch (err) {
       console.error(
-        `[flume] status: ${STATE_ROOT_NAMES.stopFlag} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] status: stop flag at ${statusStopPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }

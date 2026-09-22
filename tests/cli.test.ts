@@ -52,6 +52,7 @@ import {
   DEFAULT_PENDING_REL,
   loopLockPath,
   resolvePendingPath,
+  stopFlagPath,
 } from "../src/paths.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
@@ -1745,23 +1746,29 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
     SPAWN_BUDGET_MS,
   );
 
-  it("`flume status` exits EX_IOERR on a non-ENOENT stop-flag stat, instead of printing no stop line", async () => {
+  it("`flume status`'s unstattable stop-flag refusal names the resolved stop-flag path, not the bare artifact name", async () => {
     const dir = await mkFixtureRoot("flume-status-stop-unstattable-");
     try {
       const flumeDir = join(dir, ".flume");
+      // The path the verb itself resolves, off the engine's own accessor —
+      // never a second spelling by the tester's hand.
+      const stopPath = stopFlagPath(flumeDir);
       // A self-referential symlink reproduces a non-ENOENT stat failure
       // (ELOOP) without relying on permission bits a root-run test could
       // bypass — the same shape the loop.pid case above uses. `existsSync`
       // collapses it to "absent", which printed no stop line at all over a
       // flag that is there, telling the operator there is no pending stop
       // (`.claude/rules/engineering.md`, "Loud or nothing").
-      await symlink("stop", join(flumeDir, "stop"));
+      await symlink("stop", stopPath);
 
       const r = await runCli(dir, ["status"]);
 
       expect(r.code).toBe(EX_IOERR);
-      expect(r.out).toContain(join(flumeDir, "stop"));
-      expect(r.out).toContain("failed to stat");
+      // The refusal's own phrasing, not the errno's rendering of the path:
+      // ELOOP happens to quote the offending path, so a bare `toContain`
+      // over the path passed while the message said `stop failed to stat`
+      // and left the operator to guess which state root that name sat in.
+      expect(r.out).toContain(`stop flag at ${stopPath} failed to stat`);
       expect(r.out).not.toContain("the next `loop` refuses");
       expect(r.out).not.toContain("will finish its in-flight tick");
     } finally {
