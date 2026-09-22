@@ -26,7 +26,7 @@ import {
 import { slugify } from "../src/paths.ts";
 import { Baton } from "../src/Baton.ts";
 import { loopCompletionSummary, loopExitCode } from "../src/cliVerdict.ts";
-import { denyDirectory } from "./helpers/denial.ts";
+import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import {
   makeFixture,
   silent,
@@ -386,6 +386,68 @@ describe("superviseLoop — process-per-tick supervisor", () => {
     expect(res.shippedTags).toEqual(["SHIPPED-ENTRY"]);
     expect(res.erroredTicks).toHaveLength(1);
     expect(res.erroredTicks[0]).toContain("gate-revert");
+  });
+
+  /**
+   * The read's refusal is a fact about the run, not a crash of it: uncaught,
+   * the throw out of `readTickVerdict` (`src/tickVerdict.ts`) would take the
+   * whole `SuperviseResult` with it — the ticks already run, what they
+   * shipped, what they cost — and `flume loop` would print a stack instead
+   * of a summary. The run ends, keeping its totals and naming the wall.
+   */
+  it("a verdict present but unreadable ends the run with its totals intact, never a thrown-away SuperviseResult", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+    const verdictPath = tickVerdictPath(join(fx.repo, ".flume"));
+
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls === 1) {
+        await writeFile(
+          verdictPath,
+          JSON.stringify(
+            verdictFixture({ committed: true, shippedTags: ["SHIPPED-ENTRY"] }),
+          ),
+          "utf8",
+        );
+      } else {
+        // The second child leaves its verdict at a path that stats present
+        // and refuses the read (`tests/helpers/denial.ts`) — what an operator
+        // sees when something else owns that path. The phase stays awake, so
+        // a supervisor that shrugged this off would keep ticking.
+        denyFile(verdictPath);
+      }
+      return { exitCode: 0 };
+    };
+
+    const errors: string[] = [];
+    const log: Logger = {
+      ...silent,
+      error: (m: string) => {
+        errors.push(m);
+      },
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      maxTicks: 5,
+      runTick,
+      log,
+    });
+
+    // Non-vacuity: the first tick really did run and really did ship, so the
+    // totals below are a run's rather than an empty result's.
+    expect(calls).toBe(2);
+    expect(res.ticks).toBe(2);
+    expect(res.shippedTags).toEqual(["SHIPPED-ENTRY"]);
+    // Ended on the refusal, not on hibernation — the baton still carries the
+    // awake flag the second child never slept.
+    expect(res.hibernated).toBe(false);
+    expect(baton.awake()).toEqual(["build"]);
+    expect(res.erroredTicks).toHaveLength(1);
+    expect(res.erroredTicks[0]).toContain("unreadable");
+    expect(errors.some((e) => e.includes(verdictPath))).toBe(true);
   });
 
   it("render-refused counts as errored — a broken prompt is a genuine failure, not a clean-exit no-op", async () => {

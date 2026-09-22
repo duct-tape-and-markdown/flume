@@ -56,12 +56,13 @@ import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import {
+  tickVerdictsLogPath,
   writeTickVerdict,
   type TickVerdict,
   type TickVerdictInvocation,
 } from "../src/tickVerdict.ts";
 import { deadPid } from "./helpers/deadPid.ts";
-import { denyDirectory } from "./helpers/denial.ts";
+import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { HERMETIC_ENV_STRIP_KEYS, hermeticEnv } from "./helpers/gitEnv.ts";
@@ -2038,6 +2039,36 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
 
       expect(live.code).toBe(0);
       expect(spendLines(live.out)).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  /**
+   * spec/cli.md "Subcommand surface", `status`: the verb refuses only when a
+   * file it must read is present and unreadable — and the verdict log is one
+   * of those, because the alternative reading is a live run printed as one
+   * that has spent nothing.
+   */
+  it("flume status exits EX_IOERR over a verdict log that is present and unreadable, instead of a run that spent nothing", async () => {
+    const { dir } = await fixture("flume-status-spend-denied-", process.pid);
+    try {
+      // Non-vacuity: these rows print under this live claim before the log is
+      // denied, so the refusal below is the denial's and not an empty log's.
+      const before = await runCli(dir, ["status"]);
+      expect(before.code).toBe(0);
+      expect(spendLines(before.out)).toHaveLength(1);
+
+      // Denied at the read path itself (`tests/helpers/denial.ts`): a stat
+      // still finds the entry and the read fails non-ENOENT.
+      denyFile(tickVerdictsLogPath(join(dir, ".flume")));
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(EX_IOERR);
+      expect(r.out).toContain("failed to read");
+      expect(r.out).toContain("tick-verdicts.jsonl");
+      expect(spendLines(r.out)).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

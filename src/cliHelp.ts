@@ -88,7 +88,10 @@ Exit codes:
       path too long for the platform, ...). Refused rather than printed as
       absent — that reading would tell the operator there is no live
       supervisor, no pending stop, or no claim holder when there may be one.
-      Naming the file and the underlying error.
+      Naming the file and the underlying error. Also, under a live
+      supervisor, tick-verdicts.jsonl exists but could not be read: the
+      spend line is refused rather than withheld, since withholding it
+      states a run that has spent nothing.
 `,
   tick: `Usage: flume tick
 
@@ -223,6 +226,11 @@ Exit codes:
   0   Success — including no tick-verdicts.jsonl on disk (prints nothing).
   2   Usage: unknown or extra arguments, or -n is missing, non-numeric, or
       negative. No verdicts are read.
+  74  I/O error (EX_IOERR): tick-verdicts.jsonl exists but could not be read
+      (permission denied, a symlink loop, a directory in its place, ...).
+      Refused rather than printed as an empty history — exit 0 over silence
+      means the log is not there, never that it could not be opened. Naming
+      the file and the underlying error.
 `,
   check: `Usage: flume check
 

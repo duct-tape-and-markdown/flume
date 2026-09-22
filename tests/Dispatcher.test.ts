@@ -31,6 +31,7 @@ import { readMergingMarkers } from "../src/mergingMarkers.ts";
 import {
   writeTickVerdict,
   clearTickVerdict,
+  readTickVerdict,
   readTickVerdicts,
   readLatestVerdictsSync,
   tickVerdictPath,
@@ -133,7 +134,7 @@ import {
   slugify as indexSlugify,
   priorAttemptPath as indexPriorAttemptPath,
 } from "../src/index.ts";
-import { denyDirectory } from "./helpers/denial.ts";
+import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import {
   makeFixture,
   silent,
@@ -10265,6 +10266,58 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     const last2 = await readTickVerdicts(join(fx.repo, ".flume"), 2);
     expect(last2.map((v) => v.summary)).toEqual(["tick 3", "tick 4"]);
   });
+
+  it("readTickVerdicts refuses a verdict history log that is present and unreadable", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await writeTickVerdict(flumeDir, verdictFixture({ summary: "tick 0" }));
+    // Non-vacuity: the log reads, and carries the row, before it is denied.
+    expect(await readTickVerdicts(flumeDir)).toHaveLength(1);
+
+    // Denied structurally at the read path itself (`tests/helpers/denial.ts`)
+    // — a stat still finds the entry, the read fails EISDIR. Denying the
+    // parent instead would answer ENOENT on win32 and the probe would take
+    // its absent arm there.
+    denyFile(historyPath());
+
+    let caught: NodeJS.ErrnoException | undefined;
+    try {
+      await readTickVerdicts(flumeDir);
+    } catch (err) {
+      caught = err as NodeJS.ErrnoException;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.code).not.toBe("ENOENT");
+
+    // The absent arm is untouched: a flumeDir that never ticked still reads
+    // as empty history, so the refusal above is the present-but-unreadable
+    // case alone and not a reader that stopped folding ENOENT.
+    expect(
+      await readTickVerdicts(join(fx.repo, ".flume", "never-ticked")),
+    ).toEqual([]);
+  });
+
+  it("readTickVerdict refuses a latest-tick verdict file that is present and unreadable", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await writeTickVerdict(flumeDir, verdictFixture({ summary: "tick 0" }));
+    // Non-vacuity: the latest-tick file reads back before it is denied.
+    expect((await readTickVerdict(flumeDir))?.summary).toBe("tick 0");
+
+    denyFile(latestPath());
+
+    let caught: NodeJS.ErrnoException | undefined;
+    try {
+      await readTickVerdict(flumeDir);
+    } catch (err) {
+      caught = err as NodeJS.ErrnoException;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.code).not.toBe("ENOENT");
+
+    // `clearTickVerdict` leaves nothing behind, and that absence still reads
+    // as "nothing to report" — the one silent arm this reader keeps.
+    await rm(latestPath(), { recursive: true, force: true });
+    expect(await readTickVerdict(flumeDir)).toBeUndefined();
+  });
 });
 
 /**
@@ -10364,6 +10417,29 @@ describe("readLatestVerdictsSync — synchronous per-phase anchor read", () => {
     expect(readLatestVerdictsSync(join(fx.repo, ".flume", "never-ticked"))).toEqual(
       {},
     );
+  });
+
+  it("readLatestVerdictsSync refuses a verdict history log that is present and unreadable", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    await writeTickVerdict(
+      flumeDir,
+      verdictFixture({ phaseName: "plan", summary: "plan tick 1" }),
+    );
+    // Non-vacuity: the anchor set is populated before the log is denied —
+    // an empty result here is exactly what this reader must never report
+    // over an unread log.
+    expect(Object.keys(readLatestVerdictsSync(flumeDir))).toEqual(["plan"]);
+
+    denyFile(tickVerdictsLogPath(flumeDir));
+
+    let caught: NodeJS.ErrnoException | undefined;
+    try {
+      readLatestVerdictsSync(flumeDir);
+    } catch (err) {
+      caught = err as NodeJS.ErrnoException;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.code).not.toBe("ENOENT");
   });
 });
 

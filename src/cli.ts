@@ -61,6 +61,7 @@ import {
   readTickVerdicts,
   totalAgentUsageByPhase,
   writeTickVerdict,
+  type TickVerdict,
 } from "./tickVerdict.js";
 import { frictionCountLine, frictionNotes } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
@@ -492,10 +493,22 @@ async function main(): Promise<number> {
       );
     }
     if (startedAtMs !== undefined) {
+      // spec/cli.md "Subcommand surface", `status`: the one thing this verb
+      // exits non-zero on is a file it must read being present and
+      // unreadable. `readTickVerdicts` (src/tickVerdict.ts) refuses that
+      // rather than answering "no history", so withholding the spend line
+      // here would print an unread log as a run that spent nothing.
+      let runVerdicts: TickVerdict[];
+      try {
+        runVerdicts = await readTickVerdicts(flumeDir);
+      } catch (err) {
+        console.error(
+          `[flume] status: ${STATE_ROOT_NAMES.tickVerdictsLog} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return EX_IOERR;
+      }
       const spend = totalAgentUsageByPhase(
-        (await readTickVerdicts(flumeDir)).filter(
-          (v) => Date.parse(v.at) >= startedAtMs,
-        ),
+        runVerdicts.filter((v) => Date.parse(v.at) >= startedAtMs),
       );
       const line = agentUsageLine("agent usage this run", spend);
       if (line) console.log(line);
@@ -586,7 +599,20 @@ async function main(): Promise<number> {
       return 2;
     }
 
-    const verdicts = await readTickVerdicts(flumeDir, n);
+    // spec/cli.md "Subcommand surface", `log`: the exit-0/prints-nothing arm
+    // is **no verdicts file**, so a log that is present and unreadable takes
+    // the same EX_IOERR every other present-but-unreadable read in this file
+    // takes. Printing nothing over it would state the opposite of what was
+    // observed — an operator reading silence as "this repo has not ticked".
+    let verdicts: TickVerdict[];
+    try {
+      verdicts = await readTickVerdicts(flumeDir, n);
+    } catch (err) {
+      console.error(
+        `[flume] log: ${STATE_ROOT_NAMES.tickVerdictsLog} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_IOERR;
+    }
     for (const v of verdicts) {
       console.log(jsonMode ? JSON.stringify(v) : formatTickVerdictLine(v));
     }

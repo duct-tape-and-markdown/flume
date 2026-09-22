@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { TickOutcome } from "../src/Dispatcher.ts";
+import { EX_IOERR } from "../src/cli.ts";
 import { EX_TERMINAL_MISCONFIG, EX_MOUNT_DEAD } from "../src/exitCodes.ts";
 import {
   tickVerdictsLogPath,
@@ -27,6 +28,7 @@ import {
   loopCompletionSummary,
 } from "../src/cliVerdict.ts";
 import { awakeDir } from "../src/paths.ts";
+import { denyFile } from "./helpers/denial.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec, runCli } from "./helpers/subprocess.ts";
 
@@ -473,6 +475,34 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
       const r = await runCli(repo.dir, ["log"]);
       expect(r.code).toBe(0);
       expect(r.out.trim()).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
+  // The converse of the case above, and the reason it cannot be the verb's
+  // only silent arm: exit 0 over silence is reserved for a log that is not
+  // there. spec/cli.md gives `log` no other quiet reading, so a log that is
+  // present and unreadable exits EX_IOERR naming it.
+  it("a tick-verdicts.jsonl that is present and unreadable exits EX_IOERR instead of printing nothing", async () => {
+    const repo = await makeJobRepo("main");
+    try {
+      const verdicts = [makeVerdict({ phaseName: "plan" })];
+      await writeTickVerdictsLog(repo.dir, verdicts);
+
+      // Non-vacuity: the row really does print before the log is denied.
+      const full = await runCli(repo.dir, ["log"]);
+      expect(full.code).toBe(0);
+      expect(full.out).toContain("plan");
+
+      // Structural denial at the read path itself (`tests/helpers/denial.ts`)
+      // — a stat still finds the entry, the read fails non-ENOENT.
+      denyFile(tickVerdictsLogPath(join(repo.dir, ".flume")));
+
+      const r = await runCli(repo.dir, ["log"]);
+      expect(r.code).toBe(EX_IOERR);
+      expect(r.out).toContain("failed to read");
+      expect(r.out).toContain("tick-verdicts.jsonl");
     } finally {
       await repo.cleanup();
     }

@@ -17,10 +17,11 @@
  */
 
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 import type { AgentUsage } from "./Agent.js";
 import { bound } from "./bounds.js";
+import { existsLoud } from "./fsProbe.js";
 import type { GateResult } from "./Gate.js";
 import { namespacedJoin, tickVerdictPath, tickVerdictsLogPath } from "./paths.js";
 import type { NoCommitMode } from "./Prompt.js";
@@ -735,14 +736,24 @@ export async function clearTickVerdict(flumeDir: string): Promise<void> {
  * tick and writes it only once that tick's `dispatcher.tick()` call has
  * returned) degrades to "nothing to report" — a missing record must never
  * be misread as a prior tick's stale one.
+ *
+ * Absent is the only silent reading, and it is **proven**: `existsLoud`
+ * (`src/fsProbe.ts`) throws on any stat failure but `ENOENT`, and the read
+ * past it carries no catch of its own, so a verdict file that is present
+ * and unreadable — a directory in its place, a permission-denied parent, a
+ * symlink loop — refuses here instead of reporting the tick that wrote it
+ * as one that left nothing behind (`.claude/rules/engineering.md`, *Loud or
+ * nothing*). The degrade that remains is the parse alone, which is a
+ * statement about the file's *contents*, not about whether it was read.
  */
 export async function readTickVerdict(
   flumeDir: string,
 ): Promise<TickVerdict | undefined> {
   const p = namespacedJoin(tickVerdictPath(flumeDir));
-  if (!existsSync(p)) return undefined;
+  if (!existsLoud(p)) return undefined;
+  const raw = await readFile(p, "utf8");
   try {
-    const rec: unknown = JSON.parse(await readFile(p, "utf8"));
+    const rec: unknown = JSON.parse(raw);
     return isTickVerdict(rec) ? rec : undefined;
   } catch {
     return undefined;
@@ -754,19 +765,23 @@ export async function readTickVerdict(
  * recent tick history into a prompt. Corrupt lines are skipped,
  * never thrown; an absent log reads as empty history — same no-false-signal
  * posture as every other artifact the harness persists.
+ *
+ * Absent, and nothing else: `existsLoud` (`src/fsProbe.ts`) proves it and
+ * the read past it carries no catch, so a history log that is present and
+ * unreadable refuses rather than answering "no history" — the one answer
+ * that is indistinguishable from a repo that has never ticked
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). `flume log` and
+ * `flume status` classify that refusal as `EX_IOERR` (spec/cli.md);
+ * `writeTickVerdict` above lets it stand, because reading the log as empty
+ * there would overwrite the whole history with this one record.
  */
 export async function readTickVerdicts(
   flumeDir: string,
   n: number = MAX_TICK_VERDICTS,
 ): Promise<TickVerdict[]> {
   const p = namespacedJoin(tickVerdictsLogPath(flumeDir));
-  if (!existsSync(p)) return [];
-  let raw: string;
-  try {
-    raw = await readFile(p, "utf8");
-  } catch {
-    return [];
-  }
+  if (!existsLoud(p)) return [];
+  const raw = await readFile(p, "utf8");
   const verdicts: TickVerdict[] = [];
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
@@ -789,19 +804,19 @@ export async function readTickVerdicts(
  * from either needs this rather than the async accessor behind an `await`
  * it cannot take. Corrupt lines are skipped, same no-false-signal posture as
  * `readTickVerdicts`; an absent log reads as an empty result, never a throw.
+ * Absent is proven the same way its async sibling proves it — `existsLoud`
+ * (`src/fsProbe.ts`) and an uncaught read — so a log that is present and
+ * unreadable refuses here too, rather than handing a `shouldRun` an empty
+ * anchor set that reads as "no phase has ever ticked"
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 export function readLatestVerdictsSync(
   flumeDir: string,
 ): Record<string, TickVerdict> {
   const p = namespacedJoin(tickVerdictsLogPath(flumeDir));
   const latest: Record<string, TickVerdict> = {};
-  if (!existsSync(p)) return latest;
-  let raw: string;
-  try {
-    raw = readFileSync(p, "utf8");
-  } catch {
-    return latest;
-  }
+  if (!existsLoud(p)) return latest;
+  const raw = readFileSync(p, "utf8");
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;

@@ -15,6 +15,7 @@ import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
 import { consoleLogger, type Logger } from "./log.js";
 import {
   readTickVerdict,
+  tickVerdictPath,
   totalAgentUsageByPhase,
   type PhaseAgentUsage,
   type StageFailureEntry,
@@ -377,7 +378,32 @@ export async function superviseLoop(
     // The formula is an allowlist for exactly this — a fact absent from it
     // is excluded by construction, and each of the two above stays named
     // here so that exclusion reads as decided rather than overlooked.
-    const verdict = await readTickVerdict(flumeDir);
+    //
+    // The read itself refuses a verdict file that is present and unreadable
+    // (`readTickVerdict`, `src/tickVerdict.ts`) rather than answering
+    // "this tick left nothing behind". That refusal is answered here rather
+    // than let escape: uncaught it would take the whole `SuperviseResult`
+    // with it — the ticks already run, what they shipped, what they cost —
+    // and leave `flume loop` a raw stack. The run ends instead, the way the
+    // mount-dead and terminal arms below end it and for the same reason: the
+    // next tick writes to that same unreadable path, so continuing would
+    // hot-spin to `--max` against a wall that cannot clear itself.
+    let verdict: TickVerdict | undefined;
+    try {
+      verdict = await readTickVerdict(flumeDir);
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      log.error(
+        `[flume] this tick's verdict at ${tickVerdictPath(flumeDir)} is ` +
+          `present but could not be read (${why}); stopping after ${ticks} ` +
+          `tick(s) rather than counting the tick as one that reported ` +
+          `nothing. Make the path readable, then re-run.`,
+      );
+      erroredTicks.push(
+        `tick verdict present but unreadable (${why}); run ended before the verdict's facts could be counted`,
+      );
+      return settled({ hibernated: false });
+    }
     let countedAsErrored = false;
     if (verdict) {
       for (const tag of verdict.shippedTags) shippedTags.add(tag);

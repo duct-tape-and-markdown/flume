@@ -1815,7 +1815,11 @@ engine writes it; nothing in the shape says what the facts *mean* — no
 `TickVerdict` / `ReportedGateResult` / `TickVerdictMergeOutcome` /
 `MergeOutcome` types it returns) reads the last `n` verdicts, oldest first,
 from the bounded on-disk history log — default `n` is the log's own cap
-(200). Absent or corrupt history reads as `[]`, never a thrown error.
+(200). Absent history reads as `[]`, and a corrupt line is skipped rather
+than thrown. A log that is **present and unreadable** throws instead: "no
+history" and "a repo that has never ticked" are the same answer, so a chain
+that rendered it would be stating something it never observed. Handle it, or
+let it end the tick.
 
 A chain that wants a phase's prompt to carry recent tick history renders it
 itself, from `promptArgs`:

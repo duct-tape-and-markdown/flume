@@ -30,8 +30,12 @@ import {
 } from "../src/loopSupervisor.ts";
 import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import type { TickOutcome } from "../src/Dispatcher.ts";
-import type { TickVerdict } from "../src/tickVerdict.ts";
+import {
+  tickVerdictsLogPath,
+  type TickVerdict,
+} from "../src/tickVerdict.ts";
 import type { TickResult } from "../src/Phase.ts";
+import { denyFile } from "./helpers/denial.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
 import {
@@ -67,6 +71,22 @@ function documentedExitCodes(help: string): Set<number> {
 
 const ascending = (codes: Iterable<number>): number[] =>
   [...new Set(codes)].sort((a, b) => a - b);
+
+/** One well-formed history row, for the `log` refusal case's non-vacuity arm. */
+function logVerdict(): TickVerdict {
+  return {
+    phaseName: "help-probe",
+    tags: [],
+    committed: false,
+    gateResults: [],
+    shippedTags: [],
+    mergeOutcomes: [],
+    invocations: [],
+    summary: "help-probe: one tick",
+    headSha: "0".repeat(40),
+    at: "2024-01-01T00:00:00.000Z",
+  };
+}
 
 /**
  * The command names the top-level listing's own `Commands:` block
@@ -757,6 +777,47 @@ describe("flume loop --help — the backstop threshold names its knob (HELP-ABOR
     const { out, code } = await runCli(process.cwd(), ["loop", "--help"]);
     expect(code).toBe(0);
     expectsOverridableThreshold(exitOneClause(out, "\n  74 "));
+  }, SPAWN_BUDGET_MS);
+});
+
+/**
+ * `flume log --help`'s exit-code block against the code the verb's own I/O
+ * refusal really returns. The verb's quiet arm is absence alone — no
+ * tick-verdicts.jsonl prints nothing and exits 0 — so the refusal over a log
+ * that is present and unreadable is an exit status an operator has to be
+ * able to look up. The fixture drives the real refusal and reads the
+ * documented set off the real help text, never a copy
+ * (`.claude/rules/engineering.md`, "A seam gate reads what the real writer
+ * wrote").
+ */
+describe("flume log --help — the exit-code list against the verb's own I/O refusal", () => {
+  it("flume log --help names exit 74 for a tick-verdicts.jsonl that cannot be read", async () => {
+    const root = await mkFixtureRoot("flume-log-help-");
+    try {
+      const flumeDir = join(root, ".flume");
+      await writeFile(
+        tickVerdictsLogPath(flumeDir),
+        JSON.stringify(logVerdict()) + "\n",
+        "utf8",
+      );
+      // Non-vacuity: the verb really does print this history before the log
+      // is denied, so the refusal below is the denial's and not a fixture
+      // that never reached the read.
+      const printed = await runCli(root, ["log"]);
+      expect(printed.code).toBe(0);
+      expect(printed.out).toContain("help-probe");
+
+      denyFile(tickVerdictsLogPath(flumeDir));
+      const refusal = await runCli(root, ["log"]);
+      expect(refusal.out).toContain("failed to read");
+      expect(refusal.code).toBe(EX_IOERR);
+
+      const { out, code } = await runCli(root, ["log", "--help"]);
+      expect(code).toBe(0);
+      expect(ascending(documentedExitCodes(out))).toContain(refusal.code);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   }, SPAWN_BUDGET_MS);
 });
 
