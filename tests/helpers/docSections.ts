@@ -256,6 +256,66 @@ export function restatementsOf(
     .filter((named) => named.length > 1);
 }
 
+/** A list item's marker, whatever the page indents it by. */
+const BULLET_MARKER = /^[ \t]*[-*] /;
+
+/**
+ * Where a walk's bullet stops naming the members it is about and starts
+ * saying what they decide.
+ */
+const LEAD_END = " \u2014 ";
+
+/**
+ * Every bullet of a section, in page order, each folded to one line with the
+ * page's own wrapping taken out — a bullet is a claim, and where it breaks
+ * across source lines is the formatter's business. A blank line ends the run,
+ * so a paragraph following a list is not read as its last bullet's tail.
+ * Fenced blocks are skipped on the rule `headingsOf` already carries.
+ */
+function bulletsOf(section: string): string[] {
+  const bullets: string[] = [];
+  let listed = false;
+  let fenced = false;
+
+  for (const line of section.split(/\r?\n/)) {
+    if (FENCE.test(line)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    if (BULLET_MARKER.test(line)) {
+      bullets.push(line.replace(BULLET_MARKER, "").trim());
+      listed = true;
+      continue;
+    }
+    if (line.trim() === "") {
+      listed = false;
+      continue;
+    }
+    if (listed) bullets[bullets.length - 1] += ` ${line.trim()}`;
+  }
+
+  return bullets;
+}
+
+/**
+ * Every member a section's walk *claims* — the backticked bare names in each
+ * bullet's lead, the span before the em-dash — with no declaration to filter
+ * by. `walkOf` answers which declared members the page walks, so a name the
+ * declaration no longer carries is invisible to it; this answers what the page
+ * asserts, which is what a caller reds a retired member on.
+ *
+ * The lead, not the whole bullet: a bullet's body names whatever it needs to
+ * explain itself — a `per` cite, the `shell` a gate runs under, a sibling
+ * member — and none of those is a claim about the set. A bullet with no
+ * em-dash is read whole, since a bullet that never stops naming is all lead.
+ */
+export function leadNamesOf(section: string): string[] {
+  return bulletsOf(section).flatMap((bullet) =>
+    [...bullet.split(LEAD_END)[0]!.matchAll(MENTION)].map((mention) => mention[1]!),
+  );
+}
+
 /**
  * A bullet's opening: the list marker through whatever the page delimits the
  * member's name with — the bold run a walk that emphasizes its leads opens

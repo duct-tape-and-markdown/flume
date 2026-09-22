@@ -70,7 +70,6 @@ the entry fields the chain factory takes:
   how this consumer's spec is keyed;
 - `channelPaths` and `scopeWritesToEntry` — what a build tick writes beside
   its commit, and whether a fanout tick's writes narrow to its entry;
-- `jobs` — a named fence and spec locus per unit of work in one checkout;
 - `capabilities` — the environment facts a repository asserts, which decide
   whether a capability-gated entry is pickable;
 - `worktreesBase` — where this repository's worktrees are planted, a
@@ -117,7 +116,7 @@ identifiable line by the border it belonged to:
 | --- | --- | --- |
 | telemetry, structural liveness, a re-dispatch brake | 149 | engine's: facts it held and reported nowhere |
 | prompt arguments, a friction reader, entry-field hints | 106 | harness's: prompts the package owns |
-| a per-job schema, reader, and `--job` plumbing | 167 | harness's: the `jobs` field, before it existed |
+| a per-job schema, reader, and `--job` plumbing | 167 | harness's: one declaration per checkout, before that was the answer |
 | a .NET restore, a build gate, an agent roster, tuning | 242 | the consumer's, correctly |
 
 Six hundred of the nine hundred lines were the two inner layers' work, done

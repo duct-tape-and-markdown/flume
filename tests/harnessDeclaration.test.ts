@@ -32,7 +32,7 @@ import type {
   SectionResolver,
 } from "../harness/index.ts";
 import type { Chain } from "../src/Phase.ts";
-import { sectionOf } from "./helpers/docSections.ts";
+import { leadNamesOf, sectionOf } from "./helpers/docSections.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 
 /**
@@ -541,17 +541,13 @@ describe("the harness declaration schema", () => {
   });
 
   /**
-   * The two pages that list this schema's fields by hand, read against the
-   * schema. Both are the surface a consumer arrives on before the hover text
-   * — one enumerating what a declaration names, the other what the middle
-   * border hands a consumer — so each is pinned for what it says against the
-   * interface it describes (`.claude/rules/engineering.md`, *Narration is
-   * the ladder's bottom rung*, the `docs/` carve-out).
-   *
-   * One direction only: the schema's fields are a subset of what the page
-   * names. A page naming more — `jobs`, a field `spec/harness.md` states and
-   * the schema has yet to gain — is a page ahead of the code, which is not
-   * this pin's finding to make.
+   * The declaration list one page keeps by hand, cut from that page and proven
+   * to be the list rather than an empty span. Both pages that keep one are the
+   * surface a consumer arrives on before the hover text — one enumerating what
+   * a declaration names, the other what the middle border hands a consumer —
+   * so each is pinned for what it says against the interface it describes
+   * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*,
+   * the `docs/` carve-out).
    *
    * The span is cut rather than the page read whole: `docs/CHAIN-AUTHORING.md`
    * documents the engine-level `Chain` fields under the same names for two
@@ -559,11 +555,11 @@ describe("the harness declaration schema", () => {
    * wherever it happened to fall and pass over a declaration list that names
    * none of them.
    */
-  const fieldsMissingFrom = async (
+  const declarationListOf = async (
     page: string,
     heading: string,
     anchor: string,
-  ): Promise<{ page: string; missing: string[] }> => {
+  ): Promise<string> => {
     const text = await readFile(new URL(`../${page}`, import.meta.url), "utf8");
     const section = sectionOf(text, heading);
 
@@ -576,14 +572,35 @@ describe("the harness declaration schema", () => {
       anchored: true,
     });
 
+    return section;
+  };
+
+  /** Every field the schema declares, read off the schema rather than listed here. */
+  const declaredFields = (): string[] => {
     const fields = Object.keys(DeclarationSchema.shape);
     expect(fields.length).toBeGreaterThan(0);
+    return fields;
+  };
+
+  const fieldsMissingFrom = async (
+    page: string,
+    heading: string,
+    anchor: string,
+  ): Promise<{ page: string; missing: string[] }> => {
+    const section = await declarationListOf(page, heading, anchor);
 
     return {
       page,
-      missing: fields.filter((field) => !section.includes(`\`${field}\``)),
+      missing: declaredFields().filter((field) => !section.includes(`\`${field}\``)),
     };
   };
+
+  /** Where `docs/LAYERS.md` keeps its walk of the declaration's fields. */
+  const LAYERS_LIST = [
+    "docs/LAYERS.md",
+    "## Border 2 — harness to consumer",
+    "Through the declaration's fields",
+  ] as const;
 
   it("docs/CHAIN-AUTHORING.md names every field DeclarationSchema declares", async () => {
     expect(
@@ -596,12 +613,31 @@ describe("the harness declaration schema", () => {
   });
 
   it("docs/LAYERS.md names every field DeclarationSchema declares", async () => {
-    expect(
-      await fieldsMissingFrom(
-        "docs/LAYERS.md",
-        "## Border 2 — harness to consumer",
-        "Through the declaration's fields",
-      ),
-    ).toEqual({ page: "docs/LAYERS.md", missing: [] });
+    expect(await fieldsMissingFrom(...LAYERS_LIST)).toEqual({
+      page: "docs/LAYERS.md",
+      missing: [],
+    });
+  });
+
+  /**
+   * The other direction over the same list, which the subset read above cannot
+   * make: a field the schema never gained, or one a cut retired, stays named
+   * as a typed place a consumer can declare and reads as current.
+   *
+   * Only this page's list, and only the members its bullets lead with. The
+   * `docs/CHAIN-AUTHORING.md` list is running prose that names the engine's
+   * `Chain` fields beside the declaration's, so "every name here is a field"
+   * is not a claim it makes; the walk on this page is one bullet per member,
+   * where it is.
+   */
+  it("docs/LAYERS.md names no declaration field DeclarationSchema does not declare", async () => {
+    const named = leadNamesOf(await declarationListOf(...LAYERS_LIST));
+    expect(named.length).toBeGreaterThan(0);
+
+    const fields = declaredFields();
+    expect({
+      page: "docs/LAYERS.md",
+      undeclared: named.filter((name) => !fields.includes(name)),
+    }).toEqual({ page: "docs/LAYERS.md", undeclared: [] });
   });
 });
