@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "tag": "STATUS-SPEND-WITHHOLDING-NAMES-THE-RESOLVED-LOCK-PATH",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "status's spend-withholding stderr notice names the lock path it resolved, per the cite"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the withholding case asserts the path, not the phrase alone"
+        }
+      ]
+    },
+    "summary": "status's spend-withholding notice names the resolved loop-lock path instead of the bare artifact name",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "The stderr notice over a lock stating no claim instant names the same resolved path status's loop-lock refusal prints; exit stays 0 and the spend line stays withheld.",
+    "tests": [
+      "flume status names the resolved loop-lock path when it withholds the spend line"
+    ],
+    "notes": "src/cli.ts:503 prints STATE_ROOT_NAMES.loopLock bare while statusLockPath is bound at 339 and printed at 352 by the same verb's loop-lock refusal; loop's arms name paths too. Namespaced, so the fold is plainPath(statusLockPath) as at 352 — unlike the stop-flag arm, whose path is already plain. tests/cli.test.ts:2087 asserts the phrase only, so the path is pinned by nothing today."
+  }
+]
