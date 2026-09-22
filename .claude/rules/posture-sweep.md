@@ -67,44 +67,47 @@ drained (above). Hibernation is the empty frontier's verdict alone.
 Cited by symbol and line. A finding read off a remembered impression, a
 commit message, or a prior tick's note does not count.
 
-Beyond the pages' own sections, standing sweep lenses: a module carrying jobs
-that want separate homes; dead plumbing (unconstructable branches, vacuous
-result paths); embedded provider knowledge (documented external facts — tool
-names, path layouts, payload shapes — as literals outside the surface that
-owns them); and **expired narration** — prose whose stated scope has closed
-or whose revisit condition has fired: a comment scoped to a shipped release
-line, an `interim` marker whose retiring change has landed, a "revisit when
-X" whose X is observable now. The sweep domain for this lens includes
-`.flume/chain.ts` and `.flume/PROTOCOL.md`, which carry decisions no other
-lens reads.
+## Standing lenses
 
-A further lens is **a negative assertion over a whole rendered artifact**: a
-`not.toMatch` or `not.toContain` whose subject is an entire rendered prompt,
-log, or verdict turns on whatever else that artifact happens to quote — a
-stack trace carrying the worktree path, and so the entry tag — rather than on
-the arm the case is about. Green by accident today, red for any tag spelling
-the forbidden phrase tomorrow. The assertion reads its own block.
+Beyond the pages' own sections, the sweep reads every neighborhood through
+these. Each is a bulleted lead so a cite can name it.
 
-A further lens is **a repo-relative path composed with `node:path`**: a value
-the engine reports in git's alphabet (`stateRootRel`, a pathspec, a
-name-only line) joined or resolved through the host's separator before it
-reaches git again. Correct on posix by accident, wrong on win32 silently; the
-fold belongs at the one reporter, never at the composer.
-
-A further lens reads the engine from the consumer's side: **consumer
-restatement** (`engineering.md`, *A fact the engine holds is reported*). The
-consumers this repo carries are `examples/` and `.flume/chain.ts`; a
-decorator parsing agent output, a constant mirroring a gate's command, a
-copied path rule, or a predicate inferring engine state from commit shape is
-filed against the engine surface that should have reported the fact.
-Downstream chains outside this repo are the interactive session's to read,
-and their findings enter through the inbox.
-
-An **absence verdict never rests on a bare text search**: proving a symbol is
-*un*referenced needs a search that resolves symbols — LSP references
-(`code-navigation.md`) — never a plain no-hits. A host without the instrument
-leaves the finding unmade and says so (`engineering.md`, *An export earns its
-consumer*).
+- **A module carrying jobs that want separate homes** — the cohesion read
+  `engineering.md`, *A module is one job* administers.
+- **Dead plumbing** — unconstructable branches, vacuous result paths.
+- **Embedded provider knowledge** — documented external facts (tool names,
+  path layouts, payload shapes) as literals outside the surface that owns
+  them.
+- **Expired narration** — prose whose stated scope has closed or whose
+  revisit condition has fired: a comment scoped to a shipped release line,
+  an `interim` marker whose retiring change has landed, a "revisit when X"
+  whose X is observable now. The sweep domain for this lens includes
+  `.flume/chain.ts` and `.flume/PROTOCOL.md`, which carry decisions no
+  other lens reads.
+- **A negative assertion over a whole rendered artifact** — a `not.toMatch`
+  or `not.toContain` whose subject is an entire rendered prompt, log, or
+  verdict turns on whatever else that artifact happens to quote — a stack
+  trace carrying the worktree path, and so the entry tag — rather than on
+  the arm the case is about. Green by accident today, red for any tag
+  spelling the forbidden phrase tomorrow. The assertion reads its own block.
+- **A repo-relative path composed with `node:path`** — a value the engine
+  reports in git's alphabet (`stateRootRel`, a pathspec, a name-only line)
+  joined or resolved through the host's separator before it reaches git
+  again. Correct on posix by accident, wrong on win32 silently; the fold
+  belongs at the one reporter, never at the composer.
+- **Consumer restatement** — the engine read from the consumer's side
+  (`engineering.md`, *A fact the engine holds is reported*). The consumers
+  this repo carries are `examples/` and `.flume/chain.ts`; a decorator
+  parsing agent output, a constant mirroring a gate's command, a copied
+  path rule, or a predicate inferring engine state from commit shape is
+  filed against the engine surface that should have reported the fact.
+  Downstream chains outside this repo are the interactive session's to
+  read, and their findings enter through the inbox.
+- **An absence verdict never rests on a bare text search** — proving a
+  symbol is *un*referenced needs a search that resolves symbols — LSP
+  references (`code-navigation.md`) — never a plain no-hits. A host without
+  the instrument leaves the finding unmade and says so (`engineering.md`,
+  *An export earns its consumer*).
 
 ## Routing
 
