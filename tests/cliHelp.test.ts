@@ -19,6 +19,8 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { EX_IOERR } from "../src/cli.ts";
 import { HELP_TOP, helpPageFor } from "../src/cliHelp.ts";
+import { loopLockPath } from "../src/paths.ts";
+import { renderPidClaim } from "../src/pidClaim.ts";
 import {
   loopCompletionSummary,
   loopExitCode,
@@ -538,6 +540,202 @@ describe("docs/CLI.md's loop sections against loopExitCode's derived range (CLI-
     await expectSectionNamesTheLoopRange(/^## `flume loop\b/);
   });
 
+});
+
+/**
+ * CLI-DOC-STATUS-LOG-EXIT-CODES-PINNED — `docs/CLI.md` § `flume status` and
+ * § `flume log` are the two prose copies of a verb's exit-code range this
+ * page carried with nothing reading them against the verb.
+ *
+ * Neither verb has a `tickExitCode`-shaped classifier to drive over a
+ * candidate space: both decide their code inside `main`'s own control flow,
+ * from what they found on disk. So the producer here is the **process** —
+ * one real `flume status` / `flume log` run per arm the section claims,
+ * against a fixture built to reach that arm — and the section is compared to
+ * the set those runs returned, never to the verb's `--help` block, which is
+ * the other prose copy and moves with the page (`.claude/rules/engineering.md`,
+ * "A seam gate reads what the real writer wrote").
+ *
+ * The bound this producer carries, declared rather than left implicit: a
+ * driven arm proves the code it returns is a code the verb returns, so the
+ * "page names nothing the verb cannot do" direction is exact, while the
+ * converse reaches exactly the arms {@link DrivenRun} lists. A code reached
+ * by an arm nobody wrote is invisible here, the same bound the named
+ * process-level halves above carry.
+ */
+
+/**
+ * One real run of a verb, made for the code it returns: the invocation, the
+ * fixture mutation it needs, and the evidence the run's own output carries
+ * iff it reached the arm that code is about.
+ */
+interface DrivenRun {
+  /** The arm, named for a failure message. */
+  readonly arm: string;
+  /** A substring the run prints iff it got there. */
+  readonly evidence: string;
+  /** The invocation, with whatever fixture setup arms it. */
+  readonly run: () => Promise<{ out: string; code: number }>;
+}
+
+/**
+ * Drive a verb's arms in order and return the codes they produced, ascending.
+ *
+ * Each arm pins its own non-vacuity: a fixture that never reached the arm —
+ * a chain that died first, a refusal taken ahead of the read — exits some
+ * plausible code and would agree with prose naming almost anything, so the
+ * run's output is asserted to carry the arm's evidence before its code
+ * counts (`.claude/rules/engineering.md`, "A green verdict is proven
+ * non-vacuous"). The code is folded in either way, so an arm that reached
+ * its subject and returned something else reds on the equality rather than
+ * being dropped.
+ */
+async function driveRunExitCodes(
+  arms: readonly DrivenRun[],
+): Promise<number[]> {
+  // Vacuity: a table that collapsed to one arm agrees with a section naming
+  // one code, whichever code that is.
+  expect(arms.length).toBeGreaterThan(1);
+  const returned = new Set<number>();
+  for (const { arm, evidence, run } of arms) {
+    const { out, code } = await run();
+    expect(out, arm).toContain(evidence);
+    returned.add(code);
+  }
+  return ascending(returned);
+}
+
+/**
+ * A verdict row carrying one agent invocation, dated `at` — what `status`'s
+ * spend line needs to print at all. A phase that invoked no agent is absent
+ * from that listing rather than listed at zero, so a row with no invocations
+ * would leave the line silent and the refusal beneath it unreached.
+ */
+function spendVerdict(at: Date): TickVerdict {
+  return {
+    ...logVerdict(),
+    phaseName: "spend-probe",
+    invocations: [
+      {
+        promptPath: "prompts/spend-probe.md",
+        uncommittedTracked: [],
+        turns: 4,
+        durationMs: 1000,
+        inputTokens: 10,
+        outputTokens: 20,
+        costUsd: 0.5,
+      },
+    ],
+    at: at.toISOString(),
+  };
+}
+
+describe("docs/CLI.md's status and log sections against the codes those verbs really return (CLI-DOC-STATUS-LOG-EXIT-CODES-PINNED)", () => {
+  it("docs/CLI.md's flume status section names every exit code the real status verb returns", async () => {
+    const root = await mkFixtureRoot("flume-doc-status-exits-");
+    const flumeDir = join(root, ".flume");
+    // The window the spend line totals over: the lock states when the run
+    // took it, and a row dated inside that window is the run's own.
+    const startedAt = new Date();
+    try {
+      const driven = await driveRunExitCodes([
+        {
+          arm: "an ordinary observation",
+          evidence: "pending: 0",
+          run: () => runCli(root, ["status"]),
+        },
+        {
+          // The spend line's own arm, and the non-vacuity for the refusal
+          // below: this run reads the very file that one denies.
+          arm: "the live run's agent spend",
+          evidence: "agent usage this run",
+          run: async () => {
+            // The lock is composed by the real writer of that statement
+            // (`renderPidClaim`, `src/pidClaim.ts`), never hand-spelled here
+            // — a hand copy would re-author the claim format by the tester's
+            // hand and agree with a reader that had changed.
+            await writeFile(
+              loopLockPath(flumeDir),
+              renderPidClaim(process.pid, startedAt),
+              "utf8",
+            );
+            const spent = spendVerdict(new Date(startedAt.getTime() + 1000));
+            await writeFile(
+              tickVerdictsLogPath(flumeDir),
+              JSON.stringify(spent) + "\n",
+              "utf8",
+            );
+            return runCli(root, ["status"]);
+          },
+        },
+        {
+          arm: "a tick-verdicts.jsonl the live run's spend line cannot read",
+          evidence: "tick-verdicts.jsonl failed to read",
+          run: () => {
+            denyFile(tickVerdictsLogPath(flumeDir));
+            return runCli(root, ["status"]);
+          },
+        },
+      ]);
+
+      const section = sectionOf(await readCliDoc(), /^## `flume status\b/);
+      expect(section.length).toBeGreaterThan(0);
+      // Exactly the driven set, in both directions: a code the verb gained
+      // and the page never named is red, and so is a code the page names
+      // that no arm can produce.
+      expect(namedExitCodes(section)).toEqual(driven);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("docs/CLI.md's flume log section names every exit code the real log verb returns", async () => {
+    const root = await mkFixtureRoot("flume-doc-log-exits-");
+    const flumeDir = join(root, ".flume");
+    try {
+      const driven = await driveRunExitCodes([
+        {
+          arm: "a history it printed",
+          evidence: "help-probe",
+          run: async () => {
+            await writeFile(
+              tickVerdictsLogPath(flumeDir),
+              JSON.stringify(logVerdict()) + "\n",
+              "utf8",
+            );
+            return runCli(root, ["log"]);
+          },
+        },
+        {
+          arm: "-n missing its value",
+          evidence: "usage: flume log",
+          run: () => runCli(root, ["log", "-n"]),
+        },
+        {
+          arm: "a tick-verdicts.jsonl that cannot be read",
+          evidence: "tick-verdicts.jsonl failed to read",
+          run: () => {
+            denyFile(tickVerdictsLogPath(flumeDir));
+            return runCli(root, ["log"]);
+          },
+        },
+      ]);
+
+      const section = sectionOf(await readCliDoc(), /^## `flume log\b/);
+      expect(section.length).toBeGreaterThan(0);
+      const named = namedExitCodes(section);
+      expect(named).toEqual(driven);
+      // The reader discriminates rather than sweeping up every backticked
+      // integer: this section also documents `-n`'s default, which is a
+      // value and not a code. A reader that read it as one would hold the
+      // page permanently at odds with the runs above, so the section is
+      // asserted to carry at least one backticked integer that survived as
+      // a non-code.
+      expect(backtickedIntegers(section).length).toBeGreaterThan(named.length);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
