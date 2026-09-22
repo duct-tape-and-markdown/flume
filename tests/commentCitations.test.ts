@@ -32,7 +32,12 @@ import {
   scanPageCitations,
 } from "./helpers/commentCitations.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { modulesUnder, type ScanDomain } from "./helpers/repoProgram.ts";
+import {
+  NO_FINDINGS,
+  modulesUnder,
+  renderFindings,
+  type ScanDomain,
+} from "./helpers/repoProgram.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -1148,6 +1153,39 @@ it("the page-name scan refuses a domain naming a tree or a file the repo no long
   ).toThrow(/no source module at cfg\/retired\.ts/);
 });
 
+// --- the form a verdict over the live tree is read in ---------------------
+
+it("the citation scan's findings render to one line naming every dangling site", () => {
+  const lines = fixtureScan.findings.map(formatCitation);
+
+  // Vacuity guard: this fixture dangles at more than one site, so the join
+  // below is read over a list that a render returning its first entry alone
+  // would have passed just the same.
+  expect(lines.length).toBeGreaterThan(1);
+
+  const rendered = renderFindings(lines);
+
+  // One line, because one line is all a reverted tick's detail carries
+  // (`TestFailure`, `harness/runner.ts`). A site pushed onto a second line
+  // is a site the verdict dropped on the way out.
+  expect(rendered.split("\n")).toEqual([rendered]);
+
+  // And every site is on it, spelled the way the array form spelled it.
+  expect(renderFindings(lines.filter((line) => !rendered.includes(line)))).toBe(
+    NO_FINDINGS,
+  );
+
+  // Nothing to report renders to a sentence rather than to an empty string,
+  // so the expected half of a verdict states what it meant.
+  expect(renderFindings([])).toBe(NO_FINDINGS);
+});
+
+it("a findings rendering refuses a finding carrying a line break rather than eliding what follows it", () => {
+  expect(() =>
+    renderFindings(["lib/surface.ts:12 vanishedHelper", "lib/a.ts:1 one\ntwo"]),
+  ).toThrow(/line break/);
+});
+
 // --- the pin -------------------------------------------------------------
 
 /**
@@ -1195,6 +1233,21 @@ const EXTERNAL_VOCABULARY: ReadonlyMap<string, string> = new Map(
   ),
 );
 
+/**
+ * The form every verdict below is read in: the findings render to one line,
+ * asserted against the line a clean tree renders to.
+ *
+ * The rendering is passed twice on purpose — as the value compared and as the
+ * message prepended — for the reason `renderFindings`
+ * (`tests/helpers/repoProgram.ts`) states: chai truncates the one and not the
+ * other, and it is the untruncated half a reverted tick's detail has to
+ * carry.
+ */
+const expectNoFindings = (lines: readonly string[]): void => {
+  const rendered = renderFindings(lines);
+  expect(rendered, rendered).toBe(NO_FINDINGS);
+};
+
 it("every backticked identifier in a src/, harness/ or tests/ comment names a declaration those trees hold", () => {
   const scan = repoScan;
 
@@ -1238,11 +1291,9 @@ it("every backticked identifier in a src/, harness/ or tests/ comment names a de
   expect(excluded.filter((name) => unresolved.has(name)).length)
     .toBeGreaterThan(0);
 
-  expect(
-    scan.findings
-      .filter((s) => !excluded.includes(s.text))
-      .map(formatCitation),
-  ).toEqual([]);
+  expectNoFindings(
+    scan.findings.filter((s) => !excluded.includes(s.text)).map(formatCitation),
+  );
 });
 
 it("the repo citation pin judges the repo-relative path citations src/, harness/ and tests/ comments carry", () => {
@@ -1279,7 +1330,7 @@ it("the repo citation pin judges the unbackticked page names src/, harness/ and 
   // a basename the working tree cannot answer without the directory ahead of
   // it — would sit in the dangling set the pin above asserts empty.
   expect(repoScan.bare.length).toBeGreaterThan(350);
-  expect(unjudged.map(formatCitation)).toEqual([]);
+  expectNoFindings(unjudged.map(formatCitation));
 
   // Both families the trees name this way resolve, so renaming either page
   // reds this suite rather than leaving every comment citing it standing.
@@ -1301,7 +1352,7 @@ it("the repo citation pin refuses any citation broken across a comment line", ()
   // markdown inserts is not a character any subject spelling admits, and the
   // pins above stay green over it however the name it cites is renamed.
   // Rewrap the span.
-  expect(repoScan.wraps.findings.map(formatCitation)).toEqual([]);
+  expectNoFindings(repoScan.wraps.findings.map(formatCitation));
 });
 
 it("every section a src/, harness/ or tests/ comment cites is a section its page still carries", () => {
@@ -1329,11 +1380,11 @@ it("every section a src/, harness/ or tests/ comment cites is a section its page
   // The verdict. Spell the section as its page titles it: the match is exact
   // once backticks and the renderer's wrapping are folded out, and there is
   // no prefix arm for an abbreviation to land on.
-  expect(
+  expectNoFindings(
     repoScan.sections.findings.map(
       (site) => `${formatCitation(site)} -> ${site.page}`,
     ),
-  ).toEqual([]);
+  );
 });
 
 it("every *.md page name a src/, harness/ or tests/ title carries names a file the working tree holds", () => {
@@ -1360,7 +1411,7 @@ it("every *.md page name a src/, harness/ or tests/ title carries names a file t
   // A title is a literal, so a page name written in one is answered by the
   // working tree or by nothing at all: a page the repo moved leaves the title
   // citing it here rather than standing. Spell the page's directory.
-  expect(repoScan.titles.findings.map(formatCitation)).toEqual([]);
+  expectNoFindings(repoScan.titles.findings.map(formatCitation));
 });
 
 it("every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.ts cites names a page the working tree holds", () => {
@@ -1410,17 +1461,17 @@ it("every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.t
   // read over zero — spelled here rather than inherited, with the arm shown
   // discriminating over the fixture above
   // (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
-  expect(repoPageScan.wraps.scanned).toEqual([]);
-  expect(repoPageScan.wraps.findings).toEqual([]);
+  expectNoFindings(repoPageScan.wraps.scanned.map(formatCitation));
+  expectNoFindings(repoPageScan.wraps.findings.map(formatCitation));
 
   // The verdict. What remains is the vocabulary an example chain writes only
   // into a consumer's repo, excused by name and by reason in the list above.
   const excluded = [...EXTERNAL_VOCABULARY.keys()];
-  expect(
+  expectNoFindings(
     repoPageScan.findings
       .filter((site) => !excluded.includes(site.text))
       .map(formatCitation),
-  ).toEqual([]);
+  );
 
   // And that override is live rather than decorative: page names in these
   // trees do reach it, so a name dropped from the list reds here instead of
@@ -1447,9 +1498,9 @@ it("every section a comment in bin/, examples/, scripts/ or .flume/chain.ts cite
   expect(`${cite} -> ${resolved.has(cite)}`).toBe(`${cite} -> true`);
 
   // The verdict, on the terms the program-backed scan is held to.
-  expect(
+  expectNoFindings(
     repoPageScan.sections.findings.map(
       (site) => `${formatCitation(site)} -> ${site.page}`,
     ),
-  ).toEqual([]);
+  );
 });

@@ -174,6 +174,41 @@ export interface Scan<Site extends ScanSite, Finding = Site> {
   readonly findings: readonly Finding[];
 }
 
+/**
+ * What a verdict renders to over no findings — a sentence rather than an
+ * empty string, so the expected half of the assertion states what it meant.
+ */
+export const NO_FINDINGS = "no findings";
+
+/**
+ * A finding list rendered to **one line**, or {@link NO_FINDINGS} over none.
+ *
+ * One line because one line is all a reverted tick's detail carries: the
+ * failing assertion's first line and nothing else (`TestFailure`,
+ * `harness/runner.ts`). A verdict asserting the list itself empty renders
+ * that first line as `expected [ ...(3) ] to deeply equal []` — every site
+ * elided, so a retry has to re-run the suite to learn which one dangled.
+ *
+ * Chai truncates the value it inspects into a message at forty characters,
+ * which a rendering long enough to name several sites always exceeds, so a
+ * caller asserting on this passes it as the message argument too — chai does
+ * not truncate that half, and a caller with more than one verdict to read
+ * gives that doubling one home rather than spelling it per verdict.
+ *
+ * A finding carrying a break of its own would push everything behind it off
+ * the first line, which is the elision this renderer exists to end, so it is
+ * refused here rather than joined into a rendering that reads whole and is
+ * not (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+export const renderFindings = (lines: readonly string[]): string => {
+  const broken = lines.find((line) => line.includes("\n"));
+  if (broken !== undefined)
+    throw new Error(
+      `a finding carries a line break, so one line cannot name what follows it: ${JSON.stringify(broken)}`,
+    );
+  return lines.length === 0 ? NO_FINDINGS : lines.join(" | ");
+};
+
 /** Which files a directory walk collects, and which it drops again. */
 export interface FileWalk {
   /** The directory the walk descends, absolute. */
