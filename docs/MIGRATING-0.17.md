@@ -444,18 +444,36 @@ an operator deliberately *shares* between checkouts it only moved the
 collision one directory down.
 
 **If you share one `FLUME_WORKTREES_DIR` between checkouts**, that collision
-is now at the surface: the tick whose path is already occupied is refused by
-`createWorktree`'s registry judgment, naming the path, rather than removing
-an occupant git disclaims. Give each checkout its own base — the default,
-`<flumeDir>/worktrees/`, already is one.
+is now at the surface: the tick whose path is already occupied fails, naming
+the path, rather than taking a live sibling's checkout down. Two judgments
+produce that refusal, and only the second reaches this case. `createWorktree`
+asks git's registry first, which refuses an occupant git disclaims — but the
+registry names every worktree of the *repository*, a second checkout's live
+tree included, so a shared-base collision passes it. What refuses there is
+the **stamp**: provisioning writes the creating state root into the
+worktree's own git admin directory
+(`.git/worktrees/<name>/flume-state-root`), and a registered path stamped by
+another root — or carrying no stamp at all — fails the tick and is left
+standing. That is the same evidence the startup sweep removes on. Give each
+checkout its own base — the default, `<flumeDir>/worktrees/`, already is one.
+
+**What the stamp arm costs is a hand-clearance.** Nothing occupying the
+computed path is cleared for you unless this state root stamped it — not a
+sibling's live tree, not a worktree left by a run that predates the stamp
+(every `0.16` one), not one whose provisioning died between the `git worktree
+add` and the stamp. The tick fails, the directory stands, and clearing it is
+yours: `git worktree remove <path>` for a tree git still registers, `rm -rf`
+plus `git worktree prune` for one it has already forgotten.
 
 **A `0.16` run's worktrees are residue the `0.17` sweep will not reach.** The
 startup sweep reads the *top-level* entries of its base and removes the ones
-git registers as worktrees of this repository. A namespaced tree sits one
-level down, so the sweep sees only `<base>/<namespace>/` — a plain directory
-git calls no worktree of anything — and leaves the subtree standing, along
-with the branches those trees hold. Clear it once, before or after the
-upgrade:
+git registers as worktrees of this repository *and* whose stamp names this
+state root. A `0.16` tree carries no stamp — its provisioning wrote none — so
+even one sitting at the top level of the base is named in a warning and left
+where it is. A namespaced tree is out of reach twice over: it sits one level
+down, so the sweep sees only `<base>/<namespace>/` — a plain directory git
+calls no worktree of anything — and leaves the subtree standing, along with
+the branches those trees hold. Clear it once, before or after the upgrade:
 
 ```sh
 git worktree list                                  # what git still registers
