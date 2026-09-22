@@ -1,6 +1,6 @@
 [
   {
-    "tag": "CITATION-PIN-RESOLVES-A-PAIRS-SECTION-HALF",
+    "tag": "WAVE-VERDICT-SURVIVES-ANY-LEDGER-COMMIT-REFUSAL",
     "gate": {
       "kind": "open"
     },
@@ -9,32 +9,82 @@
       "new": [],
       "edit": [
         {
-          "path": "tests/helpers/commentCitations.ts",
-          "description": "the pair's section half becomes a resolved arm, not context; the doc comment's contrary paragraph goes with it"
+          "path": "src/waveTick.ts",
+          "description": "the commitPendingUpdate catch builds the wave's verdict for any throw, not the parse failure alone"
         },
         {
-          "path": "tests/helpers/docSections.ts",
-          "description": "the headings-and-bolded-bullet-leads read the arm resolves against"
+          "path": "src/Dispatcher.ts",
+          "description": "the fold reads a verdict-carrying throw; the 69 classification stays the parse failure's alone"
         },
         {
-          "path": "tests/commentCitations.test.ts",
+          "path": "tests/Dispatcher.test.ts",
           "description": "the two cases below"
         }
       ],
       "retire": []
     },
-    "summary": "The comment-citation pin resolves the italicized section half of a (`page.md`, *Section*) pair, exact after backtick normalization",
+    "summary": "A fanout wave whose pending-ledger commit refuses for any reason still reports the verdict for the tags it already landed",
     "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
+      "path": "spec/loop.md",
+      "section": "The tick verdict — one facts artifact"
     },
-    "acceptance": "A comment citing a section its page no longer heads reds, and every pair spelling left on the tree resolves.",
+    "acceptance": "A ledger-commit refusal outside a parse failure returns a failed tick carrying the wave's verdict; the parse failure's exit 69 is unchanged.",
     "tests": [
-      "a comment's (`page.md`, *Section*) pair resolves its section half against the page's headings and bolded bullet leads",
-      "an abbreviated section half is reported unresolved rather than matched as a prefix"
+      "a ledger commit refusing outside a parse failure still carries the wave's shipped tags in its verdict",
+      "a ledger-commit refusal outside a parse failure is a failed tick, not a throw out of Dispatcher.tick"
     ],
     "pins": [],
-    "notes": "Roughly 300 pair sites on the tree; about 12 spellings across ~14 modules resolve to nothing under the exact rule and are this entry's to expand (*Derived state is computed*, *Routing rule*, *Bay discovery*, ...). The helper's own doc comment illustrates the shape with (`spec/loop.md`, *Section*), which the arm reds. Scope is comments, per the predicate's framing — not page prose. Files under-declared deliberately: the drift fixes are comment-only and too wide to declare."
+    "notes": "commitPaths now runs `git commit --only`, which refuses on named paths with no change and on a partial commit under a paused merge or cherry-pick — both reachable from ordinary operator state, both landing on the catch that folds the verdict for PendingParseFailure alone and re-throws bare otherwise, losing tags already on trunk. Widen the carry rather than classify the cause: a disk error and an index.lock always took that arm too."
+  },
+  {
+    "tag": "HARNESS-DECLARATION-CARRIES-WORKTREES-BASE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/declaration.ts",
+          "description": "an optional `worktreesBase` over FlumePaths, beside `capabilities` and `friction`"
+        },
+        {
+          "path": "harness/chain.ts",
+          "description": "passed through whole; absent stays absent"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the declaration list, pinned against the schema"
+        },
+        {
+          "path": "docs/LAYERS.md",
+          "description": "the border-2 field list, pinned against the same schema"
+        },
+        {
+          "path": "tests/harnessDeclaration.test.ts",
+          "description": "the full-declaration fixture gains the field"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the two cases below"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The harness declaration carries `worktreesBase`, passed through whole to `Chain.worktreesBase` the way `capabilities` and `friction` are",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "What a consumer declares"
+    },
+    "acceptance": "A package consumer declares its worktree base in declaration.ts and the engine evaluates it at load; FLUME_WORKTREES_DIR still outranks it.",
+    "tests": [
+      "a declared worktreesBase reaches Chain.worktreesBase unchanged"
+    ],
+    "pins": [
+      "a declaration naming no worktreesBase leaves Chain.worktreesBase absent"
+    ],
+    "notes": "Downstream report (temper, on 0.17): it places worktrees off-repo for the vector `spec/worktrees.md`, *Placement — the worktree base* names, and only FLUME_WORKTREES_DIR reaches that today. Pass through whole, no default. Both docs lists are pinned against DeclarationSchema's field set (tests/harnessDeclaration.test.ts), so each follows or reds. The spec table's row — and its count of fields that are values with behavior — is the human's."
   },
   {
     "tag": "CITATION-PIN-RESOLVES-A-DOCS-PAGE-SECTION-SIGN",
@@ -67,7 +117,7 @@
       "a docs page with no numbered headings leaves its `§ N` as prose"
     ],
     "pins": [],
-    "notes": "Ten docs pages carry numbered headings and `§ N` refs; CLI.md, INTENT.md and LAYERS.md carry none and take the prose arm (LAYERS.md's one ref names another page's § 6). Two refs on the tree aim at a *different* page's numbering — MIGRATING-0.11.md's `§ 3` and CASCADE-DRY-RUN.md's `v0.8 §4` — and are judged against their own page like every other, which is the reading the rule states.",
+    "notes": "Ten docs pages carry numbered headings and `§ N` refs; CLI.md, INTENT.md and LAYERS.md carry none and take the prose arm. Refs aiming at another page's numbering (MIGRATING-0.11.md, CASCADE-DRY-RUN.md) are judged against their own page, the reading the rule states. The prior attempt reverted on the section-cite pin, not on its own work: its new comment illustrated the shape as a literal page-and-section pair, which that arm now reds — spell the placeholder `<page>.md`.",
     "observedFiles": [
       ".flume/plan/notes/CITATION-PIN-RESOLVES-A-DOCS-PAGE-SECTION-SIGN.md",
       "docs/MIGRATING-0.15.md",
@@ -113,6 +163,57 @@
       "docs/CLI.md's wake, sleep, stop and render sections name exit 74"
     ],
     "pins": [],
-    "notes": "Bay discovery (`resolveRepoRoot`, top of `main`) returns 74 for every verb, so the four silent pages — wake, sleep, stop, render — already understate their range, and the four docs sections state exit ranges that omit it outright. Blocked on the tick entry only because the first pin reads every page, tick's included."
+    "notes": "Bay discovery (`resolveRepoRoot`, top of `main`) returns 74 for every verb, so the four silent pages — wake, sleep, stop, render — already understate their range, and the four docs sections state exit ranges that omit it outright."
+  },
+  {
+    "tag": "TEST-FIXTURE-HOMES-FOR-THE-REPO-CHAIN-AND-THE-HELP-ROWS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "tests/helpers/repoChain.ts",
+          "description": "the repo-resident chain fixture: writeRepoConfig, the minimal chain source, and the stubbed-agent variant a tick can complete under"
+        },
+        {
+          "path": "tests/helpers/cliHelpRows.ts",
+          "description": "the one reader of the `Exit codes:` help block, rows and continuations"
+        }
+      ],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "imports both homes; its own two readers go"
+        },
+        {
+          "path": "tests/cliStateDirs.test.ts",
+          "description": "imports the chain fixture"
+        },
+        {
+          "path": "tests/tip-claim.integration.test.ts",
+          "description": "imports the chain fixture"
+        },
+        {
+          "path": "tests/cliHelp.test.ts",
+          "description": "imports the row reader"
+        },
+        {
+          "path": "tests/helpers/dispatcherFixture.ts",
+          "description": "writeMinimalChain takes its chain source from the new home rather than spelling a second"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The repo-resident chain fixture and the help block's exit-code row reader each get one home the suites import",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "`writeRepoConfig` and the `Exit codes:` block reader are each declared once; typecheck and suite green.",
+    "tests": [],
+    "pins": [],
+    "notes": "`writeRepoConfig` is spelled in three suites, doc comment verbatim; `minimalChainSrc` in two. Two readers of one help block: `documentedExitCodeRows` (tests/cliHelp.test.ts) and `helpExitCodeRow` (tests/cli.test.ts). Not docSections.ts — its header names it the markdown heading reader, and a help block is not markdown. Behavior-free: the typecheck, the suite and the citation pins hold it."
   }
 ]
