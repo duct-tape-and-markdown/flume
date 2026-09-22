@@ -246,8 +246,29 @@ export function diffPrefix(
 }
 
 /**
- * The lines `cursor..HEAD` deleted from `paths`, each with the `-` git wrote
- * it under.
+ * The byte {@link deletedLines} asks git to mark a deleted line with.
+ *
+ * git's default `-` is the same byte it spells `--- a/<path>` file headers
+ * with, so telling the two apart means guessing at a prefix — and the guess
+ * is wrong for the line git renders as `--- x`, which is a deletion whose
+ * own text began with `--`. `--output-indicator-old` is git saying which
+ * lines are deletions outright, so nothing here reconstructs it
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * `<` is any byte no other line of a diff begins with: the option renames
+ * the deletion indicator alone, leaving `---`, `+++`, `diff --git`, `index`,
+ * `@@` and `\` to the headers, ` ` to context and `+` to additions. The
+ * filter below is then git's own answer, whatever a deleted line's text is.
+ *
+ * The option landed in git 2.22, under the floor the engine already declares
+ * for the gits it runs (`WORKTREE_LIST_Z_FLOOR`, `src/git.ts`).
+ */
+const DELETED_MARK = "<";
+
+/**
+ * The lines `cursor..HEAD` deleted from `paths`, each back under the `-` a
+ * diff conventionally spells a deletion with — the mark above is how git
+ * was asked, not what a reader is handed.
  *
  * Read off one diff over the whole range rather than per commit: a line
  * added and then deleted inside the window was never a claim the tree
@@ -259,7 +280,14 @@ export function deletedLines(
   paths: readonly string[],
 ): string[] {
   if (paths.length === 0) return [];
-  return git(cwd, ["diff", `${cursor}..HEAD`, "--", ...paths])
+  return git(cwd, [
+    "diff",
+    `--output-indicator-old=${DELETED_MARK}`,
+    `${cursor}..HEAD`,
+    "--",
+    ...paths,
+  ])
     .split("\n")
-    .filter((line) => line.startsWith("-") && !line.startsWith("---"));
+    .filter((line) => line.startsWith(DELETED_MARK))
+    .map((line) => `-${line.slice(DELETED_MARK.length)}`);
 }

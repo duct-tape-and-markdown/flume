@@ -955,6 +955,81 @@ it("the sweep window carries the frontier commits and the spec lines the window 
   expect(rendered).toContain("-A ratified claim.");
 });
 
+/**
+ * The retired-claim delta's own lines, cut out of a rendered sweep window.
+ *
+ * The block runs from the delta's header to the blank line before the tip
+ * line; a deleted blank line arrives as a bare `-`, never as `""`, so the
+ * first empty line is the block's end. Cases assert against these lines
+ * rather than against the whole render, which quotes commit subjects and
+ * paths the delta has no say over (`.claude/rules/posture-sweep.md`, *A
+ * violation counts only when verified on disk this tick*).
+ */
+function retiredDelta(rendered: string | undefined): string[] {
+  if (rendered === undefined) throw new Error("the sweep window is unrendered");
+  const lines = rendered.split("\n");
+  const start = lines.findIndex((line) =>
+    line.includes("(retired-claim delta)"),
+  );
+  expect(start).not.toBe(-1);
+  const rest = lines.slice(start + 1);
+  const end = rest.indexOf("");
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+it("the retired-claim delta carries a deleted line that begins with two dashes", () => {
+  commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "spec/loop.md": "# Loop\n\nA ratified claim.\n-- a dashed claim.\n",
+    },
+    "build: a",
+  );
+  writePlanState(stateRoot(), planState());
+
+  commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
+  commit({ "spec/loop.md": "# Loop\n" }, "spec: retire both claims");
+
+  const delta = retiredDelta(
+    windows()["plan-sweep"].args({ cwd: repo, flumeDir: stateRoot() })
+      .SWEEP_WINDOW,
+  );
+
+  // Vacuity guard: the window retired two lines, and the undashed one
+  // arrives whatever git was asked to mark deletions with.
+  expect(delta).toContain("-A ratified claim.");
+  // The dashed one is the claim git renders as `--- a dashed claim.`: a
+  // deletion, not the `--- a/spec/loop.md` header it reads as.
+  expect(delta).toContain("--- a dashed claim.");
+});
+
+it("the retired-claim delta excludes the diff's own file-header lines", () => {
+  commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "spec/loop.md": "# Loop\n\nA ratified claim.\n",
+    },
+    "build: a",
+  );
+  writePlanState(stateRoot(), planState());
+
+  commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
+  commit({ "spec/loop.md": "# Loop\n" }, "spec: retire the claim");
+
+  const delta = retiredDelta(
+    windows()["plan-sweep"].args({ cwd: repo, flumeDir: stateRoot() })
+      .SWEEP_WINDOW,
+  );
+
+  // Vacuity guard: a delta that carried nothing would exclude the headers
+  // by having excluded everything.
+  expect(delta.length).toBeGreaterThan(0);
+  // Exactly what the commit removed — the sentence and the blank line above
+  // it — and none of `diff --git`, `index`, `--- a/spec/loop.md`,
+  // `+++ b/spec/loop.md` or the hunk header.
+  expect(delta).toEqual(["-", "-A ratified claim."]);
+});
+
 it("a rendered sweep window names the tip its frontier was drawn from", () => {
   const base = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
   writePlanState(stateRoot(), planState());
