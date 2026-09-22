@@ -1,14 +1,16 @@
 /**
- * The anchor arm of the citation pin (`tests/helpers/pageAnchors.ts`): a
- * markdown link's `#fragment` resolves against the headings of the page it
- * names, and a heading rewritten out from under a link reds rather than
- * silently landing a reader at the top of the page.
+ * The two citations the pin resolves against a page's own structure
+ * (`tests/helpers/pageAnchors.ts`): a markdown link's `#fragment` against the
+ * headings of the page it names, and a `§ N` on a `docs/` page against that
+ * page's own numbering. Either way a section rewritten out from under a
+ * citation reds, rather than silently landing a reader somewhere the claim no
+ * longer is.
  *
- * The repo verdict at the foot is the arm; the cases above it are the arm's
- * own detection, proven on a fixture written to be caught. A scan whose
- * matcher stopped matching reports a clean tree and a dead link the same way,
- * so the reader and the slugger are pinned on inputs where the answer is
- * known before the tree is judged.
+ * Each repo verdict is the arm; the cases above it are that arm's own
+ * detection, proven on a fixture written to be caught. A scan whose matcher
+ * stopped matching reports a clean tree and a dead citation the same way, so
+ * the readers and the slugger are pinned on inputs where the answer is known
+ * before the tree is judged.
  */
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -24,7 +26,11 @@ import {
   markdownLinks,
   pagesUnder,
   scanPageAnchors,
+  scanSectionRefs,
+  sectionNumbers,
+  sectionRefs,
   type PageDomain,
+  type SectionScan,
 } from "./helpers/pageAnchors.ts";
 import { REPO_ROOT, filesUnder, relPath } from "./helpers/repoProgram.ts";
 
@@ -91,17 +97,66 @@ const FIXTURE: Record<string, string> = {
   ].join("\n"),
 };
 
+/**
+ * The pages whose `§ N` references are judged: `docs/`, which is where the
+ * rule scopes this arm (`.claude/rules/engineering.md`, *Narration is the
+ * ladder's bottom rung*). It is the scope rather than a coverage ceiling —
+ * every other tree the domain above reads numbers no section of its own, so a
+ * `§` written there takes the prose arm and a wider domain would read the
+ * same verdict off it.
+ */
+const SECTION_DOMAIN: PageDomain = { trees: ["docs"] };
+
+/**
+ * A second fixture tree, beside the anchor one and read by its own domain: a
+ * page numbering sections both ways with references live and dead, and a page
+ * numbering none that cites the first.
+ */
+const SECTION_FIXTURE: Record<string, string> = {
+  "notes/upgrade.md": [
+    "# Migrating to 9.9.0",
+    "",
+    "## 0. Before anything else",
+    "",
+    "§ 0 is due whether or not you take the bump, and §§ 1–2 are the rest.",
+    "",
+    "## 1. A field moves",
+    "",
+    "**1.1 The read that keeps compiling.** See § 1.1 for it, and § 4 for the",
+    "section that went.",
+    "",
+    "## 2. Operators",
+    "",
+    "```",
+    "grep -n 'seedDir' chain.ts   # § 2",
+    "# 0.9 — a sample heading, opening no section",
+    "```",
+    "",
+  ].join("\n"),
+  "notes/index.md": [
+    "# The series",
+    "",
+    "`upgrade.md` § 1 is the one break, and nothing on this page numbers a",
+    "section of its own.",
+    "",
+  ].join("\n"),
+};
+
 let fixtureRoot = "";
+let fixtureSections: SectionScan;
 let repoScan: AnchorScan;
+let repoSections: SectionScan;
 
 beforeAll(async () => {
   repoScan = scanPageAnchors({ root: REPO_ROOT, domain: ANCHOR_DOMAIN });
+  repoSections = scanSectionRefs({ root: REPO_ROOT, domain: SECTION_DOMAIN });
   fixtureRoot = await mkTempDir("flume-anchors-");
-  for (const [rel, body] of Object.entries(FIXTURE)) {
+  for (const [rel, body] of Object.entries({ ...FIXTURE, ...SECTION_FIXTURE })) {
     const path = join(fixtureRoot, ...rel.split("/"));
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, body);
   }
+  fixtureSections = scanSectionRefs({ root: fixtureRoot, domain: { trees: ["notes"] } });
 });
 
 afterAll(async () => {
@@ -202,4 +257,75 @@ it("every markdown link's #fragment resolves against the cited page's own headin
   expect(repoScan.scanned.length).toBeGreaterThan(0);
 
   expect(repoScan.findings).toEqual([]);
+});
+
+it("a `§` run names every section it introduces, and a page numbers them two ways", () => {
+  // A range and a list are each one run: both endpoints, every member.
+  expect(
+    sectionRefs(
+      "§§ 1–5 are the upgrade, § 2.2, § 2.3 the two to read\n" +
+        "first, and §§ 5, 8, and 9 what a typecheck names.",
+    ).map((ref) => `${ref.line}:${ref.number}`),
+  ).toEqual(["1:1", "1:5", "1:2.2", "1:2.3", "2:5", "2:8", "2:9"]);
+
+  // A heading and a bolded lead each open a section, with or without the
+  // trailing `.`; an unnumbered heading and a fenced `# ` line open none.
+  expect(
+    sectionNumbers(
+      [
+        "# Migrating to 0.15.0",
+        "## 1. A field moves",
+        "### 1.4 The gate that opens the queue",
+        "**5.6 A handoff reading quarantinedTags.**",
+        "## Which sections apply to you",
+        "```",
+        "# 0.14 — two readings",
+        "```",
+      ].join("\n"),
+    ),
+  ).toEqual(["1", "1.4", "5.6"]);
+});
+
+it("a `§ N` on a docs page resolves against that page's own numbered headings", () => {
+  const scan = fixtureSections;
+
+  // Non-vacuity: the fixture's live references are judged, not skipped past —
+  // the fenced one among them, since a cheat-sheet cite is followed like any
+  // other even though a fenced `# ` line opens no section.
+  expect(scan.numbered).toEqual(["notes/upgrade.md"]);
+  expect(scan.resolved.map((site) => `${site.line}:${site.number}`)).toEqual([
+    "5:0",
+    "5:1",
+    "5:2",
+    "9:1.1",
+    "15:2",
+  ]);
+
+  // The one naming no section of its page is the finding, at the line a reader
+  // has to edit.
+  expect(scan.findings).toEqual([{ page: "notes/upgrade.md", line: 9, number: "4" }]);
+
+  // Non-vacuity: green over a tree whose references went unread is the failure
+  // this arm exists to make impossible.
+  expect(repoSections.numbered.length).toBeGreaterThan(0);
+  expect(repoSections.scanned.length).toBeGreaterThan(0);
+
+  expect(repoSections.findings).toEqual([]);
+});
+
+it("a docs page with no numbered headings leaves its `§ N` as prose", () => {
+  const scan = fixtureSections;
+
+  // The page numbering nothing is read, and its reference is reported prose
+  // rather than judged against a numbering it does not have.
+  expect(scan.pages).toContain("notes/index.md");
+  expect(scan.numbered).not.toContain("notes/index.md");
+  expect(scan.prose).toEqual([{ page: "notes/index.md", line: 3, number: "1" }]);
+  expect(scan.scanned.map((site) => site.page)).not.toContain("notes/index.md");
+
+  // Non-vacuity: the arm is exercised on the tree, and no page it silenced is
+  // one whose own numbering could have answered.
+  expect(repoSections.prose.length).toBeGreaterThan(0);
+  const numbered = new Set(repoSections.numbered);
+  expect(repoSections.prose.filter((site) => numbered.has(site.page))).toEqual([]);
 });

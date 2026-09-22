@@ -75,8 +75,9 @@ Net-negative on config surface: one option deleted, one env var added.
 2. **Job resolution sugar.** `flume --job <name> <cmd>` ≡
    `FLUME_DIR=FLUME_CONFIG_DIR=<repoRoot>/.flume/jobs/<name>` plus
    `FLUME_JOB=<name>`, all canonicalized and written back into env at CLI
-   entry (the existing §12 pattern — loop-spawned tick children inherit env,
-   not flags). `FLUME_JOB` alone is also honored directly.
+   entry (the existing canonicalize-at-entry pattern — loop-spawned tick
+   children inherit env, not flags). `FLUME_JOB` alone is also honored
+   directly.
 3. **Job-scoped fanout branches.** With `FLUME_JOB` set, worktree branches
    become `flume/<job>/<slug>` (today: repo-global `flume/<slug>`, created
    `-B`/deleted `-D` — two jobs sharing a tag slug silently clobber each

@@ -11,8 +11,9 @@ note in the series is [`MIGRATING-0.15.md`](MIGRATING-0.15.md), which walks
 `0.15.0` → `0.16.0` step alone, and nothing on this page substitutes for
 them. The break most likely to survive a jump unnoticed is 0.15's
 `voluntary-bail` → `clean-exit` rename, which no typecheck catches in a
-chain that reads the mode as a bare string; `MIGRATING-0.15.md` § 1.1 hunts
-it, and § 3 below shows the read that turns it into a compile error.
+chain that reads the mode as a bare string;
+[the read that keeps compiling](MIGRATING-0.15.md#11-the-read-that-keeps-compiling)
+hunts it, and § 3 below shows the read that turns it into a compile error.
 
 From **0.15.0**. Five breaking changes, every one of them a rename or a
 default the engine now takes — no chain restructuring, no new required

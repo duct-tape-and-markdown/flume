@@ -3276,8 +3276,9 @@ describe("flume tick — one chain application per process (ONE-CHAIN-APPLICATIO
  *
  * One row rather than the block, because the claim below is about one row's
  * cause list — a read handing back the whole block would turn on whatever
- * the neighbouring rows happen to quote (`.claude/rules/posture-sweep.md`,
- * *a negative assertion over a whole rendered artifact*). The block-wide
+ * the neighbouring rows happen to quote — the whole-artifact negative the
+ * standing lenses name (`.claude/rules/posture-sweep.md`, *A violation counts
+ * only when verified on disk this tick*). The block-wide
  * reader lives beside the range pins it serves, in `tests/cliHelp.test.ts`.
  */
 function helpExitCodeRow(help: string, code: number): string {

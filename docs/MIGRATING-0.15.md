@@ -18,9 +18,10 @@ The next note is [`MIGRATING-0.16.md`](MIGRATING-0.16.md) (`0.15.0` →
 shipped breaks has a page of its own — so no release between these notes has
 a `### Breaking` section in [`../CHANGELOG.md`](../CHANGELOG.md) you have to
 work by hand. One item on the next page is due here anyway —
-its § 0, the `package.json` beside your `chain.ts`, is what makes an
-ESM-only package load under `tsx` on node 22, and a chain pinned to `0.15`
-needs it exactly as much as one on `0.16`.
+[the manifest beside your chain](MIGRATING-0.16.md#0-before-anything-else-the-manifest-beside-your-chain)
+— the `package.json` next to your `chain.ts` — is what makes an ESM-only
+package load under `tsx` on node 22, and a chain pinned to `0.15` needs it
+exactly as much as one on `0.16`.
 
 From **0.14.0**: **four** breaking changes. Three are shapes your compiler
 resolves — a parameter that narrowed, a field that appeared, an internal
@@ -164,8 +165,9 @@ Four places to read for it:
 
 The fix is the same in each: delete the cast, name `NoCommitMode` or
 `PriorAttempt`, and let the compiler find the remaining sites. 0.16's
-[§ 3](MIGRATING-0.16.md) works the same repair through a full `shouldRun`,
-because the next release's keyspace change lands on exactly these readers.
+[prior-attempt keyspace section](MIGRATING-0.16.md#3-prior-attempt-records-are-scoped-by-keyspace)
+works the same repair through a full `shouldRun`, because the next release's
+keyspace change lands on exactly these readers.
 
 ## 2. `writablePathsGate`'s entry scope is the resolved path list
 
@@ -485,4 +487,5 @@ other.
 - [`CLI.md`](CLI.md) — `flume check`, `flume status`, `flume job`.
 - [`MIGRATING-0.14.md`](MIGRATING-0.14.md) — the previous note in this series.
 - [`MIGRATING-0.16.md`](MIGRATING-0.16.md) — the next one, from `0.15.0`. Its
-  § 0 is due on `0.15` too.
+  [manifest section](MIGRATING-0.16.md#0-before-anything-else-the-manifest-beside-your-chain)
+  is due on `0.15` too.

@@ -5,9 +5,10 @@ note in the series is [`MIGRATING-0.16.md`](MIGRATING-0.16.md), which walks
 `0.15.0` → `0.16.0`; before it, [`MIGRATING-0.15.md`](MIGRATING-0.15.md)
 (`0.14.0` → `0.15.0`) and the notes behind it. If your pin is below `0.16.0`,
 work those first and return here. The one item on the previous page that is
-due whether or not you take this upgrade is its § 0, the `package.json`
-beside your `chain.ts`, without which an ESM-only package stops loading under
-`tsx` on node 22.23 and later.
+due whether or not you take this upgrade is
+[the manifest beside your chain](MIGRATING-0.16.md#0-before-anything-else-the-manifest-beside-your-chain)
+— the `package.json` next to your `chain.ts` — without which an ESM-only
+package stops loading under `tsx` on node 22.23 and later.
 
 From **0.16.x**. **Eight breaking changes, and four of them are the job
 surface coming out.** Three are in the API, and the compiler catches every

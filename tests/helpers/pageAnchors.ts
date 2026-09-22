@@ -1,16 +1,18 @@
 /**
- * The anchor half of the citation carve-out `.claude/rules/engineering.md`
- * *Narration is the ladder's bottom rung* names: the `#fragment` a markdown
- * link carries into a page resolves against that page's own headings, the way
- * a `per` cite already does. A page name is answered by the working tree, and
- * a fragment is answered one step further in — by what the named page opens a
- * heading on — so neither reading asks what the link *says*. The token, never
- * its meaning.
+ * The two citations `.claude/rules/engineering.md` *Narration is the ladder's
+ * bottom rung* resolves one step past a page name — the `#fragment` a
+ * markdown link carries into a page, and the `§ N` a `docs/` page states —
+ * each answered by the structure of the page it lands in, the way a `per`
+ * cite already is. A page name is answered by the working tree; these are
+ * answered by what that page opens a section on, so neither reading asks what
+ * the citation *says*. The token, never its meaning.
  *
- * Without the arm a fragment resolves against nothing: the page-name half
- * reds when a page is renamed away, and stays green while every heading the
- * links into it named is rewritten out. A reader following one lands at the
- * top of the page with no signal that the section they were sent to is gone.
+ * One job, two spellings of it: what a page's own headings answer. Without
+ * the arms a citation past the page name resolves against nothing — the
+ * page-name half reds when a page is renamed away, and stays green while
+ * every section the citations into it named is rewritten out. A reader
+ * following one lands at the top of the page, or at a number that has since
+ * moved, with no signal that the section they were sent to is gone.
  *
  * The slug is GitHub's, because GitHub is where these links are followed: the
  * heading's rendered text, lowercased, stripped of everything that is not a
@@ -23,7 +25,7 @@
  * Headings come off the shared reader (`headingLines`,
  * `tests/helpers/docSections.ts`): one rule for what a heading is, so the
  * fenced `# ` lines a page's shell samples carry never mint an anchor the
- * renderer would not.
+ * renderer would not, nor a section number a cross-reference could name.
  *
  * `markdownLinks` is the suite's one link reader, and the destination it hands
  * back is what the packaging scan already wanted — the two callers differ in
@@ -238,4 +240,136 @@ export function scanPageAnchors(request: AnchorScanRequest): AnchorScan {
     resolved: scanned.filter(anchored),
     findings: scanned.filter((site) => !anchored(site)),
   };
+}
+
+/**
+ * A heading that opens a numbered section, capturing its number: `## 1.
+ * Declaring a Phase`, `### 1.4 A chain-authored gate`, `## 0. Before anything
+ * else`. The trailing `.` is optional because both spellings are on the tree,
+ * and the number runs to whitespace or the line's end, so a heading numbered
+ * `1.4` opens that section rather than section `1`.
+ */
+const NUMBERED_HEADING = /^#{1,6}\s+(\d+(?:\.\d+)*)\.?(?:\s|$)/;
+
+/**
+ * A bolded lead that opens one, on the same number rule: `**2.1 A chain
+ * finding its own state root.**`. A migration note numbers its subsections
+ * this way where a heading would crowd the page's table of contents, and a
+ * `§ 2.1` naming one is a reference a reader follows exactly as far — the
+ * same reading the section half of a `` (`<page>.md`, *Section*) `` pair
+ * takes, which resolves against a page's headings and its bolded leads alike.
+ */
+const NUMBERED_LEAD = /^\*\*(\d+(?:\.\d+)*)\.?(?:\s|$)/gm;
+
+/**
+ * Every section number a page opens — a numbered heading or a numbered
+ * bolded lead, each spelling in page order behind the one before it. What a
+ * reference is resolved against is membership, so the two runs are not
+ * interleaved; a caller wanting page order would be reading this for
+ * something it does not answer. Headings come off the shared reader, so a
+ * fenced `# 0.14 — two readings` line in a shell sample opens no section
+ * here either.
+ */
+export function sectionNumbers(page: string): string[] {
+  return [
+    ...headingLines(page).flatMap((heading) => NUMBERED_HEADING.exec(heading)?.[1] ?? []),
+    ...[...page.matchAll(NUMBERED_LEAD)].map((lead) => lead[1]!),
+  ];
+}
+
+/**
+ * A `§` or `§§` and the run of section numbers it introduces — one `§ 2.6`, a
+ * range `§§ 1–5`, a list `§§ 5, 8, and 9`. The run ends at the first thing
+ * that is not another number of the same series, so `§ 2.2, § 2.3` reads as
+ * two references rather than one two-long run.
+ */
+const SECTION_REF =
+  /§§?\s*\d+(?:\.\d+)*(?:\s*(?:[-–—]|,\s*|,?\s*(?:and|or|through)\s+)\s*\d+(?:\.\d+)*)*/g;
+
+/** One number inside such a run. */
+const REF_NUMBER = /\d+(?:\.\d+)*/g;
+
+/** One `§ N` cross-reference, at the line it sits on. */
+export interface SectionSite {
+  /** The page stating the reference, repo-relative and posix-separated. */
+  readonly page: string;
+  /** The 1-based line the reference sits on. */
+  readonly line: number;
+  /** The section number, dotted and without its `§` — 1, 2.6, 5.4. */
+  readonly number: string;
+}
+
+/**
+ * Every `§ N` a body states, one site per number named, in page order.
+ *
+ * Read through fenced blocks as well as around them, unlike the heading
+ * reader above: a fenced `# ` line is sample text that merely *looks* like a
+ * heading, while a `§ 3` in a fenced grep cheat-sheet is a cross-reference a
+ * reader follows like any other — and on a migration note the cheat-sheet is
+ * where most of them are.
+ */
+export function sectionRefs(body: string): { readonly line: number; readonly number: string }[] {
+  return [...body.matchAll(SECTION_REF)].flatMap((ref) =>
+    [...ref[0].matchAll(REF_NUMBER)].map((number) => ({
+      line: body.slice(0, ref.index).split("\n").length,
+      number: number[0],
+    })),
+  );
+}
+
+/** What one scan of a domain's `§ N` references found. */
+export interface SectionScan {
+  /** Every page read, repo-relative and posix-separated. */
+  readonly pages: readonly string[];
+  /** Those numbering a section of their own — the pages whose references are judged. */
+  readonly numbered: readonly string[];
+  /** References on a page that numbers none: prose, and left unjudged. */
+  readonly prose: readonly SectionSite[];
+  /** The judged references — every one on a numbered page. */
+  readonly scanned: readonly SectionSite[];
+  /** Those naming a section the page opens. */
+  readonly resolved: readonly SectionSite[];
+  /** Those naming none — the arm's verdict. */
+  readonly findings: readonly SectionSite[];
+}
+
+/**
+ * Every `§ N` the domain's pages carry, resolved against the numbering of the
+ * page that states it.
+ *
+ * The page's *own* numbering is what answers, whoever the author had in mind:
+ * `§ 4` is a number, and the only numbering in front of the reader is the one
+ * they are reading. A page numbering no section of its own has no such
+ * answer, so its references are prose and go unjudged — judging them would
+ * red every `§` a page quotes out of one that numbers its sections, on no
+ * evidence at all.
+ */
+export function scanSectionRefs(request: AnchorScanRequest): SectionScan {
+  const root = resolve(request.root);
+  const pages: string[] = [];
+  const numbered: string[] = [];
+  const prose: SectionSite[] = [];
+  const scanned: SectionSite[] = [];
+  const resolved: SectionSite[] = [];
+  const findings: SectionSite[] = [];
+
+  for (const path of pagesUnder(root, request.domain)) {
+    const page = relPath(root, path);
+    pages.push(page);
+
+    const body = readFileSync(path, "utf8");
+    const sections = sectionNumbers(body);
+    const sites = sectionRefs(body).map((ref) => ({ page, ...ref }));
+
+    if (sections.length === 0) {
+      prose.push(...sites);
+      continue;
+    }
+
+    numbered.push(page);
+    scanned.push(...sites);
+    for (const site of sites) (sections.includes(site.number) ? resolved : findings).push(site);
+  }
+
+  return { pages, numbered, prose, scanned, resolved, findings };
 }
