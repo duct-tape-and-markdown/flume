@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "tag": "ENGINE-COMMIT-CARRIES-ONLY-THE-PATHS-IT-NAMED",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/git.ts",
+          "description": "commitPaths: the commit leg takes its own pathspec; retire the doc comment's now-false 'takes no pathspec of its own' clause"
+        },
+        {
+          "path": "tests/git.test.ts",
+          "description": "the two cases below; the glob case's comment restates the retired clause"
+        }
+      ]
+    },
+    "summary": "commitPaths commits its named paths alone, leaving whatever else the operator staged staged",
+    "per": {
+      "path": "spec/loop.md",
+      "section": "The engine records, never navigates"
+    },
+    "acceptance": "With unrelated work staged on the primary checkout, a ship tick's chore(flume) commit carries pending.json alone and the operator's staging survives untouched.",
+    "tests": [
+      "commitPaths commits only its named paths when an unrelated change is staged",
+      "commitPaths refuses when its named paths hold no change and an unrelated change is staged"
+    ],
+    "notes": "Field-traced at 01a9a625: three operator question deletions rode into the ledger commit. `git commit --only -m <msg> -- <paths>` is the whole fix (arg order matters; -m after -- is read as a pathspec), and `run` already carries literalPathspecEnv. Two consequences to take deliberately: --only refuses mid-cherry-pick, where today's bare commit would conclude the pick; and it makes the unchanged-ledger skip (spec/pending.md, Wave auto-unblock) hold again, which a staged bystander defeats today."
+  }
+]
