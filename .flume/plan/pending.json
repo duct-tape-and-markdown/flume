@@ -1,1 +1,31 @@
-[]
+[
+  {
+    "tag": "THE-TERMINATION-DOC-DROPS-ITS-SHIP-CLASSIFICATION-CLAIM",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/tickAttempt.ts",
+          "description": "AgentTermination's doc: cut the paragraph claiming runFanout's ship classification consults finalMessage; state only where the field actually goes"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "pin ShipContext's key set, so the retired claim cannot be restored silently"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Retire the AgentTermination doc's claim that ship classification consults the agent's final message — the cited spec section forbids that inference by name",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "src/tickAttempt.ts states only what the engine does with a clean termination's finalMessage — the clean-exit record and the retry render — and the ShipContext pin holds its key set.",
+    "tests": [],
+    "pins": [
+      "ShipContext carries no field holding the agent's final message or termination"
+    ],
+    "notes": "Three sites disagree with it: spec/pending.md *Ship detection trusts the agent's own account* (\"Nothing is inferred... Not from the agent's output stream\"), ShipContext (src/Phase.ts:49) which carries neither field, and the sibling comment at src/tickAttempt.ts:490 (\"read for intent by the chain and never here\"). finalMessage reaches only buildCleanExit (src/tickAttempt.ts:768) and the retry render (src/Prompt.ts:862)."
+  }
+]

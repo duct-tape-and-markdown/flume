@@ -117,14 +117,22 @@
       "tests/helpers/scanCorpus.ts",
       "tests/helpers/specLocators.ts",
       "tests/helpers/suiteShape.ts",
-      "tests/retired-narration.test.ts"
+      "tests/retired-narration.test.ts",
+      "src/waveTick.ts",
+      "src/tickLeg.ts",
+      "src/gateRun.ts",
+      "src/tipVerify.ts",
+      "src/mergingMarkers.ts",
+      "src/pendingLedger.ts",
+      "src/selection.ts",
+      "src/tickAttempt.ts"
     ]
   },
   "drainedRuns": {
     "windows": {
       "run": "35163992613",
       "titles": [
-        "flume status — supervisor liveness > reports a stale pidfile when the recorded pid is dead"
+        "flume status \u2014 supervisor liveness > reports a stale pidfile when the recorded pid is dead"
       ]
     },
     "posix": {
