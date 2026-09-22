@@ -265,6 +265,41 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
   };
 }
 
+/**
+ * A minimal open entry — the subject of the per-entry refusal cases, which
+ * read the record beside an entry rather than anything the entry declares.
+ */
+const REFUSAL_ENTRY: PendingEntry = {
+  tag: "SOME-ENTRY",
+  gate: { kind: "open" },
+  dependsOnForks: [],
+  files: { new: [], edit: [], retire: [] },
+};
+
+/** A prior attempt that ran, read the tree at `headSha`, and committed nothing. */
+const cleanExit = (headSha: string): PriorAttempt => ({
+  mode: "clean-exit",
+  finalMessage: "nothing to do here",
+  key: "entry",
+  keyedAs: "some-entry",
+  headSha,
+  at: "2026-09-16T00:00:00.000Z",
+});
+
+/**
+ * The per-entry refusal a built chain carries, with the absence thrown
+ * rather than skipped: a factory that declared none would leave every case
+ * below green over nothing (`.claude/rules/engineering.md`, *A green verdict
+ * is proven non-vacuous*).
+ */
+function refusalOf(chain: Chain): NonNullable<Chain["refusesEntry"]> {
+  const refusesEntry = chain.refusesEntry;
+  if (refusesEntry === undefined) {
+    throw new Error("the factory declared no per-entry refusal");
+  }
+  return refusesEntry;
+}
+
 it("the package refuses a state root resolved outside the repository, naming both roots", () => {
   // Control: the same declaration over a root inside the repository loads,
   // so the refusal below is the relocation's doing and not the fixture's.
@@ -799,26 +834,9 @@ it("the chain the factory builds declines a clean exit at the tick's own HEAD", 
   // engine composes at selection (`bindEntryRefusal`, `src/selection.ts`) —
   // so this is the predicate a real wave consults, not the module-level one
   // asserted against itself.
-  const refusesEntry = chainFor().refusesEntry;
-  if (refusesEntry === undefined) {
-    throw new Error("the factory declared no per-entry refusal");
-  }
-
+  const refusesEntry = refusalOf(chainFor());
   const head = "9".repeat(40);
-  const entry: PendingEntry = {
-    tag: "SOME-ENTRY",
-    gate: { kind: "open" },
-    dependsOnForks: [],
-    files: { new: [], edit: [], retire: [] },
-  };
-  const cleanExit = (headSha: string): PriorAttempt => ({
-    mode: "clean-exit",
-    finalMessage: "nothing to do here",
-    key: "entry",
-    keyedAs: "some-entry",
-    headSha,
-    at: "2026-09-16T00:00:00.000Z",
-  });
+  const entry = REFUSAL_ENTRY;
 
   expect(
     refusesEntry({ entry, priorAttempt: cleanExit(head), headSha: head }),
@@ -837,6 +855,37 @@ it("the chain the factory builds declines a clean exit at the tick's own HEAD", 
 
   // And a first attempt — no record at all — is never held back.
   expect(refusesEntry({ entry, headSha: head })).toBe(false);
+});
+
+it("a chain declaring its own build handoff still carries the package's per-entry refusal", () => {
+  // The case above drives the default declaration, where the ladder and the
+  // refusal come from the same place and neither can be seen apart from the
+  // other. Here a consumer has replaced build's routing outright — the one
+  // value a declaration states about which phase runs next — and the floor
+  // beneath it is what this reads.
+  const declared: Handoff = () => ["a-phase-the-package-never-names"];
+  const chain = chainFor({ ...DECLARATION, handoff: { build: declared } });
+
+  // The ladder really is displaced for that phase, so the refusal below is
+  // the floor's doing rather than the package's default still standing.
+  expect(
+    phaseNamed(chain, BUILD_PHASE).handoff(tickResult({ phaseName: BUILD_PHASE })),
+  ).toEqual(["a-phase-the-package-never-names"]);
+
+  const refusesEntry = refusalOf(chain);
+  const head = "9".repeat(40);
+
+  expect(
+    refusesEntry({
+      entry: REFUSAL_ENTRY,
+      priorAttempt: cleanExit(head),
+      headSha: head,
+    }),
+  ).toBe(true);
+
+  // And the declaration did not turn the floor into a wall either: the same
+  // entry with nothing walled on it is still the wave's.
+  expect(refusesEntry({ entry: REFUSAL_ENTRY, headSha: head })).toBe(false);
 });
 
 it("the package's judge runs after a consumer's declared gates at the same when", () => {

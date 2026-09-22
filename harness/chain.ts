@@ -351,15 +351,9 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // runs: every slice's window is a fact of disk a sibling's handoff can
     // produce, so nothing here is handoff-unwakeable.
     humanOnly: [],
-    // The package's per-entry refusal, unconditional: an entry whose latest
-    // prior attempt is a clean exit at the tip this selection is taken at is
-    // held back from every pickable set the tick reports, so the ladder
-    // above never hands build the dispatch it has already bought
-    // (`handoff.ts`). Unconditional because the declaration carries no
-    // per-entry knob: the one value a consumer states here is `handoff`,
-    // which replaces the ladder for a phase, and the refusal rides beneath
-    // every ladder a chain this factory builds runs
-    // (`spec/harness.md`, *The default `handoff`*).
+    // The package's per-entry refusal (`handoff.ts`), unconditional because
+    // it is the floor: whatever ladder a phase runs, declared or default,
+    // runs above it (`spec/harness.md`, *The default `handoff`*).
     refusesEntry: defaultRefusesEntry,
     // Whole, and unread: which strings an environment asserts is the
     // consumer's fact, and the engine's only use of one is matching it
