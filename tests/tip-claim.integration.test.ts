@@ -24,6 +24,7 @@ import { parsePidClaim } from "../src/pidClaim.ts";
 import { deadPid } from "./helpers/deadPid.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
+import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";
 import { CLI, TSX_CLI, exec, runCli } from "./helpers/subprocess.ts";
 import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 
@@ -70,48 +71,6 @@ async function headClaimPath(dir: string): Promise<string> {
     );
   }
   return tipClaimPath(await gitCommonDir(dir), ref.path);
-}
-
-/**
- * Materialize the repo-resident config: `chain.ts` at
- * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
- * fixture in this suite loads from. `promptPath`
- * stays a plain configDir-relative join (the shared-prompts case).
- */
-async function writeRepoConfig(
-  root: string,
-  chainSrc: string,
-  promptContent = "probe prompt\n",
-): Promise<string> {
-  const cfg = join(root, ".flume");
-  await mkdir(join(cfg, "prompts"), { recursive: true });
-  await writeFile(join(cfg, "chain.ts"), chainSrc, "utf8");
-  await writeFile(join(cfg, "prompts", "prompt.md"), promptContent, "utf8");
-  return cfg;
-}
-
-/**
- * A minimal, otherwise-valid chain — loaded for its declared fields, never
- * ticked past the detached-HEAD/tick refusal it is used for below.
- */
-function minimalChainSrc(friction?: string): string {
-  return (
-    `export default () => ({ chain: {\n` +
-    `  phases: [{\n` +
-    `    name: "probe",\n` +
-    `    description: "",\n` +
-    `    promptPath: "prompts/prompt.md",\n` +
-    `    concurrency: "singleton",\n` +
-    `    writablePaths: ["**"],\n` +
-    `    gates: [],\n` +
-    `    handoff: () => [],\n` +
-    `  }],\n` +
-    `  humanOnly: [],\n` +
-    (friction !== undefined
-      ? `  friction: ${JSON.stringify(friction)},\n`
-      : ``) +
-    `} });\n`
-  );
 }
 
 /**

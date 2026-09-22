@@ -11,7 +11,7 @@
  */
 
 import { existsSync, lstatSync, readdirSync } from "node:fs";
-import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -25,6 +25,7 @@ import { Baton } from "../src/Baton.ts";
 import { EX_IOERR } from "../src/cli.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
+import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";
 import { makeScratchRepo } from "./helpers/scratchRepo.ts";
 import {
   SPAWN_BUDGET_MS,
@@ -413,41 +414,6 @@ describe("resolveRepoRoot — bay discovery walk-up", () => {
     SPAWN_BUDGET_MS,
   );
 });
-
-/**
- * Materialize the repo-resident config: `chain.ts` at
- * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
- * fixture in this suite loads from. `promptPath` stays a plain
- * configDir-relative join (the shared-prompts case).
- */
-async function writeRepoConfig(
-  root: string,
-  chainSrc: string,
-  promptContent = "state-dirs probe prompt\n",
-): Promise<string> {
-  const cfg = join(root, ".flume");
-  await mkdir(join(cfg, "prompts"), { recursive: true });
-  await writeFile(join(cfg, "chain.ts"), chainSrc, "utf8");
-  await writeFile(join(cfg, "prompts", "prompt.md"), promptContent, "utf8");
-  return cfg;
-}
-
-function minimalChainSrc(): string {
-  return (
-    `export default () => ({ chain: {\n` +
-    `  phases: [{\n` +
-    `    name: "probe",\n` +
-    `    description: "",\n` +
-    `    promptPath: "prompts/prompt.md",\n` +
-    `    concurrency: "singleton",\n` +
-    `    writablePaths: ["**"],\n` +
-    `    gates: [],\n` +
-    `    handoff: () => [],\n` +
-    `  }],\n` +
-    `  humanOnly: [],\n` +
-    `} });\n`
-  );
-}
 
 /**
  * A chain.ts whose singleton phase records every `FLUME_*` key it observes

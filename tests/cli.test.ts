@@ -70,6 +70,12 @@ import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { HERMETIC_ENV_STRIP_KEYS, hermeticEnv } from "./helpers/gitEnv.ts";
+import { helpExitCodeRow } from "./helpers/cliHelpRows.ts";
+import {
+  minimalChainSrc,
+  stubbedAgentChainSrc,
+  writeRepoConfig,
+} from "./helpers/repoChain.ts";
 import { makeScratchRepo, type ScratchRepo } from "./helpers/scratchRepo.ts";
 import {
   CLI,
@@ -997,82 +1003,6 @@ describe("flume status — supervisor liveness", () => {
 // ---------- the real CLI over a scratch repository ----------
 
 /**
- * Materialize the repo-resident config: `chain.ts` at
- * `<root>/.flume/` with its sibling `prompts/` dir — the shape every chain
- * fixture in this suite loads from. `promptPath` stays a plain
- * configDir-relative join (the shared-prompts case).
- */
-async function writeRepoConfig(
-  root: string,
-  chainSrc: string,
-  promptContent = "probe prompt\n",
-): Promise<string> {
-  const cfg = join(root, ".flume");
-  await mkdir(join(cfg, "prompts"), { recursive: true });
-  await writeFile(join(cfg, "chain.ts"), chainSrc, "utf8");
-  await writeFile(join(cfg, "prompts", "prompt.md"), promptContent, "utf8");
-  return cfg;
-}
-
-/**
- * A minimal, otherwise-valid chain — never ticked in the friction tests
- * below, just loaded for its declared fields. `friction` omitted leaves the
- * field undeclared entirely (undeclared turns every friction behavior off).
- */
-function minimalChainSrc(friction?: string, pendingPath?: string): string {
-  return (
-    `export default () => ({ chain: {\n` +
-    `  phases: [{\n` +
-    `    name: "probe",\n` +
-    `    description: "",\n` +
-    `    promptPath: "prompts/prompt.md",\n` +
-    `    concurrency: "singleton",\n` +
-    `    writablePaths: ["**"],\n` +
-    `    gates: [],\n` +
-    `    handoff: () => [],\n` +
-    `  }],\n` +
-    `  humanOnly: [],\n` +
-    (friction !== undefined
-      ? `  friction: ${JSON.stringify(friction)},\n`
-      : ``) +
-    (pendingPath !== undefined
-      ? `  pendingPath: ${JSON.stringify(pendingPath)},\n`
-      : ``) +
-    `} });\n`
-  );
-}
-
-/**
- * `minimalChainSrc`, but with an agent declared so the dispatcher never
- * falls through to the real `claudeCode()` agent (`src/Dispatcher.ts`) —
- * for tests that only need a tick to complete cleanly, not to observe what
- * an agent does. spec/worktrees.md "The default test lane must stay fast":
- * a real agent invocation in the fast lane is flaky under parallel load.
- */
-function minimalStubbedAgentChainSrc(): string {
-  return (
-    `export default () => ({ chain: {\n` +
-    `  phases: [{\n` +
-    `    name: "probe",\n` +
-    `    description: "",\n` +
-    `    promptPath: "prompts/prompt.md",\n` +
-    `    concurrency: "singleton",\n` +
-    `    writablePaths: ["**"],\n` +
-    `    gates: [],\n` +
-    `    handoff: () => [],\n` +
-    `  }],\n` +
-    `  humanOnly: [],\n` +
-    `},\n` +
-    `agent: {\n` +
-    `  name: "stub-agent",\n` +
-    `  async invoke() {\n` +
-    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
-    `  },\n` +
-    `} });\n`
-  );
-}
-
-/**
  * `flume status`'s friction line (`frictionCountLine`,
  * `src/friction.ts`): a count of files in the declared friction dir,
  * appended only when declared and non-empty. Best-effort: a missing/broken
@@ -1083,7 +1013,7 @@ describe("flume status — friction line", () => {
   it("appends a friction count line when Chain.friction is declared and its dir holds files", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
       await mkdir(frictionDir, { recursive: true });
       await writeFile(join(frictionDir, "a.md"), "note a\n");
@@ -1101,7 +1031,7 @@ describe("flume status — friction line", () => {
   it("omits the friction line when the declared dir exists but holds no files", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       await mkdir(join(repo.dir, ".flume", "friction"), { recursive: true });
 
       const r = await runCli(repo.dir, ["status"]);
@@ -1133,7 +1063,7 @@ describe("flume status — friction line", () => {
   it("renders 'friction: unreadable' when the declared dir exists but readdir fails for a non-ENOENT reason (dispatcher-frictioncountline-loud-or-nothing)", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
       await mkdir(frictionDir, { recursive: true });
       await writeFile(join(frictionDir, "a.md"), "note a\n");
@@ -1225,7 +1155,7 @@ describe("flume status — pending entry count", () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
     try {
       const customRel = join("custom", "queue.json");
-      await writeRepoConfig(dir, minimalChainSrc(undefined, customRel));
+      await writeRepoConfig(dir, minimalChainSrc({ pendingPath: customRel }));
       const customDir = join(dir, ".flume", "custom");
       await mkdir(customDir, { recursive: true });
       await writeFile(
@@ -3270,32 +3200,6 @@ describe("flume tick — one chain application per process (ONE-CHAIN-APPLICATIO
 });
 
 /**
- * One `--help` exit-code row, folded to a single line: the row `code` opens
- * through the wrapped continuations beneath it, ending where the next code
- * the block lists begins.
- *
- * One row rather than the block, because the claim below is about one row's
- * cause list — a read handing back the whole block would turn on whatever
- * the neighbouring rows happen to quote — the whole-artifact negative the
- * standing lenses name (`.claude/rules/posture-sweep.md`, *A violation counts
- * only when verified on disk this tick*). The block-wide
- * reader lives beside the range pins it serves, in `tests/cliHelp.test.ts`.
- */
-function helpExitCodeRow(help: string, code: number): string {
-  const at = help.indexOf(`\n  ${code}  `);
-  expect(at, `the block lists no ${code} row`).toBeGreaterThan(-1);
-  const [opening, ...rest] = help.slice(at + 1).split("\n");
-  const row = [opening!];
-  for (const line of rest) {
-    // A continuation is indented past the column a code sits in; the next
-    // code, and anything unindented, ends the row.
-    if (!/^ {6}\S/.test(line)) break;
-    row.push(line.trim());
-  }
-  return row.join(" ").replace(/\s+/g, " ").trim();
-}
-
-/**
  * spec/loop.md "Exit codes — the run never lies to CI": `EX_IOERR` is
  * cross-cutting, and `flume tick` reaches it on two files. The state root at
  * bay discovery is the one the verb already classified; the verdict history
@@ -3327,7 +3231,7 @@ describe("flume tick — EX_IOERR over an unreadable verdict history (spec/loop.
 
   beforeAll(async () => {
     repo = await makeScratchRepo("flume-tick-verdict-io-", "main");
-    await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+    await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
     const flumeDir = join(repo.dir, ".flume");
 
     new Baton(flumeDir).wake("probe");
@@ -3472,7 +3376,7 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
-        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
         const flumeDir = join(repo.dir, ".flume");
         await writeFile(join(flumeDir, "stop"), "", "utf8");
         new Baton(flumeDir).wake("probe");
@@ -3571,7 +3475,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
-        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
         const flumeDir = join(repo.dir, ".flume");
         // Awake, so absent the refusal this run would tick — "touches
         // nothing" is only a claim about a run that otherwise had work.
@@ -3610,7 +3514,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
-        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
         const relocated = join(repo.dir, "state");
         await mkdir(relocated, { recursive: true });
         const { markerPath } = await seedInterruptedMerge(
@@ -3644,7 +3548,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
       // stop.
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
-        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
         const flumeDir = join(repo.dir, ".flume");
         new Baton(flumeDir).wake("probe");
         const markerPath = join(flumeDir, "merging", "truncated.json");
@@ -3676,7 +3580,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       const mergingPath = join(repo.dir, ".flume", "merging");
       try {
-        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
         const flumeDir = join(repo.dir, ".flume");
         new Baton(flumeDir).wake("probe");
         const { markerPath } = await seedInterruptedMerge(repo.dir, flumeDir);
@@ -4215,7 +4119,7 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
-        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
         new Baton(join(repo.dir, ".flume")).wake("probe");
 
         const r = await runCli(repo.dir, ["tick", "plan"]);
@@ -4371,7 +4275,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it("bare lists the declared channel's notes — filename, size, mtime", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
       await mkdir(frictionDir, { recursive: true });
       await writeFile(join(frictionDir, "a.md"), "note a\n");
@@ -4391,7 +4295,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it("friction <name> prints that note's bytes verbatim", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
       await mkdir(frictionDir, { recursive: true });
       const body = "line one\nline two, no trailing newline";
@@ -4408,7 +4312,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it("friction <name> with a nested path segment is refused the same as a missing note", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
       const nestedDir = join(frictionDir, "sub");
       await mkdir(nestedDir, { recursive: true });
@@ -4435,7 +4339,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it("the bare friction listing omits a name beginning with a dot", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
       await mkdir(frictionDir, { recursive: true });
       // A real note beside the placeholder git forces a consumer to create
@@ -4460,7 +4364,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it("the friction read verb refuses a name beginning with a dot", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
       await mkdir(frictionDir, { recursive: true });
       // The placeholder genuinely exists and is a direct child, so the
@@ -4499,7 +4403,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it("a declared-but-absent friction dir lists empty and exits 0", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       // No .flume/friction dir created — never written by any tick yet.
 
       const r = await runCli(repo.dir, ["friction"]);
@@ -4513,7 +4417,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it("exits EX_IOERR naming the error on a non-ENOENT note read failure, instead of reporting 'no such note'", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
       // A directory in place of the note reproduces a non-ENOENT read
       // failure (EISDIR) without relying on permission bits a root-run test
@@ -4533,7 +4437,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it("exits EX_IOERR naming the error on a non-ENOENT bare-list readdir failure, instead of listing empty", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       // A file in place of the friction dir reproduces a non-ENOENT readdir
       // failure (ENOTDIR) without relying on permission bits — same
       // rationale as the note-read case above.
@@ -4552,7 +4456,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   it.runIf(process.platform !== "win32")("flume friction refuses with EX_IOERR when a listed note cannot be stat'd", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      await writeRepoConfig(repo.dir, minimalChainSrc("friction"));
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
       await mkdir(frictionDir, { recursive: true });
       await writeFile(join(frictionDir, "a.md"), "note a\n");
@@ -4673,7 +4577,7 @@ describe("state root layout — `flume stop` writes the flag every reader honors
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
-        await writeRepoConfig(repo.dir, minimalStubbedAgentChainSrc());
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
         new Baton(join(repo.dir, ".flume")).wake("probe");
 
         // Vacuity control: with no flag, this loop runs its tick and reaches
@@ -4946,7 +4850,7 @@ describe("flume loop — runtime ignores at the default state root", () => {
         // that lands must be the `frictionIgnoreEntry`
         // (`src/runtimeIgnores.ts`)
         // normalization the merge applies, not whatever the chain wrote.
-        await writeRepoConfig(repo.dir, minimalChainSrc("scratch\\friction//"));
+        await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "scratch\\friction//" }));
         const ignorePath = join(repo.dir, ".flume", ".gitignore");
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);

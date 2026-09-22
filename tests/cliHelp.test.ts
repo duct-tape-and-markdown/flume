@@ -44,7 +44,12 @@ import {
   type TickVerdict,
 } from "../src/tickVerdict.ts";
 import type { TickResult } from "../src/Phase.ts";
+import {
+  documentedExitCodeRows,
+  documentedExitCodes,
+} from "./helpers/cliHelpRows.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
+import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
 import { makeScratchRepo } from "./helpers/scratchRepo.ts";
@@ -58,51 +63,6 @@ import {
 // and hooks alike — once here rather than inheriting the runner's default
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
-
-/**
- * A `--help` text's own "Exit codes:" block, one entry per code, carrying
- * everything that code's row says — its first line through the wrapped
- * continuations beneath it, folded to one line, since where a row breaks
- * across help-text lines is the formatter's business and not the row's.
- *
- * Read off the real help output, never restated, so every suite below
- * compares a real producer against the shipped prose rather than against a
- * hand copy. One walk, so the range read and the per-row read below agree on
- * what a row is (`.claude/rules/engineering.md`, *The fix lands at the
- * mechanism*).
- */
-function documentedExitCodeRows(help: string): Map<number, string> {
-  const start = help.indexOf("Exit codes:\n");
-  expect(start).toBeGreaterThan(-1);
-  const rows = new Map<number, string>();
-  let open: number | undefined;
-  const extend = (code: number, text: string): void => {
-    const held = rows.get(code);
-    rows.set(code, held === undefined ? text : `${held} ${text}`);
-  };
-  for (const line of help.slice(start).split("\n").slice(1)) {
-    if (line.trim() === "") continue;
-    // A continuation line is indented past its code; anything unindented
-    // ended the block.
-    if (!line.startsWith("  ")) break;
-    const listed = /^ {2}(\d+) {2,}(\S.*)$/.exec(line);
-    if (listed) {
-      open = Number(listed[1]);
-      extend(open, listed[2]!);
-      continue;
-    }
-    if (open !== undefined) extend(open, line.trim());
-  }
-  return rows;
-}
-
-/**
- * The codes a `--help` text's own "Exit codes:" block lists — the rows above,
- * read for their codes alone.
- */
-function documentedExitCodes(help: string): Set<number> {
-  return new Set(documentedExitCodeRows(help).keys());
-}
 
 const ascending = (codes: Iterable<number>): number[] =>
   [...new Set(codes)].sort((a, b) => a - b);
@@ -1107,10 +1067,11 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
   async function skipClause(): Promise<string> {
     const dir = await mkFixtureRoot("flume-check-no-fanout-");
     try {
-      await mkdir(join(dir, ".flume", "prompts"), { recursive: true });
-      await mkdir(join(dir, ".flume", "plan"), { recursive: true });
-      await writeFile(
-        join(dir, ".flume", "chain.ts"),
+      // The fence is this fixture's own — a plan phase writing only its own
+      // dir — so the chain source is spelled here rather than taken from
+      // `minimalChainSrc`, which declares `["**"]`.
+      await writeRepoConfig(
+        dir,
         `export default () => ({ chain: {\n` +
           `  phases: [{\n` +
           `    name: "plan",\n` +
@@ -1123,13 +1084,8 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
           `  }],\n` +
           `  humanOnly: [],\n` +
           `} });\n`,
-        "utf8",
       );
-      await writeFile(
-        join(dir, ".flume", "prompts", "prompt.md"),
-        "probe prompt\n",
-        "utf8",
-      );
+      await mkdir(join(dir, ".flume", "plan"), { recursive: true });
       await writeFile(
         join(dir, ".flume", "plan", "pending.json"),
         JSON.stringify([
@@ -1365,32 +1321,13 @@ describe("flume log --help — the exit-code list against the verb's own I/O ref
  * reads what the real writer wrote").
  */
 describe("flume friction --help — the exit-code list against the verb's own I/O refusal (FRICTION-LIST-STAT-REFUSAL-CLASSIFIED)", () => {
-  const CHAIN_SRC =
-    `export default () => ({ chain: {\n` +
-    `  phases: [{\n` +
-    `    name: "probe",\n` +
-    `    description: "",\n` +
-    `    promptPath: "prompts/prompt.md",\n` +
-    `    concurrency: "singleton",\n` +
-    `    writablePaths: ["**"],\n` +
-    `    gates: [],\n` +
-    `    handoff: () => [],\n` +
-    `  }],\n` +
-    `  humanOnly: [],\n` +
-    `  friction: "friction",\n` +
-    `} });\n`;
+  const CHAIN_SRC = minimalChainSrc({ friction: "friction" });
 
   it.runIf(process.platform !== "win32")("flume friction --help names exit 74 for an I/O failure in the channel dir", async () => {
     const root = await mkFixtureRoot("flume-friction-help-");
     const frictionDir = join(root, ".flume", "friction");
     try {
-      await mkdir(join(root, ".flume", "prompts"), { recursive: true });
-      await writeFile(join(root, ".flume", "chain.ts"), CHAIN_SRC, "utf8");
-      await writeFile(
-        join(root, ".flume", "prompts", "prompt.md"),
-        "probe prompt\n",
-        "utf8",
-      );
+      await writeRepoConfig(root, CHAIN_SRC);
       await mkdir(frictionDir, { recursive: true });
       await writeFile(join(frictionDir, "a.md"), "note a\n");
       await chmod(frictionDir, 0o444);

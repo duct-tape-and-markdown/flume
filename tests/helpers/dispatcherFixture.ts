@@ -18,6 +18,10 @@ import type { TickVerdict } from "../../src/tickVerdict.ts";
 import { RUNTIME_IGNORES } from "../../src/runtimeIgnores.ts";
 
 import { mkTempDir } from "./fixtureRoot.ts";
+import {
+  minimalChainSrc,
+  type MinimalChainDeclarations,
+} from "./repoChain.ts";
 import { exec } from "./subprocess.ts";
 
 /** A logger that swallows every level — the default for suites asserting on facts, not output. */
@@ -107,19 +111,12 @@ export async function makeFixture(parent: string = tmpdir()): Promise<Fixture> {
   };
 }
 
-/** The state-root-relative chain fields {@link writeMinimalChain} can declare. */
-export interface MinimalChainDeclarations {
-  /** `Chain.friction`, verbatim — omitted from the chain when absent. */
-  friction?: string;
-  /** `Chain.pendingPath`, verbatim — omitted from the chain when absent. */
-  pendingPath?: string;
-}
-
 /**
  * Minimal, otherwise-valid chain.ts: one singleton "build" phase, no gates,
- * empty handoff. Each declaration in `declared` is spliced in as that
- * field's value (JSON-encoded here, so callers pass the path itself); a
- * field absent from `declared` is absent from the chain.
+ * empty handoff, written flat — the prompt file beside the chain rather than
+ * under the `prompts/` dir `writeRepoConfig` materializes. The source itself
+ * is the shared one (`minimalChainSrc`, `repoChain.ts`); what this fixture
+ * owns is the layout and the phase these suites tick.
  */
 export async function writeMinimalChain(
   cfg: string,
@@ -127,16 +124,9 @@ export async function writeMinimalChain(
 ): Promise<void> {
   await mkdir(cfg, { recursive: true });
   await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
-  const fields = (["friction", "pendingPath"] as const)
-    .filter((f) => declared[f] !== undefined)
-    .map((f) => `, ${f}: ${JSON.stringify(declared[f])}`)
-    .join("");
   await writeFile(
     join(cfg, "chain.ts"),
-    `export default () => ({ chain: { phases: [{ name: "build", ` +
-      `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
-      `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
-      `humanOnly: []${fields} } });\n`,
+    minimalChainSrc({ ...declared, name: "build", promptPath: "prompt.md" }),
     "utf8",
   );
 }
