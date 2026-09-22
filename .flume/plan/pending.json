@@ -1,81 +1,12 @@
 [
   {
-    "tag": "ENGINE-COMMIT-CARRIES-ONLY-THE-PATHS-IT-NAMED",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "edit": [
-        {
-          "path": "src/git.ts",
-          "description": "commitPaths: the commit leg takes its own pathspec; retire the doc comment's now-false 'takes no pathspec of its own' clause"
-        },
-        {
-          "path": "tests/git.test.ts",
-          "description": "the two cases below; the glob case's comment restates the retired clause"
-        }
-      ]
-    },
-    "summary": "commitPaths commits its named paths alone, leaving whatever else the operator staged staged",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "The engine records, never navigates"
-    },
-    "acceptance": "With unrelated work staged on the primary checkout, a ship tick's chore(flume) commit carries pending.json alone and the operator's staging survives untouched.",
-    "tests": [
-      "commitPaths commits only its named paths when an unrelated change is staged",
-      "commitPaths refuses when its named paths hold no change and an unrelated change is staged"
-    ],
-    "notes": "Field-traced at 01a9a625: three operator question deletions rode into the ledger commit. `git commit --only -m <msg> -- <paths>` is the whole fix (arg order matters; -m after -- is read as a pathspec), and `run` already carries literalPathspecEnv. Two consequences to take deliberately: --only refuses mid-cherry-pick, where today's bare commit would conclude the pick; and it makes the unchanged-ledger skip (spec/pending.md, Wave auto-unblock) hold again, which a staged bystander defeats today."
-  },
-  {
-    "tag": "TICK-CLASSIFIES-AN-UNREADABLE-VERDICT-HISTORY",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "edit": [
-        {
-          "path": "src/cli.ts",
-          "description": "tick branch: classify the verdict record's read failure at the same boundary every other stat refusal in this file is mapped at"
-        },
-        {
-          "path": "src/cliHelp.ts",
-          "description": "the tick page gains its 74 row, naming both files the table names"
-        },
-        {
-          "path": "docs/CLI.md",
-          "description": "§ `flume tick` — the other prose copy of the range"
-        },
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "TICK_PROCESS_LEVEL_EXIT_CODES gains the row; the two standing range pins follow it"
-        },
-        {
-          "path": "tests/cli.test.ts",
-          "description": "the driven arm below"
-        }
-      ]
-    },
-    "summary": "`flume tick` returns EX_IOERR when the verdict history is present and unreadable, instead of a raw stack and exit 1",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Exit codes — the run never lies to CI"
-    },
-    "acceptance": "A tick whose tick-verdicts.jsonl is present and unreadable exits 74 naming the recording failure, and tick's --help and docs/CLI.md both carry the code.",
-    "tests": [
-      "flume tick exits 74 when the verdict history is present and unreadable",
-      "flume tick's verdict refusal names the history file and says the tick's own work already landed",
-      "flume tick --help names exit 74 and the files that reach it"
-    ],
-    "notes": "`writeTickVerdict` (src/tickVerdict.ts) reads the history before appending, and VERDICT-READERS-PROVE-ABSENCE made that read throw on present-and-unreadable. In the tick branch it escapes to `main().catch`. The first cause the table names — the state root at discovery — already returns 74 for every verb at the top of `main`."
-  },
-  {
     "tag": "CITATION-PIN-RESOLVES-A-PAIRS-SECTION-HALF",
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "tests/helpers/commentCitations.ts",
@@ -89,7 +20,8 @@
           "path": "tests/commentCitations.test.ts",
           "description": "the two cases below"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "The comment-citation pin resolves the italicized section half of a (`page.md`, *Section*) pair, exact after backtick normalization",
     "per": {
@@ -101,6 +33,7 @@
       "a comment's (`page.md`, *Section*) pair resolves its section half against the page's headings and bolded bullet leads",
       "an abbreviated section half is reported unresolved rather than matched as a prefix"
     ],
+    "pins": [],
     "notes": "Roughly 300 pair sites on the tree; about 12 spellings across ~14 modules resolve to nothing under the exact rule and are this entry's to expand (*Derived state is computed*, *Routing rule*, *Bay discovery*, ...). The helper's own doc comment illustrates the shape with (`spec/loop.md`, *Section*), which the arm reds. Scope is comments, per the predicate's framing — not page prose. Files under-declared deliberately: the drift fixes are comment-only and too wide to declare."
   },
   {
@@ -108,7 +41,9 @@
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "tests/helpers/pageAnchors.ts",
@@ -118,7 +53,8 @@
           "path": "tests/pageAnchors.test.ts",
           "description": "the two cases below"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "A `§ N` cross-reference on a docs page resolves against that page's own numbered headings, and is prose on a page that has none",
     "per": {
@@ -130,17 +66,26 @@
       "a `§ N` on a docs page resolves against that page's own numbered headings",
       "a docs page with no numbered headings leaves its `§ N` as prose"
     ],
-    "notes": "Ten docs pages carry numbered headings and `§ N` refs; CLI.md, INTENT.md and LAYERS.md carry none and take the prose arm (LAYERS.md's one ref names another page's § 6). Two refs on the tree aim at a *different* page's numbering — MIGRATING-0.11.md's `§ 3` and CASCADE-DRY-RUN.md's `v0.8 §4` — and are judged against their own page like every other, which is the reading the rule states."
+    "pins": [],
+    "notes": "Ten docs pages carry numbered headings and `§ N` refs; CLI.md, INTENT.md and LAYERS.md carry none and take the prose arm (LAYERS.md's one ref names another page's § 6). Two refs on the tree aim at a *different* page's numbering — MIGRATING-0.11.md's `§ 3` and CASCADE-DRY-RUN.md's `v0.8 §4` — and are judged against their own page like every other, which is the reading the rule states.",
+    "observedFiles": [
+      ".flume/plan/notes/CITATION-PIN-RESOLVES-A-DOCS-PAGE-SECTION-SIGN.md",
+      "docs/MIGRATING-0.15.md",
+      "docs/MIGRATING-0.16.md",
+      "docs/MIGRATING-0.17.md",
+      "docs/PRD-dock-collapse.md",
+      "tests/helpers/pageAnchors.ts",
+      "tests/pageAnchors.test.ts"
+    ]
   },
   {
     "tag": "EVERY-VERBS-HELP-NAMES-THE-IO-REFUSAL",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "TICK-CLASSIFIES-AN-UNREADABLE-VERDICT-HISTORY"
-      ]
+      "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "src/cliHelp.ts",
@@ -154,7 +99,8 @@
           "path": "tests/cliHelp.test.ts",
           "description": "the two cases below"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "Every subcommand's --help names EX_IOERR and the files that reach it, the state root at discovery included",
     "per": {
@@ -166,6 +112,7 @@
       "every subcommand's --help names exit 74",
       "docs/CLI.md's wake, sleep, stop and render sections name exit 74"
     ],
+    "pins": [],
     "notes": "Bay discovery (`resolveRepoRoot`, top of `main`) returns 74 for every verb, so the four silent pages — wake, sleep, stop, render — already understate their range, and the four docs sections state exit ranges that omit it outright. Blocked on the tick entry only because the first pin reads every page, tick's included."
   }
 ]
