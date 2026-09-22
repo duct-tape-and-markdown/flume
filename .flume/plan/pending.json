@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "tag": "STATUS-STOP-FLAG-REFUSAL-NAMES-THE-RESOLVED-PATH",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/cli.ts",
+          "description": "`status`'s stop-flag EX_IOERR arm names `statusStopPath`, as its own present-lines and `loop`'s stop-flag arm already do"
+        },
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the existing unstattable-stop-flag arm reads the refusal's own phrasing instead of the errno's path"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`flume status`'s unstattable stop-flag refusal names the resolved path, not the bare artifact name",
+    "per": {
+      "path": "spec/cli.md",
+      "section": "`flume status` owes exactly this"
+    },
+    "acceptance": "the EX_IOERR stop-flag refusal in `status` states `stop flag at <path>`; a `flume status` run over a self-referential `.flume/stop` prints that phrasing, and the arm's path assertion no longer depends on the errno text",
+    "tests": [
+      "`flume status`'s unstattable stop-flag refusal names the resolved stop-flag path, not the bare artifact name"
+    ],
+    "notes": "Line 380 is the last path-in-hand `status:` refusal printing STATE_ROOT_NAMES alone; lines 352 and 418 name paths, item 3 of the cite owes the path for this artifact, and `loop`'s own arm (1149) spells it. `statusStopPath` is already plain — no `plainPath` fold, matching the siblings. tick-verdicts.jsonl arms stay out of scope: name-only but asserted by nothing."
+  }
+]
