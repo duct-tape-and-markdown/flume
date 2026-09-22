@@ -49,7 +49,7 @@ import {
   type FlumePaths,
 } from "../src/flumeApi.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
-import { restatementsOf, sectionOf, walkOf } from "./helpers/docSections.ts";
+import { bulletOf, restatementsOf, sectionOf, walkOf } from "./helpers/docSections.ts";
 import { docWalk, type DocWalkRequest } from "./helpers/docWalk.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
@@ -2058,10 +2058,7 @@ it("docs/CHAIN-AUTHORING.md names exactly the built-in gates shellGate composes"
 
   // The one bullet, through the next list item or the section's end, read as
   // a single line — the claim wraps across source lines.
-  const bullet = section
-    .slice(section.indexOf("- `shellGate` —"))
-    .split(/\n-\s/)[0]!
-    .replace(/\s+/g, " ");
+  const bullet = bulletOf(section, "- `shellGate` —");
   const CLAIM = "are `shellGate` instances";
   expect(
     bullet,
@@ -2158,20 +2155,6 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
   it("docs/CHAIN-AUTHORING.md's supervisor-policy section says when each knob is bound", () => {
     const { members: knobs, section } = docWalk(POLICY);
 
-    /**
-     * One bullet's body, its lead name through the line before the next
-     * bullet, with the page's own wrapping folded out — the phrases below are
-     * sentences, and where a sentence breaks across lines is the formatter's
-     * business, not the claim's.
-     */
-    const bulletFor = (knob: string): string => {
-      const lead = section.indexOf(`- **\`${knob}\`** —`);
-      expect(lead, `the section walks \`${knob}\``).toBeGreaterThanOrEqual(0);
-      const rest = section.slice(lead + 1);
-      const next = rest.search(/^- \*\*`/m);
-      return (next === -1 ? rest : rest.slice(0, next)).replace(/\s+/g, " ");
-    };
-
     // Binding time is what the retired listing was for, and it is per-knob
     // truth: a chain that edits itself mid-run is governed by the old value
     // of a once-per-run knob with no indication the new one was ignored. A
@@ -2180,7 +2163,7 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
     // mute.
     for (const knob of knobs) {
       expect(
-        bulletFor(knob),
+        bulletOf(section, `- **\`${knob}\`** —`),
         `docs/CHAIN-AUTHORING.md's \`${knob}\` bullet states its binding time`,
       ).toMatch(/\*\*once per run\*\*|\*\*per tick\*\*/);
     }
@@ -2325,19 +2308,9 @@ describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () =>
   it("docs/CHAIN-AUTHORING.md's gate section says which stage sets each span field", () => {
     const { section } = docWalk(GATE);
 
-    /**
-     * One bullet's body, its lead name through the line before the next
-     * bullet, with the page's own wrapping folded out — the phrases below are
-     * sentences, and where a sentence breaks across lines is the formatter's
-     * business, not the claim's.
-     */
-    const bulletFor = (field: string): string => {
-      const lead = section.indexOf(`- \`${field}\` —`);
-      expect(lead, `the section walks \`${field}\``).toBeGreaterThanOrEqual(0);
-      const rest = section.slice(lead + 1);
-      const next = rest.search(/^- `/m);
-      return (next === -1 ? rest : rest.slice(0, next)).replace(/\s+/g, " ");
-    };
+    /** One bullet of the walk, by the lead this section spells its names with. */
+    const bulletFor = (field: string): string =>
+      bulletOf(section, `- \`${field}\` —`);
 
     // A field whose availability varies is the one a chain guesses wrong
     // about: `baseSha` at both stages, `landedOnSha` only where a trunk

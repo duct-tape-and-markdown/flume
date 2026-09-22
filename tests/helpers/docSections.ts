@@ -177,3 +177,47 @@ export function restatementsOf(
     .map((block) => [...new Set(block.mentions)])
     .filter((named) => named.length > 1);
 }
+
+/**
+ * A bullet's opening: the list marker through whatever the page delimits the
+ * member's name with — the bold run a walk that emphasizes its leads opens
+ * with, or the bare backtick a walk that does not. Derived from the lead the
+ * caller passed rather than taken as a second parameter: the spelling that
+ * finds the bullet is the spelling that ends it at the next one.
+ */
+const BULLET_OPENING = /^[-*] +(?:\*\*)?`?/;
+
+/**
+ * One bullet of a section, from its lead through the line before the next
+ * bullet opening the same way, with the page's own wrapping folded out — a
+ * claim is a sentence, and where a sentence breaks across source lines is the
+ * formatter's business, not the claim's.
+ *
+ * `lead` is the bullet's opening verbatim, the member's spelling included:
+ * `` - **`tickTimeoutMs`** — ``. One home for a per-bullet read three cases in
+ * `tests/examples.test.ts` spelled three ways (`.claude/rules/engineering.md`,
+ * *A module is one job*), disagreeing on where a bullet ends — the next bolded
+ * lead, the next backticked one, the next list marker of any kind.
+ *
+ * An absent lead throws rather than yielding the empty span `sectionOf`
+ * yields: a caller's next act is asserting what this bullet *says*, so an
+ * empty string would red as "the bullet is silent on its class" when the truth
+ * is that the page has no such bullet at all.
+ */
+export function bulletOf(section: string, lead: string): string {
+  const opening = BULLET_OPENING.exec(lead)?.[0];
+  if (opening === undefined) {
+    throw new Error(`not a bullet lead: ${JSON.stringify(lead)}`);
+  }
+
+  const at = section.indexOf(lead);
+  if (at === -1) {
+    throw new Error(`the section has no bullet led by ${JSON.stringify(lead)}`);
+  }
+
+  const rest = section.slice(at + lead.length);
+  const next = rest.indexOf(`\n${opening}`);
+  const body = next === -1 ? rest : rest.slice(0, next);
+
+  return `${lead}${body}`.replace(/\s+/g, " ").trim();
+}
