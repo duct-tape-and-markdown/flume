@@ -80,7 +80,7 @@ import {
   type TickVerdict,
 } from "./tickVerdict.js";
 import * as git from "./git.js";
-import { runFanout, WaveLedgerParseFailure } from "./waveTick.js";
+import { runFanout, WaveLedgerRefusal } from "./waveTick.js";
 import {
   sweepStaleWorktrees,
   type WorktreeContext,
@@ -377,9 +377,10 @@ export interface TickOutcome {
    * This tick's unified facts artifact, present iff a phase
    * actually ran (same condition as `result`) — absent on `hibernated`,
    * `usageError`, or `terminal`. One exception on `failed`: a fanout wave
-   * whose `commitPendingUpdate` rewrite hit a `PendingParseFailure`
-   * (`WaveLedgerParseFailure`) still ran a phase and shipped tags onto trunk
-   * before the ledger rewrite refused, so `failed: true` carries `verdict`
+   * whose `commitPendingUpdate` refused — for any reason, the rewrite read
+   * that would not parse and the `git commit --only` that fatals alike
+   * (`WaveLedgerRefusal`, `src/waveTick.ts`) — still ran a phase and shipped
+   * tags onto trunk before that refusal, so `failed: true` carries `verdict`
    * too in that one case — every other `failed` path (chain resolution, a
    * decide-read parse failure with no agent run) carries none. The CLI's
    * `tick` command persists this via `writeTickVerdict`; `Dispatcher.tick()`
@@ -796,30 +797,37 @@ export class Dispatcher {
           ? await runSingleton(this.legCtx, phase, agent, chain, forkResolver)
           : await runFanout(this.legCtx, phase, agent, chain, forkResolver);
     } catch (err) {
-      if (!(err instanceof PendingParseFailure)) throw err;
-      // Same failure class as an unresolved chain: no agent ran
-      // (the decide-read refused before invoking one, because this phase's
-      // declared fence does not admit the ledger — `readPendingForDecision`,
-      // `src/pendingLedger.ts`, whose reason `err.message` carries) or a
-      // wave's shipped work landed on trunk but the rewrite that would clear
-      // it from pending.json refused rather than deriving `[]` from a parse
-      // it never trusted — either way this tick does no more work. The repair
-      // is a tick of the phase that declares the queue writable, which the
-      // decide-read's carve-out lets run over exactly this file
-      // (spec/pending.md, "Queue reads are strict"). The exit code is
-      // unchanged either way (EX_MOUNT_DEAD, `failed: true`) —
-      // `WaveLedgerParseFailure`'s carried `verdict` only adds the record of
-      // what the wave shipped before the ledger rewrite refused; it never
-      // softens the refusal itself.
+      // Two throws reach here, and neither leaves this tick any more work to
+      // do. A bare `PendingParseFailure` is the decide-read refusing before
+      // any agent ran, because this phase's declared fence does not admit the
+      // ledger (`readPendingForDecision`, `src/pendingLedger.ts`, whose
+      // reason `err.message` carries); its repair is a tick of the phase that
+      // *does* declare the queue writable, which the decide-read's carve-out
+      // lets run over exactly this file (spec/pending.md, "Queue reads are
+      // strict"), and that classification stays this arm's alone. A
+      // `WaveLedgerRefusal` is a wave whose shipped work already landed on
+      // trunk and whose ledger rewrite then refused — the rewrite read that
+      // would not parse, a `git commit --only` fatal under a paused merge, a
+      // disk error; its `cause` says which, and the tags it carries are the
+      // same either way, which is why the carry is not keyed on one of them.
+      //
+      // Everything else is an ordinary throw and keeps propagating. The exit
+      // code is unchanged for both arms (EX_MOUNT_DEAD, `failed: true`) — a
+      // carried `verdict` only adds the record of what the wave shipped
+      // before the refusal; it never softens the refusal itself.
+      if (
+        !(err instanceof PendingParseFailure) &&
+        !(err instanceof WaveLedgerRefusal)
+      ) {
+        throw err;
+      }
       this.log.error(`[flume] ${err.message}`);
       return {
         hibernated: false,
         failed: true,
         awakeAfter: this.baton.awake(),
         summary: err.message,
-        ...(err instanceof WaveLedgerParseFailure
-          ? { verdict: err.verdict }
-          : {}),
+        ...(err instanceof WaveLedgerRefusal ? { verdict: err.verdict } : {}),
       };
     }
     const {

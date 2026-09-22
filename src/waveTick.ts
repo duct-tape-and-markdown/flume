@@ -32,8 +32,6 @@ import {
 } from "./pendingLedger.js";
 import {
   entryExtensionPayload,
-  PendingParseFailure,
-  type ParseError,
   type PendingEntry,
 } from "./PendingSchema.js";
 import type {
@@ -113,34 +111,52 @@ type EntryAttempt = AttemptOutcome & {
 };
 
 /**
- * Thrown in place of a plain {@link PendingParseFailure} when
- * `commitPendingUpdate`'s rewrite read (`src/pendingLedger.ts`) hits one
- * inside `runFanout` — the ledger-rewrite drift `spec/loop.md` ("The tick
- * verdict") names: by this point the wave's cherry-picks and afterMerge
- * gates already landed `shippedTags` on trunk, so the verdict recording
- * them must survive the throw rather than vanish with it. `tick()`'s
- * `PendingParseFailure` catch checks for this subclass and folds `verdict`
- * into the failed outcome it returns; a plain `PendingParseFailure` from a
- * decide-read (no agent ran, nothing shipped) carries none, same as before.
- * Exported no further than `tick()`'s own catch: unlike
- * `PendingParseFailure` itself (part of the gate-authoring API surface,
- * `src/flumeApi.ts`) this is the one internal leg of that failure class,
- * absent from `src/index.ts` and never something a chain's gate needs to
- * distinguish.
+ * Thrown in place of whatever `commitPendingUpdate` (`src/pendingLedger.ts`)
+ * refused the wave's ledger rewrite with, once that call is reached inside
+ * `runFanout`. By this point the wave's cherry-picks and afterMerge gates
+ * already landed `shippedTags` on trunk, so the verdict recording them must
+ * survive the throw rather than vanish with it (`spec/loop.md`, "The tick
+ * verdict — one facts artifact") — and *which* refusal it was never changes
+ * that. The rewrite read that would not parse is one of them; so is the
+ * `git commit --only` that fatals on a partial commit under a paused merge
+ * or cherry-pick, a named path git finds unchanged, a disk error, a lost
+ * `index.lock`. The carry is widened to the call rather than keyed on a
+ * cause, because every cause leaves the same tags on trunk.
+ *
+ * `cause` is the refusal itself, so `tick()`'s catch can still classify it —
+ * a `PendingParseFailure` (`src/PendingSchema.ts`) there means an unparseable
+ * queue, with a repair no other cause shares. `verdict` is what this class
+ * exists to carry. A plain `PendingParseFailure` from a decide-read (no agent
+ * ran, nothing shipped) reaches `tick()` unwrapped and carries no verdict,
+ * same as before.
+ *
+ * Exported no further than `tick()`'s own catch: unlike `PendingParseFailure`
+ * itself (part of the gate-authoring API surface, `src/flumeApi.ts`) this is
+ * the wave's one internal leg, absent from `src/index.ts` and never something
+ * a chain's gate needs to distinguish.
  */
-export class WaveLedgerParseFailure extends PendingParseFailure {
+export class WaveLedgerRefusal extends Error {
   readonly verdict: TickVerdict;
-  constructor(errors: readonly ParseError[], verdict: TickVerdict) {
-    super(errors);
-    this.name = "WaveLedgerParseFailure";
+  constructor(cause: unknown, verdict: TickVerdict) {
+    super(refusalMessage(cause), { cause });
+    this.name = "WaveLedgerRefusal";
     this.verdict = verdict;
   }
 }
 
 /**
+ * The refusal's own words, for a {@link WaveLedgerRefusal}'s message and for
+ * the verdict summary built beside it — one spelling, so the two cannot
+ * describe one refusal differently.
+ */
+function refusalMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+/**
  * Wave-level no-commit cause, only meaningful when the wave shipped
  * nothing usable — shared by the wave's normal-completion verdict and by
- * `WaveLedgerParseFailure`'s partial verdict (.claude/rules/engineering.md
+ * `WaveLedgerRefusal`'s partial verdict (.claude/rules/engineering.md
  * "Derived state is computed, never restated beside its source"), so a
  * ledger refusal reports the same cause a clean completion would have. The
  * precedence is {@link WAVE_NO_COMMIT_RANK}.
@@ -775,7 +791,7 @@ export async function runFanout(
 
   // Computed here — ahead of the `commitPendingUpdate` call below — rather than
   // after cleanup where the original single use lived, so a
-  // `WaveLedgerParseFailure` thrown out of that call can report the same
+  // `WaveLedgerRefusal` thrown out of that call can report the same
   // gate results and committed-shape a clean completion would (read from
   // two sites, never restated).
   const allGateResults = perEntry
@@ -803,16 +819,18 @@ export async function runFanout(
     // commitPendingUpdate then returns the pre-existing HEAD, which must
     // not be reported as this wave's commit.
     const preUpdate = await git.revParse(repoRoot);
-    // commitPendingUpdate's rewrite read is the strict `readPending()`
-    // (.claude/rules/engineering.md "Loud or nothing"): if pending.json was
-    // corrupted by something outside this tick in the window since the
-    // wave's decide-read, the throw propagates past worktree cleanup
-    // below, straight to `tick()`'s PendingParseFailure catch —
-    // already-shipped commits stay on trunk (cherry-picked above), but the
-    // file itself is never overwritten with a rewrite derived from `[]`.
-    // Surviving worktrees are the accepted cost of refusing rather than
-    // proceeding; the next `pruneWorktrees` call reclaims their metadata
-    // once a human has fixed the file.
+    // The rewrite can refuse, and every way it does propagates past worktree
+    // cleanup below, straight to `tick()`'s catch. Its read is the strict
+    // `readPending()` (.claude/rules/engineering.md "Loud or nothing"), so a
+    // pending.json corrupted by something outside this tick in the window
+    // since the wave's decide-read refuses rather than overwriting the file
+    // with a rewrite derived from `[]`; and its commit is a `git commit
+    // --only` over the one named path, which fatals under a paused merge or
+    // cherry-pick in the primary checkout and on a path it finds unchanged.
+    // Already-shipped commits stay on trunk (cherry-picked above) in every
+    // case. Surviving worktrees are the accepted cost of refusing rather
+    // than proceeding; the next `pruneWorktrees` call reclaims their
+    // metadata once a human has cleared the refusal.
     let update: { sha: string; tipMoved: boolean };
     try {
       update = await commitPendingUpdate(
@@ -822,15 +840,21 @@ export async function runFanout(
         partitionIgnore,
       );
     } catch (err) {
-      if (!(err instanceof PendingParseFailure)) throw err;
-      // spec/loop.md "The tick verdict — one facts artifact" drift (b):
-      // this wave's shipped tags are already real (cherry-picked and
-      // afterMerge-gated onto trunk above) — only the ledger rewrite
-      // refused. A thrown error is the only channel left once
-      // `commitPendingUpdate` never returns, so build the verdict this
-      // wave already has the facts for and carry it on the error for
-      // `tick()`'s `PendingParseFailure` catch to fold in, instead of
+      // spec/loop.md "The tick verdict — one facts artifact": this wave's
+      // shipped tags are already real (cherry-picked and afterMerge-gated
+      // onto trunk above) — only the ledger rewrite refused. A thrown error
+      // is the only channel left once `commitPendingUpdate` never returns,
+      // so build the verdict this wave already has the facts for and carry
+      // it on the error for `tick()`'s catch to fold in, instead of
       // discarding it the way a plain re-throw would.
+      //
+      // Every throw out of that call, never the parse failure alone: the
+      // tags on trunk are the same facts whichever refusal happened, and
+      // keying the carry on a cause is how a `git commit --only` fatal — or
+      // a disk error, or an `index.lock` — came to lose a verdict the parse
+      // failure's sibling arm kept. `WaveLedgerRefusal` carries the cause
+      // for `tick()` to classify.
+      const why = refusalMessage(err);
       const noCommit = waveNoCommitCause(
         committedWave,
         perEntry,
@@ -856,8 +880,8 @@ export async function runFanout(
           : {}),
         summary:
           shippedTags.length > 0
-            ? `${phase.name} shipped ${shippedTags.join(", ")} — pending-ledger rewrite refused (${err.message})`
-            : `${phase.name}: pending-ledger rewrite refused (${err.message})`,
+            ? `${phase.name} shipped ${shippedTags.join(", ")} — pending-ledger rewrite refused (${why})`
+            : `${phase.name}: pending-ledger rewrite refused (${why})`,
         // headSha: the ledger rewrite never reached its own commit, so the
         // tip has not moved past what this wave's cherry-picks already
         // landed — a fresh read rather than reusing `preUpdate` so this
@@ -865,7 +889,7 @@ export async function runFanout(
         headSha: await git.revParse(repoRoot),
         at: new Date().toISOString(),
       };
-      throw new WaveLedgerParseFailure(err.errors, verdict);
+      throw new WaveLedgerRefusal(err, verdict);
     }
     const updSha = update.sha;
     if (updSha !== preUpdate) chorSha = updSha;
@@ -937,7 +961,7 @@ export async function runFanout(
 
   // Wave-level no-commit cause, only when the wave shipped nothing usable —
   // `allGateResults`/`committedWave` were already computed above, ahead of
-  // `commitPendingUpdate`, so `WaveLedgerParseFailure`'s partial verdict
+  // `commitPendingUpdate`, so `WaveLedgerRefusal`'s partial verdict
   // could read them too.
   const waveNoCommit = waveNoCommitCause(
     committedWave,
@@ -1137,7 +1161,7 @@ async function writeMergingMarker(
  * closes — once the queue no longer carries a picked entry as `open`, a
  * crash before the verdict write leaves nothing a second run would pick
  * again, and refusing over it would be a false refusal. A ledger rewrite
- * that *refused* (`WaveLedgerParseFailure`) throws past this call, so its
+ * that *refused* (`WaveLedgerRefusal`) throws past this call, so its
  * markers survive exactly as a crash's would.
  */
 async function clearMergingMarkers(

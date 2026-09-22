@@ -7518,7 +7518,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // alongside the shipping one — the shape spec/loop.md "The tick verdict"
     // drift (b) actually describes: `waveDeclined`, computed from the
     // per-entry loop before `commitPendingUpdate` runs, must survive
-    // onto `WaveLedgerParseFailure`'s carried verdict exactly like
+    // onto `WaveLedgerRefusal`'s carried verdict exactly like
     // `shippedTags` does, not just the trivial single-entry case.
     const corrupt = "{ corrupted mid-wave, not json";
     const invoked: string[] = [];
@@ -7561,7 +7561,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
 
     // The defect this test pins: a multi-entry wave's mixed outcomes —
     // one shipped, one declined — must both fold into the verdict carried
-    // on the thrown WaveLedgerParseFailure, not just the shipped tag.
+    // on the thrown `WaveLedgerRefusal`, not just the shipped tag.
     expect(outcome.verdict).toBeDefined();
     expect(outcome.verdict?.shippedTags).toEqual(["SHIP-A"]);
     expect(outcome.verdict?.committed).toBe(true);
@@ -7637,7 +7637,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     const verdict = outcome.verdict;
     expect(verdict).toBeDefined();
     // …and this verdict is the refusal site's, not a clean completion's:
-    // only the `WaveLedgerParseFailure` leg summarizes a wave this way.
+    // only the `WaveLedgerRefusal` leg summarizes a wave this way.
     expect(verdict?.summary).toContain("pending-ledger rewrite refused");
 
     // Vacuity pins for the leg this test exists to judge — without all
@@ -7676,6 +7676,132 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // the refusal preserved, and neither written file reached trunk.
     expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(false);
     expect(existsSync(join(fx.repo, "src", "stray.ts"))).toBe(false);
+  });
+
+  /**
+   * A one-entry wave that cherry-picks and gates clean, and then meets a
+   * ledger commit git refuses for a reason that is **not** a parse failure.
+   *
+   * The arming is an afterMerge gate that leaves a paused merge standing in
+   * the primary checkout — a `MERGE_HEAD` beside the tip, exactly the state an
+   * operator's own interrupted `git merge` or `git cherry-pick` leaves behind.
+   * `commitPendingUpdate`'s commit is a `git commit --only` over the one named
+   * ledger path, and git fatals on a partial commit while a merge is in
+   * progress (measured, git 2.43). The queue's own bytes parse on both sides
+   * of the refusal, which is what puts this outside `PendingParseFailure` and
+   * on the arm that used to re-throw bare.
+   *
+   * Returns the tick settled either way — outcome or throw — because whether
+   * it throws at all is one of the two properties under test.
+   */
+  async function waveRefusedByPausedMerge(): Promise<{
+    outcome: Awaited<ReturnType<Dispatcher["tick"]>> | undefined;
+    thrown: unknown;
+    armed: boolean;
+  }> {
+    await writePending(fx.repo, [makeEntry("SHIP-A", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let armed = false;
+    const pauseMerge: Gate = {
+      name: "pause-merge",
+      when: "afterMerge",
+      async run() {
+        await writeFile(
+          join(fx.repo, ".git", "MERGE_HEAD"),
+          `${await head(fx.repo)}\n`,
+        );
+        armed = true;
+        return { ok: true, message: "merge paused in the primary checkout" };
+      },
+    };
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [pauseMerge],
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ship-a": (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship"),
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    let thrown: unknown;
+    const outcome = await dispatcher.tick().catch((err: unknown) => {
+      thrown = err;
+      return undefined;
+    });
+    return { outcome, thrown, armed };
+  }
+
+  /**
+   * The queue as trunk holds it after the refusal, parsed. Two facts in one
+   * read: the rewrite's commit never landed (SHIP-A is still queued), and the
+   * bytes it would have parsed are valid — so nothing here could have thrown
+   * `PendingParseFailure`, which is what makes these two cases the arm outside
+   * it rather than the one the sibling suites above already cover.
+   */
+  async function tipQueueTags(): Promise<string[]> {
+    const { stdout } = await exec(
+      "git",
+      ["show", "HEAD:.flume/plan/pending.json"],
+      { cwd: fx.repo },
+    );
+    const parsed = parsePending(stdout);
+    expect(parsed.ok).toBe(true);
+    return parsed.ok ? parsed.entries.map((e) => e.tag) : [];
+  }
+
+  it("a ledger commit refusing outside a parse failure still carries the wave's shipped tags in its verdict", async () => {
+    const { outcome, thrown, armed } = await waveRefusedByPausedMerge();
+
+    // Vacuity pins for the arm this case exists to judge: the paused merge
+    // was really staked, the tick really refused, and the ledger it refused
+    // over really parses — without all three the verdict assertions below
+    // would pass over the parse-failure arm the siblings above cover.
+    expect(armed).toBe(true);
+    expect(thrown).toBeUndefined();
+    expect(outcome?.failed).toBe(true);
+    expect(await tipQueueTags()).toEqual(["SHIP-A"]);
+
+    // The claim: SHIP-A is on trunk — cherry-picked and afterMerge-gated
+    // before the ledger commit was ever attempted — so the verdict says so.
+    expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(true);
+    const verdict = outcome?.verdict;
+    expect(verdict).toBeDefined();
+    expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(verdict?.committed).toBe(true);
+    expect(verdict?.tags).toEqual(["SHIP-A"]);
+    expect(verdict?.phaseName).toBe("build");
+    // …and it is the refusal site's verdict, not a clean completion's.
+    expect(verdict?.summary).toContain("pending-ledger rewrite refused");
+  });
+
+  it("a ledger-commit refusal outside a parse failure is a failed tick, not a throw out of Dispatcher.tick", async () => {
+    const { outcome, thrown, armed } = await waveRefusedByPausedMerge();
+
+    // Same two vacuity pins: the refusal was armed, and it was git's rather
+    // than the parser's.
+    expect(armed).toBe(true);
+    expect(await tipQueueTags()).toEqual(["SHIP-A"]);
+
+    // The claim: `tick()` returns. A bare re-throw here escaped the
+    // dispatcher entirely, taking the wave's verdict — and the CLI's own
+    // exit-code classification — with it.
+    expect(thrown).toBeUndefined();
+    expect(outcome).toBeDefined();
+    expect(outcome?.failed).toBe(true);
+    expect(outcome?.hibernated).toBe(false);
+    // The refusal is reported, never softened: the summary is git's own
+    // refusal, carried up as the tick's.
+    expect(outcome?.summary).toMatch(/partial commit/);
   });
 });
 

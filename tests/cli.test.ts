@@ -608,7 +608,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
 /**
  * A fanout chain whose agent, only for the `ship-a` worktree, corrupts
  * `<flumeDir>/plan/pending.json` mid-invocation (same mechanism
- * `tests/Dispatcher.test.ts`'s WaveLedgerParseFailure suite uses) and then
+ * `tests/Dispatcher.test.ts`'s ledger-refusal suite uses) and then
  * commits its declared file — so `commitPendingUpdate`'s rewrite read hits
  * an unparseable ledger after the cherry-pick and (gate-less) afterMerge
  * pass have already landed. The `DECLINE-B` entry never reaches the agent:
