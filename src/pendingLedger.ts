@@ -16,9 +16,10 @@
  *
  * Nothing here interprets what it read. The strict reader refuses, the
  * decide-read hands the refusal to the queue's own writer as a fact, the
- * tolerant one announces and degrades, and the rewrite reports the sha and
- * the tip verdict it got — what a tick does about any of it stays with the
- * dispatcher (`src/Dispatcher.ts`) and the wave (`src/waveTick.ts`).
+ * tolerant one announces and degrades, and the rewrite reports the sha, the
+ * tip verdict it got, and where the queue it was moving stands — what a tick
+ * does about any of it stays with the dispatcher (`src/Dispatcher.ts`) and the
+ * wave (`src/waveTick.ts`).
  */
 
 import { readFileSync } from "node:fs";
@@ -108,6 +109,20 @@ function pendingPathRel(
 ): string | undefined {
   if (isPendingRelocated(ctx)) return undefined;
   return gitPath(relative(ctx.repoRoot, ctx.pendingPath));
+}
+
+/**
+ * The ledger's path **as a report spells it**: git's own alphabet relative to
+ * the repo root wherever git can name the file ({@link pendingPathRel}), and
+ * the absolute path when a relocated dock puts it where git cannot. Every
+ * report this module makes about the file — the rewrite's result and the
+ * refusal below — takes its spelling from here, so a caller never composes a
+ * second one out of `pendingPath` with `node:path`
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*).
+ */
+function reportedPendingPath(ctx: PendingLedgerContext): string {
+  return pendingPathRel(ctx) ?? ctx.pendingPath;
 }
 
 /**
@@ -242,6 +257,28 @@ export async function readPendingTolerant(
 }
 
 /**
+ * What {@link commitPendingUpdate} answers with, and the one place a caller
+ * learns where the file it was about to move stands.
+ *
+ * `path` rides every answer because the two the wave reports to an operator —
+ * the tip-claim refusal below and the rewrite that landed — are both about a
+ * file whose location the chain chose, and the caller holds it only as the
+ * absolute `pendingPath` it would have to re-fold itself.
+ */
+export interface PendingRewriteResult {
+  /** The tip after the call: the new ship commit, or the tip that never moved. */
+  readonly sha: string;
+  /**
+   * A live foreign tip claim refused the rewrite. Checked before the write,
+   * so nothing on disk moved either: the queue at {@link path} is the one the
+   * call read.
+   */
+  readonly tipMoved: boolean;
+  /** The ledger's path as a report spells it ({@link reportedPendingPath}). */
+  readonly path: string;
+}
+
+/**
  * The wave's ledger rewrite: retire what shipped, drain the `blockedBy`
  * gates those tags were holding, record the footprints a failed merge
  * observed, and commit the result.
@@ -255,13 +292,19 @@ export async function readPendingTolerant(
  * it. No live claim means the rewrite recommits on whatever tip is current —
  * its content derives from the wave's own outcomes, never from a recorded
  * tip.
+ *
+ * That ordering is what splits the two refusals' reports. The claim refuses
+ * before the write, so {@link PendingRewriteResult} says the file is the one
+ * this call read; the commit refuses after it, so the throw names the path the
+ * rewrite is standing at, uncommitted. Neither leaves the caller to work out
+ * which happened from the file's own mtime.
  */
 export async function commitPendingUpdate(
   ctx: PendingLedgerContext,
   shippedTags: string[],
   mergeOutcomes: readonly TickVerdictMergeOutcome[],
   partitionIgnore: string[],
-): Promise<{ sha: string; tipMoved: boolean }> {
+): Promise<PendingRewriteResult> {
   // Footprint content sources from the wave's own TickVerdict
   // record (mergeOutcomes) rather than a separately maintained map — a
   // view over the same facts `tick()` persists, not a second capture.
@@ -329,7 +372,11 @@ export async function commitPendingUpdate(
     "utf8",
   ).catch(() => "");
   if (serialized === existing) {
-    return { sha: await git.revParse(ctx.repoRoot), tipMoved: false };
+    return {
+      sha: await git.revParse(ctx.repoRoot),
+      tipMoved: false,
+      path: reportedPendingPath(ctx),
+    };
   }
   // A relocated flumeDir puts pendingPath outside the repo, where staging
   // it would fatal — after the entries already merged. An out-of-tree dock
@@ -354,6 +401,7 @@ export async function commitPendingUpdate(
       return {
         sha: await git.revParse(ctx.repoRoot),
         tipMoved: true,
+        path: reportedPendingPath(ctx),
       };
     }
   }
@@ -364,7 +412,11 @@ export async function commitPendingUpdate(
   });
   await writeFile(namespacedJoin(ctx.pendingPath), serialized, "utf8");
   if (relocated) {
-    return { sha: await git.revParse(ctx.repoRoot), tipMoved: false };
+    return {
+      sha: await git.revParse(ctx.repoRoot),
+      tipMoved: false,
+      path: reportedPendingPath(ctx),
+    };
   }
   // Scoped to pending.json — `git add -A` would sweep up untracked worktree
   // metadata and unrelated user changes into the harness's chore commit.
@@ -374,12 +426,34 @@ export async function commitPendingUpdate(
     (shippedTags.length > 0
       ? `chore(flume): ship ${shippedTags.join(", ")}`
       : `chore(flume): record merge-failure footprints for ${footprintTags.join(", ")}`);
-  const sha = await git.commitPaths({
-    cwd: ctx.repoRoot,
-    message,
-    paths: [ctx.pendingPath],
-  });
-  return { sha, tipMoved: false };
+  // The one refusal on this call that is reached **after** the write, so the
+  // only one whose report has a disk state to state: the rewrite is sitting in
+  // the tree with no commit owning it. Every cause git refuses this partial
+  // commit for — a paused merge or cherry-pick in the primary checkout, a lost
+  // `index.lock`, a disk error — leaves that same file there, so the fact is
+  // stated off the ordering in hand rather than keyed on which cause it was
+  // (`.claude/rules/engine-boundary.md`, *Told, not inferred*). Without it the
+  // refusal reaches an operator as git's sentence alone, and the modified
+  // queue in `git status` beside it is theirs to attribute
+  // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+  // never rediscovered*). The cause rides `cause` and is quoted in the
+  // message, so nothing downstream reconstructs it.
+  let sha: string;
+  try {
+    sha = await git.commitPaths({
+      cwd: ctx.repoRoot,
+      message,
+      paths: [ctx.pendingPath],
+    });
+  } catch (err) {
+    throw new Error(
+      `the rewritten queue stands on disk at ${reportedPendingPath(ctx)}, ` +
+        `uncommitted — the pending-ledger commit refused: ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+  return { sha, tipMoved: false, path: reportedPendingPath(ctx) };
 }
 
 /**

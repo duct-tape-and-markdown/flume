@@ -7836,6 +7836,120 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(tickExitCode(outcome!)).toBe(1);
     expect(tickExitCode(outcome!)).not.toBe(EX_MOUNT_DEAD);
   });
+
+  it("a ledger-commit refusal names the queue path whose rewrite stands on disk uncommitted", async () => {
+    const { outcome, thrown, armed } = await waveRefusedByPausedMerge();
+
+    // Vacuity pins for the arm this case exists to judge. The paused merge
+    // was really staked and the tick really refused…
+    expect(armed).toBe(true);
+    expect(thrown).toBeUndefined();
+    expect(outcome?.failed).toBe(true);
+    // …the commit really never landed — SHIP-A is still queued at the tip…
+    expect(await tipQueueTags()).toEqual(["SHIP-A"]);
+    // …and the rewrite really is standing in the tree, drained of the tag the
+    // tip still carries. Without this the message asserted below would be a
+    // claim about a file that matches its tip, which is the tip-claim arm's
+    // shape, not this one.
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
+
+    // The claim: the refusal states that divergence itself, at the path it is
+    // standing at, rather than leaving an operator to find a modified queue in
+    // `git status` and attribute it (.claude/rules/engineering.md, "A fact the
+    // engine holds is reported, never rediscovered"). The path is git's own
+    // spelling of the ledger the chain declared — not the `pending.json`
+    // basename a reader would have to guess a directory for.
+    expect(outcome?.summary).toContain(
+      "the rewritten queue stands on disk at .flume/plan/pending.json, uncommitted",
+    );
+    // Both operator-facing surfaces carry it: the tick's summary above, and
+    // the verdict written for the next process to read.
+    expect(outcome?.verdict?.summary).toContain(
+      "the rewritten queue stands on disk at .flume/plan/pending.json, uncommitted",
+    );
+    // …and git's own refusal is still quoted inside it, never replaced by it.
+    expect(outcome?.summary).toMatch(/partial commit/);
+  });
+
+  it("a tip-claim refusal reports no uncommitted rewrite, having refused before the write", async () => {
+    await writePending(fx.repo, [makeEntry("SHIP-A", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // The sibling refusal on the same call, taken one step earlier: a live
+    // foreign tip claim, checked before the rewrite is written. The claim path
+    // comes from the engine's own accessors — a second spelling of the
+    // tip-claims layout here would pass while the engine looked somewhere else
+    // entirely.
+    const ref = await git.currentRefPath(fx.repo);
+    expect(ref.kind).toBe("ref");
+    const claimPath = git.tipClaimPath(
+      await git.gitCommonDir(fx.repo),
+      ref.kind === "ref" ? ref.path : "",
+    );
+
+    let armed = false;
+    const claimTip: Gate = {
+      name: "claim-tip",
+      when: "afterMerge",
+      async run() {
+        await mkdir(dirname(claimPath), { recursive: true });
+        // The vitest worker plays the live holder, exactly as the CLI's own
+        // held-claim case does: this Dispatcher declares no `ownTipClaimPid`,
+        // so any live pid reads as a concurrent engine instance. Staked from
+        // an afterMerge gate so it lands *after* the cherry-pick's own tip
+        // check — otherwise nothing ships and the ledger call is never
+        // reached at all.
+        await writeFile(claimPath, String(process.pid), "utf8");
+        armed = true;
+        return { ok: true, message: "tip claimed by a foreign engine" };
+      },
+    };
+
+    const warnings: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout", gates: [claimTip] })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ship-a": (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship"),
+      }),
+      log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity pins: the claim was really staked, the entry really shipped
+    // before it, and the ledger call really refused over it — without all
+    // three the report asserted below would be a line no refusal produced.
+    expect(armed).toBe(true);
+    expect(outcome.verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(outcome.verdict?.tipMoved).toBe(true);
+    expect(await tipQueueTags()).toEqual(["SHIP-A"]);
+    // The disk says the same thing the report will: the refusal came before
+    // the write, so the queue in the tree is byte-identical to the tip's.
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "SHIP-A",
+    ]);
+
+    // The claim: this refusal's report names the same path its sibling above
+    // does, and states the queue standing there is unchanged — so the one
+    // fact that separates the two refusals reaches the operator from the call
+    // that holds it, never from the file's mtime
+    // (.claude/rules/engineering.md, "A fact the engine holds is reported,
+    // never rediscovered").
+    const line = warnings.find((l) =>
+      l.includes("tip claimed before the pending-ledger commit"),
+    );
+    expect(line).toBeDefined();
+    expect(line).toContain(
+      ".flume/plan/pending.json is unchanged on disk, no rewrite written",
+    );
+  });
 });
 
 // ---------- foundations governor ----------

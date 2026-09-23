@@ -29,6 +29,7 @@ import {
   commitPendingUpdate,
   readPendingForDecision,
   readPendingTolerant,
+  type PendingRewriteResult,
 } from "./pendingLedger.js";
 import {
   entryExtensionPayload,
@@ -859,7 +860,7 @@ export async function runFanout(
     // case. Surviving worktrees are the accepted cost of refusing rather
     // than proceeding; the next `pruneWorktrees` call reclaims their
     // metadata once a human has cleared the refusal.
-    let update: { sha: string; tipMoved: boolean };
+    let update: PendingRewriteResult;
     try {
       update = await commitPendingUpdate(
         leg,
@@ -923,8 +924,19 @@ export async function runFanout(
     if (updSha !== preUpdate) chorSha = updSha;
     if (update.tipMoved) {
       waveTipMoved = true;
+      // The refusal's own disk state, from the call that took it rather than
+      // from this site's memory of where its tip check sits: the claim is
+      // read before the rewrite is written, so the queue at `update.path` is
+      // still the one the call read — the operator has nothing to attribute
+      // here, which is the half of this pair the commit refusal below cannot
+      // say (`.claude/rules/engineering.md`, *A fact the engine holds is
+      // reported, never rediscovered*). The path is the ledger's own
+      // spelling, never `pending.json` restated here over a location the
+      // chain chose.
       leg.log.warn(
-        `[flume] ${phase.name}: tip claimed before the pending-ledger commit; pending.json left untouched — shipped entries already on trunk stay shipped`,
+        `[flume] ${phase.name}: tip claimed before the pending-ledger commit; ` +
+          `${update.path} is unchanged on disk, no rewrite written — ` +
+          `shipped entries already on trunk stay shipped`,
       );
     } else {
       leg.log.info(
