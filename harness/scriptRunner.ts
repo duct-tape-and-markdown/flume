@@ -54,7 +54,7 @@
 
 import { isAbsolute, resolve, sep } from "node:path";
 
-import { gitPath } from "../src/paths.js";
+import { escapesRoot, gitPath } from "../src/paths.js";
 
 import { resolveLanes } from "./runner.js";
 import type {
@@ -134,10 +134,15 @@ function readLine(line: string, where: string): NamedResult {
     return { name, carried: false, files: [] };
   }
   // Folded into git's alphabet before it is judged, so a win32 validator's
-  // separators read the way a posix one's do.
+  // separators read the way a posix one's do. Where it lands is then asked of
+  // `escapesRoot`, the engine's one spelling of "leaves a root" — a prefix
+  // test here would read `checks/../../outside` as inside, and the judge would
+  // lay it over the base tree's parent (`.claude/rules/engineering.md`, *The
+  // fix lands at the mechanism*).
   const raw = file ?? "";
   const relative = gitPath(raw);
-  if (relative === "" || isAbsolute(raw) || relative.startsWith("../")) {
+  const root = resolve(where);
+  if (relative === "" || isAbsolute(raw) || escapesRoot(root, resolve(root, relative))) {
     throw new Error(
       `scriptRunner: the command in ${where} wrote a \`${PASS}\` line naming ` +
         `${JSON.stringify(raw)} where a run-relative file goes: ${quoted}. The judge ` +

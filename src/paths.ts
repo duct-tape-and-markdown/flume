@@ -85,12 +85,16 @@ export function gitPath(path: string): string {
  * `relative` answers with a `..` lead when the target climbs out of the root
  * and with an absolute path when the two share no root at all (a different
  * win32 drive), and those two shapes are the whole verdict. Here rather than
- * at each asker because three reach it — the declared-field check below, the
- * state root's own escape verdict ({@link computeStateRootRel}) and the
- * ledger's relocation check (`isPendingRelocated`, `src/pendingLedger.ts`) —
- * and a fourth spelling is how two of them come to disagree about what
- * leaving a root means (`.claude/rules/engineering.md`, *The fix lands at the
- * mechanism*).
+ * at each asker because every site that asks it reads one rule — the
+ * declared-field check below, the state root's own escape verdict
+ * ({@link computeStateRootRel}), the ledger's relocation check
+ * (`isPendingRelocated`, `src/pendingLedger.ts`), the base run's selection
+ * (`baseTree`, `harness/toolRun.ts`) and the file a validator names on a
+ * verdict line (`readLine`, `harness/scriptRunner.ts`) — and a further
+ * spelling is how two of them come to disagree about what leaving a root
+ * means (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ * A prefix test over the relative path is the spelling that drifts first: it
+ * reads an interior climb (`a/../../b`) as inside.
  */
 export function escapesRoot(root: string, path: string): boolean {
   const rel = relative(root, path);

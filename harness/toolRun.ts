@@ -18,7 +18,7 @@ import { copyFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { existsLoud } from "../src/fsProbe.js";
-import { namespacedJoin } from "../src/paths.js";
+import { escapesRoot, namespacedJoin } from "../src/paths.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
 
 import { MAX_OUTPUT_BYTES } from "./exec.js";
@@ -72,9 +72,9 @@ export async function captureRun(
 /** One base run's tree, before the tool that judges it is spawned. */
 interface BaseTreeRequest {
   /**
-   * The operation a refusal names — `vitestRunner.runAtBase`. The two
-   * refusals below are the runner's own contract, so they read as the
-   * caller's message rather than as this module's.
+   * The operation a refusal names — `vitestRunner.runAtBase`. The refusals
+   * below are the runner's own contract, so they read as the caller's message
+   * rather than as this module's.
    */
   readonly label: string;
   /** The run-relative files whose working-tree bytes are laid over the base. */
@@ -90,7 +90,7 @@ interface BaseTreeRequest {
  * working-tree bytes of `files` laid over it, provisioned the way a build
  * worktree is. Returns where it landed.
  *
- * Both refusals precede the checkout: a selection that cannot be laid down
+ * Every refusal precedes the checkout: a selection that cannot be laid down
  * makes the run unjudgeable either way, and refusing afterwards spends a `git
  * worktree add` to reach the same error.
  */
@@ -107,9 +107,26 @@ export async function baseTree(
     );
   }
   // Read the selection out of the caller's tree before asking for anything:
-  // a file that is not there makes the run unjudgeable.
+  // a file that is not there, or one that is not in that tree at all, makes
+  // the run unjudgeable.
+  //
+  // The selection is run-relative, so the same arithmetic that carries it out
+  // of `cwd` carries the lay-down below out of the worktree: bounding it here
+  // bounds both, and bounds it for every runner, since this is the one site
+  // that lays a selection down. The escape verdict itself is the engine's —
+  // `escapesRoot` is where "leaves a root" is spelled, and a prefix test here
+  // would be a second spelling that reads an interior climb as inside
+  // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+  const root = resolve(cwd);
   const sources = files.map((f) => {
-    const from = resolve(cwd, f);
+    const from = resolve(root, f);
+    if (escapesRoot(root, from)) {
+      throw new Error(
+        `${label}: ${f} resolves outside the tree at ${cwd}. A base run lays its ` +
+          "selection over the base checkout, which a file that climbs out of the run " +
+          "tree cannot reach.",
+      );
+    }
     if (!existsLoud(namespacedJoin(from))) {
       throw new Error(`${label}: ${f} is not in the tree at ${cwd}`);
     }

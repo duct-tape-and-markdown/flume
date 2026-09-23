@@ -34,7 +34,7 @@
 
 import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -684,6 +684,32 @@ describe("the vitest runner", () => {
     ).rejects.toThrow(/tests\/absent\.test\.ts is not in the tree/);
   });
 
+  it("baseTree refuses a selected file that lands outside the base checkout", async () => {
+    // A sibling of the fixture under the same temp root, so the selection
+    // below is an ordinary run-relative path that happens to climb out of the
+    // tree — the shape a runner's own prefix test reads as inside, since the
+    // climb is interior rather than leading.
+    const outside = await mkTempDir("flume-harness-runner-outside-");
+    try {
+      await put(outside, "widget.test.ts", MERGED_TEST);
+      const selection = `tests/../../${basename(outside)}/widget.test.ts`;
+
+      // Vacuity: the file the selection names is really there, so the refusal
+      // below is the escape and not the absence the case above pins.
+      expect(existsSync(resolve(fixture, selection))).toBe(true);
+
+      // Refused before the checkout, which is what makes this reachable
+      // outside a gate scope — and refused for the lay-down too: copying it
+      // would have written `widget.test.ts` into the checkout's parent, which
+      // is the engine's worktree base.
+      await expect(
+        runner.runAtBase(["x"], [selection], baseSha, fixture),
+      ).rejects.toThrow(/resolves outside the tree at/);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
   it("refuses a run that produced no report rather than reading one as empty", async () => {
     const silent = vitestRunner({
       invoke: () => ({ command: process.execPath, args: ["-e", ""] }),
@@ -1123,6 +1149,22 @@ describe("the script runner", () => {
     await expect(
       printing(`flume\tpass\t\t${CARRIED}\n`).run([CARRIED], fixture),
     ).rejects.toThrow(/where a run-relative file goes/);
+  });
+
+  it("the script runner refuses a pass line whose file climbs out of the run tree", async () => {
+    // The climb is interior, so a test on the path's leading characters reads
+    // it as run-relative; where it resolves is the only thing that answers.
+    const printing = scriptRunner({
+      command: process.execPath,
+      args: [
+        "-e",
+        `process.stdout.write(${JSON.stringify(`flume\tpass\tchecks/../../outside.checks\t${CARRIED}\n`)})`,
+      ],
+    })(ctx);
+
+    await expect(printing.run([CARRIED], fixture)).rejects.toThrow(
+      /where a run-relative file goes/,
+    );
   });
 
   it.runIf(process.platform !== "win32")(
