@@ -758,6 +758,12 @@ const logStating = (...titles: readonly string[]): string =>
 /** The grammar those fixtures state, as a consumer would declare it. */
 const FAIL_LINE = /^FAIL (.+)$/m;
 
+/**
+ * The same grammar declared sticky — the flag a consumer's own read of its
+ * runner's output leaves on a shared literal, or spells outright.
+ */
+const STICKY_FAIL_LINE = /^FAIL (.+)$/my;
+
 /** The same grammar as a function, for the reader's other declared shape. */
 const readsFailLines = (log: string): string[] =>
   [...log.matchAll(/^FAIL (.+)$/gm)].map((match) => match[1] ?? "");
@@ -845,6 +851,32 @@ it("a drained-run stamp carries the failing titles the reader gave it", () => {
   >[string];
   stampLanes({ [LANE.name]: named });
   expect(lane(undefined, [reading(FAIL_LINE)]).live(stateRoot())).toBe(false);
+}, SPAWN_BUDGET_MS);
+
+it("a lane's sticky title pattern reads every failing title the log states", () => {
+  // The log's first line is the runner's own preamble, so a sticky read
+  // anchored at index 0 fails its first step and stops with nothing.
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: logStating(TITLE_B, TITLE_A),
+  });
+  stampLanes({});
+
+  const sticky = lane(undefined, [reading(STICKY_FAIL_LINE)]).render(stateRoot());
+
+  // Vacuity: a red lane really was read and really woke this slice, so the
+  // stamp below is a set this tick was told to write.
+  expect(sticky).toContain("FAILING");
+  expect(sticky).toContain("Woke this slice:");
+  expect(stampNamed(sticky)).toBe(stampValue(String(RUN.databaseId), BOTH_TITLES));
+
+  // And the same pattern without `y` answers the same titles over the same
+  // log: the flag a consumer declares decides its grammar, never how much of
+  // the log the lane reads.
+  expect(stampNamed(sticky)).toBe(
+    stampNamed(lane(undefined, [reading(FAIL_LINE)]).render(stateRoot())),
+  );
 }, SPAWN_BUDGET_MS);
 
 it("a failing run whose title set matches the lane's stamp does not make the inbox slice live", () => {

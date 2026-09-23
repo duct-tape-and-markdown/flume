@@ -80,8 +80,9 @@ type CiLane = NonNullable<Declaration["ci"]>[number];
  * A pattern answers its matches — the first capture group where it declares
  * one, the whole match otherwise — read over the log entire and over every
  * match, whatever flags it carries: {@link everyMatch} re-spells it, so
- * neither the global flag nor the match position left behind by a consumer's
- * own earlier use of the value decides how much of the log is read.
+ * neither the global flag, the sticky flag, nor the match position left
+ * behind by a consumer's own earlier use of the value decides how much of
+ * the log is read.
  *
  * Declaring none is a stated position, not a gap: the lane then wakes the
  * slice once per failing run, and its titles stay findings the slice's agent
@@ -409,19 +410,27 @@ function readTitles(lane: CiLane, log: string): string[] | undefined {
 }
 
 /**
- * A declared pattern re-spelled to read the whole log: global, from the top.
+ * A declared pattern re-spelled to read the whole log: global, from the top,
+ * and never anchored.
  *
  * Rebuilt rather than used as handed over, and unconditionally. A match-all
  * read refuses a pattern without the global flag outright, and resumes from
  * the match position a consumer's own earlier use of the value left on it —
  * so a lane's title set would otherwise depend on what else that repository
  * did with its own regex literal before the tick read it.
+ *
+ * The sticky flag goes with it, because sticky outranks global in a match-all
+ * read: each step anchors at the match position the step before left, so a
+ * `y` pattern stops at the first line of the log that is not a match and a
+ * log whose first failing line is not its first line answers the empty set.
+ * That set is indistinguishable from a run stating no failures, which is the
+ * silent degradation {@link readTitles} exists to refuse
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). A consumer declaring
+ * `y` is stating the grammar its runner prints, not asking for a partial
+ * read of the log.
  */
 const everyMatch = (pattern: RegExp): RegExp =>
-  new RegExp(
-    pattern.source,
-    pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`,
-  );
+  new RegExp(pattern.source, `${pattern.flags.replace(/[gy]/g, "")}g`);
 
 /**
  * A title set in its one spelling: each title trimmed, the blanks dropped,
