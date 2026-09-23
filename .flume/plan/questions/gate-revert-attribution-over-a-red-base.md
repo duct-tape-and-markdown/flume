@@ -68,3 +68,44 @@ that was already broken.
 **The ask:** which of 1/2/3, and does a base-red gate still revert?
 
 Filed from `.flume/inbox/2026-09-22-a-red-trunk-reverts-every-later-entry.md`.
+
+## Ruled at 3ca79f9f — option 2, and one half of it has no surface yet
+
+Ruling: re-run the failing files the entry never touched at the base through
+the existing `runAtBase`, report `base-red`, still revert, and **do not
+quarantine**.
+
+The reporting half is queued as `JUDGE-REPORTS-A-SUITE-RED-AT-THE-BASE-AS-BASE-RED`
+and needs nothing new: `GateResult.verdict` is already carried verbatim onto
+the tick verdict's gate row and onto the `gate-revert` prior-attempt record
+(`spec/chain.md`, *What a gate returns*), so the retry reads `base-red` beside
+the message it is currently blamed by.
+
+**The half that is still open: nothing lets a gate withhold blame.** An
+entry-scoped `afterMerge` revert composes `blamedOn(entry)` unconditionally,
+and the supervisor quarantines every blamed gate failure. Keying that on
+`verdict` is not available — the engine interprets that field no further by
+design, and pattern-matching a chain's prose is the shape
+`.claude/rules/engine-boundary.md`, *Told, not inferred* exists to refuse. So
+this half wants a **declared** `GateResult` field, and `spec/chain.md` states
+the shape as a closed list (`{ ok, message, details?, failingFiles?, skipped?,
+verdict? }`) — widening it is yours, not a build tick's.
+
+Two spellings, both mechanism with an injection point:
+
+1. **`blamesSpan?: false`** — the gate says this failure is not the gated
+   span's. The engine withholds the `tag`/`quarantineKey` half of the stage
+   failure, exactly as a singleton's own revert already does (there is no
+   entry to blame), and the consecutive-failure backstop still counts it. One
+   field, one reader, and the existing unblamed path is the behavior.
+2. **`attributedTo?: "span" | "base"`** — names the subject rather than
+   negating one, and leaves room for a third value later. More vocabulary for
+   the same decision today.
+
+I'd take 1: the unblamed-failure path exists already, so the field switches
+between two behaviors the engine has rather than adding one.
+
+**The ask:** the `spec/chain.md` widening, and which spelling. The
+`suspectFlake` inference over `failingFiles` disjointness is the same fact
+read the inferential way and would be the field's natural replacement — say
+whether it retires with this or stands.
