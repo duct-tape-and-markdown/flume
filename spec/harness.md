@@ -68,8 +68,11 @@ for a field it declared.
 ### The judges
 
 `tests[]` lines are proven green on the merged tree and red on
-the base; `pins[]` lines green only. The judge speaks to the consumer's test
-runner through the runner interface below and never assumes vitest.
+the base; `pins[]` lines green only. A merged suite red only in files the
+span never touched is re-run at the base; failing there too, the judge
+refuses with `base-red` rather than blaming the span (`spec/chain.md`, *What
+a gate returns*). The judge speaks to the consumer's test runner through the
+runner interface below and never assumes vitest.
 
 
 ### The gates the discipline needs
