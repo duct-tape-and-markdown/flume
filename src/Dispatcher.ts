@@ -80,7 +80,11 @@ import {
   type TickVerdict,
 } from "./tickVerdict.js";
 import * as git from "./git.js";
-import { runFanout, WaveLedgerRefusal } from "./waveTick.js";
+import {
+  runFanout,
+  WaveLedgerRefusal,
+  type LedgerRefusalClass,
+} from "./waveTick.js";
 import {
   sweepStaleWorktrees,
   type WorktreeContext,
@@ -281,6 +285,21 @@ export interface TickOutcome {
    * produced or kept no commit).
    */
   failed?: boolean;
+  /**
+   * On a `failed` tick whose failure was the pending ledger refusing, which
+   * way it refused ({@link LedgerRefusalClass}) — stated by the site that
+   * refused, never re-read here off the message. Absent on every other
+   * `failed` tick, where nothing narrows the mount-dead class: chain
+   * resolution, an invalid declaration, a missing state root.
+   *
+   * The engine reader is `tickExitCode` (`src/cliVerdict.ts`), which exits 1
+   * over `"commit-refusal"` instead of {@link EX_MOUNT_DEAD} — the chain
+   * mounted, so the run is not dead and `flume loop` proceeds. A fact, never
+   * a verdict: what a chain does with it is the chain's
+   * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+   * interactive sessions)*).
+   */
+  ledgerRefusal?: LedgerRefusalClass;
   /**
    * Set when chain resolution failed with the CJS-context
    * signature — a usage error (the host repo's package.json is missing
@@ -811,10 +830,13 @@ export class Dispatcher {
       // disk error; its `cause` says which, and the tags it carries are the
       // same either way, which is why the carry is not keyed on one of them.
       //
-      // Everything else is an ordinary throw and keeps propagating. The exit
-      // code is unchanged for both arms (EX_MOUNT_DEAD, `failed: true`) — a
-      // carried `verdict` only adds the record of what the wave shipped
-      // before the refusal; it never softens the refusal itself.
+      // Everything else is an ordinary throw and keeps propagating. Both arms
+      // are `failed: true` and neither is softened — but they are not one
+      // exit class: `ledgerRefusal` carries the refusing site's own
+      // classification out to `tickExitCode`, so a queue nothing can parse
+      // stays mount-dead while a ledger commit git refused is the ordinary
+      // harness error it is. A bare `PendingParseFailure` is a parse failure
+      // by its own type; the wave's is whichever the refusal stated.
       if (
         !(err instanceof PendingParseFailure) &&
         !(err instanceof WaveLedgerRefusal)
@@ -827,6 +849,8 @@ export class Dispatcher {
         failed: true,
         awakeAfter: this.baton.awake(),
         summary: err.message,
+        ledgerRefusal:
+          err instanceof WaveLedgerRefusal ? err.refusalClass : "parse-failure",
         ...(err instanceof WaveLedgerRefusal ? { verdict: err.verdict } : {}),
       };
     }

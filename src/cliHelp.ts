@@ -150,7 +150,12 @@ Exit codes:
   0   Success, or hibernation (no phase awake).
   1   Harness error (unexpected exception), or HEAD is detached (the tick
       record's meaning is advancing a named tip; checkout a branch first).
-      No claim is taken or checked — that's loop-level only.
+      No claim is taken or checked — that's loop-level only. Also a wave
+      whose entries merged and gated clean and whose pending-ledger commit
+      then refused — a paused merge or cherry-pick in the checkout, a lost
+      index.lock: the shipped entries are on trunk, the chain is fine, and
+      a fresh process has every reason to get further. Clear the refusal and
+      re-run; the queue still names what has not shipped.
   2   Usage: a stray trailing positional (\`tick\` consumes none — running
       something other than whichever phase is awake is refused, not
       honored); or the chain load failed with the CJS-context refusal — the
@@ -158,7 +163,10 @@ Exit codes:
       "type": "module". Add it and re-run.
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
-      fix the chain (or its state root) and re-run.
+      fix the chain (or its state root) and re-run. Also pending.json
+      failing to parse, where a fresh process reads the same bytes until the
+      queue's declared writer runs over them; a wave that shipped before its
+      rewrite read hit them still exits 69, and its work is on trunk.
   74  I/O error (EX_IOERR): the verdict history
       (\`.flume/tick-verdicts.jsonl\`) is present and unreadable — the tick
       reads it before appending its own record, so its work has already

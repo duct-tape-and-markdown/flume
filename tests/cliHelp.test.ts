@@ -170,9 +170,13 @@ it("the top-level help names no job verb", () => {
  * (main's harness-error exit). Named rather than derived — each is a
  * `return`/`process.exit` literal on a control path with no outcome value
  * to drive.
+ *
+ * 1 is *not* here, though cli.ts returns it on those refusals too: a tick
+ * whose ledger commit refused outside a parse failure reaches 1 through the
+ * outcome as well, so the driven half already owns the code and the
+ * disjointness assertion below is what keeps this set honest about it.
  */
 const TICK_PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
-  [1, "detached HEAD or held tip claim refusal, or a harness error"],
   [
     74,
     "the state root at bay discovery, or the verdict history the tick " +
@@ -251,6 +255,7 @@ const TICK_OUTCOME_SPACE: {
 } = {
   hibernated: [false, true],
   failed: [ABSENT, false, true],
+  ledgerRefusal: [ABSENT, "parse-failure", "commit-refusal"],
   usageError: [ABSENT, false, true],
   tipMoved: [ABSENT, false, true],
   declined: [ABSENT, false, true],

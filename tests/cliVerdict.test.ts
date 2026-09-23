@@ -79,6 +79,75 @@ describe("tickExitCode — axis classification", () => {
     expect(tickExitCode(outcome)).toBe(0);
   });
 
+  /**
+   * A wave that shipped, then met a ledger commit git refused. The verdict is
+   * the one `WaveLedgerRefusal` carries (`src/waveTick.ts`) — present here
+   * because it is what tells this outcome apart from a chain that never
+   * mounted, and because the two cases below have to differ in `ledgerRefusal`
+   * alone for the classification to be what decides them.
+   */
+  const LEDGER_REFUSAL_VERDICT: TickVerdict = {
+    phaseName: "build",
+    tags: ["SHIP-A"],
+    committed: true,
+    gateResults: [],
+    shippedTags: ["SHIP-A"],
+    mergeOutcomes: [],
+    invocations: [],
+    summary: "build shipped SHIP-A — pending-ledger rewrite refused",
+    headSha: "0".repeat(40),
+    at: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("a ledger-commit refusal outside a parse failure exits 1, not 69", () => {
+    const outcome: TickOutcome = {
+      hibernated: false,
+      failed: true,
+      ledgerRefusal: "commit-refusal",
+      verdict: LEDGER_REFUSAL_VERDICT,
+      awakeAfter: ["build"],
+      summary:
+        "build shipped SHIP-A — pending-ledger rewrite refused (fatal: " +
+        "cannot do a partial commit during a cherry-pick.)",
+    };
+
+    // Non-vacuity: this really is the shipped-then-refused shape, not a
+    // chain that never mounted — the wave ran and its entry is on trunk.
+    expect(outcome.failed).toBe(true);
+    expect(outcome.verdict?.shippedTags).toEqual(["SHIP-A"]);
+
+    // The claim: a paused cherry-pick, a lost index.lock, a disk error — none
+    // of them says the mount is dead, so none of them may fail-fast the loop.
+    expect(tickExitCode(outcome)).toBe(1);
+    expect(tickExitCode(outcome)).not.toBe(EX_MOUNT_DEAD);
+  });
+
+  it("an unparseable pending ledger still exits 69", () => {
+    // The decide-read leg: no agent ran, nothing shipped, no verdict.
+    const decideRead: TickOutcome = {
+      hibernated: false,
+      failed: true,
+      ledgerRefusal: "parse-failure",
+      awakeAfter: ["build"],
+      summary: "pending.json failed to parse (1 error(s)): [0] : not json",
+    };
+    expect(decideRead.verdict).toBeUndefined();
+    expect(tickExitCode(decideRead)).toBe(EX_MOUNT_DEAD);
+
+    // …and the wave's own rewrite read, which shipped first and so carries a
+    // verdict. Same bytes on disk next process either way, so the same code:
+    // the carried verdict is a record, never a softening.
+    const waveRewrite: TickOutcome = {
+      ...decideRead,
+      verdict: LEDGER_REFUSAL_VERDICT,
+      summary:
+        "build shipped SHIP-A — pending-ledger rewrite refused " +
+        "(pending.json failed to parse (1 error(s)): [0] : not json)",
+    };
+    expect(waveRewrite.verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(tickExitCode(waveRewrite)).toBe(EX_MOUNT_DEAD);
+  });
+
   it("CJS-context usage error → 2, checked ahead of the mount-dead fallback", () => {
     const outcome: TickOutcome = {
       hibernated: false,

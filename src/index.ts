@@ -133,6 +133,11 @@ export {
   type TickOutcome,
 } from "./Dispatcher.js";
 
+// `TickOutcome.ledgerRefusal`'s own type: a chain reading a failed tick needs
+// the name to hold what it read. The error that states it (`WaveLedgerRefusal`)
+// stays internal — it never crosses this boundary.
+export { type LedgerRefusalClass } from "./waveTick.js";
+
 export { type ChainModule, type ChainFactory } from "./chainLoad.js";
 
 export { consoleLogger, type Logger } from "./log.js";

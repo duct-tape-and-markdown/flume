@@ -32,6 +32,7 @@ import {
 } from "./pendingLedger.js";
 import {
   entryExtensionPayload,
+  PendingParseFailure,
   type PendingEntry,
 } from "./PendingSchema.js";
 import type {
@@ -123,26 +124,49 @@ type EntryAttempt = AttemptOutcome & {
  * `index.lock`. The carry is widened to the call rather than keyed on a
  * cause, because every cause leaves the same tags on trunk.
  *
- * `cause` is the refusal itself, so `tick()`'s catch can still classify it —
- * a `PendingParseFailure` (`src/PendingSchema.ts`) there means an unparseable
- * queue, with a repair no other cause shares. `verdict` is what this class
- * exists to carry. A plain `PendingParseFailure` from a decide-read (no agent
- * ran, nothing shipped) reaches `tick()` unwrapped and carries no verdict,
- * same as before.
+ * `refusalClass` is that classification, stated here from the `cause` in hand
+ * rather than re-read downstream off the refusal's own prose
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). `cause` stays on
+ * the error for its message and for anything after the underlying throw
+ * itself. `verdict` is what this class exists to carry. A plain
+ * `PendingParseFailure` from a decide-read (no agent ran, nothing shipped)
+ * reaches `tick()` unwrapped and carries no verdict, same as before.
  *
- * Exported no further than `tick()`'s own catch: unlike `PendingParseFailure`
- * itself (part of the gate-authoring API surface, `src/flumeApi.ts`) this is
- * the wave's one internal leg, absent from `src/index.ts` and never something
- * a chain's gate needs to distinguish.
+ * The class is exported no further than `tick()`'s own catch: unlike
+ * `PendingParseFailure` itself (part of the gate-authoring API surface,
+ * `src/flumeApi.ts`) this is the wave's one internal leg, absent from
+ * `src/index.ts` and never something a chain's gate needs to distinguish.
+ * {@link LedgerRefusalClass} does ship — it is what the tick outcome reports.
  */
 export class WaveLedgerRefusal extends Error {
   readonly verdict: TickVerdict;
+  readonly refusalClass: LedgerRefusalClass;
   constructor(cause: unknown, verdict: TickVerdict) {
     super(refusalMessage(cause), { cause });
     this.name = "WaveLedgerRefusal";
     this.verdict = verdict;
+    this.refusalClass =
+      cause instanceof PendingParseFailure ? "parse-failure" : "commit-refusal";
   }
 }
+
+/**
+ * Which way a pending-ledger read or write refused. Two causes with two
+ * repairs, and so two exit codes (`spec/loop.md`, *Exit codes — the run never
+ * lies to CI*):
+ *
+ * - `"parse-failure"` — the queue on disk would not parse. A fresh process
+ *   reads the same bytes until the queue's declared writer runs over them, so
+ *   the tick is mount-dead (69) and `flume loop` fail-fasts rather than
+ *   burning its remaining ticks on the same wall.
+ * - `"commit-refusal"` — the queue parsed and the rewrite's own commit
+ *   refused: a `git commit --only` fatal under a paused merge or cherry-pick,
+ *   a named path git finds unchanged, a disk error, a lost `index.lock`.
+ *   Nothing about the chain is dead, so the tick is an ordinary harness error
+ *   (1) and the next tick is a fresh process with every reason to get
+ *   further.
+ */
+export type LedgerRefusalClass = "parse-failure" | "commit-refusal";
 
 /**
  * The refusal's own words, for a {@link WaveLedgerRefusal}'s message and for

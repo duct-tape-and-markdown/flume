@@ -24,6 +24,8 @@ import {
   type ChainModule,
 } from "../src/chainLoad.ts";
 import { Dispatcher, type DispatcherOptions } from "../src/Dispatcher.ts";
+import { tickExitCode } from "../src/cliVerdict.ts";
+import { EX_MOUNT_DEAD } from "../src/exitCodes.ts";
 import { PendingParseFailure as realPendingParseFailure } from "../src/PendingSchema.ts";
 import { quarantineKey } from "../src/selection.ts";
 import type { Logger } from "../src/log.ts";
@@ -7403,6 +7405,8 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
 
     expect(invoked).toBe(false);
     expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBe("parse-failure");
+    expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
     expect(outcome.hibernated).toBe(false);
     expect(outcome.result).toBeUndefined();
     expect(errors.some((e) => /pending\.json/.test(e) && /parse/.test(e))).toBe(
@@ -7492,6 +7496,8 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // The refusal itself is unchanged: exit-69-worthy failure, ledger left
     // corrupt rather than overwritten with a rewrite derived from `[]`.
     expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBe("parse-failure");
+    expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
     expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
 
     // The defect this test pins: the wave's shipped tags used to vanish
@@ -7557,6 +7563,8 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // The refusal itself is unchanged: exit-69-worthy failure, ledger left
     // corrupt rather than overwritten with a rewrite derived from `[]`.
     expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBe("parse-failure");
+    expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
     expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
 
     // The defect this test pins: a multi-entry wave's mixed outcomes —
@@ -7802,6 +7810,30 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // The refusal is reported, never softened: the summary is git's own
     // refusal, carried up as the tick's.
     expect(outcome?.summary).toMatch(/partial commit/);
+  });
+
+  it("a ledger-commit refusal outside a parse failure names its class, and the process classifier exits 1 over it", async () => {
+    const { outcome, thrown, armed } = await waveRefusedByPausedMerge();
+
+    // The same two vacuity pins the siblings carry: the refusal was armed,
+    // and it was git's rather than the parser's — without the second the
+    // class asserted below would be the one the parse arm already produces.
+    expect(armed).toBe(true);
+    expect(thrown).toBeUndefined();
+    expect(outcome?.failed).toBe(true);
+    expect(await tipQueueTags()).toEqual(["SHIP-A"]);
+
+    // The claim, in two halves. The refusing site states its class on the
+    // outcome…
+    expect(outcome?.ledgerRefusal).toBe("commit-refusal");
+    // …and the real classifier reads it: a wave whose entries are on trunk
+    // and whose only casualty is the queue rewrite's own commit is an
+    // ordinary harness error, so `flume loop` logs it and takes a fresh
+    // process — never the mount-dead fail-fast that burns the rest of the
+    // run against a wall that is not there (spec/loop.md, "Exit codes — the
+    // run never lies to CI").
+    expect(tickExitCode(outcome!)).toBe(1);
+    expect(tickExitCode(outcome!)).not.toBe(EX_MOUNT_DEAD);
   });
 });
 
