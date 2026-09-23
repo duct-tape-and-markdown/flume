@@ -148,10 +148,11 @@ describe("comment citations", () => {
 
 /**
  * A test file that passes and leaves the process failing anyway: the
- * rejection nobody awaited reaches vitest's unhandled-error check, which sets
- * the exit code *after* the JSON reporter has computed `success` from the
- * files that reported. The contradiction is the real writer's — a report
- * hand-authored to claim it would pin the tester's idea of one
+ * rejection nobody awaited is what reaches vitest's unhandled-error check, so
+ * the run vitest itself refuses is the run its report calls green
+ * (`.claude/rules/platform-facts.md`, *vitest's JSON reporter can claim
+ * success over a non-zero exit*). The contradiction is the real writer's — a
+ * report hand-authored to claim it would pin the tester's idea of one
  * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
  * wrote*).
  */
