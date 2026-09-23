@@ -139,7 +139,9 @@
       "harness/exec.ts",
       "harness/scriptRunner.ts",
       "harness/toolRun.ts",
-      "harness/ci.ts"
+      "harness/ci.ts",
+      "harness/questions.ts",
+      "harness/layout.ts"
     ]
   },
   "drainedRuns": {
