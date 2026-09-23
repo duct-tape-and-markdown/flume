@@ -160,6 +160,10 @@ export interface AnchorScan {
   readonly findings: readonly AnchorSite[];
 }
 
+/** `page:line target#fragment`, the form a failure message cites a link in. */
+export const formatAnchor = (site: AnchorSite): string =>
+  `${site.page}:${site.line} ${site.target}#${site.fragment}`;
+
 /**
  * Every `*.md` page a domain resolves to, absolute and in a stable order.
  *
@@ -332,6 +336,10 @@ export interface SectionScan {
   /** Those naming none — the arm's verdict. */
   readonly findings: readonly SectionSite[];
 }
+
+/** `page:line § number`, the form a failure message cites a reference in. */
+export const formatSectionRef = (site: SectionSite): string =>
+  `${site.page}:${site.line} § ${site.number}`;
 
 /**
  * Every `§ N` the domain's pages carry, resolved against the numbering of the

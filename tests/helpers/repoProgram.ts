@@ -3,7 +3,9 @@
  * parse, the repo-relative fold, the program and checker a scan resolves
  * through, the source selection both off the program and off disk, the
  * scopeless parse a module read off disk is judged from, the token walk, the
- * directory walk, and the site and verdict vocabulary every scan reports in.
+ * directory walk, and the site and verdict vocabulary every scan reports in —
+ * down to the form a verdict over the live tree is asserted in, which is the
+ * same sentence in every suite that reads one.
  *
  * One job — *what the scanners share* — rather than a scanner of its own
  * (`.claude/rules/engineering.md`, *A module is one job*). Three siblings
@@ -29,6 +31,7 @@ import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
+import { expect } from "vitest";
 
 /** Absolute path to this repo's root — the directory holding the manifest. */
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -192,8 +195,8 @@ export const NO_FINDINGS = "no findings";
  * Chai truncates the value it inspects into a message at forty characters,
  * which a rendering long enough to name several sites always exceeds, so a
  * caller asserting on this passes it as the message argument too — chai does
- * not truncate that half, and a caller with more than one verdict to read
- * gives that doubling one home rather than spelling it per verdict.
+ * not truncate that half. {@link expectNoFindings} is where that doubling
+ * lives; a verdict spelling it inline is spelling the helper again.
  *
  * A finding carrying a break of its own would push everything behind it off
  * the first line, which is the elision this renderer exists to end, so it is
@@ -207,6 +210,29 @@ export const renderFindings = (lines: readonly string[]): string => {
       `a finding carries a line break, so one line cannot name what follows it: ${JSON.stringify(broken)}`,
     );
   return lines.length === 0 ? NO_FINDINGS : lines.join(" | ");
+};
+
+/**
+ * The form every verdict over the live tree is read in: the findings render
+ * to one line, asserted against the line a clean tree renders to.
+ *
+ * Here rather than in the suite that first needed it, on the condition
+ * {@link renderFindings} already meets — a second consumer. Three scans now
+ * read their tree verdicts this way, so the doubling is no longer any one
+ * suite's spelling of it, and a fourth scan copying whichever suite was
+ * nearest is what a shared home forecloses
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ *
+ * The caller maps its own findings to lines first: a site's spelling is the
+ * scan's vocabulary, and the formatter that owns it lives beside the scan.
+ * Passing the rendering through a formatter the fixture cases also assert on
+ * is what keeps this line non-vacuous — a formatter exercised only over an
+ * empty findings list has never produced a site name at all
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ */
+export const expectNoFindings = (lines: readonly string[]): void => {
+  const rendered = renderFindings(lines);
+  expect(rendered, rendered).toBe(NO_FINDINGS);
 };
 
 /** Which files a directory walk collects, and which it drops again. */

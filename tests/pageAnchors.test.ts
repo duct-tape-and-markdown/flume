@@ -22,6 +22,8 @@ import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   anchorSlug,
   type AnchorScan,
+  formatAnchor,
+  formatSectionRef,
   headingSlugs,
   markdownLinks,
   pagesUnder,
@@ -32,7 +34,12 @@ import {
   type PageDomain,
   type SectionScan,
 } from "./helpers/pageAnchors.ts";
-import { REPO_ROOT, filesUnder, relPath } from "./helpers/repoProgram.ts";
+import {
+  REPO_ROOT,
+  expectNoFindings,
+  filesUnder,
+  relPath,
+} from "./helpers/repoProgram.ts";
 
 /**
  * The pages whose links are judged: every tree the sweep domain names that
@@ -217,13 +224,8 @@ it("a link into a page whose heading has gone reds the arm", () => {
 
   // A fenced `# ` line in the target is not an anchor, so the link naming one
   // is the finding — reported at the line a reader has to edit.
-  expect(scan.findings).toEqual([
-    {
-      page: "docs/guide.md",
-      line: 4,
-      target: "docs/target.md",
-      fragment: "a-job-is-a-state-root",
-    },
+  expect(scan.findings.map(formatAnchor)).toEqual([
+    "docs/guide.md:4 docs/target.md#a-job-is-a-state-root",
   ]);
 });
 
@@ -247,7 +249,7 @@ it("the anchor domain reads every markdown page the sweep domain holds", () => {
   expect(held.length).toBeGreaterThan(0);
 
   const read = new Set(repoScan.pages);
-  expect(held.filter((page) => !read.has(page))).toEqual([]);
+  expectNoFindings(held.filter((page) => !read.has(page)));
 });
 
 it("every markdown link's #fragment resolves against the cited page's own headings", () => {
@@ -256,7 +258,7 @@ it("every markdown link's #fragment resolves against the cited page's own headin
   expect(repoScan.pages.length).toBeGreaterThan(0);
   expect(repoScan.scanned.length).toBeGreaterThan(0);
 
-  expect(repoScan.findings).toEqual([]);
+  expectNoFindings(repoScan.findings.map(formatAnchor));
 });
 
 it("a `§` run names every section it introduces, and a page numbers them two ways", () => {
@@ -303,14 +305,14 @@ it("a `§ N` on a docs page resolves against that page's own numbered headings",
 
   // The one naming no section of its page is the finding, at the line a reader
   // has to edit.
-  expect(scan.findings).toEqual([{ page: "notes/upgrade.md", line: 9, number: "4" }]);
+  expect(scan.findings.map(formatSectionRef)).toEqual(["notes/upgrade.md:9 § 4"]);
 
   // Non-vacuity: green over a tree whose references went unread is the failure
   // this arm exists to make impossible.
   expect(repoSections.numbered.length).toBeGreaterThan(0);
   expect(repoSections.scanned.length).toBeGreaterThan(0);
 
-  expect(repoSections.findings).toEqual([]);
+  expectNoFindings(repoSections.findings.map(formatSectionRef));
 });
 
 it("a docs page with no numbered headings leaves its `§ N` as prose", () => {
@@ -320,12 +322,14 @@ it("a docs page with no numbered headings leaves its `§ N` as prose", () => {
   // rather than judged against a numbering it does not have.
   expect(scan.pages).toContain("notes/index.md");
   expect(scan.numbered).not.toContain("notes/index.md");
-  expect(scan.prose).toEqual([{ page: "notes/index.md", line: 3, number: "1" }]);
+  expect(scan.prose.map(formatSectionRef)).toEqual(["notes/index.md:3 § 1"]);
   expect(scan.scanned.map((site) => site.page)).not.toContain("notes/index.md");
 
   // Non-vacuity: the arm is exercised on the tree, and no page it silenced is
   // one whose own numbering could have answered.
   expect(repoSections.prose.length).toBeGreaterThan(0);
   const numbered = new Set(repoSections.numbered);
-  expect(repoSections.prose.filter((site) => numbered.has(site.page))).toEqual([]);
+  expectNoFindings(
+    repoSections.prose.filter((site) => numbered.has(site.page)).map(formatSectionRef),
+  );
 });

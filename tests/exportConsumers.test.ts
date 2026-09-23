@@ -45,6 +45,7 @@ import {
   type UnnamableType,
 } from "./helpers/exportGraph.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { expectNoFindings } from "./helpers/repoProgram.ts";
 
 /**
  * Which part of the walk a finding came from. The scan says whether the
@@ -507,7 +508,7 @@ it("every src/ and harness/ export is reached by the package exports map or refe
   expect(scan.reachable.length).toBeGreaterThan(0);
   expect(scan.referenced.length).toBeGreaterThan(0);
 
-  expect(scan.findings.map(formatSite)).toEqual([]);
+  expectNoFindings(scan.findings.map(formatSite));
 });
 
 it("every type an exported function's signature names is exported from an entry module", () => {
@@ -533,9 +534,9 @@ it("every type an exported function's signature names is exported from an entry 
     expect(walked).toContain(fn);
   }
 
-  expect(
+  expectNoFindings(
     scan.positions.findings.filter(isTopLevelSignature).map(formatUnnamableType),
-  ).toEqual([]);
+  );
 });
 
 it("every type a member signature of a reached type names is exported from an entry module", () => {
@@ -560,9 +561,9 @@ it("every type a member signature of a reached type names is exported from an en
     expect(walked).toContain(member);
   }
 
-  expect(
+  expectNoFindings(
     scan.positions.findings.filter(isMemberSignature).map(formatUnnamableType),
-  ).toEqual([]);
+  );
 });
 
 it("every type a reached property position names is exported from an entry module", () => {
@@ -585,7 +586,5 @@ it("every type a reached property position names is exported from an entry modul
     expect(walked).toContain(property);
   }
 
-  expect(scan.positions.findings.filter(isProperty).map(formatUnnamableType)).toEqual(
-    [],
-  );
+  expectNoFindings(scan.positions.findings.filter(isProperty).map(formatUnnamableType));
 });

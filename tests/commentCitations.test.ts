@@ -34,6 +34,7 @@ import {
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   NO_FINDINGS,
+  expectNoFindings,
   modulesUnder,
   renderFindings,
   type ScanDomain,
@@ -1232,21 +1233,6 @@ const EXTERNAL_VOCABULARY: ReadonlyMap<string, string> = new Map(
     ) as Record<string, string>,
   ),
 );
-
-/**
- * The form every verdict below is read in: the findings render to one line,
- * asserted against the line a clean tree renders to.
- *
- * The rendering is passed twice on purpose — as the value compared and as the
- * message prepended — for the reason `renderFindings`
- * (`tests/helpers/repoProgram.ts`) states: chai truncates the one and not the
- * other, and it is the untruncated half a reverted tick's detail has to
- * carry.
- */
-const expectNoFindings = (lines: readonly string[]): void => {
-  const rendered = renderFindings(lines);
-  expect(rendered, rendered).toBe(NO_FINDINGS);
-};
 
 it("every backticked identifier in a src/, harness/ or tests/ comment names a declaration those trees hold", () => {
   const scan = repoScan;
