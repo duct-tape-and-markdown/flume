@@ -120,7 +120,11 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * opens without closing — on those same two names, so the refusal is visible
  * as a refusal. Last of the pairs is the one the path closes tight and the
  * pair rule still declines, because that path names a page: the same two
- * names again, over a page the tree holds and one it does not.
+ * names again, over a page the tree holds and one it does not. Last of all
+ * is the spelling the pair admits and the standalone rule refuses — a name in
+ * capitals, with and without the underscore an identifier segment refuses —
+ * in both verdicts and beside the same spelling standing alone in prose,
+ * which claims no home and stays a word.
  *
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
@@ -176,6 +180,9 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     ` * from the module that declares it: {@link unsharedHelper}.`,
     ` */`,
     `export const unsharedHelper = (): number => 1;`,
+    ``,
+    `/** The capitals spelling, declared here so a pair can name this door. */`,
+    `export const MAX_DEPTH_LIMIT = 8;`,
     ``,
   ].join("\n"),
   "lib/surface.ts": [
@@ -340,6 +347,21 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// Holder} resolves where the unbroken spelling does.`,
     `export const WRAPPED_LINK = 19;`,
     ``,
+    `// A pair carries a name in capitals the way it carries any other, because`,
+    `// the home is what answers it: \`MAX_DEPTH_LIMIT\` (\`lib/dataShapes.ts\`) is`,
+    `// declared in the file the pair names, and \`KINDS\` (\`lib/dataShapes.ts\`)`,
+    `// is spelled by this module rather than that one. The underscore an`,
+    `// identifier segment refuses is one of those spellings: \`VANISHED_NAME\``,
+    `// (\`lib/dataShapes.ts\`) is declared nowhere at all. The same name at its`,
+    `// own door resolves: \`KINDS\` (\`lib/surface.ts\`) is where this module`,
+    `// spells it.`,
+    `export const CAPS_PAIRED = 20;`,
+    ``,
+    `// Standing alone in prose the same spelling claims no home and is read as`,
+    `// the word it is: \`SHOUTED\` is declared nowhere, and judging it would put`,
+    `// a finding here.`,
+    `export const CAPS_ALONE = 21;`,
+    ``,
   ].join("\n"),
   "docs/carried.md": "# the page a tree outside the tsconfig cites\n",
   "tools/render.mjs": [
@@ -461,12 +483,15 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts",
   ]);
   // Read as the vocabulary rather than the roll: the pair cases at the foot
-  // of the fixture cite three of these names a second time, at a home, and
+  // of the fixture cite several of these names a second time, at a home, and
   // which sites carry which name is what `findings` below states by line.
   expect([...new Set(scan.scanned.map((s) => s.text))].sort()).toEqual([
     "Holder",
+    "KINDS",
+    "MAX_DEPTH_LIMIT",
     "Shipped",
     "Shipped.maxDepth",
+    "VANISHED_NAME",
     "Vanished",
     "WeakMap",
     "blockedBy",
@@ -480,6 +505,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "docs/withdrawn.md",
     "lib/dataShapes.ts",
     "lib/retired.ts",
+    "lib/surface.ts",
     "lib/vanished.ts",
     "release-notes.md",
     "surface.ts",
@@ -506,12 +532,16 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:93 WeakMap",
     "lib/surface.ts:107 docs/absent.md",
     "lib/surface.ts:118 docs/absent.md",
+    "lib/surface.ts:164 KINDS",
+    "lib/surface.ts:166 VANISHED_NAME",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
   // discrimination rather than a scan that flagged what it could not classify.
   expect([...new Set(scan.resolved.map((s) => s.text))].sort()).toEqual([
     "Holder",
+    "KINDS",
+    "MAX_DEPTH_LIMIT",
     "Shipped",
     "Shipped.maxDepth",
     "WeakMap",
@@ -522,6 +552,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "docs/sections.md",
     "lib/dataShapes.ts",
     "lib/retired.ts",
+    "lib/surface.ts",
     "release-notes.md",
     "surface.ts",
     "this.opts.maxDepth",
@@ -655,6 +686,9 @@ it("the citation scan resolves a repo-relative path citation against the working
     "lib/surface.ts:93 lib/dataShapes.ts",
     "lib/surface.ts:98 lib/dataShapes.ts",
     "lib/surface.ts:100 lib/dataShapes.ts",
+    "lib/surface.ts:163 lib/dataShapes.ts",
+    "lib/surface.ts:164 lib/dataShapes.ts",
+    "lib/surface.ts:167 lib/dataShapes.ts",
   ]);
 
   // Neither is a token of the program: `lib/dataShapes.ts` names the module
@@ -900,15 +934,19 @@ it("the citation scan judges no tail an unfenced page name's line break left beh
 // --- the pair, which names the home the token must sit in ----------------
 
 it("a comment pairing an identifier with a repo-relative path reds when the declaration is not in that file", () => {
-  // Vacuity guard: three pairs were drawn off the fixture, all naming the one
-  // home, so the split verdict below is the declaration set discriminating
-  // rather than a scan that drew no pair at all.
+  // Vacuity guard: every pair the fixture authored was drawn, all naming the
+  // one home, so the split verdict below is the declaration set
+  // discriminating rather than a scan that drew no pair at all.
   expect(
     fixtureScan.pairs.map((site) => `${formatCitation(site)} -> ${site.home}`),
   ).toEqual([
     "lib/surface.ts:90 Shipped -> lib/dataShapes.ts",
     "lib/surface.ts:91 Holder -> lib/dataShapes.ts",
     "lib/surface.ts:93 WeakMap -> lib/dataShapes.ts",
+    "lib/surface.ts:163 MAX_DEPTH_LIMIT -> lib/dataShapes.ts",
+    "lib/surface.ts:164 KINDS -> lib/dataShapes.ts",
+    "lib/surface.ts:166 VANISHED_NAME -> lib/dataShapes.ts",
+    "lib/surface.ts:168 KINDS -> lib/surface.ts",
   ]);
 
   // And each of the three resolves where a comment cites it unpaired — the
@@ -984,6 +1022,61 @@ it("an identifier a comment pairs with a .md page resolves repo-wide rather than
   expect(resolved).toContain("lib/surface.ts:107 WeakMap");
   expect(resolved).toContain("lib/surface.ts:104 docs/paired.md");
   expect(pairedFindings).toContain("lib/surface.ts:107 docs/absent.md");
+});
+
+it("a comment pairing an all-caps name with a repo-relative path reds when that file holds no such declaration", () => {
+  // Vacuity guard: all three capitals pairs were drawn, so the split verdict
+  // below is the declaration set discriminating rather than a subject rule
+  // that let the spelling fall out of the pair arm.
+  const caps = fixtureScan.pairs.filter((site) => site.line >= 163);
+  expect(caps.map((site) => `${formatCitation(site)} -> ${site.home}`)).toEqual(
+    [
+      "lib/surface.ts:163 MAX_DEPTH_LIMIT -> lib/dataShapes.ts",
+      "lib/surface.ts:164 KINDS -> lib/dataShapes.ts",
+      "lib/surface.ts:166 VANISHED_NAME -> lib/dataShapes.ts",
+      "lib/surface.ts:168 KINDS -> lib/surface.ts",
+    ],
+  );
+
+  // And `KINDS` resolves where the fixture does declare it, which is the
+  // reading the wrong door has to displace. Without it the finding below
+  // would be a name the fixture never declared anywhere. The capitals fence
+  // leaves the name uncitable standing alone, so its own door is where the
+  // resolving reading is shown.
+  expect(fixtureScan.resolved.map(formatCitation)).toContain(
+    "lib/surface.ts:168 KINDS",
+  );
+
+  // The verdict: the capitals name declared in the file its pair names
+  // resolves, and the two the file does not declare red — one spelled by the
+  // citing module, one by nothing at all. The underscore rides along, because
+  // a pair reads the whole span as the name it is.
+  const resolved = fixtureScan.resolved.map(formatCitation);
+  expect(resolved).toContain("lib/surface.ts:163 MAX_DEPTH_LIMIT");
+  const findings = fixtureScan.findings.map(formatCitation);
+  expect(findings).toContain("lib/surface.ts:164 KINDS");
+  expect(findings).toContain("lib/surface.ts:166 VANISHED_NAME");
+});
+
+it("a backticked word in capitals alone is judged as prose rather than as a citation subject", () => {
+  // Vacuity guard: both spans were read, so the refusal below is the subject
+  // rule discriminating and not a reader that missed the comments. And the
+  // pair arm is drawing on this fixture, so the absence of one at the second
+  // span is the gap rule declining rather than the arm gone quiet.
+  const spans = fixtureScan.backticked.map(formatCitation);
+  expect(spans).toContain("lib/surface.ts:31 VANISHED");
+  expect(spans).toContain("lib/surface.ts:173 SHOUTED");
+  expect(fixtureScan.findings.map(formatCitation)).toContain(
+    "lib/surface.ts:91 Holder",
+  );
+
+  // Neither claims a home, so neither is judged: the capitals fence is lifted
+  // by the pair and by nothing else. Admitting either would show up as a
+  // dangling finding, because the fixture declares neither name.
+  expect(fixtureScan.pairs.map((site) => site.line)).not.toContain(173);
+  const judged = fixtureScan.scanned.map((s) => s.text);
+  expect(judged).not.toContain("VANISHED");
+  expect(judged).not.toContain("SHOUTED");
 });
 
 // --- the section, which the named page's own titles answer ---------------

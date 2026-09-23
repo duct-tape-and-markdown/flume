@@ -397,6 +397,9 @@ const OPENING_PUNCTUATION = /^[([{"'*]+/;
  * single lowercase word, which is how prose emphasises an ordinary noun, and
  * a word in capitals alone, which is how it names an acronym or a constant it
  * did not spell out — `EX_OK` fails `SEGMENT` besides, but `JSON` would not.
+ * The capitals half of that is what a span standing alone in prose is held
+ * to; a span the author gave a home is `isIdentifierSubject`'s, which reads
+ * it as the name it named.
  */
 const isSubject = (text: string): boolean => {
   if (text.includes("/")) return isPathSubject(text);
@@ -410,15 +413,39 @@ const isSubject = (text: string): boolean => {
 };
 
 /**
+ * One segment of a citation spelled in capitals: `JSON`, `EX_OK`,
+ * `SPAWN_OUTPUT_CAP_BYTES`. The underscore `SEGMENT` refuses is the
+ * separator this spelling joins its words with, so the two charsets are
+ * written apart rather than one widened into the other — a name the
+ * identifier charset admits is still read by the rule that admits it.
+ */
+const SCREAMING_SEGMENT = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/;
+
+/**
  * Whether a span is the identifier half of a pair: a name spelled in the
  * identifier charset, admitted by the same subject rule every other citation
- * is held to. A slash routes a span to the path arm, so a span carrying one
- * is a path however its segments read.
+ * is held to — **or spelled in capitals throughout**, which that rule refuses
+ * on its own and a pair does not. The capitals fence is for a span standing
+ * alone in prose, where `JSON` is how a sentence names a format; a pair has
+ * already claimed a declaration at a home, and where a declaration lives is
+ * the token's fact rather than its meaning. So the name reds when a split
+ * moves the job out from under it, which is the whole point of writing the
+ * home down. Every other fence the subject rule sets stands: a single
+ * lowercase word is prose in a pair as it is anywhere.
+ *
+ * A slash routes a span to the path arm, so a span carrying one is a path
+ * however its segments read.
  */
-const isIdentifierSubject = (text: string): boolean =>
-  !text.includes("/") &&
-  isSubject(text) &&
-  text.split(".").every((segment) => SEGMENT.test(segment));
+const isIdentifierSubject = (text: string): boolean => {
+  if (text.includes("/")) return false;
+  const segments = text.split(".");
+  return (
+    segments.every(
+      (segment) => SEGMENT.test(segment) || SCREAMING_SEGMENT.test(segment),
+    ) &&
+    (isSubject(text) || segments.every((s) => SCREAMING_SEGMENT.test(s)))
+  );
+};
 
 /**
  * The gap a pair spells between its two spans, and the character that closes
@@ -1089,7 +1116,13 @@ export const scanCommentCitations = (
     for (const pair of spans.paired) pairedHome.set(pair.site, pair.home);
     scanned.push(
       ...[
-        ...spans.closed.filter((site) => isSubject(site.text)),
+        // A span the pair arm admitted is judged whatever the standalone
+        // subject rule makes of its spelling: the pair is the wider arm, and
+        // reading the narrower one over the same span would draw a home and
+        // then judge nothing at it.
+        ...spans.closed.filter(
+          (site) => isSubject(site.text) || pairedHome.has(site),
+        ),
         ...spans.bare.filter((site) => isPageName(site.text)),
       ].sort((a, b) => a.line - b.line),
     );
