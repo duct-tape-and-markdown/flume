@@ -17,17 +17,25 @@
  * Beside it, the one chain-less read (`readPendingLoose`): it takes a bare
  * path because it runs where no chain resolved, so it is driven directly
  * here rather than through a tick.
+ *
+ * And beside both, the tolerant read's three degrades: what they *announce*
+ * is a report about the chain's own file, so it is pinned here over a
+ * declared path that is not the default one, where a hand-spelled basename
+ * shows up as a lie rather than as a coincidence.
  */
 
+import { rmSync, symlinkSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import type { Logger } from "../src/log.ts";
 import { computeStateRootRel } from "../src/paths.ts";
 import {
   isPendingRelocated,
   readPendingLoose,
+  readPendingTolerant,
   type PendingLedgerContext,
 } from "../src/pendingLedger.ts";
 import { denyFile } from "./helpers/denial.ts";
@@ -117,3 +125,89 @@ describe("readPendingLoose — the ENOENT/other split", () => {
     }
   });
 });
+
+/**
+ * The tolerant read is the one reader here that **narrates** — every way it
+ * can fail degrades to `[]` with a warn, and that warn is the only place an
+ * operator learns the queue they are looking at came back empty for a reason
+ * (`src/pendingLedger.ts`, `readPendingTolerant`). A chain declares where its
+ * ledger lives, so the announcement names what the chain declared rather than
+ * the basename this repo happens to use
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*).
+ *
+ * Posix-declared, because the stat arm needs a path that is present and
+ * unstattable. Why that host and what it costs is the ledger's
+ * (`tests/helpers/host-declarations.json`), which is where a skip's reason
+ * lives rather than in a comment per site.
+ */
+describe.runIf(process.platform !== "win32")(
+  "readPendingTolerant — what a degrade announces",
+  () => {
+    it("a tolerant read's stat, read and parse warns each name the chain's declared pending path", async () => {
+      const repoRoot = await mkTempDir("flume-tolerant-warns-");
+      try {
+        // Neither the default basename nor the default dock: this chain
+        // declared `queue/ledger.json`, and that is the only spelling any of
+        // the three announcements below may carry.
+        const dock = join(repoRoot, "queue");
+        await mkdir(dock, { recursive: true });
+        const pendingPath = join(dock, "ledger.json");
+        const declared = "queue/ledger.json";
+
+        const warns: string[] = [];
+        const log: Logger = {
+          info: () => {},
+          warn: (line) => warns.push(line),
+          error: () => {},
+        };
+        const ctx: PendingLedgerContext = {
+          repoRoot,
+          pendingPath,
+          entryExtension: undefined,
+          log,
+        };
+
+        // Non-vacuity: the declared ledger reads clean and announces nothing,
+        // so each warn below is the arm above it talking
+        // (`.claude/rules/engineering.md`, *A green verdict is proven
+        // non-vacuous*).
+        await writeFile(pendingPath, "[]\n", "utf8");
+        expect(await readPendingTolerant(ctx)).toEqual([]);
+        expect(warns).toEqual([]);
+
+        // Stat arm: a self-referential symlink is present to a listing and
+        // raises ELOOP to `statSync`, which `existsLoud` (`src/fsProbe.ts`)
+        // rethrows rather than reading as absent. Not a permission bit — a
+        // root-run test would bypass one (`tests/helpers/denial.ts`).
+        rmSync(pendingPath);
+        symlinkSync(basename(pendingPath), pendingPath);
+        expect(await readPendingTolerant(ctx)).toEqual([]);
+
+        // Read arm: stattable and unreadable — a directory where the file is
+        // read, denied at the read path and never at its parent
+        // (`tests/helpers/denial.ts`).
+        rmSync(pendingPath);
+        denyFile(pendingPath);
+        expect(await readPendingTolerant(ctx)).toEqual([]);
+
+        // Parse arm: readable, and not the list the schema takes.
+        rmSync(pendingPath, { recursive: true });
+        await writeFile(pendingPath, "{}", "utf8");
+        expect(await readPendingTolerant(ctx)).toEqual([]);
+
+        expect(warns).toHaveLength(3);
+        const [statWarn, readWarn, parseWarn] = warns as [
+          string,
+          string,
+          string,
+        ];
+        expect(statWarn).toContain(`${declared} could not be stat'd`);
+        expect(readWarn).toContain(`${declared} could not be read`);
+        expect(parseWarn).toContain(`${declared} failed to parse`);
+      } finally {
+        await rm(repoRoot, { recursive: true, force: true });
+      }
+    });
+  },
+);

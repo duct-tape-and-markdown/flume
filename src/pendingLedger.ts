@@ -115,9 +115,11 @@ function pendingPathRel(
  * The ledger's path **as a report spells it**: git's own alphabet relative to
  * the repo root wherever git can name the file ({@link pendingPathRel}), and
  * the absolute path when a relocated dock puts it where git cannot. Every
- * report this module makes about the file — the rewrite's result and the
- * refusal below — takes its spelling from here, so a caller never composes a
- * second one out of `pendingPath` with `node:path`
+ * report this module makes about the file — the rewrite's result, the refusal
+ * it throws, and each degrade {@link readPendingTolerant} announces — takes
+ * its spelling from here, so no report composes a second one out of
+ * `pendingPath` with `node:path` and none spells the file by the basename
+ * this chain's declaration was free not to use
  * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
  * rediscovered*).
  */
@@ -223,9 +225,11 @@ export async function readPendingTolerant(
     // Present but unreachable — a symlink loop, a permission-denied
     // parent. `readPending`'s strict twin refuses on exactly this; here it
     // is announced and treated as empty, so a drained-looking
-    // `pendingAfter` is never the first anyone hears of it.
+    // `pendingAfter` is never the first anyone hears of it. Named through
+    // `reportedPendingPath`, like the two announcements below it: a chain
+    // that docks its ledger elsewhere is told about the file it declared.
     ctx.log.warn(
-      `[flume] pending.json could not be stat'd (${
+      `[flume] ${reportedPendingPath(ctx)} could not be stat'd (${
         (err as Error).message
       }); treating as empty`,
     );
@@ -240,7 +244,7 @@ export async function readPendingTolerant(
     // degrade as the stat and parse branches: announced, then `[]`, never
     // a throw that would take this tick's `TickResult` with it.
     ctx.log.warn(
-      `[flume] pending.json could not be read (${
+      `[flume] ${reportedPendingPath(ctx)} could not be read (${
         (err as Error).message
       }); treating as empty`,
     );
@@ -249,7 +253,8 @@ export async function readPendingTolerant(
   const r = parsePending(raw, ctx.entryExtension);
   if (!r.ok) {
     ctx.log.warn(
-      `[flume] pending.json failed to parse (${r.errors.length} errors); treating as empty`,
+      `[flume] ${reportedPendingPath(ctx)} failed to parse ` +
+        `(${r.errors.length} errors); treating as empty`,
     );
     return [];
   }
