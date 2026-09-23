@@ -236,6 +236,32 @@ export interface GateResult {
    * one meaningful value cannot be set to the wrong one. A declared fact,
    * never a reading of {@link verdict} or {@link message}
    * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+   *
+   * **The shell-backed builtins never set it.** `shellGate` judges by the
+   * exit code of one command in one working tree, so it — and `tscGate`,
+   * `vitestGate` and `eslintGate`, which are that gate under three
+   * commands — has no base run to compare against and cannot tell a red the
+   * span introduced from one it inherited. `chainLoadGate`, `pendingGate`
+   * and `writablePathsGate` read the gated commit alone and declare nothing
+   * either; `namedLinesGate` (`harness/judgeGate.ts`) is the one gate
+   * shipped beside the engine that observes a base at all, and so the one
+   * that withholds blame.
+   *
+   * What that costs is declared, not accidental
+   * (`.claude/rules/engineering.md`, *Loud or nothing*): a trunk already red
+   * at `baseSha` reverts every span gated over it, keys a quarantine on each
+   * entry, and blames a failure that predates all of them. The miss is
+   * uniform rather than selective, which is what bounds it — every entry in
+   * the wave fails the same gate with the same message, so the
+   * consecutive-identical-failure backstop aborts the run non-zero
+   * (`spec/loop.md`, *Consecutive-identical-failure backstop*) rather than
+   * the queue draining one mis-blamed entry at a time. Giving a shell gate a
+   * base arm means re-running its command against `baseSha` per failed
+   * entry, or the engine ruling base-red wave-wide ahead of the gates; both
+   * were declined as the complexity signal
+   * (`.claude/rules/collaboration.md`, *Complexity is a signal, not a
+   * challenge*). A chain that needs the distinction declares a gate that
+   * makes the base comparison itself.
    */
   blamesSpan?: false;
 }
