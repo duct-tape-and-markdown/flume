@@ -422,6 +422,11 @@ follows enough usage signal to commit under semver.
   who owns what, how each is extended from outside, where a finding goes.
 - [`docs/INTENT.md`](docs/INTENT.md) — design rationale: the spine, what
   stays prose, what becomes JSON, non-goals.
+- [`docs/MIGRATING-0.18.md`](docs/MIGRATING-0.18.md) — the note for the line
+  in progress, for a chain on `0.17.x`: one API break so far, the
+  suspect-flake marker off the gate-revert record, with the gate's own
+  `blamesSpan: false` in its place. It grows as further breaks land, and the
+  release's `### Breaking` section is the census at the cut.
 - [`docs/MIGRATING-0.17.md`](docs/MIGRATING-0.17.md) — upgrade note for a
   chain on `0.16.x`: no API change, one on-disk one. The loop lock and the
   tip claim each state the holder's pid on the first line and the instant it
