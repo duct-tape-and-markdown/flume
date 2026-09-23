@@ -1,1 +1,33 @@
-[]
+[
+  {
+    "tag": "LINK-REFERENCES-RESOLVE-FROM-THE-CITING-MODULE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "tests/helpers/commentCitations.ts", "description": "the `{@link}` arm, resolved in the citing module's own scope" },
+        { "path": "tests/commentCitations.test.ts", "description": "the arm's cases and the live-tree verdict" },
+        { "path": "harness/exec.ts", "description": "re-home the stranded cite" },
+        { "path": "harness/layout.ts", "description": "re-home the stranded cite" },
+        { "path": "harness/records.ts", "description": "re-home the stranded cite" },
+        { "path": "src/Dispatcher.ts", "description": "re-home four stranded cites" },
+        { "path": "src/selection.ts", "description": "re-home the stranded cite" },
+        { "path": "src/tickAttempt.ts", "description": "re-home the stranded cite" },
+        { "path": "src/tickVerdict.ts", "description": "re-home two stranded cites" },
+        { "path": "src/waveTick.ts", "description": "re-home the stranded cite" },
+        { "path": "tests/Agent.test.ts", "description": "re-home the stranded cite" }
+      ],
+      "retire": []
+    },
+    "summary": "Resolve a comment's `{@link}` reference from its citing module, and re-home the thirteen that name a symbol their module cannot reach",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "The citation scan answers every `{@link}` in `src/`, `harness/` and `tests/` against the citing module's own scope, and the live tree carries none it cannot answer.",
+    "tests": [
+      "every `{@link}` reference in a `src/`, `harness/` or `tests/` comment resolves from its citing module"
+    ],
+    "notes": "550 such references ride unchecked today; 13 already dangle. Resolution differs from the backticked-identifier arm on purpose: a `{@link}` is TSDoc's own declaration reference, so it resolves where the comment sits, not repo-wide — which is why the existing arm would pass all 13. Same instrument as the rest of the scan (the program's checker). The verdict needs its own vacuity pin: n > 0 references judged."
+  }
+]

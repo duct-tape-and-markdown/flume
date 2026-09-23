@@ -133,7 +133,10 @@
       "harness/gitRange.ts",
       "harness/sliceWindow.ts",
       "src/singletonTick.ts",
-      "src/tickVerdict.ts"
+      "src/tickVerdict.ts",
+      "harness/declaredGates.ts",
+      "harness/declaredShell.ts",
+      "harness/exec.ts"
     ]
   },
   "drainedRuns": {
