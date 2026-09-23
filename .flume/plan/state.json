@@ -136,7 +136,9 @@
       "src/tickVerdict.ts",
       "harness/declaredGates.ts",
       "harness/declaredShell.ts",
-      "harness/exec.ts"
+      "harness/exec.ts",
+      "harness/scriptRunner.ts",
+      "harness/toolRun.ts"
     ]
   },
   "drainedRuns": {
