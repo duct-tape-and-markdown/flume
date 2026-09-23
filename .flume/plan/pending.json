@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "tag": "COMPUTESTATEROOTREL-DOC-DROPS-ITS-CONSUMER-REGISTRY",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/paths.ts",
+          "description": "computeStateRootRel's doc keeps the fold-at-one-reporter rule, drops the hand-kept consumer enumeration"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "the stateRootRel field takes the once-at-construction fact the trim strands"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Trim computeStateRootRel's doc to its rule; re-home at Dispatcher.stateRootRel the one consumer fact no site states",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Derived state is computed, never restated beside its source"
+    },
+    "acceptance": "computeStateRootRel's doc names no consumer by hand; Dispatcher.stateRootRel documents its own computation; suite green",
+    "notes": "Same shape as the shipped escapesRoot trim. Verified this tick: the friction (src/friction.ts), configDir gate-context (src/tickAttempt.ts) and ledger (src/pendingLedger.ts) legs each already state why they ask, rebase rule included. Only Dispatcher.stateRootRel (src/Dispatcher.ts) carries no doc at all, so that leg is re-homed rather than deleted."
+  }
+]
