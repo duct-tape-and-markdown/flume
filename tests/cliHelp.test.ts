@@ -453,11 +453,11 @@ function backtickedIntegers(section: string): number[] {
  * lands at the mechanism*). `matchAll` works over a clone, so this global
  * pattern carries no match position between calls.
  *
- * What the page owes this rule: every code it means as a code carries its own
- * introducing verb — "exits `74`" — rather than trailing a sibling under one
- * leading "Exits". A section whose later codes are enumerated that way states
- * them where every read here is blind, and the every-verb range case below is
- * what reds on it.
+ * One introducing verb per code is the convention `docs/CLI.md` states in its
+ * own intro, for its readers and its authors alike. A section that states a
+ * later code trailing a sibling under one leading "Exits" puts it where every
+ * read here is blind; the every-verb range case below reds on that, naming the
+ * convention in its message.
  */
 const NAMED_EXIT_CODE = /\bexits?\b[^`\n]{0,24}`(\d+)`/gi;
 
@@ -1596,7 +1596,16 @@ describe("the cross-cutting I/O refusal on every verb's page (EVERY-VERBS-HELP-N
       // set.
       const codes = namedExitCodes(section);
       expect(codes.length, verb).toBeGreaterThan(1);
-      expect(codes, verb).toContain(EX_IOERR);
+      // What a red here means, in the page's own vocabulary: either the row
+      // is missing outright, or it is stated where {@link namedExitCodes} is
+      // blind to it.
+      expect(
+        codes,
+        `${verb}: docs/CLI.md's section names no exit ${EX_IOERR} — either it ` +
+          `lists no such row, or the row trails a sibling under one leading ` +
+          `"Exits" instead of carrying its own introducing verb ("exits ` +
+          `${EX_IOERR}"), the convention the page's intro states`,
+      ).toContain(EX_IOERR);
     }
   });
 });

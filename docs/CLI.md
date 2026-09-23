@@ -2,6 +2,13 @@
 
 > **Current reference.** Describes flume as it ships now; every spec cite
 > names a live `spec/*.md` section.
+>
+> **Reading the exit codes.** These sections backtick values as well as codes,
+> so every code carries its own introducing verb in the same clause — "exits
+> `74`", "refuses (exit `2`)", "Exit code stays `0`", never a later code
+> trailing a sibling under one leading "Exits" — and a backticked integer with
+> no such verb beside it, like `--max`'s default, is a value rather than a
+> code.
 
 `flume <subcommand>`. All commands run against the current working directory; the chain config is loaded from `./.flume/chain.ts`. Top-level `flume --help` lists the subcommands — as does the bare verb `flume help`, the same answer to the byte — `flume --version` prints the package version, and `flume <subcommand> --help` prints per-command usage with exit codes. A trailing name is that subcommand's page whichever spelling carried it — `flume help <subcommand>`, `flume --help <subcommand>` and `flume -h <subcommand>` alike; a name with no page refuses usage-shaped (exit `2`) naming it and echoing the spelling typed, rather than dropping the argument and answering the top-level listing.
 
