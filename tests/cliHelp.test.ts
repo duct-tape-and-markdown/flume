@@ -453,11 +453,11 @@ function backtickedIntegers(section: string): number[] {
  * lands at the mechanism*). `matchAll` works over a clone, so this global
  * pattern carries no match position between calls.
  *
- * One introducing verb per code is the convention `docs/CLI.md` states in its
- * own intro, for its readers and its authors alike. A section that states a
- * later code trailing a sibling under one leading "Exits" puts it where every
- * read here is blind; the every-verb range case below reds on that, naming the
- * convention in its message.
+ * One introducing verb per code is the convention the page states in its own
+ * banner (`docs/CLI.md`, *Reading the exit codes*), for its readers and its
+ * authors alike. A section that states a later code trailing a sibling under
+ * one leading "Exits" puts it where every read here is blind; the every-verb
+ * range case below reds on that, naming the convention in its message.
  */
 const NAMED_EXIT_CODE = /\bexits?\b[^`\n]{0,24}`(\d+)`/gi;
 

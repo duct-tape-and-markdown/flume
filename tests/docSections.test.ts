@@ -146,4 +146,33 @@ describe("sectionTitles", () => {
     expect(TITLED).toContain("**bolded run**");
     expect(sectionTitles(TITLED)).not.toContain("bolded run");
   });
+
+  // A banner states a page's reading conventions as bolded leads inside a
+  // blockquote rather than as bullets or headings — `docs/CLI.md`'s
+  // exit-code convention is one — so a comment cites one of those the way it
+  // cites a bullet's lead. Its own page, because the arm turns on the quote
+  // marker the bullet cases never carry: the lead's `>`, and the `>` on the
+  // line the phrase wraps onto.
+  const QUOTED = [
+    "# Title",
+    "",
+    "> **Reading the exit",
+    "> codes.** the lead a banner bolds, broken across two quoted lines the",
+    "> way a banner breaks a phrase.",
+    ">",
+    "> prose carrying a **bolded run** part-way through a quoted sentence",
+    "",
+  ].join("\n");
+
+  it("a bolded lead opening a blockquote line is a title", () => {
+    // Vacuity guard: the page states its lead inside the quote and nowhere
+    // else, wraps the phrase across the quote's own marker, and bolds a
+    // second run mid-sentence in the same quote — so the equality below is
+    // the quote arm reading a lead and folding the marker out of it, not a
+    // bullet the fixture smuggled in and not a page that never wrapped.
+    expect(QUOTED).toContain("> **Reading the exit\n> codes.**");
+    expect(QUOTED).toContain("a **bolded run** part-way through");
+
+    expect(sectionTitles(QUOTED)).toEqual(["Title", "Reading the exit codes"]);
+  });
 });

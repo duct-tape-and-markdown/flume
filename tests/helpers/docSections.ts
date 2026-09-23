@@ -90,16 +90,30 @@ export function headingLines(page: string): string[] {
 const HEADING_OPENING = /^#{1,6} +/;
 
 /**
- * A bullet whose lead the page bolds — the list marker through the `**` that
- * opens the lead. The same list markers `walkOf` reads, because a section
- * names its members one way whether or not a citation points at one of them.
+ * A line whose lead the page bolds — the marker that opens the line through
+ * the `**` that opens the lead. Two markers open one: a list marker, the same
+ * ones `walkOf` reads, because a section names its members one way whether or
+ * not a citation points at one of them; and a blockquote's `>`, because a
+ * banner states its claims as bolded leads the way a list does, and a claim a
+ * page states that way is one a comment cites.
+ *
+ * Anchored at the line, either way: a bolded run a sentence carries part-way
+ * through is emphasis the renderer shows and nothing a citation names.
  */
-const BOLD_BULLET = /^[ \t]*[-*] +\*\*/;
+const BOLD_LEAD = /^[ \t]*(?:[-*] +|>[ \t]*)\*\*/;
+
+/** A blockquote's own marker, on a line the page wraps into the quote. */
+const QUOTE_MARKER = /^[ \t]*>[ \t]*/;
 
 /**
- * One bolded bullet lead, from the `**` at `opened` through the `**` that
- * closes it, with the page's own wrapping folded out — a lead is a phrase,
- * and where a phrase breaks across source lines is the formatter's business.
+ * One bolded lead, from the `**` at `opened` through the `**` that closes it,
+ * with the page's own wrapping folded out — a lead is a phrase, and where a
+ * phrase breaks across source lines is the formatter's business.
+ *
+ * A blockquote's marker is part of that wrapping: the phrase a banner breaks
+ * across two quoted lines carries a `>` the renderer never shows, so it is
+ * folded out with the indentation beside it. The quote's own blank line is
+ * that marker alone, which ends the block the way a bare blank line does.
  *
  * A lead nothing closes before the block ends yields nothing rather than
  * running to the end of the page: a `**` the author never closed is emphasis
@@ -116,8 +130,10 @@ function boldLeadAt(
     if (closes !== -1) return joined.slice(0, closes);
     at += 1;
     const next = lines[at];
-    if (next === undefined || next.trim() === "" || FENCE.test(next)) return undefined;
-    joined = `${joined} ${next.trim()}`;
+    if (next === undefined) return undefined;
+    const wrapped = next.replace(QUOTE_MARKER, "").trim();
+    if (wrapped === "" || FENCE.test(wrapped)) return undefined;
+    joined = `${joined} ${wrapped}`;
   }
 }
 
@@ -126,12 +142,13 @@ const LEAD_TERMINATOR = /[.:;,]+$/;
 
 /**
  * Every title the page's own structure offers a citation: each heading's
- * text, and the bolded lead of each bullet. Both in page order, headings
- * first.
+ * text, and the bolded lead of each bullet or quoted line. Both in page
+ * order, headings first.
  *
- * A page states a claim at two altitudes and a comment cites it at either —
+ * A page states a claim at three altitudes and a comment cites it at any —
  * `## Loud or nothing` is a section, `- **Verbatim copying is the
- * detector.**` is a bullet inside one, and each is the whole of what a cite
+ * detector.**` is a bullet inside one, `> **Reading the exit codes.**` is a
+ * banner's claim above all of them, and each is the whole of what a cite
  * names. Fenced blocks are skipped on the rule `headingsOf` already carries,
  * so a shell sample's `# ` line mints no title and a bulleted list inside one
  * mints no lead.
@@ -155,7 +172,7 @@ export function sectionTitles(page: string): string[] {
       continue;
     }
     if (fenced) continue;
-    const opening = BOLD_BULLET.exec(line);
+    const opening = BOLD_LEAD.exec(line);
     if (!opening) continue;
     const lead = boldLeadAt(lines, index, opening[0].length);
     if (lead !== undefined) titles.push(lead.trim().replace(LEAD_TERMINATOR, ""));
