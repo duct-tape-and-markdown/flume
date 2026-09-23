@@ -233,13 +233,13 @@ skip is by name alone, never by content. A chain that declares no
 `Chain.friction` refuses usage-shaped, naming the missing declaration. A declared but
 not-yet-created directory lists empty and exits `0` — the directory is created
 lazily by whichever engine write needs it first. Exits `0` on a successful list or
-read (including the empty-directory case); `2` if the chain declares no
+read (including the empty-directory case); exits `2` if the chain declares no
 `Chain.friction`, if given more than one argument, or if `name` names no note in the
-directory; `69` (`EX_MOUNT_DEAD`) if the chain fails to load; `74` (`EX_IOERR`) if
-the channel dir, or a note in it, exists but cannot be read or stat'd — the named
-read, the bare list's directory read, and the bare list's per-note stat all refuse
-rather than report the note missing or the channel empty, and a refused list prints
-no rows at all rather than a partial listing.
+directory; exits `69` (`EX_MOUNT_DEAD`) if the chain fails to load; exits `74`
+(`EX_IOERR`) if the channel dir, or a note in it, exists but cannot be read or
+stat'd — the named read, the bare list's directory read, and the bare list's
+per-note stat all refuse rather than report the note missing or the channel empty,
+and a refused list prints no rows at all rather than a partial listing.
 
 ```sh
 flume friction

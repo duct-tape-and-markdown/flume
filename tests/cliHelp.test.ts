@@ -452,6 +452,12 @@ function backtickedIntegers(section: string): number[] {
  * sentences it spends on one code (`.claude/rules/engineering.md`, *The fix
  * lands at the mechanism*). `matchAll` works over a clone, so this global
  * pattern carries no match position between calls.
+ *
+ * What the page owes this rule: every code it means as a code carries its own
+ * introducing verb — "exits `74`" — rather than trailing a sibling under one
+ * leading "Exits". A section whose later codes are enumerated that way states
+ * them where every read here is blind, and the every-verb range case below is
+ * what reds on it.
  */
 const NAMED_EXIT_CODE = /\bexits?\b[^`\n]{0,24}`(\d+)`/gi;
 
@@ -1535,34 +1541,19 @@ describe("flume help <name> and flume --help <name> — the trailing name throug
 });
 
 /**
- * One verb's `docs/CLI.md` section names 74, among a range the reader really
- * read — the whole of what "the page states this verb's I/O refusal" is, and
- * one home for it across every case below that makes the claim about a verb
- * (`.claude/rules/engineering.md`, *A module is one job*).
- */
-function expectSectionNamesIoRefusal(page: string, verb: string): void {
-  const section = sectionOf(page, new RegExp(`^## \`flume ${verb}\\b`));
-  expect(section.length, verb).toBeGreaterThan(0);
-
-  // Vacuity: a section whose range was not read at all — a heading that
-  // moved, a phrasing the reader no longer keys on — would leave the
-  // membership below asserting over the empty set.
-  const codes = namedExitCodes(section);
-  expect(codes.length, verb).toBeGreaterThan(1);
-  expect(codes, verb).toContain(EX_IOERR);
-}
-
-/**
  * EVERY-VERBS-HELP-NAMES-THE-IO-REFUSAL — `EX_IOERR` is cross-cutting rather
  * than any one verb's: bay discovery stats the nearest state root at the top
  * of `main`, before dispatch, so every verb's process can return 74
- * (spec/loop.md, *Exit codes — the run never lies to CI*). Four pages —
- * `wake`, `sleep`, `stop`, `render` — listed no 74 row at all and so
- * understated their own range.
+ * (spec/loop.md, *Exit codes — the run never lies to CI*). Four `--help`
+ * pages — `wake`, `sleep`, `stop`, `render` — listed no 74 row at all, and
+ * `docs/CLI.md`'s `check` section named the code nowhere, each understating
+ * its own range.
  *
- * Both cases read the verb set off the surface rather than restating it, so
- * a verb added later is judged here the tick it is added rather than the
- * tick someone remembers to extend a list.
+ * Both cases read the verb set off the surface rather than restating it —
+ * `HELP_TOP`'s own `Commands:` block — so a verb added later is judged here
+ * the tick it is added rather than the tick someone remembers to extend a
+ * list, and a verb whose section drops the row reds however many others
+ * still carry it.
  */
 describe("the cross-cutting I/O refusal on every verb's page (EVERY-VERBS-HELP-NAMES-THE-IO-REFUSAL)", () => {
   it("every subcommand's --help names exit 74", () => {
@@ -1584,28 +1575,45 @@ describe("the cross-cutting I/O refusal on every verb's page (EVERY-VERBS-HELP-N
     expect(silent).toEqual([]);
   });
 
-  it("docs/CLI.md's wake, sleep, stop and render sections name exit 74", async () => {
+  it("every verb's docs/CLI.md section names exit 74", async () => {
     const page = await readCliDoc();
-    for (const verb of ["wake", "sleep", "stop", "render"]) {
-      expectSectionNamesIoRefusal(page, verb);
+    const names = topLevelCommandNames();
+    // Vacuity: an unparsed listing would hold every read below over zero
+    // verbs, and the named one is the section that stated its later codes
+    // under one leading verb, where no reader on this page could see them.
+    expect(names.length).toBeGreaterThan(1);
+    expect(names).toContain("friction");
+
+    for (const verb of names) {
+      // A verb the page gives no section of its own understates the row by
+      // stating nothing, so it reds here rather than being skipped.
+      const section = sectionOf(page, new RegExp(`^## \`flume ${verb}\\b`));
+      expect(section.length, verb).toBeGreaterThan(0);
+
+      // Vacuity, per verb: a section whose range was not read at all — a
+      // heading that moved, a phrasing {@link namedExitCodes} no longer keys
+      // on — would leave the membership beside it asserting over the empty
+      // set.
+      const codes = namedExitCodes(section);
+      expect(codes.length, verb).toBeGreaterThan(1);
+      expect(codes, verb).toContain(EX_IOERR);
     }
   });
 });
 
 /*
- * CLI-DOC-CHECK-AND-STATUS-IO-REFUSALS-PINNED — the two `docs/CLI.md` claims
- * the sweep above fixed and left unpinned. `flume check`'s section named no
- * 74 at all though the verb has returned one since its pending-read refusal,
- * and `flume status`'s section enumerated 74's *causes* without the discovery
- * read every verb starts with. Neither was reachable from a pin already here:
- * the verb-page case names four other verbs, and a range pin compares code
- * sets, which a cause list is invisible to.
+ * CLI-DOC-CHECK-AND-STATUS-IO-REFUSALS-PINNED — `flume status`'s `docs/CLI.md`
+ * section enumerated 74's *causes* without the discovery read every verb
+ * starts with, and nothing already here reached that: a range pin compares
+ * code sets, which a cause list is invisible to. The entry's other half —
+ * `check`'s section naming no 74 at all — is the range read above, which asks
+ * it of every verb the listing advertises rather than of a named few.
  *
- * `check` joins the range read; `status` is pinned the way loop's cause list
- * is — every arm driven for real, one `flume status` run apiece, and the
- * artifact each refusal reports read off the run rather than spelled again by
- * the tester's hand (`.claude/rules/engineering.md`, *A seam gate reads what
- * the real writer wrote*).
+ * `status` is pinned the way loop's cause list is — every arm driven for real,
+ * one `flume status` run apiece, and the artifact each refusal reports read off
+ * the run rather than spelled again by the tester's hand
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
  *
  * The bound, declared rather than left implicit: an arm nobody wrote is
  * invisible here, exactly as it is for the driven loop and status/log ranges
@@ -1811,11 +1819,7 @@ async function driveStatusIoRefusals(): Promise<string[][]> {
   }
 }
 
-describe("docs/CLI.md's check and status I/O refusals (CLI-DOC-CHECK-AND-STATUS-IO-REFUSALS-PINNED)", () => {
-  it("docs/CLI.md's flume check section names exit 74", async () => {
-    expectSectionNamesIoRefusal(await readCliDoc(), "check");
-  });
-
+describe("docs/CLI.md's status I/O refusal causes (CLI-DOC-CHECK-AND-STATUS-IO-REFUSALS-PINNED)", () => {
   it("docs/CLI.md's flume status section names every artifact a real status I/O refusal reports", async () => {
     const stated = await driveStatusIoRefusals();
     // Vacuity: one arm that happened to fire agrees with a sentence naming
