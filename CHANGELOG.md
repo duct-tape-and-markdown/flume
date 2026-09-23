@@ -11,6 +11,113 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-23
+
+The attribution release: **a gate says whose failure it is, and the engine
+stops guessing.** The suspect-flake marker the engine derived from file
+disjointness is gone; in its place a gate declares `blamesSpan: false` when
+a failure predates the span, the harness judge re-runs a red suite at the
+base to find out, and a `handoff` reads the wave's three stage-failure
+classes off the tick result instead of re-pairing rows. Around it: the
+ledger commit carries only the paths it named, a base run cannot escape the
+checkout, the CJS refusal fires on win32, and every I/O refusal exits 74
+naming the path it could not read. `docs/MIGRATING-0.18.md` walks the one
+break. Fifty-three entries.
+
+### Breaking
+
+- **`GateRevertAttempt.suspectFlake` is gone; a gate declares
+  `blamesSpan: false`.** The engine no longer decides whether a reverted span
+  could have caused the failure that reverted it. A gate that can tell says
+  so on `GateResult.blamesSpan`, which rides the `gate-revert` record and the
+  tick verdict's gate row verbatim beside `failingFiles`. A TypeScript read of
+  the retired field reds at the property; a JSON read finds the key absent.
+  Walked with both greps in `docs/MIGRATING-0.18.md` § 1.
+
+### Added
+
+- **`GateResult.blamesSpan?: false`.** A declared fact, never a reading of
+  `verdict` or `message`: the engine withholds the entry-scoped half of the
+  stage failure — no quarantine key, no blame on the prior-attempt record —
+  while the revert and the consecutive-failure count stand. Shell-backed
+  gates observe no base and never declare it, which their doc says.
+- **The judge re-runs a red suite at the base.** A merged suite red only in
+  files the span never touched is re-run through the existing `runAtBase`;
+  failing there too, the harness judge refuses with `verdict: "base-red"` and
+  `blamesSpan: false`, so the entry returns to the queue un-blamed. Pinned
+  with a real-vitest agreement case, not a fixture.
+- **`TickResult.provisionFailures`, `gateFailures`, `mergeFailures`** — the
+  three stage-failure classes the tick verdict carries, folded from the same
+  value and keyed by tag: entry, message, signature, and whether the engine
+  blamed the entry. A handoff counting how many of a wave's entries fell to
+  one gate on one message reads these.
+- **`worktreesBase` on the harness declaration**, a function over the
+  resolved roots passed through whole to `Chain.worktreesBase`; the
+  operator's `FLUME_WORKTREES_DIR` still outranks it.
+- **`PendingParseFailure.path`** carries the declared ledger path as a field,
+  and the message opens with it; the tolerant read's degrade warns and a
+  refused ledger commit name the same path.
+- **The record cap is 2,000 bytes**, up from 1,200: a record carrying its
+  measured evidence was being trimmed of exactly that evidence.
+- **Docs.** `CHAIN-AUTHORING.md` sanctions the sidecar-at-load shape for a
+  fence that varies per checkout; `CLI.md` states its exit-code convention
+  and every verb's section names the cross-cutting 74; `LAYERS.md` drops the
+  retired `jobs` field, with the pin direction that would have caught it.
+
+### Fixed
+
+- **The ledger commit carries only the paths it named.** It ran a bare
+  `git commit` after staging its own paths, so anything the operator had
+  staged on the primary checkout rode into the ship commit. Now `--only`.
+  And a ledger-commit refusal outside a parse failure — a paused merge in the
+  primary checkout, a lost `index.lock` — is a failed tick at exit 1 with the
+  wave's verdict intact, never a mount-dead 69 that fail-fasts the run.
+- **A base run's selection cannot escape the checkout.** `checks/../../x`
+  passed a leading-`../` check and was copied outside the base tree; the
+  refusal now lives at the one site that lays a selection down, on the
+  existing escape predicate.
+- **The CJS-context refusal fires on either spelling** of tsx's namespace
+  query. A win32 host emits the literal `?namespace=`; the guard matched only
+  the percent-encoded form, so the consumer saw the raw module-not-found.
+- **A CI lane's title pattern is read over every match whatever flags it
+  carries.** A pattern declared sticky anchored each step at the last index
+  and stopped at the first gap, answering an empty title set — which the wake
+  read as a red lane stating no failures.
+- **I/O refusals exit 74 and name the path.** `flume tick` on an unreadable
+  verdict history, `flume loop` on an unreadable `loop.pid`, and
+  `flume status` on an unreadable `loop.pid` or tip claim each leaked a raw
+  stack at exit 1; every one now classifies as `EX_IOERR` and names the
+  resolved path, and each verb's help lists the causes, pinned per arm against
+  a driven refusal.
+- **The shipped vitest runner refuses a report claiming success over a
+  non-zero exit.** vitest sums `success` from the files that reported and
+  sets the exit code afterwards, so an unawaited rejection could hand the
+  judge a green over a run vitest itself refused.
+- **A state-root listing proves its absence.** The questions and records
+  listings read `ENOENT` as "directory absent" and returned empty; on win32 a
+  file sitting where the directory belongs answers the same, and the block
+  rendered "(none open)" over questions nobody could see. Both legs now take
+  the descent probe every sibling reader uses.
+- **Verdicts name their sites on the first line.** Every live-tree scan
+  asserted a findings array empty, which chai elides to `[ Array(n) ]`, so a
+  reverted tick's record said a cite was wrong and never which. Each renders
+  its findings to one line and asserts that; the chai truncation fact has its
+  page. The namespaced-fs scan reports a bare call's argument off the
+  unmasked source for the same reason.
+
+### Changed
+
+- **The citation pin resolves five more token classes**: the section half of
+  a `` (`page.md`, *Section*) `` pair against headings, bolded bullet leads
+  and blockquote leads, exact after backtick normalization; a `§ N` on a
+  docs page against its own numbering; a `{@link}` tag from the module that
+  writes it; and an all-caps name a citation pairs with a path. Thirty-four
+  cites that named a heading their page no longer carried were rewritten.
+- **Doc comments state the rule, never a roll call of callers**, at the
+  escape predicate, the state-root offset, and the layout module.
+- **Test fixtures have one home**: the scratch repo, the repo-resident chain,
+  and the help-row reader.
+
 ## [0.17.0] - 2026-09-22
 
 The checkout release: **an effort is a checkout, and the job surface comes
