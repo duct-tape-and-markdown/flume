@@ -1,108 +1,71 @@
 [
   {
-    "tag": "GATE-DECLARES-BLAMESSPAN-AND-THE-ENGINE-WITHHOLDS-ENTRY-BLAME",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        { "path": "src/Gate.ts", "description": "GateResult gains blamesSpan?: false" },
-        { "path": "src/waveTick.ts", "description": "withhold blamedOn for a gate failure the gate disowns" },
-        { "path": "src/tickAttempt.ts", "description": "same at the afterCommit revert leg" },
-        { "path": "src/priorAttempts.ts", "description": "isSuspectFlake retires; the record carries the declared attribution" },
-        { "path": "src/Prompt.ts", "description": "GateRevertAttempt: suspectFlake out, blamesSpan in" },
-        { "path": "tests/Dispatcher.test.ts", "description": "the suspectFlake derivation cases become the declared-field cases" },
-        { "path": "docs/CHAIN-AUTHORING.md", "description": "the flake-marker paragraph states the declared field" }
-      ]
-    },
-    "summary": "GateResult gains blamesSpan?: false; the engine withholds the entry-scoped half of such a failure and the derived suspectFlake marker retires",
-    "per": { "path": "spec/chain.md", "section": "What a gate returns" },
-    "acceptance": "A gate returning blamesSpan:false still reverts and still counts a failed tick, its stage failure carries no tag/quarantineKey, and its gate-revert record carries the declared attribution; suspectFlake exists nowhere in src/, tests/ or docs/.",
-    "tests": [
-      "a gate-revert stage failure is unblamed when the gate declares blamesSpan false",
-      "a gate declaring blamesSpan false still reverts its span and still records the gate failure",
-      "a gate-revert record carries the gate's declared attribution rather than a derived flake marker"
-    ],
-    "notes": "The unblamed path already exists (a singleton's own revert); the field switches between two behaviors the engine has. docs/MIGRATING-0.13.md 2.7 names the retired marker for the 0.13 line — leave or amend is build's call, say which in the body."
-  },
-  {
     "tag": "JUDGE-GATE-DECLARES-BLAMESSPAN-FALSE-ON-BASE-RED",
-    "gate": { "kind": "blockedBy", "tags": ["GATE-DECLARES-BLAMESSPAN-AND-THE-ENGINE-WITHHOLDS-ENTRY-BLAME"] },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "harness/judgeGate.ts", "description": "the base-red refusal declares blamesSpan: false beside its verdict" },
-        { "path": "tests/harnessJudge.test.ts", "description": "the gate's base-red arm asserts the declared field" }
-      ]
+        {
+          "path": "harness/judgeGate.ts",
+          "description": "the base-red refusal declares blamesSpan: false beside its verdict"
+        },
+        {
+          "path": "tests/harnessJudge.test.ts",
+          "description": "the gate's base-red arm asserts the declared field"
+        }
+      ],
+      "retire": []
     },
     "summary": "The named-lines gate's base-red refusal declares blamesSpan: false, so the retry is not quarantined for a suite that was red before it",
-    "per": { "path": "spec/chain.md", "section": "What a gate returns" },
+    "per": {
+      "path": "spec/chain.md",
+      "section": "What a gate returns"
+    },
     "acceptance": "judgeGate's base-red return carries blamesSpan: false beside verdict 'base-red'; every other refusal arm is unchanged.",
     "tests": [
       "the named-lines gate declares blamesSpan false when the suite was already red at the base"
     ],
+    "pins": [],
     "notes": "One literal at the single site that already spells verdict 'base-red' (harness/judgeGate.ts). Blocked only on the field existing."
   },
   {
-    "tag": "CHAI-TRUNCATION-COMMENT-SHRINKS-TO-ITS-PAGE",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        { "path": "tests/helpers/repoProgram.ts", "description": "the 40-character rationale on renderFindings/expectNoFindings shrinks to a cite of the platform-facts section" }
-      ]
-    },
-    "summary": "renderFindings' doc comment shrinks to a cite of the platform-facts section that now owns chai's 40-character truncation",
-    "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
-    "acceptance": "The doc comment states the idiom and cites the page for the number; the fact is stated once, on the page.",
-    "notes": "The shrink re-homes nothing else: the page (platform-facts.md, chai truncates an inspected value in an assertion message at 40 characters) already names renderFindings as the idiom. Claims no property — the citation pin resolves the new cite."
-  },
-  {
-    "tag": "FOUR-MORE-SCANS-ADOPT-THE-FINDINGS-RENDERING",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        { "path": "tests/hostDeclarations.test.ts", "description": "the denials, reason and declarations verdicts" },
-        { "path": "tests/spawnCaps.test.ts", "description": "the spawn-cap verdict" },
-        { "path": "tests/namespacedFsPaths.test.ts", "description": "the bare and uncalled verdicts" },
-        { "path": "tests/Baton.test.ts", "description": "the uncalled and bare verdicts" },
-        { "path": "tests/helpers/namespacedFsScan.ts", "description": "a site spelling for an uncalled import, shared with Baton's scan" }
-      ]
-    },
-    "summary": "Eight more live-tree findings verdicts report their sites through expectNoFindings; the uncalled sets gain a site spelling exercised by a fixture verdict",
-    "per": { "path": ".claude/rules/platform-facts.md", "section": "chai truncates an inspected value in an assertion message at 40 characters" },
-    "acceptance": "No live-tree findings verdict in these four files asserts a bare array empty; each rendering the entry introduces is printed by at least one fixture verdict.",
-    "notes": "Sites: hostDeclarations 49/58/70, spawnCaps 318, namespacedFsPaths 136/144, Baton 207/208. Baton's scan.uncalled is a bare string set — namespacedFsPaths already spells one inline; one home for both. A formatter only ever run over an empty live-tree list has printed nothing, so its fixture verdict routes through it too."
-  },
-  {
-    "tag": "BASE-RED-GETS-A-REAL-VITEST-AGREEMENT-ARM",
-    "gate": { "kind": "open" },
-    "files": {
-      "edit": [
-        { "path": "tests/harnessRunner.test.ts", "description": "a second fixture whose merged suite is red in a file the span never touched" }
-      ]
-    },
-    "summary": "The base-red arm gains its agreement case over real vitest: a merged suite red in a file the span never touched, judged at the base",
-    "per": { "path": ".claude/rules/engineering.md", "section": "A seam gate reads what the real writer wrote" },
-    "acceptance": "A real vitest run over a fixture whose merged suite is red in an untouched file produces the base-red verdict through the real runner and the real judge.",
-    "pins": [
-      "the judge rules base-red over real vitest when the merged suite's only failure is inherited from the base"
-    ],
-    "notes": "Today the overlay-is-a-no-op premise is pinned only over the stand-in runner; the existing fixture's every case asserts green, so the arm needs a second fixture in the same file."
-  },
-  {
     "tag": "LEDGER-REFUSAL-NAMES-THE-UNCOMMITTED-QUEUE-REWRITE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
-        { "path": "src/pendingLedger.ts", "description": "the refusal after the write says the rewrite stands on disk" },
-        { "path": "src/waveTick.ts", "description": "the wrapper carries that fact to the operator" },
-        { "path": "tests/Dispatcher.test.ts", "description": "the refusal's message names the path" }
-      ]
+        {
+          "path": "src/pendingLedger.ts",
+          "description": "the refusal after the write says the rewrite stands on disk"
+        },
+        {
+          "path": "src/waveTick.ts",
+          "description": "the wrapper carries that fact to the operator"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the refusal's message names the path"
+        }
+      ],
+      "retire": []
     },
     "summary": "A ledger-commit refusal reports that the rewritten queue stands on disk uncommitted, naming the path, instead of leaving an operator to attribute a modified queue",
-    "per": { "path": ".claude/rules/engineering.md", "section": "A fact the engine holds is reported, never rediscovered" },
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
     "acceptance": "A commit refusal reached after the queue write says the rewrite is on disk and uncommitted at that path; a refusal reached before the write (the live foreign claim) says nothing of the kind.",
     "tests": [
       "a ledger-commit refusal names the queue path whose rewrite stands on disk uncommitted",
       "a tip-claim refusal reports no uncommitted rewrite, having refused before the write"
     ],
+    "pins": [],
     "notes": "commitPendingUpdate writes, then commits; only the commit refuses (a paused merge, a lost index.lock). The tip check is already ordered before the write and must stay that way — the second line pins it."
   }
 ]
