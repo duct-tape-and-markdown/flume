@@ -148,6 +148,53 @@ it("recordFiles names each record at the path node:path composes under the state
   expect(recordFiles(stateRoot)).toEqual(written);
 });
 
+/**
+ * The queue's absence arm, proven rather than read off an errno
+ * (`harness/dirListing.ts`). An obstructed ancestor is spelled `ENOENT` on
+ * win32 and `ENOTDIR` on posix (`.claude/rules/platform-facts.md`, *win32
+ * reports a path through a non-directory as not found*), so a listing keying
+ * its silent arm on the errno reports an unreachable queue as empty on
+ * exactly one host — and the inbox window then renders no record while the
+ * drain that would have named them is never woken.
+ *
+ * The parent is denied on purpose, which that same page admits for this one
+ * reader: the descent is exercised by an obstructed *ancestor* and by
+ * nothing else. A plain file denies structurally, so this runs on every host
+ * rather than riding `chmod`, which denies nothing on win32.
+ */
+it("recordFiles refuses when a plain file sits above a record directory", async () => {
+  const dirs = recordDirs(stateRoot);
+  // Vacuity pin: with no record directories the loop below judges nothing.
+  expect(dirs.length).toBeGreaterThan(0);
+
+  // The reading the obstruction has to change. A bare root is the absent
+  // queue, and absent is the silent arm — so a refusal below is the plain
+  // file talking and not a listing that throws at every root.
+  expect(recordFiles(stateRoot)).toEqual([]);
+
+  for (const dir of dirs) {
+    const above = dirname(onDisk(dir));
+    // One directory at a time, each from a bare root, so every arm proves
+    // that *this* directory's walk refuses rather than riding a sibling's.
+    await rm(stateRoot, { recursive: true, force: true });
+    await mkdir(dirname(above), { recursive: true });
+    await writeFile(above, "obstruction\n");
+
+    let message: string | undefined;
+    try {
+      recordFiles(stateRoot);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    // By name: the rung an operator has to go fix, not the leaf that was
+    // asked for — and not an empty queue.
+    expect({ dir, message }).toEqual({
+      dir,
+      message: `[flume] record queue is unreadable: ${above} is present but is not a directory`,
+    });
+  }
+});
+
 it("a record's byte cap is the package's own value, not a per-consumer knob", () => {
   // One number, exported rather than declarable: the records gate refuses
   // against it and the build prompt announces it, and no declaration field

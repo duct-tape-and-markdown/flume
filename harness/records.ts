@@ -13,24 +13,22 @@
  * prompt telling a tick where to write all read them from there
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*). This module is the fourth reader: the
- * listing and the liveness predicate below.
+ * queue's order and the liveness predicate below.
  *
- * **That listing answers host-native**, unlike the names it composes from.
- * {@link recordFiles} and {@link recordsPending} take the absolute state
- * root and read disk, so they join through `node:path` (`spec/cli.md`,
- * *win32 is a supported host*, path discipline) rather than taking a
- * git-alphabet directory from `layout.ts` and converting it.
+ * **Walking a queue directory is not this module's job either.** A record
+ * queue and the questions directory are one shape — a directory of
+ * same-extension files whose absence is an empty answer and whose
+ * obstruction is a refusal — so one walk serves both (`dirListing.ts`),
+ * which is where the host-native answer, the extension filter and the proof
+ * behind that absence are stated. What is left here is which directories,
+ * in which order.
  *
  * What a record must *contain* — the title line, whose tag it may carry,
  * that a plan slice drains rather than writes — belongs to the gate that
  * reads these paths.
  */
 
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
-
-import { namespacedJoin } from "../src/paths.js";
-
+import { listUnderStateRoot } from "./dirListing.js";
 import { RECORD_DIR_NAMES, RECORD_EXT } from "./layout.js";
 
 /**
@@ -69,21 +67,12 @@ export const RECORD_MAX_BYTES = 2000;
  * is not a record of the directory above it, and its files are named once,
  * under the directory they sit in.
  *
- * `stateRoot` here is the absolute one, and these paths are read, rendered
- * and compared as filesystem paths rather than handed to git, so they are
- * composed with `node:path` rather than slash-joined like `recordDirs`
- * (`harness/layout.ts`) is. A separator appended to an absolute win32 root
- * yields a path fs accepts and nothing else equals: the window would name
- * every record at a spelling
- * no `join`-built path — the one its own reader and every consumer compose —
- * matches.
- *
- * The listing itself goes through `namespacedJoin`, since a record sits
- * under a chain-declared state root and a note's name is an entry's tag
- * (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks
- * fs calls with no long component*). The names handed back stay plain: they
- * are what a prompt renders and a human opens, and the extended-length
- * prefix belongs at the fs call, not in the queue's vocabulary.
+ * `stateRoot` here is the absolute one, and every reading of a directory
+ * under it — the host-native paths these are rendered, opened and compared
+ * as, the absent queue that contributes nothing, the obstructed one that
+ * refuses — is `listUnderStateRoot`'s (`harness/dirListing.ts`). All this
+ * adds is which directories and in what order, and the subject that
+ * refusal names.
  *
  * One listing, two readers: the inbox slice's liveness predicate below asks
  * whether this is empty, and the slice's own window renders these files'
@@ -91,33 +80,11 @@ export const RECORD_MAX_BYTES = 2000;
  * predicate did not count, or counts one it does not show
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*).
- *
- * A missing directory contributes nothing: an empty queue and an absent one
- * are the same fact, and a consumer that has never had a record should not
- * have to create a directory to say so. Every **other** listing failure
- * throws — a caller here is about to read these bytes, and a queue that
- * silently lost a record is a finding that never reaches the slice draining
- * it (`.claude/rules/engineering.md`, *Loud or nothing*).
- *
- * Synchronous by its callers' contract: a slice's liveness predicate is pure
- * over its inputs and runs on the selection path, and these are two small
- * directory listings.
  */
 export function recordFiles(stateRoot: string): string[] {
-  return RECORD_DIR_NAMES.flatMap((name) => {
-    const dir = join(stateRoot, name);
-    let names: string[];
-    try {
-      names = readdirSync(namespacedJoin(dir));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw error;
-    }
-    return names
-      .filter((entry) => entry.endsWith(RECORD_EXT))
-      .sort()
-      .map((entry) => join(dir, entry));
-  });
+  return RECORD_DIR_NAMES.flatMap((name) =>
+    listUnderStateRoot("record queue", stateRoot, name, RECORD_EXT),
+  );
 }
 
 /**

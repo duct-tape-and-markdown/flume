@@ -10,23 +10,20 @@
  * two questions write two files and never conflict, which a page appended to
  * by line position cannot offer whatever its syntax.
  *
- * This module is the listing and its render alone. Where the directory sits
- * is `layout.ts`'s, with every other plan artifact's path; what a question
- * *says* is the human's, and no slice derives anything from it.
- *
- * **The listing answers host-native**, like the record queue's and for the
- * same reason (`records.ts`): it reads disk and the paths it renders are
- * paths a tick opens, so it joins through `node:path` (`spec/cli.md`, *win32
- * is a supported host*) rather than taking a git-alphabet directory from
- * `layout.ts` and converting it.
+ * This module is the render alone. Where the directory sits is `layout.ts`'s,
+ * with every other plan artifact's path; reading it is the shared listing's
+ * (`dirListing.ts`), which the record queue takes its own answer from and
+ * which is where this render's host-native paths and its absence arm are
+ * stated; what a question *says* is the human's, and no slice derives
+ * anything from it.
  */
 
-import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { existsLoud } from "../src/fsProbe.js";
 import { namespacedJoin } from "../src/paths.js";
 
+import { listUnderStateRoot } from "./dirListing.js";
 import {
   QUESTION_EXT,
   QUESTIONS_DIR_REL,
@@ -43,38 +40,6 @@ import {
  * *Derived state is computed, never restated beside its source*).
  */
 export const NONE_OPEN = "(none open)";
-
-/**
- * Every open question under `stateRoot`, as **host-native paths** sorted by
- * name.
- *
- * `stateRoot` is the absolute one. A missing directory contributes nothing —
- * a consumer with nothing open should not have to create a directory to say
- * so, and an empty queue and an absent one are one fact. Every **other**
- * listing failure throws: a directory that is present and unreadable, or a
- * file sitting where the directory belongs, is an input this render never
- * resolved, and answering it with the none-open placeholder would tell a plan
- * tick that a question it cannot see is closed
- * (`.claude/rules/engineering.md`, *Loud or nothing*).
- *
- * Synchronous because its one caller is `prompts.ts`'s shared-argument
- * composition, which the engine calls per tick to build a prompt: one small
- * directory listing.
- */
-function questionFiles(stateRoot: string): string[] {
-  const dir = join(stateRoot, QUESTIONS_DIR_REL);
-  let names: string[];
-  try {
-    names = readdirSync(namespacedJoin(dir));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  return names
-    .filter((name) => name.endsWith(QUESTION_EXT))
-    .sort()
-    .map((name) => join(dir, name));
-}
 
 /**
  * The open questions as a plan slice's prompt carries them: one path per
@@ -95,9 +60,22 @@ function questionFiles(stateRoot: string): string[] {
  * (`.claude/rules/engineering.md`, *Loud or nothing*). It goes when the
  * constant behind it does, with the fence line that lets the drain delete the
  * page (`layout.ts`).
+ *
+ * **A directory this cannot read refuses too**, and only a *proven* absence
+ * renders {@link NONE_OPEN}: a plain file at the state root or above the
+ * questions directory is an input this render never resolved, and answering
+ * it with the none-open line would tell a plan tick that a question it
+ * cannot see is closed. The listing proves that absence by descent rather
+ * than off an errno, so both hosts refuse alike and the refusal names the
+ * path an operator has to go fix (`dirListing.ts`).
  */
 export function renderQuestions(stateRoot: string): string {
-  const open = questionFiles(stateRoot);
+  const open = listUnderStateRoot(
+    "questions dir",
+    stateRoot,
+    QUESTIONS_DIR_REL,
+    QUESTION_EXT,
+  );
   const legacy = legacyQuestionsPath(stateRoot);
   if (!existsLoud(namespacedJoin(legacy))) {
     return open.length === 0 ? NONE_OPEN : open.join("\n");

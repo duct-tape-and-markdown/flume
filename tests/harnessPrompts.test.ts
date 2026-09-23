@@ -860,6 +860,52 @@ it("an absent questions directory renders the slices' none-open placeholder", as
 }, SPAWN_BUDGET_MS);
 
 /**
+ * The absence arm's other half: only a *proven* absence renders the
+ * placeholder (`harness/dirListing.ts`). A plain file above the questions
+ * directory is spelled `ENOENT` on win32 and `ENOTDIR` on posix
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so a listing keying its silent arm on the
+ * errno tells a plan tick "(none open)" over questions it could not see on
+ * exactly one host — and reds on neither
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * The parent is denied on purpose, which that same page admits for this one
+ * reader: the descent is exercised by an obstructed *ancestor* and by
+ * nothing else. A plain file denies structurally, so this runs on every host
+ * rather than riding `chmod`, which denies nothing on win32.
+ */
+it("renderQuestions refuses when a plain file sits above the questions directory", async () => {
+  const root = await scratchRoot("flume-prompts-obstructed-questions-");
+  const dir = join(root, QUESTIONS_DIR_REL);
+  const above = dirname(dir);
+  const question = join(dir, `a-parked-fork${QUESTION_EXT}`);
+  await mkdir(dir, { recursive: true });
+  await writeFile(question, "# a parked fork\n", "utf8");
+
+  // The reading the obstruction has to change: one question, open and
+  // listed. Without it the refusal below could be any root at all.
+  expect(renderQuestions(root)).toBe(question);
+
+  await rm(above, { recursive: true, force: true });
+  await writeFile(above, "obstruction\n", "utf8");
+
+  let message: string | undefined;
+  try {
+    renderQuestions(root);
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  // By name — the rung an operator has to go fix, not the leaf that was
+  // asked for, and not the none-open line.
+  expect(
+    message,
+    "the obstructed ancestor read as a questions directory with nothing in it",
+  ).toBe(
+    `[flume] questions dir is unreadable: ${above} is present but is not a directory`,
+  );
+});
+
+/**
  * The migration leg (`harness/layout.ts`): a consumer upgrading into the
  * questions directory has questions open inside the page that preceded it,
  * and none of them is in the listing. Rendering the none-open placeholder
