@@ -8,6 +8,7 @@
 
 import type { Agent } from "./Agent.js";
 import type {
+  GateFailure,
   MergeOutcome,
   ProvisionFailure,
   ReportedGateResult,
@@ -365,6 +366,30 @@ export interface TickResult {
    * is the engine's; what to do about it stays the chain's.
    */
   provisionFailures?: readonly ProvisionFailure[];
+  /**
+   * Every gate-stage failure this tick recorded — an `afterCommit` or
+   * `afterMerge` gate that reverted a commit — the same {@link GateFailure}
+   * records the tick verdict persists. Each carries the reverted entry's
+   * `tag` (absent for a singleton phase's own revert, and for a gate that
+   * declared `blamesSpan: false`), the gate's failure `message`, and the
+   * `signature` the run's consecutive-failure backstop compares repeats by.
+   * Absent when no gate reverted anything.
+   *
+   * What this adds beyond {@link gateResults}: those rows are untagged and
+   * in run order, so under fanout they cannot say *which* entry a failing
+   * row reverted, nor which failures the engine actually blamed an entry
+   * for — a gate that disowned the span produces a failing row exactly like
+   * one that did not. A `handoff` routing on a gate revert — waking a
+   * sibling, counting how many of a wave's entries fell to one gate on one
+   * message — reads the records here rather than re-pairing failing rows
+   * against `revertedTags` and re-deriving the signature beside the engine
+   * (spec/chain.md "What a hook receives").
+   *
+   * A fact, never a verdict: what a repeated signature means, and what to do
+   * about it, stays the chain's (`.claude/rules/engine-boundary.md`,
+   * *Routing rule (plan, build, and interactive sessions)*).
+   */
+  gateFailures?: readonly GateFailure[];
   /** Set of pending tags shipped by this phase (build only; usually 0 or 1). */
   shippedTags: readonly string[];
   /**

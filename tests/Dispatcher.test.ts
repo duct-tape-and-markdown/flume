@@ -38,6 +38,7 @@ import {
   readLatestVerdictsSync,
   tickVerdictPath,
   tickVerdictsLogPath,
+  gateFailureSignature,
   type TickVerdict,
 } from "../src/tickVerdict.ts";
 import { frictionCountLine } from "../src/friction.ts";
@@ -4248,6 +4249,130 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
     expect(outcome.provisionFailures).toEqual(
       handedToHandoff?.provisionFailures,
     );
+  });
+});
+
+/**
+ * TICK-RESULT-REPORTS-THE-WAVES-GATE-FAILURES — `gateResults` carries one
+ * row per gate run, untagged and in run order, so a `handoff` asking which
+ * of a wave's entries a gate reverted, and how many fell to one gate on one
+ * message, had to re-pair failing rows against the tag lists and re-derive
+ * the signature beside the engine. The wave's own `GateFailure` records are
+ * that fact, already built for the verdict
+ * (`.claude/rules/engineering.md`, "A fact the engine holds is reported,
+ * never rediscovered").
+ */
+describe("Dispatcher fanout — the wave's gate failures reach handoff (TICK-RESULT-REPORTS-THE-WAVES-GATE-FAILURES)", () => {
+  it("a fanout wave's TickResult reports each entry's gate failure with the signature the tick verdict recorded", async () => {
+    await writePending(fx.repo, [
+      makeEntry("GATE-FAIL-A", ["src/gate-fail-a.ts"]),
+      makeEntry("GATE-FAIL-B", ["src/gate-fail-b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // One gate, one message, both entries — the repeat a chain counts, and
+    // the case `gateResults` alone cannot report: two identical failing
+    // rows that name neither entry.
+    const veto: Gate = {
+      name: "wave-veto",
+      when: "afterCommit",
+      run: async () => ({ ok: false, message: "wave veto" }),
+    };
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [veto],
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "gate-fail-a": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/gate-fail-a.ts",
+            "A\n",
+            "build(GATE-FAIL-A): ship",
+          ),
+        "gate-fail-b": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/gate-fail-b.ts",
+            "B\n",
+            "build(GATE-FAIL-B): ship",
+          ),
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+    const outcome = await dispatcher.tick();
+
+    expect(handedToHandoff).toBeDefined();
+    const reported = [...(handedToHandoff!.gateFailures ?? [])].sort((a, b) =>
+      (a.tag ?? "").localeCompare(b.tag ?? ""),
+    );
+    // Non-vacuity: the wave really did revert both entries, so what follows
+    // is judged over two blamed records and not over an empty list.
+    expect(reported).toHaveLength(2);
+
+    // The signature is the engine's own rule over the gate that failed —
+    // read through `gateFailureSignature`, never re-spelled here, so the
+    // claim is agreement rather than a second derivation by the tester.
+    const signature = gateFailureSignature({
+      gate: "wave-veto",
+      message: "wave veto",
+    });
+    expect(reported).toEqual([
+      expect.objectContaining({
+        tag: "GATE-FAIL-A",
+        signature,
+        message: "wave veto",
+      }),
+      expect.objectContaining({
+        tag: "GATE-FAIL-B",
+        signature,
+        message: "wave veto",
+      }),
+    ]);
+
+    // Each record is held under the entry's own quarantine key, as the
+    // engine's rule computes it from the queue the wave read — the two
+    // entries are both still pending, the afterCommit revert having kept
+    // their commits off trunk.
+    const stillPending = await readPendingFromDisk(fx.repo);
+    expect(stillPending.map((e) => e.tag)).toEqual([
+      "GATE-FAIL-A",
+      "GATE-FAIL-B",
+    ]);
+    expect(reported.map((f) => f.quarantineKey)).toEqual(
+      stillPending.map((e) => quarantineKey(e)),
+    );
+
+    // One set of facts, two surfaces: what `handoff` read is what the
+    // verdict persisted and what the outcome carries, byte for byte.
+    expect(handedToHandoff!.gateFailures).toEqual(outcome.verdict?.gateFailures);
+    expect(handedToHandoff!.gateFailures).toEqual(outcome.gateFailures);
+    expect(outcome.result?.gateFailures).toEqual(handedToHandoff!.gateFailures);
+
+    // And `gateResults` — the surface a chain would otherwise re-pair —
+    // still carries the rows it always did, naming neither entry.
+    const failingRows = (handedToHandoff!.gateResults ?? []).filter(
+      (g) => g.gate === "wave-veto" && !g.ok,
+    );
+    expect(failingRows).toHaveLength(2);
+    for (const row of failingRows) {
+      expect(Object.keys(row)).not.toContain("tag");
+    }
   });
 });
 

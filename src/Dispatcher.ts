@@ -872,16 +872,27 @@ export class Dispatcher {
       clearedPriorAttempts,
     } = phaseOutcome;
 
-    // Fold the already-computed no-commit classification into the
-    // TickResult before handoff — a chain's `handoff` is the only place a
-    // clean-exit wave can be distinguished from a genuine no-op.
+    // Fold the already-computed no-commit classification and gate-stage
+    // failures into the TickResult before handoff — a chain's `handoff` is
+    // the only place a clean-exit wave can be distinguished from a genuine
+    // no-op, and the only place the entry a failing gate reverted is named
+    // (`gateResults` carries the rows untagged, in run order, with no
+    // signature and no record of which failures the engine blamed an entry
+    // for).
     // `tipMoved` does NOT fold in here: `TickResult`
     // (`src/Phase.ts`) carries no field for it — the fact lives on
     // `TickOutcome`/`TickVerdict` alone, read by a fresh next tick, never by
     // this same tick's synchronous `handoff`.
-    const resultForHandoff: TickResult = noCommit
-      ? { ...result, noCommit }
-      : result;
+    //
+    // Both folds read the same values the verdict below is built from, so
+    // the handoff surface and the persisted artifact cannot disagree about
+    // which gate reverted what (`.claude/rules/engineering.md`, *A fact the
+    // engine holds is reported, never rediscovered*).
+    const resultForHandoff: TickResult = {
+      ...result,
+      ...(noCommit ? { noCommit } : {}),
+      ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
+    };
 
     // Sleep this phase by default; handoff re-wakes if needed.
     this.baton.sleep(phase.name);
