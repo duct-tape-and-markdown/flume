@@ -1,156 +1,19 @@
 [
   {
-    "tag": "LEDGER-REFUSAL-OUTSIDE-A-PARSE-FAILURE-EXITS-1",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "edit": [
-        {
-          "path": "src/waveTick.ts",
-          "description": "WaveLedgerRefusal states its class where it is constructed, from the cause it is handed"
-        },
-        {
-          "path": "src/Dispatcher.ts",
-          "description": "the failed-tick outcome reports that class beside `failed`"
-        },
-        {
-          "path": "src/cliVerdict.ts",
-          "description": "tickExitCode maps the non-parse ledger refusal to 1"
-        },
-        {
-          "path": "tests/cliVerdict.test.ts",
-          "description": "the exit-code seam over both classes"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the class on the outcome, beside the existing verdict-carry cases"
-        }
-      ]
-    },
-    "summary": "A ledger-commit refusal outside a parse failure exits 69, so a paused cherry-pick or a lost index.lock fail-fasts the whole loop as mount-dead",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "Exit codes — the run never lies to CI"
-    },
-    "acceptance": "a wave whose ledger commit refused for a non-parse cause exits 1 and the loop proceeds; an unparseable ledger still exits 69 and still aborts",
-    "tests": [
-      "a ledger-commit refusal outside a parse failure exits 1, not 69"
-    ],
-    "pins": [
-      "an unparseable pending ledger still exits 69"
-    ],
-    "notes": "Ruled at 3ca79f9f: the code is the defect, not the 69 row. The verdict carry WAVE-VERDICT-SURVIVES-ANY-LEDGER-COMMIT-REFUSAL shipped stays as it is — only the exit class differs. Stated at construction, where the cause is already in hand, never re-read off the refusal's prose downstream (`engine-boundary.md`, *Told, not inferred*)."
-  },
-  {
-    "tag": "JUDGE-REPORTS-A-SUITE-RED-AT-THE-BASE-AS-BASE-RED",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "edit": [
-        {
-          "path": "harness/judge.ts",
-          "description": "on a red suite, re-run the failing files the span's footprint does not contain at the base through the existing runAtBase; the verdict carries what it found"
-        },
-        {
-          "path": "harness/judgeGate.ts",
-          "description": "hand the span's footprint in; report base-red as the gate's verdict"
-        },
-        {
-          "path": "tests/harnessJudge.test.ts",
-          "description": "the base-red arm and the touched-file arm that stays the span's"
-        },
-        {
-          "path": "tests/harnessRunner.test.ts",
-          "description": "the gate row's verdict on a base-red refusal"
-        }
-      ]
-    },
-    "summary": "A gate-revert over a suite that was already red blames the entry: the judge rules suite-failed before any base run, so the retry re-picks into the same wall",
-    "per": {
-      "path": "spec/worktrees.md",
-      "section": "Per-entry `afterMerge` revert isolation"
-    },
-    "acceptance": "a suite failing only in files the span never touched still reverts, with base-red on the gate row and so on the prior-attempt record; a failure in a file the span touched stays the span's",
-    "tests": [
-      "a red suite whose failing files the span never touched is ruled base-red",
-      "the named-lines gate reports base-red as its verdict when the judge ruled the base red"
-    ],
-    "pins": [
-      "a red suite whose failing file the span touched stays the span's own failure"
-    ],
-    "notes": "Ruled at 3ca79f9f, option 2: no runner interface change — the overlay is a no-op for a file the span never touched. `verdict` already reaches the gate row and the prior-attempt record (spec/chain.md, *What a gate returns*), so nothing in src/ changes here. The not-quarantined half needs a GateResult field the spec enumerates; it stays on the question file."
-  },
-  {
-    "tag": "CLI-DOC-74-PIN-READS-THE-VERB-SET",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "edit": [
-        {
-          "path": "tests/cliHelp.test.ts",
-          "description": "the docs case loops topLevelCommandNames(); CLI-DOC-CHECK's standalone `check` case folds into it"
-        }
-      ]
-    },
-    "summary": "The docs/CLI.md 74 case loops a literal four-verb list under a header claiming both cases read the verb set off the surface",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Narration is the ladder's bottom rung"
-    },
-    "acceptance": "the docs case names no verb literally, and a verb whose docs/CLI.md section drops its 74 row reds the default lane",
-    "pins": [
-      "every verb's docs/CLI.md section names exit 74"
-    ],
-    "notes": "From the CLI-DOC-CHECK-AND-STATUS-IO-REFUSALS-PINNED note. Verified: all ten verbs the `Commands:` block advertises name 74 in their own section, so the generalization is green today. It retitles the shipped four-verb case and subsumes the `check` case beside it. status's cause-list direction is not this entry's — see the plan commit body."
-  },
-  {
-    "tag": "LIVE-TREE-VERDICTS-ADOPT-THE-FINDINGS-RENDERING",
-    "gate": {
-      "kind": "open"
-    },
-    "files": {
-      "edit": [
-        {
-          "path": "tests/helpers/repoProgram.ts",
-          "description": "the doubled-argument verdict helper takes its home beside renderFindings"
-        },
-        {
-          "path": "tests/commentCitations.test.ts",
-          "description": "adopt the shared helper in place of its local expectNoFindings"
-        },
-        {
-          "path": "tests/pageAnchors.test.ts",
-          "description": "three live-tree verdicts render their findings instead of asserting an array"
-        },
-        {
-          "path": "tests/exportConsumers.test.ts",
-          "description": "three live-tree verdicts render their findings instead of asserting an array"
-        }
-      ]
-    },
-    "summary": "Six live-tree verdicts still assert an array empty, so a revert reports `[ ...(n) ]` and the retry re-runs the suite to learn which site dangled",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Loud or nothing"
-    },
-    "acceptance": "every live-tree findings verdict across the three scans asserts a rendered line, and the rendering-passed-twice form has one home",
-    "notes": "From the CITATION-VERDICTS note: pageAnchors.test.ts:259/:313/:330 and exportConsumers.test.ts:510/:538/:565. `renderFindings` already lives in tests/helpers/repoProgram.ts, so this is an import; the doubling helper moves beside it rather than a third module spelling it (`engineering.md`, *A module is one job*). pageAnchors' findings are objects, so each case needs a formatter. No named line: the renderer's behavior is pinned in commentCitations.test.ts."
-  },
-  {
     "tag": "CHAIN-AUTHORING-SANCTIONS-THE-SIDECAR-FENCE",
     "gate": {
       "kind": "open"
     },
+    "dependsOnForks": [],
     "files": {
+      "new": [],
       "edit": [
         {
           "path": "docs/CHAIN-AUTHORING.md",
           "description": "a section for the per-checkout fence: the sidecar read at chain load, and the function-form `fence` over the resolved roots named as the surface to file if a second consumer needs it"
         }
-      ]
+      ],
+      "retire": []
     },
     "summary": "One committed declaration serves every checkout, so a consumer wanting a fence per ticket invents a sidecar read at load and no page names the shape",
     "per": {
@@ -158,6 +21,8 @@
       "section": "Surface, not prescription"
     },
     "acceptance": "the page carries one spelling of the sidecar fence and names the engine surface to file when a second consumer needs it",
+    "tests": [],
+    "pins": [],
     "notes": "Ruled at 3ca79f9f, option 1: docs only, no engine change — `declaration.ts` is a module whose fields may be values with behavior, so reading a gitignored sidecar at load is inside what it can do today. Reported by developertools (DEV-9565) on 0.17.0. No named line: the page's forward field pin and its anchor pins already read the new section, and the recipe claims no engine behavior."
   }
 ]
