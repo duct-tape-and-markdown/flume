@@ -1196,8 +1196,8 @@ async function writeMergingMarker(
  * names — the `pending.json` rewrite above and the prior-attempt record
  * clears that ride with it. The verdict is not part of it and no marker is
  * held for it: `Dispatcher.tick()` never writes the verdict, the CLI's
- * `tick` command does, after `tick()` has returned
- * ({@link writeTickVerdict}). The ledger rewrite is also where the hazard
+ * `tick` command does, after `tick()` has returned (`writeTickVerdict`
+ * (`src/tickVerdict.ts`)). The ledger rewrite is also where the hazard
  * closes — once the queue no longer carries a picked entry as `open`, a
  * crash before the verdict write leaves nothing a second run would pick
  * again, and refusing over it would be a false refusal. A ledger rewrite

@@ -14,9 +14,9 @@
  *
  * **Nothing here is caught.** A spawn that failed leaves as the error the
  * platform threw — its exit status, its errno, its stderr — for the caller
- * that knows what those mean: {@link branchAt} tells a detached HEAD from a
- * broken git by git's own exit status, and the lane reader tells a forge CLI
- * that is absent from one that refused by its errno
+ * that knows what those mean: `branchAt` (`harness/ci.ts`) tells a detached
+ * HEAD from a broken git by git's own exit status, and the lane reader tells
+ * a forge CLI that is absent from one that refused by its errno
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). Wrapping the
  * failure would be this module deciding a meaning it was never given.
  */

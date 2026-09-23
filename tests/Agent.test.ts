@@ -320,7 +320,7 @@ describe("claudeCode — win32 .cmd shim fallback", () => {
 /**
  * The abort half of the seam: an agent invocation runs in its own process
  * group and an abort takes that whole group down, settling on its exit rather
- * than on the abort (`src/Agent.ts`, {@link AgentInvocation.signal}).
+ * than on the abort — `AgentInvocation.signal` (`src/Agent.ts`).
  *
  * Driven against the mocked `node:child_process` like the rest of this file —
  * what a signal aimed at a real process group reaches is

@@ -14,6 +14,11 @@
  * The scanner is the same one in both, reading a real tsconfig and resolving
  * through a real program, so the fixture cannot drift into testing a second
  * implementation of the verdict.
+ *
+ * A TSDoc link tag is the one citation judged against a single module rather
+ * than against the three trees, so the fixture cites one name from both
+ * sides of that line: the module that declares it, and the module next door
+ * that never imported it.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -96,6 +101,15 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * literal: the page names are answered by the working tree alone, and the
  * module path is the arm that still reads the token set.
  *
+ * Then the link tags, whose reach is one module's: the fixture cites a
+ * declaration of the citing module, an import, a lib global, a member of
+ * one, and each of the tag's other two spellings — `linkcode` and
+ * `linkplain`, the second carrying a link text; then a declaration of the
+ * module next door that this one never imported, a name nothing declares,
+ * and a tag naming nothing at all. The name next door is backticked beside
+ * its tag, because the backticked arm answers it and this one must not.
+ * Last is a tag the wrapping broke, which is one reference all the same.
+ *
  * Then the pairs, which name a home the token set cannot answer: a
  * declaration in the file the pair names, a declaration of the other module
  * cited at the wrong door, and a lib global no module of the tree declares at
@@ -152,6 +166,12 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `export interface Shipped {`,
     `  readonly maxDepth: number;`,
     `}`,
+    ``,
+    `/**`,
+    ` * A declaration the module next door never imports, cited by a link tag`,
+    ` * from the module that declares it: {@link unsharedHelper}.`,
+    ` */`,
+    `export const unsharedHelper = (): number => 1;`,
     ``,
   ].join("\n"),
   "lib/surface.ts": [
@@ -294,6 +314,25 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// an aside) leaves the parenthetical open past the italics, and`,
     `// (\`docs/sections.md\`) claims no section at all.`,
     `export const UNCITED = 16;`,
+    ``,
+    `// A link tag is judged on its syntax, so no subject rule is read over`,
+    `// one: {@link Holder} is declared here, {@link Shipped} is imported from`,
+    `// next door, {@link WeakMap} is a lib global, {@link Shipped.maxDepth} is`,
+    `// a member of one, and {@linkcode ratio} and {@linkplain Holder | with`,
+    `// a link text} are the tag's other two spellings.`,
+    `export const LINKED = 17;`,
+    ``,
+    `// A reference the citing module cannot reach is one nothing follows:`,
+    `// {@link unsharedHelper} is declared next door and imported nowhere`,
+    `// here, which the backticked \`unsharedHelper\` beside it still resolves.`,
+    `// {@link vanishedLink} names nothing anywhere, and {@link |only a label}`,
+    `// names nothing at all.`,
+    `export const UNLINKED = 18;`,
+    ``,
+    `// A tag the wrapping broke is one reference all the same, because the`,
+    `// rendering closes the break before the target is read: {@link`,
+    `// Holder} resolves where the unbroken spelling does.`,
+    `export const WRAPPED_LINK = 19;`,
     ``,
   ].join("\n"),
   "docs/carried.md": "# the page a tree outside the tsconfig cites\n",
@@ -440,6 +479,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "surface.ts",
     "this.opts.maxDepth",
     "tsconfig.json",
+    "unsharedHelper",
     "vanished-notes.md",
     "vanished.helper",
     "vanishedHelper",
@@ -480,6 +520,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "surface.ts",
     "this.opts.maxDepth",
     "tsconfig.json",
+    "unsharedHelper",
   ]);
 
   // A backtick inside a string literal is no citation: the reader takes
@@ -493,6 +534,49 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
 });
 
 // --- the spellings the subject rule turns on -----------------------------
+
+it("the citation scan resolves a link tag against the module whose comment carries it", () => {
+  const scan = fixtureScan;
+
+  // Vacuity guard: the tags were read, both modules of the fixture carry
+  // one, and the judged set is the one the fixture authored — before any
+  // verdict is read off it. A tag reader that stopped matching would report
+  // a clean tree over zero references.
+  expect(scan.links.scanned.map(formatCitation)).toEqual([
+    "lib/dataShapes.ts:8 unsharedHelper",
+    "lib/surface.ts:142 Holder",
+    "lib/surface.ts:142 Shipped",
+    "lib/surface.ts:143 WeakMap",
+    "lib/surface.ts:143 Shipped.maxDepth",
+    "lib/surface.ts:144 ratio",
+    "lib/surface.ts:144 Holder",
+    "lib/surface.ts:149 unsharedHelper",
+    "lib/surface.ts:151 vanishedLink",
+    "lib/surface.ts:151 ",
+    "lib/surface.ts:156 Holder",
+  ]);
+
+  expect(scan.links.findings.map(formatCitation)).toEqual([
+    "lib/surface.ts:149 unsharedHelper",
+    "lib/surface.ts:151 vanishedLink",
+    "lib/surface.ts:151 ",
+  ]);
+
+  // The whole of the arm's claim, in one name: `unsharedHelper` is a
+  // reference the module that declares it follows and the module next door
+  // does not, and the two verdicts over it differ by nothing but which
+  // comment carried the tag.
+  const answered = new Set(
+    scan.links.scanned
+      .filter((site) => !scan.links.findings.includes(site))
+      .map(formatCitation),
+  );
+  expect(answered.has("lib/dataShapes.ts:8 unsharedHelper")).toBe(true);
+
+  // And the backticked arm reads that same name the other way, from the same
+  // comment: the two are a discrimination rather than one rule spelled twice.
+  expect(scan.resolved.map((s) => s.text)).toContain("unsharedHelper");
+});
 
 it("the citation scan judges a dotted citation whose segments carry no internal capital", () => {
   // Vacuity guard: both spans were read off the fixture, and no segment of
@@ -1339,6 +1423,28 @@ it("the repo citation pin refuses any citation broken across a comment line", ()
   // pins above stay green over it however the name it cites is renamed.
   // Rewrap the span.
   expectNoFindings(repoScan.wraps.findings.map(formatCitation));
+});
+
+it("every `{@link}` reference in a `src/`, `harness/` or `tests/` comment resolves from its citing module", () => {
+  const scan = repoScan;
+
+  // Vacuity guard: these trees carry link tags in quantity and all three of
+  // them carry one, before the emptiness below is read. A tag reader that
+  // stopped matching would report a clean tree over zero references.
+  expect(scan.links.scanned.length).toBeGreaterThan(400);
+  for (const tree of ["src/", "harness/", "tests/"]) {
+    const carried = scan.links.scanned.some((site) =>
+      site.module.startsWith(tree),
+    );
+    expect(`${tree} -> ${carried}`).toBe(`${tree} -> true`);
+  }
+
+  // And the arm is judging at the altitude it claims: a tag whose target the
+  // citing module cannot reach is unanswered here however many of these
+  // trees declare the name, so a reference no reader can follow cannot ride
+  // a sibling's declaration. Re-home the cite — name the file the
+  // declaration sits in, the way every other cross-module citation does.
+  expectNoFindings(scan.links.findings.map(formatCitation));
 });
 
 it("every section a src/, harness/ or tests/ comment cites is a section its page still carries", () => {

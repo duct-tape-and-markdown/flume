@@ -71,9 +71,10 @@ export const RECORD_MAX_BYTES = 2000;
  *
  * `stateRoot` here is the absolute one, and these paths are read, rendered
  * and compared as filesystem paths rather than handed to git, so they are
- * composed with `node:path` rather than slash-joined like {@link recordDirs}
- * is. A separator appended to an absolute win32 root yields a path fs accepts
- * and nothing else equals: the window would name every record at a spelling
+ * composed with `node:path` rather than slash-joined like `recordDirs`
+ * (`harness/layout.ts`) is. A separator appended to an absolute win32 root
+ * yields a path fs accepts and nothing else equals: the window would name
+ * every record at a spelling
  * no `join`-built path — the one its own reader and every consumer compose —
  * matches.
  *

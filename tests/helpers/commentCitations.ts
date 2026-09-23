@@ -29,6 +29,16 @@
  * home like that would red every name cited at it. Both spans keep the arms
  * they have.
  *
+ * TSDoc's link tag is a third alphabet, and the only one whose *syntax* is the
+ * claim: an author writing one has said "this names a declaration", so no
+ * subject rule is read over it and every tag is judged. What it is judged
+ * against is the citing module alone — a link tag is a declaration reference
+ * the language resolves where the comment sits, so a name the module neither
+ * declares, imports, nor has as a global is a reference nothing follows, even
+ * where a sibling tree three directories away declares it. The repo-wide token
+ * set would answer every one of those, which is why the tag gets its own
+ * verdict rather than riding the backticked one.
+ *
  * A `*.md` page name is a citation backticked or not, because a filename is
  * never a sentence: the extension is the whole claim, so no surrounding prose
  * has to be read to know the token names a file. The unfenced ones are
@@ -236,6 +246,17 @@ export interface CitationScan extends Scan<CitationSite> {
    * comments cite, and among them the ones their page no longer titles.
    */
   readonly sections: Scan<SectionCitation>;
+  /**
+   * The fifth verdict, over a fifth judged set: the TSDoc link tags those
+   * comments carry, and among them the ones naming a declaration their own
+   * module cannot reach.
+   *
+   * Judged against one module's scope rather than against the three trees,
+   * for the reason the header states: a link tag resolves where the comment
+   * sits, so the repo-wide token set would answer a reference no reader can
+   * follow.
+   */
+  readonly links: Scan<CitationSite>;
 }
 
 /**
@@ -635,6 +656,23 @@ const renderRun = (run: readonly CommentLine[]): RenderedRun => {
 const SECTION_CITE = /\(`?([^\s`(),]+\.md)`?,\s+\*([^*]+)\*\)/g;
 
 /**
+ * A TSDoc link tag and the declaration it references: the three spellings the
+ * syntax has, and the target that opens the tag's body.
+ *
+ * The target ends where TSDoc ends it — at whitespace, at the `|` a link text
+ * sits behind, or at the closing brace — so a tag carrying a label is judged
+ * on the reference and never on the prose beside it. An empty target is
+ * captured as the empty string rather than passed over, so a tag naming
+ * nothing reds where a reader would find nothing
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * Read off the run as markdown renders it, for the reason a section cite is:
+ * the tag is the author's whichever line the wrapping broke it on, and the
+ * compiler that resolves it reads the same closed spelling.
+ */
+const LINK_CITE = /\{@link(?:code|plain)?\s+([^\s|}]*)/g;
+
+/**
  * A wrapped span read across its break. The line break and the next line's
  * margin collapse into `at`: a space is what markdown renders and what breaks
  * whatever the span was spelling; nothing at all is the spelling the author
@@ -668,6 +706,10 @@ const joinWrapped = (raw: string, at: string): string =>
  * fenced wrap already goes to, and its tail is left out of the collected
  * names — the same report for both fencings rather than a second rule for the
  * one the author left bare.
+ *
+ * The link tags come off the rendered run rather than the pairing, because
+ * the tag's own braces delimit it and a backtick around one is the author's
+ * emphasis rather than a fence the scan owes a reading to.
  */
 const commentSpans = (
   sf: ts.SourceFile,
@@ -678,12 +720,14 @@ const commentSpans = (
   readonly wrapped: WrappedCitation[];
   readonly paired: Array<{ site: CitationSite; home: string }>;
   readonly sections: SectionCitation[];
+  readonly links: CitationSite[];
 } => {
   const closed: CitationSite[] = [];
   const bare: CitationSite[] = [];
   const wrapped: WrappedCitation[] = [];
   const paired: Array<{ site: CitationSite; home: string }> = [];
   const sections: SectionCitation[] = [];
+  const links: CitationSite[] = [];
 
   const read = (run: readonly CommentLine[]): void => {
     if (run.length === 0) return;
@@ -839,6 +883,17 @@ const commentSpans = (
         page,
       });
     }
+
+    // The link tags, off that same rendering: the tag is one reference
+    // whichever line the wrapping broke it on, and the compiler that
+    // resolves it reads the closed spelling too.
+    for (const match of rendered.text.matchAll(LINK_CITE)) {
+      links.push({
+        module,
+        line: rendered.lineAt(match.index),
+        text: match[1] ?? "",
+      });
+    }
   };
 
   let run: CommentLine[] = [];
@@ -852,7 +907,7 @@ const commentSpans = (
   }
   read(run);
 
-  return { closed, bare, wrapped, paired, sections };
+  return { closed, bare, wrapped, paired, sections, links };
 };
 
 /**
@@ -928,6 +983,11 @@ const sectionReader = (root: string): ((site: SectionCitation) => boolean) => {
  * the arm a title's page name already goes through, for the reason the
  * header states.
  *
+ * A TSDoc link tag is the other exception, and takes one module's reach
+ * alone: the same segment rule, over the names the *citing* module holds
+ * rather than over the three trees'. A tag is judged on its syntax, so the
+ * subject rule is not read over it at all.
+ *
  * A literal is therefore a resolution arm, which is why nothing that exists
  * *in order to be excused* may sit in a judged tree as one: a list spelling
  * the names it excuses would resolve every one of them.
@@ -946,6 +1006,18 @@ export const scanCommentCitations = (
   // token set cannot answer: a scope holds every global, so `WeakMap` is in
   // scope in every module and declared in none of them.
   const homes = new Map<string, Set<string>>();
+  /**
+   * The names each module can reach on its own — globals, its imports, its
+   * own declarations, and every member the checker resolves inside it. What
+   * a link tag is judged against, because that is the scope the language
+   * resolves one in; the repo-wide set beside it would answer a reference
+   * whose own module declares nothing of the sort.
+   *
+   * A string literal is *not* in it, though one is a resolution arm for
+   * every other citation: a link tag names a declaration, and a fixture's
+   * source text declares nothing.
+   */
+  const reach = new Map<string, Set<string>>();
   const holds = (name: string, module: string): void => {
     const held = homes.get(name) ?? new Set<string>();
     held.add(module);
@@ -959,6 +1031,8 @@ export const scanCommentCitations = (
   for (const sf of sources) {
     const module = relPath(root, resolve(sf.fileName));
     modules.add(module);
+    const reachable = new Set<string>();
+    reach.set(module, reachable);
     // Both spellings a comment cites a module by — `planState.ts` and
     // `PendingSchema` are the same file named two ways, and each stops
     // resolving the moment the file is renamed away.
@@ -972,6 +1046,7 @@ export const scanCommentCitations = (
     // in the tree happens to use.
     for (const sym of checker.getSymbolsInScope(sf, ts.SymbolFlags.All)) {
       tokens.add(sym.getName());
+      reachable.add(sym.getName());
       declares(sym);
     }
     eachToken(sf, (token) => {
@@ -979,6 +1054,7 @@ export const scanCommentCitations = (
         const sym = checker.getSymbolAtLocation(token);
         if (sym) {
           tokens.add(sym.getName());
+          reachable.add(sym.getName());
           declares(sym);
         }
       } else {
@@ -999,6 +1075,7 @@ export const scanCommentCitations = (
   const scanned: CitationSite[] = [];
   const titled: CitationSite[] = [];
   const sections: SectionCitation[] = [];
+  const links: CitationSite[] = [];
   /** The home each paired citation named, keyed by the very site judged. */
   const pairedHome = new Map<CitationSite, string>();
   for (const sf of sources) {
@@ -1008,6 +1085,7 @@ export const scanCommentCitations = (
     bare.push(...spans.bare);
     wrapped.push(...spans.wrapped);
     sections.push(...spans.sections);
+    links.push(...spans.links);
     for (const pair of spans.paired) pairedHome.set(pair.site, pair.home);
     scanned.push(
       ...[
@@ -1064,6 +1142,18 @@ export const scanCommentCitations = (
   // declarations not at all.
   const titles = sectionReader(root);
 
+  // A link tag resolves where it sits: every dotted segment is a name the
+  // citing module reaches, read the way the repo-wide arm reads a segment —
+  // the token, never its meaning. A module the scan never read reaches
+  // nothing, so a tag in one reds rather than passing for want of a scope.
+  const followed = (site: CitationSite): boolean => {
+    const reachable = reach.get(site.module);
+    return (
+      reachable !== undefined &&
+      site.text.split(".").every((segment) => reachable.has(segment))
+    );
+  };
+
   return {
     modules: [...modules],
     backticked,
@@ -1082,6 +1172,10 @@ export const scanCommentCitations = (
     sections: {
       scanned: sections,
       findings: sections.filter((site) => !titles(site)),
+    },
+    links: {
+      scanned: links,
+      findings: links.filter((site) => !followed(site)),
     },
     pairs: scanned
       .filter((site) => pairedHome.has(site))

@@ -67,8 +67,8 @@ export function quarantineKey(entry: PendingEntry): string {
 /**
  * The entry-scoping half of every stage-failure record, filled from the
  * entry the failure is blamed on. One home for the `tag`/`quarantineKey`
- * pairing {@link StageFailureEntry} types — a call site that has the entry
- * spreads this rather than rebuilding either half.
+ * pairing `StageFailureEntry` (`src/tickVerdict.ts`) types — a call site
+ * that has the entry spreads this rather than rebuilding either half.
  */
 export function blamedOn(entry: PendingEntry): {
   tag: string;

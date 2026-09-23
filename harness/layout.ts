@@ -26,10 +26,10 @@
  *
  * **These names answer in git's alphabet**, since what they are for is a
  * diff-tree line, a pathspec, a fence glob. A consumer that means to read
- * disk folds them to the host's separator at its fs call — {@link
- * recordFiles} (`records.ts`) is the listing that must, and it composes with
- * `node:path` from {@link RECORD_DIR_NAMES} rather than converting a name
- * from here.
+ * disk folds them to the host's separator at its fs call —
+ * `recordFiles` (`harness/records.ts`) is the listing that must, and it
+ * composes with `node:path` from {@link RECORD_DIR_NAMES} rather than
+ * converting a name from here.
  */
 
 import { gitPath, resolvePendingPath } from "../src/paths.js";
@@ -111,10 +111,10 @@ const NOTE_DIR_RELS = [NOTES_REL, PARKED_NOTES_REL] as const;
  * The record directories' names under a state root, in the order
  * `.flume/PROTOCOL.md`, *Records: one file each* lists them: findings from
  * the field, then build ticks' notes, one directory per kind. The one
- * spelling — {@link recordDirs}, {@link recordGlobs} and {@link recordFiles}
- * each compose from here, in this order, rather than each walking its own
- * list. They differ only in the separator they join with, never in which
- * directories exist or in what order they are named.
+ * spelling — {@link recordDirs}, {@link recordGlobs} and `recordFiles`
+ * (`harness/records.ts`) each compose from here, in this order, rather than
+ * each walking its own list. They differ only in the separator they join
+ * with, never in which directories exist or in what order they are named.
  *
  * The parked directory rides it like any other: a park is a record, so the
  * drain lists it, the plan fence admits its deletion, and the records gate

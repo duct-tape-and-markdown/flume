@@ -365,10 +365,10 @@ export interface TickVerdictMergeOutcome {
 /**
  * spec/loop.md "The tick verdict — one facts artifact", "Every agent
  * invocation leaves a usage row": one row per agent run this tick, carrying
- * whatever cost/usage facts that run's {@link AgentResult} reported.
- * `entryTag` names the provisioned entry under fanout — the same name and
- * rule as {@link AgentInvocation.entryTag}; absent for a singleton phase,
- * which has no entry to tag.
+ * whatever cost/usage facts that run's `AgentResult` (`src/Agent.ts`)
+ * reported. `entryTag` names the provisioned entry under fanout — the same
+ * name and rule as `AgentInvocation.entryTag` (`src/Agent.ts`); absent for a
+ * singleton phase, which has no entry to tag.
  */
 export interface TickVerdictInvocation extends AgentUsage {
   entryTag?: string;
@@ -393,7 +393,7 @@ export interface TickVerdictInvocation extends AgentUsage {
    * loss is seen even though it is not preserved" is only readable if the
    * no-loss case is stated too, and an absent key would make a clean
    * teardown indistinguishable from a read that never happened. Untracked
-   * files are out of scope ({@link git.trackedModifications}).
+   * files are out of scope (`trackedModifications` (`src/git.ts`)).
    *
    * A fact, never a verdict: the engine says what went away with the
    * worktree; whether that matters is the chain's

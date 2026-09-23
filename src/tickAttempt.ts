@@ -450,8 +450,8 @@ async function invokeAgent(
   extraEnv?: Record<string, string>,
   /**
    * The provisioned entry's tag under fanout; omitted by the singleton
-   * caller, which has no entry — the same rule the {@link
-   * TickVerdictInvocation} row this call produces already follows.
+   * caller, which has no entry — the same rule the `TickVerdictInvocation`
+   * (`src/tickVerdict.ts`) row this call produces already follows.
    */
   entryTag?: string,
 ): Promise<AgentTermination> {
@@ -624,8 +624,9 @@ async function runAfterCommitGates(
  * `label` names the entry tag or the phase name — both the revert note's
  * filename and the log line use it. `blamed` is the fanout entry this
  * revert is scoped to, and `undefined` for a singleton phase's own revert
- * (no entry to quarantine — {@link StageFailureEntry}'s doc). The entry,
- * not its tag: the returned {@link GateFailure} carries the quarantine key
+ * (no entry to quarantine — see the doc on `StageFailureEntry`
+ * (`src/tickVerdict.ts`)). The entry, not its tag: the returned
+ * {@link GateFailure} carries the quarantine key
  * beside the tag, and only the entry as read can supply it. A gate that
  * declared `blamesSpan: false` leaves even a fanout revert unblamed —
  * having an entry to blame is not the same as the gate blaming it.

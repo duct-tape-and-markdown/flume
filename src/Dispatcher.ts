@@ -197,18 +197,19 @@ export interface DispatcherOptions {
   /**
    * This run's teardown, reaching the agent seam: aborting it aborts the
    * in-flight invocation, which takes the agent's whole process tree down and
-   * settles once that tree is gone ({@link AgentInvocation.signal}). The
-   * `flume tick` command supplies its own controller's signal and awaits
-   * `tick()` before it releases the tip claim and exits, so a signalled bare
-   * tick leaves no writer inside the state root the claim protected
-   * (spec/loop.md, "The loop lock and the tip claim"). Default: unset — a
+   * settles once that tree is gone — `AgentInvocation.signal`
+   * (`src/Agent.ts`). The `flume tick` command supplies its own controller's
+   * signal and awaits `tick()` before it releases the tip claim and exits,
+   * so a signalled bare tick leaves no writer inside the state root the
+   * claim protected (spec/loop.md, "The loop lock and the tip claim").
+   * Default: unset — a
    * dispatcher nobody can stop, which is every embedder that never wired one.
    */
   stopSignal?: AbortSignal;
   /**
-   * {@link quarantineKey} values (`slug@hash`) excluded
-   * from this tick's fanout pick even though `pending.json` still lists them
-   * as pickable — `pending.json` itself is untouched. The `flume loop`
+   * `quarantineKey` (`src/selection.ts`) values (`slug@hash`) excluded from
+   * this tick's fanout pick even though `pending.json` still lists them as
+   * pickable — `pending.json` itself is untouched. The `flume loop`
    * supervisor populates this (via the `tick` command's
    * `FLUME_QUARANTINED_SLUGS` env var, whose name predates the key and
    * stands) from entries whose provision/merge/gate stage failed earlier in
@@ -277,8 +278,8 @@ export interface TickOutcome {
   /**
    * True when the tick could not run at all — chain resolution threw and no
    * `chainLoadGate` reverted the producing commit: the mount-dead
-   * failure class. The `flume tick` process exits
-   * {@link EX_MOUNT_DEAD}; the `flume loop` supervisor fail-fasts on it
+   * failure class. The `flume tick` process exits `EX_MOUNT_DEAD`
+   * (`src/exitCodes.ts`); the `flume loop` supervisor fail-fasts on it
    * (aborting the run) rather than proceeding to the next tick — a mount-dead
    * chain is exactly as dead next tick as this one. Distinct from
    * `hibernated` (clean stop) and from a no-commit tick (the agent ran but
@@ -293,9 +294,10 @@ export interface TickOutcome {
    * resolution, an invalid declaration, a missing state root.
    *
    * The engine reader is `tickExitCode` (`src/cliVerdict.ts`), which exits 1
-   * over `"commit-refusal"` instead of {@link EX_MOUNT_DEAD} — the chain
-   * mounted, so the run is not dead and `flume loop` proceeds. A fact, never
-   * a verdict: what a chain does with it is the chain's
+   * over `"commit-refusal"` instead of `EX_MOUNT_DEAD`
+   * (`src/exitCodes.ts`) — the chain mounted, so the run is not dead and
+   * `flume loop` proceeds. A fact, never a verdict: what a chain does with
+   * it is the chain's
    * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
    * interactive sessions)*).
    */
@@ -305,8 +307,9 @@ export interface TickOutcome {
    * signature — a usage error (the host repo's package.json is missing
    * `"type": "module"`) with a concrete, nameable fix, not a mount-dead
    * chain nothing can retry. `flume tick` exits 2 (usage), never
-   * {@link EX_MOUNT_DEAD}; sibling to `failed`, mutually exclusive with it —
-   * this is the one chain-resolution failure that isn't `failed`.
+   * `EX_MOUNT_DEAD` (`src/exitCodes.ts`); sibling to `failed`, mutually
+   * exclusive with it — this is the one chain-resolution failure that isn't
+   * `failed`.
    */
   usageError?: boolean;
   /**
@@ -366,7 +369,7 @@ export interface TickOutcome {
    * to retry). Set when every awake flag names a phase the chain does not
    * declare. The flags are deliberately left on disk: clearing them would
    * convert the misconfiguration into a silent clean stop. `flume tick`
-   * exits {@link EX_TERMINAL_MISCONFIG} when this is set.
+   * exits `EX_TERMINAL_MISCONFIG` (`src/exitCodes.ts`) when this is set.
    */
   terminal?: TerminalMisconfiguration;
   /**
@@ -469,7 +472,7 @@ export class RenderUsageError extends Error {
  * (`NO_COMMIT_MODES`, `src/Prompt.ts`) — the agent is never invoked either
  * way; here there is simply no invocation to skip. An unresolved inline-exec
  * span is the same class and keeps its own richer type,
- * {@link InlineExecRenderError}, which names every failing span.
+ * `InlineExecRenderError` (`src/Prompt.ts`), which names every failing span.
  */
 export class RenderUnresolvedError extends Error {
   constructor(message: string) {
@@ -714,11 +717,11 @@ export class Dispatcher {
     // chainLoadGate-guarded broken chain.ts is reverted by its producing
     // tick, so the next tick's fresh process reads the restored file. An
     // *unguarded* broken chain.ts has nothing to run: log loudly and return a
-    // no-work failed outcome. The `flume tick` process exits {@link
-    // EX_MOUNT_DEAD}; the `flume loop` supervisor aborts the run on
-    // first occurrence rather than proceeding — a mount-dead chain is exactly
-    // as dead next tick as this one, so it does not burn the remaining
-    // `--max` ticks re-hitting the same wall.
+    // no-work failed outcome. The `flume tick` process exits
+    // `EX_MOUNT_DEAD` (`src/exitCodes.ts`); the `flume loop` supervisor
+    // aborts the run on first occurrence rather than proceeding — a
+    // mount-dead chain is exactly as dead next tick as this one, so it does
+    // not burn the remaining `--max` ticks re-hitting the same wall.
     let chainModule: ChainModule;
     try {
       chainModule = await this.chainLoader();
