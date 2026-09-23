@@ -1,1 +1,89 @@
-[]
+[
+  {
+    "tag": "GATE-DOC-DECLARES-THE-SHELL-BLAME-ASYMMETRY",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/Gate.ts",
+          "description": "on `blamesSpan`, declare that the shell-backed builtins never set it"
+        }
+      ]
+    },
+    "summary": "Declare at `GateResult.blamesSpan` that the shell-backed builtins never withhold blame: a red inherited from trunk reverts and blames the span",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Loud or nothing"
+    },
+    "acceptance": "`blamesSpan`'s doc names which gates can never set it and what a trunk-red costs in those gates; the citation scan still resolves every cite it adds.",
+    "notes": "Ruled in the inbox. A shell gate has no base run to compare against, and the two fixes that would give it one (per-gate base re-run; an engine-wide base ruling) were declined as complexity signals. `namedLinesGate` is the one gate in the package that observes a base at all; the `failingFiles` doc already says the builtins attribute nothing, and this extends that sentence to blame."
+  },
+  {
+    "tag": "TICK-RESULT-REPORTS-THE-WAVES-GATE-FAILURES",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "report the wave's `GateFailure` records on `TickResult`"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "populate it from the records it already builds for the verdict"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the wave case"
+        }
+      ]
+    },
+    "summary": "Report the wave's per-entry gate-failure records on `TickResult`, so a handoff reads the failed gate and its signature instead of inferring them from `gateResults`",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "a `handoff` reads each entry's failed gate, message and signature off `TickResult`; every existing field stays byte-identical.",
+    "tests": [
+      "a fanout wave's TickResult reports each entry's gate failure with the signature the tick verdict recorded"
+    ],
+    "notes": "The verdict already holds `GateFailure[]` keyed by `gateFailureSignature` (`src/tickVerdict.ts`); `TickResult` carries only untagged `gateResults` rows, so counting how many of a wave's entries failed one gate on one message is an inference today. A fact, never a verdict: what a repeated signature means stays the chain's. The enumeration in spec/chain.md is the human's to extend."
+  },
+  {
+    "tag": "UNHANDLED-TEST-CITES-THE-VITEST-PLATFORM-FACT",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/harnessRunner.test.ts",
+          "description": "`UNHANDLED_TEST`'s doc comment cites the page for the vitest fact"
+        }
+      ]
+    },
+    "summary": "Point `UNHANDLED_TEST`'s doc comment at the platform-facts section for vitest's behavior, keeping its own vacuity rationale in place",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "the fixture comment still says why this file produces the contradiction and cites the page for the toolchain fact; the section cite resolves.",
+    "notes": "The page now carries it: `.claude/rules/platform-facts.md`, *vitest's JSON reporter can claim success over a non-zero exit*. Ruled option (1) — a bare pointer would strand the comment's own rationale."
+  },
+  {
+    "tag": "CITATION-TITLE-NAMES-THE-BLOCKQUOTE-LEAD",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "widen the section-arm case's title; give its fixture a blockquote lead to resolve against"
+        }
+      ]
+    },
+    "summary": "Widen the section-arm case's title to the page's settled enumeration, and give its fixture the blockquote lead the widened title claims",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "the title names headings, bolded bullet leads and a bolded lead opening a blockquote line, and the fixture cites a section each of those three arms mints.",
+    "notes": "Today the title stops at \"the page's headings and bolded bullet leads\", the page's pre-ruling wording. The fixture carries no blockquote lead, so widening the title alone would claim a subject the body never exercises (*A green verdict is proven non-vacuous*). No `tests[]` line: the whole diff is the file carrying the case."
+  }
+]
