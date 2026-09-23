@@ -505,14 +505,20 @@ export interface QueueParseFailure {
  * {@link QueueParseFailure} instead is the decide-read taken for a phase that
  * can write the queue (`readPendingForDecision`, `src/pendingLedger.ts`).
  *
- * `path` is what the message opens with, taken from the engine's one
- * spelling of where the ledger lives (`reportedPendingPath`,
- * `src/pendingLedger.ts`): git's own alphabet relative to the repo root, or
- * the absolute path when a relocated dock puts the file where git cannot name
- * it. The refusal named the default basename before, which is a file a chain
- * docking its ledger elsewhere does not have — the engine held the location
- * and spelled a guess at it instead (`.claude/rules/engineering.md`, *A fact
- * the engine holds is reported, never rediscovered*).
+ * `path` is a field a catcher reads, and the same value the message opens
+ * with, taken from the engine's one spelling of where the ledger lives
+ * (`reportedPendingPath`, `src/pendingLedger.ts`): git's own alphabet
+ * relative to the repo root, or the absolute path when a relocated dock puts
+ * the file where git cannot name it. The refusal named the default basename
+ * before, which is a file a chain docking its ledger elsewhere does not have
+ * — the engine held the location and spelled a guess at it instead. It is
+ * carried structurally for the reason the twin {@link QueueParseFailure}
+ * carries one: a chain's gate reaching this class through `FlumeApi` would
+ * otherwise have to take the path back out of the message with a regex —
+ * rebuilding a fact the engine already holds, in the shape
+ * `.claude/rules/engine-boundary.md`, *Told, not inferred* refuses
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
  *
  * `detail` is the refusing read's own reason, appended to the message: the
  * decide-read names the fence verdict that kept the refusal standing, so the
@@ -528,6 +534,14 @@ export interface QueueParseFailure {
  * `FlumeApi.PendingParseFailure` (`src/flumeApi.ts`).
  */
 export class PendingParseFailure extends Error {
+  /**
+   * The ledger's path as every report of this module spells it
+   * (`reportedPendingPath`, `src/pendingLedger.ts`): git's own alphabet
+   * relative to the repo root, or the absolute path when a relocated dock
+   * puts the file where git cannot name it — the same alphabet the twin
+   * {@link QueueParseFailure} reports it in.
+   */
+  readonly path: string;
   readonly errors: readonly ParseError[];
   constructor(path: string, errors: readonly ParseError[], detail?: string) {
     super(
@@ -536,6 +550,7 @@ export class PendingParseFailure extends Error {
         (detail ? `; ${detail}` : ""),
     );
     this.name = "PendingParseFailure";
+    this.path = path;
     this.errors = errors;
   }
 }

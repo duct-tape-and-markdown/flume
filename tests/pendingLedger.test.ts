@@ -339,4 +339,70 @@ describe("readPending — what a strict refusal names", () => {
       await repo.cleanup();
     }
   });
+
+  /**
+   * The same fact, off the error rather than out of its message. A chain's
+   * gate reaches this class through `FlumeApi.PendingParseFailure`
+   * (`src/flumeApi.ts`), and without the field its only way to the path is a
+   * regex over prose the engine wrote — the twin `QueueParseFailure` hands
+   * its reader a field, and this is the same fact on the throwing side
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   *
+   * Both constructions are read: the bare refusal `commitPendingUpdate`'s
+   * rewrite read raises, and the one `readPendingForDecision` re-throws with
+   * its fence verdict behind it.
+   */
+  it("a strict pending read's parse refusal carries the chain's declared ledger path on the error", async () => {
+    const repo = await makeScratchRepo("flume-refusal-field-", "main");
+    try {
+      const dock = join(repo.dir, "queue");
+      await mkdir(dock, { recursive: true });
+      const pendingPath = join(dock, "ledger.json");
+      const declared = "queue/ledger.json";
+      await writeFile(pendingPath, "{}\n", "utf8");
+      await exec("git", ["add", "."], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "an unparseable ledger"], {
+        cwd: repo.dir,
+      });
+
+      const ctx: PendingLedgerContext = {
+        repoRoot: repo.dir,
+        pendingPath,
+        entryExtension: undefined,
+        log: silent,
+      };
+
+      let bare: unknown;
+      try {
+        await commitPendingUpdate(ctx, [], [], []);
+      } catch (err) {
+        bare = err;
+      }
+      expect(bare).toBeInstanceOf(PendingParseFailure);
+      // Non-vacuity: the refusal really carries the parse's own errors, so
+      // the path below is read off a failure that happened rather than off a
+      // constructed stand-in (`.claude/rules/engineering.md`, *A green
+      // verdict is proven non-vacuous*).
+      expect((bare as PendingParseFailure).errors.length).toBeGreaterThan(0);
+      expect((bare as PendingParseFailure).path).toBe(declared);
+
+      let rethrown: unknown;
+      try {
+        await readPendingForDecision(ctx, {
+          name: "build",
+          writablePaths: ["src/**"],
+        });
+      } catch (err) {
+        rethrown = err;
+      }
+      expect(rethrown).toBeInstanceOf(PendingParseFailure);
+      expect((rethrown as PendingParseFailure).errors.length).toBeGreaterThan(
+        0,
+      );
+      expect((rethrown as PendingParseFailure).path).toBe(declared);
+    } finally {
+      await repo.cleanup();
+    }
+  });
 });
