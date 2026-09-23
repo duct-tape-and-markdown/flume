@@ -1,1 +1,61 @@
-[]
+[
+  {
+    "tag": "PAIR-ARM-RESOLVES-AN-ALL-CAPS-NAME",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "tests/helpers/commentCitations.ts",
+          "description": "widen the pair arm's identifier half; the bare-span fence stays"
+        },
+        {
+          "path": "tests/commentCitations.test.ts",
+          "description": "the pair case for an all-caps name, and the bare-span pin"
+        }
+      ]
+    },
+    "summary": "Widen the citation pair arm's identifier half to admit an all-caps name, per the ruled clause",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "Narration is the ladder's bottom rung"
+    },
+    "acceptance": "The all-caps pair cites src/, harness/ and tests/ carry are judged by the repo citation pin, and a pair naming a declaration its file does not hold reds.",
+    "tests": [
+      "a comment pairing an all-caps name with a repo-relative path reds when that file holds no such declaration"
+    ],
+    "pins": [
+      "a backticked word in capitals alone is judged as prose rather than as a citation subject"
+    ],
+    "notes": "Widen at `isIdentifierSubject` alone; `isSubject`'s bare-span fence is unchanged, which the pin holds. 13 sites gain their check today (`EX_MOUNT_DEAD`, `EX_TERMINAL_MISCONFIG`, `CORE_ENTRY_FIELDS`, `STATE_ROOT_NAMES`, `NO_COMMIT_MODES`, `DEFAULT_STATE_ROOT`, `SPAWN_OUTPUT_CAP_BYTES`, three `DEFAULT_*` in tests, `RUNTIME_IGNORES`). A site whose name does not resolve is a real find — fix it at the site, not by narrowing back."
+  },
+  {
+    "tag": "TICK-RESULT-REPORTS-THE-WAVES-MERGE-FAILURES",
+    "gate": { "kind": "open" },
+    "files": {
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "the `mergeFailures` field on TickResult, documented as its siblings are"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "fold it in beside the existing gateFailures fold"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the wave case"
+        }
+      ]
+    },
+    "summary": "Fold `mergeFailures` onto `TickResult`, off the same value the tick verdict is built from",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "A cherry-pick conflict names its entry, message and signature on the handoff surface rather than only on the persisted verdict.",
+    "tests": [
+      "a fanout wave's TickResult reports each entry's merge failure with the signature the tick verdict recorded"
+    ],
+    "notes": "`TickOutcome` and `TickVerdict` carry all three stage-failure classes; `TickResult` now carries `provisionFailures` and `gateFailures` and not this one. Same fold site as the gateFailures one in `Dispatcher.tick()`, same value. Without it a conflict shows to `handoff` only as committed/not-shipped plus a `mergeOutcome`, with no signature and no quarantine key — the inference the gateFailures entry closed."
+  }
+]
