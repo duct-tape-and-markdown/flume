@@ -860,6 +860,20 @@ export function describeBareCall(scan: FsCallScan, call: BareFsCall): string {
   return `${scan.module}:${call.line} — ${call.fn}() path argument ${call.position}, \`${call.argument}\`, is not composed for win32's path limit`;
 }
 
+/**
+ * An entry of {@link FsCallScan.uncalled} as one line of a failure message.
+ *
+ * A symbol, not a site: the scan reports the import it could not judge, and
+ * the module it was imported into is the only other fact there is. Here
+ * rather than at either caller, because both the per-module verdict
+ * (`tests/Baton.test.ts`) and the tree-wide one
+ * (`tests/namespacedFsPaths.test.ts`) read this set, and a line one of them
+ * spelled inline is the vocabulary the other would copy
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ */
+export function describeUncalled(scan: FsCallScan, fn: string): string {
+  return `${scan.module} imports ${fn} and never calls it`;
+}
 
 /** A `JsFormCall` as one line of a failure message, named by its module. */
 export function describeJsForm(scan: FsCallScan, call: JsFormCall): string {

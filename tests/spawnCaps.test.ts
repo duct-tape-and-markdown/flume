@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { expectNoFindings } from "./helpers/repoProgram.ts";
 import {
   formatPromisifiedSpawnSite,
   formatSpawnCapSite,
@@ -151,12 +152,20 @@ const JUDGED: readonly string[] = [
   "src/piped.mjs",
 ];
 
-/** The modules whose capturing call names no cap. */
+/**
+ * The capturing calls that name no cap, as `formatSpawnCapSite` cites them.
+ *
+ * Rendered rather than named by module, because the repo verdict below reads
+ * its findings through that same formatter and finds none: a formatter only
+ * ever run over an empty list has produced no site name at all, and the
+ * detail a reverted tick would read off it would itself be unproven
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ */
 const CAPLESS: readonly string[] = [
-  ".flume/chain.ts",
-  "src/capless.ts",
-  "src/consumer.ts",
-  "src/piped.mjs",
+  ".flume/chain.ts:3 execFileSync",
+  "src/capless.ts:4 run",
+  "src/consumer.ts:2 capture",
+  "src/piped.mjs:3 spawnSync",
 ];
 
 let fixtureRoot = "";
@@ -181,8 +190,7 @@ afterAll(async () => {
 
 it("the scan reds a capturing spawn written without a cap", () => {
   expect(fixture.scanned.length).toBeGreaterThan(0);
-  const reported = [...new Set(fixture.findings.map((s) => s.module))].sort();
-  expect(reported).toEqual([...CAPLESS]);
+  expect(fixture.findings.map(formatSpawnCapSite).sort()).toEqual([...CAPLESS]);
 });
 
 it("the scan judges a forwarder's callers and skips what captures nothing", () => {
@@ -315,7 +323,7 @@ it("the scan refuses a named file that is not on disk", async () => {
 it("every capturing spawn outside tests/ declares its output cap", () => {
   const scan = scanSpawnCaps();
   expect(scan.scanned.length).toBeGreaterThan(0);
-  expect(scan.findings.map(formatSpawnCapSite)).toEqual([]);
+  expectNoFindings(scan.findings.map(formatSpawnCapSite));
 });
 
 /**

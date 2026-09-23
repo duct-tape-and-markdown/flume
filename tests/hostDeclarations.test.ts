@@ -32,6 +32,7 @@ import {
   suiteSources,
   type HostScan,
 } from "./helpers/hostDeclarations.ts";
+import { expectNoFindings } from "./helpers/repoProgram.ts";
 
 const suite = scanHostDeclarations(suiteSources());
 
@@ -46,16 +47,16 @@ it("no case in tests/ denies with a permission bit outside the declared-host lis
   expect(suite.denials.scanned.length).toBeGreaterThan(0);
   expect(new Set(suite.denials.scanned.map((s) => s.module)).size).toBeGreaterThan(1);
 
-  expect(suite.denials.findings.map(formatSite)).toEqual([]);
+  expectNoFindings(suite.denials.findings.map(formatSite));
 
   // And every one of them is inside a case the ledger names a reason for —
   // `declared` being non-null is the finding's own predicate, so the reason
   // is what this adds.
-  expect(
+  expectNoFindings(
     suite.denials.scanned
       .filter((site) => site.declared?.reason == null)
       .map(formatSite),
-  ).toEqual([]);
+  );
 });
 
 it("every declared-host case carries the reason it cannot run on the other host", () => {
@@ -67,14 +68,15 @@ it("every declared-host case carries the reason it cannot run on the other host"
   expect(hosts.filter((h) => h === "posix").length).toBeGreaterThan(20);
   expect(hosts.filter((h) => h === "win32").length).toBeGreaterThan(5);
 
-  expect(suite.declarations.findings.map(formatSite)).toEqual([]);
+  expectNoFindings(suite.declarations.findings.map(formatSite));
 
   // The other direction: a ledger row whose case was renamed or deleted is a
   // reason for a skip that no longer happens, and reds here rather than
   // sitting in the file unread.
   const declared = new Set(suite.declarations.scanned.map((site) => site.key));
-  expect([...hostDeclarationLedger().keys()].filter((key) => !declared.has(key)))
-    .toEqual([]);
+  expectNoFindings(
+    [...hostDeclarationLedger().keys()].filter((key) => !declared.has(key)),
+  );
 });
 
 describe("the host-declaration scan — the detector, over sources written to be caught", () => {

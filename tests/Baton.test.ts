@@ -8,9 +8,11 @@ import { Baton } from "../src/Baton.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import {
   describeBareCall,
+  describeUncalled,
   fsImports,
   scanFsCalls,
 } from "./helpers/namespacedFsScan.ts";
+import { expectNoFindings } from "./helpers/repoProgram.ts";
 
 const BATON_SRC_PATH = fileURLToPath(new URL("../src/Baton.ts", import.meta.url));
 
@@ -204,8 +206,8 @@ describe("Baton — win32 MAX_PATH fix (.claude/rules/platform-facts.md)", () =>
   });
 
   it("every fs symbol src/Baton.ts imports is called on a namespacedJoin argument", () => {
-    expect(scan.uncalled, "imported but never called").toEqual([]);
-    expect(scan.bare.map((call) => describeBareCall(scan, call))).toEqual([]);
+    expectNoFindings(scan.uncalled.map((fn) => describeUncalled(scan, fn)));
+    expectNoFindings(scan.bare.map((call) => describeBareCall(scan, call)));
   });
 });
 

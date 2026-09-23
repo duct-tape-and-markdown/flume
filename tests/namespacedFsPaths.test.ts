@@ -75,10 +75,12 @@ import {
   describeBareCall,
   describeEscape,
   describeJsForm,
+  describeUncalled,
   describeUnfollowed,
   scanFsCalls,
   type FsCallScan,
 } from "./helpers/namespacedFsScan.ts";
+import { expectNoFindings } from "./helpers/repoProgram.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
@@ -130,18 +132,16 @@ function pinTree(
 
   it(titles.composed, () => {
     populated();
-    const bare = withFs.flatMap((scan) =>
-      scan.bare.map((call) => describeBareCall(scan, call)),
+    expectNoFindings(
+      withFs.flatMap((scan) => scan.bare.map((call) => describeBareCall(scan, call))),
     );
-    expect(bare).toEqual([]);
   });
 
   it(titles.uncalled, () => {
     populated();
-    const uncalled = withFs.flatMap((scan) =>
-      scan.uncalled.map((fn) => `${scan.module} imports ${fn} and never calls it`),
+    expectNoFindings(
+      withFs.flatMap((scan) => scan.uncalled.map((fn) => describeUncalled(scan, fn))),
     );
-    expect(uncalled).toEqual([]);
   });
 }
 
@@ -179,7 +179,37 @@ export function markerDir(flumeDir: string): string | undefined {
 }
 `;
 
+/**
+ * The shape the composition verdict exists to red: a path built from segments
+ * and handed to an fs call with no fold on it. Segments are identifiers rather
+ * than string literals because the scan reports the argument off its masked
+ * source, where a literal reads as blanks.
+ */
+const BARE_JOIN_SOURCE = `
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+export function read(root: string, name: string): string {
+  return readFileSync(join(root, name), "utf8");
+}
+`;
+
 describe("the scan's reading of one call", () => {
+  it("the namespaced-fs scan names the call and the uncomposed argument of a bare join", () => {
+    // `describeBareCall` is the rendering both tree verdicts and the per-module
+    // one (`tests/Baton.test.ts`) read their findings through, and all three
+    // find none — so without this case the line a revert would be handed has
+    // never been produced at all (`.claude/rules/engineering.md`, *A green
+    // verdict is proven non-vacuous*).
+    const scan = scanFsCalls("src/fixture.ts", BARE_JOIN_SOURCE);
+
+    expect(scan.judged).toBe(1);
+    expect(scan.bare.map((call) => describeBareCall(scan, call))).toEqual([
+      "src/fixture.ts:6 — readFileSync() path argument 0, `join(root, name)`, " +
+        "is not composed for win32's path limit",
+    ]);
+  });
+
   it("the scan reads a variadic fs-probe descent's paths and not the subject it names", () => {
     const scan = scanFsCalls("src/fixture.ts", DESCENT_SOURCE);
 
@@ -406,8 +436,9 @@ describe("the scan's reading of a type position", () => {
     // And the quiet direction stays loud: a module that only *describes* the
     // symbol has no call site at all, which the scan reports rather than
     // passing over.
-    expect(scanFsCalls("src/fixture.ts", SIGNATURE_ONLY_SOURCE).uncalled).toEqual([
-      "readFileSync",
+    const described = scanFsCalls("src/fixture.ts", SIGNATURE_ONLY_SOURCE);
+    expect(described.uncalled.map((fn) => describeUncalled(described, fn))).toEqual([
+      "src/fixture.ts imports readFileSync and never calls it",
     ]);
   });
 });
@@ -443,11 +474,11 @@ describe("a namespaced path never leaves its fs call", () => {
     const scans = [...scanTree("src"), ...scanTree("harness")];
     const answered = scans.reduce((n, scan) => n + scan.answered, 0);
     expect(answered, "path-answering fs calls on a composed path").toBeGreaterThan(0);
-    expect(
+    expectNoFindings(
       scans.flatMap((scan) =>
         scan.escaped.map((escape) => describeEscape(scan, escape)),
       ),
-    ).toEqual([]);
+    );
   });
 
   it("the namespaced-fs scan reports a path-answering call whose answer goes to a callback rather than judging it clean", () => {
@@ -491,11 +522,11 @@ describe("a namespaced path never leaves its fs call", () => {
     // the call-site regex all still match — which is what an empty-by-design
     // verdict cannot assert for itself.
     expect(scans.filter((scan) => scan.symbols.length > 0).length).toBeGreaterThan(0);
-    expect(
+    expectNoFindings(
       scans.flatMap((scan) =>
         scan.unfollowed.map((call) => describeUnfollowed(scan, call)),
       ),
-    ).toEqual([]);
+    );
   });
 });
 
@@ -574,9 +605,9 @@ describe("a composed path reaches only the head that takes it", () => {
     const scans = [...scanTree("src"), ...scanTree("harness")];
     const nativeOnly = scans.reduce((n, scan) => n + scan.nativeOnly, 0);
     expect(nativeOnly, "composed paths at a symbol only .native resolves").toBeGreaterThan(0);
-    expect(
+    expectNoFindings(
       scans.flatMap((scan) => scan.jsForm.map((call) => describeJsForm(scan, call))),
-    ).toEqual([]);
+    );
   });
 });
 
