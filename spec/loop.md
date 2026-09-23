@@ -555,12 +555,10 @@ dispatcher-owned `<prior-attempt>` block:
   record was written — and `at`, an ISO timestamp. A chain deciding "bailed, and nothing
   has changed since" compares `headSha` to the tip, never the record file's mtime to a
   commit time.
-- **A gate that names its failing files earns a flake marker.** A `gate-revert` record
-  whose gate result carried `failingFiles` (`spec/chain.md`, *What a gate returns*) and
-  whose every named file is **disjoint from the reverted span's footprint** is marked
-  `suspectFlake: true`: the entry's own edits cannot have caused a failure in files it
-  never touched. The marker is derived, never trusted — the engine computes it from the
-  two lists, and a gate that reports no `failingFiles` earns no marker.
+- **A gate-revert record carries the gate's own attribution, never an inferred one.**
+  A gate that declares `blamesSpan: false` (`spec/chain.md`, *What a gate returns*)
+  leaves a record with no blame on the entry; the engine infers nothing from
+  `failingFiles`, since a span's edits can red a file they never touched.
 - **Bounded by construction — a digest, not a transcript.** Gate details, diffstats,
   and agent messages are each capped at a few KB with an explicit truncation marker.
 - **No false signal.** The slot is absent on a first attempt, and a clean ship clears

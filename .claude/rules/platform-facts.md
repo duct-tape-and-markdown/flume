@@ -385,3 +385,13 @@ working directory itself. A fixture proving a long-path behavior therefore
 puts its depth on the *subject* path — a long job name, a deep config dir, a
 deep queue path — and never on a directory git or any process is spawned in,
 or asked to create a worktree under.
+
+## chai truncates an inspected value in an assertion message at 40 characters
+
+`expect(list).toEqual([])` reports its received side through chai's
+inspector, which cuts the rendering at 40 characters: a findings list of
+eight sites names one, and a runner keeping a failure's first line hands
+the retry nothing it can act on. The message argument is not truncated,
+so a verdict whose detail must name several sites passes its rendering
+twice — as the compared value and as the message; `renderFindings`
+(`tests/helpers/repoProgram.ts`) is the idiom. Measured on vitest 2.1.9.

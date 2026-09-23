@@ -154,7 +154,8 @@ default export that is not a factory, no `phases[]`. Two layers, both required.
 - **A CJS-context host is refused, not relayed.** When the load failure carries
   the module-context signature — `Cannot use import statement outside a
   module`, or an `ERR_MODULE_NOT_FOUND` whose path carries tsx's
-  percent-encoded `?namespace=` query (an empirical two-shape family)
+  `?namespace=` query in either spelling, literal or percent-encoded (an
+  empirical two-shape family)
   — the engine refuses with a usage-shaped message naming the fix (`"type":
   "module"` in the repo's package.json, or one beside `chain.ts`) and the tick
   exits **2**, not the mount-dead constant (`CjsContextLoadError`,
@@ -498,7 +499,7 @@ confines side effects to disk inside `cwd`.
 ## What a gate returns
 
 `GateResult` is `{ ok, message, details?, failingFiles?,
-skipped?, verdict? }`.
+skipped?, verdict?, blamesSpan? }`.
 
 - **A gate that throws is a gate that failed.** The engine catches the throw at
   every gate-run site, records `{ ok: false, message: <the error's message>,
@@ -524,12 +525,21 @@ skipped?, verdict? }`.
 
 - **`failingFiles?: string[]`** — repo-relative paths the gate attributes the
   failure to, when the gate's runner can name them (a test reporter's JSON, a
-  type-checker's diagnostics). The chain knows its runner; the engine knows the
-  span's footprint. When both are present the engine derives the
-  suspect-flake marker on the prior-attempt record (`spec/loop.md`,
-  *Prior-outcome feedback*) — mechanically, from list disjointness, never by
-  reading the gate's prose. An absent field is today's behavior: no marker,
-  no inference.
+  type-checker's diagnostics). Copied onto the tick verdict's gate result and
+  the `gate-revert` record verbatim; the engine derives nothing from it. A
+  span's edits can red a file they never touched — a pin in a test module
+  that reads the whole tree — so disjointness from the footprint proves
+  nothing, and attribution is the gate's to declare (`blamesSpan`, below).
+
+- **`blamesSpan?: false`** — the gate says this failure is not the gated
+  span's: the suite was red at the base, or a resource the span never
+  touched refused. The engine withholds the entry-scoped half of the stage
+  failure — no quarantine key, no blame on the prior-attempt record —
+  exactly as a singleton's own revert already carries none, while the
+  consecutive-failure backstop still counts the failed tick. The revert
+  itself still happens; a span that cannot be judged does not land. Absent
+  or `true` is today's behavior. A declared fact, never a reading of
+  `verdict` or `message`.
 
 ## What a hook receives
 
