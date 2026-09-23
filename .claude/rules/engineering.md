@@ -64,11 +64,11 @@ Every check lives at the most deterministic layer that can express it — a
   a markdown link carries into such a page, which resolves against that
   page's own headings the way a `per` cite already does; the italicized
   section half of a `` (`page.md`, *Section*) `` pair, resolved against that
-  page's headings and bolded bullet leads, exact after backtick
-  normalization — no prefix arm, so an abbreviation is a rewrite, not a
-  match; and a `§ N` cross-reference on a `docs/` page, resolved against
-  that page's own numbered headings where it has any and left as prose where
-  it has none. A pin may resolve each against the declarations those trees
+  page's headings, bolded bullet leads, and a bolded lead opening a
+  blockquote line, exact after backtick normalization — no prefix arm, so
+  an abbreviation is a rewrite, not a match; and a `§ N` cross-reference on
+  a `docs/` page, resolved against that page's own numbered headings where
+  it has any and left as prose where it has none. A pin may resolve each against the declarations those trees
   hold and the working tree, so a deleted symbol, a renamed page, or a
   renumbered section cannot leave its citations standing. A class this
   predicate admits and the suite does not yet resolve is a plan entry, not a

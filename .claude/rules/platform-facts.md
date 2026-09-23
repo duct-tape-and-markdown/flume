@@ -395,3 +395,17 @@ the retry nothing it can act on. The message argument is not truncated,
 so a verdict whose detail must name several sites passes its rendering
 twice — as the compared value and as the message; `renderFindings`
 (`tests/helpers/repoProgram.ts`) is the idiom. Measured on vitest 2.1.9.
+
+## vitest's JSON reporter can claim success over a non-zero exit
+
+The JSON reporter computes `success` from the files that reported, and
+vitest's unhandled-error check sets the exit code afterwards: a suite whose
+every assertion passed while a rejection nobody awaited surfaced reports
+`success: true` and exits non-zero. A runner reading the report alone
+would hand a judge a green over a run vitest itself refused. Read the
+status beside the report and refuse a success the exit contradicts — the
+shipped vitest runner does. Measured on vitest 2.1.9; the fact expires when
+a vitest folds unhandled errors into `success`, at which point the fixture
+that produces the contradiction (`UNHANDLED_TEST`,
+`tests/harnessRunner.test.ts`) stops producing it and its case reds with
+nothing wrong in the runner.
