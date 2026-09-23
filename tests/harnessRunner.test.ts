@@ -13,7 +13,13 @@
  * disagreement is what makes `runAtBase`'s two claims separable: the base's
  * bytes decided the failure, and the merged bytes decided which tests ran.
  *
- * The same fixture drives the judge (`harness/judge.ts`) over this runner,
+ * A second fixture repeats that span beneath one test file both commits hold
+ * identically and both run red. Nothing in the span touches it, so the
+ * overlay `runAtBase` lays over the base checkout is the base's own bytes —
+ * the premise the judge's `base-red` ruling rests on, and the one arm the
+ * first fixture's all-green cases cannot reach.
+ *
+ * Both fixtures drive the judge (`harness/judge.ts`) over this runner,
  * end to end. The two sides of the runner interface are pinned apart
  * elsewhere — `harnessJudge.test.ts` rules over a stand-in runner, the cases
  * above read vitest's own reporter — and a seam whose halves are only ever
@@ -69,6 +75,11 @@ const put = async (repo: string, rel: string, body: string): Promise<void> => {
   await writeFile(join(repo, rel), body);
 };
 
+/** `node_modules` for a tree that has none of its own. */
+const link = async (tree: string): Promise<void> => {
+  await symlink(join(REPO_ROOT, "node_modules"), join(tree, "node_modules"), "dir");
+};
+
 /** The test file as the base commit holds it: one name, and it needs "base". */
 const BASE_TEST = `import { describe, expect, it } from "vitest";
 import { widget } from "../src/widget.ts";
@@ -95,6 +106,21 @@ describe("widget", () => {
   });
   it("runs wherever it is laid down", () => {
     expect(typeof widget).toBe("string");
+  });
+});
+`;
+
+/**
+ * The test file the second fixture adds, held byte-identically by both
+ * commits and red in both. Nothing in that span touches it, so what
+ * `runAtBase` lays over the base checkout is the base's own bytes and the
+ * failure the base reports is the base's own.
+ */
+const INHERITED_TEST = `import { describe, expect, it } from "vitest";
+
+describe("comment citations", () => {
+  it("every backticked page name resolves", () => {
+    expect(["docs/absent.md"]).toEqual([]);
   });
 });
 `;
@@ -225,11 +251,6 @@ describe("the vitest runner", () => {
       throw new Error(`worktree registry unreadable: ${registry.reason}`);
     }
     return [...registry.worktrees.keys()].filter((p) => p !== resolve(repo));
-  };
-
-  /** `node_modules` for a tree that has none of its own. */
-  const link = async (tree: string): Promise<void> => {
-    await symlink(join(REPO_ROOT, "node_modules"), join(tree, "node_modules"), "dir");
   };
 
   /** {@link apiOver} bound to this fixture. */
@@ -1062,5 +1083,108 @@ describe("the harness package boundary", () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * The same seam, over a span that inherited a red suite. The first fixture's
+ * every case is green where it is asked to be, so the judge's `base-red`
+ * ruling — the one arm that turns on `runAtBase` laying a file the span never
+ * touched over the base — has nothing there to be read off. A stand-in runner
+ * can only *assert* that overlay is a no-op (`harnessJudge.test.ts`); here
+ * vitest decides it.
+ */
+describe("the vitest runner over a span that inherited a red suite", () => {
+  let fixture: string;
+  let baseSha: string;
+  /** The span's footprint, asked of git — as in the fixture above. */
+  let footprint: string[];
+  let runner: Runner;
+
+  beforeAll(async () => {
+    fixture = await mkTempDir("flume-harness-runner-base-red-");
+    const flumeDir = join(fixture, ".flume");
+    git(fixture, ["init", "-q"]);
+    git(fixture, ["config", "user.email", "t@example.com"]);
+    git(fixture, ["config", "user.name", "t"]);
+    git(fixture, ["config", "commit.gpgsign", "false"]);
+
+    await put(fixture, "package.json", `{ "name": "fixture", "private": true, "type": "module" }\n`);
+    await put(fixture, ".gitignore", "node_modules\n");
+    await put(
+      fixture,
+      "vitest.config.ts",
+      `import { defineConfig } from "vitest/config";\nexport default defineConfig({ test: { include: ["tests/**/*.test.ts"] } });\n`,
+    );
+    await put(fixture, "src/widget.ts", `export const widget = "base";\n`);
+    await put(fixture, "tests/widget.test.ts", BASE_TEST);
+    // The commit the span starts from is already red, and stays red: the
+    // span below never names this file.
+    await put(fixture, "tests/cite.test.ts", INHERITED_TEST);
+    git(fixture, ["add", "-A"]);
+    git(fixture, ["commit", "-q", "-m", "base, already red"]);
+    baseSha = git(fixture, ["rev-parse", "HEAD"]);
+
+    await put(fixture, "src/widget.ts", `export const widget = "merged";\n`);
+    await put(fixture, "tests/widget.test.ts", MERGED_TEST);
+    git(fixture, ["add", "-A"]);
+    git(fixture, ["commit", "-q", "-m", "merged"]);
+
+    footprint = git(fixture, ["diff", "--name-only", baseSha, "HEAD"])
+      .split("\n")
+      .filter(Boolean);
+
+    await link(fixture);
+    runner = vitestRunner()(contextFrom(apiOver(fixture, flumeDir, link)));
+  });
+
+  afterAll(async () => {
+    if (fixture) await rm(fixture, { recursive: true, force: true });
+  });
+
+  it("the judge rules base-red over real vitest when the merged suite's only failure is inherited from the base", async () => {
+    const line = "carries the merged widget";
+
+    const verdict = await inGateScope(() =>
+      judgeNamedLines(runner, {
+        tests: [line],
+        pins: [],
+        baseSha,
+        footprint,
+        cwd: fixture,
+      }),
+    );
+
+    // Vacuity: the merged-tree run collected a real suite, passed some of it,
+    // and failed in exactly the file the span never named — so the ruling
+    // below answers a question the run actually raised.
+    expect(verdict.passed).toBeGreaterThan(0);
+    expect(verdict.failures).toHaveLength(1);
+    expect(verdict.failingFiles).toEqual(["tests/cite.test.ts"]);
+    expect(footprint).toEqual(["src/widget.ts", "tests/widget.test.ts"]);
+    expect(verdict.ownFailingFiles).toEqual([]);
+
+    // The premise the ruling rests on, asked of git rather than asserted: the
+    // overlay `runAtBase` lays down for this file is the base's own bytes, so
+    // the base report cannot be the span's breakage carried backward.
+    expect(
+      git(fixture, ["diff", "--name-only", baseSha, "HEAD", "--", "tests/cite.test.ts"]),
+    ).toBe("");
+
+    // And vitest, run at the base over that file alone, said so.
+    expect(verdict.outcome).toBe("base-red");
+    expect(verdict.baseFailures).toHaveLength(1);
+    expect(verdict.baseFailures[0]!.file).toBe("tests/cite.test.ts");
+    expect(verdict.baseFailures[0]!.name).toBe(
+      "comment citations every backticked page name resolves",
+    );
+    expect(verdict.message).toContain(baseSha.slice(0, 7));
+
+    // A refusal, not a ruling on the line: the merged-tree state stands as the
+    // merged tree left it, since a red tree makes the entry unjudgeable
+    // whoever made it red.
+    expect(verdict.lines).toEqual([
+      { line, lane: "tests", state: "carried", files: ["tests/widget.test.ts"] },
+    ]);
   });
 });
