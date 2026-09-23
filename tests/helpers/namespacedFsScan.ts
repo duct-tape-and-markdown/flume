@@ -333,6 +333,29 @@ function callSites(fn: string): RegExp {
   );
 }
 
+/**
+ * Half-open offsets into the source a scan read — what {@link splitArguments}
+ * answers instead of text.
+ *
+ * {@link maskNonCode} blanks in place, character for character, so one span
+ * addresses both faces of the same source: the masked face is what an
+ * expression resolves against, and the unmasked one is what the module
+ * actually spells. A reader that only ever saw the masked text would report a
+ * string literal as the blanks that stood in for it
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+interface Span {
+  /** First character of the argument, inclusive. */
+  start: number;
+  /** One past its last character. */
+  end: number;
+}
+
+/** What `span` covers in `face` — `maskNonCode`'s output, or the source itself. */
+function spanText(face: string, span: Span): string {
+  return face.slice(span.start, span.end);
+}
+
 /** One parameter of a signature: `k: string`, `k?: string`, `...rest: T[]`. */
 const PARAMETER = /^\s*(?:\.\.\.)?[A-Za-z_$][\w$]*\s*\??\s*:/;
 
@@ -355,8 +378,8 @@ const PARAMETER = /^\s*(?:\.\.\.)?[A-Za-z_$][\w$]*\s*\??\s*:/;
  * argument is judged bare, and a module whose only spelling of an import is
  * `name()` in a type position reports that import uncalled.
  */
-function declaresParameters(args: readonly string[]): boolean {
-  return args.length > 0 && args.every((arg) => PARAMETER.test(arg));
+function declaresParameters(masked: string, args: readonly Span[]): boolean {
+  return args.length > 0 && args.every((arg) => PARAMETER.test(spanText(masked, arg)));
 }
 
 /** One fs call site whose path argument was not composed. */
@@ -365,7 +388,7 @@ export interface BareFsCall {
   fn: string;
   /** Which argument is the path that did not compose. */
   position: number;
-  /** That argument's text, string bodies blanked — for the failure message. */
+  /** That argument's text as the module spells it — for the failure message. */
   argument: string;
   /** 1-indexed line of the call, for the failure message. */
   line: number;
@@ -515,8 +538,8 @@ function isComposed(
   const text = arrowBody(expression.trim());
   if (text.startsWith("namespacedJoin(")) return true;
   if (text.startsWith("toNamespacedPath(")) {
-    const inner = splitArguments(text, text.indexOf("("))[0] ?? "";
-    return !/^\s*join\s*\(/.test(inner);
+    const inner = splitArguments(text, text.indexOf("("))[0];
+    return !/^\s*join\s*\(/.test(inner ? spanText(text, inner) : "");
   }
   if (seen.size >= MAX_HOPS) return false;
 
@@ -537,9 +560,13 @@ function isComposed(
   );
 }
 
-/** The source text of `fn(`'s arguments at `open`, top-level commas only. */
-function splitArguments(masked: string, open: number): string[] {
-  const args: string[] = [];
+/**
+ * The {@link Span} of each of `fn(`'s arguments at `open`, top-level commas
+ * only — the splitting reads the masked face, and answers offsets so each
+ * caller slices the face its own job needs.
+ */
+function splitArguments(masked: string, open: number): Span[] {
+  const args: Span[] = [];
   let depth = 0;
   let start = open + 1;
   for (let i = open + 1; i < masked.length; i++) {
@@ -547,12 +574,12 @@ function splitArguments(masked: string, open: number): string[] {
     if (ch === "(" || ch === "[" || ch === "{") depth++;
     else if (ch === ")" || ch === "]" || ch === "}") {
       if (ch === ")" && depth === 0) {
-        args.push(masked.slice(start, i));
+        args.push({ start, end: i });
         return args;
       }
       depth--;
     } else if (ch === "," && depth === 0) {
-      args.push(masked.slice(start, i));
+      args.push({ start, end: i });
       start = i + 1;
     }
   }
@@ -787,7 +814,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
         callee: match[0].slice(0, -1).replace(/\s+/g, ""),
         args: splitArguments(masked, match.index! + match[0].length - 1),
       }))
-      .filter((site) => !declaresParameters(site.args));
+      .filter((site) => !declaresParameters(masked, site.args));
     if (calls.length === 0) {
       uncalled.push(fn);
       continue;
@@ -798,14 +825,14 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
       let namespacedAnswer = false;
       let namespacedArgument = false;
       for (const position of contract.positions(args.length)) {
-        const argument = args[position];
-        if (argument === undefined) continue;
+        const span = args[position];
+        if (span === undefined) continue;
         if (contract.calleeFolds) {
           delegated++;
           continue;
         }
         judged++;
-        if (isComposed(masked, argument)) {
+        if (isComposed(masked, spanText(masked, span))) {
           namespacedAnswer ||= contract.answer !== "none";
           namespacedArgument = true;
           continue;
@@ -813,7 +840,11 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
         bare.push({
           fn,
           position,
-          argument: argument.trim(),
+          // The finding is the site as the module spells it, so the reported
+          // argument is read off `source` and not the masked face the split
+          // ran over: a path composed of string literals is blanks there, and
+          // a finding rendering blanks is a revert with nothing to act on.
+          argument: spanText(source, span).trim(),
           line: lineOf(index),
         });
       }

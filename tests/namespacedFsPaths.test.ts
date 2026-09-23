@@ -181,31 +181,34 @@ export function markerDir(flumeDir: string): string | undefined {
 
 /**
  * The shape the composition verdict exists to red: a path built from segments
- * and handed to an fs call with no fold on it. Segments are identifiers rather
- * than string literals because the scan reports the argument off its masked
- * source, where a literal reads as blanks.
+ * and handed to an fs call with no fold on it. One segment is a string literal
+ * and one an identifier, because those are the two faces of the source the
+ * scan reads — it splits the argument on the masked one, where a literal is
+ * blanks, and must report it off the other.
  */
 const BARE_JOIN_SOURCE = `
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export function read(root: string, name: string): string {
-  return readFileSync(join(root, name), "utf8");
+  return readFileSync(join(root, "notes", name), "utf8");
 }
 `;
 
 describe("the scan's reading of one call", () => {
-  it("the namespaced-fs scan names the call and the uncomposed argument of a bare join", () => {
+  it("a bare fs call's reported argument prints the string literals its path composes", () => {
     // `describeBareCall` is the rendering both tree verdicts and the per-module
     // one (`tests/Baton.test.ts`) read their findings through, and all three
     // find none — so without this case the line a revert would be handed has
     // never been produced at all (`.claude/rules/engineering.md`, *A green
-    // verdict is proven non-vacuous*).
+    // verdict is proven non-vacuous*). What it prints is the same question: a
+    // finding whose argument renders as blanks names no site to go fix
+    // (*Loud or nothing*).
     const scan = scanFsCalls("src/fixture.ts", BARE_JOIN_SOURCE);
 
     expect(scan.judged).toBe(1);
     expect(scan.bare.map((call) => describeBareCall(scan, call))).toEqual([
-      "src/fixture.ts:6 — readFileSync() path argument 0, `join(root, name)`, " +
+      'src/fixture.ts:6 — readFileSync() path argument 0, `join(root, "notes", name)`, ' +
         "is not composed for win32's path limit",
     ]);
   });
