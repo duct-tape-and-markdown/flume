@@ -497,6 +497,18 @@ export class Dispatcher {
   private readonly maxParallel: number;
   private readonly tickTimeoutMs: number | undefined;
   private readonly flumeDir: string;
+  /**
+   * The state root's path relative to the repo root in git's alphabet
+   * (`computeStateRootRel`, `src/paths.ts`), `undefined` when that root is
+   * relocated outside the repo. Every gate reads it as
+   * `GateContext.stateRootRel`, and the teardown harvest as the offset a
+   * worktree mirrors the state root at (`harvestFriction`, `src/friction.ts`).
+   *
+   * Stored rather than composed on read — the opposite call from
+   * {@link worktreeCtx} and {@link attemptCtx}, which carry it — because both
+   * roots it folds are construction arguments: nothing this dispatcher does
+   * later can change the answer, so there is no snapshot to go stale.
+   */
   private readonly stateRootRel: string | undefined;
   /** The roots this dispatcher resolved, as the chain factory receives them. */
   private readonly paths: FlumePaths;

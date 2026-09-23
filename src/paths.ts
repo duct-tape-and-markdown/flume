@@ -115,20 +115,13 @@ export function escapesRoot(root: string, path: string): boolean {
  * path rules rather than inside the orchestrator that happens to call it
  * first (`.claude/rules/engineering.md`, *A module is one job*).
  *
- * The dispatcher (`src/Dispatcher.ts`) computes it once, from the two roots
- * that never change after its construction, and shares it on every
- * `GateContext.stateRootRel` and with `harvestFriction`'s own worktree-mirror
- * check (`src/friction.ts`; spec/chain.md "What a gate receives"). One
- * further consumer calls it with a different second root, a path whose escape
- * status decides whether a worktree holds a mirror of it: the `afterCommit`
- * gate-context build passes `configDir`, rebasing it onto the worktree only
- * when it resolves inside the repo. The ledger's own relocation check
- * (`isPendingRelocated`, `src/pendingLedger.ts`) asks the escape half of the
- * same question about `pendingPath` — a descendant of the state root
- * ({@link resolvePendingPath}) whose escape status against `repoRoot` always
- * matches `flumeDir`'s own — and reaches it through the {@link escapesRoot}
- * this function reads it from. Neither re-derives the check
- * (`.claude/rules/engineering.md` "The fix lands at the mechanism").
+ * The second root is the caller's to choose: the state root is the usual
+ * one, and a caller wanting git's offset for some other path reads the same
+ * verdict under the same rule. Each consumer says at its own site why it
+ * asks, and what that root's escape status decides there; which sites those
+ * are is the program's answer, not a list kept here by hand
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
  */
 export function computeStateRootRel(
   repoRoot: string,
