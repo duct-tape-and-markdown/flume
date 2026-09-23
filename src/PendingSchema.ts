@@ -495,8 +495,7 @@ export interface QueueParseFailure {
  * The throwing form of a {@link parsePending} refusal, for the reads that act
  * on the result rather than report it: `readPending` (`src/pendingLedger.ts`
  * — the reads that decide pickable work, and the wave's ledger rewrite)
- * raises it when
- * `pending.json` exists but fails to parse. Per
+ * raises it when the ledger exists but fails to parse. Per
  * .claude/rules/engineering.md "Loud or nothing": a queue that never resolved
  * must not read as an empty one, and nothing downstream may derive a decision
  * or a rewrite from it. `tick()` (`src/Dispatcher.ts`) catches it exactly
@@ -505,6 +504,15 @@ export interface QueueParseFailure {
  * exactly as unusable next tick as this one. The one read that answers with
  * {@link QueueParseFailure} instead is the decide-read taken for a phase that
  * can write the queue (`readPendingForDecision`, `src/pendingLedger.ts`).
+ *
+ * `path` is what the message opens with, taken from the engine's one
+ * spelling of where the ledger lives (`reportedPendingPath`,
+ * `src/pendingLedger.ts`): git's own alphabet relative to the repo root, or
+ * the absolute path when a relocated dock puts the file where git cannot name
+ * it. The refusal named the default basename before, which is a file a chain
+ * docking its ledger elsewhere does not have — the engine held the location
+ * and spelled a guess at it instead (`.claude/rules/engineering.md`, *A fact
+ * the engine holds is reported, never rediscovered*).
  *
  * `detail` is the refusing read's own reason, appended to the message: the
  * decide-read names the fence verdict that kept the refusal standing, so the
@@ -521,9 +529,9 @@ export interface QueueParseFailure {
  */
 export class PendingParseFailure extends Error {
   readonly errors: readonly ParseError[];
-  constructor(errors: readonly ParseError[], detail?: string) {
+  constructor(path: string, errors: readonly ParseError[], detail?: string) {
     super(
-      `pending.json failed to parse (${errors.length} error(s)): ` +
+      `${path} failed to parse (${errors.length} error(s)): ` +
         errors.map((e) => `[${e.index}] ${e.path}: ${e.message}`).join("; ") +
         (detail ? `; ${detail}` : ""),
     );

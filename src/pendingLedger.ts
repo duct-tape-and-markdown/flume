@@ -181,7 +181,7 @@ async function readPending(
     if (!existsLoud(namespacedJoin(ctx.pendingPath))) return [];
     const raw = await readFile(namespacedJoin(ctx.pendingPath), "utf8");
     const r = parsePending(raw, ctx.entryExtension);
-    if (!r.ok) throw new PendingParseFailure(r.errors);
+    if (!r.ok) throw new PendingParseFailure(reportedPendingPath(ctx), r.errors);
     return r.entries;
   }
   // Non-relocated by the branch above, so the fold always answers.
@@ -189,7 +189,7 @@ async function readPending(
   const raw = await git.readFileAtRef(ctx.repoRoot, "HEAD", rel);
   if (raw === null) return [];
   const r = parsePending(raw, ctx.entryExtension);
-  if (!r.ok) throw new PendingParseFailure(r.errors);
+  if (!r.ok) throw new PendingParseFailure(reportedPendingPath(ctx), r.errors);
   return r.entries;
 }
 
@@ -512,6 +512,7 @@ export async function readPendingForDecision(
     const rel = pendingPathRel(ctx);
     if (rel === undefined || !matchesAny(rel, phase.writablePaths)) {
       throw new PendingParseFailure(
+        reportedPendingPath(ctx),
         err.errors,
         rel === undefined
           ? `the ledger is relocated outside the repo root, which no ` +
