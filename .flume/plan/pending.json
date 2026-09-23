@@ -1,7 +1,10 @@
 [
   {
     "tag": "ONE-STATE-ROOT-LISTING-PROVES-ITS-ABSENCE",
-    "gate": { "kind": "open" },
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
     "files": {
       "new": [
         {
@@ -10,10 +13,22 @@
         }
       ],
       "edit": [
-        { "path": "harness/questions.ts", "description": "questionFiles calls the shared listing" },
-        { "path": "harness/records.ts", "description": "recordFiles calls the shared listing" },
-        { "path": "tests/harnessPrompts.test.ts", "description": "the obstructed-ancestor refusal through renderQuestions" },
-        { "path": "tests/harnessRecords.test.ts", "description": "the obstructed-ancestor refusal through recordFiles" }
+        {
+          "path": "harness/questions.ts",
+          "description": "questionFiles calls the shared listing"
+        },
+        {
+          "path": "harness/records.ts",
+          "description": "recordFiles calls the shared listing"
+        },
+        {
+          "path": "tests/harnessPrompts.test.ts",
+          "description": "the obstructed-ancestor refusal through renderQuestions"
+        },
+        {
+          "path": "tests/harnessRecords.test.ts",
+          "description": "the obstructed-ancestor refusal through recordFiles"
+        }
       ],
       "retire": []
     },
@@ -27,27 +42,15 @@
       "renderQuestions refuses when a plain file sits above the questions directory",
       "recordFiles refuses when a plain file sits above a record directory"
     ],
-    "notes": "questions.ts:70 and records.ts:113 read readdir's ENOENT as absence; win32 answers an obstructed ancestor ENOENT (platform-facts.md, *win32 reports a path through a non-directory as not found*), so the block says none-open and the inbox reads empty — what both doc comments say cannot happen. isDirectoryOrAbsent (src/fsProbe.ts) is the descent, PriorAttemptStore.readAll the shape. The two legs are one sequence (engineering.md, *A module is one job*)."
-  },
-  {
-    "tag": "LAYOUT-DOC-STATES-THE-RULE-NOT-ITS-CALLERS",
-    "gate": { "kind": "open" },
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/layout.ts",
-          "description": "drop the hand-kept caller enumerations; keep the rule each doc states and re-home any fact a roll call alone carried"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "layout.ts's docs state why one spelling exists, not a hand-kept index of who calls each accessor",
-    "per": {
-      "path": ".claude/rules/engineering.md",
-      "section": "Derived state is computed, never restated beside its source"
-    },
-    "acceptance": "No doc comment in layout.ts enumerates the sites that call the symbol below it; each still says why a second spelling would drift.",
-    "notes": "Verified: the header's \"five surfaces\" against nine importers of layout.js, and questionsDir's \"Three readers share it\" naming the questions listing first, where questions.ts composes its own host-native path from QUESTIONS_DIR_REL and never calls it. Same trim as escapesRoot (1e15d6bd) and computeStateRootRel (0ebee318). Claims no property: a completeness check over a roll call reads meaning, not a token. Bound by the shrink clause in *Narration is the ladder's bottom rung*."
+    "pins": [],
+    "notes": "questions.ts:70 and records.ts:113 read readdir's ENOENT as absence; win32 answers an obstructed ancestor ENOENT (platform-facts.md, *win32 reports a path through a non-directory as not found*), so the block says none-open and the inbox reads empty — what both doc comments say cannot happen. isDirectoryOrAbsent (src/fsProbe.ts) is the descent, PriorAttemptStore.readAll the shape. The two legs are one sequence (engineering.md, *A module is one job*).",
+    "observedFiles": [
+      ".flume/plan/notes/ONE-STATE-ROOT-LISTING-PROVES-ITS-ABSENCE.md",
+      "harness/dirListing.ts",
+      "harness/questions.ts",
+      "harness/records.ts",
+      "tests/harnessPrompts.test.ts",
+      "tests/harnessRecords.test.ts"
+    ]
   }
 ]
