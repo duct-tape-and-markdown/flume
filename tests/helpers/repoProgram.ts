@@ -192,11 +192,12 @@ export const NO_FINDINGS = "no findings";
  * that first line as `expected [ ...(3) ] to deeply equal []` — every site
  * elided, so a retry has to re-run the suite to learn which one dangled.
  *
- * Chai truncates the value it inspects into a message at forty characters,
- * which a rendering long enough to name several sites always exceeds, so a
- * caller asserting on this passes it as the message argument too — chai does
- * not truncate that half. {@link expectNoFindings} is where that doubling
- * lives; a verdict spelling it inline is spelling the helper again.
+ * A caller asserting on this rendering passes it as the message argument
+ * too — the doubling chai's truncation forces
+ * (`.claude/rules/platform-facts.md`, *chai truncates an inspected value in
+ * an assertion message at 40 characters*). {@link expectNoFindings} is where
+ * that doubling lives; a verdict spelling it inline is spelling the helper
+ * again.
  *
  * A finding carrying a break of its own would push everything behind it off
  * the first line, which is the elision this renderer exists to end, so it is
