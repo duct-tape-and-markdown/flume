@@ -13,14 +13,28 @@
  * stand-in matches a line to a passing test by the same containment rule the
  * interface states, so the judge sees the vocabulary it will see in
  * production.
+ *
+ * The gate the ruling reaches a dispatcher through (`harness/judgeGate.ts`) is
+ * driven here too, over the same stand-in. Its subject is the translation —
+ * which ruling becomes which `GateResult`, and what discriminant a refusal
+ * carries — whose input is a typed verdict, not a tool's output.
  */
 
 import { describe, expect, it } from "vitest";
 
 import { judgeNamedLines, type RunResult, type Runner, type TestFailure } from "../harness/index.ts";
+import { namedLinesGate } from "../harness/judgeGate.ts";
+import type { GateContext } from "../src/Gate.ts";
+import type { PendingEntry } from "../src/PendingSchema.ts";
 
 const BASE_SHA = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c";
 const CWD = "/tmp/a-tree";
+/**
+ * The span's footprint in most cases below: a source file and the test file
+ * its own named lines live in. A failing file outside it is the shape a red
+ * base is asked about.
+ */
+const FOOTPRINT = ["src/widget.ts", "tests/widget.test.ts"];
 
 /** A suite as the stand-in holds it: which full names passed, and where. */
 interface FakeSuite {
@@ -93,6 +107,7 @@ describe("the judge", () => {
       tests: [line],
       pins: [],
       baseSha: BASE_SHA,
+      footprint: FOOTPRINT,
       cwd: CWD,
     });
 
@@ -126,6 +141,7 @@ describe("the judge", () => {
       tests: [stale, fresh],
       pins: [],
       baseSha: BASE_SHA,
+      footprint: FOOTPRINT,
       cwd: CWD,
     });
 
@@ -164,6 +180,7 @@ describe("the judge", () => {
       tests: [test],
       pins: [pin],
       baseSha: BASE_SHA,
+      footprint: FOOTPRINT,
       cwd: CWD,
     });
 
@@ -194,6 +211,7 @@ describe("the judge", () => {
       tests: [],
       pins: [],
       baseSha: BASE_SHA,
+      footprint: FOOTPRINT,
       cwd: CWD,
     });
 
@@ -219,6 +237,10 @@ describe("the judge", () => {
       tests: [line],
       pins: [],
       baseSha: BASE_SHA,
+      // The failing file is the span's own, so the ruling is settled here and
+      // no base run is asked for — the case's subject is the merged-tree
+      // reading, and the blame arm has its own case below.
+      footprint: [...FOOTPRINT, "tests/other.test.ts"],
       cwd: CWD,
     });
 
@@ -230,6 +252,117 @@ describe("the judge", () => {
       { line, lane: "tests", state: "carried", files: ["tests/widget.test.ts"] },
     ]);
     expect(asked.runAtBase).toEqual([]);
+  });
+
+  /** A cite pin failing in a file no span below declares — the measured shape. */
+  const INHERITED: TestFailure = {
+    file: "tests/cite.test.ts",
+    name: "comment citations > every backticked page name resolves",
+    message: "expected 0 unresolved citations, got 1",
+  };
+
+  it("a red suite whose failing files the span never touched is ruled base-red", async () => {
+    const line = "the widget refuses a negative count";
+    const { runner, asked } = fakeRunner(
+      {
+        passing: [{ fullName: `widget > ${line}`, file: "tests/widget.test.ts" }],
+        failures: [INHERITED],
+      },
+      // The same failure at the base. The span's footprint never named that
+      // file, so what `runAtBase` lays over the base checkout is the copy the
+      // base already held, and the verdict is the base's own.
+      { passing: [], failures: [INHERITED] },
+    );
+
+    const verdict = await judgeNamedLines(runner, {
+      tests: [line],
+      pins: [],
+      baseSha: BASE_SHA,
+      footprint: FOOTPRINT,
+      cwd: CWD,
+    });
+
+    // Vacuity: the merged-tree run really failed, in a file the footprint
+    // really excludes, and the base run really happened over exactly it —
+    // asking about no named line, since the question there is the file's.
+    expect(verdict.failingFiles).toEqual(["tests/cite.test.ts"]);
+    expect(FOOTPRINT).not.toContain("tests/cite.test.ts");
+    expect(asked.runAtBase).toEqual([
+      { names: [], files: ["tests/cite.test.ts"], baseSha: BASE_SHA, cwd: CWD },
+    ]);
+
+    expect(verdict.outcome).toBe("base-red");
+    // None of the red is the span's, and the base's failures are on the
+    // verdict for a caller to act on rather than inside its prose.
+    expect(verdict.ownFailingFiles).toEqual([]);
+    expect(verdict.baseFailures).toEqual([INHERITED]);
+    expect(verdict.message).toContain(BASE_SHA.slice(0, 7));
+    // Still a refusal, and the merged-tree line state is unchanged by it: the
+    // entry is unjudgeable on a red tree whoever made it red.
+    expect(verdict.lines).toEqual([
+      { line, lane: "tests", state: "carried", files: ["tests/widget.test.ts"] },
+    ]);
+  });
+
+  it("a red suite whose failing file the span touched stays the span's own failure", async () => {
+    const line = "the widget refuses a negative count";
+    const own = "tests/widget.test.ts";
+    const { runner, asked } = fakeRunner({
+      passing: [{ fullName: `widget > ${line}`, file: own }],
+      failures: [
+        { file: own, name: "widget > clamps at zero", message: "expected 0 to be 1" },
+        INHERITED,
+      ],
+    });
+
+    const verdict = await judgeNamedLines(runner, {
+      tests: [line],
+      pins: [],
+      baseSha: BASE_SHA,
+      footprint: FOOTPRINT,
+      cwd: CWD,
+    });
+
+    // Vacuity: two files failed and one of them is the span's own — the mixed
+    // case, where a base run would answer a question nobody asked.
+    expect(verdict.failingFiles).toEqual([own, "tests/cite.test.ts"]);
+    expect(verdict.ownFailingFiles).toEqual([own]);
+
+    expect(verdict.outcome).toBe("suite-failed");
+    // No base run is spent: laying the span's own bytes over the base would
+    // carry its breakage there and report it back as the base's.
+    expect(asked.runAtBase).toEqual([]);
+    expect(verdict.baseFailures).toEqual([]);
+  });
+
+  it("a red suite green at the base names the span rather than leaving the reading open", async () => {
+    const line = "the widget refuses a negative count";
+    // The span changed source; a test file it never declared broke on the
+    // change. Outside the footprint, and the base run settles it.
+    const { runner, asked } = fakeRunner(
+      {
+        passing: [{ fullName: `widget > ${line}`, file: "tests/widget.test.ts" }],
+        failures: [INHERITED],
+      },
+      { passing: [{ fullName: INHERITED.name!, file: INHERITED.file }] },
+    );
+
+    const verdict = await judgeNamedLines(runner, {
+      tests: [line],
+      pins: [],
+      baseSha: BASE_SHA,
+      footprint: FOOTPRINT,
+      cwd: CWD,
+    });
+
+    // Vacuity: the base run happened and came back green, so the ruling below
+    // is the answer to it rather than the answer to no run at all.
+    expect(asked.runAtBase).toHaveLength(1);
+    expect(verdict.baseFailures).toEqual([]);
+
+    expect(verdict.outcome).toBe("suite-failed");
+    expect(verdict.message).toContain("green at");
+    expect(verdict.message).toContain(BASE_SHA.slice(0, 7));
   });
 
   it("the judge names its failing files from the failures the run reported", async () => {
@@ -250,6 +383,9 @@ describe("the judge", () => {
       tests: [line],
       pins: [],
       baseSha: BASE_SHA,
+      // Both failing files are the span's own: the subject here is the blame
+      // list's order, not what a base run would say about it.
+      footprint: [...FOOTPRINT, "tests/zebra.test.ts", "tests/apple.test.ts"],
       cwd: CWD,
     });
 
@@ -276,7 +412,115 @@ describe("the judge", () => {
     };
 
     await expect(
-      judgeNamedLines(runner, { tests: [line], pins: [], baseSha: BASE_SHA, cwd: CWD }),
+      judgeNamedLines(runner, {
+        tests: [line],
+        pins: [],
+        baseSha: BASE_SHA,
+        footprint: FOOTPRINT,
+        cwd: CWD,
+      }),
     ).rejects.toThrow(/reported no result for the named line/);
+  });
+});
+
+/**
+ * Everything a gate context states, with the two fields these cases vary
+ * left to the caller. Hand-authored, and the sanctioned kind: the subject is
+ * the gate's refusal vocabulary, and a refusal test's input is not an
+ * agreement claim (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*).
+ */
+const gateContext = (
+  over: Pick<GateContext, "entry" | "touchedPaths">,
+): GateContext => ({
+  cwd: CWD,
+  repoRoot: CWD,
+  flumeDir: `${CWD}/.flume`,
+  stateRootRel: ".flume",
+  pendingPath: `${CWD}/.flume/plan/pending.json`,
+  configDir: `${CWD}/.flume`,
+  phaseName: "build",
+  commitSha: "a".repeat(40),
+  baseSha: BASE_SHA,
+  landedOnSha: "b".repeat(40),
+  log: () => {},
+  ...over,
+});
+
+/** The entry a span was provisioned for, naming one behavior. */
+const entryNaming = (line: string): PendingEntry => ({
+  tag: "SOME-ENTRY",
+  gate: { kind: "open" },
+  dependsOnForks: [],
+  files: { new: [], edit: [], retire: [] },
+  tests: [line],
+  pins: [],
+});
+
+describe("the named-lines gate", () => {
+  const line = "the widget refuses a negative count";
+  const inherited: TestFailure = {
+    file: "tests/cite.test.ts",
+    name: "comment citations > every backticked page name resolves",
+    message: "expected 0 unresolved citations, got 1",
+  };
+  /** A red merged suite, failing the same way at the base. */
+  const redBoth = (): Runner =>
+    fakeRunner(
+      {
+        passing: [{ fullName: `widget > ${line}`, file: "tests/widget.test.ts" }],
+        failures: [inherited],
+      },
+      { passing: [], failures: [inherited] },
+    ).runner;
+
+  it("the named-lines gate reports base-red as its verdict when the judge ruled the base red", async () => {
+    const result = await namedLinesGate(redBoth(), () => false).run(
+      gateContext({ entry: entryNaming(line), touchedPaths: ["src/widget.ts"] }),
+    );
+
+    // Vacuity: the judge ran. A skipped gate carries `skipped` and none of
+    // the evidence below, so a green-over-nothing cannot read as this.
+    expect(result.skipped).toBeUndefined();
+    expect(result.ok).toBe(false);
+
+    // The discriminant the dispatcher copies verbatim onto the gate row and
+    // onto the `gate-revert` prior-attempt record: the retry reads the fact
+    // beside the message rather than being blamed by it.
+    expect(result.verdict).toBe("base-red");
+    // And the base's own failure reaches the agent as its own detail line,
+    // marked as the base's rather than folded into the merged tree's list.
+    expect(result.details?.split("\n")).toContain(
+      `FAIL AT BASE ${inherited.file} × ${inherited.name}: ${inherited.message}`,
+    );
+    expect(result.failingFiles).toEqual([inherited.file]);
+  });
+
+  it("hands the span's footprint to the judge, so a failing file the span touched carries no base-red", async () => {
+    // The same runner and the same entry; only the span's touched paths
+    // differ. Without the footprint reaching the judge, this would rule
+    // base-red exactly as the case above does.
+    const result = await namedLinesGate(redBoth(), () => false).run(
+      gateContext({
+        entry: entryNaming(line),
+        touchedPaths: ["src/widget.ts", inherited.file],
+      }),
+    );
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.ok).toBe(false);
+    expect(result.verdict).toBeUndefined();
+    // Read off the detail lines rather than the whole block: an absence
+    // asserted over a rendered artifact turns on whatever else that artifact
+    // quotes (`.claude/rules/posture-sweep.md`, *A negative assertion over a
+    // whole rendered artifact*).
+    expect(
+      (result.details ?? "").split("\n").filter((l) => l.startsWith("FAIL AT BASE")),
+    ).toEqual([]);
+    // Non-vacuous: the block really was rendered, and really does carry the
+    // merged tree's failure — the base's is the one thing missing from it.
+    expect((result.details ?? "").split("\n").filter((l) => l.startsWith("FAIL "))).toEqual([
+      `FAIL ${inherited.file} × ${inherited.name}: ${inherited.message}`,
+    ]);
   });
 });

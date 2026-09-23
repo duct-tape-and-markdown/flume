@@ -61,7 +61,7 @@ export interface LineVerdict {
 
 /**
  * The judge's ruling over the whole entry. `proven` and `empty` are the two
- * outcomes that are not a refusal; the other three each name what was wrong
+ * outcomes that are not a refusal; the other four each name what was wrong
  * and leave in `lines` the evidence for it.
  *
  * `empty` is its own outcome rather than a green one: a judge whose input set
@@ -69,13 +69,21 @@ export interface LineVerdict {
  * pass that hides longest (`.claude/rules/engineering.md`, *A green verdict
  * is proven non-vacuous*). What an entry naming no line should cost is the
  * caller's policy, not the judge's.
+ *
+ * `base-red` and `suite-failed` are the same red suite told apart by one
+ * observation: whether the failures were already there at the span's base.
+ * Both are refusals — an entry is unjudgeable on a red tree either way — and
+ * which of them a caller blames the span for is the caller's
+ * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+ * interactive sessions)*).
  */
 export type JudgeOutcome =
   | "proven"
   | "empty"
   | "unnamed"
   | "green-on-base"
-  | "suite-failed";
+  | "suite-failed"
+  | "base-red";
 
 /** What the judge ruled, and every fact it ruled from. */
 export interface JudgeVerdict {
@@ -99,6 +107,28 @@ export interface JudgeVerdict {
    * summarizes.
    */
   readonly failingFiles: readonly string[];
+  /**
+   * The subset of {@link failingFiles} the span itself changed — read against
+   * {@link JudgeRequest.footprint}, which the verdict does not restate. A
+   * failure in one of these is the span's however the base ran, so the base
+   * is not asked about it.
+   *
+   * Empty over a green suite, and empty over a red suite whose every failing
+   * file the span never touched — the case that sends those files to the base.
+   */
+  readonly ownFailingFiles: readonly string[];
+  /**
+   * Every failure the base run over {@link failingFiles} reported, in report
+   * order. That run happens exactly when the suite is red, `failingFiles` is
+   * populated, and {@link ownFailingFiles} is empty, so whether it happened
+   * is read off those rather than off a fourth field restating them
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*).
+   *
+   * Non-empty is the `base-red` outcome: the suite was failing before this
+   * span existed.
+   */
+  readonly baseFailures: readonly TestFailure[];
 }
 
 /** What the judge is asked to rule on. */
@@ -113,6 +143,15 @@ export interface JudgeRequest {
    * caller that has no base sha resolves that before it gets here.
    */
   readonly baseSha: string;
+  /**
+   * The gated span's changed paths, in git's own alphabet — a gate hands over
+   * `GateContext.touchedPaths`, which the dispatcher already computed. It is
+   * the only value that tells a failure the span caused from one it merely
+   * inherited, so it is required for the same reason {@link baseSha} is: a
+   * caller with no footprint has no span, and a judge handed none would read
+   * every red suite as the span's.
+   */
+  readonly footprint: readonly string[];
   /** The tree to run in. */
   readonly cwd: string;
 }
@@ -139,6 +178,12 @@ function answerFor(run: RunResult, name: string, where: string): NamedResult {
 const quote = (lines: readonly LineVerdict[]): string =>
   lines.map((l) => JSON.stringify(l.line)).join(", ");
 
+/** The clause a failure list contributes to a message: its first, or nothing. */
+const firstOf = (failures: readonly TestFailure[]): string => {
+  const first = failures[0];
+  return first ? `, first ${first.file}${first.name ? ` × ${first.name}` : ""}` : "";
+};
+
 /**
  * Judge one entry's named lines through a declared runner.
  *
@@ -153,20 +198,33 @@ const quote = (lines: readonly LineVerdict[]): string =>
  * file that cannot even load at the base (it imports a symbol the entry
  * introduced) carries no passing test and so reads red — conservative in the
  * direction that matters.
+ *
+ * A **red merged suite** reaches the base too, and for the opposite question:
+ * whether it was red before this span existed. That question is asked only
+ * when *no* failing file is in the span's footprint, and then over all of
+ * them, through the same `runAtBase` — the overlay it lays down is the
+ * working tree's copy of a file the span never changed, so the base's own
+ * verdict is what runs. One failing file the span *did* touch settles the
+ * blame here and spends no base run: that overlay would carry the span's own
+ * breakage to the base and report it back as the base's.
  */
 export async function judgeNamedLines(
   runner: Runner,
   request: JudgeRequest,
 ): Promise<JudgeVerdict> {
-  const { tests, pins, baseSha, cwd } = request;
+  const { tests, pins, baseSha, footprint, cwd } = request;
   const named = [...tests, ...pins];
+  const spanFiles = new Set(footprint);
 
   const run = await runner.run(named, cwd);
+  const failingFiles = [...new Set(run.failures.map((f) => f.file))];
   /** The merged-tree facts every verdict below carries, whatever it rules. */
   const observed = {
     passed: run.passed,
     failures: run.failures,
-    failingFiles: [...new Set(run.failures.map((f) => f.file))],
+    failingFiles,
+    ownFailingFiles: failingFiles.filter((file) => spanFiles.has(file)),
+    baseFailures: [] as readonly TestFailure[],
   };
 
   const draft = (line: string, lane: LineLane): LineVerdict => {
@@ -184,12 +242,34 @@ export async function judgeNamedLines(
   ];
 
   if (!run.ok) {
-    const first = run.failures[0];
+    const short = baseSha.slice(0, 7);
+    // Every failing file is one the span never touched, so the base can be
+    // asked whether they were failing already. One file the span *did* touch
+    // settles the blame here, and no base run is spent.
+    const askBase = failingFiles.length > 0 && observed.ownFailingFiles.length === 0;
+    const baseFailures = askBase
+      ? (await runner.runAtBase([], failingFiles, baseSha, cwd)).failures
+      : [];
+
+    if (baseFailures.length > 0) {
+      return {
+        outcome: "base-red",
+        message:
+          `the suite was already red at ${short}: ${baseFailures.length} failure(s) there ` +
+          `across ${failingFiles.length} file(s) this span never touched` +
+          firstOf(baseFailures),
+        lines,
+        ...observed,
+        baseFailures,
+      };
+    }
+
     return {
       outcome: "suite-failed",
       message:
         `the suite is not green: ${run.failures.length} failure(s)` +
-        (first ? `, first ${first.file}${first.name ? ` × ${first.name}` : ""}` : ""),
+        firstOf(run.failures) +
+        (askBase ? `; green at ${short}, so the failure arrived with this span` : ""),
       lines,
       ...observed,
     };

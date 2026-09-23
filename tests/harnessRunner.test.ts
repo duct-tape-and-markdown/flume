@@ -191,6 +191,14 @@ describe("the vitest runner", () => {
   let fixture: string;
   let flumeDir: string;
   let baseSha: string;
+  /**
+   * The span's footprint, asked of git rather than restated: the judge reads
+   * it to tell a failing file the span changed from one it inherited, and a
+   * hand-listed copy would drift from the commit the fixture actually made
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*).
+   */
+  let footprint: string[];
   /** The engine surface the factory is handed, and the runner it returns. */
   let api: FlumeApi;
   let ctx: RunnerContext;
@@ -284,6 +292,10 @@ describe("the vitest runner", () => {
     git(fixture, ["add", "-A"]);
     git(fixture, ["commit", "-q", "-m", "merged"]);
 
+    footprint = git(fixture, ["diff", "--name-only", baseSha, "HEAD"])
+      .split("\n")
+      .filter(Boolean);
+
     await link(fixture);
 
     api = apiWithInstaller(link);
@@ -356,6 +368,27 @@ describe("the vitest runner", () => {
     expect(await checkoutsOf(fixture)).toEqual([]);
   });
 
+  it("reports a base run asked about no named line at all, as the red-suite check makes", async () => {
+    // The call the judge makes when a merged suite is red: a file selection
+    // and no names, because the question there is the file's verdict at the
+    // base rather than any line's. Pinned over the real reporter, since a
+    // runner that refused an empty selection of names would fail only on a
+    // red suite — the path nothing else here exercises.
+    const r = await inGateScope(() =>
+      runner.runAtBase([], ["tests/widget.test.ts"], baseSha, fixture),
+    );
+
+    // Vacuity: the run collected and executed the file it was given.
+    expect(r.passed + r.failed).toBeGreaterThan(0);
+
+    expect(r.names).toEqual([]);
+    // And the verdict a base-red ruling is read off: the base's own source
+    // decided it, so the merged tree's name is red here.
+    expect(r.ok).toBe(false);
+    expect(r.failures).toHaveLength(1);
+    expect(r.failures[0]!.file).toBe("tests/widget.test.ts");
+  });
+
   it("the judge proves a named line over the real vitest runner's merged-tree and base reports", async () => {
     const test = "carries the merged widget";
     const pin = "runs wherever it is laid down";
@@ -365,6 +398,7 @@ describe("the vitest runner", () => {
         tests: [test],
         pins: [pin],
         baseSha,
+        footprint,
         cwd: fixture,
       }),
     );
@@ -374,6 +408,11 @@ describe("the vitest runner", () => {
     expect(verdict.passed).toBeGreaterThan(0);
     expect(verdict.failures).toEqual([]);
     expect(verdict.failingFiles).toEqual([]);
+    // And the footprint handed over is the span's real one, so the blame
+    // fields below are read against evidence rather than an empty list.
+    expect(footprint).toEqual(["src/widget.ts", "tests/widget.test.ts"]);
+    expect(verdict.ownFailingFiles).toEqual([]);
+    expect(verdict.baseFailures).toEqual([]);
 
     // Both halves of the seam decided this: vitest's merged-tree report
     // carried each line, and vitest's base report — over the base's own
@@ -400,6 +439,7 @@ describe("the vitest runner", () => {
         tests: [line],
         pins: [],
         baseSha,
+        footprint,
         cwd: fixture,
       }),
     );

@@ -6,7 +6,8 @@
  *
  * The ruling itself lives in `judge.ts` and the runner that observes it in
  * `runner.ts`; nothing here re-decides either. What this module owns is the
- * gate's own vocabulary: the two skips, and the detail block.
+ * gate's own vocabulary: the two skips, the `base-red` discriminant a refusal
+ * carries, and the detail block.
  */
 
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
@@ -14,7 +15,7 @@ import type { PendingEntry } from "../src/PendingSchema.js";
 
 import { NamedLinesSchema } from "./entryExtension.js";
 import { judgeNamedLines, type JudgeVerdict } from "./judge.js";
-import type { Runner } from "./runner.js";
+import type { Runner, TestFailure } from "./runner.js";
 
 /**
  * Whether a build commit is a park — the chain factory's predicate, handed
@@ -44,6 +45,17 @@ type ParkPredicate = (
  * channel the tick had for saying why it could not ship. Spelled as a skip
  * rather than an unexplained green (`.claude/rules/engineering.md`, *A green
  * verdict is proven non-vacuous*).
+ *
+ * A suite that was already red at the span's base still refuses — an entry is
+ * unjudgeable on a red tree either way — but the refusal carries
+ * `verdict: "base-red"`, which the dispatcher copies verbatim onto the tick
+ * verdict's gate row and onto the `gate-revert` prior-attempt record
+ * (`spec/chain.md`, *What a gate returns*). The retry reads the fact beside
+ * the message instead of being blamed by it. Withholding the *blame* wants a
+ * declared `GateResult` field, which is `spec/chain.md`'s closed shape to
+ * widen: the engine interprets `verdict` no further by design, and a gate
+ * that keyed the engine's quarantine off its own prose would be the
+ * inference `.claude/rules/engine-boundary.md`, *Told, not inferred* refuses.
  */
 export function namedLinesGate(runner: Runner, isPark: ParkPredicate): Gate {
   return {
@@ -69,6 +81,11 @@ export function namedLinesGate(runner: Runner, isPark: ParkPredicate): Gate {
         tests: NamedLinesSchema.parse(entry.tests),
         pins: NamedLinesSchema.parse(entry.pins),
         baseSha: ctx.baseSha,
+        // The span's own footprint, as the dispatcher already computed it:
+        // the judge tells a failing file this span changed from one it
+        // inherited, and nothing here re-derives the diff
+        // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+        footprint: ctx.touchedPaths,
         cwd: ctx.repoRoot,
       });
       if (verdict.outcome === "proven") {
@@ -89,6 +106,10 @@ export function namedLinesGate(runner: Runner, isPark: ParkPredicate): Gate {
         ok: false,
         message: verdict.message,
         details: details(verdict),
+        // A discriminant, spelled at the one place that sets it: the engine
+        // copies it verbatim and reads it no further, so a chain keying its
+        // retry policy on the string is keying on this literal.
+        ...(verdict.outcome === "base-red" ? { verdict: "base-red" } : {}),
         ...(verdict.failingFiles.length > 0
           ? { failingFiles: [...verdict.failingFiles] }
           : {}),
@@ -97,9 +118,15 @@ export function namedLinesGate(runner: Runner, isPark: ParkPredicate): Gate {
   };
 }
 
+/** One failure as a detail line: where it was attributed, and what it said. */
+const rendered = (failure: TestFailure): string =>
+  `${failure.file}${failure.name ? ` × ${failure.name}` : ""}: ${failure.message}`;
+
 /**
  * Every fact the judge ruled from, one line each — the line verdicts the
- * agent has to act on, then the failures the suite reported.
+ * agent has to act on, then the failures the suite reported, then whatever
+ * the base run over them found, each prefixed so the two runs are not one
+ * list a reader has to guess the halves of.
  *
  * Composed from the verdict's own fields rather than parsed back out of its
  * message: the judge reports facts precisely so a caller does not have to
@@ -112,9 +139,9 @@ function details(verdict: JudgeVerdict): string {
       `${line.lane}[] ${line.state}: ${JSON.stringify(line.line)}` +
       (line.files.length > 0 ? ` (${line.files.join(", ")})` : ""),
   );
-  const failures = verdict.failures.map(
-    (failure) =>
-      `FAIL ${failure.file}${failure.name ? ` × ${failure.name}` : ""}: ${failure.message}`,
+  const failures = verdict.failures.map((failure) => `FAIL ${rendered(failure)}`);
+  const atBase = verdict.baseFailures.map(
+    (failure) => `FAIL AT BASE ${rendered(failure)}`,
   );
-  return [...lines, ...failures].join("\n");
+  return [...lines, ...failures, ...atBase].join("\n");
 }
