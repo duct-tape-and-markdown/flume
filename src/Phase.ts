@@ -9,6 +9,7 @@
 import type { Agent } from "./Agent.js";
 import type {
   GateFailure,
+  MergeFailure,
   MergeOutcome,
   ProvisionFailure,
   ReportedGateResult,
@@ -366,6 +367,31 @@ export interface TickResult {
    * is the engine's; what to do about it stays the chain's.
    */
   provisionFailures?: readonly ProvisionFailure[];
+  /**
+   * Every merge-stage failure this tick recorded — a cherry-pick conflict,
+   * or a trunk that refused the pick, that kept an already-committed span
+   * off trunk — the same {@link MergeFailure} records the tick verdict
+   * persists. Each carries the entry's `tag` and `quarantineKey` (absent
+   * for a singleton phase's own merge failure, which no entry can be blamed
+   * for), git's own failure `message`, and the `signature` the run's
+   * consecutive-failure backstop compares repeats by. Absent when every span
+   * that reached the merge stage landed.
+   *
+   * What this adds beyond {@link FanoutEntryOutcome.mergeOutcome}: that
+   * field names the *fate* (`cherry-pick-conflict`) and the span it was
+   * read over, and says nothing about why git refused or how a repeat of
+   * the same refusal would be recognized. A `handoff` routing on a conflict
+   * — holding the phase awake, counting how many waves in a row fell to the
+   * same collision, keying a hold under the entry — reads the records here
+   * rather than re-deriving a signature from a message it would have to
+   * re-read git for (spec/chain.md "What a hook receives").
+   *
+   * A fact, never a verdict: whether a repeated conflict means retry,
+   * re-partition or park stays the chain's
+   * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+   * interactive sessions)*).
+   */
+  mergeFailures?: readonly MergeFailure[];
   /**
    * Every gate-stage failure this tick recorded — an `afterCommit` or
    * `afterMerge` gate that reverted a commit — the same {@link GateFailure}

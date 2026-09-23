@@ -872,25 +872,28 @@ export class Dispatcher {
       clearedPriorAttempts,
     } = phaseOutcome;
 
-    // Fold the already-computed no-commit classification and gate-stage
-    // failures into the TickResult before handoff — a chain's `handoff` is
-    // the only place a clean-exit wave can be distinguished from a genuine
-    // no-op, and the only place the entry a failing gate reverted is named
-    // (`gateResults` carries the rows untagged, in run order, with no
-    // signature and no record of which failures the engine blamed an entry
-    // for).
+    // Fold the already-computed no-commit classification and the merge- and
+    // gate-stage failures into the TickResult before handoff — a chain's
+    // `handoff` is the only place a clean-exit wave can be distinguished
+    // from a genuine no-op, and the only place the entry a failing gate
+    // reverted is named (`gateResults` carries the rows untagged, in run
+    // order, with no signature and no record of which failures the engine
+    // blamed an entry for). The merge-stage fold is the same shortfall one
+    // stage earlier: an entry's `mergeOutcome` names the fate and the span,
+    // never git's refusal or the signature a repeat is recognized by.
     // `tipMoved` does NOT fold in here: `TickResult`
     // (`src/Phase.ts`) carries no field for it — the fact lives on
     // `TickOutcome`/`TickVerdict` alone, read by a fresh next tick, never by
     // this same tick's synchronous `handoff`.
     //
-    // Both folds read the same values the verdict below is built from, so
+    // Every fold reads the same values the verdict below is built from, so
     // the handoff surface and the persisted artifact cannot disagree about
-    // which gate reverted what (`.claude/rules/engineering.md`, *A fact the
+    // which stage refused what (`.claude/rules/engineering.md`, *A fact the
     // engine holds is reported, never rediscovered*).
     const resultForHandoff: TickResult = {
       ...result,
       ...(noCommit ? { noCommit } : {}),
+      ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
     };
 

@@ -4377,6 +4377,135 @@ describe("Dispatcher fanout — the wave's gate failures reach handoff (TICK-RES
 });
 
 /**
+ * TICK-RESULT-REPORTS-THE-WAVES-MERGE-FAILURES — an entry whose cherry-pick
+ * conflicted showed to `handoff` only as `committed: true` with no tag in
+ * `shippedTags`, plus a `mergeOutcome` naming the fate and the span. Neither
+ * says why git refused, and neither carries the signature or quarantine key
+ * the engine already built for the verdict — so a chain counting repeats of
+ * one collision had to re-derive both beside the engine
+ * (`.claude/rules/engineering.md`, "A fact the engine holds is reported,
+ * never rediscovered").
+ */
+describe("Dispatcher fanout — the wave's merge failures reach handoff (TICK-RESULT-REPORTS-THE-WAVES-MERGE-FAILURES)", () => {
+  it("a fanout wave's TickResult reports each entry's merge failure with the signature the tick verdict recorded", async () => {
+    // Three entries with disjoint declared files, all three also writing the
+    // shared channel file. A's pick lands 'from-A' on trunk; B's and C's
+    // diffs both expect 'baseline' there and conflict — two merge failures
+    // in one wave, which is the plural case `mergeOutcome` reports one row
+    // at a time and the tag lists cannot express at all.
+    await mkdir(join(fx.repo, "src"), { recursive: true });
+    await writeFile(join(fx.repo, "src", "shared.ts"), "baseline\n");
+    await exec("git", ["add", "--", "src/shared.ts"], { cwd: fx.repo });
+    await exec("git", ["commit", "-q", "-m", "seed shared"], { cwd: fx.repo });
+
+    await writePending(fx.repo, [
+      makeEntry("MERGE-FAIL-A", ["src/merge-fail-a.ts"]),
+      makeEntry("MERGE-FAIL-B", ["src/merge-fail-b.ts"]),
+      makeEntry("MERGE-FAIL-C", ["src/merge-fail-c.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const writeBoth = (declared: string, mark: string) => async (cwd: string) => {
+      await mkdir(join(cwd, "src"), { recursive: true });
+      await writeFile(join(cwd, "src", declared), `${mark}\n`);
+      await writeFile(join(cwd, "src", "shared.ts"), `from-${mark}\n`);
+      await exec("git", ["add", "."], { cwd });
+      await exec("git", ["commit", "-q", "-m", `build: ${mark}`], { cwd });
+    };
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      entryChannelPaths: ["src/shared.ts"],
+      gates: [],
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "merge-fail-a": writeBoth("merge-fail-a.ts", "A"),
+        "merge-fail-b": writeBoth("merge-fail-b.ts", "B"),
+        "merge-fail-c": writeBoth("merge-fail-c.ts", "C"),
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+    const outcome = await dispatcher.tick();
+
+    expect(handedToHandoff).toBeDefined();
+    const reported = [...(handedToHandoff!.mergeFailures ?? [])].sort((a, b) =>
+      (a.tag ?? "").localeCompare(b.tag ?? ""),
+    );
+    // Non-vacuity: the wave really did leave two spans off trunk, so what
+    // follows is judged over two blamed records and not over an empty list.
+    expect(reported).toHaveLength(2);
+    expect(reported.map((f) => f.tag)).toEqual([
+      "MERGE-FAIL-B",
+      "MERGE-FAIL-C",
+    ]);
+    // Only A's work landed — the wave committed, so `committed`/`shippedTags`
+    // alone say nothing about the two that did not.
+    expect(handedToHandoff!.shippedTags).toEqual(["MERGE-FAIL-A"]);
+    expect(handedToHandoff!.committed).toBe(true);
+
+    // Each record carries git's own refusal and a signature derived from it
+    // — the value the consecutive-failure backstop compares repeats by,
+    // which no field on the handoff surface previously carried.
+    for (const failure of reported) {
+      expect(failure.message).toMatch(/conflict/i);
+      expect(failure.signature.length).toBeGreaterThan(0);
+    }
+
+    // Held under each entry's own quarantine key, as the engine's rule
+    // computes it from the queue the wave read: both entries are still
+    // pending, their commits having stayed off trunk.
+    const stillPending = await readPendingFromDisk(fx.repo);
+    expect(stillPending.map((e) => e.tag)).toEqual([
+      "MERGE-FAIL-B",
+      "MERGE-FAIL-C",
+    ]);
+    expect(reported.map((f) => f.quarantineKey)).toEqual(
+      stillPending.map((e) => quarantineKey(e)),
+    );
+
+    // One set of facts, three surfaces: what `handoff` read is what the
+    // verdict persisted and what the outcome carries, byte for byte — so a
+    // signature a chain routes on and a signature the run's backstop
+    // compares cannot drift apart.
+    expect(handedToHandoff!.mergeFailures).toEqual(
+      outcome.verdict?.mergeFailures,
+    );
+    expect(handedToHandoff!.mergeFailures).toEqual(outcome.mergeFailures);
+    expect(outcome.result?.mergeFailures).toEqual(
+      handedToHandoff!.mergeFailures,
+    );
+
+    // And the per-entry outcomes — the surface a chain would otherwise read
+    // instead — still name the fate and the span alone, with no signature
+    // and no quarantine key on them.
+    const conflicted = (outcome.verdict?.mergeOutcomes ?? []).filter(
+      (m) => m.outcome === "cherry-pick-conflict",
+    );
+    expect(conflicted.map((m) => m.entryTag).sort()).toEqual([
+      "MERGE-FAIL-B",
+      "MERGE-FAIL-C",
+    ]);
+    for (const row of conflicted) {
+      expect(Object.keys(row)).not.toContain("signature");
+      expect(Object.keys(row)).not.toContain("quarantineKey");
+    }
+  });
+});
+
+/**
  * SINGLETON-PRUNE-PROVISION-FAILURE — `runSingleton`'s pre-tick
  * `pruneWorktrees` used to warn and drop the throw on the floor, so a
  * deterministic prune wall on a singleton-only chain repeated every tick
