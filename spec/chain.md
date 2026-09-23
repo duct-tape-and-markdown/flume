@@ -617,6 +617,17 @@ the merge bookkeeping completes.
     `setupWorktree` hook — is on **`provisionFailures`** under its tag instead
     (`spec/worktrees.md`, *`setupWorktree` and `teardownWorktree`*), never a
     record here with every flag false.
+  - **`provisionFailures`, `gateFailures`, `mergeFailures`** — the three
+    stage-failure classes the tick verdict carries, folded from the same
+    value and keyed by tag: an entry whose provisioning failed, one an
+    `afterMerge` gate reverted, one whose span could not be cherry-picked.
+    Each carries the entry, the message, and the failure's signature, and
+    says whether the engine blamed the entry — a gate that disowned the span
+    (*What a gate returns*, `blamesSpan`) produces a failing row in
+    `gateResults` exactly like one that did not, and only here is the
+    difference stated. A handoff counting how many of a wave's entries fell
+    to one gate on one message reads these rather than re-pairing failing
+    rows against `revertedTags`. A fact, never a verdict.
 - **`ShipContext`** (`shipped`; `spec/pending.md`, *Ship detection trusts the
   agent's own account*) — entry, merged sha, touched paths, gate results,
   worktree path before teardown, and the same `baseSha`.
@@ -632,7 +643,13 @@ does not rebuild exec plumbing to run `tsc`. `chainLoadGate` is above;
 `pendingGate` and `writablePathsGate` are `spec/pending.md`.
 
 - **`shellGate({ name, when, cmd, args, maxBuffer?, failHint?, env? })`** — the
-  escape hatch, and what the others are built from. Verdict is exit code alone.
+  escape hatch, and what the others are built from. Verdict is exit code alone,
+  and so is blame: no shell-backed gate observes a base, so none can declare
+  `blamesSpan: false` (*What a gate returns*), and over a trunk already red a
+  shell gate blames whichever span happened to be gated. What bounds that is
+  the consecutive-identical-failure abort (`spec/loop.md`), which holds while
+  the wave's failures share a signature — true of a constant `failHint`,
+  not of a `message` carrying per-entry text.
   On success `details` carries `stdout || stderr`; on failure `message` is
   `failHint` (default `"<name> failed"`) and `details` carries the captured
   output. `env` merges over `process.env` for the spawned command — the
