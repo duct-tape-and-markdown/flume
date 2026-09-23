@@ -74,7 +74,9 @@ Every check lives at the most deterministic layer that can express it — a
   predicate admits and the suite does not yet resolve is a plan entry, not a
   question.
   An identifier the citation pairs with a path, `` `name` (`src/file.ts`) ``,
-  resolves in that file: where a declaration lives is the token's fact, not
+  resolves in that file — an all-caps name included; the capitals fence is
+  for a span standing alone in prose, and a pair has already claimed a
+  declaration at a home: where a declaration lives is the token's fact, not
   its meaning, and a split that moves the job moves the pair or is caught.
   A path named on its own is context, and no pair is read into it; nor is a
   pair whose path is a `*.md` page — no declaration lives in a page, so the
