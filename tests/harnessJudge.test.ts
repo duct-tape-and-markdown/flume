@@ -496,6 +496,39 @@ describe("the named-lines gate", () => {
     expect(result.failingFiles).toEqual([inherited.file]);
   });
 
+  it("the named-lines gate declares blamesSpan false when the suite was already red at the base", async () => {
+    const result = await namedLinesGate(redBoth(), () => false).run(
+      gateContext({ entry: entryNaming(line), touchedPaths: ["src/widget.ts"] }),
+    );
+
+    // Vacuity: the judge ran and refused. `blamesSpan` on a green or skipped
+    // result would say nothing, so the arm under test is the refusing one.
+    expect(result.skipped).toBeUndefined();
+    expect(result.ok).toBe(false);
+    expect(result.verdict).toBe("base-red");
+
+    // The declared fact the engine acts on: the failure predates the span,
+    // so the retry is not quarantined for it.
+    expect(result.blamesSpan).toBe(false);
+  });
+
+  it("a refusal the span is answerable for declares no blamesSpan", async () => {
+    // Same runner, same entry; only the footprint differs, so the judge rules
+    // the failing file the span's own. The disowning is the base-red arm's
+    // alone — every other refusal stays blamed.
+    const result = await namedLinesGate(redBoth(), () => false).run(
+      gateContext({
+        entry: entryNaming(line),
+        touchedPaths: ["src/widget.ts", inherited.file],
+      }),
+    );
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.ok).toBe(false);
+    expect(result.verdict).toBeUndefined();
+    expect(result).not.toHaveProperty("blamesSpan");
+  });
+
   it("hands the span's footprint to the judge, so a failing file the span touched carries no base-red", async () => {
     // The same runner and the same entry; only the span's touched paths
     // differ. Without the footprint reaching the judge, this would rule

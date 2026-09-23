@@ -48,14 +48,15 @@ type ParkPredicate = (
  *
  * A suite that was already red at the span's base still refuses — an entry is
  * unjudgeable on a red tree either way — but the refusal carries
- * `verdict: "base-red"`, which the dispatcher copies verbatim onto the tick
- * verdict's gate row and onto the `gate-revert` prior-attempt record
- * (`spec/chain.md`, *What a gate returns*). The retry reads the fact beside
- * the message instead of being blamed by it. Withholding the *blame* wants a
- * declared `GateResult` field, which is `spec/chain.md`'s closed shape to
- * widen: the engine interprets `verdict` no further by design, and a gate
- * that keyed the engine's quarantine off its own prose would be the
- * inference `.claude/rules/engine-boundary.md`, *Told, not inferred* refuses.
+ * `verdict: "base-red"` and `blamesSpan: false`, which the dispatcher copies
+ * verbatim onto the tick verdict's gate row and onto the `gate-revert`
+ * prior-attempt record (`spec/chain.md`, *What a gate returns*). The retry
+ * reads the fact beside the message, and the engine withholds the
+ * entry-scoped blame: no quarantine key for a span whose failure predates
+ * it. The two are declared separately because `blamesSpan` is the engine's
+ * to act on and `verdict` is the chain's to read — a gate keying the
+ * quarantine off its own prose would be the inference
+ * `.claude/rules/engine-boundary.md`, *Told, not inferred* refuses.
  */
 export function namedLinesGate(runner: Runner, isPark: ParkPredicate): Gate {
   return {
@@ -106,10 +107,14 @@ export function namedLinesGate(runner: Runner, isPark: ParkPredicate): Gate {
         ok: false,
         message: verdict.message,
         details: details(verdict),
-        // A discriminant, spelled at the one place that sets it: the engine
-        // copies it verbatim and reads it no further, so a chain keying its
-        // retry policy on the string is keying on this literal.
-        ...(verdict.outcome === "base-red" ? { verdict: "base-red" } : {}),
+        // A discriminant the engine copies verbatim and reads no further, so
+        // a chain keying its retry policy on the string is keying on this
+        // literal — and beside it the one field the engine does act on: the
+        // base was red before this span, so the failure is not the span's to
+        // be quarantined for.
+        ...(verdict.outcome === "base-red"
+          ? { verdict: "base-red", blamesSpan: false as const }
+          : {}),
         ...(verdict.failingFiles.length > 0
           ? { failingFiles: [...verdict.failingFiles] }
           : {}),
