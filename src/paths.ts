@@ -114,21 +114,13 @@ export function escapesRoot(root: string, path: string): boolean {
  * arithmetic and nothing else, which is why it sits with the engine's other
  * path rules rather than inside the orchestrator that happens to call it
  * first (`.claude/rules/engineering.md`, *A module is one job*).
- *
- * The second root is the caller's to choose: the state root is the usual
- * one, and a caller wanting git's offset for some other path reads the same
- * verdict under the same rule. Each consumer says at its own site why it
- * asks, and what that root's escape status decides there; which sites those
- * are is the program's answer, not a list kept here by hand
- * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
- * beside its source*).
  */
 export function computeStateRootRel(
   repoRoot: string,
-  flumeDir: string,
+  innerRoot: string,
 ): string | undefined {
-  if (escapesRoot(repoRoot, flumeDir)) return undefined;
-  return gitPath(relative(repoRoot, flumeDir));
+  if (escapesRoot(repoRoot, innerRoot)) return undefined;
+  return gitPath(relative(repoRoot, innerRoot));
 }
 
 /**
