@@ -89,7 +89,10 @@ export const declaration: DeclarationInput = {
     build: { model: "claude-opus-5", extraArgs: ["--exclude-dynamic-system-prompt-sections"] },
   },
 
-  // Engine defaults for the supervisor; nothing overridden here.
+  // Wave width bounded to two: each entry's gates run the suite, and two
+  // four-wide waves on this host have reached the OOM edge. Every other
+  // supervisor knob is the engine's default.
+  supervisor: { maxParallel: 2 },
 
   // Every provisioned worktree gets the engine's own lockfile-aware install
   // at its root, singleton and fanout alike.

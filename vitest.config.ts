@@ -23,6 +23,13 @@ export default defineConfig(({ mode }) => {
       // that plants it is the one a per-suite guard would be missing
       // (`installStateRootLeakGuard`, tests/helpers/fixtureRoot.ts).
       setupFiles: ["./tests/helpers/vitestSetup.ts"],
+      // Bounded below the core count: a build wave runs one suite per entry
+      // in parallel, and one worker per core across two waves has taken a
+      // shared 11 GB host to the OOM edge twice. Four workers is a measured
+      // ceiling, not a tuning; the floor rides with it, since vitest's default
+      // minimum is derived from the core count and refuses a lower ceiling.
+      minWorkers: 1,
+      maxWorkers: 4,
     },
   };
 });
