@@ -1,1 +1,21 @@
-[]
+[
+  {
+    "tag": "CI-TITLE-PATTERN-STICKY-FLAG-DROPPED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/ci.ts", "description": "everyMatch re-spells a declared title pattern without the sticky flag" },
+        { "path": "tests/harnessCi.test.ts", "description": "the sticky-pattern read" }
+      ],
+      "retire": []
+    },
+    "summary": "everyMatch keeps a declared title pattern's `y` flag, so a sticky lane reader silently answers a short or empty title set",
+    "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+    "acceptance": "A lane declaring a sticky title pattern answers the same titles the same pattern without `y` answers, over the whole shed log.",
+    "tests": [
+      "a lane's sticky title pattern reads every failing title the log states"
+    ],
+    "notes": "everyMatch (harness/ci.ts:420) adds `g` and keeps every other flag. With `y` kept, matchAll anchors each step at lastIndex and stops at the first gap: measured, /FAIL (\\w+)/y over a log whose first match is not at index 0 answers []. That empty set is exactly the silent degradation readTitles (:402) says it must not yield, and the head's claim at :81 — over every match, whatever flags it carries — is false for `y`."
+  }
+]

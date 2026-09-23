@@ -138,7 +138,8 @@
       "harness/declaredShell.ts",
       "harness/exec.ts",
       "harness/scriptRunner.ts",
-      "harness/toolRun.ts"
+      "harness/toolRun.ts",
+      "harness/ci.ts"
     ]
   },
   "drainedRuns": {
