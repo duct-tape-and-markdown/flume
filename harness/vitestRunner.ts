@@ -16,9 +16,10 @@
  * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
  * wrote*).
  *
- * Nothing here interprets: a run that produced no report throws at the point
- * of detection, and every other observation leaves as a fact on `RunResult`
- * for a judge to rule on.
+ * Nothing here interprets: a run whose report and process disagree about
+ * whether anything failed throws at the point of detection, as a run that
+ * produced no report does, and every other observation leaves as a fact on
+ * `RunResult` for a judge to rule on.
  */
 
 import { createRequire } from "node:module";
@@ -37,18 +38,20 @@ import type {
   RunnerFactory,
   TestFailure,
 } from "./runner.js";
-import { baseTree, captureRun } from "./toolRun.js";
+import { baseTree, captureRun, type CapturedRun } from "./toolRun.js";
 
 /**
  * One run of vitest in `cwd`, through the spawn every shipped runner makes
  * (`captureRun`, `harness/toolRun.ts`): a non-zero exit is vitest's ordinary
- * way of saying "tests failed" and its report is still on stdout.
+ * way of saying "tests failed" and its report is still on stdout, so both the
+ * output and the status come back and {@link readRun} reads them together.
  */
 const capture = (
   invocation: VitestInvocation,
   extra: readonly string[],
   cwd: string,
-): Promise<string> => captureRun(invocation.command, [...invocation.args, ...extra], cwd);
+): Promise<CapturedRun> =>
+  captureRun(invocation.command, [...invocation.args, ...extra], cwd);
 
 /** How the runner reaches vitest from one tree. */
 export interface VitestInvocation {
@@ -145,16 +148,17 @@ const firstLine = (s: string | undefined): string | undefined =>
   s === undefined ? undefined : (s.split("\n")[0] ?? undefined);
 
 /**
- * Turn one run's output into facts. `root` is the tree the run happened in,
- * so every path reported is relative to it — identical strings whether the
- * run was on the merged tree or at the base.
+ * Turn one run into facts. `root` is the tree the run happened in, so every
+ * path reported is relative to it — identical strings whether the run was on
+ * the merged tree or at the base.
  */
-function readRun(output: string, names: readonly string[], root: string): RunResult {
-  const report = parseReport(output);
+function readRun(run: CapturedRun, names: readonly string[], root: string): RunResult {
+  const { stdout, status } = run;
+  const report = parseReport(stdout);
   if (!report) {
     throw new Error(
       `vitest wrote no JSON report in ${root} — nothing to report on. ` +
-        `Last output:\n${output.slice(-2000)}`,
+        `Last output:\n${stdout.slice(-2000)}`,
     );
   }
 
@@ -195,8 +199,25 @@ function readRun(output: string, names: readonly string[], root: string): RunRes
     }
   }
 
+  const ok = report.success && failures.length === 0;
+  // The report is computed from the files that reported, and the status is
+  // the whole process's. A run whose failure never reached a file — an
+  // unhandled rejection, a worker that dropped — leaves the two disagreeing,
+  // and reading the report alone there reports a green suite over a run that
+  // failed (`.claude/rules/engineering.md`, *Loud or nothing*). A report
+  // that already states failures is the ordinary non-zero exit and is read
+  // as those failures.
+  if (ok && status !== 0) {
+    throw new Error(
+      `vitest reported a green suite in ${root} but exited ${status} — the ` +
+        `report and the process disagree, so what failed is outside the ` +
+        `report and there is nothing to rule on. Last output:\n` +
+        stdout.slice(-2000),
+    );
+  }
+
   return {
-    ok: report.success && failures.length === 0,
+    ok,
     passed: report.numPassedTests,
     failed: report.numFailedTests,
     names: named,
@@ -224,8 +245,7 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
       lanes,
 
       async run(names, cwd) {
-        const output = await capture(invoke(cwd), ["--reporter=json"], cwd);
-        return readRun(output, names, cwd);
+        return readRun(await capture(invoke(cwd), ["--reporter=json"], cwd), names, cwd);
       },
 
       async runAtBase(names, files, baseSha, cwd) {
@@ -233,8 +253,8 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
           { api, provision },
           { label: "vitestRunner.runAtBase", files, baseSha, cwd },
         );
-        const output = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
-        return readRun(output, names, worktree);
+        const run = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
+        return readRun(run, names, worktree);
       },
     };
   };

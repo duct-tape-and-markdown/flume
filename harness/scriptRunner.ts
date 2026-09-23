@@ -9,7 +9,11 @@
  * the report is. A validator that exits non-zero because something it checked
  * is wrong has still answered every name it was asked about, and a judge
  * reading the status instead would rule on a fact nobody stated
- * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). So the status
+ * `captureRun` reports beside the output is deliberately unread here — a
+ * validator says nothing by it that its report does not say better — and
+ * what bounds that is the reconciliation below, which refuses an answer set
+ * that is not one answer per name however the command exited.
  *
  * What that report *says* is the consumer's, so {@link ScriptRunnerOptions}
  * carries a reader over the command's whole stdout. A validator that already
@@ -284,7 +288,7 @@ export function scriptRunner(options: ScriptRunnerOptions): RunnerFactory {
     pathed && !isAbsolute(options.command) ? resolve(tree, options.command) : options.command;
 
   const runIn = async (tree: string, names: readonly string[]): Promise<RunResult> => {
-    const stdout = await captureRun(commandIn(tree), [...args, ...names], tree);
+    const { stdout } = await captureRun(commandIn(tree), [...args, ...names], tree);
     return reportOf(answersFor(read({ stdout, names, cwd: tree }), names, tree));
   };
 

@@ -24,29 +24,47 @@ import { execFileWithShimRetry } from "../src/spawnShim.js";
 import { MAX_OUTPUT_BYTES } from "./exec.js";
 import type { RunnerContext } from "./runner.js";
 
+/** What one spawn of a consumer's tool left behind. */
+export interface CapturedRun {
+  /** Everything the command wrote to stdout, verbatim. */
+  readonly stdout: string;
+  /**
+   * The status it exited with, `0` where it exited clean. A run that never
+   * started and a run a signal took down have no status to state, so both
+   * throw rather than reporting one.
+   */
+  readonly status: number;
+}
+
 /**
- * Spawn `command` in `cwd` and hand back what it wrote to stdout.
+ * Spawn `command` in `cwd` and hand back what it wrote to stdout, and the
+ * status it exited with.
  *
  * A non-zero exit is an ordinary way for a test tool to say that something
- * failed while the report the runner reads is still on stdout, so the exit
- * status is read only to tell that case from a spawn that never started —
- * where `code` is an errno string and there is no output to hand back at all.
- * What the captured text means is the caller's alone.
+ * failed while the report the runner reads is still on stdout, so that case
+ * is told from a spawn that never started — where `code` is an errno string
+ * and there is no output to hand back at all — and the status leaves as a
+ * fact beside the output rather than as a verdict over it. Which of the two
+ * the caller reads, and what their disagreement means, is the caller's alone
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
  */
 export async function captureRun(
   command: string,
   args: readonly string[],
   cwd: string,
-): Promise<string> {
+): Promise<CapturedRun> {
   try {
     const { stdout } = await execFileWithShimRetry(command, [...args], {
       cwd,
       maxBuffer: MAX_OUTPUT_BYTES,
     });
-    return stdout;
+    return { stdout, status: 0 };
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stdout?: string };
-    if (typeof e.code === "number" && typeof e.stdout === "string") return e.stdout;
+    if (typeof e.code === "number" && typeof e.stdout === "string") {
+      return { stdout: e.stdout, status: e.code };
+    }
     throw err;
   }
 }

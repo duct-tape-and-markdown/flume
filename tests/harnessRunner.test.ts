@@ -42,6 +42,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { harnessChain } from "../harness/chain.ts";
 import {
   judgeNamedLines,
+  resolveVitest,
   scriptRunner,
   vitestRunner,
   type Lane,
@@ -51,6 +52,7 @@ import {
   type ScriptReader,
   type ScriptReport,
 } from "../harness/index.ts";
+import { captureRun } from "../harness/toolRun.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import { worktreesBase } from "../src/paths.ts";
 import { withGateCheckouts } from "../src/worktrees.ts";
@@ -78,6 +80,25 @@ const put = async (repo: string, rel: string, body: string): Promise<void> => {
 /** `node_modules` for a tree that has none of its own. */
 const link = async (tree: string): Promise<void> => {
   await symlink(join(REPO_ROOT, "node_modules"), join(tree, "node_modules"), "dir");
+};
+
+/**
+ * A vitest project of its own: one test file, no git, `node_modules` by
+ * symlink. The two cases that turn on what the *process* did around a report
+ * each need a suite nothing else reads its counts off, so neither is a file
+ * added to a span fixture.
+ */
+const soloProject = async (slug: string, body: string): Promise<string> => {
+  const dir = await mkTempDir(`flume-harness-runner-${slug}-`);
+  await put(dir, "package.json", `{ "name": "solo", "private": true, "type": "module" }\n`);
+  await put(
+    dir,
+    "vitest.config.ts",
+    `import { defineConfig } from "vitest/config";\nexport default defineConfig({ test: { include: ["tests/**/*.test.ts"] } });\n`,
+  );
+  await put(dir, "tests/solo.test.ts", body);
+  await link(dir);
+  return dir;
 };
 
 /** The test file as the base commit holds it: one name, and it needs "base". */
@@ -121,6 +142,37 @@ const INHERITED_TEST = `import { describe, expect, it } from "vitest";
 describe("comment citations", () => {
   it("every backticked page name resolves", () => {
     expect(["docs/absent.md"]).toEqual([]);
+  });
+});
+`;
+
+/**
+ * A test file that passes and leaves the process failing anyway: the
+ * rejection nobody awaited reaches vitest's unhandled-error check, which sets
+ * the exit code *after* the JSON reporter has computed `success` from the
+ * files that reported. The contradiction is the real writer's — a report
+ * hand-authored to claim it would pin the tester's idea of one
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+const UNHANDLED_TEST = `import { expect, it } from "vitest";
+
+it("passes while a rejection nobody awaited goes unhandled", () => {
+  void Promise.reject(new Error("nobody awaited this"));
+  expect(1).toBe(1);
+});
+`;
+
+/**
+ * A test file that fails the ordinary way: one red assertion, which vitest
+ * reports as a failure *and* exits non-zero over. The other side of the same
+ * disagreement check — a non-zero exit the report accounts for.
+ */
+const FAILING_TEST = `import { describe, expect, it } from "vitest";
+
+describe("widget", () => {
+  it("fails the ordinary way", () => {
+    expect("merged").toBe("base");
   });
 });
 `;
@@ -636,6 +688,67 @@ describe("the vitest runner", () => {
       invoke: () => ({ command: process.execPath, args: ["-e", ""] }),
     })(ctx);
     await expect(silent.run(["anything"], fixture)).rejects.toThrow(/wrote no JSON report/);
+  }, SPAWN_BUDGET_MS);
+
+  it("refuses a report claiming success when vitest exited non-zero", async () => {
+    // The report is computed from the files that reported; the status is the
+    // whole process's. Here they disagree, and reading the report alone would
+    // hand a judge a green suite over a run that failed.
+    const solo = await soloProject("unhandled", UNHANDLED_TEST);
+    try {
+      const refusal = await runner
+        .run(["passes while a rejection nobody awaited goes unhandled"], solo)
+        .then(
+          () => undefined,
+          (err: unknown) => err as Error,
+        );
+
+      // The arm that fired, read off the refusal rather than assumed: the
+      // status vitest left, the tree it ran in, and a report tail claiming
+      // the success this refusal is about — not a missing report, the other
+      // way this reader throws.
+      expect(refusal).toBeInstanceOf(Error);
+      expect(refusal!.message).toContain("but exited 1");
+      expect(refusal!.message).toContain(solo);
+      expect(refusal!.message).toContain('"success":true');
+      expect(refusal!.message).toContain('"numFailedTests":0');
+    } finally {
+      await rm(solo, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("a vitest run reporting failures over a non-zero exit reads as those failures rather than refusing", async () => {
+    const solo = await soloProject("failing", FAILING_TEST);
+    try {
+      // The premise, off the real writer and through the spawn the runner
+      // itself makes: an ordinary red suite exits non-zero, and its report
+      // accounts for why. That is the status the reader below was handed.
+      const invocation = resolveVitest(solo);
+      const captured = await captureRun(
+        invocation.command,
+        [...invocation.args, "--reporter=json"],
+        solo,
+      );
+      expect(captured.status).not.toBe(0);
+      expect(captured.stdout).toContain('"success":false');
+
+      const r = await runner.run(["fails the ordinary way"], solo);
+
+      // Vacuity: a failure was read, and it is the one the file states — a
+      // reader refusing on the status alone would have thrown instead of
+      // reaching any of this.
+      expect(r.failures).toHaveLength(1);
+      expect(r.failed).toBe(1);
+      expect(r.ok).toBe(false);
+      expect(r.failures[0]!.file).toBe("tests/solo.test.ts");
+      expect(r.failures[0]!.name).toBe("widget fails the ordinary way");
+      expect(r.failures[0]!.message).toContain("base");
+      expect(r.names).toEqual([
+        { name: "fails the ordinary way", carried: false, files: [] },
+      ]);
+    } finally {
+      await rm(solo, { recursive: true, force: true });
+    }
   }, SPAWN_BUDGET_MS);
 });
 
