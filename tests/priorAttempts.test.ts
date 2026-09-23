@@ -85,7 +85,6 @@ async function everyDraft(
       { gate: "tsc", message: "type error", details: "src/seed.ts(1,1)" },
       repo,
       head,
-      ["src/seed.ts"],
     ),
     buildCleanExit("refused: the fence excludes spec/"),
     buildPlatformPreempt("process-failure"),
@@ -198,7 +197,6 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
       },
       fx.repo,
       head,
-      ["src/seed.ts"],
     );
     const withVerdict = priorAttemptRef({ name: "authored" } as Phase);
     await store.write(withVerdict, authored);
@@ -222,7 +220,6 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
       { gate: "tsc", message: "type error" },
       fx.repo,
       head,
-      ["src/seed.ts"],
     );
     expect(silentGate).not.toHaveProperty("verdict");
     const noVerdict = priorAttemptRef({ name: "unauthored" } as Phase);

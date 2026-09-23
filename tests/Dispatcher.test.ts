@@ -1463,15 +1463,16 @@ describe("ReportedGateResult.failingFiles — what the gate blamed, reported not
       blamed,
     );
 
-    // The same list still drives the derivation it already fed: the row is an
-    // additional reader of the fact, never a replacement for it.
+    // The same list rides the prior-attempt record too, verbatim and
+    // uninterpreted: the row is an additional reader of the fact, never a
+    // replacement for it.
     const record = JSON.parse(
       await readFile(priorAttemptPath(flumeDir, phaseRef("plan")), "utf8"),
     ) as PriorAttempt;
     expect(record).toMatchObject({
       mode: "gate-revert",
       gate: "suite",
-      suspectFlake: true,
+      failingFiles: blamed,
     });
   });
 
@@ -8612,147 +8613,199 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     ).toBe(false);
   });
 
-  // ---------- suspectFlake derivation (spec/chain.md "What a gate
+  // ---------- a gate's own attribution (spec/chain.md "What a gate
   // returns", spec/loop.md "Prior-outcome feedback") ----------
   //
-  // GateResult.failingFiles lets the dispatcher derive `suspectFlake` on the
-  // persisted gate-revert record mechanically, from list disjointness
-  // against the reverted span's own touched paths — never from the gate's
-  // prose. Exercised at the afterCommit revert site (singleton), the
-  // simplest path that reaches `buildGateRevert`; the afterMerge sites
-  // thread the same `failingFiles` field through the same helper.
+  // `GateResult.blamesSpan: false` is the gate stating that a failure is not
+  // the gated span's — the suite red at the base, a resource the span never
+  // touched. The engine withholds the entry-scoped half of the stage failure
+  // and stamps the declaration onto the gate-revert record; the revert and
+  // the failed-tick count stand either way. Nothing is derived: the
+  // disjointness rule `failingFiles` once fed is retired, because a span's
+  // edits can red a file they never touched.
 
   async function readPlanPriorAttempt(): Promise<Record<string, unknown>> {
     return JSON.parse(
       await readFile(
-        join(fx.repo, ".flume", "prior-attempts", "phase", "plan.json"),
+        priorAttemptPath(join(fx.repo, ".flume"), phaseRef("plan")),
         "utf8",
       ),
     ) as Record<string, unknown>;
   }
 
-  it("gate-revert record: failingFiles disjoint from the reverted span's footprint → suspectFlake:true", async () => {
+  async function readEntryPriorAttempt(
+    tag: string,
+  ): Promise<Record<string, unknown>> {
+    return JSON.parse(
+      await readFile(
+        priorAttemptPath(join(fx.repo, ".flume"), entryRef(tag)),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+  }
+
+  /** A gate refusing on something it says the span did not cause. */
+  const disowningGate: Gate = {
+    name: "suite",
+    when: "afterCommit",
+    async run() {
+      return {
+        ok: false,
+        message: "suite red at the base",
+        verdict: "base-red",
+        failingFiles: ["tests/unrelated.test.ts"],
+        blamesSpan: false,
+      };
+    },
+  };
+
+  /** The same refusal with no attribution declared — the ordinary revert. */
+  const silentGate: Gate = {
+    name: "suite",
+    when: "afterCommit",
+    async run() {
+      return { ok: false, message: "suite red", verdict: "base-red" };
+    },
+  };
+
+  function fanoutOver(tag: string, gate: Gate): Dispatcher {
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [gate],
+    });
+    const slug = tag.toLowerCase();
+    return new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        [slug]: (cwd) =>
+          writeAndCommit(cwd, `src/${slug}.ts`, "x\n", `build(${tag}): attempt`),
+      }),
+      log: silent,
+    });
+  }
+
+  it("a gate-revert stage failure is unblamed when the gate declares blamesSpan false", async () => {
+    await writePending(fx.repo, [makeEntry("DISOWNED", ["src/disowned.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const outcome = await fanoutOver("DISOWNED", disowningGate).tick();
+
+    const gf = outcome.verdict?.gateFailures ?? [];
+    // Non-vacuity: one gate failure, and it is this gate's refusal — the
+    // withholding below is asserted over a populated set, never over none.
+    expect(gf.length).toBe(1);
+    expect(gf[0]?.message).toBe("suite red at the base");
+
+    // Both halves withheld, never one (`StageFailureEntry`, src/tickVerdict.ts):
+    // the supervisor's quarantine leg can read neither, so the failed tick
+    // falls to the consecutive-failure backstop exactly as a singleton's own
+    // revert already does.
+    expect(gf[0]).not.toHaveProperty("tag");
+    expect(gf[0]).not.toHaveProperty("quarantineKey");
+  });
+
+  it("a gate declaring blamesSpan false still reverts its span and still records the gate failure", async () => {
+    await writePending(fx.repo, [makeEntry("STANDS", ["src/stands.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const outcome = await fanoutOver("STANDS", disowningGate).tick();
+
+    // Non-vacuity: the declaration reached the engine. Without this the case
+    // reads green over a tree that drops the field, where the revert below
+    // is the ordinary blamed one wearing this title
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    const row = (outcome.verdict?.gateResults ?? []).find(
+      (g) => g.gate === "suite",
+    );
+    expect(row?.ok).toBe(false);
+    expect(row?.blamesSpan).toBe(false);
+
+    // Reverted: a span that cannot be judged does not land. Nothing reached
+    // trunk and the entry is still queued for the next wave.
+    expect(existsSync(join(fx.repo, "src/stands.ts"))).toBe(false);
+    expect(outcome.result?.shippedTags ?? []).toEqual([]);
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "STANDS",
+    ]);
+
+    // And the failure is recorded on both surfaces the next tick reads: the
+    // verdict's own list, which the consecutive-failure backstop counts, and
+    // the entry's prior-attempt record.
+    expect((outcome.verdict?.gateFailures ?? []).length).toBe(1);
+    const record = await readEntryPriorAttempt("STANDS");
+    expect(record.mode).toBe("gate-revert");
+    expect(record.gate).toBe("suite");
+    expect(record.message).toBe("suite red at the base");
+  });
+
+  it("a gate-revert record carries the gate's declared attribution rather than a derived flake marker", async () => {
+    // Singleton, the shortest path to `buildGateRevert`. The gate names a
+    // file the span never touched — exactly the disjointness the retired
+    // marker was computed from — and states the attribution itself.
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
-    const failing: Gate = {
-      name: "flaky-gate",
-      when: "afterCommit",
-      async run() {
-        return {
-          ok: false,
-          message: "unrelated failure",
-          failingFiles: ["totally/unrelated.ts"],
-        };
-      },
-    };
     const phase = makePhase({
       name: "plan",
       concurrency: "singleton",
-      gates: [failing],
+      gates: [disowningGate],
     });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    const agent = singleAgent(async (cwd) => {
-      await writeAndCommit(cwd, "src/o.ts", "x\n", "plan: attempt");
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
+    await new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      agent,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/o.ts", "x\n", "plan: attempt");
+      }),
       log: silent,
-    });
-
-    await dispatcher.tick();
+    }).tick();
 
     const record = await readPlanPriorAttempt();
+    // Non-vacuity: the real revert leg wrote the mode under judgement.
     expect(record.mode).toBe("gate-revert");
-    expect(record.suspectFlake).toBe(true);
+    expect(record.gate).toBe("suite");
+
+    // The gate's own two statements, copied verbatim: what it blamed, and
+    // that it did not blame the span. Nothing on the record is derived from
+    // either — the disjointness these paths once fed is gone, and the
+    // attribution beside them is the gate's word.
+    expect(record.failingFiles).toEqual(["tests/unrelated.test.ts"]);
+    expect(record.blamesSpan).toBe(false);
   });
 
-  it("gate-revert record: failingFiles overlaps the reverted span's footprint → no suspectFlake marker", async () => {
-    new Baton(join(fx.repo, ".flume")).wake("plan");
+  it("a gate that declares no attribution leaves its fanout revert blamed", async () => {
+    await writePending(fx.repo, [makeEntry("BLAMED", ["src/blamed.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
 
-    const failing: Gate = {
-      name: "real-gate",
-      when: "afterCommit",
-      async run() {
-        return {
-          ok: false,
-          message: "genuine failure",
-          failingFiles: ["src/o.ts"],
-        };
-      },
-    };
-    const phase = makePhase({
-      name: "plan",
-      concurrency: "singleton",
-      gates: [failing],
-    });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const outcome = await fanoutOver("BLAMED", silentGate).tick();
 
-    const agent = singleAgent(async (cwd) => {
-      await writeAndCommit(cwd, "src/o.ts", "x\n", "plan: attempt");
-    });
+    const gf = outcome.verdict?.gateFailures ?? [];
+    expect(gf.length).toBe(1);
+    expect(gf[0]?.tag).toBe("BLAMED");
+    expect(gf[0]?.quarantineKey).toMatch(/^blamed@[0-9a-f]{10}$/);
 
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-    });
-
-    await dispatcher.tick();
-
-    const record = await readPlanPriorAttempt();
+    // Absence is the default arm, spelled here rather than inherited: the
+    // record states nothing about attribution, and neither does its row.
+    const record = await readEntryPriorAttempt("BLAMED");
     expect(record.mode).toBe("gate-revert");
-    expect(record.suspectFlake).toBeUndefined();
+    expect(record).not.toHaveProperty("blamesSpan");
+    expect(record).not.toHaveProperty("failingFiles");
+    const row = (outcome.verdict?.gateResults ?? []).find(
+      (g) => g.gate === "suite",
+    );
+    expect(row?.ok).toBe(false);
+    expect(row).not.toHaveProperty("blamesSpan");
   });
 
-  it("gate-revert record: no failingFiles on the gate result → no suspectFlake marker (today's behavior)", async () => {
-    new Baton(join(fx.repo, ".flume")).wake("plan");
-
-    const failing: Gate = {
-      name: "silent-gate",
-      when: "afterCommit",
-      async run() {
-        return { ok: false, message: "no attribution offered" };
-      },
-    };
-    const phase = makePhase({
-      name: "plan",
-      concurrency: "singleton",
-      gates: [failing],
-    });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    const agent = singleAgent(async (cwd) => {
-      await writeAndCommit(cwd, "src/o.ts", "x\n", "plan: attempt");
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-    });
-
-    await dispatcher.tick();
-
-    const record = await readPlanPriorAttempt();
-    expect(record.mode).toBe("gate-revert");
-    expect(record.suspectFlake).toBeUndefined();
-  });
-
-  // The builtin that now names its violating paths, driven through the real
-  // derivation rather than a hand-built gate result: the auto-attached
-  // writable-paths gate blames paths that are by construction inside the
-  // reverted span's own footprint, so disjointness can never hold and the
-  // marker can never appear on a writable-paths revert.
-  it("a writable-paths gate-revert record earns no suspect-flake marker", async () => {
+  // The builtin that names its violating paths, driven through the real
+  // revert rather than a hand-built gate result: it attributes files, and
+  // attributing files is not disowning the span — a writable-paths refusal
+  // is the span's by construction, and the record says so by declaring
+  // nothing.
+  it("a writable-paths gate-revert record carries the paths it blamed and no disavowal", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
     const phase = makePhase({
@@ -8760,24 +8813,19 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
       concurrency: "singleton",
       writablePaths: ["src/**"],
     });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
 
-    const agent = singleAgent(async (cwd) => {
-      await writeAndCommit(cwd, "outside/d.ts", "d\n", "plan: overreach");
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      agent,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "outside/d.ts", "d\n", "plan: overreach");
+      }),
       log: silent,
-    });
-
-    const outcome = await dispatcher.tick();
+    }).tick();
 
     // Non-vacuity: the writable-paths gate is what refused, and it named the
-    // path it refused on — otherwise the assertion below would pass over a
+    // path it refused on — otherwise the assertions below would pass over a
     // record no gate wrote anything to.
     const row = outcome.verdict?.gateResults.find(
       (g) => g.gate === "writable-paths",
@@ -8788,7 +8836,8 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     const record = await readPlanPriorAttempt();
     expect(record.mode).toBe("gate-revert");
     expect(record.gate).toBe("writable-paths");
-    expect(record.suspectFlake).toBeUndefined();
+    expect(record.failingFiles).toEqual(["outside/d.ts"]);
+    expect(record).not.toHaveProperty("blamesSpan");
   });
 });
 

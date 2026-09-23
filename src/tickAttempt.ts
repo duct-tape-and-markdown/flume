@@ -626,7 +626,9 @@ async function runAfterCommitGates(
  * revert is scoped to, and `undefined` for a singleton phase's own revert
  * (no entry to quarantine — {@link StageFailureEntry}'s doc). The entry,
  * not its tag: the returned {@link GateFailure} carries the quarantine key
- * beside the tag, and only the entry as read can supply it.
+ * beside the tag, and only the entry as read can supply it. A gate that
+ * declared `blamesSpan: false` leaves even a fanout revert unblamed —
+ * having an entry to blame is not the same as the gate blaming it.
  */
 async function revertAfterCommitFailure(
   ctx: AttemptContext,
@@ -639,13 +641,7 @@ async function revertAfterCommitFailure(
   failure: ReportedGateResult,
   touchedPaths: string[],
 ): Promise<{ footprint: string[]; gateFailure: GateFailure }> {
-  const record = await buildGateRevert(
-    "afterCommit",
-    failure,
-    cwd,
-    sha,
-    touchedPaths,
-  );
+  const record = await buildGateRevert("afterCommit", failure, cwd, sha);
   await writeRevertNote(ctx, chain, cwd, sha, label, failure);
   await ctx.attempts.snapshotReverted(cwd, sha, ref);
   await git.dropLastCommit(cwd, sha);
@@ -654,7 +650,11 @@ async function revertAfterCommitFailure(
   return {
     footprint: touchedPaths,
     gateFailure: {
-      ...(blamed ? blamedOn(blamed) : {}),
+      // Blamed only when there is an entry to blame *and* the gate did not
+      // disown the span: `blamesSpan: false` puts a fanout entry's revert in
+      // the same unblamed class a singleton's own revert is already in
+      // (spec/chain.md "What a gate returns").
+      ...(blamed && failure.blamesSpan !== false ? blamedOn(blamed) : {}),
       signature: gateFailureSignature(failure),
       message: failure.message,
     },

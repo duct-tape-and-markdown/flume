@@ -397,7 +397,6 @@ export async function runSingleton(
           entryFailure,
           repoRoot,
           mergedSha,
-          commitTouchedPaths,
         );
         await leg.attempts.write(ref, record);
         noCommit = "gate-revert";

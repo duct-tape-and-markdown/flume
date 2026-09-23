@@ -666,11 +666,15 @@ export async function runFanout(
         entryFailure,
         repoRoot,
         mergedSha,
-        commitTouchedPaths,
       );
       await leg.attempts.write(priorAttemptRef(phase, r.entry), record);
       gateFailures.push({
-        ...blamedOn(r.entry),
+        // The gate's own attribution decides the entry-scoped half: a gate
+        // declaring `blamesSpan: false` leaves the failure unblamed, so the
+        // run-scoped quarantine never holds this entry for a wall it was
+        // told the entry did not build (spec/chain.md "What a gate
+        // returns"). The revert below still happens either way.
+        ...(entryFailure.blamesSpan === false ? {} : blamedOn(r.entry)),
         signature: gateFailureSignature(entryFailure),
         message: entryFailure.message,
       });

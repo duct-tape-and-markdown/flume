@@ -161,13 +161,23 @@ export interface GateRevertAttempt {
   /** `git show --stat` digest of the reverted commit, bounded. */
   diffStat: string;
   /**
-   * Set when the gate's `failingFiles` (`GateResult.failingFiles`) is present
-   * and every entry in it is disjoint from the reverted span's own touched
-   * paths — derived mechanically by the dispatcher, never inferred from gate
-   * prose (spec/chain.md "What a gate returns"). Absent when either list is
-   * missing or the lists overlap: an absent field is never read as flaky.
+   * The gate's own `GateResult.failingFiles` (`./Gate.js`), copied verbatim:
+   * the repo-relative paths the gate attributed the failure to, absent when
+   * it named none. The engine derives nothing from it — a span's edits can
+   * red a file they never touched, so disjointness from the footprint proves
+   * nothing (spec/chain.md "What a gate returns").
    */
-  suspectFlake?: boolean;
+  failingFiles?: string[];
+  /**
+   * The gate's own `GateResult.blamesSpan` (`./Gate.js`), copied verbatim:
+   * present and `false` when the gate declared this failure not the reverted
+   * span's. The record then carries no blame on the entry, and neither does
+   * the tick's stage failure (spec/loop.md "Prior-outcome feedback to the
+   * retrying tick"). Absent is the ordinary revert — the gate attributed
+   * nothing, and the span is the suspect. Declared by the gate, never
+   * inferred by the engine.
+   */
+  blamesSpan?: false;
   /**
    * Which keyspace this record's key lives in (spec/loop.md "No false
    * signal") — stamped by the writer, never derived from the key's text.

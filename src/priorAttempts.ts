@@ -279,24 +279,6 @@ const MAX_PRIOR_NOCOMMIT = 4 * 1024;
 const MAX_PRIOR_TOUCHED_PATHS = 200;
 
 /**
- * spec/chain.md "What a gate returns": a gate-revert record earns
- * `suspectFlake: true` only when the gate named `failingFiles` AND every
- * named file is disjoint from the reverted span's own footprint — the
- * entry's own edits cannot have caused a failure in files it never touched.
- * Mechanical, from list disjointness alone; never inferred from gate prose,
- * and never derived from an absent or empty `failingFiles` (non-vacuous:
- * nothing named means nothing to disjoint-check).
- */
-function isSuspectFlake(
-  failingFiles: string[] | undefined,
-  footprint: string[],
-): boolean {
-  if (!failingFiles || failingFiles.length === 0) return false;
-  const touched = new Set(footprint);
-  return failingFiles.every((f) => !touched.has(f));
-}
-
-/**
  * Where a phase/entry's prior-attempt record lives: the entry tag slug for
  * fanout, the phase name for singleton. A retry is scheduled "for that
  * same entry (fanout) or phase (singleton)" — the key mirrors exactly that
@@ -628,9 +610,9 @@ async function capturedDiffStat(cwd: string, sha: string): Promise<string> {
 
 /**
  * Build the gate-revert record: an afterCommit/afterMerge gate refused the
- * span and the engine dropped it. Carries the gate's own verdict plus the
- * bounded `git show --stat` of what was reverted, so the retry reads what
- * landed instead of blindly reconstructing it.
+ * span and the engine dropped it. Carries the gate's own verdict and its own
+ * attribution plus the bounded `git show --stat` of what was reverted, so the
+ * retry reads what landed instead of blindly reconstructing it.
  */
 export async function buildGateRevert(
   when: GateRevertAttempt["when"],
@@ -640,14 +622,10 @@ export async function buildGateRevert(
     verdict?: string;
     details?: string;
     failingFiles?: string[];
+    blamesSpan?: false;
   },
   diffCwd: string,
   sha: string,
-  /**
-   * The reverted span's own touched paths (spec/chain.md "What a gate
-   * returns") — the footprint `suspectFlake` disjointness reads against.
-   */
-  footprint: string[],
 ): Promise<Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs">> {
   const diffStat = await capturedDiffStat(diffCwd, sha);
   return {
@@ -668,9 +646,13 @@ export async function buildGateRevert(
         }
       : {}),
     diffStat,
-    ...(isSuspectFlake(failure.failingFiles, footprint)
-      ? { suspectFlake: true }
-      : {}),
+    // Both copied verbatim, like `verdict` above: what the gate blamed and
+    // whether it blamed the span at all are the gate's statements, and the
+    // engine adds nothing to either (spec/chain.md "What a gate returns").
+    // `blamesSpan` tests `=== false` because its one meaningful value is the
+    // falsy one.
+    ...(failure.failingFiles ? { failingFiles: failure.failingFiles } : {}),
+    ...(failure.blamesSpan === false ? { blamesSpan: false as const } : {}),
   };
 }
 

@@ -200,11 +200,10 @@ because cost is unrecoverable without the cache split.
 `readLatestVerdictsSync` serves the latest verdict per phase to
 `shouldRun`/`handoff`, which cannot `await`.
 
-**2.7 `GateResult.failingFiles` and `suspectFlake`.** A gate whose runner can
-name the files it failed on may report them, and the engine marks a
-gate-revert record `suspectFlake` when every named file is disjoint from the
-reverted span's footprint. No builtin populates the field yet — this is a
-surface for your runner, not a behavior change.
+**2.7 `GateResult.failingFiles`.** A gate whose runner can name the files it
+failed on may report them, and the engine carries the list onto the tick
+verdict's gate row and the gate-revert record. No builtin populates the field
+yet — this is a surface for your runner, not a behavior change.
 
 ## 3. Operators
 

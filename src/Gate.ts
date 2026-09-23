@@ -210,15 +210,34 @@ export interface GateResult {
   /**
    * Repo-relative paths the gate attributes the failure to, when its runner
    * can name them (a test reporter's JSON, a type-checker's diagnostics).
-   * When present alongside the reverted span's own touched paths, the
-   * dispatcher derives the suspect-flake marker on the prior-attempt record
-   * mechanically, from list disjointness — never from this gate's prose
-   * (spec/chain.md "What a gate returns"). Absent is today's behavior: no
-   * marker, no inference. `writablePathsGate` populates it with the same
-   * paths its `details` lists; the shell-backed builtins do not, having no
-   * structured report to attribute from.
+   * Copied onto the tick verdict's gate result and onto a `gate-revert`
+   * prior-attempt record verbatim; the engine derives nothing from it
+   * (spec/chain.md "What a gate returns"). A span's edits can red a file
+   * they never touched — a pin in a test module that reads the whole tree —
+   * so disjointness from the footprint proves nothing, and attribution is
+   * the gate's to declare on {@link blamesSpan}. `writablePathsGate`
+   * populates this with the same paths its `details` lists; the
+   * shell-backed builtins do not, having no structured report to attribute
+   * from.
    */
   failingFiles?: string[];
+  /**
+   * The gate says this failure is **not** the gated span's: the suite was
+   * red at the base, or a resource the span never touched refused. The
+   * engine withholds the entry-scoped half of the stage failure — no
+   * quarantine key, no blame on the prior-attempt record — exactly as a
+   * singleton's own revert already carries none, while the
+   * consecutive-failure backstop still counts the failed tick
+   * (spec/chain.md "What a gate returns"). The revert itself still happens:
+   * a span that cannot be judged does not land.
+   *
+   * Absent is today's behavior — the span is blamed. Typed `false` alone
+   * because `true` says only what absence already says, and a field with
+   * one meaningful value cannot be set to the wrong one. A declared fact,
+   * never a reading of {@link verdict} or {@link message}
+   * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+   */
+  blamesSpan?: false;
 }
 
 /**

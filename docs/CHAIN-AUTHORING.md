@@ -627,6 +627,7 @@ interface GateResult {
   verdict?: string; // your own discriminant for *why* this gate ruled as it did
   skipped?: string; // the judge never ran, and why — `ok` is still the verdict
   failingFiles?: string[]; // paths the runner blamed, when it can name them
+  blamesSpan?: false; // this failure is not the gated span's
 }
 ```
 
@@ -643,7 +644,8 @@ span merged — the same tree a fanout entry's sees, minus the siblings.
 
 `verdict`, `skipped` and `failingFiles` are **facts about the run, not
 engine judgments**: the dispatcher copies them onto the tick verdict and
-interprets them no further.
+interprets them no further. `blamesSpan` is the one field below the engine
+acts on — and it acts on what you declared, never on what it inferred.
 
 - Set `verdict` when the *reason* your gate ruled as it did is something a
   later tick keys on — `"stale-input"` vs `"assertion-failed"`,
@@ -657,11 +659,20 @@ interprets them no further.
   by design. A bare `ok: true` claims the check was earned; spelling the skip
   is how a green verdict stays non-vacuous.
 - Set `failingFiles` (repo-relative, forward-slash) when the runner names the
-  files it blamed — a test reporter's JSON, a type-checker's diagnostics. The
-  dispatcher compares that list against the reverted span's own touched paths
-  to mark a suspect flake on the prior-attempt record, so a gate never has to
-  call "flake" itself. Omit it and you get today's behavior: no marker, no
-  inference.
+  files it blamed — a test reporter's JSON, a type-checker's diagnostics. It
+  rides the tick verdict's gate row and the `gate-revert` prior-attempt
+  record verbatim, and the engine derives nothing from it: your span's edits
+  can red a file they never touched — a pin in a test module that reads the
+  whole tree — so disjointness from the footprint proves nothing. Attribution
+  is yours to declare, below.
+- Set `blamesSpan: false` when the failure is **not** the gated span's: your
+  suite was already red at the base, a resource the span never touched
+  refused. The engine still reverts — a span it cannot judge does not land —
+  and still counts the failed tick against the consecutive-failure backstop,
+  but it withholds the entry-scoped half of the stage failure: no quarantine
+  key on the failure, no blame on the prior-attempt record. Omit it and the
+  span is the suspect, which is the ordinary revert. The field takes `false`
+  alone: `true` says only what absence already says.
 - `command` is the gate's **own command line**, and the harness block shows
   it to the agent beside the gate's name — so a chain asking the agent to
   self-check before committing doesn't restate the command in its prompt from
@@ -1771,13 +1782,13 @@ to retry reads that field off `TickContext.priorAttempts` rather than
 pattern-matching the rendered prose. The block above renders `message` and
 `details` only — `verdict` is for the hook, not the agent.
 
-**A gate that names its failing files earns a flake marker.** When a
-`gate-revert` record's gate returned `failingFiles` (above, §2) and every file
-it named is disjoint from the reverted span's own footprint, the record carries
-`suspectFlake: true` — the entry's own edits cannot have caused a failure in
-files they never touched. It is derived, never trusted: the dispatcher computes
-it from the two lists, and a gate reporting no `failingFiles` earns no marker.
-An absent field is never a claim of flakiness.
+**A gate-revert record carries the gate's own attribution, never an inferred
+one.** A `gate-revert` record carries the failing gate's `failingFiles`
+(above, §2) verbatim, and its `blamesSpan` beside them — `false` when the gate
+disowned the span, absent otherwise. The engine infers nothing from the paths:
+a span's edits can red a file they never touched, so a `shouldRun` deciding
+whether a wall is real reads what the gate *said* rather than what the two
+path lists happened to overlap on.
 
 The carry is cross-process by construction — the record is persisted under
 `.flume/prior-attempts/<keyspace>/` (gitignored, beside the baton;
@@ -1788,7 +1799,7 @@ hooks as `TickContext.priorAttempts`, keyed by the keyspace and identity each
 record was written under — `entry:<tag slug>` for a fanout record,
 `phase:<phase name>` for a singleton one, your spelling of that name rather
 than the slugged stem the file sits at — so a
-`shouldRun` or `promptArgs` reading one — the `suspectFlake` marker included —
+`shouldRun` or `promptArgs` reading one — the gate's own attribution included —
 never opens the directory itself. The join is the package's, not yours:
 `api.entryAttemptKey(entry)` spells the key for a queue entry you hold,
 `api.phaseAttemptKey(phase)` for a singleton phase's own record, and

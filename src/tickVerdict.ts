@@ -60,10 +60,11 @@ export type ProvisionFailure = StageFailureEntry & {
  * - `tag` is the entry the failure is scoped to (a `createWorktree` failure
  *   for that specific slug, a cherry-pick conflict on that entry's commit, a
  *   gate revert of it). Absent for a repo-level failure (e.g. `git worktree
- *   prune`) or a singleton phase's own revert, where no single entry can be
- *   blamed — the run-scoped quarantine only ever isolates a *blamed* failure;
- *   an unblamed one is exactly the "non-entry-scoped" class the
- *   consecutive-failure backstop exists for.
+ *   prune`), for a singleton phase's own revert, and for a gate revert whose
+ *   gate declared `blamesSpan: false` (`./Gate.js`) — in each, no single
+ *   entry can be blamed. The run-scoped quarantine only ever isolates a
+ *   *blamed* failure; an unblamed one is exactly the "non-entry-scoped"
+ *   class the consecutive-failure backstop exists for.
  * - `quarantineKey` is that entry's key **as this tick read it** from
  *   `pending.json` ({@link quarantineKey}), the value the supervisor holds
  *   the quarantine under and crosses to the next child on
@@ -96,8 +97,9 @@ export type MergeFailure = StageFailureEntry & {
  * then abort"): an afterCommit or afterMerge gate that reverted a commit,
  * `signature` derived from the gate's own name plus its failure output. `tag`
  * is absent for a singleton phase's own gate revert (no entry to quarantine —
- * it falls to the consecutive-failure backstop alone) and present for a
- * fanout entry/wave gate revert.
+ * it falls to the consecutive-failure backstop alone) and for a fanout entry
+ * whose gate declared `blamesSpan: false` (`./Gate.js`), and present for
+ * every other fanout entry/wave gate revert.
  */
 export type GateFailure = StageFailureEntry & {
   /** Same comparison-key contract as `ProvisionFailure.signature`. */
@@ -147,13 +149,24 @@ export interface ReportedGateResult {
   /**
    * The gate's own `GateResult.failingFiles` (`./Gate.js`), copied verbatim:
    * the repo-relative paths the gate attributed the failure to. Absent when
-   * the gate named none. The engine already decodes this to derive the
-   * suspect-flake marker on a prior-attempt record, so a chain reading the
-   * verdict or a `handoff` reads the same list instead of re-parsing the
-   * gate's output beside it (`.claude/rules/engineering.md`, *A fact the
-   * engine holds is reported, never rediscovered*).
+   * the gate named none. The engine derives nothing from it, so a chain
+   * reading the verdict or a `handoff` reads the same list instead of
+   * re-parsing the gate's output beside it (`.claude/rules/engineering.md`,
+   * *A fact the engine holds is reported, never rediscovered*).
    */
   failingFiles?: string[];
+  /**
+   * The gate's own `GateResult.blamesSpan` (`./Gate.js`), copied verbatim:
+   * present and `false` when the gate disowned the gated span for this
+   * failure. The engine *does* act on it — it withholds the entry-scoped
+   * half of the stage failure (`StageFailureEntry` above) and stamps the
+   * `gate-revert` record with the same declaration — and reports it here
+   * beside the fields it only copies, so a `handoff` or a `shouldRun`
+   * reads the attribution the engine acted on rather than re-deriving it
+   * from the gate's prose (`.claude/rules/engineering.md`, *A fact the
+   * engine holds is reported, never rediscovered*).
+   */
+  blamesSpan?: false;
 }
 
 /** Bound on a persisted stage-failure signature (provision/merge/gate alike) — a comparison key, not a transcript. */
@@ -221,6 +234,10 @@ export function reportedGateRow(
     ...(r.verdict ? { verdict: r.verdict } : {}),
     ...(r.skipped ? { skipped: r.skipped } : {}),
     ...(r.failingFiles ? { failingFiles: r.failingFiles } : {}),
+    // `=== false` rather than truthiness: the field's one meaningful value
+    // is the falsy one, so the usual `r.x ? … : {}` idiom beside it would
+    // drop exactly the declaration this row exists to carry.
+    ...(r.blamesSpan === false ? { blamesSpan: false as const } : {}),
   };
 }
 
