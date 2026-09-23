@@ -142,6 +142,10 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
   "docs/sections.md": [
     "# The page whose sections a comment cites",
     "",
+    "> **Reading the fixture's own banner.** A bolded lead opening a quoted",
+    "> line is a title too, stated where a page states its reading",
+    "> conventions rather than as a bullet or a heading.",
+    "",
     "## Loud or nothing",
     "",
     "A heading is a title, cited whole.",
@@ -285,12 +289,14 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// not hold, which reds as the page it is rather than as a home.`,
     `export const PAGED = 11;`,
     ``,
-    `// A section cite names a page and a section of it, at either altitude`,
+    `// A section cite names a page and a section of it, at every altitude`,
     `// the page states one: a heading (\`docs/sections.md\`, *Loud or`,
-    `// nothing*) and a bolded bullet lead (docs/sections.md, *Verbatim`,
-    `// copying is the detector*), the page half backticked or bare. A page`,
-    `// this tree does not hold titles nothing, so a cite into one reds where`,
-    `// the page name already does: (\`docs/absent.md\`, *Loud or nothing*).`,
+    `// nothing*), a bolded bullet lead (docs/sections.md, *Verbatim`,
+    `// copying is the detector*), and a bolded lead opening a blockquote`,
+    `// line (\`docs/sections.md\`, *Reading the fixture's own banner*), the`,
+    `// page half backticked or bare. A page this tree does not hold titles`,
+    `// nothing, so a cite into one reds where the page name already does:`,
+    `// (\`docs/absent.md\`, *Loud or nothing*).`,
     `export const SECTIONS = 12;`,
     ``,
     `// An abbreviation is a rewrite rather than a match, though the page`,
@@ -499,7 +505,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:91 Holder",
     "lib/surface.ts:93 WeakMap",
     "lib/surface.ts:107 docs/absent.md",
-    "lib/surface.ts:116 docs/absent.md",
+    "lib/surface.ts:118 docs/absent.md",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
@@ -544,22 +550,22 @@ it("the citation scan resolves a link tag against the module whose comment carri
   // a clean tree over zero references.
   expect(scan.links.scanned.map(formatCitation)).toEqual([
     "lib/dataShapes.ts:8 unsharedHelper",
-    "lib/surface.ts:142 Holder",
-    "lib/surface.ts:142 Shipped",
-    "lib/surface.ts:143 WeakMap",
-    "lib/surface.ts:143 Shipped.maxDepth",
-    "lib/surface.ts:144 ratio",
     "lib/surface.ts:144 Holder",
-    "lib/surface.ts:149 unsharedHelper",
-    "lib/surface.ts:151 vanishedLink",
-    "lib/surface.ts:151 ",
-    "lib/surface.ts:156 Holder",
+    "lib/surface.ts:144 Shipped",
+    "lib/surface.ts:145 WeakMap",
+    "lib/surface.ts:145 Shipped.maxDepth",
+    "lib/surface.ts:146 ratio",
+    "lib/surface.ts:146 Holder",
+    "lib/surface.ts:151 unsharedHelper",
+    "lib/surface.ts:153 vanishedLink",
+    "lib/surface.ts:153 ",
+    "lib/surface.ts:158 Holder",
   ]);
 
   expect(scan.links.findings.map(formatCitation)).toEqual([
-    "lib/surface.ts:149 unsharedHelper",
-    "lib/surface.ts:151 vanishedLink",
-    "lib/surface.ts:151 ",
+    "lib/surface.ts:151 unsharedHelper",
+    "lib/surface.ts:153 vanishedLink",
+    "lib/surface.ts:153 ",
   ]);
 
   // The whole of the arm's claim, in one name: `unsharedHelper` is a
@@ -982,13 +988,13 @@ it("an identifier a comment pairs with a .md page resolves repo-wide rather than
 
 // --- the section, which the named page's own titles answer ---------------
 
-it("a comment's (`<page>.md`, *Section*) pair resolves its section half against the page's headings and bolded bullet leads", () => {
+it("a comment's (`<page>.md`, *Section*) pair resolves its section half against the page's headings, bolded bullet leads and a bolded lead opening a blockquote line", () => {
   // Vacuity guard: every cite the fixture authored was drawn, and no other,
   // before a verdict is read off any of them — both fencings of the page
-  // half, both altitudes the page states a title at, and the wrap the
-  // renderer closes. The two spellings below the last of these are the
-  // refusals: a parenthetical the italics do not close, and one carrying no
-  // section at all, neither of which appears here.
+  // half, each of the three altitudes the page states a title at, and the
+  // wrap the renderer closes. The two spellings below the last of these are
+  // the refusals: a parenthetical the italics do not close, and one carrying
+  // no section at all, neither of which appears here.
   expect(
     fixtureScan.sections.scanned.map(
       (site) => `${formatCitation(site)} -> ${site.page}`,
@@ -996,15 +1002,17 @@ it("a comment's (`<page>.md`, *Section*) pair resolves its section half against 
   ).toEqual([
     "lib/surface.ts:112 Loud or nothing -> docs/sections.md",
     "lib/surface.ts:113 Verbatim copying is the detector -> docs/sections.md",
-    "lib/surface.ts:116 Loud or nothing -> docs/absent.md",
-    "lib/surface.ts:121 Derived state is computed -> docs/sections.md",
-    "lib/surface.ts:126 Derived state is computed, never restated beside its source -> docs/sections.md",
-    "lib/surface.ts:132 A fenced lead mints none either -> docs/sections.md",
+    "lib/surface.ts:115 Reading the fixture's own banner -> docs/sections.md",
+    "lib/surface.ts:118 Loud or nothing -> docs/absent.md",
+    "lib/surface.ts:123 Derived state is computed -> docs/sections.md",
+    "lib/surface.ts:128 Derived state is computed, never restated beside its source -> docs/sections.md",
+    "lib/surface.ts:134 A fenced lead mints none either -> docs/sections.md",
   ]);
 
   // The verdict: a heading answers a cite, a bolded bullet lead answers one
   // too — the page half bare there, so the fence is the author's and not the
-  // rule's — and a phrase the comment line broke is closed the way markdown
+  // rule's — a bolded lead opening a blockquote line answers one the same
+  // way, and a phrase the comment line broke is closed the way markdown
   // closes it rather than lost the way a broken token is.
   const findings = fixtureScan.sections.findings.map(formatCitation);
   expect(findings).not.toContain("lib/surface.ts:112 Loud or nothing");
@@ -1012,18 +1020,21 @@ it("a comment's (`<page>.md`, *Section*) pair resolves its section half against 
     "lib/surface.ts:113 Verbatim copying is the detector",
   );
   expect(findings).not.toContain(
-    "lib/surface.ts:126 Derived state is computed, never restated beside its source",
+    "lib/surface.ts:115 Reading the fixture's own banner",
+  );
+  expect(findings).not.toContain(
+    "lib/surface.ts:128 Derived state is computed, never restated beside its source",
   );
 
   // And the named page is what answers. The same section spelled at a page
   // this tree does not hold reds, so the arm reads the page the cite names
   // rather than whichever page of the tree happens to carry the title.
-  expect(findings).toContain("lib/surface.ts:116 Loud or nothing");
+  expect(findings).toContain("lib/surface.ts:118 Loud or nothing");
 
   // A title only a fenced sample of that page carries is no title, on the
   // rule that makes a fenced `# ` line no heading.
   expect(findings).toContain(
-    "lib/surface.ts:132 A fenced lead mints none either",
+    "lib/surface.ts:134 A fenced lead mints none either",
   );
 });
 
@@ -1033,15 +1044,15 @@ it("an abbreviated section half is reported unresolved rather than matched as a 
   // few lines down. So the finding below is the exactness rule and not a
   // page that lost the section or a reader that never saw the cite.
   const drawn = fixtureScan.sections.scanned.map(formatCitation);
-  expect(drawn).toContain("lib/surface.ts:121 Derived state is computed");
+  expect(drawn).toContain("lib/surface.ts:123 Derived state is computed");
   const findings = fixtureScan.sections.findings.map(formatCitation);
   expect(findings).not.toContain(
-    "lib/surface.ts:126 Derived state is computed, never restated beside its source",
+    "lib/surface.ts:128 Derived state is computed, never restated beside its source",
   );
 
   // The verdict: a prefix of a title is a title the page does not carry, so
   // the abbreviation is a rewrite the citing comment has to follow.
-  expect(findings).toContain("lib/surface.ts:121 Derived state is computed");
+  expect(findings).toContain("lib/surface.ts:123 Derived state is computed");
 });
 
 // --- the title, which carries the page-name arm alone --------------------
