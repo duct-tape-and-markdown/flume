@@ -204,6 +204,107 @@ run refuses the load naming the line that declared a command for it, rather
 than reporting itself as that gate failing on the tick that first reached it
 — or as every worktree in a wave failing to provision.
 
+#### A fence that varies per checkout
+
+`declaration.ts` is one committed file and `fence` is data inside it, so every
+checkout of the repository is held to the same fence. An operator running
+several efforts at once gives each one a checkout of its own (`spec/jobs.md`,
+*The checkout is the unit of isolation*), and may want each effort's
+`fence.build` narrowed to the paths that effort is allowed to touch — a value
+that is machine-local by nature and has no business in a commit.
+
+The declaration is a TypeScript module rather than JSON, so a field may be a
+value it computed at load. Read the narrowing out of a gitignored sidecar
+beside the declaration, once, as the module imports:
+
+```ts
+// .flume/declaration.ts — the fence this checkout is held to.
+import { readFileSync } from "node:fs";
+
+import { vitestRunner, type DeclarationInput } from "@dtmd/flume/harness";
+
+/** Gitignored, per checkout: `{ "fence": ["src/parser/**", "tests/parser/**"] }`. */
+const SIDECAR = new URL("./effort.json", import.meta.url);
+
+function effortFence(): string[] {
+  let text: string;
+  try {
+    text = readFileSync(SIDECAR, "utf8");
+  } catch (cause) {
+    throw new Error(`no effort sidecar at ${SIDECAR.pathname}`, { cause });
+  }
+  const declared = (JSON.parse(text) as { fence?: unknown }).fence;
+  if (
+    !Array.isArray(declared) ||
+    declared.length === 0 ||
+    declared.some((glob) => typeof glob !== "string")
+  ) {
+    throw new Error(`${SIDECAR.pathname} carries no \`fence\` array of globs`);
+  }
+  return declared as string[];
+}
+
+export const declaration: DeclarationInput = {
+  specLocus: ["spec/**"],
+  fence: { build: effortFence() },
+  runner: vitestRunner(),
+  slices: { enabled: ["plan-derive"] },
+};
+```
+
+What that shape is answering for:
+
+- **The ignore line is yours.** The runtime ensures ignores for the layout it
+  owns and nothing more (`spec/jobs.md`, "Runtime ignores"); a
+  chain-convention file under the state root is its chain's to ignore. The
+  merge is append-only and preserves hand-authored lines, so the entry
+  survives every later sweep of that file.
+- **Absent or malformed refuses the load.** A throw while the declaration
+  imports is a chain that never resolved: the tick exits 69 (mount-dead),
+  `flume loop` fail-fasts on it instead of burning its remaining ticks, and
+  `flume check` says the same thing without spending an agent. That refusal is
+  the whole reason the read is safe — the fallback it replaces would silently
+  *widen* the fence on a checkout whose sidecar went missing
+  (`.claude/rules/engineering.md`, *Loud or nothing*).
+- **It is a file rather than an environment variable.** Every process that
+  loads the chain in that checkout reads the same bytes, so the fence a tick
+  renders into its `<harness>` block and the fence `flume check` measures the
+  queue against are one value. An exported variable says one thing to the
+  loop that exported it and nothing at all to a second terminal — the
+  evidence a decision rests on has to be on the disk the next tick reads
+  (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+- **A narrowed fence narrows the queue with it.** The package's pending gate
+  pre-checks every queued entry's declared `files` against build's fence, in
+  that checkout's own state root — so an entry naming paths outside this
+  effort's fence refuses the plan slice's gate rather than reaching build.
+  With one queue per checkout that is the intent, but the sidecar still has to
+  admit every path the entries in that checkout carry.
+- **Keep the chain module out of a fence that also wires `chain-load`.** That
+  registry gate re-loads the just-committed chain *inside the tick's worktree*
+  to prove a self-edit still loads, and a gitignored file does not exist in a
+  fresh checkout — so with both wired, every commit that touches `chain.ts`
+  reverts on the missing sidecar rather than on anything the commit did. A
+  per-checkout fence and a self-modifying chain do not compose.
+- **Per-*entry* narrowing is already a declared field.** `scopeWritesToEntry`
+  holds a fanout tick to its assigned entry's own files. Reach for a sidecar
+  only when the variation is the checkout's rather than the entry's.
+
+**If your repository is the second one to want this, file the surface rather
+than copying the block.** The shape to ask for is `fence` in function form —
+`(paths) => ({ build: [...] })` over the roots the engine resolved, evaluated
+once per chain load, which is the shape and the evaluation point
+`worktreesBase` already has on this declaration. What it buys over the recipe
+above is where the value is keyed from: the roots the engine resolved rather
+than wherever the chain module happens to live, so the sidecar can sit beside
+the state root or the repo root — `FLUME_DIR` and `FLUME_CONFIG_DIR` move
+those independently — and a bad value refuses at the field the way a bad
+`worktreesBase` does rather than as an import that threw. File it against the
+declaration and not the engine: a hand-authored chain already computes
+`writablePaths` from `api.paths` in its factory, so the surface that is
+missing is the package's. A block like the one above appearing unchanged in a
+second consumer's declaration is the evidence that files it
+(`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+
 ### What adoption costs
 
 A consumer enables or disables slices; it does not re-author them, and there
