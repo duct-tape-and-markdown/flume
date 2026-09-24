@@ -135,7 +135,17 @@ and the sweep's domain). Optional: `channelPaths`, `scopeWritesToEntry` (off
 by default, and the package takes no side), `resolver`, `handoff` per phase,
 `gates` per phase and `when`, `shell` (the shell every command line the
 declaration carries runs under — a `shell` or `script` gate's, `setup`'s
-restore — `sh` where the declaration is silent), `agents`,
+restore — `sh` where the declaration is silent), `agents` (per phase, and
+each of its four subfields optional: `model`, the model that phase's tick
+runs under, absent leaving the binary's own; `extraArgs`, arguments appended
+to that tick's argv; `contextWindow`, how many tokens that model holds — a
+provider fact nothing can look up, forwarded as the adapter's `budget` with
+no cadence and no thresholds, so the tick is handed its own room after every
+tool call, and absent registers no budget hook at all; and `inheritUserMcp`,
+whether the tick loads your own MCP configuration beside the one the chain
+hands it, off where the declaration is silent. Each is the `claudeCode`
+option of the same name, which §4 below spells in full; a phase naming none
+takes the package's default agent),
 `supervisor` (the engine's policy passed through whole), `setup` (the
 directories to install and the restore command that installs them, run in
 every provisioned worktree; `serialize: true` where that restore's shared
