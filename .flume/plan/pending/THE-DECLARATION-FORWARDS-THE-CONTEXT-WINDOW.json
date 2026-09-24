@@ -1,12 +1,12 @@
 {
   "tag": "THE-DECLARATION-FORWARDS-THE-CONTEXT-WINDOW",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "THE-ADAPTER-REGISTERS-THE-BUDGET-HOOK"
-    ]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "harness/declaration.ts",
@@ -24,7 +24,8 @@
         "path": "tests/harnessChain.test.ts",
         "description": "the declared window reaches the agent the phase runs"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "The `agents` row names `contextWindow`, and no declaration surface carries it",
   "per": {
@@ -35,8 +36,8 @@
   "tests": [
     "a declared agents.contextWindow reaches the adapter as its budget window"
   ],
-  "notes": "Forwarding only — the adapter owns cadence, thresholds and the line itself. The declaration is where the provider fact lives because one file holds the environment.",
   "pins": [
     "a declaration naming no contextWindow builds its phase agent with no budget"
-  ]
+  ],
+  "notes": "Forwarding only — the adapter owns cadence, thresholds and the line itself. The declaration is where the provider fact lives because one file holds the environment."
 }

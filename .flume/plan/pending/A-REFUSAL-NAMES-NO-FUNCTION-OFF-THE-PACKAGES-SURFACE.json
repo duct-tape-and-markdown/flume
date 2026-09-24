@@ -1,11 +1,10 @@
 {
   "tag": "A-REFUSAL-NAMES-NO-FUNCTION-OFF-THE-PACKAGES-SURFACE",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "THE-INTERFACE-PAGES-NAME-SURFACE-THE-PACKAGE-HOLDS"
-    ]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
     "new": [
       {
@@ -34,7 +33,8 @@
         "path": "tests/PendingSchema.test.ts",
         "description": "the local extractor shrinks to the shared one"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "Five `src/` messages name four engine functions the package's surface does not hold, and nothing resolves the symbols a string literal states",
   "per": {
@@ -45,5 +45,6 @@
   "tests": [
     "no src/ string literal names a function the package's surface does not hold"
   ],
+  "pins": [],
   "notes": "Per note THE-ASYNC-VALIDATOR-REFUSAL-NAMES-NO-ENGINE-FUNCTION, whose 331-hit read was over every camelCase span; narrowed to top-level fn/class declarations it is 4 names at 5 sites — `dropLastCommit`, `commitPaths` (`src/git.ts:247`, `:682`), `superviseLoop` (`src/loopSupervisor.ts:890`), `deleteBranch` (`src/worktrees.ts:635`, `:811`). `worktreesBase` and `checkoutAt` hit too and are legitimate members of handed-out surface, so the resolver is the blocker's reachable one, not `src/index.ts`."
 }
