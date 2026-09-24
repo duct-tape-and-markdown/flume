@@ -239,10 +239,13 @@ it waited for, never on a tip that happened to move. Read from the mode and
 the key the engine reports on the record, never from a heuristic of the
 package's own. If the pickable set cannot carry a per-entry refusal a chain
 declares, that is a missing engine capability, and the harness is its first
-declarer. That refusal is the package's floor: a consumer's declared `handoff`
-replaces the wake set above it and runs beneath the refusal, because
-re-dispatching an unreconciled entry is the same outcome whoever schedules the
-phases. A consumer overrides the wake set by declaration, not by copying it.
+declarer. Two things are the package's floor, beneath any consumer's declared
+`handoff`: that refusal, and the stop write after a contract-touching ship. A
+declared handoff replaces the wake set above them and runs beneath both,
+because re-dispatching an unreconciled entry is the same outcome whoever
+schedules the phases, and a resident supervisor absorbing a contract its
+children no longer share is the same livelock whoever names the next phase. A
+consumer overrides the wake set by declaration, not by copying it.
 
 
 ### Committed-path discipline

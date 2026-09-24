@@ -12,8 +12,9 @@ help text are `spec/cli.md`.
 ## Baton — presence wakes, absence hibernates
 
 The baton is the only mutable harness state outside committed files, and it is a
-directory of empty files: `<flumeDir>/awake/<phase>` (`Baton`). Presence of a
-flag wakes the named phase on the next tick; absence sleeps it. No daemon, no
+directory of files: `<flumeDir>/awake/<phase>` (`Baton`). Presence of a
+flag wakes the named phase on the next tick; absence sleeps it; what a flag
+carries is the wake token the handoff bullet below describes. No daemon, no
 database, no in-memory carry. Disk is truth, including the baton. A relocated
 `flumeDir` carries the baton with it.
 
@@ -23,7 +24,9 @@ database, no in-memory carry. Disk is truth, including the baton. A relocated
   phase in the chain's declared order whose name is awake; `flume tick --phase <name>`
   takes the named one, awake or not, which is how the supervisor tells a child what
   it is for — a name the chain does not declare is refused before any work, naming
-  the phases it does (exit 1). The supervisor starts one child per awake phase that
+  the phases it does, at exit 2 like every other argv the surface cannot honor
+  (`spec/cli.md`, *Subcommand surface*); the supervisor never spawns a child for
+  a phase the chain does not declare, so the code is argv's alone. The supervisor starts one child per awake phase that
   has no child of its own in flight, in declared order, until
   `supervisorPolicy.maxTicks` children are running (`spec/chain.md`, *Supervisor
   policy is a chain-overridable default*); the default is one, which is the serial
@@ -651,10 +654,13 @@ store until gc, and the verdict is the only place their sha outlives the branch.
   it. On a fanout wave the list is every entry's results concatenated,
   so absence is per-entry rather than per-tick, and one red
   result can be followed by more from later entries.
-- **Two paths under the state dir.** `<flumeDir>/tick-verdict.json` holds this tick's
-  verdict alone, cleared before the tick's own work begins so a tick that never reaches
-  the write (chain-load failure, hibernation, terminal misconfiguration) leaves nothing
-  the supervisor can misread as its own. `<flumeDir>/tick-verdicts.jsonl` appends every
+- **Two paths under the state dir.** `<flumeDir>/tick-verdict/<phase>.json` holds
+  this tick's verdict alone — one file per phase, because a phase never runs twice at
+  once (*Baton*) and the supervisor names each child's phase, so it reads the file it
+  named the child by and two children of one run never share a verdict path — cleared
+  before the tick's own work begins so a tick that never reaches the write (chain-load
+  failure, hibernation, terminal misconfiguration) leaves nothing the supervisor can
+  misread as its own. `<flumeDir>/tick-verdicts.jsonl` appends every
   verdict, bounded to a rolling 200 — history, never cleared.
 - **The CLI writes it, not `Dispatcher.tick()`.** `tick()` returns the verdict as a
   pure value on `TickOutcome.verdict`; the `tick` command persists it
