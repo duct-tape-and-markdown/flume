@@ -147,7 +147,10 @@
       "harness/deriveWindow.ts",
       "src/waveMerge.ts",
       "harness/judgeGate.ts",
-      "harness/putDown.ts"
+      "harness/putDown.ts",
+      "tests/processTree.test.ts",
+      "src/processTree.ts",
+      "tests/helpers/fixtureRoot.ts"
     ]
   }
 }
