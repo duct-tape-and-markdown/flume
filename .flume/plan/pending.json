@@ -331,32 +331,6 @@
     "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. It is the section's only merged-tree gate: there is no duplicate refusal beside it — the drain folds a duplicate instead (THE-DRAIN-FOLDS-A-DUPLICATE-FINDING)."
   },
   {
-    "tag": "THE-DRAIN-FOLDS-A-DUPLICATE-FINDING",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/prompts/plan-inbox.md",
-          "description": "the pending-entry route folds a finding a standing entry covers"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The drain's pending-entry route amends the entry that covers a finding rather than filing a sibling — the fold that replaces the dropped duplicate gate",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The phases"
-    },
-    "acceptance": "The inbox prompt's pending-entry route says a finding a standing entry covers is amended into that entry, as its question and CI-title routes already say, and names the clean-exit record a duplicate that reached build leaves.",
-    "tests": [],
-    "pins": [],
-    "notes": "Prose is the only rung here: the fold is a judgement over `<pending-now>` the drain makes, and nothing mechanical can hold it. The question and CI-title arms already carry the same sentence; this is the third route saying it."
-  },
-  {
     "tag": "PLAN-STATE-IS-ONE-FILE-PER-SLICE",
     "gate": {
       "kind": "open"
