@@ -1,0 +1,48 @@
+{
+  "tag": "THE-PENDING-GATE-CARRIES-THE-CLAIM-CHECK",
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/builtinGates.ts",
+        "description": "the third check, and `opts.hint` over all three"
+      },
+      {
+        "path": "harness/gates.ts",
+        "description": "wire it afterMerge on the producer phases"
+      },
+      {
+        "path": "tests/builtinGates.test.ts",
+        "description": "the four arms"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the wiring"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "what the gate now checks"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "pendingGate's third check: a gated commit leaves a claimed entry's file byte-identical, or is refused naming the entry and its holder",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "`pendingGate` \u2014 validation and fence pre-check as an opt-in builtin"
+  },
+  "acceptance": "A commit that edits or removes a claimed entry's file fails pendingGate naming the entry and the holding pid; an edit to an unclaimed entry passes; the check runs afterMerge over the merged tree and `opts.hint` appends to its message as to the other two.",
+  "tests": [
+    "pendingGate refuses a commit that edits a claimed entry's file, naming the entry and the holder",
+    "pendingGate refuses a commit that removes a claimed entry's file",
+    "pendingGate passes a commit that edits an unclaimed entry",
+    "opts.hint appends to the claim-check violation message"
+  ],
+  "pins": [],
+  "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. It is the section's only merged-tree gate: there is no duplicate refusal beside it \u2014 the drain folds a duplicate instead (THE-DRAIN-FOLDS-A-DUPLICATE-FINDING)."
+}

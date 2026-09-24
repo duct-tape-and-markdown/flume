@@ -1,0 +1,32 @@
+{
+  "tag": "THE-WAVE-MERGE-STAGE-IS-ITS-OWN-MODULE",
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "priority": 0,
+  "files": {
+    "new": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the wave's merge/gate/revert/ledger stage: takes the per-entry results, answers the merge outcomes and gate rows the verdict needs"
+      }
+    ],
+    "edit": [
+      {
+        "path": "src/waveTick.ts",
+        "description": "`runFanout` calls the stage; the ship lock's span becomes a signature, not a brace pair"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "Split `runFanout`'s merge stage \u2014 the ~500-line try from the cherry-pick loop to `clearMergingMarkers` \u2014 out of `src/waveTick.ts` into its own module",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A module is one job"
+  },
+  "acceptance": "`src/waveTick.ts` holds the wave's provisioning and agent fanout; the merge stage is a named function in its own file, taking the per-entry results and answering the merge outcomes and gate rows. Behavior-free: tsc, the default lane, and the export and citation pins hold it.",
+  "tests": [],
+  "pins": [],
+  "notes": "Observed by the tick that shipped SIBLING-TICKS-TAKE-TURNS-AT-GIT: after the ship lock landed, the stage is one `try` whose only marker is an indent level (src/waveTick.ts is 1234 lines). No behavior moves \u2014 a split that changes an outcome is the wrong split."
+}
