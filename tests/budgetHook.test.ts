@@ -181,32 +181,42 @@ it("the cadence beats on every Nth call, and undeclared it beats on each one", (
 });
 
 it("a threshold reports on the turn that crosses it and not on the calls after", () => {
+  const CONTEXT_WINDOW = 200_000;
+  const THRESHOLD = 0.8;
   const budget: BudgetDeclaration = {
-    contextWindow: 200_000,
+    contextWindow: CONTEXT_WINDOW,
     everyCalls: 100,
-    thresholds: [0.8],
+    thresholds: [THRESHOLD],
   };
-  const crossing = reading({
+  // Tokens against the window the reading names, since that is the shape a
+  // crossing is taken on: eighty percent of this window is 160,000.
+  const windowed = (over: Partial<BudgetReading>): BudgetReading =>
+    reading({ contextWindow: CONTEXT_WINDOW, ...over });
+  const crossing = windowed({
     toolCalls: 3,
-    contextFraction: 0.81,
-    priorContextFraction: 0.79,
+    contextTokens: 162_000,
+    priorContextTokens: 158_000,
   });
-  const after = reading({
+  const after = windowed({
     toolCalls: 4,
-    contextFraction: 0.85,
-    priorContextFraction: 0.81,
+    contextTokens: 170_000,
+    priorContextTokens: 162_000,
   });
-  const below = reading({
+  const below = windowed({
     toolCalls: 5,
-    contextFraction: 0.5,
-    priorContextFraction: 0.4,
+    contextTokens: 100_000,
+    priorContextTokens: 80_000,
   });
+  expect(THRESHOLD * CONTEXT_WINDOW).toBe(160_000);
   expect(budgetLineDue(crossing, budget)).toBe(true);
   expect(budgetLineDue(after, budget)).toBe(false);
   expect(budgetLineDue(below, budget)).toBe(false);
-  // A reading carrying no fraction crosses nothing, whatever the thresholds
-  // say: the cadence is the only arm left, and at 100 it has not beaten.
-  expect(budgetLineDue(reading({ toolCalls: 3 }), budget)).toBe(false);
+  // A turn that is the transcript's first names no prior context, which
+  // reads as below every threshold: the crossing is re-reported rather than
+  // swallowed, and at a cadence of 100 nothing else is carrying this call.
+  expect(
+    budgetLineDue(windowed({ toolCalls: 3, contextTokens: 162_000 }), budget),
+  ).toBe(true);
 });
 
 it("a call the cadence and thresholds both pass over writes nothing at all", async () => {

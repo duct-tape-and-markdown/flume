@@ -234,9 +234,15 @@ function shellQuote(arg: string): string {
  * cadence beat, or a turn that carried the context past a declared
  * threshold.
  *
- * A crossing is read against the turn before, so a threshold reports once
- * and not on every call after it. An absent prior fraction reads as below
- * every threshold, which re-reports a crossing rather than swallowing one.
+ * A crossing is taken here, in tokens, against the window the reading names
+ * — the fraction is computed where it is compared rather than read off a
+ * copy stored beside the tokens it was taken over
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ *
+ * It is read against the turn before, so a threshold reports once and not on
+ * every call after it. An absent prior context reads as below every
+ * threshold, which re-reports a crossing rather than swallowing one.
  */
 export function budgetLineDue(
   reading: BudgetReading,
@@ -244,12 +250,16 @@ export function budgetLineDue(
 ): boolean {
   const everyCalls = budget.everyCalls ?? 1;
   if (reading.toolCalls > 0 && reading.toolCalls % everyCalls === 0) return true;
-  const { contextFraction } = reading;
-  if (contextFraction === undefined) return false;
-  const prior = reading.priorContextFraction ?? 0;
-  return (budget.thresholds ?? []).some(
-    (threshold) => contextFraction >= threshold && prior < threshold,
-  );
+  // A windowless reading is a windowless declaration, which `validateBudget`
+  // has already refused thresholds to: the cadence above was its only arm,
+  // and there is nothing here to take a fraction of.
+  const { contextWindow } = reading;
+  if (contextWindow === undefined) return false;
+  const prior = reading.priorContextTokens ?? 0;
+  return (budget.thresholds ?? []).some((threshold) => {
+    const crossing = threshold * contextWindow;
+    return reading.contextTokens >= crossing && prior < crossing;
+  });
 }
 
 /** What the hook writes, on each stream, for one tool call. */

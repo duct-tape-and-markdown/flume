@@ -144,7 +144,11 @@ it("the budget line reports context used against the declared window from the la
   );
 
   expect(read.reading.contextTokens).toBe(context(latest));
-  expect(read.reading.contextFraction).toBeCloseTo(42_007 / 200_000, 10);
+  // The window the reading was taken against, and the turn before's context
+  // over that same window — the two facts a crossing is computed from, in
+  // place of a fraction stored beside them.
+  expect(read.reading.contextWindow).toBe(200_000);
+  expect(read.reading.priorContextTokens).toBe(context(earlier));
   expect(read.line).toBe(
     "budget: context 42,007/200,000 tokens (21%) | elapsed 20m | 1 tool call",
   );
@@ -186,7 +190,9 @@ it("the budget line counts tool calls and elapsed clock from the transcript's ow
 
   expect(read.reading.toolCalls).toBe(3);
   expect(read.reading.elapsedMs).toBe(14 * 60_000);
-  expect(read.reading.contextFraction).toBeUndefined();
+  // No window on the reading, so nothing downstream can score a fraction
+  // against one the chain never named.
+  expect(read.reading.contextWindow).toBeUndefined();
   expect(read.line).toBe("budget: elapsed 14m | 3 tool calls");
 
 });

@@ -57,21 +57,25 @@ export interface BudgetReading {
   /** Milliseconds from the transcript's first timestamped event to now. */
   elapsedMs: number;
   /**
-   * Context against the declared window, present only when one was
-   * declared — the value the line's percentage rounds, and the one a
-   * threshold is crossed against.
+   * The window those tokens were read against, present only where the chain
+   * declared one. Every fraction this reading is scored on — the line's
+   * percentage, a threshold crossing — is that fraction's numerator over
+   * this, computed where it is compared rather than stored here beside it
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*). A windowed reading therefore cannot lack
+   * its fraction, and a windowless one cannot carry a share of a window it
+   * does not name.
    */
-  contextFraction?: number;
+  contextWindow?: number;
   /**
-   * The same fraction one assistant turn earlier — the other side a
-   * crossing is decided on, since a threshold is crossed by a turn that
-   * passed it and not by every turn after. Absent where no window was
-   * declared, where the latest turn is the transcript's first, or where the
-   * turn before it reported no usage; a caller deciding a crossing reads
-   * absence as "below every threshold", which re-reports a crossing rather
-   * than swallowing one.
+   * The context one assistant turn earlier — the other side a crossing is
+   * decided on, since a threshold is crossed by a turn that passed it and
+   * not by every turn after. Absent where the latest turn is the
+   * transcript's first, or where the turn before it reported no usage; a
+   * caller deciding a crossing reads absence as "below every threshold",
+   * which re-reports a crossing rather than swallowing one.
    */
-  priorContextFraction?: number;
+  priorContextTokens?: number;
 }
 
 /**
@@ -171,25 +175,20 @@ function budgetLineFrom(
 
   const { contextWindow } = opts;
   const elapsedMs = (opts.now ?? Date.now()) - firstEventMs;
-  const contextFraction =
-    contextWindow === undefined ? undefined : contextTokens / contextWindow;
-  const priorTokens = priorUsage === undefined ? undefined : contextTokensOf(priorUsage);
-  const priorContextFraction =
-    contextWindow === undefined || priorTokens === undefined
-      ? undefined
-      : priorTokens / contextWindow;
+  const priorContextTokens =
+    priorUsage === undefined ? undefined : contextTokensOf(priorUsage);
   const reading: BudgetReading = {
     contextTokens,
     toolCalls,
     elapsedMs,
-    ...(contextFraction !== undefined ? { contextFraction } : {}),
-    ...(priorContextFraction !== undefined ? { priorContextFraction } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(priorContextTokens !== undefined ? { priorContextTokens } : {}),
   };
 
   const parts: string[] = [];
-  if (contextWindow !== undefined && contextFraction !== undefined) {
+  if (contextWindow !== undefined) {
     parts.push(
-      `context ${groupDigits(contextTokens)}/${groupDigits(contextWindow)} tokens (${Math.round(contextFraction * 100)}%)`,
+      `context ${groupDigits(contextTokens)}/${groupDigits(contextWindow)} tokens (${Math.round((contextTokens / contextWindow) * 100)}%)`,
     );
   }
   parts.push(`elapsed ${formatElapsed(elapsedMs)}`);
