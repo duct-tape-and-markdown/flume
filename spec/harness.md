@@ -35,7 +35,10 @@ entry in flight is left alone*; `spec/loop.md`, *The ship lock and the worktree
 lock — sibling ticks take turns at git*) — never an order the package imposes
 on the baton. How many run at once is the consumer's budget,
 `supervisorPolicy.maxTicks`, which this repo declares and the package leaves at
-the engine's default of one.
+the engine's default of one. **Build is declared first**, the plan slices after
+it and the sweep last of those: declared order is the priority when the budget
+is short, and at the default budget that order is the whole schedule, so the
+product outranks insurance for every consumer that declares nothing.
 
 A slice is made live by unrouted work, never by a signal alone: a record in a
 queue, a spec commit past the derive cursor, a commit past the sweep stamp. A
@@ -43,9 +46,10 @@ tick that runs and files nothing is the shape this sentence exists to refuse.
 Two orderings the serial baton used to carry are mechanism now. A refused
 entry is not re-picked before the drain reconciles it: the refusal keys on the
 entry as declared, and stands until a producer rewrites or drops it (*The
-default `handoff`*). And a finding two producers file at once lands once: the
-pending gate over the merged tree refuses the second (*The gates the discipline
-needs*).
+default `handoff`*). And a finding two producers file at once is folded, not
+refused: the drain amends the entry that covers it rather than filing a
+sibling, and one that reaches build first costs a clean-exit record the next
+drain drops (*The gates the discipline needs*).
 
 
 ### The prompts and their discipline
@@ -92,16 +96,15 @@ per record, titled, under the tick's own tag), the
 clean-tree gate, the pending gate wired to the consumer's fence, and the
 cursor gate: a plan commit's derive cursor is an ancestor of the tip and a
 descendant of its pre-commit value, refused otherwise, because a cursor
-stepped past commits nobody derived fails silently on every tick after. Two
-more over the merged tree, because they judge what two concurrent producers
-did to one queue: the **claim check** the engine's pending gate carries,
-refusing a commit that edits or removes an entry a build tick holds
-(`spec/pending.md`, *Claims — an entry in flight is left alone*); and the
-**duplicate refusal**, the package's own — a commit adding an entry whose `per`
-cite equals a standing entry's and whose declared files overlap it is refused
-naming both, so the producer re-runs against the tip that shows the entry it
-did not see. Both are `afterMerge`: under one producer they are uncontended,
-and a pre-merge read would pass over exactly the tree the collision is not in.
+stepped past commits nobody derived fails silently on every tick after. One
+more over the merged tree, because it judges what two concurrent producers did
+to one queue: the **claim check** the engine's pending gate carries, refusing
+a commit that edits or removes an entry a build tick holds
+(`spec/pending.md`, *Claims — an entry in flight is left alone*). It is
+`afterMerge` because a pre-merge read passes over exactly the tree the
+collision is not in. There is no duplicate gate: two producers filing one
+finding is a shape every legitimate decomposition shares, so the drain folds
+a duplicate rather than a gate refusing it (*The phases*).
 The record byte cap is not the gate's: a note over the cap ships with its entry,
 and the drain that reads it says so in the plan commit body — a shape rule on
 a prose channel refuses the prose, never the code it rode in with.
