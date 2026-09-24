@@ -460,6 +460,12 @@ const entryNaming = (line: string): PendingEntry => ({
 
 describe("the named-lines gate", () => {
   const line = "the widget refuses a negative count";
+  /**
+   * A span that finished the entry it was handed — it wrote neither note
+   * whose location puts the work down, so the judge rules
+   * (`harness/chain.ts`).
+   */
+  const finished = (): undefined => undefined;
   const inherited: TestFailure = {
     file: "tests/cite.test.ts",
     name: "comment citations > every backticked page name resolves",
@@ -475,8 +481,46 @@ describe("the named-lines gate", () => {
       { passing: [], failures: [inherited] },
     ).runner;
 
+  it("the named-lines gate skips a span that wrote a continuing note", async () => {
+    // The runner is the red-at-base one every case here uses: a gate that
+    // ruled at all over it would refuse, so a green verdict below can only be
+    // the skip.
+    const runner = redBoth();
+    const entry = entryNaming(line);
+    const span = gateContext({ entry, touchedPaths: ["src/widget.ts"] });
+
+    const result = await namedLinesGate(runner, () => "continuing").run(span);
+
+    expect(result.ok).toBe(true);
+    // Spelled as a skip rather than an unexplained green, and as the
+    // continuation's own: the lines belong to the completed entry, and a
+    // segment of it attempted them no more than a park did.
+    expect(result.skipped).toBe(
+      "the named lines belong to the completed entry, not to a segment of it",
+    );
+    expect(result.message).toBe(
+      `${entry.tag}: continuing — a note under the continuing directory`,
+    );
+
+    // Non-vacuity, twice over. The same span with neither note written really
+    // is judged — so the skip is the predicate's answer and not a gate stuck
+    // on green...
+    const judged = await namedLinesGate(redBoth(), finished).run(span);
+    expect(judged.ok).toBe(false);
+    expect(judged.skipped).toBeUndefined();
+    // ...and a park over the same span skips too, under its own reason — so
+    // the verdict above names the kind the tick declared rather than one
+    // spelling covering both.
+    const parked = await namedLinesGate(redBoth(), () => "parked").run(span);
+    expect(parked.ok).toBe(true);
+    expect(parked.skipped).toBe(
+      "a park attempts none of the entry's named lines",
+    );
+    expect(parked.skipped).not.toBe(result.skipped);
+  });
+
   it("the named-lines gate reports base-red as its verdict when the judge ruled the base red", async () => {
-    const result = await namedLinesGate(redBoth(), () => false).run(
+    const result = await namedLinesGate(redBoth(), finished).run(
       gateContext({ entry: entryNaming(line), touchedPaths: ["src/widget.ts"] }),
     );
 
@@ -498,7 +542,7 @@ describe("the named-lines gate", () => {
   });
 
   it("the named-lines gate declares blamesSpan false when the suite was already red at the base", async () => {
-    const result = await namedLinesGate(redBoth(), () => false).run(
+    const result = await namedLinesGate(redBoth(), finished).run(
       gateContext({ entry: entryNaming(line), touchedPaths: ["src/widget.ts"] }),
     );
 
@@ -517,7 +561,7 @@ describe("the named-lines gate", () => {
     // Same runner, same entry; only the footprint differs, so the judge rules
     // the failing file the span's own. The disowning is the base-red arm's
     // alone — every other refusal stays blamed.
-    const result = await namedLinesGate(redBoth(), () => false).run(
+    const result = await namedLinesGate(redBoth(), finished).run(
       gateContext({
         entry: entryNaming(line),
         touchedPaths: ["src/widget.ts", inherited.file],
@@ -534,7 +578,7 @@ describe("the named-lines gate", () => {
     // The same runner and the same entry; only the span's touched paths
     // differ. Without the footprint reaching the judge, this would rule
     // base-red exactly as the case above does.
-    const result = await namedLinesGate(redBoth(), () => false).run(
+    const result = await namedLinesGate(redBoth(), finished).run(
       gateContext({
         entry: entryNaming(line),
         touchedPaths: ["src/widget.ts", inherited.file],

@@ -39,6 +39,8 @@ import { defaultHandoff, type Handoff } from "../harness/handoff.ts";
 import { consumerIgnores } from "../harness/ignores.ts";
 import { promptPath, type PromptName } from "../harness/prompts.ts";
 import {
+  continuingNotePath,
+  continuingNotesDir,
   noteGlobs,
   notePath,
   notePaths,
@@ -724,6 +726,33 @@ it("a note beside the parked directory ships its entry", () => {
   expect(
     build.shipped?.(shipContext(assigned, [observation, "src/index.ts"])),
   ).toBe(true);
+});
+
+it("a commit carrying a continuing note keeps its entry in the queue", () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+  const continuing = continuingNotePath(STATE_ROOT, assigned.tag);
+
+  // The path really is under the continuing directory — the one fact the
+  // verdict below is about, read off the accessor the build prompt names to
+  // the agent rather than assumed from the call.
+  expect(continuing.startsWith(`${continuingNotesDir(STATE_ROOT)}/`)).toBe(true);
+  // Non-vacuity: the tick's own fence admits it, so this is a commit a tick
+  // could have written rather than one that would have reverted first.
+  expect(build.writablePaths).toContain(
+    `${continuingNotesDir(STATE_ROOT)}/*.md`,
+  );
+  // And the same commit without the note ships, so the verdict below is that
+  // note's presence and not a predicate stuck on one answer.
+  expect(build.shipped?.(shipContext(assigned, ["src/index.ts"]))).toBe(true);
+
+  // A green segment of the entry, landed with the rest put down: the span
+  // stays on the trunk and the entry stays in the queue for the next tick on
+  // it, exactly as a park's does.
+  expect(build.shipped?.(shipContext(assigned, [continuing]))).toBe(false);
+  expect(
+    build.shipped?.(shipContext(assigned, ["src/index.ts", continuing])),
+  ).toBe(false);
 });
 
 it("a commit writing a parked note and the entry's work is still a park", () => {

@@ -12,7 +12,8 @@
  * the plan artifacts' paths and the fence that is their list in `layout.ts`.
  * What is decided here is only what a `Phase` object needs that none of them
  * can answer alone: which of those fences each phase carries, which prompt
- * it addresses, which commit is a park, and the order the gates sit in.
+ * it addresses, which commit put its work down, and the order the gates sit
+ * in.
  *
  * **The declaration is parsed here, not by the consumer.** The whole of
  * adoption is one declaration module and the hop that applies this factory
@@ -43,7 +44,7 @@ import { resolve } from "node:path";
 import type { Agent } from "../src/Agent.js";
 import type { FlumeApi } from "../src/flumeApi.js";
 import type { Gate } from "../src/Gate.js";
-import type { EntryExtension, PendingEntry } from "../src/PendingSchema.js";
+import type { EntryExtension } from "../src/PendingSchema.js";
 import type { Chain, Phase, TickContext } from "../src/Phase.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
 
@@ -61,8 +62,13 @@ import { MAX_OUTPUT_BYTES } from "./exec.js";
 import { harnessGates, type GateEngine } from "./gates.js";
 import { defaultRefusesEntry, resolveHandoff } from "./handoff.js";
 import { SESSIONS_REL } from "./ignores.js";
-import { namedLinesGate } from "./judgeGate.js";
-import { noteGlobs, parkedNotePath, planArtifacts } from "./layout.js";
+import { namedLinesGate, type PutDownPredicate } from "./judgeGate.js";
+import {
+  continuingNotePath,
+  noteGlobs,
+  parkedNotePath,
+  planArtifacts,
+} from "./layout.js";
 import {
   BUILD_PROMPT_DATA_KEYS,
   PLAN_SLICE_PROMPT_DATA_KEYS,
@@ -294,21 +300,33 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   };
 
   /**
-   * Whether this commit is a park: the entry's own note, written under the
-   * parked directory (`spec/harness.md`, *Records as one file each* —
-   * location is kind).
+   * How this commit put its work down, if it did: the entry's own note,
+   * written under the parked directory or under the continuing one
+   * (`spec/harness.md`, *Records as one file each* — location is kind). A
+   * commit that wrote neither finished the entry.
    *
    * The package's vocabulary, not the engine's — the engine reports that a
    * commit landed and which paths it touched, and what that *means* is the
    * chain's (`.claude/rules/engine-boundary.md`, *Told, not inferred*). What
    * it reads is **where** the tick wrote, and nothing about the shape of the
    * path list around it: a refusal that could not help leaving a half-edited
-   * file behind is still a refusal, and a commit carrying an observation note
-   * beside its work is a tick that shipped and had something to say. Told,
-   * either way, rather than inferred from how much the commit touched.
+   * file behind is still a refusal, a segment that landed green is still a
+   * continuation however much of the entry it covered, and a commit carrying
+   * an observation note beside its work is a tick that shipped and had
+   * something to say. Told, every way, rather than inferred from how much the
+   * commit touched.
+   *
+   * The park is read first, so a tick that wrote both notes is the refusal it
+   * declared rather than the continuation: only one of them can be true of an
+   * entry, and the one that keeps the work in front of plan is the safer
+   * reading of a tick that said two things.
    */
-  const isPark = (entry: PendingEntry, touched: readonly string[]): boolean =>
-    touched.includes(parkedNotePath(stateRoot, entry.tag));
+  const putDown: PutDownPredicate = (entry, touched) => {
+    if (touched.includes(parkedNotePath(stateRoot, entry.tag))) return "parked";
+    if (touched.includes(continuingNotePath(stateRoot, entry.tag)))
+      return "continuing";
+    return undefined;
+  };
 
   const buildWritablePaths = unique([...declaration.fence.build, ...notes]);
 
@@ -341,7 +359,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
         }
       : {}),
     gates: gatesFor({ writablePaths: buildWritablePaths }, BUILD_PHASE, [
-      namedLinesGate(runner, isPark),
+      namedLinesGate(runner, putDown),
     ]),
     promptArgs: (ctx) => ({
       ...shared(ctx),
@@ -351,7 +369,11 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // and the spec section its `per` cites are both routinely the text that
     // *documents* the span grammar.
     promptDataKeys: [...SHARED_PROMPT_DATA_KEYS, ...BUILD_PROMPT_DATA_KEYS],
-    shipped: ({ entry, touchedPaths }) => !isPark(entry, touchedPaths),
+    // A commit that put its work down — a park or a continuation — leaves its
+    // entry in the queue with its span on the trunk; everything else finished
+    // the entry it was handed.
+    shipped: ({ entry, touchedPaths }) =>
+      putDown(entry, touchedPaths) === undefined,
     handoff: handoffFor(BUILD_PHASE),
     ...(setup ? { setupWorktree: setup } : {}),
   };

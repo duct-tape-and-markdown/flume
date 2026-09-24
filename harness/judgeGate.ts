@@ -6,8 +6,8 @@
  *
  * The ruling itself lives in `judge.ts` and the runner that observes it in
  * `runner.ts`; nothing here re-decides either. What this module owns is the
- * gate's own vocabulary: the two skips, the `base-red` discriminant a refusal
- * carries, and the detail block.
+ * gate's own vocabulary: the skips and how each reads, the `base-red`
+ * discriminant a refusal carries, and the detail block.
  */
 
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
@@ -18,17 +18,42 @@ import { judgeNamedLines, type JudgeVerdict } from "./judge.js";
 import type { Runner, TestFailure } from "./runner.js";
 
 /**
- * Whether a build commit is a park — the chain factory's predicate, handed
- * in rather than rebuilt here. What a park *is* is the package's vocabulary
- * over paths the factory composed (`chain.ts`), and a second spelling of it
- * beside the gate would be the copy that goes stale
- * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
- * beside its source*).
+ * Which note a build tick put its work down with — the two kinds whose
+ * location says the entry is not finished (`spec/harness.md`, *A tick puts
+ * work down*): a park, and a continuation.
  */
-type ParkPredicate = (
+type PutDownKind = "parked" | "continuing";
+
+/**
+ * How a build commit put its work down, or `undefined` for one that finished
+ * the entry — the chain factory's predicate, handed in rather than rebuilt
+ * here. What each kind *is* is the package's vocabulary over paths the
+ * factory composed (`chain.ts`), and a second spelling of it beside the gate
+ * would be the copy that goes stale (`.claude/rules/engineering.md`, *Derived
+ * state is computed, never restated beside its source*).
+ */
+export type PutDownPredicate = (
   entry: PendingEntry,
   touched: readonly string[],
-) => boolean;
+) => PutDownKind | undefined;
+
+/**
+ * How each put-down reads on the verdict: what the commit said, and why the
+ * named lines went unjudged. Keyed exhaustively by {@link PutDownKind}, so a
+ * further note home whose location is a verdict is a typecheck failure here
+ * rather than a skip that reads as a park.
+ */
+const PUT_DOWN: Record<PutDownKind, { said: string; skipped: string }> = {
+  parked: {
+    said: "parked — a note under the parked directory",
+    skipped: "a park attempts none of the entry's named lines",
+  },
+  continuing: {
+    said: "continuing — a note under the continuing directory",
+    skipped:
+      "the named lines belong to the completed entry, not to a segment of it",
+  },
+};
 
 /**
  * The judge as a gate on the merged tree (`spec/harness.md`, *The judges*):
@@ -40,11 +65,14 @@ type ParkPredicate = (
  * `afterMerge` revert is per-entry. The base half needs a base sha, which
  * is a fact of the gated span either way.
  *
- * A park is not judged. Its named lines belong to work the park did not
- * attempt, and judging them would revert the note — throwing away the one
- * channel the tick had for saying why it could not ship. Spelled as a skip
- * rather than an unexplained green (`.claude/rules/engineering.md`, *A green
- * verdict is proven non-vacuous*).
+ * A commit that put its work down is not judged. A park attempted none of
+ * the entry's named lines, and judging them would revert the note — throwing
+ * away the one channel the tick had for saying why it could not ship. A
+ * continuation landed a green segment, and the lines belong to the completed
+ * entry rather than to a segment of it, so judging them would revert a span
+ * the entry keeps (`spec/harness.md`, *A tick puts work down*). Each is
+ * spelled as its own skip rather than an unexplained green
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
  *
  * A suite that was already red at the span's base still refuses — an entry is
  * unjudgeable on a red tree either way — but the refusal carries
@@ -58,7 +86,10 @@ type ParkPredicate = (
  * quarantine off its own prose would be the inference
  * `.claude/rules/engine-boundary.md`, *Told, not inferred* refuses.
  */
-export function namedLinesGate(runner: Runner, isPark: ParkPredicate): Gate {
+export function namedLinesGate(
+  runner: Runner,
+  putDown: PutDownPredicate,
+): Gate {
   return {
     name: "named lines",
     when: "afterMerge",
@@ -71,11 +102,12 @@ export function namedLinesGate(runner: Runner, isPark: ParkPredicate): Gate {
           skipped: "the judge rules on one entry's named lines",
         };
       }
-      if (isPark(entry, ctx.touchedPaths)) {
+      const kind = putDown(entry, ctx.touchedPaths);
+      if (kind !== undefined) {
         return {
           ok: true,
-          message: `${entry.tag}: parked — a note under the parked directory`,
-          skipped: "a park attempts none of the entry's named lines",
+          message: `${entry.tag}: ${PUT_DOWN[kind].said}`,
+          skipped: PUT_DOWN[kind].skipped,
         };
       }
       const verdict = await judgeNamedLines(runner, {
