@@ -1,0 +1,22 @@
+{
+  "tag": "THE-WAVES-TWO-VERDICT-PRODUCERS-NAME-ONE-FACT-SET",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "one wave's facts driven through both real verdict producers, the refused verdict read against the completing one's field set"
+      }
+    ]
+  },
+  "summary": "The wave's completing and ledger-refusal verdicts are two hand-assembled argument lists over one optional-everywhere shape, so an omitted fact compiles and ships green",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "one wave runs twice — once completing, once with its ledger rewrite refused — and the refused verdict is asserted to name every fact field the completing verdict names, both verdicts taken from the real producers rather than hand-authored",
+  "pins": [
+    "a wave's ledger-refusal verdict names every fact field that wave's completing verdict names"
+  ],
+  "notes": "Off note THE-LEDGER-REFUSAL-VERDICT-NAMES-THE-STAKE-LOSSES, its second finding, fork (2). Fork (1) — one shared facts value — is unavailable: `src/Dispatcher.ts:1056` is the tick's one verdict site, serving singletons too and deriving each fact locally; only `src/waveMerge.ts:784` is the wave's. Verified: the two lists name identical fields today and every `TickVerdictFacts` field is optional, so the next omission compiles. `tests/Dispatcher.test.ts:8302` is the refusal leg."
+}
