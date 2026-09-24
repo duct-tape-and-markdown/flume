@@ -1,0 +1,19 @@
+{
+  "tag": "THE-DISCIPLINE-PAGE-PRICES-UNDER-DECLARING-AT-THE-SPAN",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/prompts/plan-discipline.md",
+        "description": "the `files` paragraph's under-declaring cost agrees with the section it derives from"
+      }
+    ]
+  },
+  "summary": "The discipline page tells every plan tick under-declaring costs \"at most a cherry-pick conflict\", which the section it derives from no longer says",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "`files` is a prediction the scheduler consumes"
+  },
+  "acceptance": "the discipline page's under-declaring clause prices the tick's span, not a retry, and the sibling-seam paragraph's \"the retry above\" still resolves to it",
+  "notes": "Ratified 69164290: the abort discards the work before the entry goes back to pending, so the retry re-earns the span at full agent price — verified at `src/waveMerge.ts:444`-`:466`. The page currently reads the two ways at once: line 15 says \"at most\", and the paragraph below it already prices the retry \"at a fresh agent\". No `tests[]`/`pins[]` — prompt prose is its authors', never the suite's (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*)."
+}
