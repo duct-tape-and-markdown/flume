@@ -439,6 +439,7 @@ it("the package's build prompt renders over a real tick with no placeholder left
       ...sharedPromptArgs({
         declaration,
         extension: entryExtension(),
+        phase: "build",
         stateRoot: flumeDir,
       }),
       ...buildPromptArgs({
@@ -483,6 +484,7 @@ it("build's per-tick args reach the renderer through a phase carrying the packag
     ...sharedPromptArgs({
       declaration: declare(),
       extension: entryExtension(),
+      phase: "build",
       stateRoot: flumeDir,
     }),
     ...perTick,
@@ -580,6 +582,7 @@ async function renderOver(ctx: BuildTickContext): Promise<string> {
       ...sharedPromptArgs({
         declaration,
         extension: entryExtension(),
+        phase: "build",
         stateRoot: ctx.flumeDir,
       }),
       ...buildPromptArgs({ declaration, ctx }),

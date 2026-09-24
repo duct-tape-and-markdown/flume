@@ -184,9 +184,23 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   const agentFor = agentFactory(api, declaration);
   const setup = worktreeSetup(declaration, provision);
 
-  /** One phase's shared prompt args, per tick, at the root the tick reports. */
-  const shared = (ctx: TickContext): Record<string, string> =>
-    sharedPromptArgs({ declaration, extension, stateRoot: ctx.flumeDir });
+  /**
+   * One phase's shared prompt args, per tick, at the root the tick reports.
+   *
+   * The phase rides along because one of the shared values is read for the
+   * phase rendering it: what a tick puts down when its budget line says to
+   * (`prompts.ts`, `putDownStatement`).
+   */
+  const shared = (
+    name: HarnessPhase,
+    ctx: TickContext,
+  ): Record<string, string> =>
+    sharedPromptArgs({
+      declaration,
+      extension,
+      phase: name,
+      stateRoot: ctx.flumeDir,
+    });
 
   /**
    * The package's discipline gates, then the consumer's, then whatever the
@@ -256,7 +270,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       // renders (`windows.ts`). Both come off the same value here, so a
       // slice cannot be woken over a window its prompt then shows as empty.
       promptArgs: (ctx) => ({
-        ...shared(ctx),
+        ...shared(name, ctx),
         // The claimed set is the engine's own read, handed straight through
         // (`spec/pending.md`, *Claims — an entry in flight is left alone*).
         // Absent only on a hand-built context, where "nothing in flight" is
@@ -339,7 +353,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       namedLinesGate(runner, putDown),
     ]),
     promptArgs: (ctx) => ({
-      ...shared(ctx),
+      ...shared(BUILD_PHASE, ctx),
       ...buildPromptArgs({ declaration, ctx }),
     }),
     // As above, and build is where it bites hardest: an entry's own prose

@@ -18,9 +18,11 @@
  * mid-sentence (`.claude/rules/engineering.md`, *Derived state is computed,
  * never restated beside its source*). Every value below is read from the
  * surface that owns it — the engine's `NO_COMMIT_MODES`, `records.ts`'s cap,
- * the entry extension's own hints, the consumer's declaration. The turn
- * boundary is the one this module owns outright: nothing else holds it, so
- * the single home *is* the constant below.
+ * the entry extension's own hints, the consumer's declaration. Two are this
+ * module's outright — the turn boundary, and when a tick puts its work down
+ * beside what each phase puts down — because nothing else holds a reading of
+ * the invocation or of the engine's budget line, so the single home *is* the
+ * constant and the function below.
  *
  * A placeholder with no argument is refused by the engine's renderer before
  * the agent is invoked, so an arg this module stops supplying is a loud
@@ -50,7 +52,12 @@ import { namespacedJoin, resolvePendingDir } from "../src/paths.js";
 import { NO_COMMIT_MODES } from "../src/Prompt.js";
 
 import { resolveCiteSync } from "./citeResolver.js";
-import { PHASES, type Declaration, type PlanSlice } from "./declaration.js";
+import {
+  PHASES,
+  type Declaration,
+  type HarnessPhase,
+  type PlanSlice,
+} from "./declaration.js";
 import { PerSchema } from "./entryExtension.js";
 import {
   continuingNotePath,
@@ -90,6 +97,52 @@ const DISCIPLINE = "plan-discipline";
  * was the boundary, so nothing was contradicted.
  */
 const TURN_BOUNDARY = `**One tick is one turn.** Ending your turn ends this invocation, and nothing wakes it afterwards. A command left running in the background, a scheduled wake-up, a watcher armed on your own work, a message whose reply you meant to read: each is a continuation this process will not be alive for, and whatever it would have written dies uncommitted with the worktree. Wait inside the turn on anything you started, and name what you left undone in the commit this tick writes.`;
+
+/**
+ * What each phase puts down when the room runs out — one act per phase,
+ * beside the statement that frames them so the thresholds are stated once
+ * and only the act varies.
+ *
+ * Each names the phase's own coherent unit and the cursor or record that
+ * carries what is left, because "stop" without it is an instruction to
+ * abandon a tick rather than to close one.
+ */
+const PUT_DOWN_ACTS: Record<HarnessPhase, string> = {
+  "plan-inbox":
+    "commit the records you have routed, and leave the rest on disk for the next inbox tick to see again",
+  "plan-derive":
+    "commit the entries you have derived, and advance `derivedThrough` only through the commits you finished — never past them as bookkeeping",
+  "plan-sweep":
+    "commit the neighborhoods you have swept with every frontier module you read recorded covered, and leave the rotation open",
+  build:
+    "commit the coherent, green segment you have and declare the rest another tick's work in a continuing note",
+};
+
+/**
+ * When a tick puts its work down, and what putting it down *is* for the
+ * phase reading the line (`spec/harness.md`, *A tick puts work down*).
+ *
+ * Beside {@link TURN_BOUNDARY}, and the package's to author for the same
+ * reason: the thresholds are a reading of the budget line, and no engine
+ * export holds a reading.
+ *
+ * **A threshold per fact the line can carry.** The line is the engine's
+ * (`src/budgetLine.ts`): elapsed wall clock and tool calls on every line, the
+ * context percentage only where the chain declared `contextWindow`. A
+ * statement naming the percentage alone would be a dial an undeclared-window
+ * chain never sees, so each fact gets its own threshold and the agent reads
+ * the ones its own line printed.
+ *
+ * **The absence clause is the line the engine actually sends.** No window
+ * declared composes a line *without a percentage*, not a missing line; a
+ * line that fails to arrive is a transcript the hook could not read, and
+ * says nothing about the room. Reading absence as "no window declared" would
+ * hand the agent a verdict on a fact it never received
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ */
+function putDownStatement(phase: HarnessPhase): string {
+  return `**If the room is running out, put the work down rather than be cut off by it.** A budget line arrives after a tool call with the facts of this session: elapsed wall clock, tool calls so far, and — where this chain declared the model's context window — the context used against it. Each fact carries its own threshold, and you read the ones your line actually printed. **On the window:** at **70%** open no new ground and land the segment you are already in; at **80%** stop. **On the clock:** past **45 minutes** land what is green; past **60 minutes** stop. **A line with no percentage in it is a chain that declared no window** — nothing is missing from that line, and the clock is the whole dial. A line that does not arrive at all is a session transcript the hook could not read: it says nothing about the room you have, and the call is yours on your own reading. Putting the work down is for work that will not fit in one tick — never a licence to stop while the room is there, and never a way to land work that is not green. Here it means: ${PUT_DOWN_ACTS[phase]}.`;
+}
 
 /**
  * Every prompt file the package ships: one per phase it constructs, plus the
@@ -132,6 +185,7 @@ export function promptPath(name: PromptName): string {
  */
 export const SHARED_PROMPT_DATA_KEYS = [
   "TURN_BOUNDARY",
+  "PUT_DOWN",
   "NO_COMMIT_MODES",
   "RECORD_MAX_BYTES",
   "DISCIPLINE",
@@ -152,6 +206,13 @@ export type SharedPromptArg = (typeof SHARED_PROMPT_DATA_KEYS)[number];
 
 /** What a prompt's shared arguments are composed from. */
 export interface SharedPromptArgsInput {
+  /**
+   * The phase being rendered. Every value below is the same for all four but
+   * one: what a tick puts down when its budget line says to is the phase's
+   * own act, and it is composed here rather than per phase so the thresholds
+   * around it have one home ({@link putDownStatement}).
+   */
+  readonly phase: HarnessPhase;
   /** The consumer's validated declaration — its spec locus and its slots. */
   readonly declaration: Declaration;
   /**
@@ -175,10 +236,12 @@ export interface SharedPromptArgsInput {
 export function sharedPromptArgs(
   input: SharedPromptArgsInput,
 ): Record<SharedPromptArg, string> {
-  const { declaration, extension, stateRoot } = input;
+  const { declaration, extension, phase, stateRoot } = input;
   return {
     /** The invocation boundary every phase runs inside. */
     TURN_BOUNDARY,
+    /** When to put the work down, and what this phase puts down. */
+    PUT_DOWN: putDownStatement(phase),
     /**
      * The engine's no-commit taxonomy, rendered from the engine's own
      * declaration (`src/Prompt.ts`) — the whole point of this arg. A mode

@@ -28,7 +28,12 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
-import { PHASES, PLAN_SLICES, type PlanSlice } from "../harness/declaration.ts";
+import {
+  PHASES,
+  PLAN_SLICES,
+  type HarnessPhase,
+  type PlanSlice,
+} from "../harness/declaration.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
 import { harnessInit } from "../harness/init.ts";
 import {
@@ -121,7 +126,7 @@ afterAll(async () => {
  * slice added to the package reaches the per-slice producer below without
  * this file naming it.
  */
-const isPlanSlice = (name: PromptName): name is PlanSlice =>
+const isPlanSlice = (name: HarnessPhase): name is PlanSlice =>
   (PLAN_SLICES as readonly string[]).includes(name);
 
 /**
@@ -134,19 +139,18 @@ const isPlanSlice = (name: PromptName): name is PlanSlice =>
  * here would re-author the seam this file exists to hold.
  */
 function args(
+  name: HarnessPhase,
   root: string = stateRoot,
-  name?: PromptName,
   claimed: readonly string[] = [],
 ): Record<string, string> {
   return {
     ...sharedPromptArgs({
       declaration,
       extension: entryExtension(),
+      phase: name,
       stateRoot: root,
     }),
-    ...(name !== undefined && isPlanSlice(name)
-      ? planSlicePromptArgs(name, root, claimed)
-      : {}),
+    ...(isPlanSlice(name) ? planSlicePromptArgs(name, root, claimed) : {}),
   };
 }
 
@@ -171,13 +175,13 @@ function phase(name: string): Phase {
  * the prompts own, and it would go stale the moment a prompt grew an arg.
  */
 async function render(
-  name: PromptName,
+  name: HarnessPhase,
   root: string = stateRoot,
   claimed: readonly string[] = [],
 ): Promise<string> {
   const promptFile = promptPath(name);
   const raw = await readFile(promptFile, "utf8");
-  const shared = args(root, name, claimed);
+  const shared = args(name, root, claimed);
   const perTick = Object.fromEntries(
     [...raw.matchAll(PLACEHOLDER)]
       .map((match) => match[1]!)
@@ -324,7 +328,7 @@ it("every plan slice the package declares points its reader at the discipline pa
  */
 const ARTIFACTS: ReadonlyArray<{
   readonly key: PromptArg;
-  readonly at: (root: string, prompt: PromptName) => string | undefined;
+  readonly at: (root: string, prompt: HarnessPhase) => string | undefined;
   /**
    * Where the sentinel bytes are written, when that is not the path a span
    * opens. The queue is a directory (`spec/pending.md`, *The ledger is a
@@ -332,7 +336,7 @@ const ARTIFACTS: ReadonlyArray<{
    * damages *it*, while the bytes that prove arrival live in an entry file
    * under it. Every other artifact is a file, where the two coincide.
    */
-  readonly seedAt?: (root: string, prompt: PromptName) => string | undefined;
+  readonly seedAt?: (root: string, prompt: HarnessPhase) => string | undefined;
   readonly body: string;
   readonly sentinel: string;
   readonly placeholder?: string;
@@ -407,9 +411,9 @@ function spanSubstitutes(raw: string, key: PromptArg): boolean {
  * `harness/prompts/build.md` never having read it.
  */
 async function promptsReadingEachArtifact(
-  roster: readonly PromptName[] = PHASES,
-): Promise<ReadonlyMap<PromptArg, PromptName[]>> {
-  const readers = new Map<PromptArg, PromptName[]>(
+  roster: readonly HarnessPhase[] = PHASES,
+): Promise<ReadonlyMap<PromptArg, HarnessPhase[]>> {
+  const readers = new Map<PromptArg, HarnessPhase[]>(
     ARTIFACTS.map((a) => [a.key, []]),
   );
   for (const name of roster) {
@@ -433,7 +437,7 @@ async function promptsReadingEachArtifact(
  * still being read.
  */
 function expectEveryArtifactRead(
-  readers: ReadonlyMap<PromptArg, PromptName[]>,
+  readers: ReadonlyMap<PromptArg, HarnessPhase[]>,
   over: ReadonlyArray<(typeof ARTIFACTS)[number]> = ARTIFACTS,
 ): void {
   expect(over.length).toBeGreaterThan(0);
@@ -448,7 +452,7 @@ function expectEveryArtifactRead(
  * detector the loop itself skips by.
  */
 function pairsToAssert(
-  readers: ReadonlyMap<PromptArg, PromptName[]>,
+  readers: ReadonlyMap<PromptArg, HarnessPhase[]>,
   over: ReadonlyArray<(typeof ARTIFACTS)[number]>,
 ): number {
   return over.reduce((n, a) => n + readers.get(a.key)!.length, 0);
@@ -556,7 +560,7 @@ async function coldRoot(prefix: string): Promise<string> {
 
 /** One render's outcome, as a value both branches can be asserted against. */
 async function outcomeOf(
-  name: PromptName,
+  name: HarnessPhase,
   root: string,
 ): Promise<{ rendered: string } | { error: unknown }> {
   return render(name, root).then(
@@ -846,8 +850,8 @@ function questionsBlock(rendered: string, label: string): string[] {
  * the loop (`.claude/rules/engineering.md`, *A green verdict is proven
  * non-vacuous*).
  */
-async function slicesCarryingQuestions(): Promise<PromptName[]> {
-  const carrying: PromptName[] = [];
+async function slicesCarryingQuestions(): Promise<PlanSlice[]> {
+  const carrying: PlanSlice[] = [];
   for (const name of PLAN_SLICES) {
     const raw = await readFile(promptPath(name), "utf8");
     if (raw.includes("{{QUESTIONS_INDEX}}")) carrying.push(name);
@@ -1028,11 +1032,13 @@ it("every phase prompt the package renders substitutes the shared turn-boundary 
 
   // The producer's value, read from the producer — an empty one would make
   // every `carries` assertion below trivially true.
-  const boundary = args()["TURN_BOUNDARY"];
-  expect(boundary, "the shared args supply no TURN_BOUNDARY").toBeDefined();
-  expect(boundary!.trim()).not.toBe("");
-
   for (const name of PHASES) {
+    // The producer's value, read from the producer — an empty one would make
+    // the `carries` assertion below trivially true.
+    const boundary = args(name)["TURN_BOUNDARY"];
+    expect(boundary, "the shared args supply no TURN_BOUNDARY").toBeDefined();
+    expect(boundary!.trim()).not.toBe("");
+
     const raw = await readFile(promptPath(name), "utf8");
     const rendered = await render(name);
     expect({
@@ -1041,6 +1047,41 @@ it("every phase prompt the package renders substitutes the shared turn-boundary 
       carries: rendered.includes(boundary!),
     }).toEqual({ name, names: true, carries: true });
   }
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The put-down statement reaches every phase prompt from the one home that
+ * holds it, at both ends of the seam like the boundary above — and, unlike
+ * it, carrying a value that is the rendering phase's own: the thresholds are
+ * shared, the act each phase puts down is not.
+ *
+ * What the sentence *says* is not judged here. What is judged is the
+ * mechanical half: a phase added without the placeholder reads no thresholds
+ * at all, and a phase rendering a sibling's act is told to close a tick it is
+ * not running.
+ */
+it("every phase prompt the package renders substitutes its own put-down statement", async () => {
+  expect(PHASES.length).toBeGreaterThan(0);
+
+  const statements = new Set<string>();
+  for (const name of PHASES) {
+    const statement = args(name)["PUT_DOWN"];
+    expect(statement, "the shared args supply no PUT_DOWN").toBeDefined();
+    expect(statement!.trim()).not.toBe("");
+    statements.add(statement!);
+
+    const raw = await readFile(promptPath(name), "utf8");
+    const rendered = await render(name);
+    expect({
+      name,
+      names: raw.includes("{{PUT_DOWN}}"),
+      carries: rendered.includes(statement!),
+    }).toEqual({ name, names: true, carries: true });
+  }
+
+  // One per phase, never one value handed to all of them: a `Record` keyed by
+  // phase whose arms had converged would pass every assertion above.
+  expect(statements.size).toBe(PHASES.length);
 }, SPAWN_BUDGET_MS);
 
 /**
@@ -1079,7 +1120,7 @@ it("a plan slice tick with nothing in flight renders no claimed block at all", a
   for (const name of PLAN_SLICES) {
     // The producer's own empty answer, so the assertion is about what the
     // renderer put in the file rather than about a value this case invented.
-    expect(args(stateRoot, name, [])["CLAIMED_ENTRIES"]).toBe("");
+    expect(args(name, stateRoot, [])["CLAIMED_ENTRIES"]).toBe("");
     const rendered = await render(name);
     expect({ name, block: rendered.includes("<in-flight>") }).toEqual({
       name,
