@@ -23,7 +23,7 @@ rendered-prompts/
 worktrees/
 node_modules/
 loop.pid
-tick-verdict.json
+tick-verdict/
 tick-verdicts.jsonl
 stop
 merging/

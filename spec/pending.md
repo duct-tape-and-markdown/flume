@@ -454,8 +454,12 @@ is a chain's convention, not the engine's.
 
 ## `pendingGate` — validation and fence pre-check as an opt-in builtin
 
-`pendingGate(opts)` is an `afterCommit` gate a chain attaches to whichever
-phase produces the queue. It is a convenience builtin, not engine behavior — a chain that wants
+`pendingGate(opts)` is an `afterCommit` gate by default — `opts.when` moves it — that a
+chain attaches to whichever phase produces the queue; the harness attaches a second,
+`afterMerge`, so the claim check reads the merged tree, and that instance re-runs every
+check over the merged queue on purpose: a seam gate reads what two producers actually
+merged (`.claude/rules/engineering.md`, *A seam gate reads what the real writer wrote*),
+so the parse it costs is the check rather than overhead. It is a convenience builtin, not engine behavior — a chain that wants
 neither check attaches neither.
 
 1. **Schema validation.** Parses the queue against the composed core + `opts.extension` — the

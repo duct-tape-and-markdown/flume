@@ -613,7 +613,8 @@ the merge bookkeeping completes.
 - **`TickResult`** (`handoff`) — the existing
   facts (`committed`, `commitSha`, `gateResults`, `pendingAfter`,
   `shippedTags`, `revertedTags`, `noCommit`, `quarantinedTags`,
-  `nothingPickable`) plus:
+  `nothingPickable`, and `priorAttempts`, the record store as the tick left
+  it, which the package's refusal leg reads) plus:
   - **`pickableAfter`** — `pendingAfter` filtered by the same dispatcher
     verdict as `TickContext.pickable`, taken at the post-tick re-read. A
     handoff that wakes build on "anything pickable" reads this list; it does

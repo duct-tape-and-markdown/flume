@@ -58,7 +58,11 @@ Every check lives at the most deterministic layer that can express it — a
   tree or the program can answer, read as the token and never its meaning —
   that predicate is the rule, and the classes the suite resolves today are
   its instances: a backticked identifier or a backticked repo-relative path
-  in `src/`, `harness/`, or `tests/`, where the program reaches; a `*.md`
+  in `src/`, `harness/`, or `tests/`, where the program reaches, and a
+  backticked identifier on a page that states what a shipped interface does
+  — the authoring page, the CLI page, the README — resolved against the
+  package's exports, while a migration guide or a survey names retired
+  surface on purpose and is out by construction; a `*.md`
   page name, with or without backticks, in any tree the sweep domain names,
   since a filename resolves on disk and is never a sentence; the `#fragment`
   a markdown link carries into such a page, which resolves against that
