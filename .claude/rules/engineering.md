@@ -66,9 +66,9 @@ Every check lives at the most deterministic layer that can express it — a
   page name, with or without backticks, in any tree the sweep domain names,
   since a filename resolves on disk and is never a sentence; the `#fragment`
   a markdown link carries into such a page, which resolves against that
-  page's own headings the way a `per` cite already does; the italicized
-  section half of a `` (`page.md`, *Section*) `` pair, resolved against that
-  page's headings, bolded bullet leads, and a bolded lead opening a
+  page's own headings the way a `per` cite already does; the section half of a `` (`page.md`, *Section*) `` or
+  `` (`page.md`, "Section") `` pair, italicized or quoted, resolved against
+  that page's headings, bolded bullet leads, and a bolded lead opening a
   blockquote line, exact after backtick normalization — no prefix arm, so
   an abbreviation is a rewrite, not a match; and a `§ N` cross-reference on
   a `docs/` page, resolved against that page's own numbered headings where
