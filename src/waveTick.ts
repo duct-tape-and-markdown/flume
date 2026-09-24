@@ -40,6 +40,7 @@ import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import {
   MAX_FAILURE_SIGNATURE,
   type ProvisionFailure,
+  type StakeLoss,
 } from "./tickVerdict.js";
 import { runWaveMerge, type EntryAttempt } from "./waveMerge.js";
 import { createWorktree, teardownWorktreeInstance } from "./worktrees.js";
@@ -180,6 +181,12 @@ export async function runFanout(
   // spec/pending.md "Claims — an entry in flight is left alone": every claim
   // this wave staked, dropped together once its attempts have ended (below).
   const staked: StakedPidClaim[] = [];
+  // And every entry this wave selected and then lost the stake race for,
+  // reported on the result and the verdict below: the entry reaches no agent
+  // and moves no tag list, so without this record the only trace of it is the
+  // log line beside the push (`.claude/rules/engineering.md`, *A fact the
+  // engine holds is reported, never rediscovered*).
+  const stakeLosses: StakeLoss[] = [];
   for (const entry of batch) {
     // Staked *before* the worktree exists, which is the whole point of the
     // ordering: from here until this wave lets go, the entry is this tick's
@@ -188,6 +195,7 @@ export async function runFanout(
     // now — it carries the entry, this wave does not.
     const claim = await leg.claims.stake(entry.tag);
     if (claim.kind === "held") {
+      stakeLosses.push({ tag: entry.tag, by: claim.by });
       leg.log.warn(
         `[flume] ${phase.name}: ${entry.tag} was claimed by pid ${claim.by.pid} after this wave selected it; entry stays pending`,
       );
@@ -431,6 +439,10 @@ export async function runFanout(
       // from the handoff surface alone — they are absent from `entries`,
       // untouched in `pendingAfter`, and in no tag list.
       ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
+      // Named beside them for the same reason, and never among them: a
+      // sibling carrying the entry is not a failure this wave can be
+      // quarantined for.
+      ...(stakeLosses.length > 0 ? { stakeLosses } : {}),
       shippedTags: mergeStage.shipped.map((s) => s.tag),
       revertedTags: mergeStage.mergeReverted.map((e) => e.tag),
       ...(queueParseFailure ? { queueParseFailure } : {}),
@@ -442,6 +454,7 @@ export async function runFanout(
       ? { bystanderCheckpointSha: mergeStage.bystanderCheckpointSha }
       : {}),
     ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
+    ...(stakeLosses.length > 0 ? { stakeLosses } : {}),
     ...(mergeStage.mergeFailures.length > 0
       ? { mergeFailures: mergeStage.mergeFailures }
       : {}),

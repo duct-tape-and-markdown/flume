@@ -2351,6 +2351,15 @@ Two things follow for a chain, and neither asks it to read the claims itself:
   order, beside `pickableAfter`. A `handoff` routing on "anything pickable"
   reads the two together, the same way it reads `quarantinedTags` and
   `refusedTags`.
+- **A race the wave lost is reported too.** A sibling can stake an entry in
+  the window between this wave's claims read and its own stake, after the
+  batch is already drawn. The wave leaves that entry to its holder, and
+  `TickResult.stakeLosses` — the same records on `TickVerdict.stakeLosses` —
+  names each one beside the holder's own statement (`PidClaim`: the pid, and
+  the instant it took the claim). Such an entry reached no agent, so it is
+  absent from `entries` and in no tag list; it is never among
+  `provisionFailures`, because losing a race to a sibling is neither a failure
+  nor something this run should quarantine the entry for.
 - **A producer phase is told which entries are someone's.**
   `TickContext.claimed` carries the same tags to a `promptArgs` builder, so a
   phase that rewrites the queue can render them for its agent. A tick whose

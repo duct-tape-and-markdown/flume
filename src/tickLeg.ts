@@ -32,6 +32,7 @@ import type {
   GateFailure,
   MergeFailure,
   ProvisionFailure,
+  StakeLoss,
   TickVerdict,
   TickVerdictInvocation,
   TickVerdictMergeOutcome,
@@ -49,6 +50,8 @@ export type PhaseTickOutcome = {
   /** See {@link TickVerdict.bystanderCheckpointSha}. */
   bystanderCheckpointSha?: string;
   provisionFailures?: ProvisionFailure[];
+  /** See {@link TickVerdict.stakeLosses}; fanout only. */
+  stakeLosses?: StakeLoss[];
   /** See {@link TickVerdict.mergeFailures}. */
   mergeFailures?: MergeFailure[];
   /** See {@link TickVerdict.gateFailures}. */

@@ -29,6 +29,7 @@ import {
   tickVerdictPath,
   tickVerdictsLogPath,
 } from "./paths.js";
+import type { PidClaim } from "./pidClaim.js";
 import type { NoCommitMode } from "./Prompt.js";
 
 /**
@@ -96,6 +97,35 @@ export type MergeFailure = StageFailureEntry & {
   signature: string;
   message: string;
 };
+
+/**
+ * One entry a fanout wave selected and then did not carry: between the wave's
+ * claims read and its own stake, a sibling tick took the entry's claim
+ * (`spec/pending.md`, *Claims — an entry in flight is left alone*). The entry
+ * is untouched in the queue, reached no agent, and is being built by the
+ * holder named here.
+ *
+ * Not a {@link ProvisionFailure}: losing the race is neither a failure nor
+ * this wave's fault, and the run quarantine those records feed must not hold
+ * an entry a sibling is shipping right now.
+ *
+ * A fact, never a verdict — whether to wake the phase again, wait for the
+ * holder, or let the next tick pick the entry up stays the chain's
+ * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+ * interactive sessions)*).
+ */
+export interface StakeLoss {
+  /** The entry this wave selected and left to its holder, by tag. */
+  tag: string;
+  /**
+   * The live holder the stake found, as the holder itself stated it in the
+   * claim file (`PidClaim`, `src/pidClaim.ts`) — the engine's own decode,
+   * handed on rather than left for a reader to re-read the claims directory
+   * for (`.claude/rules/engineering.md`, *A fact the engine holds is
+   * reported, never rediscovered*).
+   */
+  by: PidClaim;
+}
 
 /**
  * A gate-stage failure (spec/loop.md "Repeated identical failures — quarantine,
@@ -627,6 +657,13 @@ export interface TickVerdict {
    * entries. Absent/empty when the tick hit none.
    */
   provisionFailures?: ProvisionFailure[];
+  /**
+   * spec/pending.md "Claims — an entry in flight is left alone": every entry
+   * this tick selected and then lost the stake race for, each naming the
+   * holder that took it. Absent/empty when every selected entry was staked —
+   * which is every tick with no sibling racing it.
+   */
+  stakeLosses?: StakeLoss[];
   /**
    * Merge-stage cherry-pick-conflict failures this tick recorded
    * (spec/loop.md "Repeated identical failures").

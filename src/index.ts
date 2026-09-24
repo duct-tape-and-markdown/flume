@@ -159,9 +159,18 @@ export {
   type GateFailure,
   type MergeFailure,
   type ProvisionFailure,
+  // The record beside them that is not a failure: an entry a sibling tick
+  // took between this wave's selection and its stake, with the holder it
+  // names (`PidClaim`, re-exported below for the same reason).
+  type StakeLoss,
   type TickVerdict,
   type ReportedGateResult,
   type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
   type MergeOutcome,
 } from "./tickVerdict.js";
+
+// `StakeLoss.by`'s own type: the statement a guard file's holder wrote, as
+// the engine decoded it. A chain reading which sibling took an entry names
+// what it is holding, exactly as it does for the stage-failure records above.
+export { type PidClaim } from "./pidClaim.js";

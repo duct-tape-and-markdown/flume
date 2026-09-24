@@ -13,6 +13,7 @@ import type {
   MergeOutcome,
   ProvisionFailure,
   ReportedGateResult,
+  StakeLoss,
 } from "./tickVerdict.js";
 import type { FlumePaths } from "./flumeApi.js";
 import type { Gate } from "./Gate.js";
@@ -430,6 +431,29 @@ export interface TickResult {
    * is the engine's; what to do about it stays the chain's.
    */
   provisionFailures?: readonly ProvisionFailure[];
+  /**
+   * Every entry this wave selected and then did not carry, because a sibling
+   * tick staked its claim between this wave's claims read and its own stake
+   * (`spec/pending.md`, *Claims — an entry in flight is left alone*). Each
+   * names the holder that took it. Absent when every selected entry was
+   * staked, and on a singleton tick, which stakes no entry claim.
+   *
+   * What this adds beyond {@link claimedTags}: that set is the hold
+   * *selection* applied, so an entry it never names can still be missing from
+   * `entries` — claimed in the window selection had already closed over. Such
+   * an entry is absent from `entries`, unchanged in `pendingAfter`, and in no
+   * tag list on the tick's own side, exactly as a provisioning failure is;
+   * without this field the only record of it is a log line
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   *
+   * Never folded into {@link provisionFailures}: those records feed the run's
+   * quarantine, and losing a race to a sibling is neither a failure nor this
+   * wave's fault. A fact, never a verdict — what to do about it stays the
+   * chain's (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build,
+   * and interactive sessions)*).
+   */
+  stakeLosses?: readonly StakeLoss[];
   /**
    * Every merge-stage failure this tick recorded — a cherry-pick conflict,
    * or a trunk that refused the pick, that kept an already-committed span

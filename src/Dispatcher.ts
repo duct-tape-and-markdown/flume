@@ -968,6 +968,7 @@ export class Dispatcher {
       declined,
       bystanderCheckpointSha,
       provisionFailures,
+      stakeLosses,
       mergeFailures,
       gateFailures,
       tags,
@@ -1064,6 +1065,10 @@ export class Dispatcher {
       ...(provisionFailures && provisionFailures.length > 0
         ? { provisionFailures }
         : {}),
+      // The wave's lost stake races, on the artifact the next tick reads —
+      // the same records `result.stakeLosses` already handed `handoff`, so
+      // the two surfaces cannot disagree about which entries a sibling took.
+      ...(stakeLosses && stakeLosses.length > 0 ? { stakeLosses } : {}),
       ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
       ...(clearedPriorAttempts && clearedPriorAttempts.length > 0

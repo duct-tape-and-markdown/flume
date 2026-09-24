@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -126,6 +126,13 @@ import type { NoCommitMode } from "../src/index.ts";
 // package entry point. These imports fail tsc if either drops from
 // src/index.ts.
 import type { PriorAttemptKeyspace, QuarantinedTag } from "../src/index.ts";
+
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): StakeLoss is the element type of TickVerdict.stakeLosses /
+// TickResult.stakeLosses and PidClaim is the type of its `by`, so a chain
+// reading which sibling took an entry needs to name both from the package
+// entry point. These imports fail tsc if either drops from src/index.ts.
+import type { PidClaim, StakeLoss } from "../src/index.ts";
 
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): EntryRefusalContext is what `Chain.refusesEntry` is handed, so a
@@ -19489,6 +19496,78 @@ describe("Dispatcher fanout — the per-entry claim", () => {
 
     expect(seen).toEqual([["HELD"]]);
     expect(outcome.result?.claimedTags).toEqual(["HELD"]);
+  });
+
+  it("a wave that loses the stake race reports the dropped entry and its holder on the tick verdict", async () => {
+    // The race through the engine's own seams: `TAKEN`'s claim is planted
+    // from inside the chain's `refusesEntry`, which selection consults *after*
+    // it has read the claims directory — so the entry is pickable, enters the
+    // batch, and is already held by the time the wave's own stake reaches it.
+    // The holder is the vitest worker, alive for the case, as every liveness
+    // case here plays a sibling tick.
+    const takenClaim = await claimPathFor("TAKEN");
+    await mkdir(dirname(takenClaim), { recursive: true });
+
+    await writePending(fx.repo, [
+      { ...makeEntry("MINE", ["src/mine.ts"]), priority: 1 },
+      makeEntry("TAKEN", ["src/taken.ts"]),
+    ]);
+    // Every entry the chain's predicate was offered, in consult order. An
+    // entry a claim already held is never offered to it, so TAKEN standing
+    // here is what proves selection had it — and that the loss below happened
+    // after the batch was drawn, not at the selection's own claim hold.
+    const offered: string[] = [];
+    const chain: Chain = {
+      phases: [wakeBuild()],
+      humanOnly: [],
+      refusesEntry: (ctx: EntryRefusalContext) => {
+        offered.push(ctx.entry.tag);
+        if (ctx.entry.tag === "TAKEN") {
+          writeFileSync(
+            takenClaim,
+            renderPidClaim(process.pid, new Date()),
+            "utf8",
+          );
+        }
+        return false;
+      },
+    };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // Registered for MINE alone: TAKEN reaching an agent would throw "no
+      // action registered", the loudest failure this case can take.
+      agent: fanoutAgent({
+        mine: async (cwd) =>
+          writeAndCommit(cwd, "src/mine.ts", "ok\n", "build: MINE"),
+      }),
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: TAKEN was pickable at the selection and gone from it after
+    // the wave (its claim stands, so the post-wave selection never offers it
+    // either), while its batch sibling ran and shipped.
+    expect(offered).toEqual(["MINE", "TAKEN"]);
+    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual(["MINE"]);
+    expect(outcome.result?.shippedTags).toEqual(["MINE"]);
+
+    // The fact itself, on the artifact the next tick reads and on the handoff
+    // surface, naming the holder that took the entry.
+    const losses: readonly StakeLoss[] | undefined =
+      outcome.verdict?.stakeLosses;
+    expect(losses?.map((l) => l.tag)).toEqual(["TAKEN"]);
+    const holder: PidClaim | undefined = losses?.[0]?.by;
+    expect(holder?.pid).toBe(process.pid);
+    expect(outcome.result?.stakeLosses).toEqual(losses);
+    // And never folded in with the provisioning failures: a sibling carrying
+    // the entry is not a failure this run may quarantine it for.
+    expect(outcome.verdict?.provisionFailures).toBeUndefined();
+    // The queue is untouched and the claim is its holder's still — the wave
+    // dropped only what it staked.
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["TAKEN"]);
+    expect(existsSync(takenClaim)).toBe(true);
   });
 
   it("a claim held by a dead pid is reclaimed by the next selection", async () => {
