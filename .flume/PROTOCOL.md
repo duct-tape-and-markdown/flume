@@ -85,7 +85,7 @@ Drained means **deleted**: the inbox slice routes each record to an entry, an op
 
 ## Disk vs git log
 
-When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (`.flume/plan/pending.json`, the source file). Never grep commit messages or `git log`. Git log is orientation, not authority.
+When asking "did X ship?" or "is gate Y satisfied?" — read the disk artifact (`.flume/plan/pending/`, the source file). Never grep commit messages or `git log`. Git log is orientation, not authority.
 
 ## Push policy
 
