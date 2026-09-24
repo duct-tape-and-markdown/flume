@@ -16,17 +16,19 @@
  * same post-tick re-read the dispatcher took it at, never `isPickableNow`
  * re-run here with a default resolver and an empty capability set. Which
  * phase this handoff is running for is `TickResult.phaseName`, not a copy
- * closed over at construction. A build refusal is the tick's `noCommit` mode
- * and each entry's `mergeOutcome`, never a re-parse of the agent's final
- * message (`.claude/rules/engine-boundary.md`, *Told, not inferred*). What
- * the engine reports, this module reads; what it does not, this module does
- * not invent.
+ * closed over at construction. A standing build refusal is the record store
+ * as the tick left it — `TickResult.priorAttempts` against
+ * `TickResult.pendingAfter` — never a re-parse of the agent's final message
+ * and never the engine's own fates re-classified into the records they were
+ * stamped onto (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ * What the engine reports, this module reads; what it does not, this module
+ * does not invent.
  *
- * **The taxonomies are keyed by the engine's own types.** A mode added to
- * `NoCommitMode`, or a fate added to `MergeOutcome`, is a type error in the
- * tables below rather than a fate the set silently treats as "not a
- * refusal" — the failure the untyped `ReadonlySet<string>` this replaces
- * could not catch.
+ * **The taxonomy is keyed by the engine's own types**, and it lives beside
+ * the other reader of it rather than here (`standingRefusal.ts`): the inbox
+ * slice's window asks the same question of the same records at its
+ * `shouldRun` consult, and one table with two callers is what keeps the two
+ * from drifting.
  *
  * **The slices are a parameter.** Which windows a consumer's slices open
  * over, and how each is computed from disk, belong to the slices; this
@@ -52,11 +54,10 @@
 
 import { writeFileSync } from "node:fs";
 
-import type { MergeOutcome } from "../src/tickVerdict.js";
 import { namespacedJoin, stopFlagPath } from "../src/paths.js";
 import type { QueueParseFailure } from "../src/PendingSchema.js";
 import type { EntryRefusalContext, Phase, TickResult } from "../src/Phase.js";
-import type { NoCommitMode, PriorAttempt } from "../src/Prompt.js";
+import type { PriorAttempt } from "../src/Prompt.js";
 
 import {
   BUILD_PHASE,
@@ -65,6 +66,7 @@ import {
   type PlanSlice,
 } from "./declaration.js";
 import { CONTRACT_TOUCHING_FIELD } from "./entryExtension.js";
+import { standingRefusals } from "./standingRefusal.js";
 
 /**
  * A phase's `handoff` as the engine declares it, aliased so the declaration
@@ -120,73 +122,6 @@ export interface HandoffSlice {
   /** Whether this slice's window is open, given the tick's reported facts. */
   readonly live: (window: SliceWindow) => boolean;
 }
-
-/**
- * Which no-commit modes are refusals only a plan slice can resolve.
- *
- * `clean-exit` is a build agent that looked and declined; `render-refused`
- * is a prompt that never resolved, so no agent ran at all. Both leave the
- * entry exactly as pickable as it was, and neither is a state the next wave
- * can move — for a walled render, forever, since nothing about the tree
- * changes between attempts. Waking the slice that drains records is what
- * puts the refusal in front of the only phase that can drop, re-scope, or
- * answer the entry.
- *
- * `gate-revert` and `platform-preempt` are not plan's: a reverted commit and
- * a killed process are both worth retrying from the same queue, and a build
- * wave is what retries them.
- *
- * Exhaustive over {@link NoCommitMode} by type, so a mode the engine adds is
- * a type error here and must be classified rather than defaulting to "not a
- * refusal".
- *
- * Exported because the same question is asked of a second evidence: this
- * table reads a fate the engine reported on *this* tick's result, while the
- * inbox slice's window reads a prior-attempt record still standing on disk
- * from an earlier one (`inboxWindow.ts`). One classification, two evidences — a
- * copy beside the other reader is how a mode comes to route to the inbox
- * from a `TickResult` and nowhere from a record
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
- */
-export const PLAN_RESOLVES_NO_COMMIT: Record<NoCommitMode, boolean> = {
-  "clean-exit": true,
-  "render-refused": true,
-  "gate-revert": false,
-  "platform-preempt": false,
-};
-
-/**
- * Which merge fates are refusals only a plan slice can resolve.
- *
- * `not-shipped` alone: a commit that landed and passed every gate which the
- * consumer's own `shipped` predicate declined — a park, whose reason is in
- * the note the tick wrote. Every other fate is the wave's to retry from the
- * next base; a cherry-pick conflict in particular is nobody's refusal.
- * `tip-moved` is a span discarded because its base stopped being an ancestor:
- * the agent's work was not at fault and the next wave starts from a live
- * base, so it too is the wave's.
- *
- * Exhaustive over {@link MergeOutcome} for the same reason the table above
- * is exhaustive over its union.
- *
- * Exported for the same reason, and for the same second evidence: the two
- * fates a `PriorAttempt` can carry — `not-shipped` and `tip-moved` — are the
- * ones the inbox slice's window reads off a record still standing on disk
- * from an earlier run (`inboxWindow.ts`). It composes its classification from
- * this table rather than restating either verdict, so the fate a build tick
- * routes on and the fate a record routes on cannot come apart
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
- */
-export const PLAN_RESOLVES_MERGE: Record<MergeOutcome, boolean> = {
-  "not-shipped": true,
-  merged: false,
-  "cherry-pick-conflict": false,
-  "afterMerge-reverted": false,
-  "afterMerge-revert-refused": false,
-  "afterCommit-reverted": false,
-  "tip-moved": false,
-  "dropped-work": false,
-};
 
 /**
  * Which prior-attempt modes describe an outcome only a producer can move.
@@ -257,33 +192,31 @@ export function defaultRefusesEntry(ctx: EntryRefusalContext): boolean {
 }
 
 /**
- * Whether this build tick carries a refusal only a plan slice can resolve —
- * the wave's own no-commit mode, or any one entry's mode or merge fate.
+ * Whether a standing refusal only a plan slice can resolve is keyed to an
+ * entry this tick's queue still carries.
  *
- * Read per entry as well as per wave: a wave where one entry shipped reports
- * no wave-level `noCommit` at all, and a sibling's refusal would otherwise
- * be invisible here (`TickResult.entries`).
+ * **This is the inbox slice's own liveness question, over the inbox slice's
+ * own evidence.** The engine reports the record store as the tick left it
+ * (`TickResult.priorAttempts`) beside the queue it left
+ * (`pendingAfter`), so the handoff asks {@link standingRefusals} — the one
+ * function that slice's window asks — rather than rebuilding the answer from
+ * the wave's `noCommit` and each entry's `mergeOutcome`. Those two fields
+ * are the fates the engine *stamped onto* the records being read here, so
+ * routing on them was the engine's own classification respelled by the
+ * package (`.claude/rules/engineering.md`, *A fact the engine holds is
+ * reported, never rediscovered*).
  *
- * **This is the inbox slice's own liveness question, asked of the evidence a
- * handoff has.** That slice's window reads the record still standing on
- * disk; a `TickResult` reports no record set at all (`TickFacts`,
- * `harness/sliceWindow.ts`), so the wave that *produced* the refusal is read
- * here instead, through the two tables above that the window composes its
- * own answer from. It puts the inbox in the wake set; it never takes build
- * out of it. Re-dispatching the walled entry is what
- * {@link defaultRefusesEntry} holds back, per entry, and the wave still has
- * every other pickable entry to ship.
+ * Reading the store rather than this tick's fates also widens the leg in the
+ * one direction that was a hole: a refusal a *previous* wave left standing
+ * is still waiting on a producer, and a wave that shipped something else
+ * reported nothing about it. The record is what outlives the tick.
+ *
+ * It puts the inbox in the wake set; it never takes build out of it.
+ * Re-dispatching the walled entry is what {@link defaultRefusesEntry} holds
+ * back, per entry, and the wave still has every other pickable entry to ship.
  */
 function refusedForPlan(result: TickResult): boolean {
-  if (result.noCommit !== undefined && PLAN_RESOLVES_NO_COMMIT[result.noCommit]) {
-    return true;
-  }
-  return (result.entries ?? []).some(
-    (entry) =>
-      (entry.noCommit !== undefined && PLAN_RESOLVES_NO_COMMIT[entry.noCommit]) ||
-      (entry.mergeOutcome !== undefined &&
-        PLAN_RESOLVES_MERGE[entry.mergeOutcome]),
-  );
+  return standingRefusals(result.pendingAfter, result.priorAttempts).length > 0;
 }
 
 /**

@@ -261,6 +261,7 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
     gateResults: [],
     pendingAfter: [],
     pickableAfter: [],
+    priorAttempts: new Map(),
     flumeDir,
     configDir: flumeDir,
     shippedTags: [],

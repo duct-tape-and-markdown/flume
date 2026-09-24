@@ -1096,6 +1096,7 @@ describe("cascade-chain.ts — the plan ladder", () => {
     gateResults: [],
     pendingAfter: [],
     pickableAfter: [],
+    priorAttempts: new Map(),
     flumeDir,
     configDir: "/nonexistent/cascade-ladder-fixture",
     shippedTags: [],

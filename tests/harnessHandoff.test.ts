@@ -40,19 +40,15 @@ import {
   type PlanSlice,
 } from "../harness/declaration.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
+import { recordAttemptKey } from "../src/priorAttempts.ts";
 import type {
   EntryRefusalContext,
   FanoutEntryOutcome,
   TickResult,
 } from "../src/Phase.ts";
-import { namespacedJoin, stopFlagPath } from "../src/paths.ts";
+import { namespacedJoin, slugify, stopFlagPath } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
-import {
-  NO_COMMIT_MODES,
-  PRIOR_ATTEMPT_MODES,
-  type NoCommitMode,
-  type PriorAttempt,
-} from "../src/Prompt.ts";
+import { PRIOR_ATTEMPT_MODES, type PriorAttempt } from "../src/Prompt.ts";
 
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 
@@ -78,6 +74,9 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
     gateResults: [],
     pendingAfter: [],
     pickableAfter: [],
+    // A drained store is the neutral fixture: every case that is about a
+    // refusal says so by putting a record in it.
+    priorAttempts: new Map(),
     flumeDir: FLUME_DIR,
     configDir: "/tmp/flume-handoff-fixture/.flume",
     shippedTags: [],
@@ -85,6 +84,61 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
     ...overrides,
   };
 }
+
+/**
+ * One standing prior-attempt record for `tag`, in the keyspace and under the
+ * identity the engine writes a fanout record with (`priorAttemptRef`,
+ * `src/priorAttempts.ts`): the `entry` keyspace, keyed by the tag's slug.
+ *
+ * Every mode, because the refusal leg discriminates on this field and a
+ * fixture that can only build one of them judges that leg over one arm.
+ */
+function record(tag: string, mode: PriorAttempt["mode"]): PriorAttempt {
+  const anchor = {
+    key: "entry",
+    keyedAs: slugify(tag),
+    headSha: "0".repeat(40),
+    at: "2026-09-16T00:00:00.000Z",
+  } as const;
+  switch (mode) {
+    case "not-shipped":
+      return { mode, mergedSha: "a".repeat(40), touchedPaths: [], ...anchor };
+    case "clean-exit":
+      return { mode, finalMessage: "nothing to do here", ...anchor };
+    case "gate-revert":
+      return {
+        mode,
+        when: "afterCommit",
+        gate: "tsc",
+        message: "failed",
+        diffStat: "",
+        ...anchor,
+      };
+    case "platform-preempt":
+      return { mode, failureClass: "timeout", ...anchor };
+    case "render-refused":
+      return { mode, failures: "span failed", ...anchor };
+    case "tip-moved":
+      return {
+        mode,
+        expectedTip: "b".repeat(40),
+        observedTip: "c".repeat(40),
+        ...anchor,
+      };
+  }
+}
+
+/**
+ * The record store as a tick left it, filed under the engine's own key for
+ * each record (`recordAttemptKey`, `src/priorAttempts.ts`) rather than under
+ * the two halves of that key respelled here — the same keying `readAll`
+ * files a real store under, so these fixtures cannot agree with the reader
+ * on a spelling the engine does not use.
+ */
+const store = (
+  ...records: readonly PriorAttempt[]
+): ReadonlyMap<string, PriorAttempt> =>
+  new Map(records.map((rec) => [recordAttemptKey(rec), rec]));
 
 /** One fanout entry outcome, shipped clean unless a case says otherwise. */
 const outcome = (
@@ -175,43 +229,62 @@ describe("the harness package's default handoff", () => {
     expect(handoff(result)).toEqual([]);
   });
 
-  it("a build tick the chain declined wakes the inbox slice beside build", () => {
+  it("the default handoff routes a walled entry to the inbox off the reported record set", () => {
     const handoff = defaultHandoff(sliceSet());
-    const pickable = { pickableAfter: [entry("PARKED")] };
+    const queued = {
+      pendingAfter: [entry("PARKED")],
+      pickableAfter: [entry("PARKED")],
+    };
 
     // A commit that landed and passed every gate which `shipped` declined:
     // the park. Its reason is in the note the tick wrote, and only a plan
     // slice can act on it — so the inbox joins the set. Build stays in it:
     // the walled entry is held back per entry, and the queue's other work is
     // still the wave's.
+    //
+    // The evidence is the store the engine reports, never this wave's own
+    // fates: the tick below reports a clean wave — `committed`, no
+    // `noCommit`, every entry `merged` — so an answer carrying the inbox can
+    // only have come off the record.
     const parked = tickResult({
-      ...pickable,
-      entries: [outcome({ tag: "PARKED", shipped: false, mergeOutcome: "not-shipped" })],
+      ...queued,
+      priorAttempts: store(record("PARKED", "not-shipped")),
+      entries: [outcome({ tag: "PARKED" })],
     });
+    expect(parked.noCommit).toBeUndefined();
+    expect(parked.entries!.every((e) => e.mergeOutcome === "merged")).toBe(true);
+    expect(parked.priorAttempts.size).toBe(1);
     expect(handoff(parked)).toEqual([INBOX_PHASE, BUILD_PHASE]);
 
-    // The control: the same wave with the park's one fact changed leaves the
-    // inbox out, so the wake above is the refusal's doing.
-    const shipped = tickResult({ ...pickable, entries: [outcome({ tag: "PARKED" })] });
-    expect(handoff(shipped)).toEqual([BUILD_PHASE]);
+    // The control, one fact at a time: the same tick with the store drained
+    // — which is what a clean ship leaves behind — keeps the inbox out.
+    expect(handoff(tickResult({ ...queued, entries: [outcome({ tag: "PARKED" })] }))).toEqual([
+      BUILD_PHASE,
+    ]);
 
-    // A cherry-pick conflict is nobody's refusal — the next wave retries it
-    // from the new base rather than asking plan to resolve anything.
-    const conflicted = tickResult({
-      ...pickable,
-      entries: [
-        outcome({ tag: "PARKED", shipped: false, mergeOutcome: "cherry-pick-conflict" }),
-      ],
+    // And a record whose entry has left the queue is not this slice's work:
+    // it outlived what it was about, so the same record over a drained queue
+    // wakes nobody.
+    const departed = tickResult({
+      pendingAfter: [],
+      pickableAfter: [],
+      priorAttempts: store(record("PARKED", "not-shipped")),
     });
-    expect(handoff(conflicted)).toEqual([BUILD_PHASE]);
+    expect(departed.priorAttempts.size).toBe(1);
+    expect(handoff(departed)).toEqual([]);
   });
 
   it("a build tick whose prompt never rendered wakes the inbox slice", () => {
     const handoff = defaultHandoff(sliceSet());
+    const queued = {
+      pendingAfter: [entry("UNRENDERABLE")],
+      pickableAfter: [entry("UNRENDERABLE")],
+    };
     const walled = tickResult({
+      ...queued,
       committed: false,
       noCommit: "render-refused",
-      pickableAfter: [entry("UNRENDERABLE")],
+      priorAttempts: store(record("UNRENDERABLE", "render-refused")),
     });
 
     // Nothing about the tree changes between attempts on a refused render,
@@ -219,11 +292,14 @@ describe("the harness package's default handoff", () => {
     expect(handoff(walled)).toEqual([INBOX_PHASE, BUILD_PHASE]);
 
     // The control: a reverted commit is worth retrying from the same queue,
-    // and asks no producer for anything.
+    // and asks no producer for anything. Both the tick's fate and the record
+    // it left move together, because the engine stamps the one onto the
+    // other.
     const reverted = tickResult({
+      ...queued,
       committed: false,
       noCommit: "gate-revert",
-      pickableAfter: [entry("UNRENDERABLE")],
+      priorAttempts: store(record("UNRENDERABLE", "gate-revert")),
     });
     expect(handoff(reverted)).toEqual([BUILD_PHASE]);
   });
@@ -337,33 +413,40 @@ describe("the harness package's default handoff", () => {
 });
 
 describe("the default handoff's reading of the engine's facts", () => {
-  it("wakes the inbox on exactly the no-commit modes only a plan slice can resolve", () => {
+  it("wakes the inbox on exactly the standing record modes only a plan slice can resolve", () => {
     const handoff = defaultHandoff(sliceSet());
-    const routed = NO_COMMIT_MODES.filter((mode: NoCommitMode) =>
+    const routed = PRIOR_ATTEMPT_MODES.filter((mode) =>
       handoff(
         tickResult({
-          committed: false,
-          noCommit: mode,
+          pendingAfter: [entry("READY")],
           pickableAfter: [entry("READY")],
+          priorAttempts: store(record("READY", mode)),
         }),
       ).includes(INBOX_PHASE),
     );
 
-    // Read off the engine's own list, so a mode it gains is classified here
-    // rather than passing unexercised as "not a refusal".
-    expect(NO_COMMIT_MODES.length).toBeGreaterThan(0);
-    expect([...routed].sort()).toEqual(["clean-exit", "render-refused"]);
-    expect(routed.length).toBeLessThan(NO_COMMIT_MODES.length);
+    // Read off the engine's own roster, so a mode it mints is classified
+    // here rather than passing unexercised as "not a refusal".
+    expect(PRIOR_ATTEMPT_MODES.length).toBeGreaterThan(0);
+    expect([...routed].sort()).toEqual([
+      "clean-exit",
+      "not-shipped",
+      "render-refused",
+    ]);
+    expect(routed.length).toBeLessThan(PRIOR_ATTEMPT_MODES.length);
   });
 
   it("reads a refusal off one entry of a wave whose siblings shipped", () => {
     const handoff = defaultHandoff(sliceSet());
 
     // A wave where anything shipped reports no wave-level `noCommit` at all,
-    // so the sibling's refusal is visible only per entry.
+    // and the shipped entry's own record is cleared — so the only thing left
+    // saying a producer is owed anything is the sibling's standing record.
     const mixed = tickResult({
       shippedTags: ["SHIPPED"],
+      pendingAfter: [entry("REFUSED")],
       pickableAfter: [entry("REFUSED")],
+      priorAttempts: store(record("REFUSED", "clean-exit")),
       entries: [
         outcome({ tag: "SHIPPED" }),
         outcome({ tag: "REFUSED", committed: false, shipped: false, noCommit: "clean-exit" }),
@@ -446,15 +529,20 @@ describe("the default handoff's stop after a contract-touching ship", () => {
 
     // Marked but never shipped — a park — is also "no shipped entry is
     // contractTouching": the mark alone does not end the run, and this one
-    // routes to the inbox exactly as an unmarked park does.
-    const parked = wave(
-      outcome({
-        tag: "CONTRACT",
-        shipped: false,
-        mergeOutcome: "not-shipped",
-        extension: { [CONTRACT_TOUCHING_FIELD]: true },
-      }),
-    );
+    // routes to the inbox exactly as an unmarked park does, off the record
+    // the park left standing against an entry still in the queue.
+    const parked: TickResult = {
+      ...wave(
+        outcome({
+          tag: "CONTRACT",
+          shipped: false,
+          mergeOutcome: "not-shipped",
+          extension: { [CONTRACT_TOUCHING_FIELD]: true },
+        }),
+      ),
+      pendingAfter: [entry("CONTRACT")],
+      priorAttempts: store(record("CONTRACT", "not-shipped")),
+    };
     expect(handoff(parked)).toEqual([INBOX_PHASE, BUILD_PHASE]);
     expect(stopped()).toBe(false);
 

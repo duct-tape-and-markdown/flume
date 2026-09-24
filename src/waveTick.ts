@@ -260,6 +260,10 @@ export async function runFanout(
         gateResults: [],
         pendingAfter: pending,
         pickableAfter: pickable,
+        // The store as this tick leaves it, which on this path is the store
+        // as it opened: `clearStale` ran above and nothing since writes a
+        // record, because no agent ran.
+        priorAttempts,
         flumeDir: leg.flumeDir,
         configDir: leg.configDir,
         shippedTags: [],
@@ -1068,8 +1072,9 @@ export async function runFanout(
   // records are now on disk. Re-read both rather than reusing the wave's
   // opening facts — a refusal judged against the tip this wave started from
   // would hold an entry back over a world that no longer exists.
+  const priorAttemptsAfter = await leg.attempts.readAll();
   const postSelection = leg.selection(chain, pendingAfterWave, isForkResolved, {
-    priorAttempts: await leg.attempts.readAll(),
+    priorAttempts: priorAttemptsAfter,
     headSha: await git.revParse(repoRoot),
   });
   return {
@@ -1083,6 +1088,10 @@ export async function runFanout(
       // Paired with the set above, not with the wave's opening one: a
       // handoff routes on what is pickable now.
       refusedTags: postSelection.refusedTags,
+      // One read, two readers: the map the refusal above was judged against
+      // is the map the handoff is handed, so a chain asking "which records
+      // stand" and the engine's own post-wave verdict cannot disagree.
+      priorAttempts: priorAttemptsAfter,
       flumeDir: leg.flumeDir,
       configDir: leg.configDir,
       // The tip every worktree in this wave was provisioned from

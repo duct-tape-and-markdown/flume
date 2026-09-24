@@ -32,14 +32,18 @@ export const WINDOW_LINE_BUDGET = 1200;
  * The two facts a tick reports about its own records, as every reader of a
  * window spells them.
  *
- * `pending` and `priorAttempts` are `TickContext`'s own fields, and they are
- * optional because the handoff has neither: a `TickResult` reports no record
- * set at all. Their absence reads as "no standing refusal", which is the
- * answer the wake set wants — a standing record is a reason to be *woken*,
- * never a reason a slice re-wakes itself, since only a build wave clears
- * one. Nothing is lost by it: the build tick that *produced* the refusal
- * routes it through the handoff's own refusal leg (`handoff.ts`), reading
- * the same classification the inbox window reads.
+ * `pending` and `priorAttempts` are `TickContext`'s own fields, optional here
+ * for the reason they are optional there: a hand-built fixture may omit
+ * either, and a dispatcher-built context always carries both. Their absence
+ * reads as "no standing refusal" — the answer a reader that was handed no
+ * store can truthfully give (`standingRefusal.ts`).
+ *
+ * A window the handoff builds omits them too, and loses nothing by it: the
+ * engine reports the same two facts on the `TickResult`
+ * (`pendingAfter`/`priorAttempts`), and the handoff's own refusal leg asks
+ * `standingRefusals` (`harness/standingRefusal.ts`) of them directly — one
+ * classification over one evidence, whichever surface the reader is on
+ * (`handoff.ts`).
  */
 export interface TickFacts {
   /** The queue as the tick sees it — `TickContext.pending`. */

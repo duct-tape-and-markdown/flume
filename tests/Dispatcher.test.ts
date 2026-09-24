@@ -54,6 +54,7 @@ import {
   worktreesBase,
 } from "../src/paths.ts";
 import {
+  entryAttemptKey,
   priorAttemptPath,
   priorAttemptRef,
   priorAttemptsDir,
@@ -4351,6 +4352,97 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
     expect(outcome.provisionFailures).toEqual(
       handedToHandoff?.provisionFailures,
     );
+  });
+});
+
+/**
+ * TICKRESULT-PRIOR-ATTEMPTS — the prior-attempt store on the surface a
+ * `handoff` reads. The engine already hands the map to `promptArgs` through
+ * `TickContext.priorAttempts`, but that read is taken *before* the agent
+ * runs: the store is written during a tick (a clean exit, a refused render,
+ * a gate revert, a park) and retired for every tag the ledger rewrite
+ * dropped. A handoff asking "is a standing refusal waiting on a producer"
+ * therefore had only the tick's own `noCommit`/`mergeOutcome` to rebuild the
+ * answer from — the engine's classification respelled by a chain, over an
+ * evidence that reaches one tick back (`.claude/rules/engineering.md`, "A
+ * fact the engine holds is reported, never rediscovered").
+ *
+ * Both halves of "as the tick left them" are driven here by the engine's own
+ * writes, never a hand-planted file: one wave walls both entries so the
+ * store opens the second wave populated, and the second wave ships one of
+ * them and walls the other.
+ */
+describe("Dispatcher fanout — the record store as the tick left it (TICKRESULT-PRIOR-ATTEMPTS)", () => {
+  it("TickResult carries the standing prior-attempt records as the tick left them", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const ships = makeEntry("SHIPS-CLEAN", ["src/ships-clean.ts"]);
+    const walls = makeEntry("WALLS-AGAIN", ["src/walls-again.ts"]);
+    await writePending(fx.repo, [ships, walls]);
+
+    let openedWith: ReadonlyMap<string, PriorAttempt> | undefined;
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      promptArgs: (ctx) => {
+        openedWith = ctx.priorAttempts;
+        return {};
+      },
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const dispatcher = (bySlug: Record<string, (cwd: string) => Promise<void>>) =>
+      new Dispatcher({
+        chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent: fanoutAgent(bySlug),
+        log: silent,
+        maxParallel: 4,
+      });
+
+    // Wave one: neither agent commits, so the engine files a clean-exit
+    // record for each and both entries stay queued.
+    const nothing = async (): Promise<void> => {};
+    new Baton(flumeDir).wake("build");
+    await dispatcher({ "ships-clean": nothing, "walls-again": nothing }).tick();
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("SHIPS-CLEAN")))).toBe(true);
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("WALLS-AGAIN")))).toBe(true);
+
+    // Wave two: one entry ships — which retires its record — and the other
+    // walls again, which rewrites its own.
+    new Baton(flumeDir).wake("build");
+    await dispatcher({
+      "ships-clean": (cwd) =>
+        writeAndCommit(cwd, "src/ships-clean.ts", "A\n", "build(SHIPS-CLEAN): ship"),
+      "walls-again": nothing,
+    }).tick();
+
+    expect(handedToHandoff).toBeDefined();
+    const result = handedToHandoff!;
+
+    // Non-vacuity, and the two facts that make the comparison mean
+    // something: this wave really did ship one entry and wall the other, and
+    // the store it *opened* on carried a record for both.
+    expect(result.shippedTags).toEqual(["SHIPS-CLEAN"]);
+    expect(openedWith).toBeDefined();
+    expect([...openedWith!.keys()].sort()).toEqual(
+      [entryAttemptKey(ships), entryAttemptKey(walls)].sort(),
+    );
+
+    // The reported map is the store as this wave left it: the shipped
+    // entry's record is gone, the walled entry's stands, and each is under
+    // the engine's own key for it.
+    expect([...result.priorAttempts.keys()]).toEqual([entryAttemptKey(walls)]);
+    expect(result.priorAttempts.get(entryAttemptKey(walls))?.mode).toBe("clean-exit");
+    expect(result.priorAttempts.get(entryAttemptKey(ships))).toBeUndefined();
+
+    // ... and the map agrees with the disk the next tick will read.
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("SHIPS-CLEAN")))).toBe(false);
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("WALLS-AGAIN")))).toBe(true);
   });
 });
 

@@ -331,6 +331,34 @@ export interface TickResult {
    * receives").
    */
   pickableAfter: readonly PendingEntry[];
+  /**
+   * Every persisted {@link PriorAttempt} record under
+   * `<flumeDir>/prior-attempts/` **as this tick left the store** — the same
+   * map `TickContext.priorAttempts` carries, under the same keyspaced keys
+   * (`entry:<tag slug>`, `phase:<phase name>`), read back at the same
+   * post-tick point `pendingAfter`/`pickableAfter` are taken and from the
+   * same read the post-tick refusal was judged against.
+   *
+   * The tick-start map is the wrong one for a `handoff`, which is why this
+   * is a second read and not the context's: the store is written *during* a
+   * tick — a clean exit, a refused render, a gate revert, a park — and
+   * retired for every tag the tick's ledger rewrite dropped. A handoff
+   * handed the opening map would be routing over the world this tick found
+   * rather than the one it left.
+   *
+   * What it buys a `handoff`: "is a standing refusal waiting on a producer"
+   * is otherwise answerable only by rebuilding the record set from
+   * `noCommit` and `entries[].mergeOutcome` — the engine's own
+   * classification respelled by a chain, against an evidence that reaches
+   * one tick back where the store reaches every tick back
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   *
+   * A fact, never a verdict: which modes count as a refusal, and what to do
+   * about one, stays the chain's (`.claude/rules/engine-boundary.md`,
+   * *Routing rule (plan, build, and interactive sessions)*).
+   */
+  priorAttempts: ReadonlyMap<string, PriorAttempt>;
   /** Absolute, resolved flume state root — same value `TickContext.flumeDir` carries. */
   flumeDir: string;
   /** Absolute, resolved chain config directory (`<configDir>/chain.ts`). */

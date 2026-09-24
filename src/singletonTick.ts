@@ -87,13 +87,19 @@ export async function runSingleton(
 
   const ref = priorAttemptRef(phase);
 
-  const noRunResult = (): TickResult => ({
+  const noRunResult = async (): Promise<TickResult> => ({
     phaseName: phase.name,
     committed: false,
     gateResults: [],
     pendingAfter: pending,
     pickableAfter: pickable,
     refusedTags: selected.refusedTags,
+    // Re-read, not the map above: a `shouldRun` that threw persisted its own
+    // render-refused record between the two reads, and a handoff handed the
+    // opening map would be told this tick left no refusal behind
+    // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+    // never rediscovered*).
+    priorAttempts: await leg.attempts.readAll(),
     flumeDir: leg.flumeDir,
     configDir: leg.configDir,
     shippedTags: [],
@@ -127,14 +133,14 @@ export async function runSingleton(
     ref,
     phase.name,
   );
-  if (consult === "declined") return { result: noRunResult(), declined: true };
+  if (consult === "declined") return { result: await noRunResult(), declined: true };
   // A throw is a refusal, never the decline above: no worktree is
   // provisioned either way, but the verdict must not record a chain
   // decision the chain never reached (spec/chain.md, "What a hook
   // receives").
   if (consult === "refused") {
     return {
-      result: { ...noRunResult(), noCommit: "render-refused" },
+      result: { ...(await noRunResult()), noCommit: "render-refused" },
       noCommit: "render-refused",
     };
   }
@@ -179,7 +185,7 @@ export async function runSingleton(
     provisionFailures.push({ signature, message });
     const failures = [...provisionFailures];
     return {
-      result: { ...noRunResult(), provisionFailures: failures },
+      result: { ...(await noRunResult()), provisionFailures: failures },
       provisionFailures: failures,
     };
   }
@@ -209,7 +215,7 @@ export async function runSingleton(
       provisionFailures.push({ signature, message });
       const failures = [...provisionFailures];
       return {
-        result: { ...noRunResult(), provisionFailures: failures },
+        result: { ...(await noRunResult()), provisionFailures: failures },
         provisionFailures: failures,
       };
     }
@@ -508,14 +514,16 @@ export async function runSingleton(
   // A second selection over a second world: this tick may have committed,
   // and it may have left a record of its own. Both facts are re-read, so a
   // chain's refusal judges the tree the handoff is about to route in rather
-  // than the one this tick opened on.
+  // than the one this tick opened on — and the record set it was judged
+  // against rides the result below, one read serving both.
+  const priorAttemptsAfter = await leg.attempts.readAll();
   const postSelection = pickableSelection({
     pending: pendingAfterSingleton,
     isForkResolved,
     capabilities,
     ...(quarantinedSlugs !== undefined ? { quarantinedSlugs } : {}),
     refuses: bindEntryRefusal(chain, {
-      priorAttempts: await leg.attempts.readAll(),
+      priorAttempts: priorAttemptsAfter,
       headSha: await git.revParse(repoRoot),
     }),
   });
@@ -530,6 +538,9 @@ export async function runSingleton(
       // Paired with the set above, not with the tick's opening one: a
       // handoff routes on what is pickable now.
       refusedTags: postSelection.refusedTags,
+      // One read, two readers: the map the refusal above was judged against
+      // is the map the handoff is handed.
+      priorAttempts: priorAttemptsAfter,
       flumeDir: leg.flumeDir,
       configDir: leg.configDir,
       ...(preWtHead ? { baseSha: preWtHead } : {}),

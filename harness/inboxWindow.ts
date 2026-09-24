@@ -43,13 +43,12 @@
 import { readFileSync } from "node:fs";
 
 import { namespacedJoin } from "../src/paths.js";
-import { entryAttemptKey, recordAttemptKey } from "../src/priorAttempts.js";
+import { recordAttemptKey } from "../src/priorAttempts.js";
 import type { PriorAttempt } from "../src/Prompt.js";
 
 import { laneLeg } from "./ciLane.js";
 import { INBOX_PHASE } from "./declaration.js";
 import { frictionFiles, frictionPending } from "./friction.js";
-import { PLAN_RESOLVES_MERGE, PLAN_RESOLVES_NO_COMMIT } from "./handoff.js";
 import { RECORD_MAX_BYTES, recordFiles, recordsPending } from "./records.js";
 import {
   SLICE_DATA_KEYS,
@@ -58,9 +57,9 @@ import {
   type PlanSliceWindow,
   type PlanSliceWindowsOptions,
   type SliceArgs,
-  type TickFacts,
   type WindowContext,
 } from "./sliceWindow.js";
+import { standingRefusals } from "./standingRefusal.js";
 
 /**
  * The inbox slice's window.
@@ -104,7 +103,7 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       !queueResolved(inputs) ||
       recordsPending(inputs.flumeDir) ||
       frictionPending(inputs.flumeDir, friction) ||
-      standingRefusals(inputs).length > 0 ||
+      standingRefusals(inputs.pending, inputs.priorAttempts).length > 0 ||
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
@@ -114,69 +113,6 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
     }),
     dataKeys: SLICE_DATA_KEYS[INBOX_PHASE],
   };
-}
-
-/**
- * Which prior-attempt modes are standing refusals only a plan slice can
- * resolve.
- *
- * States no verdict of its own. "Can only plan resolve this" is one
- * question, and a record on disk is the same fate the tick reported, read a
- * run later — so every mode resolves through the table the build handoff
- * routes that same fate by: the four no-commit modes through
- * {@link PLAN_RESOLVES_NO_COMMIT}, and the two siblings that are merge fates
- * rather than `NoCommitMode` members through {@link PLAN_RESOLVES_MERGE},
- * which is where `TickResult` carries them (`entries[].mergeOutcome`). Both
- * rationales live at those tables (`.claude/rules/engineering.md`, *The fix
- * lands at the mechanism*).
- *
- * Exhaustive over `PriorAttempt["mode"]` by type, so a variant the engine
- * adds must be classified here rather than defaulting to "not a refusal" —
- * and each merge-fate key is indexed out of the engine's own `MergeOutcome`
- * table, so a fate that union drops is a type error rather than a verdict
- * this side goes on holding alone.
- */
-const PLAN_RESOLVES_STANDING: Record<PriorAttempt["mode"], boolean> = {
-  ...PLAN_RESOLVES_NO_COMMIT,
-  "not-shipped": PLAN_RESOLVES_MERGE["not-shipped"],
-  "tip-moved": PLAN_RESOLVES_MERGE["tip-moved"],
-};
-
-/**
- * The standing prior-attempt records that are refusals only a plan slice can
- * resolve **and** are keyed to an entry the queue still carries.
- *
- * Keyed to a live entry is the whole test: a record whose entry has left the
- * queue outlived the work it was about, and waking the inbox over it would
- * hold the slice open on nothing. So the walk runs the queue's way — each
- * queued entry looked up under the engine's own `entryAttemptKey`
- * (`src/priorAttempts.ts`), which is the key the store's walk filed the
- * record under. Reaching the record through that key rather than re-spelling
- * its two halves here is what keeps the keyspace and the tag's slug one
- * spelling: a slice that composed either itself would stop waking the day
- * the engine changed how it keys, silently, and over exactly the records a
- * wave is walling on (`.claude/rules/engineering.md`, *The fix lands at the
- * mechanism*). The keyspace comes with the key, which is what keeps a stem
- * the queue no longer carries from matching a live phase's record
- * (`spec/loop.md`, *No false signal*).
- *
- * The same set either way: the map holds one record per written identity, so
- * looking each queued entry up finds exactly the entry-keyspace records a
- * scan of the map's values would have kept.
- *
- * One derivation, two readers: the window's liveness leg above counts this,
- * and the rendered build-records block marks exactly these — by object
- * identity, since these are the map's own records.
- */
-function standingRefusals(ctx: TickFacts): PriorAttempt[] {
-  const attempts = ctx.priorAttempts;
-  if (ctx.pending === undefined || attempts === undefined) return [];
-  return ctx.pending
-    .map((entry) => attempts.get(entryAttemptKey(entry)))
-    .filter(
-      (record): record is PriorAttempt =>
-        record !== undefined && PLAN_RESOLVES_STANDING[record.mode],
-    );
 }
 
 /**
@@ -320,7 +256,9 @@ function renderBuildRecords(ctx: WindowContext): string {
   // By reference: `standingRefusals` filters the same record objects this
   // list holds, so identity is the marking test and no second key spelling
   // can drift from it.
-  const standing = new Set<PriorAttempt>(standingRefusals(ctx));
+  const standing = new Set<PriorAttempt>(
+    standingRefusals(ctx.pending, ctx.priorAttempts),
+  );
   const lines = [`=== ${records.length} standing prior-attempt record(s) ===`];
   for (const record of records) {
     const mark = standing.has(record)

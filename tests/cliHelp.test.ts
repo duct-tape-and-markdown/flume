@@ -219,6 +219,7 @@ const A_TICK_RESULT: TickResult = {
   gateResults: [],
   pendingAfter: [],
   pickableAfter: [],
+  priorAttempts: new Map(),
   shippedTags: [],
   revertedTags: [],
   flumeDir: ".flume",

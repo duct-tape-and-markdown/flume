@@ -46,7 +46,7 @@ import {
   INBOX_PHASE,
   type PlanSlice,
 } from "../harness/declaration.ts";
-import type { FanoutEntryOutcome, TickResult } from "../src/Phase.ts";
+import type { TickResult } from "../src/Phase.ts";
 import type {
   PendingEntry,
   QueueParseFailure,
@@ -659,16 +659,20 @@ it("the inbox window ignores a phase-keyed prior-attempt record whose key matche
 
 /**
  * The same question — "is this refusal only a plan slice's to resolve" —
- * asked of the two evidences that carry it: the `TickResult` a build tick
- * reports, read by the handoff's refusal leg, and a record still standing on
- * disk from an earlier run, read by this window. Both real readers run here;
- * neither side's table is restated by the test.
+ * asked by the two readers that carry it, over **one evidence**: the
+ * prior-attempt store the engine reports beside the queue it left. This
+ * window reads it at a `shouldRun` consult (`TickContext`), the default
+ * handoff's refusal leg reads it at the tick that follows (`TickResult`),
+ * and both real readers run here. Neither side's table is restated by the
+ * test.
  *
- * Which `TickResult` field carries a mode is the engine's own split, so the
- * switch below follows it: the four `NoCommitMode` members arrive as the
- * tick's `noCommit`, and the two merge fates as an entry's `mergeOutcome`. A
- * prior-attempt mode the engine adds that is neither is a typecheck failure
- * in that switch rather than an unexercised arm.
+ * One evidence is the property under test. The handoff used to rebuild this
+ * verdict from the tick's own `noCommit` and `entries[].mergeOutcome` — the
+ * fates the engine had already stamped onto the very records the window
+ * reads — so the two sides agreed only as long as a hand kept two tables in
+ * step. Handed the store, the agreement is structural: a mode the engine
+ * mints cannot route to the inbox from one surface and nowhere from the
+ * other.
  */
 it("the inbox window and the build handoff agree on every prior-attempt mode", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
@@ -678,16 +682,17 @@ it("the inbox window and the build handoff agree on every prior-attempt mode", (
   const tag = "HARNESS-STANDING-REFUSAL";
   const pending = [entry(tag)];
 
-  /** Whether the inbox window opens over one standing record of this mode. */
-  const windowSays = (mode: PriorAttemptMode): boolean => {
+  /** The queue and the store a tick reports, with one record of `mode` in it. */
+  const facts = (
+    mode: PriorAttemptMode,
+  ): { pending: PendingEntry[]; priorAttempts: Map<string, PriorAttempt> } => {
     const rec = record(tag, mode);
-    return inbox.live({
-      flumeDir: stateRoot(),
-      pickable: true,
-      pending,
-      priorAttempts: new Map([[`${rec.key}:${rec.keyedAs}`, rec]]),
-    });
+    return { pending, priorAttempts: new Map([[`${rec.key}:${rec.keyedAs}`, rec]]) };
   };
+
+  /** Whether the inbox window opens over one standing record of this mode. */
+  const windowSays = (mode: PriorAttemptMode): boolean =>
+    inbox.live({ flumeDir: stateRoot(), pickable: true, ...facts(mode) });
 
   // Every slice is dead, so a tick whose wake set carries the inbox got it
   // there through the handoff's refusal leg and not through an open window.
@@ -697,38 +702,23 @@ it("the inbox window and the build handoff agree on every prior-attempt mode", (
     ),
   );
 
-  /** One build tick reporting this mode where the engine reports it. */
+  /** One build tick reporting that same store, with the same queue behind it. */
   const reported = (mode: PriorAttemptMode): TickResult => {
-    const base: TickResult = {
+    const { pending: queue, priorAttempts } = facts(mode);
+    return {
       phaseName: BUILD_PHASE,
       committed: true,
       gateResults: [],
-      pendingAfter: pending,
+      pendingAfter: queue,
       // Build is a live alternative throughout, so "inbox" is a routing
       // decision rather than the only phase left to name.
-      pickableAfter: pending,
+      pickableAfter: queue,
+      priorAttempts,
       flumeDir: stateRoot(),
       configDir: stateRoot(),
       shippedTags: [],
       revertedTags: [],
     };
-    const entryOutcome = (
-      mergeOutcome: NonNullable<FanoutEntryOutcome["mergeOutcome"]>,
-    ): FanoutEntryOutcome => ({
-      tag,
-      extension: {},
-      committed: true,
-      shipped: false,
-      reverted: false,
-      mergeOutcome,
-    });
-    switch (mode) {
-      case "not-shipped":
-      case "tip-moved":
-        return { ...base, entries: [entryOutcome(mode)] };
-      default:
-        return { ...base, committed: false, noCommit: mode };
-    }
   };
 
   const verdicts = PRIOR_ATTEMPT_MODES.map((mode) => ({
@@ -1433,6 +1423,7 @@ it("the default handoff names the inbox slice over a queue that did not parse", 
     gateResults: [],
     pendingAfter: [],
     pickableAfter: [],
+    priorAttempts: new Map(),
     flumeDir: stateRoot(),
     configDir: stateRoot(),
     shippedTags: [],

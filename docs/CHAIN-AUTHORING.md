@@ -521,7 +521,11 @@ Things to notice:
 - **`handoff` reads the `TickResult`.** Fields: `committed`, `commitSha`,
   `gateResults` (the same `ReportedGateResult` rows the verdict persists —
   `details`, `verdict` and `skipped` included, so a handoff keys on the field
-  rather than re-reading `message`), `pendingAfter`, `shippedTags`,
+  rather than re-reading `message`), `pendingAfter`, `priorAttempts` (the
+  prior-attempt store as this tick left it, keyed exactly as
+  `TickContext.priorAttempts` is — so "does a standing refusal still need a
+  producer" is a lookup rather than a rebuild from this tick's `noCommit` and
+  `entries[].mergeOutcome`), `shippedTags`,
   `revertedTags` (entries a
   fanout wave reverted at merge — lets a handoff distinguish merge-thrash
   from a clean wave). Return `[]` to leave nobody awake — the system
