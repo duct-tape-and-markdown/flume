@@ -1,10 +1,12 @@
 {
   "tag": "THE-SWEEP-CARRIES-A-RETIRED-CLAIM-CURSOR",
   "gate": {
-    "kind": "blockedBy",
-    "tags": ["THE-CURSOR-GATE-BECOMES-THE-SLICE-STATE-GATE"]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "harness/planState.ts",
@@ -26,7 +28,8 @@
         "path": "tests/harnessWindows.test.ts",
         "description": "the delta drawn from the cursor, and from the stamp where none is written"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "The retired-claim delta re-renders every line the locus deleted since the stamp on every tick of a rotation, because nothing records that a tick searched them",
   "per": {
@@ -38,5 +41,6 @@
     "the retired-claim delta renders the lines deleted since the retired-claim cursor",
     "a sweep state carrying no retired-claim cursor draws the delta from the stamp"
   ],
+  "pins": [],
   "notes": "Ruled off the retired-claim-cursor record, fork (1). Constraint: the live sweep state carries no such field and only the sweep slice may rewrite it, so a required field refuses that slice's own window and it cannot repair itself — absent reads as the stamp. `AnyCursorField` (`harness/planState.ts`) derives the table from string-valued fields and an optional one does not extend `string`. Measured: 852 deleted lines against a 1200-line budget."
 }
