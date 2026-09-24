@@ -2210,13 +2210,13 @@ the parser cannot drift:
 
 - **Validation** — the dispatcher *adapts* each declared validator (calling
   its `~standard.validate`, never merging its schema object) into the
-  composed entry schema; `parsePending(raw, entryExtension)` does the same
-  in your own gates. The composed schema is strict: a field that is neither
-  core nor declared fails loudly. (Silent stripping is how plan-authored
-  fields would get destroyed when the dispatcher rewrites an entry's file
-  on ship.) A validator's `~standard.validate` must be synchronous —
-  `parsePending` cannot await it, and an async validator is refused at
-  first parse, naming the field.
+  composed entry schema; `parsePendingQueue(files, entryExtension)` does the
+  same in your own gates. The composed schema is strict: a field that is
+  neither core nor declared fails loudly. (Silent stripping is how
+  plan-authored fields would get destroyed when the dispatcher rewrites an
+  entry's file on ship.) A validator's `~standard.validate` must be
+  synchronous — `parsePendingQueue` cannot await it, and an async validator
+  is refused at first parse, naming the field.
 - **Rendering** — `renderSchemaForPrompt(entryExtension)` renders the core
   shape followed by each declared field as `"<name>": <hint>`, verbatim.
   Pass it through your plan phase's `promptArgs` exactly as before.
@@ -2234,9 +2234,11 @@ carry only the mechanical fields, and anything extra is rejected.
 
 The extension isn't cascade-specific machinery — `backlog-groomer-chain.ts`
 declares its own, one field (`reason`), and validates a completely
-different queue (`BACKLOG.json`, not the pending directory) against
-`composePendingList`/`parsePending` the same way. Same composition, no
-plan/build split in sight.
+different queue (`BACKLOG.json`, not the pending directory) against the same
+composition. It calls `composePendingEntry(entryExtension)` and applies the
+returned schema to each array element itself, because `parsePendingQueue`
+reads a directory listing and that chain's queue is one file. Same composed
+entry shape, no plan/build split in sight.
 
 ## 11. Refining the tag grammar
 
@@ -2375,7 +2377,7 @@ const factory: ChainFactory = (flume) => {
   // ... phases defined here, composing with the destructured values ...
 
   const cascadeChain: Chain = {
-    phases: [build, plan],
+    phases: [build, ...planSlices],
     humanOnly: [],
   };
   return { chain: cascadeChain };
@@ -2404,8 +2406,9 @@ move it.
 cannot wake via another phase's `handoff` — humans wake them by touching
 `.flume/awake/<name>` (or `flume wake <name>`). Reach for it when a phase
 consumes something a human authors between runs, so waking it from a
-sibling's handoff would only burn a tick. Cascade declares it empty: both
-its phases derive from disk, so either is safe to wake autonomously.
+sibling's handoff would only burn a tick. Cascade declares it empty: each of
+its three phases — `build` and the two plan slices — derives from disk, so
+any of them is safe to wake autonomously.
 
 ## Where to look next
 

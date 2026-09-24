@@ -344,8 +344,9 @@ export default factory;
  *      `<your-repo>/.flume/prompts/backlog-groomer.md`.
  *
  *   2. Replace the `../src/index.ts` import path with the bare specifier.
- *      It stays `import type` — `isPickableNow`, `parsePending` and
- *      `renderSchemaForPrompt` are destructured off the factory's `api`
+ *      It stays `import type` — `composePendingEntry`, `isPickableNow`,
+ *      `renderSchemaForPrompt` and `withSessionCapture` are every runtime
+ *      value this file uses, each destructured off the factory's `api`
  *      below, so nothing here resolves a second engine:
  *
  *          import type { Agent, Chain, EntryExtension, Gate, Phase } from "flume";

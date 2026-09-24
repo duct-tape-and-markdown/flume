@@ -68,7 +68,7 @@ export default factory;
  * Grow from here: add a second phase, declare gates (`tscGate`, `vitestGate`,
  * `shellGate`, ...) to enforce checks post-commit, switch a phase to
  * `concurrency: "fanout"` once pending entries are partitioned by file
- * overlap, or layer in `parsePending` / `renderSchemaForPrompt` for
+ * overlap, or layer in `parsePendingQueue` / `renderSchemaForPrompt` for
  * plan↔build coordination. See `examples/cascade-chain.ts` for the loaded
  * shape.
  * -------------------------------------------------------------------------- */

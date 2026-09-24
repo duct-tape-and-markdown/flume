@@ -309,8 +309,8 @@ export class AsyncEntryExtensionValidatorError extends Error {
   constructor(fieldName: string) {
     super(
       `entryExtension field "${fieldName}"'s ~standard.validate returned a ` +
-        `Promise; parsePending is synchronous and cannot await it. Declare ` +
-        `a synchronous Standard Schema validator for this field.`,
+        `Promise; parsePendingQueue is synchronous and cannot await it. ` +
+        `Declare a synchronous Standard Schema validator for this field.`,
     );
     this.name = "AsyncEntryExtensionValidatorError";
   }

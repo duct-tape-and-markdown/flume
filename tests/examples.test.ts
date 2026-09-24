@@ -913,13 +913,15 @@ describe("example chains — the engine arrives on the api, never through a valu
 });
 
 /**
- * `phases[0]` is a chain's entry point by position (docs/CHAIN-AUTHORING.md,
- * *1. Declaring a Phase*), so a chain whose entry phase is also in its own
- * `humanOnly` list declares a state root that can never cold-start on its
- * own machinery: a human has to wake it on tick one, every time. Every chain
+ * Declaration order is the loop's priority (`docs/CHAIN-AUTHORING.md`,
+ * *Putting it together*): a bare `flume tick` takes the first phase down
+ * `phases` whose flag is awake, and the supervisor starts children in that
+ * order. A `humanOnly` phase is out of every sibling's `handoff` reach —
+ * only `flume wake` puts its flag up — so a chain listing `phases[0]` there
+ * puts its own highest-priority phase behind a hand-wake, and the loop can
+ * never return to the head of its ladder on its own machinery. Every chain
  * under `examples/` is a "read this to learn the shape" artifact, so this
- * pins the entry-phase/humanOnly relationship across all of them, not just
- * cascade.
+ * pins the relationship across all of them, not just cascade.
  */
 describe("example chains — entry phase is machine-wakeable", () => {
   const chains: Array<{ name: string; chain: Chain }> = [

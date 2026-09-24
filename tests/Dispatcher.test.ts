@@ -12080,7 +12080,7 @@ describe("The rendered prompt is persisted before the agent runs (spec/prompt.md
     expect(await renderedFiles()).toEqual([]);
   });
 
-  it("the longest tag parsePending accepts yields a filename within NAME_MAX — the schema's ceiling driven through the real writer", async () => {
+  it("the longest tag parsePendingQueue accepts yields a filename within NAME_MAX — the schema's ceiling driven through the real writer", async () => {
     const tag = "A".repeat(TAG_MAX_LENGTH);
     await writePending(fx.repo, [makeEntry(tag, ["src/tag-len.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -16538,7 +16538,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
   // path refusal ("fatal: '$GIT_DIR' too big"). The fanoutAgent key below
   // is `worktreeDirName(tag)` — the bounded directory name — not the raw
   // slug the tag would otherwise produce.
-  it("a gate-revert on the longest tag parsePending accepts writes a revert-note filename within NAME_MAX — the schema's ceiling driven through the real writer (TAG-LENGTH-BOUND-AGREEMENT-PIN)", async () => {
+  it("a gate-revert on the longest tag parsePendingQueue accepts writes a revert-note filename within NAME_MAX — the schema's ceiling driven through the real writer (TAG-LENGTH-BOUND-AGREEMENT-PIN)", async () => {
     const tag = "A".repeat(TAG_MAX_LENGTH);
     await writePending(fx.repo, [makeEntry(tag, ["src/tag-len.ts"])]);
     // The real reader accepts the boundary tag — a value one over would

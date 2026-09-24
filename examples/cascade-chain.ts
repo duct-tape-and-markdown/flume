@@ -676,7 +676,7 @@ const factory: ChainFactory = (api) => {
     // `nextPhase`'s answer alone, and this line does not move it.
     phases: [build, ...planSlices],
     entryExtension,
-    humanOnly: [], // both phases are machine-woken; the spec corpus a human edits is not a phase
+    humanOnly: [], // every phase above is machine-woken; the spec corpus a human edits is not a phase
   };
 
   return { chain: cascadeChain };
