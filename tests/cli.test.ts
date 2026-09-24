@@ -2276,9 +2276,9 @@ function tickChildPidChainSrc(
 
 /**
  * The grace the tree-teardown arms declare. Short enough that escalating
- * through it costs a fraction of a case, and far enough under
- * `DEFAULT_KILL_GRACE_MS` (`src/processTree.ts`) that a run bounded by the
- * engine's own value could not be mistaken for one bounded by this.
+ * through it costs a fraction of a case, and different from
+ * `DEFAULT_KILL_GRACE_MS` (`src/processTree.ts`), so an arm reading the number
+ * a tick announces cannot match one that fell back to the engine's own value.
  */
 const DECLARED_GRACE_MS = 250;
 
@@ -2846,8 +2846,8 @@ function bareTickAgentChainSrc(
 /**
  * Drive a real bare `flume tick` to an agent parked mid-invocation and SIGTERM
  * the tick — the shape every arm below shares. Returns the pids it observed,
- * the output collected so far, the exit as a promise carrying how long the
- * teardown took, and the cleanup its caller owns.
+ * the output collected so far, the exit as a promise, and the cleanup its
+ * caller owns.
  *
  * The exit is handed over rather than awaited here, as the loop driver above
  * hands its own over: an arm whose subject is what the tick *says* while its
@@ -2874,7 +2874,6 @@ async function signalledBareTickRun(opts: {
   exited: Promise<{
     code: number | null;
     signal: NodeJS.Signals | null;
-    teardownMs: number;
   }>;
   out: () => string;
   cleanup: () => Promise<void>;
@@ -2955,17 +2954,12 @@ async function signalledBareTickRun(opts: {
     expect(agentPid).not.toBe(tickPid);
     expect(processAlive(agentPid)).toBe(true);
 
-    let signalledAt = 0;
     const exited = new Promise<{
       code: number | null;
       signal: NodeJS.Signals | null;
-      teardownMs: number;
     }>((resolveExit) => {
-      tick?.on("exit", (code, signal) =>
-        resolveExit({ code, signal, teardownMs: Date.now() - signalledAt }),
-      );
+      tick?.on("exit", (code, signal) => resolveExit({ code, signal }));
     });
-    signalledAt = Date.now();
     process.kill(tickPid, "SIGTERM");
 
     return {
@@ -3039,29 +3033,41 @@ describe("flume tick — a signalled bare tick takes its agent down (spec/loop.m
   it.skipIf(process.platform === "win32")(
     "a bare tick whose agent ignores SIGTERM kills it after the declared grace rather than exiting over a live writer",
     async () => {
-      // Non-vacuity, and what makes the ceiling below discriminate: the
-      // declared grace must be far enough under the engine's that a teardown
-      // bounded by the default cannot land inside it.
-      expect(DECLARED_GRACE_MS * 10).toBeLessThan(DEFAULT_KILL_GRACE_MS);
+      // Non-vacuity for the number read below: a tick naming the engine's
+      // own default would satisfy a `toContain` over any grace that happened
+      // to equal it, so the declared one must differ from it.
+      expect(DECLARED_GRACE_MS).not.toBe(DEFAULT_KILL_GRACE_MS);
 
       const run = await signalledBareTickRun({
         ignoreSigterm: true,
         killGraceMs: DECLARED_GRACE_MS,
       });
       try {
-        const { teardownMs } = await run.exited;
+        // Which grace bounded the wait, read off the tick's own account of
+        // entering it rather than off how long it took — the same line the
+        // announcement arm below reads. It is printed as the wait opens, so
+        // it is collected whether the escalation has landed yet or not, and
+        // nothing here is sized for how fast the host gets there.
+        const line = await waitFor(
+          "the tick to announce the wait it is entering",
+          () =>
+            run
+              .out()
+              .split("\n")
+              .find((l) => l.includes("signalled; waiting for")),
+        );
+
+        await run.exited;
 
         // The agent swallowed the SIGTERM and would have parked past this
         // case's whole budget, so reaching here at all is the escalation.
         expect(processAlive(run.agentPid)).toBe(false);
         expect(existsSync(run.claimPath)).toBe(false);
-        // A ceiling, not a cost. The agent ignores SIGTERM, so the only thing
-        // that can end it is the escalation, and the only question is which
-        // grace timed it: under the engine default this teardown could not
-        // have finished before `DEFAULT_KILL_GRACE_MS`, and half of that
-        // still leaves the declared grace an order of magnitude of slack on a
-        // loaded host.
-        expect(teardownMs).toBeLessThan(DEFAULT_KILL_GRACE_MS / 2);
+        // And the wait that escalation ended was the one this chain declared,
+        // named with the knob that declared it: a tick falling back to the
+        // engine default announces a different number and reds here.
+        expect(line).toContain(`${DECLARED_GRACE_MS}ms`);
+        expect(line).toContain("supervisorPolicy.killGraceMs");
       } finally {
         await run.cleanup();
       }
