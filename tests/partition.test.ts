@@ -16,6 +16,7 @@ function makeEntry(
     },
     gate: { kind: "open" },
     dependsOnForks: [],
+    priority: 0,
     files: {
       new: (paths.new ?? []).map((p) => ({ path: p, description: "n" })),
       edit: (paths.edit ?? []).map((p) => ({ path: p, description: "e" })),

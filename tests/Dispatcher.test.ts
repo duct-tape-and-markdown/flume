@@ -298,6 +298,7 @@ function makeEntry(tag: string, editPaths: string[]): PendingEntry {
     tag,
     gate: { kind: "open" },
     dependsOnForks: [],
+    priority: 0,
     files: {
       new: [],
       edit: editPaths.map((p) => ({ path: p, description: "edit" })),
@@ -6244,8 +6245,11 @@ describe("Dispatcher — staged bystander state is checkpointed to a recoverable
 
 describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMerge-revert site does not crash the tick", () => {
   it("fanout: a collision reverting one entry does not crash the wave; an already-merged sibling still ships and the pending-ledger rewrite still runs", async () => {
+    // SHIP-CLEAN declares the higher `priority`: this case turns on its
+    // merge completing ahead of COLLIDE-BAD's, and the wave's order is that
+    // field rather than the array's (`spec/pending.md`, *The entry core*).
     const entries = [
-      makeEntry("SHIP-CLEAN", ["src/clean.ts"]),
+      { ...makeEntry("SHIP-CLEAN", ["src/clean.ts"]), priority: 1 },
       makeEntry("COLLIDE-BAD", ["src/collide.ts"]),
     ];
     await writePending(fx.repo, entries);
@@ -7542,9 +7546,14 @@ describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-
  * `pickableAfter`" a refusal rather than a ship.
  */
 describe("Dispatcher fanout — the pickable set carries a chain-declared per-entry refusal", () => {
-  /** Two open entries, disjoint by files, in queue order. */
+  /**
+   * Two open entries, disjoint by files. `PICKED` declares the higher
+   * `priority`, because the assertions below name the reported sets in
+   * order and the queue's order is that field, never the position an
+   * entry was written at (`spec/pending.md`, *The entry core*).
+   */
   const twoOpen = (): PendingEntry[] => [
-    makeEntry("PICKED", ["src/picked.ts"]),
+    { ...makeEntry("PICKED", ["src/picked.ts"]), priority: 1 },
     makeEntry("HELD", ["src/held.ts"]),
   ];
 
@@ -18812,5 +18821,135 @@ describe("Dispatcher — the queue's declared writer runs over an unparseable qu
     // agent's prompt is built from and on the result the handoff reads.
     expect(seen!.pending).toEqual([]);
     expect(outcome.result?.queueParseFailure?.path).toBe(QUEUE_REL);
+  });
+});
+
+/**
+ * ENTRY-PRIORITY-ORDERS-THE-QUEUE (`spec/pending.md`, *The entry core*): the
+ * queue's order is a field, never a position — `priority` descending, then
+ * tag ascending, at every surface that selects.
+ *
+ * Each case writes a queue whose own order agrees with the queue's ordering
+ * on neither axis, then reads the order back off the engine's *reported*
+ * surfaces — the wave's batch, `TickResult.pickableAfter`, and `render`'s
+ * preview — rather than off the comparator beside them: a sort asserted at
+ * its own producer proves self-agreement and nothing about what a tick picks
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ *
+ * The agents here commit nothing, so every entry stays queued and the
+ * post-tick sets are read over the queue the pre-tick selection saw.
+ */
+describe("Dispatcher — `priority` is the order every selection takes", () => {
+  /**
+   * Three open entries, disjoint by files, in an order no ordering would
+   * produce: the top priority is written last, and the two that tie on
+   * priority are written in descending tag order.
+   */
+  const scrambled = (): PendingEntry[] => [
+    { ...makeEntry("BETA", ["src/beta.ts"]), priority: 1 },
+    { ...makeEntry("ALPHA", ["src/alpha.ts"]), priority: 1 },
+    { ...makeEntry("GAMMA", ["src/gamma.ts"]), priority: 5 },
+  ];
+
+  /** The order those three sort into: 5 first, then the tie broken on tag. */
+  const ordered = ["GAMMA", "ALPHA", "BETA"];
+
+  /** A fanout `build` phase, the baton woken for it, and a chain carrying it. */
+  const wakeBuild = (): Chain => {
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    return {
+      phases: [makePhase({ name: "build", concurrency: "fanout", gates: [] })],
+      humanOnly: [],
+    };
+  };
+
+  /** An agent that runs for each of the three slugs and commits nothing. */
+  const noopWave = (): Agent =>
+    fanoutAgent({
+      alpha: async () => {},
+      beta: async () => {},
+      gamma: async () => {},
+    });
+
+  it("selection orders entries by priority descending, then tag ascending", async () => {
+    await writePending(fx.repo, scrambled());
+    const chain = wakeBuild();
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: noopWave(),
+      log: silent,
+    });
+
+    // `render`'s preview, taken before the tick it previews: the same
+    // selection, one call short of invoking an agent.
+    const preview = await dispatcher.render({ phase: "build" });
+    expect(preview.pickable.map((e) => e.tag)).toEqual(ordered);
+    expect(preview.entry?.tag).toBe("GAMMA");
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the file's own order is the scrambled one, and all three
+    // entries are still in it — so the order below is the selection's, and
+    // not the order the queue was read in.
+    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "BETA",
+      "ALPHA",
+      "GAMMA",
+    ]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
+      "BETA",
+      "ALPHA",
+      "GAMMA",
+    ]);
+    // The wave's batch, in the order the wave carried it.
+    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual(ordered);
+    // The post-tick re-derivation the handoff routes on.
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(ordered);
+  });
+
+  it("an entry declaring no priority sorts as zero", async () => {
+    // One entry above the default, one below, and one declaring nothing at
+    // all: the undeclared entry lands between them, which it can only do by
+    // being read as 0 rather than as absent.
+    const { priority: _default, ...declaresNone } = makeEntry("BETA", [
+      "src/beta.ts",
+    ]);
+    await writePending(fx.repo, [
+      { ...makeEntry("ALPHA", ["src/alpha.ts"]), priority: -1 },
+      declaresNone as PendingEntry,
+      { ...makeEntry("GAMMA", ["src/gamma.ts"]), priority: 1 },
+    ]);
+    const chain = wakeBuild();
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: noopWave(),
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: the entry that declares nothing really is on the queue,
+    // and really declares no priority on disk.
+    const onDisk = await readPendingFromDisk(fx.repo);
+    expect(onDisk.map((e) => e.tag)).toContain("BETA");
+    const raw = JSON.parse(
+      await readFile(join(fx.repo, ".flume", "plan", "pending.json"), "utf8"),
+    ) as Record<string, unknown>[];
+    expect(raw.find((e) => e["tag"] === "BETA")).not.toHaveProperty("priority");
+
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
+      "GAMMA",
+      "BETA",
+      "ALPHA",
+    ]);
+    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual([
+      "GAMMA",
+      "BETA",
+      "ALPHA",
+    ]);
   });
 });

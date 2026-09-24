@@ -832,6 +832,7 @@ describe("priorAttempts — a record is keyed by the identity it was written und
       tag,
       gate: { kind: "open" },
       dependsOnForks: [],
+      priority: 0,
       files: { new: [], edit: [], retire: [] },
     };
 
@@ -932,6 +933,7 @@ const collidingEntry: PendingEntry = {
   tag: COLLIDING_TAG,
   gate: { kind: "open" },
   dependsOnForks: [],
+  priority: 0,
   files: { new: [], edit: [], retire: [] },
 };
 

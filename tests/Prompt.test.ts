@@ -72,6 +72,7 @@ function entry(overrides: Partial<PendingEntry> = {}): PendingEntry {
     per: { path: "spec/pending.md", section: "5. Tests" },
     gate: { kind: "open" },
     dependsOnForks: [],
+    priority: 0,
     files: { new: [], edit: [], retire: [] },
     tests: [],
     acceptance: "green",

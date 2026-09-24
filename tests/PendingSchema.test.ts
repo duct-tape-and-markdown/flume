@@ -895,6 +895,39 @@ describe("dependsOnForks — foundations governor", () => {
   });
 });
 
+describe("priority — the queue's one ordering (spec/pending.md § The entry core)", () => {
+  it("priority defaults to 0 when omitted", () => {
+    const parsed = roundTrip({ ...baseEntry, gate: { kind: "open" } });
+    expect(parsed.priority).toBe(0);
+  });
+
+  it("round-trips a declared priority, above and below the default", () => {
+    expect(
+      roundTrip({ ...baseEntry, gate: { kind: "open" }, priority: 7 }).priority,
+    ).toBe(7);
+    expect(
+      roundTrip({ ...baseEntry, gate: { kind: "open" }, priority: -2 }).priority,
+    ).toBe(-2);
+  });
+
+  it("a non-integer priority fails validation", () => {
+    // The engine consumes the number as a sort key alone, so a fraction would
+    // order perfectly well — and that is exactly why it is refused rather
+    // than accepted and rounded: a producer writing 1.5 meant something the
+    // field cannot carry, and a silent read of it would be the degradation
+    // `.claude/rules/engineering.md`, *Loud or nothing* fences.
+    for (const priority of [1.5, "3", null]) {
+      const result = parsePending(
+        JSON.stringify([{ ...baseEntry, gate: { kind: "open" }, priority }]),
+      );
+      expect(result.ok, `priority ${JSON.stringify(priority)} parsed`).toBe(
+        false,
+      );
+      expect(result.errors.map((e) => e.path)).toContain("priority");
+    }
+  });
+});
+
 describe("gate=blockedBy — pickability against a tag list (spec/pending.md § The entry core)", () => {
   const noForks = new Set<string>();
 
@@ -962,6 +995,7 @@ describe("renderSchemaForPrompt", () => {
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
         "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
+  "priority": 0,                                        // optional integer, default 0; the queue's one ordering — higher is picked first, ties break on tag ascending. Omit unless this entry must be carried ahead of its siblings.
         "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],
@@ -970,7 +1004,7 @@ describe("renderSchemaForPrompt", () => {
         "observedFiles": [ "path", ... ]                      // engine-maintained, never authored here: the dispatcher records the real footprint of an attempt that did not ship, so a retry partitions away from whatever it collided with. Carry it through unchanged when an entry already has one; omit it otherwise.
       }
 
-      Output is a JSON array of these entries, ordered by execution priority (top = next).
+      Output is a JSON array of these entries; the "priority" field orders them, never their position.
       Empty array is valid (means nothing pending)."
     `);
   });
@@ -1196,6 +1230,7 @@ describe("renderSchemaForPrompt", () => {
       tag: "EVERY-RENDERED-FIELD",
       gate: { kind: "open" },
       dependsOnForks: ["some-fork"],
+      priority: 3,
       files: {
         new: [{ path: "src/new.ts", description: "the new" }],
         edit: [{ path: "src/edit.ts", description: "the edit" }],

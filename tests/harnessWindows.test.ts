@@ -175,6 +175,7 @@ const entry = (tag: string): PendingEntry => ({
   tag,
   gate: { kind: "open" },
   dependsOnForks: [],
+  priority: 0,
   files: { new: [], edit: [], retire: [] },
 });
 

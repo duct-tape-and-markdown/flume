@@ -5,9 +5,9 @@
  * One derivation for every surface that asks: `runSingleton`'s pre-tick read
  * (`src/singletonTick.ts`), `runFanout`'s wave (`src/waveTick.ts`),
  * `render`'s preview and `TickResult.pickableAfter`'s post-tick
- * re-derivation (`src/Dispatcher.ts`). The gate switch, the
- * run-scoped quarantine hold, the chain's own declared per-entry refusal, and
- * the file-overlap partition are spelled here
+ * re-derivation (`src/Dispatcher.ts`). The queue's ordering, the gate switch,
+ * the run-scoped quarantine hold, the chain's own declared per-entry refusal,
+ * and the file-overlap partition are spelled here
  * alone, so no two of those surfaces can disagree about what "pickable" means
  * at the moment each is taken (`.claude/rules/engineering.md`, *A module is
  * one job*).
@@ -111,6 +111,23 @@ function isPickable(
   }
 }
 
+/**
+ * The queue's one ordering (`spec/pending.md`, *The entry core*): `priority`
+ * descending, then tag ascending. A file listing, a producer's array, a
+ * directory walk — whatever order a queue is read in, every selection below
+ * takes this one, so the order a tick picks in is the entry's declaration and
+ * never the order its file happened to arrive in.
+ *
+ * Tags compare by code unit rather than `localeCompare`, so the ordering is
+ * the same on every host: `TAG_PATTERN` (`src/PendingSchema.ts`) admits ASCII
+ * alone, where code-unit order *is* ascending, and a locale-sensitive collator
+ * would make the queue's order a property of the machine reading it.
+ */
+function byQueueOrder(a: PendingEntry, b: PendingEntry): number {
+  if (a.priority !== b.priority) return b.priority - a.priority;
+  return a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0;
+}
+
 /** The entries `isPickable` clears, before this run's live quarantine is applied. */
 function gateEligible(
   pending: readonly PendingEntry[],
@@ -180,7 +197,8 @@ export function bindEntryRefusal(
 /**
  * The pickable set and the two holds that shrank it — what `isPickable`
  * cleared, minus this run's live quarantine, minus what the chain's own
- * refusal declined, with each hold named by the entries it took.
+ * refusal declined, with each hold named by the entries it took. Every one of
+ * the three is in the queue's own order ({@link byQueueOrder}).
  *
  * The one derivation `runSingleton`'s pre-tick selection, {@link selectBatch}
  * and `TickResult.pickableAfter`'s post-tick re-derivation all take, so no
@@ -222,11 +240,14 @@ export function pickableSelection(opts: {
   quarantinedSlugs?: ReadonlySet<string>;
   refuses: (entry: PendingEntry) => boolean;
 }): PickableSelection {
+  // The queue's one ordering, taken once over the eligible set: the pickable
+  // set below and both hold lists are read off it in this order, so no
+  // surface that reports one of them can order it differently.
   const eligible = gateEligible(
     opts.pending,
     opts.isForkResolved,
     opts.capabilities,
-  );
+  ).sort(byQueueOrder);
   // One consult per entry offered, partitioned in the same pass: the
   // predicate is the chain's code, and asking it twice about one entry both
   // pays for it twice and lets two answers disagree inside one selection.

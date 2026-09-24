@@ -155,6 +155,7 @@ const queueEntry = (
   tag,
   gate: { kind: "open" },
   dependsOnForks: [],
+  priority: 0,
   files: {
     new: [],
     edit: [{ path: over.edit ?? "src/widget.ts", description: "the work" }],

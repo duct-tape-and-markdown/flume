@@ -94,6 +94,7 @@ describe("buildFlumeApi() — the prior-attempt keyers (.claude/rules/engineerin
         tag: "PLAN-SWEEP",
         gate: { kind: "open" },
         dependsOnForks: [],
+        priority: 0,
         files: { new: [], edit: [], retire: [] },
       }),
     ).toBe("entry:plan-sweep");

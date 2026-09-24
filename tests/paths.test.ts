@@ -143,6 +143,7 @@ describe("entryWriteScope — the one scoped-or-not decision", () => {
       per: { path: "spec/pending.md", section: "5. Tests" },
       gate: { kind: "open" },
       dependsOnForks: [],
+      priority: 0,
       files: { new: [], edit: [], retire: [] },
       acceptance: "green",
       ...overrides,
@@ -235,6 +236,7 @@ describe("queueFenceViolations — the one consumer-phase fence pre-check", () =
       per: { path: "spec/pending.md", section: "The pending queue" },
       gate: { kind: "open" },
       dependsOnForks: [],
+      priority: 0,
       files: { new: [], edit: [], retire: [] },
       acceptance: "green",
       ...overrides,
@@ -373,6 +375,7 @@ describe("matchesAny — a declared literal path matches only itself", () => {
       per: { path: "spec/pending.md", section: "The pending queue" },
       gate: { kind: "open" },
       dependsOnForks: [],
+      priority: 0,
       files: {
         new: [],
         edit: [{ path: "docs/faq?.md", description: "edit" }],
@@ -443,6 +446,7 @@ describe("matchesAny — a declared literal path matches only itself", () => {
         per: { path: "spec/pending.md", section: "The pending queue" },
         gate: { kind: "open" },
         dependsOnForks: [],
+        priority: 0,
         files: { new: [], edit: [{ path, description: "edit" }], retire: [] },
         acceptance: "green",
       };

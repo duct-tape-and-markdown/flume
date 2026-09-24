@@ -127,9 +127,11 @@ const factory: ChainFactory = (api) => {
 
   /**
    * Deterministic groomer: parse `BACKLOG.json` against core + this chain's
-   * extension, pick the first pickable entry (array order — "top is next",
-   * same convention `pending.json` uses), remove it from the backlog, log it
-   * to `SHIPPED.md`, and commit both files itself — one tick, one commit, the
+   * extension, pick the first pickable entry in array order — this backlog's
+   * own convention, and this agent's to choose: the engine's queue orders on
+   * the entry's `priority`, and nothing hands that ordering to an agent
+   * picking out of a file it owns. Then remove it from the backlog, log it to
+   * `SHIPPED.md`, and commit both files itself — one tick, one commit, the
    * same contract an LLM-backed agent honors.
    *
    * `capabilities` is hardcoded empty here to mirror `Chain.capabilities`

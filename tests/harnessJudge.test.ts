@@ -452,6 +452,7 @@ const entryNaming = (line: string): PendingEntry => ({
   tag: "SOME-ENTRY",
   gate: { kind: "open" },
   dependsOnForks: [],
+  priority: 0,
   files: { new: [], edit: [], retire: [] },
   tests: [line],
   pins: [],

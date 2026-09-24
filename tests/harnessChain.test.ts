@@ -213,6 +213,7 @@ const entry = (tag: string): PendingEntry => ({
   tag,
   gate: { kind: "open" },
   dependsOnForks: [],
+  priority: 0,
   files: { new: [], edit: [{ path: "src/index.ts", description: "the seed" }], retire: [] },
   summary: "one line",
   per: CITE,
@@ -275,6 +276,7 @@ const REFUSAL_ENTRY: PendingEntry = {
   tag: "SOME-ENTRY",
   gate: { kind: "open" },
   dependsOnForks: [],
+  priority: 0,
   files: { new: [], edit: [], retire: [] },
 };
 

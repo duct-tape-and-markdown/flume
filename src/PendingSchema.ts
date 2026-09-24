@@ -137,6 +137,18 @@ const PendingEntryCore = z.strictObject({
      */
     dependsOnForks: z.array(z.string().min(1)).default([]),
     /**
+     * The queue's one ordering: higher is picked first, ties broken on tag
+     * ascending (`spec/pending.md`, *The entry core*). Applied wherever the
+     * engine selects, by `pickableSelection` (`src/selection.ts`).
+     *
+     * Defaults to `0`, so an entry declaring nothing sorts among its
+     * undeclared siblings rather than behind them. The engine consumes the
+     * number and nothing about what it means — what earns a raise is the
+     * producing phase's to decide (`.claude/rules/engine-boundary.md`,
+     * *Capability vs convention*).
+     */
+    priority: z.int().default(0),
+    /**
      * File-level work breakdown. The parallelism partition reads `edit[].path`.
      *
      * Load-bearing on entry-scoped fanout phases: the write guard narrows a
@@ -391,7 +403,8 @@ export function composePendingList(
 }
 
 /**
- * A plan's full pending list. Order is meaningful — top is next. Empty array
+ * A producer's full pending list. Position carries nothing: the order every
+ * selection takes is `priority` descending, then tag ascending. Empty array
  * is valid and means nothing pending.
  */
 export type PendingList = PendingEntry[];
@@ -671,6 +684,7 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
         | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
   "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
+  "priority": 0,                                        // optional integer, default 0; the queue's one ordering — higher is picked first, ties break on tag ascending. Omit unless this entry must be carried ahead of its siblings.
   "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
     "new":  [ { "path": "...", "description": "..." } ],
     "edit": [ { "path": "...", "description": "..." } ],
@@ -688,7 +702,7 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
 ${fields}
 }
 
-Output is a JSON array of these entries, ordered by execution priority (top = next).
+Output is a JSON array of these entries; the "priority" field orders them, never their position.
 Empty array is valid (means nothing pending).`;
 }
 
