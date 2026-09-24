@@ -13,12 +13,16 @@ window** and **80% of the window**. Both are percentages of a context window.
 - The composed line offers three facts, and the percentage is the optional
   one: `src/budgetLine.ts:186`-`:200` pushes the context part only where a
   window was declared, then always pushes `elapsed` and the tool-call count.
-- **No chain can declare a window today.** `contextWindow` reaches
-  `readBudgetLine` through `BudgetLineOptions`, and no declaration surface
-  carries it — that forwarding is queued as
-  `THE-DECLARATION-FORWARDS-THE-CONTEXT-WINDOW`. So every build tick this
-  loop has run read a line stating elapsed and calls, under a paragraph whose
-  only thresholds are percentages of a window that line never printed.
+- **The window can be declared now, and is not.** `agents.<phase>.contextWindow`
+  parses and reaches the adapter as `budget: { contextWindow }`, with no cadence
+  and no thresholds (shipped a35cbeb1, closing
+  `THE-DECLARATION-FORWARDS-THE-CONTEXT-WINDOW`). `.flume/declaration.ts` is
+  outside every autonomous phase's fence, so the field goes live on a human
+  edit and this repo has not made one: every build tick this loop has run read
+  a line stating elapsed and calls, under a paragraph whose only thresholds are
+  percentages of a window that line never printed. **What this ruling now
+  needs is the number, not the mechanism** — the forward it was waiting on has
+  landed, and fork 2 below is no longer an accident either way.
 - The absence clause meant to cover that — "No budget line at all means this
   chain declared no window" — describes a case the engine does not produce:
   a missing line is one of three *transcript* failures

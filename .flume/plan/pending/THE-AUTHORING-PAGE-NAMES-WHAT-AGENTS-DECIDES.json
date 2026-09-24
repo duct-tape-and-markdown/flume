@@ -1,0 +1,21 @@
+{
+  "tag": "THE-AUTHORING-PAGE-NAMES-WHAT-AGENTS-DECIDES",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the declaration's optional-field listing names what `agents` decides, its four subfields included, the way every field beside it does"
+      }
+    ]
+  },
+  "summary": "The authoring page lists the declaration's `agents` bare, so `model`, `extraArgs`, `contextWindow` and `inheritUserMcp` are named on no page a consumer reads",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "What a consumer declares"
+  },
+  "acceptance": "the authoring page's `agents` entry names its four subfields and what each decides, agreeing with that field's row in the section cited",
+  "notes": "Per note THE-DECLARATION-FORWARDS-THE-CONTEXT-WINDOW, verified this drain: in the optional listing (~:138) every other field carries a parenthetical and `agents` is a bare name; the four subfields appear nowhere in the page's declaration prose — the `budget` block at :1447 is the adapter's layer, not the declaration's. Deriving the listing from the schema is the rung above and wants a ruling on which nesting depth a page owes. Seam: THE-DOTTED-PAGE-SPAN-IS-JUDGED edits the same page."
+}
