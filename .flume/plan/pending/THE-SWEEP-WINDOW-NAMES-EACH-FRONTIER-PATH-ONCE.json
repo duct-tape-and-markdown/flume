@@ -1,6 +1,9 @@
 {
   "tag": "THE-SWEEP-WINDOW-NAMES-EACH-FRONTIER-PATH-ONCE",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 1,
   "files": {
     "edit": [
       {
@@ -17,7 +20,7 @@
       }
     ]
   },
-  "summary": "The sweep window renders one block per commit, so the frontier's 218 paths arrive as 3,203 lines and grow with every commit of the rotation",
+  "summary": "The sweep window renders one block per commit, so the frontier's 221 paths arrive as 2,603 path lines — 133 KB of a 245 KB prompt — and grow with every commit of the rotation",
   "per": {
     "path": ".claude/rules/posture-sweep.md",
     "section": "The frontier is decidable; the neighborhood is judged"
@@ -26,5 +29,5 @@
   "tests": [
     "the sweep window names each frontier path once across the range, never once per commit that touched it"
   ],
-  "notes": "Measured this tick: 620 commits, 2,582 path lines, 3,203 listing lines against the package's 1,200-line budget (`WINDOW_LINE_BUDGET`, `harness/sliceWindow.ts`), which bounds only the retired-claim section beside it (`harness/sweepWindow.ts:151`). The union is 218 paths, bounded by the domain's own size, so it needs no budget of its own. Nothing reads the subjects: the frontier is touched modules, and the phrase delta fires on a posture page being in the union."
+  "notes": "Re-measured at this drain over the 19-26-00 plan-sweep render: 627 commits, 2,603 path lines over 221 unique paths = 133 KB of the prompt's 245 KB, beside 63 KB of retired-claim delta and 36 KB of `<pending-now>`. The union needs no budget of its own; `WINDOW_LINE_BUDGET` (`harness/sliceWindow.ts`) bounds only the delta (`harness/sweepWindow.ts:151`). Nothing reads the subjects. Priority raised: 100 sweep ticks of this rotation have paid it."
 }

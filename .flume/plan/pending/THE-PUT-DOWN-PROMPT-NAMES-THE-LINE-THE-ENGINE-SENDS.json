@@ -1,0 +1,19 @@
+{
+  "tag": "THE-PUT-DOWN-PROMPT-NAMES-THE-LINE-THE-ENGINE-SENDS",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/prompts/build.md",
+        "description": "the put-down bullet's absence clause states the shape the engine composes when no window is declared, and its thresholds name a fact that line carries"
+      }
+    ]
+  },
+  "summary": "The put-down bullet tells build no budget line means no declared window; the engine sends a line carrying elapsed and tool calls and no percentage, so that clause never fires",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "A tick puts work down"
+  },
+  "acceptance": "the put-down bullet names a threshold against a fact the composed line actually carries, and its absence clause states the real no-window shape — a line with no percentage — instead of a missing line, whose three causes are transcript failures",
+  "notes": "Verified at `src/budgetLine.ts:186`-`:200`: with no window declared the line still renders, elapsed and tool calls alone. A missing line is one of three transcript failures (`:146`-`:171`), none a chain's declaration. No chain can declare a window yet (THE-DECLARATION-FORWARDS-THE-CONTEXT-WINDOW), so every build tick today reads 70%/80% of a window its line never states. Which dial the second arm names is parked. Prompt prose, so no property."
+}
