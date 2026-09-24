@@ -1,0 +1,22 @@
+{
+  "tag": "THE-WORKTREE-LOCK-CASE-PROVES-ITS-THREE-COMMANDS-RAN",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/waitLock.test.ts",
+        "description": "the worktree-lock case's closing assertion establishes the loop's cardinality instead of a state zero iterations also leave"
+      }
+    ]
+  },
+  "summary": "The worktree-lock case's declared vacuity pin holds identically over zero iterations, so \"each blocked\" is three verdicts only by the array literal",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A green verdict is proven non-vacuous"
+  },
+  "acceptance": "the case's closing assertion is false when the command loop runs fewer than its three commands, so the per-command verdicts inside it cannot be inherited from a loop that fell through",
+  "pins": [
+    "each git worktree add, remove and prune runs under the worktree lock"
+  ],
+  "notes": "Verified this tick. `tests/waitLock.test.ts:277`-`:279` closes on `expect(existsSync(wt)).toBe(false)` under a comment claiming it proves all three ran; `wt` (`:237`) is only created by the loop's own `add`, so the assertion is equally true over zero iterations. The per-command `waitFor` and `done` verdicts inside the loop are real; nothing outside it counts them."
+}

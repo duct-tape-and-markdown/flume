@@ -153,7 +153,12 @@
       "tests/helpers/fixtureRoot.ts",
       "src/chainLoad.ts",
       "src/budgetLine.ts",
-      "tests/budgetLine.test.ts"
+      "tests/budgetLine.test.ts",
+      "tests/waitLock.test.ts",
+      "src/waitLock.ts",
+      "src/log.ts",
+      "tests/helpers/deadPid.ts",
+      "tests/helpers/scratchRepo.ts"
     ]
   }
 }
