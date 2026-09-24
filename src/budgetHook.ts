@@ -44,7 +44,8 @@ export interface BudgetDeclaration {
    * The model's context window in tokens. Declared rather than looked up: a
    * model's context size is a provider fact the engine does not hold.
    * Undeclared, the line states elapsed and calls alone — a token count has
-   * nothing to be reported against — and no threshold can fire.
+   * nothing to be reported against — and {@link BudgetDeclaration.thresholds}
+   * is refused with it.
    */
   contextWindow?: number;
   /**
@@ -54,8 +55,10 @@ export interface BudgetDeclaration {
   everyCalls?: number;
   /**
    * Fractions of the declared window — 0.7 for seventy percent — each
-   * reported once, on the turn that crosses it. Needs a window; without one
-   * there is no fraction to compare against.
+   * reported once, on the turn that crosses it. Needs a window: without one
+   * there is no fraction to compare against, so declaring these alone is
+   * refused rather than carried as an arm that never fires
+   * ({@link validateBudget}).
    */
   thresholds?: number[];
 }
@@ -73,8 +76,8 @@ const THRESHOLDS_FLAG = "--thresholds";
 const HOOK_MODULE_PATH = fileURLToPath(import.meta.url);
 
 /**
- * A declaration checked for the values it can be read on, or a throw naming
- * the field at fault.
+ * A declaration checked for the values it can be read on, and for the fields
+ * that need each other, or a throw naming the field at fault.
  *
  * Run by the adapter as the agent is built, so a chain that declared a
  * window of zero learns at chain-build time rather than once per tool call,
@@ -100,12 +103,22 @@ export function validateBudget(budget: BudgetDeclaration): BudgetDeclaration {
       );
     }
   }
-  for (const threshold of budget.thresholds ?? []) {
+  const thresholds = budget.thresholds ?? [];
+  for (const threshold of thresholds) {
     if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 1) {
       throw new Error(
         `budget: each threshold must be a fraction of the window in (0, 1], got ${threshold}`,
       );
     }
+  }
+  // A threshold is a fraction of the window, so with no window declared there
+  // is nothing to take a fraction of: every crossing arm is unreachable, and
+  // the chain that asked to be told at seventy percent would be told nothing,
+  // on a line that still looks like the one it declared.
+  if (thresholds.length > 0 && budget.contextWindow === undefined) {
+    throw new Error(
+      "budget: thresholds are fractions of contextWindow, which was not declared, so none of them can ever fire",
+    );
   }
   return budget;
 }

@@ -1456,11 +1456,14 @@ Spawns `claude -p` with the rendered prompt on stdin. Options:
   narrowing:
   - `contextWindow` — the model's context window in tokens. Declared rather
     than looked up: a model's context size is a provider fact the engine does
-    not hold. Undeclared, the line states elapsed and calls alone.
+    not hold. Undeclared, the line states elapsed and calls alone, and
+    `thresholds` is refused with it.
   - `everyCalls` — report on every Nth tool call. Undeclared, every call
     reports.
   - `thresholds` — fractions of the window (`0.7` for seventy percent), each
-    reported once, on the turn that crosses it. Needs a window.
+    reported once, on the turn that crosses it. Needs a window: declared
+    without `contextWindow` they are refused where you declared them, rather
+    than carried as an arm no turn can ever cross.
 
   ```ts
   claudeCode({

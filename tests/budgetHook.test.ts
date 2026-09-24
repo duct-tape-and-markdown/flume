@@ -149,6 +149,25 @@ it("a budget declaration that cannot be read on refuses where the chain declared
   });
 });
 
+it("a budget declaring thresholds and no context window refuses where the chain declared it", () => {
+  // Every arm of the pair, since a threshold with no window reaches the hook
+  // by two roads: the adapter's chain-build check, and the hook's own parse
+  // of the argv that check let through.
+  expect(() => validateBudget({ thresholds: [0.7] })).toThrow(/contextWindow/);
+  expect(() => validateBudget({ everyCalls: 5, thresholds: [0.7, 0.8] })).toThrow(
+    /contextWindow/,
+  );
+  expect(() => budgetHookCommand({ thresholds: [0.7] })).toThrow(/contextWindow/);
+  expect(() => parseBudgetArgs(["--thresholds", "0.7"])).toThrow(/contextWindow/);
+  // The window is what makes them readable on, and an empty list declares no
+  // arm at all — neither is refused.
+  expect(validateBudget({ contextWindow: 200_000, thresholds: [0.7] })).toEqual({
+    contextWindow: 200_000,
+    thresholds: [0.7],
+  });
+  expect(validateBudget({ thresholds: [] })).toEqual({ thresholds: [] });
+});
+
 it("the cadence beats on every Nth call, and undeclared it beats on each one", () => {
   const every3: BudgetDeclaration = { everyCalls: 3 };
   const beats = [1, 2, 3, 4, 5, 6].map((toolCalls) =>
@@ -162,7 +181,11 @@ it("the cadence beats on every Nth call, and undeclared it beats on each one", (
 });
 
 it("a threshold reports on the turn that crosses it and not on the calls after", () => {
-  const budget: BudgetDeclaration = { everyCalls: 100, thresholds: [0.8] };
+  const budget: BudgetDeclaration = {
+    contextWindow: 200_000,
+    everyCalls: 100,
+    thresholds: [0.8],
+  };
   const crossing = reading({
     toolCalls: 3,
     contextFraction: 0.81,
@@ -181,8 +204,8 @@ it("a threshold reports on the turn that crosses it and not on the calls after",
   expect(budgetLineDue(crossing, budget)).toBe(true);
   expect(budgetLineDue(after, budget)).toBe(false);
   expect(budgetLineDue(below, budget)).toBe(false);
-  // No window declared, so there is no fraction to cross: the cadence is
-  // the only arm left, and at 100 it has not beaten.
+  // A reading carrying no fraction crosses nothing, whatever the thresholds
+  // say: the cadence is the only arm left, and at 100 it has not beaten.
   expect(budgetLineDue(reading({ toolCalls: 3 }), budget)).toBe(false);
 });
 
