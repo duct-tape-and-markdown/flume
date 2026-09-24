@@ -1,0 +1,33 @@
+{
+  "tag": "A-RELEASED-CLAIM-NEVER-UNLINKS-A-LATER-HOLDERS",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/pidClaim.ts",
+        "description": "a staked claim's release drops at most once, at the stake that took it"
+      },
+      {
+        "path": "src/cli.ts",
+        "description": "the two hand-held drop flags shrink to the guard the stake now carries"
+      },
+      {
+        "path": "tests/pidClaim.test.ts",
+        "description": "a second release over a path a later holder has since staked"
+      }
+    ]
+  },
+  "summary": "A staked claim's release unlinks whatever is at the path, so a second drop deletes the claim a later holder took",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "release removes only the file its own stake created, and only once, so neither tip-claim drop needs a held flag beside it to stay off a later holder's claim",
+  "tests": [
+    "a second release of a staked claim leaves a later holder's claim file standing"
+  ],
+  "pins": [
+    "a staked claim's first release removes the claim file it created"
+  ],
+  "notes": "Verified this tick: release unlinks `target` unconditionally (`src/pidClaim.ts:209`), so the interface doc's \"Idempotent\" (`:154`) holds only against its own absence. `dropLock` gates the loop-lock unlink on `lockHeld` but leaves `tipClaim?.release()` ungated (`src/cli.ts:1251`); the bare-tick sibling gates on `claimHeld` and names this exact hazard at `:1046`. Detection one sibling performs, re-derived beside the mechanism rather than in it."
+}

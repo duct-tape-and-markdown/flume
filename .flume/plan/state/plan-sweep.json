@@ -140,7 +140,9 @@
       "harness/toolRun.ts",
       "harness/ci.ts",
       "harness/questions.ts",
-      "harness/layout.ts"
+      "harness/layout.ts",
+      "src/entryClaims.ts",
+      "src/pidClaim.ts"
     ]
   }
 }
