@@ -88,7 +88,7 @@ const DESCRIPTIONS: Record<HarnessPhase, string> = {
   "plan-derive":
     "Derive the contract changes past the derive cursor into pending entries.",
   "plan-sweep":
-    "Sweep one neighborhood of the posture rotation against the declared posture pages.",
+    "Sweep the open posture rotation's frontier against the declared posture pages.",
   build: "Ship one (or N disjoint) pending entries to the trunk.",
 };
 

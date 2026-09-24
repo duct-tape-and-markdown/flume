@@ -35,7 +35,7 @@ discipline: {{DISCIPLINE}}
 
 # TASK
 
-Apply the declared posture pages to code that already exists. Those pages bind this slice — the frontier, the neighborhood bound, the cursor, the routing bar, the stamp; `<sweep-window>` names them, and you read them now, in full, as they read this tick. One neighborhood per tick.
+Apply the declared posture pages to code that already exists. Those pages bind this slice — the frontier, what a neighborhood is, the cursor, the routing bar, the stamp; `<sweep-window>` names them, and you read them now, in full, as they read this tick. You sweep **neighborhoods** — one frontier module read together with its immediate imports, then the next — until the budget line below says to put the rotation down. That line is the bound, not a count: a rotation a phrase delta armed is the whole domain, and one module per tick prices it at a hundred ticks.
 
 `<sweep-window>` lists the sweep-domain paths the commits past `sweptThrough` touched — each named once, whatever number of those commits touched it — then the posture pages that range touched, each of which is a phrase delta putting every sweep-domain module in the frontier, then the spec lines the range deleted — the retired-claim delta. `<plan-state>` carries the open rotation's covered set, if one is open; covered is settled and is never re-swept, even where fresh judgment would cut the boundary differently.
 
@@ -53,7 +53,7 @@ Discipline: `{{DISCIPLINE}}` — read it before writing the queue.
 
 # OUTPUT
 
-One commit prefixed `plan:`; the body names the neighborhood swept and each finding's route. Close per *Closing a slice* in the discipline file.
+One commit prefixed `plan:`; the body names the neighborhoods swept and each finding's route. Close per *Closing a slice* in the discipline file.
 
 <schema>
 {{PENDING_SCHEMA}}
