@@ -340,9 +340,6 @@ async function readAll(stream: NodeJS.ReadStream): Promise<string> {
  * stop being.
  */
 if (process.argv[1] === HOOK_MODULE_PATH) {
-  // Chained rather than awaited at module scope: this module is imported by
-  // the adapter, and the chain loader compiles a graph it reaches to CJS
-  // interop, where a top-level await has no spelling at all.
   readAll(process.stdin)
     .then((input) => budgetHookOutcome(process.argv.slice(2), input))
     .then(({ stdout, stderr }) => {
