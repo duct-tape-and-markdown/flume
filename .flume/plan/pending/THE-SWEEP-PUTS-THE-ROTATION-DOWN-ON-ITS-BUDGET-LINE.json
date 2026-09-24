@@ -24,5 +24,6 @@
     "section": "The frontier is decidable; the neighborhood is judged"
   },
   "acceptance": "the sweep tick's stated bound is its budget line's put-down rather than a count, and what it records covered is every frontier module it read",
-  "notes": "Ruled off the phrase-delta record: none of the three forks — the frontier stays whole and the tick's bound moves. Sites: `harness/prompts/plan-sweep.md:38` (\"One neighborhood per tick\") and `:54`, `harness/chain.ts:91`; nothing pins either string. Blocked on the put-down statement's one home — the sweep agent needs the thresholds, and a second copy spelled here is the drift *Narration is the ladder's bottom rung* names. Prompt prose, so no property."
+  "notes": "Ruled off the phrase-delta record: none of the three forks \u2014 the frontier stays whole and the tick's bound moves. Sites: `harness/prompts/plan-sweep.md:38` (\"One neighborhood per tick\") and `:54`, `harness/chain.ts:91`; nothing pins either string. Blocked on the put-down statement's one home \u2014 the sweep agent needs the thresholds, and a second copy spelled here is the drift *Narration is the ladder's bottom rung* names. Prompt prose, so no property.",
+  "priority": 5
 }

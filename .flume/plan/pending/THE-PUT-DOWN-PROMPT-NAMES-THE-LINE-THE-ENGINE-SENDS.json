@@ -7,7 +7,7 @@
     "edit": [
       {
         "path": "harness/prompts.ts",
-        "description": "the put-down statement takes one home beside `TURN_BOUNDARY` — a threshold per fact the line can carry, and the act each phase puts down"
+        "description": "the put-down statement takes one home beside `TURN_BOUNDARY` \u2014 a threshold per fact the line can carry, and the act each phase puts down"
       },
       {
         "path": "harness/prompts/build.md",
@@ -24,6 +24,7 @@
     "path": "spec/harness.md",
     "section": "A tick puts work down"
   },
-  "acceptance": "the put-down statement names a threshold for each fact the budget line can carry — the declared window's fraction and the elapsed clock — from one home every phase's prompt renders, and its absence clause states a line with no percentage rather than a missing line",
-  "notes": "Ruled off the put-down-dial record, fork (3): 70% and 80% stand, and on the clock land what is green at 45 minutes and stop at 60 — the median build tick is under 20, the one lost span 76. This repo now declares `contextWindow: 1_000_000` on every phase, so the percentage arm is live and inert by measurement. A missing line is one of three transcript failures (`src/budgetLine.ts:146`-`:171`), never a declaration. Prompt prose, so no property."
+  "acceptance": "the put-down statement names a threshold for each fact the budget line can carry \u2014 the declared window's fraction and the elapsed clock \u2014 from one home every phase's prompt renders, and its absence clause states a line with no percentage rather than a missing line",
+  "notes": "Ruled off the put-down-dial record, fork (3): 70% and 80% stand, and on the clock land what is green at 45 minutes and stop at 60 \u2014 the median build tick is under 20, the one lost span 76. This repo now declares `contextWindow: 1_000_000` on every phase, so the percentage arm is live and inert by measurement. A missing line is one of three transcript failures (`src/budgetLine.ts:146`-`:171`), never a declaration. Prompt prose, so no property.",
+  "priority": 5
 }
