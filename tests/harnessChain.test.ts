@@ -383,16 +383,20 @@ it("the factory returns the three plan slices and the build phase from a declara
 
   const chain = chainFor();
 
-  expect(chain.phases.map((phase) => phase.name)).toEqual([
-    ...PLAN_SLICES,
-    BUILD_PHASE,
-  ]);
+  // Which phases, and how each runs. The order they are declared in is the
+  // case below's subject, so this one reads the set — two cases pinning one
+  // list would be the second copy that goes stale against the first.
+  expect(new Set(chain.phases.map((phase) => phase.name))).toEqual(
+    new Set([...PLAN_SLICES, BUILD_PHASE]),
+  );
   expect(
-    chain.phases.map((phase) => [phase.name, phase.concurrency]),
-  ).toEqual([
-    ...PLAN_SLICES.map((name) => [name, "singleton"]),
-    [BUILD_PHASE, "fanout"],
-  ]);
+    Object.fromEntries(
+      chain.phases.map((phase) => [phase.name, phase.concurrency]),
+    ),
+  ).toEqual({
+    ...Object.fromEntries(PLAN_SLICES.map((name) => [name, "singleton"])),
+    [BUILD_PHASE]: "fanout",
+  });
   // Each phase is complete enough for a tick: a description, gates, and a
   // handoff are what the dispatcher reads before it renders anything.
   for (const phase of chain.phases) {
@@ -439,6 +443,35 @@ it("every phase's agent tees its transcript into a path the consumer ignore set 
   }
 });
 
+it("the package declares build first and the plan slices after it, the sweep last of them", () => {
+  // Non-vacuity, and the claim the second half rests on: the package's own
+  // slice order already places the sweep last, so "the sweep last of them"
+  // is read off that list rather than respelled here.
+  expect(PLAN_SLICES.length).toBe(3);
+  expect(PLAN_SLICES.at(-1)).toBe("plan-sweep");
+
+  // Declared order is the priority when the budget is short, and the package
+  // leaves the budget at the engine's default of one — so for a consumer
+  // that declares no `supervisorPolicy` this list is the whole schedule, and
+  // the product outranks insurance.
+  expect(chainFor().phases.map((phase) => phase.name)).toEqual([
+    BUILD_PHASE,
+    ...PLAN_SLICES,
+  ]);
+
+  // Whichever slices a declaration enables: build keeps the front, and the
+  // enabled ones keep their order behind it rather than closing up in front.
+  const withoutSweep = chainFor({
+    ...DECLARATION,
+    slices: { enabled: ["plan-inbox", "plan-derive"] },
+  });
+  expect(withoutSweep.phases.map((phase) => phase.name)).toEqual([
+    BUILD_PHASE,
+    "plan-inbox",
+    "plan-derive",
+  ]);
+});
+
 it("a plan slice the declaration does not enable is absent from the returned chain", () => {
   // The control: the same declaration with every slice enabled carries it.
   expect(chainFor().phases.map((phase) => phase.name)).toContain("plan-sweep");
@@ -448,11 +481,9 @@ it("a plan slice the declaration does not enable is absent from the returned cha
     slices: { enabled: ["plan-inbox", "plan-derive"] },
   });
 
-  expect(withoutSweep.phases.map((phase) => phase.name)).toEqual([
-    "plan-inbox",
-    "plan-derive",
-    BUILD_PHASE,
-  ]);
+  expect(withoutSweep.phases.map((phase) => phase.name)).not.toContain(
+    "plan-sweep",
+  );
   // Absent, not present-and-permanently-closed: the ladder reads the list it
   // is given, and a slice that can never run reads as a phase the chain
   // carries but nothing wakes.

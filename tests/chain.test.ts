@@ -183,9 +183,9 @@ describe("this repo's chain is the harness factory applied to its declaration (s
   const { chain } = chainFactory(buildFlumeApi(REPO_PATHS));
   const byName = Object.fromEntries(chain.phases.map((p) => [p.name, p]));
 
-  it("declares the three plan slices ahead of build, and nothing else", () => {
-    expect(chain.phases.map((p) => p.name)).toEqual(["plan-inbox", "plan-derive", "plan-sweep", "build"]);
-    expect(chain.phases.map((p) => p.concurrency)).toEqual(["singleton", "singleton", "singleton", "fanout"]);
+  it("declares build ahead of the three plan slices, and nothing else", () => {
+    expect(chain.phases.map((p) => p.name)).toEqual(["build", "plan-inbox", "plan-derive", "plan-sweep"]);
+    expect(chain.phases.map((p) => p.concurrency)).toEqual(["fanout", "singleton", "singleton", "singleton"]);
   });
 
   it("every phase's prompt is an absolute path into the package that exists on disk", () => {

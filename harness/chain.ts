@@ -1,8 +1,8 @@
 /**
  * The package's chain factory (`spec/harness.md`, *The phases*) — one
- * declaration in, a complete `Chain` out: the three plan slices a consumer
- * enabled, the fanout build phase, and for each of them the package's
- * prompt, gates, judge, windows, handoff and agent.
+ * declaration in, a complete `Chain` out: the fanout build phase, the plan
+ * slices a consumer enabled declared behind it, and for each of them the
+ * package's prompt, gates, judge, windows, handoff and agent.
  *
  * **The assembly point, and nothing else.** Every part it wires already has
  * a home and its own tests — the gate set in `gates.ts`, the consumer's
@@ -346,7 +346,16 @@ export function harnessChain(options: HarnessChainOptions): Chain {
 
   const policy = supervisorPolicy(declaration.supervisor);
   return {
-    phases: [...windows.map(planPhase), build],
+    // Build first, the enabled plan slices behind it in `PLAN_SLICES` order
+    // — the sweep last of them, since that list already places insurance
+    // behind product (`declaration.ts`). Declared order is what the
+    // supervisor spends a short budget on, and the package leaves the budget
+    // at the engine's default of one, so for a consumer that declares no
+    // `supervisorPolicy` this line *is* the schedule: the product ships and
+    // the slices fill whatever room is left. Order here, not a knob — a
+    // consumer that wants more ticks at once raises its own budget
+    // (`spec/harness.md`, *The phases*).
+    phases: [build, ...windows.map(planPhase)],
     entryExtension: extension,
     // No phase the package ships consumes something a human authors between
     // runs: every slice's window is a fact of disk a sibling's handoff can
