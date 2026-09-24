@@ -52,7 +52,7 @@ import {
   computeStateRootRel,
   defaultStateRoot,
   phasePromptPath,
-  resolvePendingPath,
+  resolvePendingDir,
 } from "./paths.js";
 import {
   readPendingForDecision,
@@ -141,7 +141,7 @@ export interface DispatcherOptions {
   configDir: string;
   /**
    * Mutable-state root: where the baton (`awake/`), pending
-   * (`plan/pending.json`), worktrees (`worktrees/`), and prior-attempt records
+   * (`plan/pending/`), worktrees (`worktrees/`), and prior-attempt records
    * (`prior-attempts/`) live. Defaults to `<repoRoot>/.flume` — the historical
    * fixed location. Relocate it to run a fully self-contained, ephemeral
    * harness whose entire footprint can be removed in one `rm` (the
@@ -209,8 +209,8 @@ export interface DispatcherOptions {
   stopSignal?: AbortSignal;
   /**
    * `entryDeclaredKey` (`src/entryKey.ts`) values (`slug@hash`) excluded from
-   * this tick's fanout pick even though `pending.json` still lists them as
-   * pickable — `pending.json` itself is untouched. The `flume loop`
+   * this tick's fanout pick even though the queue still lists them as
+   * pickable — the queue itself is untouched. The `flume loop`
    * supervisor populates this (via the `tick` command's
    * `FLUME_QUARANTINED_SLUGS` env var, whose name predates the key and
    * stands) from entries whose provision/merge/gate stage failed earlier in
@@ -243,7 +243,7 @@ export interface DispatcherOptions {
    * (.claude/rules/engine-boundary.md "Capability vs convention").
    * `commitPendingUpdate` calls this with the tags shipped this wave (empty
    * when the wave only recorded merge-failure footprints) and the tags whose
-   * footprints were recorded, and commits pending.json with whatever string
+   * footprints were recorded, and commits the queue with whatever string
    * it returns. The `chore(flume): ship ...` /
    * `chore(flume): record merge-failure footprints for ...` wording is this
    * harness's own convention, not something every chain need adopt.
@@ -561,7 +561,7 @@ export class Dispatcher {
    * base*).
    */
   private chainWorktreesBase: string | undefined;
-  private pendingPath: string;
+  private pendingDir: string;
   private readonly chainLoader: () => Promise<ChainModule>;
   /** Set when tick() loads the chain; composes pending parses. */
   private entryExtension: EntryExtension | undefined;
@@ -593,7 +593,7 @@ export class Dispatcher {
     this.maxParallel = opts.maxParallel ?? 4;
     this.tickTimeoutMs = opts.tickTimeoutMs;
     this.bounds = resolveAgentBounds(undefined, this.tickTimeoutMs);
-    this.pendingPath = resolvePendingPath(this.flumeDir);
+    this.pendingDir = resolvePendingDir(this.flumeDir);
     this.chainLoader = opts.chainLoader ?? diskChainLoader(this.paths);
   }
 
@@ -637,7 +637,7 @@ export class Dispatcher {
       ),
       flumeDir: this.flumeDir,
       stateRootRel: this.stateRootRel,
-      pendingPath: this.pendingPath,
+      pendingDir: this.pendingDir,
       worktreeCtx: this.worktreeCtx,
       attempts: this.attempts,
       bounds: this.bounds,
@@ -667,7 +667,7 @@ export class Dispatcher {
   private get ledgerCtx(): PendingLedgerContext {
     return {
       repoRoot: this.opts.repoRoot,
-      pendingPath: this.pendingPath,
+      pendingDir: this.pendingDir,
       entryExtension: this.entryExtension,
       log: this.log,
       ...(this.opts.ownTipClaimPid !== undefined
@@ -836,7 +836,7 @@ export class Dispatcher {
     const chain = chainModule.chain;
     // The bounds every agent invocation this tick makes runs under, read at
     // the one point per process where a chain is in hand — the same per-tick
-    // read as `entryExtension` and `pendingPath` below, and what
+    // read as `entryExtension` and `pendingDir` below, and what
     // `agentKillGraceMs` reports to a caller that has no chain of its own.
     this.bounds = resolveAgentBounds(chain.supervisorPolicy, this.tickTimeoutMs);
     // Pending parses compose core + the chain's declared entry extension —
@@ -844,10 +844,10 @@ export class Dispatcher {
     // downstream of the one place the chain is loaded, and reads it off the
     // context this class composes.
     this.entryExtension = chain.entryExtension;
-    // spec/pending.md "The pending queue": Chain.pendingPath replaces the
+    // spec/pending.md "The pending queue": Chain.pendingDir replaces the
     // constructor-fixed default — resolved once per tick, after chain load,
     // same idiom as entryExtension above.
-    this.pendingPath = resolvePendingPath(this.flumeDir, chain.pendingPath);
+    this.pendingDir = resolvePendingDir(this.flumeDir, chain.pendingDir);
     // Foundations governor: a chain.ts `forkResolver` export overrides the
     // constructor default per tick, mirroring the `agent` override.
     const forkResolver = chainModule.forkResolver ?? this.opts.forkResolver;
@@ -1126,7 +1126,7 @@ export class Dispatcher {
     // The same two per-tick rebinds `tick()` takes off a freshly-loaded
     // chain, for the same two readers: the ledger read's parse and its path.
     this.entryExtension = chain.entryExtension;
-    this.pendingPath = resolvePendingPath(this.flumeDir, chain.pendingPath);
+    this.pendingDir = resolvePendingDir(this.flumeDir, chain.pendingDir);
 
     const phase = chain.phases.find((p) => p.name === opts.phase);
     if (!phase) {

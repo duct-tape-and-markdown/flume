@@ -135,7 +135,7 @@ export async function runSingleton(
   // ahead of the prune, `createWorktree` and `setupWorktree` — a singleton
   // decline costs the `rev-parse` and the pending read above and nothing
   // else, where it used to pay a full provisioning (dependency install
-  // included) to reach a verdict computable from `pending.json`. `cwd` is
+  // included) to reach a verdict computable from the queue. `cwd` is
   // the repo root because no worktree exists yet, and none will.
   const consult = await consultShouldRun(
     leg.attemptCtx,
@@ -388,7 +388,7 @@ export async function runSingleton(
               repoRoot,
               flumeDir: leg.flumeDir,
               stateRootRel: leg.stateRootRel,
-              pendingPath: leg.pendingPath,
+              pendingDir: leg.pendingDir,
               configDir: leg.configDir,
               phaseName: phase.name,
               commitSha: mergedSha,

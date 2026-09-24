@@ -67,14 +67,17 @@ export { type GitStatusRecord } from "./git.js";
 export { type StandardSchemaV1 } from "./standardSchema.js";
 
 export {
-  composePendingList,
-  parsePending,
-  parsePendingLoose,
+  composePendingEntry,
+  parsePendingQueue,
+  parsePendingQueueLoose,
   renderSchemaForPrompt,
   touchedPaths,
   isPickableNow,
   type PendingEntry,
   type PendingList,
+  // The shape `parsePendingQueue` takes: one entry file's name and bytes.
+  // A chain's own gate reading the queue at a commit holds a list of these.
+  type QueueFile,
   type EntryExtension,
   type EntryExtensionField,
   type ParseError,

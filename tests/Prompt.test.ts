@@ -381,7 +381,7 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
       // Relocated state root: the offset a dispatcher would hand this
       // fixture is genuinely absent, stated rather than omitted.
       stateRootRel: undefined,
-      pendingPath: "/state-root/plan/pending.json",
+      pendingDir: "/state-root/plan/pending",
       configDir: join(dir, ".flume"),
       repoRoot: dir,
       phaseName: "build",

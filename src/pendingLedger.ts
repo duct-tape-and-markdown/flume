@@ -1,8 +1,9 @@
 /**
- * The pending ledger's I/O: every way a tick reads the queue file, the
- * chain-less read a CLI verb counts through, the relocation check those reads
- * turn on, the fence verdict that decides whose read may survive a parse
- * failure, and the one rewrite that retires what a wave shipped.
+ * The pending ledger's I/O: the queue directory's listing, every way a tick
+ * reads the entry files under it, the chain-less read a CLI verb counts
+ * through, the relocation check those reads turn on, the fence verdict that
+ * decides whose read may survive a parse failure, and the one rewrite that
+ * retires what a wave shipped.
  *
  * Calls that share one fact each — where the ledger lives, which
  * alphabet it is read out of, and whether git can see it at all — so they
@@ -22,23 +23,25 @@
  * wave (`src/waveTick.ts`).
  */
 
-import { readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, relative } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join, relative } from "node:path";
 
-import { existsLoud } from "./fsProbe.js";
 import * as git from "./git.js";
 import type { Logger } from "./log.js";
 import { escapesRoot, gitPath, matchesAny, namespacedJoin } from "./paths.js";
 import {
-  parsePending,
-  parsePendingLoose,
+  ENTRY_FILE_EXT,
+  entryFileName,
+  parsePendingQueue,
+  parsePendingQueueLoose,
   PendingParseFailure,
 } from "./PendingSchema.js";
 import type {
   EntryExtension,
   ParseResult,
   PendingEntry,
+  QueueFile,
   QueueParseFailure,
 } from "./PendingSchema.js";
 import type { Phase } from "./Phase.js";
@@ -59,8 +62,8 @@ import { liveForeignClaimPid } from "./tipVerify.js";
  */
 export interface PendingLedgerContext {
   readonly repoRoot: string;
-  /** The pending ledger's resolved path, as this tick's chain declared it. */
-  readonly pendingPath: string;
+  /** The pending ledger directory's resolved path, as this tick's chain declared it. */
+  readonly pendingDir: string;
   /**
    * The chain's declared entry extension, composed into every parse below —
    * `undefined` where the chain declares none, which is core shape alone.
@@ -77,7 +80,7 @@ export interface PendingLedgerContext {
 }
 
 /**
- * Whether `pendingPath` sits outside `repoRoot` — an out-of-tree state
+ * Whether `pendingDir` sits outside `repoRoot` — an out-of-tree state
  * root's ledger, invisible to git by construction. Shared by
  * {@link readPending}'s tip-vs-disk choice and {@link commitPendingUpdate}'s
  * commit-vs-disk-only choice: one relocation check, not two independently
@@ -85,68 +88,188 @@ export interface PendingLedgerContext {
  * (`src/paths.ts`) owns rather than re-deriving it
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*), which
  * is the same verdict `computeStateRootRel` (`src/paths.ts`) reports the
- * state root under — `pendingPath` being a descendant of that root
- * (`resolvePendingPath`, `src/paths.ts`), the two always agree.
+ * state root under — `pendingDir` being a descendant of that root
+ * (`resolvePendingDir`, `src/paths.ts`), the two always agree.
  */
 export function isPendingRelocated(ctx: PendingLedgerContext): boolean {
-  return escapesRoot(ctx.repoRoot, ctx.pendingPath);
+  return escapesRoot(ctx.repoRoot, ctx.pendingDir);
 }
 
 /**
- * The ledger's path relative to the repo root **in git's own alphabet**
- * ({@link gitPath}), or `undefined` when it is relocated outside that root
- * and git can name it at all.
+ * The ledger directory's path relative to the repo root **in git's own
+ * alphabet** ({@link gitPath}), or `undefined` when it is relocated outside
+ * that root and git cannot name it at all.
  *
  * The fold lands here, at the one reporter, for the reason
  * `computeStateRootRel` (`src/paths.ts`) folds its own: every consumer
- * composes a value git will read — a pathspec at a ref ({@link readPending}
- * below) or a declared fence glob ({@link writesPendingLedger}) — and
- * `relative` answers in the host's dialect, so reporting it raw puts one
- * consumer in the other alphabet on win32 the first time one forgets.
+ * composes a value git will read — a tree listing at a ref ({@link
+ * readQueueAtRef} below) or a declared fence glob ({@link
+ * writesPendingLedger}) — and `relative` answers in the host's dialect, so
+ * reporting it raw puts one consumer in the other alphabet on win32 the first
+ * time one forgets.
  */
-function pendingPathRel(
+function pendingDirRel(
   ctx: PendingLedgerContext,
 ): string | undefined {
   if (isPendingRelocated(ctx)) return undefined;
-  return gitPath(relative(ctx.repoRoot, ctx.pendingPath));
+  return gitPath(relative(ctx.repoRoot, ctx.pendingDir));
 }
 
 /**
- * The ledger's path **as a report spells it**: git's own alphabet relative to
- * the repo root wherever git can name the file ({@link pendingPathRel}), and
- * the absolute path when a relocated dock puts it where git cannot. Every
- * report this module makes about the file — the rewrite's result, the refusal
+ * One entry file's path relative to the repo root, in git's alphabet — the
+ * spelling a fence glob is matched against and a pathspec is composed from.
+ *
+ * Composed here rather than at each caller, and with `/` rather than
+ * `node:path`: the directory half already came out of {@link pendingDirRel}
+ * in git's alphabet, and rejoining it through the host's separator is the
+ * fold undone (`.claude/rules/posture-sweep.md`, *A repo-relative path
+ * composed with `node:path`*).
+ */
+function entryFileRel(dirRel: string, file: string): string {
+  return `${dirRel}/${file}`;
+}
+
+/**
+ * The ledger directory's path **as a report spells it**: git's own alphabet
+ * relative to the repo root wherever git can name it ({@link pendingDirRel}),
+ * and the absolute path when a relocated dock puts it where git cannot. Every
+ * report this module makes about the queue — the rewrite's result, the refusal
  * it throws, and each degrade {@link readPendingTolerant} announces — takes
  * its spelling from here, so no report composes a second one out of
- * `pendingPath` with `node:path` and none spells the file by the basename
- * this chain's declaration was free not to use
+ * `pendingDir` with `node:path` and none spells the queue by the directory
+ * name this chain's declaration was free not to use
  * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
  * rediscovered*).
  */
-function reportedPendingPath(ctx: PendingLedgerContext): string {
-  return pendingPathRel(ctx) ?? ctx.pendingPath;
+function reportedPendingDir(ctx: PendingLedgerContext): string {
+  return pendingDirRel(ctx) ?? ctx.pendingDir;
 }
 
 /**
- * Whether `phase` is the queue's own writer — its declared
- * {@link Phase.writablePaths} admit the ledger's path, read through the same
- * `matchesAny` the write guard enforces the fence with, so the carve-out and
- * the enforcement cannot disagree about what a glob covers.
+ * Whether `phase` is the writer of the entry files named in `files` — its
+ * declared {@link Phase.writablePaths} admit every one of them, read through
+ * the same `matchesAny` the write guard enforces the fence with, so the
+ * carve-out and the enforcement cannot disagree about what a glob covers.
+ *
+ * Per file, not per directory: the fence a producer declares over a queue of
+ * one file each is a glob (`plan/pending/*.json`), which the directory's own
+ * path does not match, and the repair the carve-out exists for is a write to
+ * the files that did not parse.
  *
  * Keyed on the **declared** fence and nothing else
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*): the chain said
  * which paths this phase may write, so the engine reads that statement rather
  * than guessing from a phase's name, its prompt, or what its last commit
- * touched. A relocated ledger ({@link pendingPathRel}) is no phase's writer
+ * touched. A relocated ledger ({@link pendingDirRel}) is no phase's writer
  * here — `writablePaths` is repo-relative by declaration, so no glob a chain
  * can write names a path outside the repo.
  */
 function writesPendingLedger(
   ctx: PendingLedgerContext,
   phase: Pick<Phase, "writablePaths">,
+  files: readonly string[],
 ): boolean {
-  const rel = pendingPathRel(ctx);
-  return rel !== undefined && matchesAny(rel, phase.writablePaths);
+  const rel = pendingDirRel(ctx);
+  if (rel === undefined || files.length === 0) return false;
+  return files.every((file) =>
+    matchesAny(entryFileRel(rel, file), phase.writablePaths),
+  );
+}
+
+/**
+ * The queue directory's listing on disk, each entry file read: every
+ * `*.json` **directly** under `dir` and nothing else (`spec/pending.md`,
+ * *The ledger is a directory — one entry per file*). `null` when the
+ * directory is absent, which is nothing pending.
+ *
+ * Subdirectories are dropped rather than walked, so a chain may keep sidecars
+ * beside the entries — a `.gitkeep` holding the directory in a tree, a
+ * scratch folder — without the engine reading either as work.
+ *
+ * Absence is the only silent reading. Every other failure throws: a directory
+ * that is present but unreachable — a symlink loop, a permission-denied
+ * parent — refuses here instead of dispatching this tick over an empty queue
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). A `.json` entry that
+ * is a symlink is read as the file it is, and a loop under it throws with it.
+ *
+ * Names are sorted so two hosts' directory orders cannot produce two
+ * listings; what a selection picks in is the queue's declared order, applied
+ * at its own home (`byQueueOrder`, `src/selection.ts`).
+ */
+export function readQueueOnDisk(dir: string): QueueFile[] | null {
+  let listing;
+  try {
+    // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
+    listing = readdirSync(namespacedJoin(dir), { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+  return listing
+    .filter((d) => !d.isDirectory() && d.name.endsWith(ENTRY_FILE_EXT))
+    .map((d) => d.name)
+    .sort()
+    .map((file) => ({
+      file,
+      raw: readFileSync(namespacedJoin(dir, file), "utf8"),
+    }));
+}
+
+/**
+ * The queue directory's listing **as of a commit**, each entry file read out
+ * of that commit's tree: {@link readQueueOnDisk}'s at-ref twin, and `null`
+ * for the same fact — the directory is not in that tree.
+ *
+ * Exported because `pendingGate` (`src/builtinGates.ts`) judges the commit it
+ * is attached to and the package's own gates judge theirs, and a second
+ * spelling of "list the directory, then read each file" is how a gate comes
+ * to read a queue the dispatcher does not (`.claude/rules/engineering.md`,
+ * *A fact the engine holds is reported, never rediscovered*).
+ *
+ * `dirRel` is repo-relative in git's own alphabet; both legs hand it to git
+ * unchanged.
+ */
+export async function readQueueAtRef(
+  repoRoot: string,
+  ref: string,
+  dirRel: string,
+): Promise<QueueFile[] | null> {
+  const names = await git.listTreeBlobNames(repoRoot, ref, dirRel);
+  if (names === null) return null;
+  const files = names.filter((name) => name.endsWith(ENTRY_FILE_EXT)).sort();
+  return Promise.all(
+    files.map(async (file) => ({
+      file,
+      // Present in the listing a moment ago and the ref does not move, so a
+      // null here is a tree that changed under the read — reported as the
+      // empty file it then is, and refused by the parse rather than silently
+      // skipped.
+      raw:
+        (await git.readFileAtRef(repoRoot, ref, entryFileRel(dirRel, file))) ??
+        "",
+    })),
+  );
+}
+
+/**
+ * The listing this tick reads the queue out of: the committed tip's, or the
+ * disk's for a relocated dock git cannot see.
+ *
+ * spec/pending.md "Dispatch reads come from the tip, not the tree": resolves
+ * the committed `HEAD` tip, never the working tree — a mid-wave merge, an
+ * engine revert, or an operator's staged edit can each leave the tree ahead
+ * of or behind the branch, and a dispatch decision must never act on state no
+ * commit owns. An out-of-tree `pendingDir` (a relocated state root) has no
+ * tip to read — invisible to git by construction ({@link
+ * commitPendingUpdate}) — so it stays the one disk-reading case here,
+ * alongside {@link readPendingTolerant}.
+ */
+async function readQueueFiles(
+  ctx: PendingLedgerContext,
+): Promise<QueueFile[] | null> {
+  if (isPendingRelocated(ctx)) return readQueueOnDisk(ctx.pendingDir);
+  // Non-relocated by the branch above, so the fold always answers.
+  return readQueueAtRef(ctx.repoRoot, "HEAD", pendingDirRel(ctx)!);
 }
 
 /**
@@ -158,38 +281,17 @@ function writesPendingLedger(
  * {@link readPendingTolerant} below is the one declared exception, for the
  * two report-only reads.
  *
- * spec/pending.md "Dispatch reads come from the tip, not the tree":
- * resolves the committed `HEAD` tip (`git.readFileAtRef`), never the
- * working tree — a mid-wave merge, an engine revert, or an operator's
- * staged edit can each leave the tree ahead of or behind the branch, and a
- * dispatch decision must never act on state no commit owns. An out-of-tree
- * `pendingPath` (a relocated state root) has no tip to read — invisible to
- * git by construction ({@link commitPendingUpdate}), so it stays the one
- * disk-reading case here, alongside {@link readPendingTolerant}.
+ * An absent directory reads as nothing pending, which is what it is: a tree
+ * holds no empty directory, so a queue drained to nothing and a queue never
+ * created are one state and neither is an error.
  */
 async function readPending(
   ctx: PendingLedgerContext,
 ): Promise<PendingEntry[]> {
-  if (isPendingRelocated(ctx)) {
-    // win32 MAX_PATH: a relocated pendingPath sits under an arbitrary
-    // state root. namespacedJoin (src/paths.ts) is the shared idiom.
-    // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts)
-    // throws on any other stat failure rather than reporting absence, so a
-    // ledger that is present but unreachable — a symlink loop, a
-    // permission-denied parent on the state root — refuses here instead of
-    // dispatching this tick over an empty queue.
-    if (!existsLoud(namespacedJoin(ctx.pendingPath))) return [];
-    const raw = await readFile(namespacedJoin(ctx.pendingPath), "utf8");
-    const r = parsePending(raw, ctx.entryExtension);
-    if (!r.ok) throw new PendingParseFailure(reportedPendingPath(ctx), r.errors);
-    return r.entries;
-  }
-  // Non-relocated by the branch above, so the fold always answers.
-  const rel = pendingPathRel(ctx)!;
-  const raw = await git.readFileAtRef(ctx.repoRoot, "HEAD", rel);
-  if (raw === null) return [];
-  const r = parsePending(raw, ctx.entryExtension);
-  if (!r.ok) throw new PendingParseFailure(reportedPendingPath(ctx), r.errors);
+  const files = await readQueueFiles(ctx);
+  if (files === null) return [];
+  const r = parsePendingQueue(files, ctx.entryExtension);
+  if (!r.ok) throw new PendingParseFailure(reportedPendingDir(ctx), r.errors);
   return r.entries;
 }
 
@@ -198,7 +300,7 @@ async function readPending(
  * `TickResult.pendingAfter` — an informational re-read taken after this
  * tick's own strict decide- or rewrite-read already ran (and, for the fanout
  * wave, after any shipped work already landed on trunk). A parse failure
- * here means something outside this tick corrupted the file in the gap
+ * here means something outside this tick corrupted a file in the gap
  * between that strict read and now; degrading to `[]` is bounded because
  * `pendingAfter` — and the `TickResult.pickableAfter` derived from it —
  * feeds only the handoff's advisory read of what is pickable next, never a
@@ -210,50 +312,36 @@ async function readPending(
  * then `[]`. It cannot refuse the way {@link readPending} does: it runs after
  * the tick's work has already landed, so a throw here would lose the
  * `TickResult` that describes it. The tolerance is in this reader, never in
- * the probe: `existsLoud` (src/fsProbe.ts) still splits absent from
- * unreachable, and the catches below turn that refusal — and any failure
- * of the read past it — into the warn a silent `existsSync` `false` would
- * have skipped.
+ * the listing: {@link readQueueOnDisk} still splits absent from unreachable,
+ * and the catch below turns that refusal — and any failure of the reads past
+ * it — into the warn a silent absent-verdict would have skipped.
  */
 export async function readPendingTolerant(
   ctx: PendingLedgerContext,
 ): Promise<PendingEntry[]> {
-  // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
+  let files: QueueFile[] | null;
   try {
-    if (!existsLoud(namespacedJoin(ctx.pendingPath))) return [];
+    files = readQueueOnDisk(ctx.pendingDir);
   } catch (err) {
-    // Present but unreachable — a symlink loop, a permission-denied
-    // parent. `readPending`'s strict twin refuses on exactly this; here it
-    // is announced and treated as empty, so a drained-looking
-    // `pendingAfter` is never the first anyone hears of it. Named through
-    // `reportedPendingPath`, like the two announcements below it: a chain
-    // that docks its ledger elsewhere is told about the file it declared.
+    // Present but unreachable — a symlink loop, a permission-denied parent, a
+    // `.json` entry whose read failed. `readPending`'s strict twin refuses on
+    // exactly this; here it is announced and treated as empty, so a
+    // drained-looking `pendingAfter` is never the first anyone hears of it.
+    // Named through `reportedPendingDir`, like the announcement below it: a
+    // chain that docks its ledger elsewhere is told about the queue it
+    // declared.
     ctx.log.warn(
-      `[flume] ${reportedPendingPath(ctx)} could not be stat'd (${
+      `[flume] ${reportedPendingDir(ctx)} could not be read (${
         (err as Error).message
       }); treating as empty`,
     );
     return [];
   }
-  let raw: string;
-  try {
-    raw = await readFile(namespacedJoin(ctx.pendingPath), "utf8");
-  } catch (err) {
-    // Stattable but unreadable — a directory at the path, a mode denying
-    // the file itself, a delete racing the probe above. Same declared
-    // degrade as the stat and parse branches: announced, then `[]`, never
-    // a throw that would take this tick's `TickResult` with it.
-    ctx.log.warn(
-      `[flume] ${reportedPendingPath(ctx)} could not be read (${
-        (err as Error).message
-      }); treating as empty`,
-    );
-    return [];
-  }
-  const r = parsePending(raw, ctx.entryExtension);
+  if (files === null) return [];
+  const r = parsePendingQueue(files, ctx.entryExtension);
   if (!r.ok) {
     ctx.log.warn(
-      `[flume] ${reportedPendingPath(ctx)} failed to parse ` +
+      `[flume] ${reportedPendingDir(ctx)} failed to parse ` +
         `(${r.errors.length} errors); treating as empty`,
     );
     return [];
@@ -267,19 +355,19 @@ export async function readPendingTolerant(
  *
  * `path` rides every answer because the two the wave reports to an operator —
  * the tip-claim refusal below and the rewrite that landed — are both about a
- * file whose location the chain chose, and the caller holds it only as the
- * absolute `pendingPath` it would have to re-fold itself.
+ * queue whose location the chain chose, and the caller holds it only as the
+ * absolute `pendingDir` it would have to re-fold itself.
  */
 export interface PendingRewriteResult {
   /** The tip after the call: the new ship commit, or the tip that never moved. */
   readonly sha: string;
   /**
-   * A live foreign tip claim refused the rewrite. Checked before the write,
+   * A live foreign tip claim refused the rewrite. Checked before the writes,
    * so nothing on disk moved either: the queue at {@link path} is the one the
    * call read.
    */
   readonly tipMoved: boolean;
-  /** The ledger's path as a report spells it ({@link reportedPendingPath}). */
+  /** The ledger directory's path as a report spells it ({@link reportedPendingDir}). */
   readonly path: string;
 }
 
@@ -292,17 +380,17 @@ export interface PendingRewriteResult {
  * bookkeeping": no sha comparison — `liveForeignClaimPid`, checked fresh
  * immediately before this function's own harness-driven `commitPaths` call,
  * the wave's other tip-verify site beside `cherryPickRange` (`runFanout`,
- * `src/waveTick.ts`). Checked before `writeFile`: a refusal here leaves
- * pending.json untouched on disk rather than a write with no commit behind
+ * `src/waveTick.ts`). Checked before the writes: a refusal here leaves every
+ * entry file untouched on disk rather than a write with no commit behind
  * it. No live claim means the rewrite recommits on whatever tip is current —
  * its content derives from the wave's own outcomes, never from a recorded
  * tip.
  *
  * That ordering is what splits the two refusals' reports. The claim refuses
- * before the write, so {@link PendingRewriteResult} says the file is the one
- * this call read; the commit refuses after it, so the throw names the path the
- * rewrite is standing at, uncommitted. Neither leaves the caller to work out
- * which happened from the file's own mtime.
+ * before the writes, so {@link PendingRewriteResult} says the queue is the one
+ * this call read; the commit refuses after them, so the throw names the queue
+ * the rewrite is standing at, uncommitted. Neither leaves the caller to work
+ * out which happened from a file's own mtime.
  */
 export async function commitPendingUpdate(
   ctx: PendingLedgerContext,
@@ -333,57 +421,61 @@ export async function commitPendingUpdate(
     ),
   );
   const shipped = new Set(shippedTags);
-  // Re-read pending.json fresh, right before deriving the rewrite —
-  // NOT the tick-start snapshot the caller read before provisioning
-  // worktrees and running agents. A fanout wave's fanned-out agent runs
-  // and serial cherry-picks can take long enough for another process
-  // (a concurrent tick, a hand fix) to land its own commit to
-  // pending.json on trunk in the meantime; deriving from the stale
-  // snapshot would blindly overwrite that concurrent write with
-  // whatever this wave saw at tick start — silently resurrecting
-  // retired fields or reverting fixes in entries this wave never
-  // touched. Sourcing the rewrite from the current on-disk state at
-  // write time means this wave only ever removes the tags it shipped
-  // and touches observedFiles/blockedBy for tags it knows about.
-  const current = await readPending(ctx);
-  // A blockedBy gate naming a tag this wave shipped is resolved HERE,
-  // mechanically: this wave just merged and gated that tag, so
-  // "did the blocker land" needs no plan tick — the next wave forms
-  // without a plan interim. Judgment gates (parked) stay plan's. A
-  // multi-parent blockedBy drains one landed tag at a time: the gate
-  // only flips to open once every named parent has shipped.
-  const after = current
-    .filter((e) => !shipped.has(e.tag))
-    .map((e) => {
-      if (e.gate.kind !== "blockedBy") return e;
-      const remainingTags = e.gate.tags.filter((tag) => !shipped.has(tag));
-      if (remainingTags.length === e.gate.tags.length) return e;
-      return remainingTags.length === 0
-        ? { ...e, gate: { kind: "open" as const } }
-        : { ...e, gate: { kind: "blockedBy" as const, tags: remainingTags } };
-    })
-    .map((e) => {
-      const obs = observed.get(e.tag);
-      if (!obs || obs.length === 0) return e;
-      const merged = [...new Set([...(e.observedFiles ?? []), ...obs])];
-      return { ...e, observedFiles: merged };
-    });
-  const serialized = JSON.stringify(after, null, 2) + "\n";
+  // Re-read the queue fresh, right before deriving the rewrite — NOT the
+  // tick-start snapshot the caller read before provisioning worktrees and
+  // running agents. A fanout wave's fanned-out agent runs and serial
+  // cherry-picks can take long enough for another process (a concurrent tick,
+  // a hand fix) to land its own commit to the queue on trunk in the meantime;
+  // deriving from the stale snapshot would blindly overwrite that concurrent
+  // write with whatever this wave saw at tick start. Sourcing the rewrite
+  // from the current committed state at write time means this wave only ever
+  // removes the tags it shipped and touches observedFiles/blockedBy for tags
+  // it knows about.
+  const files = (await readQueueFiles(ctx)) ?? [];
+  const parsed = parsePendingQueue(files, ctx.entryExtension);
+  if (!parsed.ok) {
+    throw new PendingParseFailure(reportedPendingDir(ctx), parsed.errors);
+  }
+  const rawByFile = new Map(files.map((f) => [f.file, f.raw]));
+
+  // Exactly the shipped entries' files are removed and exactly the entries
+  // this wave changed are rewritten; every other file in the directory is
+  // left byte-identical, which is what makes two producers' commits merge
+  // (`spec/pending.md`, *The ledger is a directory — one entry per file*).
+  const removals: string[] = [];
+  const writes: { file: string; content: string }[] = [];
+  for (const entry of parsed.entries) {
+    const file = entryFileName(entry.tag);
+    if (shipped.has(entry.tag)) {
+      removals.push(file);
+      continue;
+    }
+    // A blockedBy gate naming a tag this wave shipped is resolved HERE,
+    // mechanically: this wave just merged and gated that tag, so
+    // "did the blocker land" needs no plan tick — the next wave forms
+    // without a plan interim. Judgment gates (parked) stay plan's. A
+    // multi-parent blockedBy drains one landed tag at a time: the gate
+    // only flips to open once every named parent has shipped.
+    const next = withObservedFiles(withDrainedGate(entry, shipped), observed);
+    // Identity, not a serialization compare: an entry this wave did not
+    // change keeps the bytes its producer wrote, formatting included, so the
+    // ledger commit never carries a reformat nobody asked for.
+    if (next === entry) continue;
+    const content = JSON.stringify(next, null, 2) + "\n";
+    if (content !== rawByFile.get(file)) writes.push({ file, content });
+  }
+
   // A footprint-only update can be a no-op (same collision, same paths,
-  // second time around) — committing an unchanged file fails, so skip.
-  // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
-  const existing = await readFile(
-    namespacedJoin(ctx.pendingPath),
-    "utf8",
-  ).catch(() => "");
-  if (serialized === existing) {
+  // second time around) — committing an unchanged tree fails, so skip.
+  if (removals.length === 0 && writes.length === 0) {
     return {
       sha: await git.revParse(ctx.repoRoot),
       tipMoved: false,
-      path: reportedPendingPath(ctx),
+      path: reportedPendingDir(ctx),
     };
   }
-  // A relocated flumeDir puts pendingPath outside the repo, where staging
+
+  // A relocated flumeDir puts pendingDir outside the repo, where staging
   // it would fatal — after the entries already merged. An out-of-tree dock
   // is invisible to git by construction, so no chore commit is wanted: the
   // disk write alone carries the auto-unblock and observedFiles forward —
@@ -394,9 +486,9 @@ export async function commitPendingUpdate(
   if (!relocated) {
     // spec/loop.md "Tip verify", re-checked fresh immediately before this
     // function's own commit — the wave's other harness-driven commit besides
-    // `cherryPickRange`. Checked before `writeFile`: a refusal here leaves
-    // pending.json untouched on disk, never a write with no commit behind
-    // it. Shipped entries this wave already cherry-picked stay shipped
+    // `cherryPickRange`. Checked before the writes: a refusal here leaves the
+    // queue untouched on disk, never a write with no commit behind it.
+    // Shipped entries this wave already cherry-picked stay shipped
     // regardless — only the ledger update itself is refused.
     const foreignClaim = await liveForeignClaimPid(
       ctx.repoRoot,
@@ -406,36 +498,47 @@ export async function commitPendingUpdate(
       return {
         sha: await git.revParse(ctx.repoRoot),
         tipMoved: true,
-        path: reportedPendingPath(ctx),
+        path: reportedPendingDir(ctx),
       };
     }
   }
 
   // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
-  await mkdir(namespacedJoin(dirname(ctx.pendingPath)), {
-    recursive: true,
-  });
-  await writeFile(namespacedJoin(ctx.pendingPath), serialized, "utf8");
+  await mkdir(namespacedJoin(ctx.pendingDir), { recursive: true });
+  for (const { file, content } of writes) {
+    await writeFile(namespacedJoin(ctx.pendingDir, file), content, "utf8");
+  }
+  for (const file of removals) {
+    // `force` because the tree is a surface two writers share: the tip said
+    // this entry exists and an operator may already have deleted the file.
+    // What the commit below stages is the removal either way.
+    await rm(namespacedJoin(ctx.pendingDir, file), { force: true });
+  }
   if (relocated) {
     return {
       sha: await git.revParse(ctx.repoRoot),
       tipMoved: false,
-      path: reportedPendingPath(ctx),
+      path: reportedPendingDir(ctx),
     };
   }
-  // Scoped to pending.json — `git add -A` would sweep up untracked worktree
-  // metadata and unrelated user changes into the harness's chore commit.
+  // Scoped to exactly the entry files this rewrite touched — `git add -A`
+  // would sweep up untracked worktree metadata and unrelated user changes
+  // into the harness's chore commit, and naming the directory would sweep up
+  // a sidecar beside the entries.
+  const paths = [...removals, ...writes.map((w) => w.file)].map((file) =>
+    join(ctx.pendingDir, file),
+  );
   const footprintTags = [...observed.keys()];
   const message =
     ctx.commitMessage?.(shippedTags, footprintTags) ??
     (shippedTags.length > 0
       ? `chore(flume): ship ${shippedTags.join(", ")}`
       : `chore(flume): record merge-failure footprints for ${footprintTags.join(", ")}`);
-  // The one refusal on this call that is reached **after** the write, so the
+  // The one refusal on this call that is reached **after** the writes, so the
   // only one whose report has a disk state to state: the rewrite is sitting in
   // the tree with no commit owning it. Every cause git refuses this partial
   // commit for — a paused merge or cherry-pick in the primary checkout, a lost
-  // `index.lock`, a disk error — leaves that same file there, so the fact is
+  // `index.lock`, a disk error — leaves those same files there, so the fact is
   // stated off the ordering in hand rather than keyed on which cause it was
   // (`.claude/rules/engine-boundary.md`, *Told, not inferred*). Without it the
   // refusal reaches an operator as git's sentence alone, and the modified
@@ -445,20 +548,49 @@ export async function commitPendingUpdate(
   // message, so nothing downstream reconstructs it.
   let sha: string;
   try {
-    sha = await git.commitPaths({
-      cwd: ctx.repoRoot,
-      message,
-      paths: [ctx.pendingPath],
-    });
+    sha = await git.commitPaths({ cwd: ctx.repoRoot, message, paths });
   } catch (err) {
     throw new Error(
-      `the rewritten queue stands on disk at ${reportedPendingPath(ctx)}, ` +
+      `the rewritten queue stands on disk at ${reportedPendingDir(ctx)}, ` +
         `uncommitted — the pending-ledger commit refused: ` +
         `${err instanceof Error ? err.message : String(err)}`,
       { cause: err },
     );
   }
-  return { sha, tipMoved: false, path: reportedPendingPath(ctx) };
+  return { sha, tipMoved: false, path: reportedPendingDir(ctx) };
+}
+
+/**
+ * One entry with the `blockedBy` parents `shipped` just landed struck out —
+ * the same entry, by identity, when it names none of them.
+ */
+function withDrainedGate(
+  entry: PendingEntry,
+  shipped: ReadonlySet<string>,
+): PendingEntry {
+  if (entry.gate.kind !== "blockedBy") return entry;
+  const remaining = entry.gate.tags.filter((tag) => !shipped.has(tag));
+  if (remaining.length === entry.gate.tags.length) return entry;
+  return remaining.length === 0
+    ? { ...entry, gate: { kind: "open" as const } }
+    : { ...entry, gate: { kind: "blockedBy" as const, tags: remaining } };
+}
+
+/**
+ * One entry with this wave's observed footprint merged into its
+ * `observedFiles` — the same entry, by identity, when the wave observed none
+ * for it.
+ */
+function withObservedFiles(
+  entry: PendingEntry,
+  observed: ReadonlyMap<string, string[]>,
+): PendingEntry {
+  const obs = observed.get(entry.tag);
+  if (!obs || obs.length === 0) return entry;
+  return {
+    ...entry,
+    observedFiles: [...new Set([...(entry.observedFiles ?? []), ...obs])],
+  };
 }
 
 /**
@@ -509,34 +641,42 @@ export async function readPendingForDecision(
     pending = await readPending(ctx);
   } catch (err) {
     if (!(err instanceof PendingParseFailure)) throw err;
-    const rel = pendingPathRel(ctx);
-    if (rel === undefined || !matchesAny(rel, phase.writablePaths)) {
+    const rel = pendingDirRel(ctx);
+    // The files that did not resolve, which is what a repair writes — every
+    // `ParseError` names one (`spec/pending.md`, *The ledger is a directory —
+    // one entry per file*), so the fence verdict is over exactly those and
+    // never over the whole directory.
+    const broken = [...new Set(err.errors.map((e) => e.file))];
+    if (!writesPendingLedger(ctx, phase, broken)) {
       throw new PendingParseFailure(
-        reportedPendingPath(ctx),
+        reportedPendingDir(ctx),
         err.errors,
         rel === undefined
           ? `the ledger is relocated outside the repo root, which no ` +
             `repo-relative fence can name, so '${phase.name}' cannot rewrite it`
-          : `'${phase.name}' does not declare ${rel} writable, so this tick ` +
-            `cannot rewrite it`,
+          : `'${phase.name}' does not declare ${broken
+              .map((file) => entryFileRel(rel, file))
+              .join(", ")} writable, so this tick cannot rewrite ` +
+            `${broken.length === 1 ? "it" : "them"}`,
       );
     }
     ctx.log.warn(
-      `[flume] ${phase.name} declares ${rel} writable; running it over the ` +
-        `unparseable queue with the failure as a tick fact (${err.errors.length} error(s))`,
+      `[flume] ${phase.name} declares ${broken.length} unparseable queue ` +
+        `file(s) writable; running it over them with the failure as a tick ` +
+        `fact (${err.errors.length} error(s))`,
     );
     return {
       pending: [],
-      queueParseFailure: { path: rel, errors: err.errors },
+      queueParseFailure: { path: rel!, errors: err.errors },
     };
   }
   return { pending, queueParseFailure: undefined };
 }
 
 /**
- * Chain-less informational read of a pending.json at `pendingPath`: absent
- * (`ENOENT`) reads as the empty, valid list (nothing planned is nothing
- * pending); present reads through `parsePendingLoose` (core fields
+ * Chain-less informational read of the queue directory at `pendingDir`:
+ * absent reads as the empty, valid queue (nothing planned is nothing
+ * pending); present reads through `parsePendingQueueLoose` (core fields
  * validated, no extension composed — never a write path). Any other read
  * failure (permission denied, a path too long for the platform, …) is
  * rethrown rather than folded into the absent case
@@ -549,15 +689,8 @@ export async function readPendingForDecision(
  * {@link PendingLedgerContext}: it runs where no chain resolved, which is the
  * whole reason it exists beside the reads that compose a declared extension.
  */
-export function readPendingLoose(pendingPath: string): ParseResult {
-  let raw: string;
-  try {
-    raw = readFileSync(namespacedJoin(pendingPath), "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      return { ok: true, entries: [], errors: [] };
-    }
-    throw err;
-  }
-  return parsePendingLoose(raw);
+export function readPendingLoose(pendingDir: string): ParseResult {
+  const files = readQueueOnDisk(pendingDir);
+  if (files === null) return { ok: true, entries: [], errors: [] };
+  return parsePendingQueueLoose(files);
 }

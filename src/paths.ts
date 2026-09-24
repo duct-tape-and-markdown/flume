@@ -126,7 +126,7 @@ export function computeStateRootRel(
 /**
  * Shared escape-check for a declared state-root-relative path
  * (`Chain.friction` — `validateFrictionDeclaration`, `src/friction.ts`;
- * `Chain.pendingPath` — `validatePendingPathDeclaration`,
+ * `Chain.pendingDir` — `validatePendingDirDeclaration`,
  * `src/chainLoad.ts`): must be relative, and must still resolve inside the
  * root it is joined to.
  *
@@ -576,21 +576,21 @@ export function tickVerdictsLogPath(flumeDir: string): string {
 }
 
 /**
- * The pending queue's path when `Chain.pendingPath` is undeclared, relative
- * to the state root (spec/pending.md "The pending queue"). Callers that
- * resolve against a state root want {@link resolvePendingPath}; this is for
- * the ones that report the relative form to an operator.
+ * The pending queue's directory when `Chain.pendingDir` is undeclared,
+ * relative to the state root (spec/pending.md "The pending queue"). Callers
+ * that resolve against a state root want {@link resolvePendingDir}; this is
+ * for the ones that report the relative form to an operator.
  */
-export const DEFAULT_PENDING_REL = join("plan", "pending.json");
+export const DEFAULT_PENDING_REL = join("plan", "pending");
 
 /**
- * The queue file a state root actually reads: the chain's declared
- * `pendingPath` when it has one, {@link DEFAULT_PENDING_REL} otherwise,
+ * The queue directory a state root actually reads: the chain's declared
+ * `pendingDir` when it has one, {@link DEFAULT_PENDING_REL} otherwise,
  * resolved against `stateRoot`. Every consumer of the queue — the
  * dispatcher, `flume check`, `flume status` — resolves it here, so an
- * undeclared queue is the same absolute file on all of them.
+ * undeclared queue is the same absolute directory on all of them.
  */
-export function resolvePendingPath(stateRoot: string, declared?: string): string {
+export function resolvePendingDir(stateRoot: string, declared?: string): string {
   return join(stateRoot, declared ?? DEFAULT_PENDING_REL);
 }
 

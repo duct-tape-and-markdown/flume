@@ -1,6 +1,6 @@
 /**
  * entryKey — one queue entry's identity **as declared**: its tag slug and a
- * hash of the declaration `pending.json` carries for it, joined `slug@hash`.
+ * hash of the declaration its queue file carries for it, joined `slug@hash`.
  *
  * Its own module because two mechanics key on that identity and neither owns
  * it — the run-scoped quarantine hold (`src/selection.ts`) and the
@@ -22,7 +22,7 @@ const DECLARED_KEY_HASH_LENGTH = 10;
 /**
  * spec/loop.md "Repeated identical failures — quarantine, then abort": the key
  * for one entry **as read** — its slug and a hash of its bytes in
- * `pending.json`, joined `slug@hash`.
+ * its queue file, joined `slug@hash`.
  *
  * The hash covers the entry's whole parsed shape, so any edit to it — a
  * re-scoped `files`, a widened `summary`, a changed gate — yields a new key.

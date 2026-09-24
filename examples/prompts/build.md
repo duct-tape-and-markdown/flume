@@ -39,4 +39,4 @@ One commit on this worktree's branch, prefixed `build:`. Imperative mood. Body e
 
 Validation gates (tsc, tests, lint, writable-paths) run automatically. If any gate fails, your commit is reverted and the entry stays in pending.
 
-Do NOT touch `{{FLUME_DIR}}/plan/pending.json` — the harness updates it post-merge.
+Do NOT touch `{{FLUME_DIR}}/plan/pending/` — the harness updates it post-merge.

@@ -6,8 +6,7 @@
  * project-specific check; promote new gates here only when ≥2 chains want them.
  */
 
-import { readFile } from "node:fs/promises";
-import { join, relative, toNamespacedPath } from "node:path";
+import { join, relative } from "node:path";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
 import type { Phase } from "./Phase.js";
@@ -15,18 +14,19 @@ import type { Phase } from "./Phase.js";
 // the gate's verdict can never disagree with what the next tick's resolution
 // would do.
 import { loadChainModule } from "./chainLoad.js";
-import * as git from "./git.js";
 import {
   chainModulePath,
   gitPath,
   matchesAny,
   queueFenceViolations,
 } from "./paths.js";
+import { readQueueAtRef, readQueueOnDisk } from "./pendingLedger.js";
 import { execFileWithShimRetry } from "./spawnShim.js";
 import {
-  parsePending,
+  parsePendingQueue,
   type EntryExtension,
   type PendingEntry,
+  type QueueFile,
 } from "./PendingSchema.js";
 
 /**
@@ -217,7 +217,7 @@ export const eslintGate: PkgManagerGate = pkgManagerGate(
  *
  * No-op on the overwhelming majority of ticks (the commit didn't touch
  * `chain.ts`). Promoted to a builtin — not chain-local like the pending-parse
- * gate — because `chain.ts` is universal to every flume project (pending.json
+ * gate — because `chain.ts` is universal to every flume project (the queue
  * is specific to a plan/build chain).
  */
 export const chainLoadGate: Gate = {
@@ -326,57 +326,49 @@ export function pendingGate(opts: PendingGateOptions): Gate {
     name: "pending-gate",
     when: "afterCommit",
     async run(ctx: GateContext): Promise<GateResult> {
-      // spec/pending.md "The pending queue": `ctx.pendingPath` is the one
-      // resolved value (`Chain.pendingPath ?? "plan/pending.json"`,
-      // absolute, under `ctx.flumeDir`) — the gate and the dispatcher can
-      // no longer check two different files. `displayPath` is only for
-      // messages: flumeDir-relative, matching the pre-ctx.pendingPath text.
-      const displayPath = relative(ctx.flumeDir, ctx.pendingPath);
+      // spec/pending.md "The pending queue": `ctx.pendingDir` is the one
+      // resolved value (`Chain.pendingDir ?? "plan/pending"`, absolute,
+      // under `ctx.flumeDir`) — the gate and the dispatcher can no longer
+      // check two different queues. `displayPath` is only for messages:
+      // flumeDir-relative, matching the pre-`ctx.pendingDir` text.
+      const displayPath = relative(ctx.flumeDir, ctx.pendingDir);
       // spec/pending.md "Dispatch reads come from the tip, not the tree":
       // the gate judges the commit it is attached to, not whatever the
       // working tree happens to hold — a disk read here would see trunk's
-      // pending.json even while gating a commit that hasn't merged to
-      // trunk yet (`.claude/rules/engineering.md` "Loud or nothing").
-      // `git.readFileAtRef` resolves the queue as of `ctx.commitSha`
-      // instead — keyed by `ctx.stateRootRel`, the state root's offset from
-      // the *primary* repo root (spec/chain.md "What a gate receives"), not
-      // by rebasing `ctx.flumeDir` onto `ctx.repoRoot`: under `afterCommit`
-      // `ctx.repoRoot` is a worktree that mirrors the primary checkout's
-      // tracked layout at that same offset, while `ctx.flumeDir` is the
-      // primary checkout's own state root and is never nested under the
-      // worktree — `relative(ctx.repoRoot, ctx.flumeDir)` climbs out through
-      // the worktree root regardless of whether the state root is actually
-      // relocated, misreading every real afterCommit tick as relocated and
-      // falling back to the primary checkout's on-disk (pre-commit) copy.
-      // Absent `stateRootRel` (a genuinely relocated state root) has no
-      // shared tracked history to read the gated commit's copy from, so it
-      // stays the disk read.
-      let raw: string;
+      // queue even while gating a commit that hasn't merged to trunk yet
+      // (`.claude/rules/engineering.md` "Loud or nothing").
+      // `readQueueAtRef` (`src/pendingLedger.ts`) resolves the queue
+      // directory as of `ctx.commitSha` instead — keyed by `ctx.stateRootRel`,
+      // the state root's offset from the *primary* repo root (spec/chain.md
+      // "What a gate receives"), not by rebasing `ctx.flumeDir` onto
+      // `ctx.repoRoot`: under `afterCommit` `ctx.repoRoot` is a worktree that
+      // mirrors the primary checkout's tracked layout at that same offset,
+      // while `ctx.flumeDir` is the primary checkout's own state root and is
+      // never nested under the worktree — `relative(ctx.repoRoot,
+      // ctx.flumeDir)` climbs out through the worktree root regardless of
+      // whether the state root is actually relocated, misreading every real
+      // afterCommit tick as relocated and falling back to the primary
+      // checkout's on-disk (pre-commit) copy. Absent `stateRootRel` (a
+      // genuinely relocated state root) has no shared tracked history to read
+      // the gated commit's copy from, so it stays the disk read.
+      let files: QueueFile[] | null;
       if (ctx.stateRootRel === undefined) {
         try {
-          raw = await readFile(toNamespacedPath(ctx.pendingPath), "utf8");
+          files = readQueueOnDisk(ctx.pendingDir);
         } catch {
-          return {
-            ok: false,
-            message: `${displayPath} missing after commit`,
-          };
+          files = null;
         }
       } else {
-        const relPath = join(ctx.stateRootRel, displayPath);
-        const atCommit = await git.readFileAtRef(
+        files = await readQueueAtRef(
           ctx.repoRoot,
           ctx.commitSha,
-          relPath,
+          join(ctx.stateRootRel, displayPath),
         );
-        if (atCommit === null) {
-          return {
-            ok: false,
-            message: `${displayPath} missing after commit`,
-          };
-        }
-        raw = atCommit;
       }
-      const parsed = parsePending(raw, opts.extension);
+      if (files === null) {
+        return { ok: false, message: `${displayPath} missing after commit` };
+      }
+      const parsed = parsePendingQueue(files, opts.extension);
       if (!parsed.ok) {
         return {
           ok: false,
@@ -384,7 +376,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
             `${displayPath} has ${parsed.errors.length} schema violation(s)`,
           ),
           details: parsed.errors
-            .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
+            .map((e) => `  [${e.file}] ${e.path}: ${e.message}`)
             .join("\n"),
         };
       }

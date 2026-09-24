@@ -673,7 +673,7 @@ export async function runFanout(
             repoRoot,
             flumeDir: leg.flumeDir,
             stateRootRel: leg.stateRootRel,
-            pendingPath: leg.pendingPath,
+            pendingDir: leg.pendingDir,
             configDir: leg.configDir,
             phaseName: phase.name,
             commitSha: mergedSha,
@@ -880,7 +880,7 @@ export async function runFanout(
       .concat(mergeGateResults);
     committedWave = shipped.length > 0;
 
-    // Update pending.json — remove shipped entries, record merge-failure
+    // Update the queue — remove shipped entries, record merge-failure
     // footprints — as one harness commit. `commitPendingUpdate` derives the
     // footprints straight off `mergeOutcomes`, the same records this wave's
     // TickVerdict carries — no separate observed-files bookkeeping here.
@@ -902,7 +902,7 @@ export async function runFanout(
       // The rewrite can refuse, and every way it does propagates past worktree
       // cleanup below, straight to `tick()`'s catch. Its read is the strict
       // `readPending()` (.claude/rules/engineering.md "Loud or nothing"), so a
-      // pending.json corrupted by something outside this tick in the window
+      // the queue corrupted by something outside this tick in the window
       // since the wave's decide-read refuses rather than overwriting the file
       // with a rewrite derived from `[]`; and its commit is a `git commit
       // --only` over the one named path, which fatals under a paused merge or
@@ -982,7 +982,7 @@ export async function runFanout(
         // here, which is the half of this pair the commit refusal below cannot
         // say (`.claude/rules/engineering.md`, *A fact the engine holds is
         // reported, never rediscovered*). The path is the ledger's own
-        // spelling, never `pending.json` restated here over a location the
+        // spelling, never `plan/pending` restated here over a location the
         // chain chose.
         leg.log.warn(
           `[flume] ${phase.name}: tip claimed before the pending-ledger commit; ` +
@@ -1275,7 +1275,7 @@ async function writeMergingMarker(
  * Retire this wave's markers, once the hazard each one names is closed.
  *
  * The wait point is the ship bookkeeping spec/loop.md "Crash equals stop"
- * names — the `pending.json` rewrite above and the prior-attempt record
+ * names — the queue rewrite above and the prior-attempt record
  * clears that ride with it. The verdict is not part of it and no marker is
  * held for it: `Dispatcher.tick()` never writes the verdict, the CLI's
  * `tick` command does, after `tick()` has returned (`writeTickVerdict`

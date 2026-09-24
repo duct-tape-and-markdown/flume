@@ -28,6 +28,7 @@ import {
   mergingDir,
   stopFlagPath,
 } from "../src/paths.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import {
@@ -1103,23 +1104,21 @@ describe("flume check's no-consumer skip is documented (CHECK-NO-FANOUT-SKIP-IN-
           `  humanOnly: [],\n` +
           `} });\n`,
       );
-      await mkdir(join(dir, ".flume", "plan"), { recursive: true });
+      await mkdir(join(dir, ".flume", "plan", "pending"), { recursive: true });
       await writeFile(
-        join(dir, ".flume", "plan", "pending.json"),
-        JSON.stringify([
-          {
-            tag: "DECLARES-FILES",
-            gate: { kind: "open" },
-            dependsOnForks: [],
-            files: {
-              new: [],
-              edit: [
-                { path: "docs/readme.md", description: "declared, unfenced" },
-              ],
-              retire: [],
-            },
+        join(dir, ".flume", "plan", "pending", entryFileName("DECLARES-FILES")),
+        JSON.stringify({
+          tag: "DECLARES-FILES",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: {
+            new: [],
+            edit: [
+              { path: "docs/readme.md", description: "declared, unfenced" },
+            ],
+            retire: [],
           },
-        ]) + "\n",
+        }) + "\n",
         "utf8",
       );
 

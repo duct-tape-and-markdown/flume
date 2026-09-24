@@ -8,15 +8,18 @@ import { z } from "zod";
 import {
   AsyncEntryExtensionValidatorError,
   CORE_ENTRY_FIELDS,
-  composePendingList,
+  composePendingEntry,
   declaredPaths,
+  entryFileName,
   isPickableNow,
-  parsePending,
-  parsePendingLoose,
+  parsePendingQueue,
+  parsePendingQueueLoose,
   renderSchemaForPrompt,
   touchedPaths,
   type EntryExtension,
+  type ParseResult,
   type PendingEntry,
+  type QueueFile,
 } from "../src/PendingSchema.ts";
 import type { StandardSchemaV1 } from "../src/standardSchema.ts";
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
@@ -78,14 +81,47 @@ const testExtension = {
   },
 } satisfies EntryExtension;
 
+/**
+ * The queue directory as a fixture spells it: one file per entry, named
+ * `<tag>.json` the way a producer writes it (`spec/pending.md`, *The ledger
+ * is a directory — one entry per file*).
+ *
+ * An entry carrying no string `tag` gets a name no tag can claim, so the
+ * agreement check refuses it exactly as a mis-named file on disk would rather
+ * than the helper choosing a name that papers over the fixture.
+ */
+function queueOf(entries: readonly unknown[]): QueueFile[] {
+  return entries.map((entry, index) => {
+    const tag = (entry as { tag?: unknown } | null)?.tag;
+    return {
+      file:
+        typeof tag === "string" ? entryFileName(tag) : `unnamed-${index}.json`,
+      raw: JSON.stringify(entry),
+    };
+  });
+}
+
+/** {@link queueOf} driven through the real strict queue parse. */
+function parseQueue(
+  entries: readonly unknown[],
+  extension?: EntryExtension,
+): ParseResult {
+  return parsePendingQueue(queueOf(entries), extension);
+}
+
+/** {@link queueOf} driven through the real chain-less queue parse. */
+function parseQueueLoose(entries: readonly unknown[]): ParseResult {
+  return parsePendingQueueLoose(queueOf(entries));
+}
+
 function roundTrip(entry: unknown): PendingEntry {
-  const result = parsePending(JSON.stringify([entry]));
+  const result = parseQueue([entry]);
   expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   expect(result.entries).toHaveLength(1);
   return result.entries[0]!;
 }
 
-describe("parsePending — round-trip per gate.kind", () => {
+describe("parsePendingQueue — round-trip per gate.kind", () => {
   it("parses gate=open", () => {
     const parsed = roundTrip({ ...baseEntry, gate: { kind: "open" } });
     expect(parsed.gate).toEqual({ kind: "open" });
@@ -144,85 +180,90 @@ describe("parsePending — round-trip per gate.kind", () => {
   });
 });
 
-describe("parsePending — rejects malformed entries", () => {
-  it("rejects invalid JSON with a structural error", () => {
-    const result = parsePending("{not json");
+describe("parsePendingQueue — rejects malformed entries", () => {
+  it("a parse failure names the entry file it read", () => {
+    const result = parsePendingQueue([
+      { file: "GOOD-TAG.json", raw: JSON.stringify({ ...baseEntry, tag: "GOOD-TAG", gate: { kind: "open" } }) },
+      { file: "BROKEN-TAG.json", raw: "{not json" },
+    ]);
     expect(result.ok).toBe(false);
     expect(result.entries).toEqual([]);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.index).toBe(-1);
+    // The file, not an index into a page every writer shared: the producer
+    // repairing the queue is told which file to open.
+    expect(result.errors[0]!.file).toBe("BROKEN-TAG.json");
     expect(result.errors[0]!.message).toMatch(/invalid JSON/);
   });
 
   it("rejects a tag containing whitespace (mechanical safety only)", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "DAL REWIRE" },
-      ]),
+      ],
     );
     expect(result.ok).toBe(false);
     const tagErr = result.errors.find((e) => e.path === "tag");
     expect(tagErr).toBeDefined();
-    expect(tagErr!.index).toBe(0);
+    expect(tagErr!.file).toBe("DAL REWIRE.json");
   });
 
   it("rejects a tag containing a path separator", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "DAL/REWIRE" },
-      ]),
+      ],
     );
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.path === "tag")).toBe(true);
   });
 
   it("rejects a tag past the derived length bound", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "A".repeat(217) },
-      ]),
+      ],
     );
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.path === "tag")).toBe(true);
   });
 
   it("rejects an unknown gate.kind", () => {
-    const result = parsePending(
-      JSON.stringify([{ ...baseEntry, gate: { kind: "wat" } }]),
+    const result = parseQueue(
+      [{ ...baseEntry, gate: { kind: "wat" } }],
     );
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
   });
 
   it("rejects gate=blockedBy missing `tags`", () => {
-    const result = parsePending(
-      JSON.stringify([{ ...baseEntry, gate: { kind: "blockedBy" } }]),
+    const result = parseQueue(
+      [{ ...baseEntry, gate: { kind: "blockedBy" } }],
     );
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
   });
 
   it("rejects gate=blockedBy with an empty `tags` array (not a silently-open gate)", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "blockedBy", tags: [] } },
-      ]),
+      ],
     );
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
   });
 
   it("rejects gate=requiresCapability missing `capability`", () => {
-    const result = parsePending(
-      JSON.stringify([{ ...baseEntry, gate: { kind: "requiresCapability" } }]),
+    const result = parseQueue(
+      [{ ...baseEntry, gate: { kind: "requiresCapability" } }],
     );
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
   });
 
   it("rejects the retired gate=requiresDockerHost variant", () => {
-    const result = parsePending(
-      JSON.stringify([{ ...baseEntry, gate: { kind: "requiresDockerHost" } }]),
+    const result = parseQueue(
+      [{ ...baseEntry, gate: { kind: "requiresDockerHost" } }],
     );
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.path.startsWith("gate"))).toBe(true);
@@ -230,20 +271,26 @@ describe("parsePending — rejects malformed entries", () => {
 
   it("rejects a field that is neither core nor declared (bare core)", () => {
     // Silent stripping would destroy plan-authored fields on the
-    // dispatcher's pending.json rewrite — unknown fields fail loudly.
-    const result = parsePending(
-      JSON.stringify([
+    // dispatcher's rewrite of the entry's own file — unknown fields fail loudly.
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, summary: "undeclared" },
-      ]),
+      ],
     );
     expect(result.ok).toBe(false);
     expect(result.errors[0]!.message).toMatch(/summary/);
   });
 
-  it("rejects a non-array root", () => {
-    const result = parsePending(JSON.stringify({ not: "an array" }));
+  it("rejects an entry file holding an array rather than one entry", () => {
+    const result = parsePendingQueue([
+      {
+        file: "SOME-TAG.json",
+        raw: JSON.stringify([{ ...baseEntry, tag: "SOME-TAG", gate: { kind: "open" } }]),
+      },
+    ]);
     expect(result.ok).toBe(false);
     expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]!.file).toBe("SOME-TAG.json");
   });
 });
 
@@ -256,7 +303,7 @@ describe("chain-declared extension", () => {
   };
 
   it("accepts declared fields and round-trips their values", () => {
-    const result = parsePending(JSON.stringify([extended]), testExtension);
+    const result = parseQueue([extended], testExtension);
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
     const entry = result.entries[0]!;
     expect(entry.summary).toBe("do the thing");
@@ -267,8 +314,8 @@ describe("chain-declared extension", () => {
   });
 
   it("enforces the declared field's own constraints (extension cap)", () => {
-    const result = parsePending(
-      JSON.stringify([{ ...extended, summary: "x".repeat(201) }]),
+    const result = parseQueue(
+      [{ ...extended, summary: "x".repeat(201) }],
       testExtension,
     );
     expect(result.ok).toBe(false);
@@ -276,8 +323,8 @@ describe("chain-declared extension", () => {
   });
 
   it("rejects a field the extension did not declare", () => {
-    const result = parsePending(
-      JSON.stringify([{ ...extended, schemaDelta: "none" }]),
+    const result = parseQueue(
+      [{ ...extended, schemaDelta: "none" }],
       testExtension,
     );
     expect(result.ok).toBe(false);
@@ -291,14 +338,14 @@ describe("chain-declared extension", () => {
         hint: `[ "..." ]`,
       },
     } satisfies EntryExtension;
-    const result = parsePending(JSON.stringify([{ ...baseEntry, gate: { kind: "open" } }]), ext);
+    const result = parseQueue([{ ...baseEntry, gate: { kind: "open" } }], ext);
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
     expect(result.entries[0]!.tests).toEqual([]);
   });
 
   /**
    * Shadow refusal, judged over the engine's own vocabulary rather than one
-   * hand-picked name: `CORE_ENTRY_FIELDS` is what `composePendingList`
+   * hand-picked name: `CORE_ENTRY_FIELDS` is what `composePendingEntry`
    * checks against, so every name it holds — and every name a later core
    * field adds to it — is covered here without the test being edited.
    */
@@ -312,37 +359,37 @@ describe("chain-declared extension", () => {
       const shadowing: EntryExtension = {
         [name]: { schema: z.string(), hint: `"..."` },
       };
-      expect(() => composePendingList(shadowing)).toThrow(
+      expect(() => composePendingEntry(shadowing)).toThrow(
         new RegExp(`"${name}".*shadows`),
       );
     }
     // `tag` is the one declared exception: refined, never replaced.
     expect(() =>
-      composePendingList({ tag: { schema: z.string(), hint: `"..."` } }),
+      composePendingEntry({ tag: { schema: z.string(), hint: `"..."` } }),
     ).not.toThrow();
   });
 });
 
 describe("tag grammar reduces to mechanical safety", () => {
   it("DAL-REWIRE(usp_Filter_Get) validates against the bare core", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         {
           ...baseEntry,
           gate: { kind: "open" },
           tag: "DAL-REWIRE(usp_Filter_Get)",
         },
-      ]),
+      ],
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
     expect(result.entries[0]!.tag).toBe("DAL-REWIRE(usp_Filter_Get)");
   });
 
   it("accepts a lowercase tag under the bare core (grammar beyond mechanical safety is a chain's choice, not the engine's)", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "roster-triage-mig" },
-      ]),
+      ],
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   });
@@ -355,19 +402,19 @@ describe("tag grammar reduces to mechanical safety", () => {
       },
     } satisfies EntryExtension;
 
-    const lowercase = parsePending(
-      JSON.stringify([
+    const lowercase = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "roster-triage-mig" },
-      ]),
+      ],
       allCapsRefinement,
     );
     expect(lowercase.ok).toBe(false);
     expect(lowercase.errors.some((e) => e.path === "tag")).toBe(true);
 
-    const valid = parsePending(
-      JSON.stringify([
+    const valid = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "ROSTER-TRIAGE-MIG" },
-      ]),
+      ],
       allCapsRefinement,
     );
     expect(valid.ok, JSON.stringify(valid.errors)).toBe(true);
@@ -380,10 +427,10 @@ describe("tag grammar reduces to mechanical safety", () => {
     const startsWithLetter = {
       tag: { schema: z.string().regex(/^[A-Z]/), hint: `"..."` },
     } satisfies EntryExtension;
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "ROSTER TRIAGE" },
-      ]),
+      ],
       startsWithLetter,
     );
     expect(result.ok).toBe(false);
@@ -391,59 +438,72 @@ describe("tag grammar reduces to mechanical safety", () => {
   });
 });
 
-describe("tag uniqueness within the queue", () => {
-  it("rejects two entries sharing a tag, naming both offending indices (bare core)", () => {
-    const result = parsePending(
-      JSON.stringify([
-        { ...baseEntry, tag: "DUP-TAG", gate: { kind: "open" } },
-        { ...baseEntry, tag: "DUP-TAG", gate: { kind: "open" } },
-      ]),
-    );
+describe("tag identity is the filesystem's", () => {
+  it("an entry file whose tag disagrees with its filename is refused naming both", () => {
+    const result = parsePendingQueue([
+      {
+        file: "FILENAME-TAG.json",
+        raw: JSON.stringify({ ...baseEntry, tag: "BODY-TAG", gate: { kind: "open" } }),
+      },
+    ]);
     expect(result.ok).toBe(false);
-    const tagErrors = result.errors.filter((e) => e.path === "tag");
-    expect(tagErrors.map((e) => e.index).sort()).toEqual([0, 1]);
-    expect(tagErrors[0]!.message).toMatch(/DUP-TAG/);
+    expect(result.errors).toHaveLength(1);
+    const err = result.errors[0]!;
+    expect(err.file).toBe("FILENAME-TAG.json");
+    expect(err.path).toBe("tag");
+    // Both sides, so the producer knows which one to change.
+    expect(err.message).toMatch(/BODY-TAG/);
+    expect(err.message).toMatch(/BODY-TAG\.json/);
   });
 
-  it("rejects a duplicate tag through the extension-composed path", () => {
-    const result = parsePending(
-      JSON.stringify([
+  it("refuses the disagreement through the extension-composed path too", () => {
+    const result = parsePendingQueue(
+      [
         {
-          ...baseEntry,
-          tag: "DUP-TAG",
-          gate: { kind: "open" },
-          summary: "first",
-          per: { path: "spec/pending.md", section: "5. Tests" },
+          file: "FILENAME-TAG.json",
+          raw: JSON.stringify({
+            ...baseEntry,
+            tag: "BODY-TAG",
+            gate: { kind: "open" },
+            summary: "first",
+            per: { path: "spec/pending.md", section: "5. Tests" },
+          }),
         },
-        {
-          ...baseEntry,
-          tag: "DUP-TAG",
-          gate: { kind: "open" },
-          summary: "second",
-          per: { path: "spec/pending.md", section: "5. Tests" },
-        },
-      ]),
+      ],
       testExtension,
     );
     expect(result.ok).toBe(false);
-    const tagErrors = result.errors.filter((e) => e.path === "tag");
-    expect(tagErrors.map((e) => e.index).sort()).toEqual([0, 1]);
+    expect(result.errors.some((e) => e.path === "tag")).toBe(true);
   });
 
-  it("a queue with distinct tags parses clean (bare core)", () => {
-    const result = parsePending(
-      JSON.stringify([
-        { ...baseEntry, tag: "TAG-ONE", gate: { kind: "open" } },
-        { ...baseEntry, tag: "TAG-TWO", gate: { kind: "open" } },
-      ]),
-    );
+  it("the chain-less parse holds the same agreement", () => {
+    const result = parsePendingQueueLoose([
+      {
+        file: "FILENAME-TAG.json",
+        raw: JSON.stringify({ ...baseEntry, tag: "BODY-TAG", gate: { kind: "open" } }),
+      },
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === "tag")).toBe(true);
+  });
+
+  it("two entries can no longer share a tag — one tag is one file", () => {
+    // The check the composed list schema used to carry is the directory's
+    // now: `entryFileName` is total, so two entries claiming one tag name
+    // one file and there is no second entry to refuse.
+    expect(entryFileName("DUP-TAG")).toBe("DUP-TAG.json");
+    const result = parseQueue([
+      { ...baseEntry, tag: "TAG-ONE", gate: { kind: "open" } },
+      { ...baseEntry, tag: "TAG-TWO", gate: { kind: "open" } },
+    ]);
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
     expect(result.entries).toHaveLength(2);
+    expect(new Set(result.entries.map((e) => entryFileName(e.tag))).size).toBe(2);
   });
 
   it("a queue with distinct tags parses clean through the extension-composed path", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         {
           ...baseEntry,
           tag: "TAG-ONE",
@@ -458,7 +518,7 @@ describe("tag uniqueness within the queue", () => {
           summary: "second",
           per: { path: "spec/pending.md", section: "5. Tests" },
         },
-      ]),
+      ],
       testExtension,
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
@@ -518,15 +578,15 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
       },
     } satisfies EntryExtension;
 
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         {
           ...baseEntry,
           gate: { kind: "open" },
           summary: "do the thing",
           per: { path: "spec/pending.md", section: "5. Tests" },
         },
-      ]),
+      ],
       ext,
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
@@ -558,13 +618,13 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
         hint: `"..."`,
       },
     } satisfies EntryExtension;
-    const result = parsePending(
-      JSON.stringify([{ ...baseEntry, gate: { kind: "open" }, summary: "" }]),
+    const result = parseQueue(
+      [{ ...baseEntry, gate: { kind: "open" }, summary: "" }],
       ext,
     );
     expect(result.ok).toBe(false);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.index).toBe(0);
+    expect(result.errors[0]!.file).toBe(entryFileName("EXAMPLE-TAG"));
     expect(result.errors[0]!.path).toBe("summary");
     expect(result.errors[0]!.message).toBe(
       "summary must be a non-empty string (hand-written)",
@@ -593,15 +653,15 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
         hint: `{...}`,
       },
     } satisfies EntryExtension;
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, per: { path: "", section: "ok" } },
-      ]),
+      ],
       ext,
     );
     expect(result.ok).toBe(false);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.index).toBe(0);
+    expect(result.errors[0]!.file).toBe(entryFileName("EXAMPLE-TAG"));
     expect(result.errors[0]!.path).toBe("per.path");
     expect(result.errors[0]!.message).toBe(
       "path must be non-empty (hand-written)",
@@ -623,19 +683,19 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
       },
     } satisfies EntryExtension;
 
-    const lowercase = parsePending(
-      JSON.stringify([
+    const lowercase = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "roster-triage-mig" },
-      ]),
+      ],
       allCaps,
     );
     expect(lowercase.ok).toBe(false);
     expect(lowercase.errors.some((e) => e.path === "tag")).toBe(true);
 
-    const valid = parsePending(
-      JSON.stringify([
+    const valid = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "ROSTER-TRIAGE-MIG" },
-      ]),
+      ],
       allCaps,
     );
     expect(valid.ok, JSON.stringify(valid.errors)).toBe(true);
@@ -649,10 +709,10 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
         hint: `"..."`,
       },
     } satisfies EntryExtension;
-    const stillRejected = parsePending(
-      JSON.stringify([
+    const stillRejected = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, tag: "ROSTER TRIAGE" },
-      ]),
+      ],
       permitsAnything,
     );
     expect(stillRejected.ok).toBe(false);
@@ -666,33 +726,39 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
         hint: `"..."`,
       },
     } satisfies EntryExtension;
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, summary: "x", extra: "nope" },
-      ]),
+      ],
       ext,
     );
     expect(result.ok).toBe(false);
     expect(result.errors[0]!.message).toMatch(/extra/);
   });
 
-  it("rejects a duplicate tag through the hand-written-extension-composed path", () => {
+  it("holds the filename agreement through the hand-written-extension-composed path", () => {
     const ext = {
       summary: {
         schema: handStandardSchema<string>((value) => ({ value: value as string })),
         hint: `"..."`,
       },
     } satisfies EntryExtension;
-    const result = parsePending(
-      JSON.stringify([
-        { ...baseEntry, tag: "DUP-HAND", gate: { kind: "open" }, summary: "a" },
-        { ...baseEntry, tag: "DUP-HAND", gate: { kind: "open" }, summary: "b" },
-      ]),
+    const result = parsePendingQueue(
+      [
+        {
+          file: "FILENAME-TAG.json",
+          raw: JSON.stringify({
+            ...baseEntry,
+            tag: "BODY-TAG",
+            gate: { kind: "open" },
+            summary: "a",
+          }),
+        },
+      ],
       ext,
     );
     expect(result.ok).toBe(false);
-    const tagErrors = result.errors.filter((e) => e.path === "tag");
-    expect(tagErrors.map((e) => e.index).sort()).toEqual([0, 1]);
+    expect(result.errors.some((e) => e.path === "tag")).toBe(true);
   });
 
   it("a declared validator that supplies a value for an absent key materializes it in the parsed entry", () => {
@@ -714,8 +780,8 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
         hint: `[ { "path": "...", "asserts": "..." } ]`,
       },
     } satisfies EntryExtension;
-    const result = parsePending(
-      JSON.stringify([{ ...baseEntry, gate: { kind: "open" } }]),
+    const result = parseQueue(
+      [{ ...baseEntry, gate: { kind: "open" } }],
       ext,
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
@@ -731,21 +797,19 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
         hint: `"..."`,
       },
     } satisfies EntryExtension;
-    const raw = JSON.stringify([
-      { ...baseEntry, gate: { kind: "open" }, summary: "x" },
-    ]);
-    expect(() => parsePending(raw, ext)).toThrow(AsyncEntryExtensionValidatorError);
-    expect(() => parsePending(raw, ext)).toThrow(/summary/);
+    const entries = [{ ...baseEntry, gate: { kind: "open" }, summary: "x" }];
+    expect(() => parseQueue(entries, ext)).toThrow(AsyncEntryExtensionValidatorError);
+    expect(() => parseQueue(entries, ext)).toThrow(/summary/);
   });
 });
 
-/** The module declaring `parsePendingLoose` — the call-site scan drops it. */
+/** The module declaring `parsePendingQueueLoose` — the call-site scan drops it. */
 const LOOSE_DECLARATION = "PendingSchema.ts";
 
-/** Every `src/` module mentioning `parsePendingLoose(`, with its count. */
+/** Every `src/` module mentioning `parsePendingQueueLoose(`, with its count. */
 const looseMentions = (): { file: string; count: number }[] =>
   filesUnder(SRC_FILES).flatMap((file) => {
-    const count = (readFileSync(file, "utf8").match(/\bparsePendingLoose\(/g) ?? []).length;
+    const count = (readFileSync(file, "utf8").match(/\bparsePendingQueueLoose\(/g) ?? []).length;
     return count > 0 ? [{ file, count }] : [];
   });
 
@@ -758,17 +822,17 @@ const looseMentions = (): { file: string; count: number }[] =>
 const looseCallSites = (): { file: string; count: number }[] =>
   looseMentions().filter((site) => basename(site.file) !== LOOSE_DECLARATION);
 
-describe("parsePendingLoose — chain-less informational reads", () => {
+describe("parsePendingQueueLoose — chain-less informational reads", () => {
   it("passes undeclared fields through unvalidated", () => {
-    const result = parsePendingLoose(
-      JSON.stringify([
+    const result = parseQueueLoose(
+      [
         {
           ...baseEntry,
           gate: { kind: "open" },
           summary: "kept as-is",
           anything: { nested: true },
         },
-      ]),
+      ],
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
     expect(result.entries[0]!.summary).toBe("kept as-is");
@@ -776,8 +840,8 @@ describe("parsePendingLoose — chain-less informational reads", () => {
   });
 
   it("still rejects a malformed core", () => {
-    const result = parsePendingLoose(
-      JSON.stringify([{ ...baseEntry, gate: { kind: "wat" } }]),
+    const result = parseQueueLoose(
+      [{ ...baseEntry, gate: { kind: "wat" } }],
     );
     expect(result.ok).toBe(false);
   });
@@ -790,7 +854,7 @@ describe("parsePendingLoose — chain-less informational reads", () => {
     expect(callSites[0]!.count).toBe(1);
   });
 
-  it("the parsePendingLoose call-site scan excludes its own declaration from a set that really contained it", () => {
+  it("the parsePendingQueueLoose call-site scan excludes its own declaration from a set that really contained it", () => {
     const leaves = (sites: { file: string }[]): string[] =>
       sites.map((site) => basename(site.file));
 
@@ -798,19 +862,19 @@ describe("parsePendingLoose — chain-less informational reads", () => {
     expect(leaves(looseCallSites())).not.toContain(LOOSE_DECLARATION);
   });
 
-  it("its one call site never rewrites pending.json — readPendingLoose (pendingLedger.ts, what flume status counts through) is read-only", () => {
+  it("its one call site never rewrites the queue — readPendingLoose (pendingLedger.ts, what flume status counts through) is read-only", () => {
     const ledgerSrc = readFileSync(`${SRC_DIR}/pendingLedger.ts`, "utf8");
     const probeBody = extractFunctionBody(ledgerSrc, "readPendingLoose");
     const noMutation =
       /\b(writeFileSync|writeFile|appendFileSync|appendFile|rmSync|rm|unlinkSync|unlink)\s*\(/;
 
-    expect(probeBody).toContain("parsePendingLoose(");
-    // No write/delete call anywhere in the function that reads pending.json.
+    expect(probeBody).toContain("parsePendingQueueLoose(");
+    // No write/delete call anywhere in the function that reads the queue.
     expect(probeBody).not.toMatch(noMutation);
   });
 });
 
-describe("parsePending/parsePendingLoose — shared error mapping", () => {
+describe("parsePendingQueue/parsePendingQueueLoose — shared error mapping", () => {
   it("constructs the invalid-JSON message exactly once in module source", () => {
     const src = readFileSync(`${SRC_DIR}/PendingSchema.ts`, "utf8");
     const occurrences = (src.match(/invalid JSON: /g) ?? []).length;
@@ -917,8 +981,8 @@ describe("priority — the queue's one ordering (spec/pending.md § The entry co
     // field cannot carry, and a silent read of it would be the degradation
     // `.claude/rules/engineering.md`, *Loud or nothing* fences.
     for (const priority of [1.5, "3", null]) {
-      const result = parsePending(
-        JSON.stringify([{ ...baseEntry, gate: { kind: "open" }, priority }]),
+      const result = parseQueue(
+        [{ ...baseEntry, gate: { kind: "open" }, priority }],
       );
       expect(result.ok, `priority ${JSON.stringify(priority)} parsed`).toBe(
         false,
@@ -995,7 +1059,7 @@ describe("renderSchemaForPrompt", () => {
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
         "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
-  "priority": 0,                                        // optional integer, default 0; the queue's one ordering — higher is picked first, ties break on tag ascending. Omit unless this entry must be carried ahead of its siblings.
+        "priority": 0,                                        // optional integer, default 0; the queue's one ordering — higher is picked first, ties break on tag ascending. Omit unless this entry must be carried ahead of its siblings.
         "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],
@@ -1004,8 +1068,7 @@ describe("renderSchemaForPrompt", () => {
         "observedFiles": [ "path", ... ]                      // engine-maintained, never authored here: the dispatcher records the real footprint of an attempt that did not ship, so a retry partitions away from whatever it collided with. Carry it through unchanged when an entry already has one; omit it otherwise.
       }
 
-      Output is a JSON array of these entries; the "priority" field orders them, never their position.
-      Empty array is valid (means nothing pending)."
+      One entry per file, named "<tag>.json" directly under the queue directory — the filename and the "tag" field must agree. The "priority" field orders the queue, never any position or filename. An empty directory is valid (means nothing pending)."
     `);
   });
 
@@ -1175,10 +1238,10 @@ describe("renderSchemaForPrompt", () => {
       expect(rendered).toContain(`"${name}":`);
     }
     expect(rendered).not.toContain(`"schemaDelta":`);
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, gate: { kind: "open" }, schemaDelta: "none" },
-      ]),
+      ],
       testExtension,
     );
     expect(result.ok).toBe(false);
@@ -1193,10 +1256,10 @@ describe("renderSchemaForPrompt", () => {
    * set the composed validator actually accepts. A hand-written list of core
    * names here would be the tester re-authoring the writer's vocabulary, so
    * both sides are read from the real thing: the names come off the engine's
-   * `CORE_ENTRY_FIELDS` — the same list `composePendingList` composes and
+   * `CORE_ENTRY_FIELDS` — the same list `composePendingEntry` composes and
    * refuses shadows against — the render comes off the real
    * `renderSchemaForPrompt`, and the acceptance direction runs through the real
-   * `parsePending`.
+   * `parsePendingQueue`.
    */
   function renderedTopLevelFieldNames(rendered: string): string[] {
     return rendered.split("\n").flatMap((line) => {
@@ -1220,7 +1283,7 @@ describe("renderSchemaForPrompt", () => {
     }
   });
 
-  it("parsePending accepts an entry carrying every field the rendered schema names", () => {
+  it("parsePendingQueue accepts an entry carrying every field the rendered schema names", () => {
     const renderedNames = renderedTopLevelFieldNames(renderSchemaForPrompt());
     expect(
       renderedNames.length,
@@ -1244,7 +1307,7 @@ describe("renderSchemaForPrompt", () => {
         `rendered field "${name}" carries no value in the entry this gate parses`,
       ).toContain(name);
     }
-    const result = parsePending(JSON.stringify([fullEntry]));
+    const result = parseQueue([fullEntry]);
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   });
 
@@ -1255,7 +1318,7 @@ describe("renderSchemaForPrompt", () => {
    * declaration record as `schema` — nothing ties the two together, so the hint
    * can claim a bound the schema doesn't actually enforce (or vice versa).
    * These tests extract the bound from the real `renderSchemaForPrompt` output
-   * and drive it through the real `parsePending`, so a hint/schema mismatch
+   * and drive it through the real `parsePendingQueue`, so a hint/schema mismatch
    * fails here instead of shipping silently.
    */
   function extractCharBound(rendered: string, fieldName: string): number {
@@ -1275,15 +1338,15 @@ describe("renderSchemaForPrompt", () => {
     const atBound = "A".repeat(max);
     const overBound = "A".repeat(max + 1);
 
-    const ok = parsePending(
-      JSON.stringify([{ ...baseEntry, tag: atBound, gate: { kind: "open" } }]),
+    const ok = parseQueue(
+      [{ ...baseEntry, tag: atBound, gate: { kind: "open" } }],
     );
     expect(ok.ok, JSON.stringify(ok.errors)).toBe(true);
 
-    const bad = parsePending(
-      JSON.stringify([
+    const bad = parseQueue(
+      [
         { ...baseEntry, tag: overBound, gate: { kind: "open" } },
-      ]),
+      ],
     );
     expect(bad.ok).toBe(false);
   });
@@ -1304,8 +1367,8 @@ describe("renderSchemaForPrompt", () => {
   it("tag: every character the rendered charset admits is accepted by the real parser", () => {
     const extras = extractTagCharsetExtras(renderSchemaForPrompt());
     const sample = `aZ9${extras}`;
-    const result = parsePending(
-      JSON.stringify([{ ...baseEntry, tag: sample, gate: { kind: "open" } }]),
+    const result = parseQueue(
+      [{ ...baseEntry, tag: sample, gate: { kind: "open" } }],
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   });
@@ -1314,10 +1377,10 @@ describe("renderSchemaForPrompt", () => {
     const rendered = renderSchemaForPrompt();
     expect(rendered).toContain("no whitespace");
     const extras = extractTagCharsetExtras(rendered);
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         { ...baseEntry, tag: `a ${extras}`, gate: { kind: "open" } },
-      ]),
+      ],
     );
     expect(result.ok).toBe(false);
   });
@@ -1335,14 +1398,14 @@ describe("renderSchemaForPrompt", () => {
         notes: "valid notes",
       };
 
-      const ok = parsePending(
-        JSON.stringify([{ ...validEntry, [name]: "x".repeat(max) }]),
+      const ok = parseQueue(
+        [{ ...validEntry, [name]: "x".repeat(max) }],
         testExtension,
       );
       expect(ok.ok, JSON.stringify(ok.errors)).toBe(true);
 
-      const bad = parsePending(
-        JSON.stringify([{ ...validEntry, [name]: "x".repeat(max + 1) }]),
+      const bad = parseQueue(
+        [{ ...validEntry, [name]: "x".repeat(max + 1) }],
         testExtension,
       );
       expect(bad.ok).toBe(false);
@@ -1374,14 +1437,14 @@ describe("renderSchemaForPrompt", () => {
 
 describe("files — an all-empty declaration is not a floor (spec/pending.md § `files` is a prediction the scheduler consumes)", () => {
   it("parses an entry with files: {} (all-empty new/edit/retire) and it is pickable", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         {
           tag: "ZERO-FILES",
           gate: { kind: "open" },
           files: {},
         },
-      ]),
+      ],
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
     const entry = result.entries[0]!;
@@ -1390,8 +1453,8 @@ describe("files — an all-empty declaration is not a floor (spec/pending.md § 
   });
 
   it("parses clean when only files.new declares a path", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         {
           tag: "ONLY-NEW",
           gate: { kind: "open" },
@@ -1401,14 +1464,14 @@ describe("files — an all-empty declaration is not a floor (spec/pending.md § 
             retire: [],
           },
         },
-      ]),
+      ],
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   });
 
   it("parses clean when only files.edit declares a path", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         {
           tag: "ONLY-EDIT",
           gate: { kind: "open" },
@@ -1418,26 +1481,26 @@ describe("files — an all-empty declaration is not a floor (spec/pending.md § 
             retire: [],
           },
         },
-      ]),
+      ],
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   });
 
   it("parses clean when only files.retire declares a path", () => {
-    const result = parsePending(
-      JSON.stringify([
+    const result = parseQueue(
+      [
         {
           tag: "ONLY-RETIRE",
           gate: { kind: "open" },
           files: { new: [], edit: [], retire: ["src/only-retire.ts"] },
         },
-      ]),
+      ],
     );
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   });
 });
 
-describe("parsePending — observedFiles survives the round-trip", () => {
+describe("parsePendingQueue — observedFiles survives the round-trip", () => {
   it("preserves the dispatcher-written footprint so a re-parse cannot strip it", () => {
     const entry = roundTrip({
       ...baseEntry,

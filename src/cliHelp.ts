@@ -89,7 +89,7 @@ Commands:
   log [-n N] [--json] Print the last N tick verdicts (default 10) from
                       tick-verdicts.jsonl, oldest first — a human table by
                       default, or --json for the records verbatim as JSONL.
-  check               Validate the working tree's plan/pending.json — parse
+  check               Validate the working tree's plan/pending/ — parse
                       plus fence arithmetic against the consumer (fanout)
                       phase's declared fence — without spending an agent.
   render <phase> [--entry <tag>]
@@ -118,7 +118,7 @@ Print baton state: awake phases (or "hibernating" if none), then, when
 then, when HEAD names a ref and a tip claim exists for it, its holder ("tip
 claimed by pid N" or "tip claim present, process dead — stale"; a detached
 HEAD or no claim file prints nothing extra), then the pending entry count
-from plan/pending.json ("pending: N"; "pending: 0" if absent; "pending:
+from plan/pending/ ("pending: N"; "pending: 0" if absent; "pending:
 unparsable" if present but malformed), then, when the chain loads, a
 friction count (declared Chain.friction dir holding notes) and one line per
 pending entry gated on a capability the chain hasn't asserted, then, when a
@@ -182,7 +182,7 @@ Exit codes:
       and re-run.
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
-      fix the chain (or its state root) and re-run. Also pending.json
+      fix the chain (or its state root) and re-run. Also the queue
       failing to parse, where a fresh process reads the same bytes until the
       queue's declared writer runs over them; a wave that shipped before its
       rewrite read hit them still exits 69, and its work is on trunk.
@@ -336,7 +336,7 @@ Exit codes:
 `,
   check: `Usage: flume check
 
-Validate the working tree's plan/pending.json without spending an agent:
+Validate the working tree's plan/pending/ without spending an agent:
 the real parse (the same decode a tick's resolution takes, against the
 loaded chain's declared entryExtension) plus fence arithmetic for every
 entry — declared paths against the consumer (fanout-concurrency) phase's
@@ -346,7 +346,7 @@ gates never run — only the engine's own parse + fence mechanics.
 
 Exit codes:
   0    Three routes: the queue parses clean and every entry's declared
-       files survive the consumer phase's fence; plan/pending.json is
+       files survive the consumer phase's fence; plan/pending/ is
        absent (nothing to check); or the chain declares no fanout phase, so
        there is no consumer and no fence — the parse still runs and the
        output says "no fanout phase declared; fence not checked", never a
@@ -355,12 +355,13 @@ Exit codes:
        the chain load below; or the chain failed to load with the
        CJS-context refusal — the host repo's package.json (or the one
        beside .flume/chain.ts) lacks "type": "module". Add it and re-run.
-  65   Data error (EX_DATAERR): plan/pending.json fails schema validation,
-       or an entry declares a path outside the consumer phase's fence.
+  65   Data error (EX_DATAERR): an entry under plan/pending/ fails schema
+       validation, or an entry declares a path outside the consumer
+       phase's fence.
        Naming the offending entry (and paths, for a fence violation).
   69   Mount-dead (EX_UNAVAILABLE): the chain module could not load for any
        other reason. Nothing was checked — fix the chain and re-run.
-  74   I/O error (EX_IOERR): plan/pending.json exists but could not be read
+  74   I/O error (EX_IOERR): plan/pending/ exists but could not be read
        (permission denied, a path too long for the platform, …). Naming
        the underlying error.
        ${bayDiscoveryRefusal(7)}

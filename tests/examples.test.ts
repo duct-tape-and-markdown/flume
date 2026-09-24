@@ -36,13 +36,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import type { Gate, GateContext } from "../src/Gate.ts";
 import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
 import { InlineExecRenderError, renderPrompt } from "../src/Prompt.ts";
 import { Baton } from "../src/Baton.ts";
 import * as builtinGates from "../src/builtinGates.ts";
 import { Dispatcher, type TickOutcome } from "../src/Dispatcher.ts";
-import { resolvePendingPath } from "../src/paths.ts";
+import { resolvePendingDir } from "../src/paths.ts";
 import {
   buildFlumeApi,
   type FlumeApi,
@@ -198,7 +199,7 @@ describe("cascade-chain.ts — the plan fence roots at the reported state root",
     // value, not an empty string that would make every claim below vacuous.
     const at = planFence(join(EXAMPLE_PATHS.repoRoot, ".flume"));
     expect(at.length).toBeGreaterThan(0);
-    expect(at).toContain(".flume/plan/pending.json");
+    expect(at).toContain(".flume/plan/pending/*.json");
     expect(at).toContain(".flume/inbox/**");
 
     // The same chain under a state root relocated inside the repo: the whole
@@ -211,7 +212,7 @@ describe("cascade-chain.ts — the plan fence roots at the reported state root",
       at.map((g) => g.replace(/^\.flume\//, "state/alpha/")),
     );
     expect(moved.filter((g) => g.startsWith(".flume/"))).toEqual([]);
-    expect(moved).toContain("state/alpha/plan/pending.json");
+    expect(moved).toContain("state/alpha/plan/pending/*.json");
   });
 
   it("cascade refuses at chain load when its state root resolves outside the repository", () => {
@@ -320,7 +321,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
 
   /**
    * The artifacts a template's spans read under the state root. The queue's
-   * path is the engine's (`resolvePendingPath`); the rest are this example's
+   * path is the engine's (`resolvePendingDir`); the rest are this example's
    * own layout, which only its prompt and its fence spell. A sentinel rides
    * each one so a case asserts the bytes *arrived*, not merely that the
    * render did not throw.
@@ -344,11 +345,15 @@ describe("examples/prompts — the spans read the injected state root", () => {
     readonly opensDir?: (root: string) => string;
   }> = [
     {
-      span: "plan/pending.json",
-      at: (root) => resolvePendingPath(root),
-      body: '{ "entries": [], "note": "PENDING-SENTINEL" }\n',
+      // The queue is a directory of one entry per file, so the span opens the
+      // directory and the sentinel rides an entry inside it
+      // (`spec/pending.md`, *The ledger is a directory — one entry per file*).
+      span: "plan/pending",
+      at: (root) => join(resolvePendingDir(root), "SENTINEL-TAG.json"),
+      opensDir: (root) => resolvePendingDir(root),
+      body: '{ "note": "PENDING-SENTINEL" }\n',
       sentinel: "PENDING-SENTINEL",
-      placeholder: "[]",
+      placeholder: "(no queue directory yet)",
     },
     {
       span: "plan/state.md",
@@ -1298,9 +1303,13 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
       // worktree, which holds tracked content only, so an uncommitted
       // finding is simply absent where the agent runs.
       mkdirSync(join(flumeDir, "inbox"), { recursive: true });
-      mkdirSync(join(flumeDir, "plan"), { recursive: true });
+      // The queue directory, present and empty — and a placeholder inside
+      // it, because git holds no empty directory and the fence admits only
+      // `*.json` (`spec/pending.md`, *The ledger is a directory — one entry
+      // per file*).
+      mkdirSync(join(flumeDir, "plan", "pending"), { recursive: true });
       writeFileSync(report, "# a report from the field\n");
-      writeFileSync(join(flumeDir, "plan", "pending.json"), "[]\n");
+      writeFileSync(join(flumeDir, "plan", "pending", ".gitkeep"), "");
       await exec("git", ["add", "-A"], { cwd: repo });
       await exec("git", ["commit", "-q", "-m", "seed the plan artifacts"], {
         cwd: repo,
@@ -1471,9 +1480,18 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
       const refilled = await tick(
         derive.name,
         commits("plan: file one entry", (cwd) =>
+          // One file, named for the entry's tag — a producer adds an entry by
+          // adding a file (`spec/pending.md`, *The ledger is a directory —
+          // one entry per file*).
           writeFileSync(
-            join(cwd, ".flume", "plan", "pending.json"),
-            `${JSON.stringify([filedEntry], null, 2)}\n`,
+            join(
+              cwd,
+              ".flume",
+              "plan",
+              "pending",
+              entryFileName(filedEntry.tag),
+            ),
+            `${JSON.stringify(filedEntry, null, 2)}\n`,
           ),
         ),
       );
@@ -1552,7 +1570,7 @@ describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () =
     flumeDir: "/repo/.flume",
     stateRootRel: ".flume",
     configDir: "/repo/.flume",
-    pendingPath: "/repo/.flume/plan/pending.json",
+    pendingDir: "/repo/.flume/plan/pending",
     phaseName: "build",
     commitSha: "c".repeat(40),
     baseSha: "b".repeat(40),
@@ -1689,7 +1707,7 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     flumeDir: "/nonexistent/declared-files-fixture/.flume",
     stateRootRel: ".flume",
     configDir: "/nonexistent/declared-files-fixture/.flume",
-    pendingPath: "/nonexistent/declared-files-fixture/.flume/plan/pending.json",
+    pendingDir: "/nonexistent/declared-files-fixture/.flume/plan/pending",
     phaseName: "build",
     baseSha: BASE,
     commitSha: TIP,
@@ -1979,7 +1997,7 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
     // is the `writablePaths` list, so that is what is asserted present.
     expect(fromSource.length).toBeGreaterThan(10);
     expect(fromSource).toContain("writablePaths: [");
-    expect(fromSource).toContain("`${stateRoot}/plan/pending.json`,");
+    expect(fromSource).toContain("`${stateRoot}/plan/pending/*.json`,");
 
     expect(fromDoc).toEqual(fromSource);
   });
@@ -2568,16 +2586,23 @@ describe("backlog-groomer-chain.ts — the reason is one line", () => {
 
     // Direction: the same entry with the newline removed is accepted, so the
     // refusal is the line break's doing and not the fixture's shape.
-    const accepted = api.parsePending(
-      backlogWith(FORGED.replace("\n", " ")),
-      extension,
-    );
-    expect(accepted.errors).toEqual([]);
-    expect(accepted.entries).toHaveLength(1);
+    // The backlog is this chain's own array in one file, so the entry
+    // validator is what judges each element — the same shape the chain's own
+    // backlog parse composes (`examples/backlog-groomer-chain.ts`).
+    const entrySchema = api.composePendingEntry(extension);
+    const entryWith = (reason: string): unknown =>
+      (JSON.parse(backlogWith(reason)) as unknown[])[0];
 
-    const refused = api.parsePending(backlogWith(FORGED), extension);
-    expect(refused.ok).toBe(false);
-    expect(refused.errors.map((e) => e.path)).toContain("reason");
+    const accepted = entrySchema.safeParse(
+      entryWith(FORGED.replace("\n", " ")),
+    );
+    expect(accepted.success).toBe(true);
+
+    const refused = entrySchema.safeParse(entryWith(FORGED));
+    expect(refused.success).toBe(false);
+    expect(
+      refused.error?.issues.map((issue) => issue.path.join(".")),
+    ).toContain("reason");
   });
 
   it("a newline in a reason never reaches the groomer's shipped ledger", async () => {

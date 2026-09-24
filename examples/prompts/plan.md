@@ -1,8 +1,8 @@
 # CURRENT STATE
 
-<pending-json>
-!`p="{{FLUME_DIR}}/plan/pending.json"; test -e "$p" || { echo "[]"; exit 0; }; cat "$p"`
-</pending-json>
+<pending-queue>
+!`d="{{FLUME_DIR}}/plan/pending"; test -e "$d" || { echo "(no queue directory yet)"; exit 0; }; find "$d"/ -maxdepth 1 -name '*.json' >/dev/null || exit 1; n=0; for f in "$d"/*.json; do test -e "$f" || break; n=$((n+1)); printf '=== %s\n' "${f##*/}"; cat "$f"; done; test "$n" -gt 0 || echo "(queue empty)"`
+</pending-queue>
 
 <state>
 !`p="{{FLUME_DIR}}/plan/state.md"; test -e "$p" || { echo "(no prior state)"; exit 0; }; cat "$p"`
@@ -43,7 +43,7 @@ artifacts are re-derived from disk every tick.
   queue.
 - **An entry carries a `per` cite that resolves.** If a candidate can't, it is
   an open question for a human, not a pending entry.
-- **Open questions live in `open-questions.md`**, never in pending.json.
+- **Open questions live in `open-questions.md`**, never in the queue.
 - **state.md is rewritten from scratch** (~5 lines: phase, last shipped tag,
   in-flight work), never carried forward.
 
@@ -51,11 +51,11 @@ artifacts are re-derived from disk every tick.
 
 Commit all changes in one commit prefixed `plan:`. Write:
 
-- `{{FLUME_DIR}}/plan/pending.json` — JSON array conforming to the schema below.
+- `{{FLUME_DIR}}/plan/pending/<tag>.json` — one file per entry, conforming to the schema below; the filename and the entry's `tag` must agree.
 - `{{FLUME_DIR}}/plan/state.md` — ~5 line markdown.
 - `{{FLUME_DIR}}/plan/open-questions.md` — markdown.
 
-The harness will reject your commit if `pending.json` doesn't parse, if an entry's declared `files` can't survive build's fence, or if you modify anything outside this slice's writable paths.
+The harness will reject your commit if any entry file doesn't parse, if an entry's declared `files` can't survive build's fence, or if you modify anything outside this slice's writable paths.
 
 <schema>
 {{PENDING_SCHEMA}}

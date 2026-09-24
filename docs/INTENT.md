@@ -23,7 +23,7 @@ This split is load-bearing. Anything a prompt can drift on, the harness owns:
 
 ### Committed state is the loop's memory
 
-Each tick reads the disk, does work, and commits. The next tick starts from what the last one left, and that accumulation **is** the mechanism: a chain converges by iterating against committed state, not by any single tick being correct. This is why **pipeline state — `pending.json`, plan prose — is committed on purpose, not as bookkeeping**: it is what the next iteration reads.
+Each tick reads the disk, does work, and commits. The next tick starts from what the last one left, and that accumulation **is** the mechanism: a chain converges by iterating against committed state, not by any single tick being correct. This is why **pipeline state — the pending queue, plan prose — is committed on purpose, not as bookkeeping**: it is what the next iteration reads.
 
 It follows that discarding a tick's commit discards *progress*, not merely a bad write. A revert is a real cost paid to keep the tree working — never a routine control-flow step, and never the price of a bookkeeping mismatch. Work that ran, passed its checks, and moved the tree toward the goal stays on the disk the next iteration reads. Where a harness must choose, it iterates again over imperfect state rather than resetting to clean state; the loop's job is to reach the end result, not to make each step conform to a prediction of it.
 

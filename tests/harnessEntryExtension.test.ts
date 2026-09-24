@@ -8,7 +8,7 @@
  * the declaration the prompt announces and the declaration the parser
  * enforces are one declaration, so both sides run for real: the package's
  * own `entryExtension()` goes into the engine's `renderSchemaForPrompt` and
- * into the engine's `parsePending`, and no hint text or cap is restated by
+ * into the engine's `parsePendingQueue`, and no hint text or cap is restated by
  * the tester's hand.
  *
  * The removal case hand-authors its input, which is the sanctioned shape —
@@ -24,8 +24,13 @@ import {
   entryExtension,
 } from "../harness/index.ts";
 import type { Lane } from "../harness/index.ts";
-import { parsePending, renderSchemaForPrompt } from "../src/index.ts";
-import type { EntryExtension } from "../src/index.ts";
+import { parsePendingQueue, renderSchemaForPrompt } from "../src/index.ts";
+// The naming rule, not the package surface: a fixture composing an entry's
+// own file takes the engine's spelling of `<tag>.json` rather than a second
+// copy of it (`spec/pending.md`, *The ledger is a directory — one entry per
+// file*).
+import { entryFileName } from "../src/PendingSchema.ts";
+import type { EntryExtension, QueueFile } from "../src/index.ts";
 
 /** The six the spec section lists, in the order it lists them. */
 const SPEC_FIELDS = ["summary", "per", "acceptance", "tests", "pins", "notes"];
@@ -33,10 +38,16 @@ const SPEC_FIELDS = ["summary", "per", "acceptance", "tests", "pins", "notes"];
 /** Those six plus the package's risk flag, which renders and parses beside them. */
 const PACKAGE_FIELDS = [...SPEC_FIELDS, CONTRACT_TOUCHING_FIELD];
 
-/** One core-valid entry, with the extension fields a caller wants over it. */
-const entryJson = (fields: Record<string, unknown>): string =>
-  JSON.stringify([
-    {
+/**
+ * One core-valid entry as its own queue file, with the extension fields a
+ * caller wants over it — the queue is a directory of one entry per file
+ * (`spec/pending.md`, *The ledger is a directory — one entry per file*), so
+ * the fixture is the listing the real reader hands the parse.
+ */
+const entryQueue = (fields: Record<string, unknown>): QueueFile[] => [
+  {
+    file: entryFileName("SOME-TAG"),
+    raw: JSON.stringify({
       tag: "SOME-TAG",
       gate: { kind: "open" },
       dependsOnForks: [],
@@ -47,8 +58,9 @@ const entryJson = (fields: Record<string, unknown>): string =>
       tests: ["a behavior"],
       pins: [],
       ...fields,
-    },
-  ]);
+    }),
+  },
+];
 
 /** A Standard Schema that accepts anything — this file judges wiring, not validation. */
 const anything = { "~standard": { version: 1, vendor: "test", validate: (value: unknown) => ({ value }) } } as const;
@@ -83,7 +95,7 @@ it("the package's entry extension declares summary, per, acceptance, tests, pins
 
   // And the same declaration is what the parser enforces: the render is a
   // claim about a schema only if that schema is the one a gate runs.
-  const parsed = parsePending(entryJson({}), extension);
+  const parsed = parsePendingQueue(entryQueue({}), extension);
   expect(parsed.errors).toEqual([]);
   expect(parsed.entries).toHaveLength(1);
 });
@@ -94,7 +106,7 @@ it("a consumer field is merged into the entry extension beside the package's own
   expect(Object.keys(extension)).toEqual([...PACKAGE_FIELDS, "risk"]);
 
   // Beside, not instead: the package's own still parse and still render.
-  const parsed = parsePending(entryJson({ risk: "low" }), extension);
+  const parsed = parsePendingQueue(entryQueue({ risk: "low" }), extension);
   expect(parsed.errors).toEqual([]);
   expect(parsed.entries[0]).toMatchObject({ risk: "low", summary: expect.any(String) });
 
@@ -120,14 +132,14 @@ it("a summary past the package's cap is refused", () => {
 
   // At the cap, through the real parser — without this the refusal below
   // would pass over a schema that rejected every summary.
-  const atCap = parsePending(
-    entryJson({ summary: "x".repeat(ENTRY_CAPS.summary) }),
+  const atCap = parsePendingQueue(
+    entryQueue({ summary: "x".repeat(ENTRY_CAPS.summary) }),
     extension,
   );
   expect(atCap.errors).toEqual([]);
 
-  const past = parsePending(
-    entryJson({ summary: "x".repeat(ENTRY_CAPS.summary + 1) }),
+  const past = parsePendingQueue(
+    entryQueue({ summary: "x".repeat(ENTRY_CAPS.summary + 1) }),
     extension,
   );
   expect(past.ok).toBe(false);
@@ -143,15 +155,15 @@ it("the package entry extension accepts an entry that omits contractTouching", (
   expect(Object.keys(extension)).toContain(CONTRACT_TOUCHING_FIELD);
 
   // The ordinary entry — no risk flag — through the real parser.
-  const omitted = parsePending(entryJson({}), extension);
+  const omitted = parsePendingQueue(entryQueue({}), extension);
   expect(omitted.errors).toEqual([]);
   expect(omitted.entries).toHaveLength(1);
   expect(omitted.entries[0]).not.toHaveProperty(CONTRACT_TOUCHING_FIELD);
 
   // And the marked entry parses to the boolean the handoff reads back off
   // `FanoutEntryOutcome.extension`, so the two sides of that read agree.
-  const marked = parsePending(
-    entryJson({ [CONTRACT_TOUCHING_FIELD]: true }),
+  const marked = parsePendingQueue(
+    entryQueue({ [CONTRACT_TOUCHING_FIELD]: true }),
     extension,
   );
   expect(marked.errors).toEqual([]);
@@ -159,8 +171,8 @@ it("the package entry extension accepts an entry that omits contractTouching", (
 
   // A non-boolean is refused, naming the field — without this the two cases
   // above would pass over a schema that accepted anything.
-  const bogus = parsePending(
-    entryJson({ [CONTRACT_TOUCHING_FIELD]: "yes" }),
+  const bogus = parsePendingQueue(
+    entryQueue({ [CONTRACT_TOUCHING_FIELD]: "yes" }),
     extension,
   );
   expect(bogus.ok).toBe(false);

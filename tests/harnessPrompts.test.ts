@@ -47,7 +47,7 @@ import {
   type PromptName,
   type SharedPromptArg,
 } from "../harness/prompts.ts";
-import { resolvePendingPath } from "../src/paths.ts";
+import { resolvePendingDir } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
 import {
   InlineExecRenderError,
@@ -80,11 +80,9 @@ let declaration: Declaration;
 
 beforeAll(async () => {
   stateRoot = await mkTempDir("flume-prompts-");
-  await mkdir(join(stateRoot, "plan"), { recursive: true });
-  await writeFile(
-    join(stateRoot, "plan", "pending.json"),
-    '{ "entries": [] }\n',
-  );
+  // The queue is a directory, present and empty — the state adoption seeds
+  // (`harness/init.ts`) and the one every slice's span reads.
+  await mkdir(resolvePendingDir(stateRoot), { recursive: true });
   // One question open, as presence states it (`spec/harness.md`, *Records as
   // one file each*): a file under the questions directory, not a section of a
   // page.
@@ -326,14 +324,23 @@ it("every plan slice the package declares points its reader at the discipline pa
 const ARTIFACTS: ReadonlyArray<{
   readonly key: PromptArg;
   readonly at: (root: string, prompt: PromptName) => string | undefined;
+  /**
+   * Where the sentinel bytes are written, when that is not the path a span
+   * opens. The queue is a directory (`spec/pending.md`, *The ledger is a
+   * directory — one entry per file*): the span opens the directory and a case
+   * damages *it*, while the bytes that prove arrival live in an entry file
+   * under it. Every other artifact is a file, where the two coincide.
+   */
+  readonly seedAt?: (root: string, prompt: PromptName) => string | undefined;
   readonly body: string;
   readonly sentinel: string;
   readonly placeholder?: string;
 }> = [
   {
-    key: "PENDING_PATH",
-    at: (root) => resolvePendingPath(root),
-    body: '{ "entries": [], "note": "PENDING-SENTINEL" }\n',
+    key: "PENDING_DIR",
+    at: (root) => resolvePendingDir(root),
+    seedAt: (root) => join(resolvePendingDir(root), "SENTINEL-TAG.json"),
+    body: '{ "note": "PENDING-SENTINEL" }\n',
     sentinel: "PENDING-SENTINEL",
   },
   {
@@ -363,7 +370,7 @@ const pathsOf = (
   root: string,
 ): string[] => [
   ...new Set(
-    PHASES.map((name) => artifact.at(root, name)).filter(
+    PHASES.map((name) => (artifact.seedAt ?? artifact.at)(root, name)).filter(
       (at): at is string => at !== undefined,
     ),
   ),
@@ -581,7 +588,7 @@ function placeholderIsBlockContent(
  * assertions below read the same for every way of breaking one.
  */
 interface Damage {
-  /** The state, as the failure messages say it: "an absent PENDING_PATH". */
+  /** The state, as the failure messages say it: "an absent PENDING_DIR". */
   readonly says: string;
   readonly apply: (at: string) => Promise<void>;
 }
@@ -720,7 +727,7 @@ async function everySliceOverAbsentArtifactAt(
 }
 
 it("each plan slice prompt's verdict on an absent queue follows whether its spans read that artifact", async () => {
-  await everySliceOverAbsentArtifactAt("PENDING_PATH");
+  await everySliceOverAbsentArtifactAt("PENDING_DIR");
 }, SPAWN_BUDGET_MS);
 
 /**
@@ -743,15 +750,17 @@ it("a state root flume-harness init just wrote renders every plan slice prompt's
     // Non-vacuity: a slice that stopped opening the queue would render clean
     // below while proving nothing about what adoption wrote.
     expect(
-      spanSubstitutes(raw, "PENDING_PATH"),
-      `${name}: opens no PENDING_PATH span`,
+      spanSubstitutes(raw, "PENDING_DIR"),
+      `${name}: opens no PENDING_DIR span`,
     ).toBe(true);
 
-    // The seeded bytes arrived as the block's content — an empty queue the
-    // slice can read, not a render that merely failed to throw.
+    // The seeded directory arrived as the block's content — an empty queue
+    // the slice can read, not a render that merely failed to throw. Seeded
+    // empty by construction (`harness/init.ts` writes only the `.gitkeep`),
+    // so the span's own empty reading is what has to land.
     const rendered = await render(name, root);
     expect(rendered, `${name}: the seeded queue did not reach the prompt`).toMatch(
-      /^\[\]$/m,
+      /^\(queue empty\)$/m,
     );
   }
 }, SPAWN_BUDGET_MS);

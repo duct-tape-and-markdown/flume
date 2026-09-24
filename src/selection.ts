@@ -328,7 +328,7 @@ export function selectBatch(opts: {
   // `requiresCapability` gate.
   const capabilities = new Set(chain.capabilities ?? []);
   // A slug the supervisor quarantined earlier this run (its worktree
-  // provisioning failed on a prior tick) is dropped here — `pending.json`
+  // provisioning failed on a prior tick) is dropped here — the queue
   // itself is untouched, so a fresh run/process retries it from scratch. An
   // entry a sibling tick holds a claim on is dropped beside it, for the
   // window that tick is carrying it. The chain's own per-entry refusal is

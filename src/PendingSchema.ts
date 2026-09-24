@@ -111,7 +111,7 @@ export const TAG_MAX_LENGTH = NAME_MAX - 39;
  *   MAINTAIN-tsc-a31893e
  *
  * A chain wanting stricter grammar (e.g. an ALL-CAPS convention) layers a
- * refinement on `tag` via its declared extension — see `composePendingList`.
+ * refinement on `tag` via its declared extension — see `composePendingEntry`.
  */
 const TAG_PATTERN = new RegExp(`^[A-Za-z0-9._()-]{1,${TAG_MAX_LENGTH}}$`);
 
@@ -120,7 +120,7 @@ const TAG_PATTERN = new RegExp(`^[A-Za-z0-9._()-]{1,${TAG_MAX_LENGTH}}$`);
  * dispatcher mechanically consumes. Strict — a field that is neither core
  * nor declared in the chain's extension fails validation loudly (silent
  * stripping would destroy plan-authored fields when the dispatcher rewrites
- * pending.json on ship).
+ * its file on ship).
  */
 const PendingEntryCore = z.strictObject({
     /** Stable identifier; appears in commit messages. */
@@ -184,7 +184,7 @@ export type PendingEntry = z.infer<typeof PendingEntryCore> &
 /**
  * One chain-declared entry field: the Standard Schema (`~standard`)
  * validator that validates it and the prompt hint that renders it. Declared
- * once — `composePendingList` builds the adapted validator and
+ * once — `composePendingEntry` builds the adapted validator and
  * `renderSchemaForPrompt` builds the rendered schema block from the same
  * record, so the two surfaces cannot drift.
  *
@@ -216,7 +216,7 @@ export type EntryExtension = Record<string, EntryExtensionField>;
  * Exported because this vocabulary is a fact the engine holds and acts on:
  * it gates extension composition and it is the set the rendered prompt
  * schema claims to enumerate. A consumer that needs the names otherwise
- * rebuilds them by reaching through `composePendingList`'s returned
+ * rebuilds them by reaching through `composePendingEntry`'s returned
  * `z.ZodType` into zod's `.element.shape` — internals this module keeps
  * private precisely so a zod major cannot rename them out from under a
  * reader.
@@ -253,44 +253,32 @@ export function entryExtensionPayload(
 }
 
 /**
- * Reject a duplicate `tag` value within the queue — tag identity must be
- * unique: cli's find-by-tag and Dispatcher's blockedBy/shippedTags lookups key
- * on it, so a duplicate silently resolves to the wrong entry. Every index
- * sharing a tag gets its own issue naming the others, so a three-way collision
- * is fully attributed rather than only the second occurrence being flagged.
+ * The extension one entry's file carries. One spelling, because the listing
+ * that decides what is an entry (`readQueueOnDisk`, `src/pendingLedger.ts`)
+ * and the name one is written under ({@link entryFileName}) are two halves of
+ * one rule.
  */
-function withUniqueTagCheck<T extends z.ZodTypeAny>(
-  arraySchema: T,
-): z.ZodType<PendingEntry[]> {
-  return (arraySchema as unknown as z.ZodArray<z.ZodTypeAny>).superRefine(
-    (entries, ctx) => {
-      const indicesByTag = new Map<string, number[]>();
-      entries.forEach((entry, index) => {
-        const tag = (entry as { tag: string }).tag;
-        const indices = indicesByTag.get(tag) ?? [];
-        indices.push(index);
-        indicesByTag.set(tag, indices);
-      });
-      for (const [tag, indices] of indicesByTag) {
-        if (indices.length < 2) continue;
-        for (const index of indices) {
-          const others = indices.filter((i) => i !== index);
-          ctx.addIssue({
-            code: "custom",
-            path: [index, "tag"],
-            message: `tag "${tag}" duplicates entr${
-              others.length === 1 ? "y" : "ies"
-            } at index ${others.join(", ")}`,
-          });
-        }
-      }
-    },
-  ) as unknown as z.ZodType<PendingEntry[]>;
+export const ENTRY_FILE_EXT = ".json";
+
+/**
+ * The file one entry lives in, named by its tag (`spec/pending.md`, *The
+ * ledger is a directory — one entry per file*). Queue-wide tag uniqueness is
+ * this function's consequence and not a check anywhere: two entries claiming
+ * one tag would be one file.
+ *
+ * Exported because the ship composes it — the ledger rewrite `git rm`s
+ * exactly the shipped entries' files and holds only their tags
+ * (`commitPendingUpdate`, `src/pendingLedger.ts`) — and a caller spelling
+ * `${tag}.json` itself is the second copy of the rule the agreement check
+ * below exists to enforce.
+ */
+export function entryFileName(tag: string): string {
+  return `${tag}${ENTRY_FILE_EXT}`;
 }
 
 /**
  * Thrown when a chain-declared `~standard.validate` returns a `Promise`.
- * `parsePending` is synchronous and feeds decision and rewrite paths — a
+ * `parsePendingQueue` is synchronous and feeds decision and rewrite paths — a
  * `Promise` read as a result object has no `issues`, so it would be treated as
  * passing and accept the entry vacuously. This is a chain-config defect (the
  * same class as an extension shadowing a core field), so the adapter throws it
@@ -319,7 +307,7 @@ function standardIssuePath(
 /**
  * Adapt a chain-declared Standard Schema validator into an engine-instance zod
  * schema: a value-preserving position, never a bare check. Every downstream
- * mechanic — strictness, entry-indexed error paths, the `tag` intersection
+ * mechanic — strictness, the composed error paths, the `tag` intersection
  * floor — stays on the zod side; this is the one seam that calls into the
  * chain's declared validator.
  *
@@ -359,9 +347,9 @@ function adaptStandardSchemaField(
 
 /**
  * Compose the core entry schema with a chain's extension declaration into
- * the list validator. Strict: fields neither core nor declared fail.
- * Throws on an extension that shadows a core field — that is a chain-config
- * defect, not a pending.json defect.
+ * the validator one entry file is parsed by. Strict: fields neither core nor
+ * declared fail. Throws on an extension that shadows a core field — that is a
+ * chain-config defect, not a queue defect.
  *
  * `tag` is the one core field an extension MAY declare: a chain wanting
  * stricter grammar (e.g. an ALL-CAPS convention) than the engine's
@@ -370,15 +358,15 @@ function adaptStandardSchemaField(
  * pass — so a chain declaring `tag` narrows the grammar, it can never widen
  * past (or replace) the engine's mechanical floor.
  *
- * The composed list schema also enforces tag uniqueness across the queue —
- * mechanical safety, not convention: the engine's own tag-keyed lookups (cli
- * find-by-tag, Dispatcher blockedBy/shippedTags) require it.
+ * One entry, never a list: the queue is a directory and its uniqueness is the
+ * filesystem's ({@link entryFileName}), so there is no queue-wide check left
+ * for a composed array schema to carry.
  */
-export function composePendingList(
+export function composePendingEntry(
   extension?: EntryExtension,
-): z.ZodType<PendingEntry[]> {
+): z.ZodType<PendingEntry> {
   if (!extension || Object.keys(extension).length === 0) {
-    return withUniqueTagCheck(z.array(PendingEntryCore));
+    return PendingEntryCore as unknown as z.ZodType<PendingEntry>;
   }
   for (const name of Object.keys(extension)) {
     if (name !== "tag" && CORE_FIELDS.has(name)) {
@@ -399,23 +387,45 @@ export function composePendingList(
     );
   }
   // .extend on a strictObject stays strict: core + declared fields only.
-  return withUniqueTagCheck(z.array(PendingEntryCore.extend(shape)));
+  return PendingEntryCore.extend(shape) as unknown as z.ZodType<PendingEntry>;
 }
 
 /**
- * A producer's full pending list. Position carries nothing: the order every
- * selection takes is `priority` descending, then tag ascending. Empty array
- * is valid and means nothing pending.
+ * A producer's full pending queue, as a reader hands it on. Position carries
+ * nothing: the order every selection takes is `priority` descending, then tag
+ * ascending. Empty is valid and means nothing pending.
  */
 export type PendingList = PendingEntry[];
 
 // ---------- parse helpers ----------
 
 /**
- * Outcome of `parsePending`. On success, `ok` is true, `entries` holds the
- * parsed list, and `errors` is empty. On failure, `entries` is `[]` and
- * `errors` carries one `ParseError` per zod issue so the caller can surface
- * them — typically by injecting them into the next plan prompt.
+ * One entry file, as a queue reader hands it to the parse: its name directly
+ * under the queue directory, and its bytes.
+ *
+ * The name rides along because it is *input* to the parse, not decoration —
+ * the tag a file claims has to agree with the name it is reachable under
+ * ({@link parsePendingEntry}), and a failure names the file it read
+ * (`spec/pending.md`, *The ledger is a directory — one entry per file*).
+ */
+export interface QueueFile {
+  /** The entry file's own name, with no directory part — `<tag>.json`. */
+  readonly file: string;
+  /** The file's bytes, exactly as the tip or the disk holds them. */
+  readonly raw: string;
+}
+
+/**
+ * Outcome of {@link parsePendingQueue}. On success, `ok` is true, `entries`
+ * holds the queue in its declared order, and `errors` is empty. On failure,
+ * `entries` is `[]` and `errors` carries one `ParseError` per issue so the
+ * caller can surface them — typically by injecting them into the next plan
+ * prompt.
+ *
+ * All-or-nothing over the directory, for the reason the strict read exists:
+ * a decision or a rewrite derived from a queue one of whose files did not
+ * resolve is acting on a queue it never read (`.claude/rules/engineering.md`,
+ * *Loud or nothing*).
  */
 export interface ParseResult {
   ok: boolean;
@@ -424,26 +434,39 @@ export interface ParseResult {
 }
 
 /**
- * One validation failure produced by `parsePending`. The harness injects
- * these into the next plan prompt so the agent can re-derive without
+ * One validation failure produced by {@link parsePendingQueue}. The harness
+ * injects these into the next plan prompt so the agent can re-derive without
  * needing to read zod's raw error format.
  */
 export interface ParseError {
-  /** Index into the raw array, or -1 if structure itself was malformed. */
-  index: number;
-  /** Path within the entry, e.g. "files.edit[0].path". */
+  /**
+   * The entry file the failure was read out of, with no directory part — the
+   * whole point of the per-file queue: a producer repairing the queue is told
+   * which file to open, never an index into a page every writer shared.
+   */
+  file: string;
+  /** Path within the entry, e.g. "files.edit.0.path"; empty for the file itself. */
   path: string;
   message: string;
 }
 
+/** Outcome of parsing one entry file. */
+interface EntryParseResult {
+  ok: boolean;
+  /** The parsed entry, or `undefined` when `ok` is false. */
+  entry: PendingEntry | undefined;
+  errors: ParseError[];
+}
+
 /**
  * Parse `raw` as JSON, wrapped as a failed `ParseResult` on failure. Shared
- * by `parsePending` and `parsePendingLoose` so the invalid-JSON error shape
+ * by `parsePendingQueue` and `parsePendingQueueLoose` so the invalid-JSON error shape
  * has one source instead of two copies that can drift.
  */
 function parseJsonOrFail(
+  file: string,
   raw: string,
-): { ok: true; value: unknown } | { ok: false; result: ParseResult } {
+): { ok: true; value: unknown } | { ok: false; result: EntryParseResult } {
   try {
     return { ok: true, value: JSON.parse(raw) };
   } catch (err) {
@@ -451,10 +474,10 @@ function parseJsonOrFail(
       ok: false,
       result: {
         ok: false,
-        entries: [],
+        entry: undefined,
         errors: [
           {
-            index: -1,
+            file,
             path: "",
             message: `invalid JSON: ${(err as Error).message}`,
           },
@@ -465,20 +488,19 @@ function parseJsonOrFail(
 }
 
 /**
- * Map zod's issue list to `ParseError[]`. Shared by `parsePending` and
- * `parsePendingLoose` so the mapping has one source instead of two copies
- * that can drift.
+ * Map zod's issue list to `ParseError[]`, keyed to the file it was read from.
+ * Shared by {@link parsePendingEntry} and {@link parsePendingEntryLoose} so
+ * the mapping has one source instead of two copies that can drift.
  */
-function issuesToParseErrors(issues: z.core.$ZodIssue[]): ParseError[] {
-  return issues.map((issue) => {
-    const [first, ...rest] = issue.path;
-    const index = typeof first === "number" ? first : -1;
-    return {
-      index,
-      path: rest.join("."),
-      message: issue.message,
-    };
-  });
+function issuesToParseErrors(
+  file: string,
+  issues: z.core.$ZodIssue[],
+): ParseError[] {
+  return issues.map((issue) => ({
+    file,
+    path: issue.path.join("."),
+    message: issue.message,
+  }));
 }
 
 /**
@@ -496,35 +518,38 @@ function issuesToParseErrors(issues: z.core.$ZodIssue[]): ParseError[] {
  */
 export interface QueueParseFailure {
   /**
-   * The queue's path relative to the repo root, in git's own alphabet — the
-   * same value the fence that carved this failure out was matched against.
+   * The queue **directory**'s path relative to the repo root, in git's own
+   * alphabet. Which files did not resolve is {@link ParseError.file} on each
+   * error below — the same names the fence that carved this failure out was
+   * matched against, composed under this directory.
    */
   path: string;
-  /** One per validation failure, exactly as {@link parsePending} reported them. */
+  /** One per validation failure, exactly as {@link parsePendingQueue} reported them. */
   errors: readonly ParseError[];
 }
 
 /**
- * The throwing form of a {@link parsePending} refusal, for the reads that act
+ * The throwing form of a {@link parsePendingQueue} refusal, for the reads that act
  * on the result rather than report it: `readPending` (`src/pendingLedger.ts`
  * — the reads that decide pickable work, and the wave's ledger rewrite)
- * raises it when the ledger exists but fails to parse. Per
+ * raises it when a file in the queue directory fails to parse. Per
  * .claude/rules/engineering.md "Loud or nothing": a queue that never resolved
  * must not read as an empty one, and nothing downstream may derive a decision
  * or a rewrite from it. `tick()` (`src/Dispatcher.ts`) catches it exactly
  * where it catches chain-resolution failure and folds it into the same
- * mount-dead failed-outcome shape — a pending.json no agent can parse is
+ * mount-dead failed-outcome shape — a queue no agent can parse is
  * exactly as unusable next tick as this one. The one read that answers with
  * {@link QueueParseFailure} instead is the decide-read taken for a phase that
  * can write the queue (`readPendingForDecision`, `src/pendingLedger.ts`).
  *
  * `path` is a field a catcher reads, and the same value the message opens
  * with, taken from the engine's one spelling of where the ledger lives
- * (`reportedPendingPath`, `src/pendingLedger.ts`): git's own alphabet
+ * (`reportedPendingDir`, `src/pendingLedger.ts`): git's own alphabet
  * relative to the repo root, or the absolute path when a relocated dock puts
- * the file where git cannot name it. The refusal named the default basename
- * before, which is a file a chain docking its ledger elsewhere does not have
- * — the engine held the location and spelled a guess at it instead. It is
+ * the directory where git cannot name it. Which *file* did not resolve rides
+ * every `ParseError` (`spec/pending.md`, *The ledger is a directory — one
+ * entry per file*: a parse failure names a file), so the refusal states the
+ * queue and each line states the entry a producer opens. It is
  * carried structurally for the reason the twin {@link QueueParseFailure}
  * carries one: a chain's gate reaching this class through `FlumeApi` would
  * otherwise have to take the path back out of the message with a regex —
@@ -548,10 +573,10 @@ export interface QueueParseFailure {
  */
 export class PendingParseFailure extends Error {
   /**
-   * The ledger's path as every report of this module spells it
-   * (`reportedPendingPath`, `src/pendingLedger.ts`): git's own alphabet
+   * The ledger directory's path as every report of this module spells it
+   * (`reportedPendingDir`, `src/pendingLedger.ts`): git's own alphabet
    * relative to the repo root, or the absolute path when a relocated dock
-   * puts the file where git cannot name it — the same alphabet the twin
+   * puts the directory where git cannot name it — the same alphabet the twin
    * {@link QueueParseFailure} reports it in.
    */
   readonly path: string;
@@ -559,7 +584,7 @@ export class PendingParseFailure extends Error {
   constructor(path: string, errors: readonly ParseError[], detail?: string) {
     super(
       `${path} failed to parse (${errors.length} error(s)): ` +
-        errors.map((e) => `[${e.index}] ${e.path}: ${e.message}`).join("; ") +
+        errors.map((e) => `[${e.file}] ${e.path}: ${e.message}`).join("; ") +
         (detail ? `; ${detail}` : ""),
     );
     this.name = "PendingParseFailure";
@@ -569,56 +594,131 @@ export class PendingParseFailure extends Error {
 }
 
 /**
- * Parse pending.json contents against core + the chain's declared extension.
+ * Parse one entry file against core + the chain's declared extension, and
+ * hold it to the name it is reachable under.
+ *
+ * **The filename is the tag's second statement, and they must agree.** The
+ * directory's listing is the queue and every tag-keyed lookup the engine
+ * makes — `cli`'s find-by-tag, the dispatcher's `blockedBy` and
+ * `shippedTags`, the ship's `git rm` — composes the file back from the tag
+ * ({@link entryFileName}). A file reachable under one name and claiming
+ * another therefore resolves to the wrong entry, or to none, so the
+ * disagreement is refused naming both rather than one side being preferred
+ * (`spec/pending.md`, *Tag grammar is mechanical safety, nothing more*).
+ *
  * Returns structured errors rather than throwing so the harness can inject
  * them back into the plan prompt for re-derivation.
  */
-export function parsePending(
+function parsePendingEntry(
+  file: string,
   raw: string,
   extension?: EntryExtension,
-): ParseResult {
-  const parsed = parseJsonOrFail(raw);
+): EntryParseResult {
+  const parsed = parseJsonOrFail(file, raw);
   if (!parsed.ok) return parsed.result;
 
-  const result = composePendingList(extension).safeParse(parsed.value);
-  if (result.success) {
-    return { ok: true, entries: result.data, errors: [] };
+  const result = composePendingEntry(extension).safeParse(parsed.value);
+  if (!result.success) {
+    return {
+      ok: false,
+      entry: undefined,
+      errors: issuesToParseErrors(file, result.error.issues),
+    };
   }
-
-  return {
-    ok: false,
-    entries: [],
-    errors: issuesToParseErrors(result.error.issues),
-  };
+  return withFileNameAgreement(file, result.data);
 }
 
 /**
- * Lenient core-only parse for chain-less informational reads (`status`-class
- * commands that count/inspect entries without loading the chain). Validates
- * the core fields and passes unknown (presumably extension) fields through
- * unvalidated. Never used on a write path — rewriting pending.json from a
- * parse that didn't know the extension is how fields get destroyed.
+ * Lenient core-only parse of one entry file, for chain-less informational
+ * reads (`status`-class commands that count/inspect entries without loading
+ * the chain). Validates the core fields and passes unknown (presumably
+ * extension) fields through unvalidated. Never used on a write path —
+ * rewriting an entry from a parse that didn't know the extension is how
+ * declared fields get destroyed.
  */
-export function parsePendingLoose(raw: string): ParseResult {
-  const parsed = parseJsonOrFail(raw);
+function parsePendingEntryLoose(
+  file: string,
+  raw: string,
+): EntryParseResult {
+  const parsed = parseJsonOrFail(file, raw);
   if (!parsed.ok) return parsed.result;
 
-  const result = z
-    .array(PendingEntryCore.catchall(z.unknown()))
-    .safeParse(parsed.value);
-  if (result.success) {
+  const result = PendingEntryCore.catchall(z.unknown()).safeParse(parsed.value);
+  if (!result.success) {
     return {
-      ok: true,
-      entries: result.data as PendingEntry[],
-      errors: [],
+      ok: false,
+      entry: undefined,
+      errors: issuesToParseErrors(file, result.error.issues),
     };
   }
+  return withFileNameAgreement(file, result.data as PendingEntry);
+}
 
-  return {
-    ok: false,
-    entries: [],
-    errors: issuesToParseErrors(result.error.issues),
-  };
+/**
+ * The agreement check both parses end on, so the strict reader and the
+ * chain-less one cannot disagree about which files name their own entry.
+ */
+function withFileNameAgreement(
+  file: string,
+  entry: PendingEntry,
+): EntryParseResult {
+  const claimed = entryFileName(entry.tag);
+  if (claimed !== file) {
+    return {
+      ok: false,
+      entry: undefined,
+      errors: [
+        {
+          file,
+          path: "tag",
+          message:
+            `tag "${entry.tag}" disagrees with the file it is in: ` +
+            `an entry tagged "${entry.tag}" is ${claimed}`,
+        },
+      ],
+    };
+  }
+  return { ok: true, entry, errors: [] };
+}
+
+/**
+ * Parse a whole queue directory's listing: every file, each against core +
+ * the chain's declared extension, into the queue in its declared order.
+ *
+ * **One verdict over the directory.** Every file's issues are collected —
+ * a producer handed one repair per tick pays a tick per broken file — but a
+ * single failure fails the read, because the queue a decision or a rewrite
+ * acts on is all of it (`spec/pending.md`, *Queue reads are strict*).
+ */
+export function parsePendingQueue(
+  files: readonly QueueFile[],
+  extension?: EntryExtension,
+): ParseResult {
+  return collectQueue(files.map((f) => parsePendingEntry(f.file, f.raw, extension)));
+}
+
+/**
+ * {@link parsePendingQueue}'s chain-less twin, over
+ * {@link parsePendingEntryLoose}.
+ */
+export function parsePendingQueueLoose(
+  files: readonly QueueFile[],
+): ParseResult {
+  return collectQueue(files.map((f) => parsePendingEntryLoose(f.file, f.raw)));
+}
+
+/**
+ * Fold per-file outcomes into the one queue verdict both parses answer with.
+ *
+ * Entries come back in the order the listing handed them, which carries
+ * nothing: the order a selection picks in is `priority` descending then tag
+ * ascending, applied at the one home that owns it (`byQueueOrder`,
+ * `src/selection.ts`).
+ */
+function collectQueue(results: readonly EntryParseResult[]): ParseResult {
+  const errors = results.flatMap((r) => r.errors);
+  if (errors.length > 0) return { ok: false, entries: [], errors };
+  return { ok: true, entries: results.map((r) => r.entry!), errors: [] };
 }
 
 // ---------- prompt rendering ----------
@@ -702,8 +802,7 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
 ${fields}
 }
 
-Output is a JSON array of these entries; the "priority" field orders them, never their position.
-Empty array is valid (means nothing pending).`;
+One entry per file, named "<tag>.json" directly under the queue directory — the filename and the "tag" field must agree. The "priority" field orders the queue, never any position or filename. An empty directory is valid (means nothing pending).`;
 }
 
 // ---------- pickability ----------

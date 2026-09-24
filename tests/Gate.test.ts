@@ -20,6 +20,7 @@ import {
   writablePathsGate,
   pendingGate,
 } from "../src/builtinGates.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
@@ -38,7 +39,7 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
     // The offset the dispatcher would hand these roots, from the same
     // function it computes it with — never a hand-typed ".flume".
     stateRootRel: computeStateRootRel(repoRoot, flumeDir),
-    pendingPath: join(flumeDir, "plan", "pending.json"),
+    pendingDir: join(flumeDir, "plan", "pending"),
     configDir: join(cwd, ".flume"),
     repoRoot,
     phaseName: "test-phase",
@@ -777,7 +778,7 @@ describe("GateContext — the fields every gate context states", () => {
   const GATE_SRC = fileURLToPath(new URL("../src/Gate.ts", import.meta.url));
   // Everything a GateContext needs except the fields under test.
   const REST =
-    'cwd: "", flumeDir: "", configDir: "", pendingPath: "", ' +
+    'cwd: "", flumeDir: "", configDir: "", pendingDir: "", ' +
     'repoRoot: "", phaseName: "", log: () => {}';
   const TOUCHED = "touchedPaths: []";
   const STATE_ROOT = "stateRootRel: undefined";
@@ -869,16 +870,24 @@ describe("pendingGate — composed validation + fence pre-check", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  // Commits the queue at `.flume/plan/pending.json` so the gate — which
-  // reads the gated commit via `git.readFileAtRef`, not the working tree —
-  // has a real ref to resolve. Returns the resulting sha for `ctx(dir, {
+  // Commits the queue at `.flume/plan/pending/` — one `<tag>.json` per entry
+  // — so the gate, which reads the gated commit's tree rather than the
+  // working tree, has a real ref to resolve. The `.gitkeep` rides along for
+  // the reason adoption seeds one (`harness/init.ts`): git holds no empty
+  // directory, so an empty queue needs a file of its own to be *present* and
+  // empty rather than missing. Returns the resulting sha for `ctx(dir, {
   // commitSha })`.
-  async function writePending(entries: unknown): Promise<string> {
-    return commitFiles(
-      dir,
-      { ".flume/plan/pending.json": JSON.stringify(entries) },
-      "pending update",
-    );
+  async function writePending(
+    entries: readonly unknown[],
+  ): Promise<string> {
+    const files: Record<string, string> = { ".flume/plan/pending/.gitkeep": "" };
+    for (const entry of entries) {
+      const tag = (entry as { tag?: unknown }).tag;
+      files[
+        `.flume/plan/pending/${entryFileName(typeof tag === "string" ? tag : "SOME-TAG")}`
+      ] = JSON.stringify(entry);
+    }
+    return commitFiles(dir, files, "pending update");
   }
 
   const validEntry = {
@@ -966,7 +975,7 @@ describe("pendingGate — composed validation + fence pre-check", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("passes an empty queue — a fully-drained pending.json has nothing to fence", async () => {
+  it("passes an empty queue — a fully-drained queue directory has nothing to fence", async () => {
     const sha = await writePending([]);
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
     const result = await gate.run(ctx(dir, { commitSha: sha }));
@@ -974,22 +983,23 @@ describe("pendingGate — composed validation + fence pre-check", () => {
     expect(result.message).toMatch(/\(0 entries\)/);
   });
 
-  it("reports pending.json missing after commit", async () => {
+  it("reports the queue directory missing after commit", async () => {
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
     const result = await gate.run(ctx(dir, { commitSha: seedSha }));
     expect(result.ok).toBe(false);
     expect(result.message).toMatch(/missing after commit/);
   });
 
-  it("reads pending.json from ctx.pendingPath — the queue path is Chain.pendingPath's, not the gate's own", async () => {
+  it("reads the queue from ctx.pendingDir — the queue path is Chain.pendingDir's, not the gate's own", async () => {
     const sha = await commitFiles(dir, {
-      ".flume/custom/queue.json": JSON.stringify([validEntry]),
+      [`.flume/custom/queue/${entryFileName(validEntry.tag)}`]:
+        JSON.stringify(validEntry),
     });
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
     const result = await gate.run(
       ctx(dir, {
         commitSha: sha,
-        pendingPath: join(dir, ".flume", "custom", "queue.json"),
+        pendingDir: join(dir, ".flume", "custom", "queue"),
       }),
     );
     expect(result.ok).toBe(true);

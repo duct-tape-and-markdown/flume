@@ -28,7 +28,9 @@ import {
   planStatePath,
   questionGlob,
   questionsDir,
-  queuePath,
+  queueDir,
+  queueGlob,
+  legacyQueuePath,
   recordDirs,
   underStateRoot,
 } from "../harness/layout.ts";
@@ -36,7 +38,7 @@ import {
   DEFAULT_PENDING_REL,
   gitPath,
   matchesAny,
-  resolvePendingPath,
+  resolvePendingDir,
 } from "../src/paths.ts";
 
 /** A state root as the engine reports one: repo-relative, in git's alphabet. */
@@ -61,11 +63,13 @@ it("the plan fence admits every artifact the package's own accessors address", (
   // off disk, not handed to git — so its answer arrives here in the host's
   // alphabet and a fence glob is compared in git's. The fold is the engine's
   // own `gitPath` applied at this case, the one side that needs the
-  // conversion; `queuePath` would be the fence's own accessor, which is the
+  // conversion; `queueDir` would be the fence's own accessor, which is the
   // fence agreeing with itself rather than with the resolver it is fenced
-  // against.
+  // against. An entry's own file under it, because the queue's fence line is
+  // a glob over the directory rather than the directory itself.
   const artifacts = [
-    gitPath(resolvePendingPath(STATE_ROOT)),
+    `${gitPath(resolvePendingDir(STATE_ROOT))}/SOME-ENTRY.json`,
+    legacyQueuePath(STATE_ROOT),
     planStatePath(STATE_ROOT, SOME_SLICE),
     `${questionsDir(STATE_ROOT)}/a-parked-fork${QUESTION_EXT}`,
     legacyQuestionsPath(STATE_ROOT),
@@ -191,16 +195,39 @@ it("the plan fence admits the legacy plan state page a split deletes", () => {
   }
 });
 
-it("the queue's fence path is the engine's resolved queue, in git's alphabet", () => {
+it("the queue's fence path is the engine's resolved queue directory, in git's alphabet", () => {
   // One spelling for three readers — the plan fence, the adoption verb's
   // written line, and the gate that reads the queue at a commit. The engine's
-  // resolver is the only place `plan/pending.json` is named, and this is the
+  // resolver is the only place `plan/pending` is named, and this is the
   // fold that puts its answer in the alphabet a pathspec and a fence glob are
   // compared in.
-  expect(queuePath(STATE_ROOT)).toBe(
+  expect(queueDir(STATE_ROOT)).toBe(
     `${STATE_ROOT}/${gitPath(DEFAULT_PENDING_REL)}`,
   );
-  expect(planArtifacts(STATE_ROOT, SOME_SLICE)).toContain(queuePath(STATE_ROOT));
+
+  // The fence line is the glob, so an entry file is admitted and the
+  // directory's own sidecars are not.
+  expect(queueGlob(STATE_ROOT)).toBe(`${queueDir(STATE_ROOT)}/*.json`);
+  expect(planArtifacts(STATE_ROOT, SOME_SLICE)).toContain(
+    queueGlob(STATE_ROOT),
+  );
+  expect(matchesAny(`${queueDir(STATE_ROOT)}/SOME-ENTRY.json`, [
+    queueGlob(STATE_ROOT),
+  ])).toBe(true);
+  expect(matchesAny(`${queueDir(STATE_ROOT)}/.gitkeep`, [
+    queueGlob(STATE_ROOT),
+  ])).toBe(false);
+});
+
+it("the legacy queue page rides the plan fence so a cutover can git rm it", () => {
+  // The one reason it is still addressable (`harness/layout.ts`): outside
+  // the fence, the page the cutover deletes is a file no phase can reach and
+  // every plan tick reverts on.
+  expect(legacyQueuePath(STATE_ROOT)).toBe(`${STATE_ROOT}/plan/pending.json`);
+  expect(legacyQueuePath(STATE_ROOT)).not.toBe(queueDir(STATE_ROOT));
+  expect(
+    matchesAny(legacyQueuePath(STATE_ROOT), planArtifacts(STATE_ROOT, SOME_SLICE)),
+  ).toBe(true);
 });
 
 it("a path under a state root is git-alphabet whatever alphabet its tail arrived in", () => {

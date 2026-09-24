@@ -1,4 +1,4 @@
-import { existsSync, lstatSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -91,10 +91,12 @@ import type {
   WorktreeSetupContext,
 } from "../src/Phase.ts";
 import {
-  parsePending,
+  entryFileName,
+  parsePendingQueue,
   TAG_MAX_LENGTH,
   type PendingEntry,
 } from "../src/PendingSchema.ts";
+import { readQueueAtRef, readQueueOnDisk } from "../src/pendingLedger.ts";
 import {
   InlineExecRenderError as realInlineExecRenderError,
   type PriorAttempt,
@@ -243,22 +245,32 @@ async function writeAndCommit(
   await exec("git", ["commit", "-q", "-m", message], { cwd });
 }
 
+/** The queue directory these fixtures write, absolute. */
+function queueDirOf(repo: string): string {
+  return join(repo, ".flume", "plan", "pending");
+}
+
 /**
- * Write `pending.json`'s raw content and commit it — every strict read the
- * dispatcher acts on now resolves the committed `HEAD` tip, never the
- * working tree (spec/pending.md "Dispatch reads come from the tip, not the
- * tree"), so a fixture that only writes to disk is invisible to it. Swallows
- * exit `1` ("nothing to commit") for a caller that re-writes byte-identical
- * content — the established `isAncestor`/`getLocalConfig` exit-code-as-data
- * pattern (src/git.ts), not a text match on git's own wording.
+ * Write one entry file's raw content under the queue directory and commit it
+ * — every strict read the dispatcher acts on resolves the committed `HEAD`
+ * tip, never the working tree (spec/pending.md "Dispatch reads come from the
+ * tip, not the tree"), so a fixture that only writes to disk is invisible to
+ * it. Swallows exit `1` ("nothing to commit") for a caller that re-writes
+ * byte-identical content — the established `isAncestor`/`getLocalConfig`
+ * exit-code-as-data pattern (src/git.ts), not a text match on git's own
+ * wording.
  */
-async function commitPendingFile(repo: string, content: string): Promise<void> {
-  const path = join(repo, ".flume", "plan", "pending.json");
+async function commitEntryFile(
+  repo: string,
+  file: string,
+  content: string,
+): Promise<void> {
+  const path = join(queueDirOf(repo), file);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content, "utf8");
-  await exec("git", ["add", "--", ".flume/plan/pending.json"], { cwd: repo });
+  await exec("git", ["add", "--", `.flume/plan/pending/${file}`], { cwd: repo });
   try {
-    await exec("git", ["commit", "-q", "-m", "test: pending.json"], {
+    await exec("git", ["commit", "-q", "-m", `test: pending/${file}`], {
       cwd: repo,
     });
   } catch (err) {
@@ -266,18 +278,45 @@ async function commitPendingFile(repo: string, content: string): Promise<void> {
   }
 }
 
+/**
+ * The whole queue as `entries` spells it: one `<tag>.json` per entry, every
+ * other entry file removed, committed as one. The listing is the queue
+ * (spec/pending.md, *The ledger is a directory — one entry per file*), so a
+ * fixture that sets the queue sets the directory.
+ */
 async function writePending(
   repo: string,
   entries: PendingEntry[],
 ): Promise<void> {
-  await commitPendingFile(repo, JSON.stringify(entries, null, 2) + "\n");
+  const dir = queueDirOf(repo);
+  await mkdir(dir, { recursive: true });
+  const wanted = new Set(entries.map((e) => entryFileName(e.tag)));
+  for (const name of await readdir(dir)) {
+    if (name.endsWith(".json") && !wanted.has(name)) {
+      await rm(join(dir, name), { force: true });
+    }
+  }
+  for (const entry of entries) {
+    await writeFile(
+      join(dir, entryFileName(entry.tag)),
+      JSON.stringify(entry, null, 2) + "\n",
+      "utf8",
+    );
+  }
+  await exec("git", ["add", "-A", "--", ".flume/plan/pending"], { cwd: repo });
+  try {
+    await exec("git", ["commit", "-q", "-m", "test: pending queue"], {
+      cwd: repo,
+    });
+  } catch (err) {
+    if ((err as { code?: unknown }).code !== 1) throw err;
+  }
 }
 
-async function readPendingFromDisk(repo: string): Promise<PendingEntry[]> {
-  const path = join(repo, ".flume", "plan", "pending.json");
-  const raw = await readFile(path, "utf8");
-  const r = parsePending(raw);
-  if (!r.ok) throw new Error("pending.json failed to parse");
+function readPendingFromDisk(repo: string): PendingEntry[] {
+  const files = readQueueOnDisk(queueDirOf(repo));
+  const r = parsePendingQueue(files ?? []);
+  if (!r.ok) throw new Error("the queue failed to parse");
   return r.entries;
 }
 
@@ -1774,7 +1813,7 @@ describe("Dispatcher — orphaned awake flags → Axis-C terminal", () => {
 // ---------- fanout ----------
 
 describe("Dispatcher fanout — two disjoint entries both ship", () => {
-  it("cherry-picks both worktree commits onto trunk, updates pending.json, sets shippedTags", async () => {
+  it("cherry-picks both worktree commits onto trunk, drains the queue, sets shippedTags", async () => {
     const entries = [
       makeEntry("TEST-A", ["src/a.ts"]),
       makeEntry("TEST-B", ["src/b.ts"]),
@@ -1820,8 +1859,8 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
     expect(await readFile(join(fx.repo, "src/a.ts"), "utf8")).toBe("from-A\n");
     expect(await readFile(join(fx.repo, "src/b.ts"), "utf8")).toBe("from-B\n");
 
-    // pending.json on disk is empty (both entries shipped).
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    // The queue on disk is empty (both entries shipped).
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
     expect(outcome.result?.pendingAfter).toEqual([]);
 
     // Worktree dirs were cleaned up.
@@ -1831,6 +1870,87 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
     expect(existsSync(join(fx.repo, ".flume", "worktrees", "test-b"))).toBe(
       false,
     );
+  });
+});
+
+/**
+ * The ship's own footprint on the queue directory (`spec/pending.md`, *The
+ * ledger is a directory — one entry per file*): `git rm` of exactly what
+ * shipped, and every other file in the directory left byte-identical.
+ *
+ * That last half is what makes two producers' commits merge at all, and it is
+ * the half a whole-array rewrite could never have. It is asserted over both
+ * kinds of bystander the directory can hold: a sibling entry the wave did not
+ * pick, and a sidecar that is not an entry at all.
+ */
+describe("Dispatcher fanout — the ship removes the shipped entries' files alone", () => {
+  it("a ship removes exactly the shipped entries' files and edits no other entry", async () => {
+    const shipped = makeEntry("SHIPS-ONE", ["src/one.ts"]);
+    const bystander: PendingEntry = {
+      ...makeEntry("STAYS-PUT", ["src/two.ts"]),
+      gate: { kind: "parked", reason: "not this wave" },
+    };
+    await writePending(fx.repo, [shipped, bystander]);
+
+    // A sidecar beside the entries — not a `*.json`, so the engine never
+    // reads it as work, and the ship must not touch it either.
+    const queueDir = queueDirOf(fx.repo);
+    const sidecar = join(queueDir, "NOTES.md");
+    await writeFile(sidecar, "a chain's own note\n", "utf8");
+    await exec("git", ["add", "--", relative(fx.repo, sidecar)], {
+      cwd: fx.repo,
+    });
+    await exec("git", ["commit", "-q", "-m", "test: a sidecar"], {
+      cwd: fx.repo,
+    });
+
+    // The bytes each bystander carries going in — the ship is judged against
+    // these rather than against a re-serialization the tester chose.
+    const bystanderPath = join(queueDir, entryFileName(bystander.tag));
+    const bystanderBefore = await readFile(bystanderPath, "utf8");
+    const sidecarBefore = await readFile(sidecar, "utf8");
+    // Non-vacuity: both entry files really are on disk before the wave, so an
+    // absent one below is a removal rather than a fixture that never wrote it.
+    expect(
+      existsSync(join(queueDir, entryFileName(shipped.tag))),
+    ).toBe(true);
+
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout", gates: [] })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ships-one": (cwd) =>
+          writeAndCommit(cwd, "src/one.ts", "one\n", "build(SHIPS-ONE): ship"),
+      }),
+      log: silent,
+    }).tick();
+
+    expect(outcome.result?.shippedTags).toEqual([shipped.tag]);
+
+    // Exactly the shipped entry's file is gone.
+    expect(existsSync(join(queueDir, entryFileName(shipped.tag)))).toBe(false);
+
+    // And nothing else in the directory moved — byte-identical, not merely
+    // still parsing to the same entry.
+    expect(await readFile(bystanderPath, "utf8")).toBe(bystanderBefore);
+    expect(await readFile(sidecar, "utf8")).toBe(sidecarBefore);
+
+    // The removal is committed, not just on disk: the ledger commit names the
+    // shipped entry's file and no other path under the directory.
+    const touched = await git.diffNameOnly(
+      fx.repo,
+      `${await head(fx.repo)}^`,
+      await head(fx.repo),
+    );
+    const queueRel = relative(fx.repo, queueDir).split(/[\\/]/).join("/");
+    expect(touched.filter((p) => p.startsWith(`${queueRel}/`))).toEqual([
+      `${queueRel}/${entryFileName(shipped.tag)}`,
+    ]);
   });
 });
 
@@ -1947,43 +2067,43 @@ describe("Dispatcher — the agent invocation states which entry it is running",
   });
 });
 
-describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md 'The pending queue')", () => {
+describe("Dispatcher — Chain.pendingDir (CHAIN-PENDINGPATH, spec/pending.md 'The pending queue')", () => {
   /**
-   * Commits a pending queue's raw content at an arbitrary flumeDir-relative
-   * path — the same tip-committing shape `commitPendingFile` gives the
-   * default `plan/pending.json` location, generalized so a declared
-   * `Chain.pendingPath` has something to resolve against.
+   * Commits one entry file under an arbitrary flumeDir-relative queue
+   * directory — the same tip-committing shape `commitEntryFile` gives the
+   * default `plan/pending` location, generalized so a declared
+   * `Chain.pendingDir` has something to resolve against.
    */
-  async function commitPendingFileAt(
+  async function commitEntryFileAt(
     repo: string,
-    rel: string,
-    content: string,
+    dirRel: string,
+    entry: PendingEntry,
   ): Promise<void> {
+    const rel = join(dirRel, entryFileName(entry.tag));
     const path = join(repo, ".flume", rel);
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, content, "utf8");
+    await writeFile(path, JSON.stringify(entry, null, 2) + "\n", "utf8");
     await exec("git", ["add", "--", join(".flume", rel)], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "test: pending.json"], {
+    await exec("git", ["commit", "-q", "-m", "test: a queue entry"], {
       cwd: repo,
     });
   }
 
-  it("a chain-declared pendingPath is honored by fanout selection, the wave-end rewrite, and a gate reading ctx.pendingPath", async () => {
-    const customRel = join("custom", "queue.json");
-    const entries = [makeEntry("CUSTOM-PATH", ["src/custom.ts"])];
-    await commitPendingFileAt(
+  it("a chain-declared pendingDir is honored by fanout selection, the wave-end rewrite, and a gate reading ctx.pendingDir", async () => {
+    const customRel = join("custom", "queue");
+    await commitEntryFileAt(
       fx.repo,
       customRel,
-      JSON.stringify(entries, null, 2) + "\n",
+      makeEntry("CUSTOM-PATH", ["src/custom.ts"]),
     );
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    let capturedPendingPath: string | undefined;
+    let capturedPendingDir: string | undefined;
     const capturingGate: Gate = {
       name: "capture-pendingpath",
       when: "afterCommit",
       run(ctx) {
-        capturedPendingPath = ctx.pendingPath;
+        capturedPendingDir = ctx.pendingDir;
         return Promise.resolve({ ok: true, message: "captured" });
       },
     };
@@ -1996,7 +2116,7 @@ describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md '
     const chain: Chain = {
       phases: [phase],
       humanOnly: [],
-      pendingPath: customRel,
+      pendingDir: customRel,
     };
 
     const agent = fanoutAgent({
@@ -2016,32 +2136,28 @@ describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md '
     const outcome = await dispatcher.tick();
 
     // Fanout selection picked the entry from the declared location, and the
-    // wave-end rewrite ships it there — not at the default plan/pending.json.
+    // wave-end rewrite ships it there — not at the default plan/pending.
     expect(outcome.result?.shippedTags).toEqual(["CUSTOM-PATH"]);
     expect(
-      JSON.parse(
-        await readFile(join(fx.repo, ".flume", customRel), "utf8"),
-      ),
+      readQueueOnDisk(join(fx.repo, ".flume", customRel)),
     ).toEqual([]);
-    expect(existsSync(join(fx.repo, ".flume", "plan", "pending.json"))).toBe(
-      false,
-    );
+    expect(existsSync(join(fx.repo, ".flume", "plan", "pending"))).toBe(false);
 
     // The afterCommit gate saw the same resolved, absolute path.
-    expect(capturedPendingPath).toBe(join(fx.repo, ".flume", customRel));
+    expect(capturedPendingDir).toBe(join(fx.repo, ".flume", customRel));
   });
 
-  it("undeclared pendingPath defaults to .flume/plan/pending.json", async () => {
+  it("undeclared pendingDir defaults to .flume/plan/pending", async () => {
     const entries = [makeEntry("DEFAULT-PATH", ["src/default.ts"])];
     await writePending(fx.repo, entries);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    let capturedPendingPath: string | undefined;
+    let capturedPendingDir: string | undefined;
     const capturingGate: Gate = {
       name: "capture-pendingpath",
       when: "afterCommit",
       run(ctx) {
-        capturedPendingPath = ctx.pendingPath;
+        capturedPendingDir = ctx.pendingDir;
         return Promise.resolve({ ok: true, message: "captured" });
       },
     };
@@ -2070,9 +2186,7 @@ describe("Dispatcher — Chain.pendingPath (CHAIN-PENDINGPATH, spec/pending.md '
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.shippedTags).toEqual(["DEFAULT-PATH"]);
-    expect(capturedPendingPath).toBe(
-      join(fx.repo, ".flume", "plan", "pending.json"),
-    );
+    expect(capturedPendingDir).toBe(join(fx.repo, ".flume", "plan", "pending"));
   });
 });
 
@@ -2121,7 +2235,7 @@ describe("Dispatcher fanout — wave auto-unblock (spec/pending.md § Wave auto-
       "PARENT-B",
     ]);
 
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk).toEqual([
       {
         ...makeEntry("CHILD-MULTI", ["src/c.ts"]),
@@ -2169,7 +2283,7 @@ describe("Dispatcher fanout — wave auto-unblock (spec/pending.md § Wave auto-
 
     expect(outcome.result?.shippedTags).toEqual(["PARENT-A"]);
 
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk).toEqual([
       {
         ...makeEntry("CHILD-PARTIAL", ["src/c.ts"]),
@@ -2240,7 +2354,7 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
     // pickable — it stays pending for the next tick's fresh partition.
     expect(outcome.result?.shippedTags).toEqual(["MP-A", "MP-B"]);
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["MP-C"]);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "MP-C",
     ]);
   });
@@ -2799,10 +2913,13 @@ describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a t
 
     const agent = fanoutAgent({
       "ship-a": async (cwd) => {
-        const concurrent = [makeEntry("SHIP-A", ["src/a.ts"]), concurrentKeepB];
-        await commitPendingFile(
+        // Only KEEP-B's own file: a concurrent producer edits the entry it
+        // is about and nothing else in the directory, which is the whole
+        // reason the queue is one file per entry.
+        await commitEntryFile(
           fx.repo,
-          JSON.stringify(concurrent, null, 2) + "\n",
+          entryFileName("KEEP-B"),
+          JSON.stringify(concurrentKeepB, null, 2) + "\n",
         );
         await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
       },
@@ -2820,9 +2937,9 @@ describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a t
     const outcome = await dispatcher.tick();
     expect(outcome.result?.shippedTags).toEqual(["SHIP-A"]);
 
-    const after = await readPendingFromDisk(fx.repo);
+    const after = readPendingFromDisk(fx.repo);
     // The concurrent write's field survived, byte-for-byte — proof the
-    // rewrite was derived from pending.json's state at write time, not the
+    // rewrite was derived from the queue's state at write time, not the
     // stale pre-wave snapshot that never saw it. No reintroduced or
     // foreign keys, no lost edits.
     expect(after).toEqual([concurrentKeepB]);
@@ -2830,7 +2947,7 @@ describe("Dispatcher fanout — commitPendingUpdate rewrite reads fresh, not a t
 });
 
 describe("Dispatcher — dispatch reads resolve from the committed tip, not the working tree (spec/pending.md \"Dispatch reads come from the tip, not the tree\")", () => {
-  it("a decide-read reflects the committed tip, ignoring an uncommitted working-tree edit to pending.json", async () => {
+  it("a decide-read reflects the committed tip, ignoring an uncommitted working-tree edit to an entry file", async () => {
     await writePending(fx.repo, [makeEntry("TIP-A", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -2838,14 +2955,15 @@ describe("Dispatcher — dispatch reads resolve from the committed tip, not the 
     // owns. Parks the only entry, so a tree-read would see nothing pickable;
     // the decide-read must resolve HEAD's committed content instead, where
     // TIP-A is still open.
-    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
-    const dirty: PendingEntry[] = [
-      {
-        ...makeEntry("TIP-A", ["src/a.ts"]),
-        gate: { kind: "parked", reason: "uncommitted tree edit" },
-      },
-    ];
-    await writeFile(pendingPath, JSON.stringify(dirty, null, 2) + "\n", "utf8");
+    const dirtyEntry: PendingEntry = {
+      ...makeEntry("TIP-A", ["src/a.ts"]),
+      gate: { kind: "parked", reason: "uncommitted tree edit" },
+    };
+    await writeFile(
+      join(queueDirOf(fx.repo), entryFileName("TIP-A")),
+      JSON.stringify(dirtyEntry, null, 2) + "\n",
+      "utf8",
+    );
 
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
     const chain: Chain = { phases: [phase], humanOnly: [] };
@@ -2870,7 +2988,11 @@ describe("Dispatcher — dispatch reads resolve from the committed tip, not the 
   });
 
   it("PendingParseFailure still throws when the tip's committed content fails to parse", async () => {
-    await commitPendingFile(fx.repo, "{ this is not valid json");
+    await commitEntryFile(
+      fx.repo,
+      entryFileName("CORRUPT"),
+      "{ this is not valid json",
+    );
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     // A fence that admits no queue path: the strict read's carve-out is for
@@ -2904,7 +3026,7 @@ describe("Dispatcher — dispatch reads resolve from the committed tip, not the 
     const outcome = await dispatcher.tick();
 
     expect(outcome.failed).toBe(true);
-    expect(errors.some((e) => /pending\.json/.test(e) && /parse/.test(e))).toBe(
+    expect(errors.some((e) => /plan\/pending/.test(e) && /parse/.test(e))).toBe(
       true,
     );
   });
@@ -2941,7 +3063,7 @@ describe("Dispatcher fanout — two consecutive ship waves leave an untouched en
 
     const first = await dispatcher.tick();
     expect(first.result?.shippedTags).toEqual(["SHIP-1"]);
-    const afterFirst = await readPendingFromDisk(fx.repo);
+    const afterFirst = readPendingFromDisk(fx.repo);
     expect(afterFirst).toEqual([keep]);
 
     // A second entry lands between waves, as a plan tick would — `writePending`
@@ -2956,7 +3078,7 @@ describe("Dispatcher fanout — two consecutive ship waves leave an untouched en
     const second = await dispatcher.tick();
     expect(second.result?.shippedTags).toEqual(["SHIP-2"]);
 
-    const afterSecond = await readPendingFromDisk(fx.repo);
+    const afterSecond = readPendingFromDisk(fx.repo);
     expect(afterSecond).toEqual([keep]);
   });
 });
@@ -3349,7 +3471,7 @@ describe("Dispatcher fanout — worktree base resolution", () => {
 
 /**
  * An out-of-tree dock is invisible to git by construction.
- * Ship bookkeeping must not `git add` a pendingPath outside repoRoot (the add
+ * Ship bookkeeping must not `git add` a pendingDir outside repoRoot (the add
  * fatals *after* entries already merged); the disk write alone carries the
  * auto-unblock and observedFiles forward.
  */
@@ -3357,11 +3479,11 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
   it("merges the entry to trunk, updates pending at the relocated path, no chore commit, no git fatal", async () => {
     const dock = await mkTempDir("flume-dock-");
     try {
-      const pendingPath = join(dock, "plan", "pending.json");
-      await mkdir(dirname(pendingPath), { recursive: true });
+      const pendingDir = join(dock, "plan", "pending");
+      await mkdir(pendingDir, { recursive: true });
       await writeFile(
-        pendingPath,
-        JSON.stringify([makeEntry("RELOC-A", ["src/reloc-a.ts"])], null, 2) +
+        join(pendingDir, entryFileName("RELOC-A")),
+        JSON.stringify(makeEntry("RELOC-A", ["src/reloc-a.ts"]), null, 2) +
           "\n",
         "utf8",
       );
@@ -3410,10 +3532,12 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
       expect(subject.trim()).toBe("build(RELOC-A): ship");
       expect(outcome.result?.commitSha).toBeUndefined();
 
-      // Pending was updated on disk at the relocated path.
-      const parsed = parsePending(await readFile(pendingPath, "utf8"));
+      // Pending was updated on disk at the relocated path: the shipped
+      // entry's file is gone, which is what an empty queue is now.
+      const parsed = parsePendingQueue(readQueueOnDisk(pendingDir) ?? []);
       expect(parsed.ok).toBe(true);
       if (parsed.ok) expect(parsed.entries).toEqual([]);
+      expect(existsSync(join(pendingDir, entryFileName("RELOC-A")))).toBe(false);
       expect(outcome.result?.pendingAfter).toEqual([]);
 
       // No state bled into the default in-repo location.
@@ -3433,16 +3557,16 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
  * hibernation, and a queue full of work the operator can still see on disk
  * (`.claude/rules/engineering.md`, "Loud or nothing").
  */
-describe("Dispatcher — relocated pendingPath existence probe", () => {
-  it("readPending throws when a relocated pendingPath is present but unstattable", async () => {
+describe("Dispatcher — relocated pendingDir existence probe", () => {
+  it("readPending throws when a relocated pendingDir is present but unstattable", async () => {
     const dock = await mkTempDir("flume-dock-unstattable-");
     try {
-      const pendingPath = join(dock, "plan", "pending.json");
-      await mkdir(dirname(pendingPath), { recursive: true });
-      // A self-referential symlink reproduces a non-ENOENT stat failure
+      const pendingDir = join(dock, "plan", "pending");
+      await mkdir(dirname(pendingDir), { recursive: true });
+      // A self-referential symlink reproduces a non-ENOENT listing failure
       // (ELOOP) without relying on permission bits a root-run test could
       // bypass — the shape the CLI's and supervisor's probes are pinned on.
-      await symlink("pending.json", pendingPath);
+      await symlink("pending", pendingDir);
       new Baton(dock).wake("build");
 
       const phase = makePhase({ name: "build", concurrency: "fanout" });
@@ -3468,13 +3592,13 @@ describe("Dispatcher — relocated pendingPath existence probe", () => {
     }
   });
 
-  it("an absent relocated pendingPath still reads as an empty queue, not a refusal", async () => {
+  it("an absent relocated pendingDir still reads as an empty queue, not a refusal", async () => {
     const dock = await mkTempDir("flume-dock-absent-");
     try {
       // Nothing written under `dock` at all — ENOENT is the one stat failure
       // the probe is allowed to read as absence, and the tick must still
       // reach its ordinary nothing-pickable hibernation.
-      expect(existsSync(join(dock, "plan", "pending.json"))).toBe(false);
+      expect(existsSync(join(dock, "plan", "pending"))).toBe(false);
       new Baton(dock).wake("build");
 
       const phase = makePhase({ name: "build", concurrency: "fanout" });
@@ -3701,7 +3825,7 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
     expect(outcome.result?.shippedTags).toEqual(["RACE-A", "RACE-B"]);
     expect(await readFile(join(fx.repo, "src/race-a.ts"), "utf8")).toBe("A\n");
     expect(await readFile(join(fx.repo, "src/race-b.ts"), "utf8")).toBe("B\n");
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
 
     // Teardown left git's worktree registry clean: no `.flume/worktrees/`
     // entry survives, neither registered with git nor on disk.
@@ -4044,7 +4168,7 @@ describe("Dispatcher fanout — pre-tick worktree provisioning failure isolates 
         signature: expect.stringContaining("worktree directory survived"),
       }),
     ]);
-    const pendingTags = (await readPendingFromDisk(fx.repo)).map(
+    const pendingTags = (readPendingFromDisk(fx.repo)).map(
       (e) => e.tag,
     );
     expect(pendingTags).toEqual(["HELD-ENTRY"]);
@@ -4122,7 +4246,7 @@ describe("Dispatcher fanout — setupWorktree hook throw isolates one entry (WOR
         signature: expect.stringContaining("setupWorktree boom"),
       }),
     ]);
-    const pendingTags = (await readPendingFromDisk(fx.repo)).map(
+    const pendingTags = (readPendingFromDisk(fx.repo)).map(
       (e) => e.tag,
     );
     expect(pendingTags).toEqual(["FAIL-HOOK"]);
@@ -4196,7 +4320,7 @@ describe("Dispatcher fanout — setupWorktree hook throw isolates one entry (WOR
     expect(outcome.provisionFailures).toEqual([
       expect.objectContaining({ tag: "ENTRY-B" }),
     ]);
-    const pendingTags = (await readPendingFromDisk(fx.repo)).map(
+    const pendingTags = (readPendingFromDisk(fx.repo)).map(
       (e) => e.tag,
     );
     expect(pendingTags).toEqual(["ENTRY-B"]);
@@ -4545,7 +4669,7 @@ describe("Dispatcher fanout — the wave's gate failures reach handoff (TICK-RES
     // engine's rule computes it from the queue the wave read — the two
     // entries are both still pending, the afterCommit revert having kept
     // their commits off trunk.
-    const stillPending = await readPendingFromDisk(fx.repo);
+    const stillPending = readPendingFromDisk(fx.repo);
     expect(stillPending.map((e) => e.tag)).toEqual([
       "GATE-FAIL-A",
       "GATE-FAIL-B",
@@ -4663,7 +4787,7 @@ describe("Dispatcher fanout — the wave's merge failures reach handoff (TICK-RE
     // Held under each entry's own quarantine key, as the engine's rule
     // computes it from the queue the wave read: both entries are still
     // pending, their commits having stayed off trunk.
-    const stillPending = await readPendingFromDisk(fx.repo);
+    const stillPending = readPendingFromDisk(fx.repo);
     expect(stillPending.map((e) => e.tag)).toEqual([
       "MERGE-FAIL-B",
       "MERGE-FAIL-C",
@@ -5061,7 +5185,7 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
     );
 
     // pending.json now has only the un-shipped entry.
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk.map((e) => e.tag)).toEqual(["CONFLICT-B"]);
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
       "CONFLICT-B",
@@ -5465,7 +5589,7 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
     ]);
     expect([...(await markersNow(fx.repo)).keys()]).toEqual([]);
     // The queue rewrite is what the removal waits on — and it landed.
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
   });
 });
 
@@ -5701,7 +5825,7 @@ describe("Dispatcher fanout — afterMerge gate failure reverts only the offendi
     expect(await head(fx.repo)).not.toBe(preHead);
 
     // ISO-FAIL stays pending; ISO-PASS removed by the ship chore.
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk.map((e) => e.tag)).toEqual(["ISO-FAIL"]);
     expect(first.result?.pendingAfter.map((e) => e.tag)).toEqual(["ISO-FAIL"]);
 
@@ -6035,7 +6159,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     // The merge came back off trunk, and the entry stayed in the queue.
     expect(outcome.result?.shippedTags ?? []).toEqual([]);
     expect(existsSync(join(fx.repo, "src", "throw-r.ts"))).toBe(false);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "THROW-R",
     ]);
     expect(outcome.verdict?.mergeOutcomes).toContainEqual({
@@ -6168,7 +6292,7 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
     // stays pending — the reset carried it back off trunk.
     expect(outcome.result?.committed).toBe(false);
     expect(existsSync(join(fx.repo, "src/thing.ts"))).toBe(false);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([
+    expect(readPendingFromDisk(fx.repo)).toEqual([
       { ...makeEntry("REVERT-ME", ["src/thing.ts"]), observedFiles: ["src/thing.ts"] },
     ]);
 
@@ -6291,7 +6415,7 @@ describe("Dispatcher — staged bystander state is checkpointed to a recoverable
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.committed).toBe(false);
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk.map((e) => e.tag)).toEqual(["SHIP-IT"]);
 
     const sha = outcome.verdict?.bystanderCheckpointSha;
@@ -6406,7 +6530,7 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
 
     // pending.json rewrite ran despite COLLIDE-BAD's refused revert:
     // SHIP-CLEAN removed, COLLIDE-BAD stays pending.
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk.map((e) => e.tag)).toEqual(["COLLIDE-BAD"]);
 
     // COLLIDE-BAD's commit stays on trunk — the revert itself was refused,
@@ -6556,7 +6680,7 @@ describe("Dispatcher — afterMerge revert refuses over a foreign commit landed 
     expect(existsSync(join(fx.repo, "src/tip-drift.ts"))).toBe(true);
     expect(existsSync(join(fx.repo, "src/foreign.ts"))).toBe(true);
 
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk.map((e) => e.tag)).toEqual(["TIP-DRIFT"]);
 
     const mo = outcome.verdict?.mergeOutcomes.find(
@@ -6683,7 +6807,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     expect(await readFile(join(fx.repo, "notes/finding.md"), "utf8")).toBe(
       "cross-tick\n",
     );
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
   });
 
   it("scopeWritesToEntry undeclared: a fanout tick's write allowance is byte-identical to a singleton tick's — writablePaths ceiling only, entry.files ignored", async () => {
@@ -6729,7 +6853,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     expect(await readFile(join(fx.repo, "src/stray.ts"), "utf8")).toBe(
       "stray\n",
     );
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
   });
 
   it("reverts a path outside entry scope but inside phase globs; the retry prompt names it", async () => {
@@ -6789,7 +6913,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     expect(first.result?.shippedTags).toEqual([]);
     expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(false);
     expect(existsSync(join(fx.repo, "src", "stray.ts"))).toBe(false);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "SCOPE-STRAY",
     ]);
     const gr = first.result?.gateResults ?? [];
@@ -6872,7 +6996,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
 
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(existsSync(join(fx.repo, "outside", "d.ts"))).toBe(false);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "SCOPE-CEIL",
     ]);
 
@@ -6936,7 +7060,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(false);
     expect(existsSync(join(fx.repo, "src", "stray.ts"))).toBe(false);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "FOOT-STRAY",
     ]);
 
@@ -6947,7 +7071,7 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     // prior-attempt record.
     expect(await head(fx.repo)).not.toBe(preHead);
 
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk[0]!.observedFiles).toEqual(
       expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
     );
@@ -7184,7 +7308,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
       "context\n",
     );
     expect(outcome.result?.shippedTags).toEqual(["NOTE-ONLY-SHIPS"]);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
     expect(warnings.some((w) => w.includes("shipped returned false"))).toBe(
       false,
     );
@@ -7233,7 +7357,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
     expect(await readFile(join(fx.repo, "notes/finding.md"), "utf8")).toBe(
       "context\n",
     );
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
   });
 
   it("an agent whose final message says it parked still ships when no predicate is declared — the engine reads no prose (.claude/rules/engine-boundary.md \"Told, not inferred\")", async () => {
@@ -7284,7 +7408,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.shippedTags).toEqual(["SHIPS-AND-MENTIONS-PARK"]);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
   });
 
   it("an entry the phase's own `shipped` predicate rejects is not classified shipped, even though its commit landed and gates passed", async () => {
@@ -7352,7 +7476,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
       "blocked\n",
     );
     expect(outcome.result?.shippedTags).toEqual([]);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "STATED-PARK",
     ]);
     expect(
@@ -7515,9 +7639,9 @@ describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-
     const preHead = await head(fx.repo);
 
     // Quarantine keys are read off the queue as the dispatcher parses it —
-    // the same `parsePending` it uses, so the two sides cannot disagree on
+    // the same `parsePendingQueue` it uses, so the two sides cannot disagree on
     // what an entry's bytes hash to.
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     const keys = onDisk.map((e) => entryDeclaredKey(e));
 
     const dispatcher = new Dispatcher({
@@ -7679,10 +7803,12 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     }).tick();
 
     // Non-vacuity: both entries are still queued and still `open`, so the
-    // set below is a refusal and not a drained queue.
-    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
-      "PICKED",
+    // set below is a refusal and not a drained queue. `pendingAfter` is the
+    // directory's listing, which carries no order of its own; the queue's
+    // order is what `pickableAfter` is reported in.
+    expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
       "HELD",
+      "PICKED",
     ]);
     expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(["PICKED"]);
     // Held back at selection, so it never reached an agent at all.
@@ -7738,9 +7864,11 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
       log: silent,
     }).tick();
 
-    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
-      "PICKED",
+    // `pendingAfter` is the directory's listing, which carries no order;
+    // `pickableAfter` is the queue's own order, which is the claim here.
+    expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
       "HELD",
+      "PICKED",
     ]);
     expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
       "PICKED",
@@ -7848,9 +7976,9 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     // Non-vacuity: the hook ran and was handed a set, over a queue that
     // still carries both entries.
     expect(captured).toBeDefined();
-    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
-      "PICKED",
+    expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
       "HELD",
+      "PICKED",
     ]);
     expect(captured!.map((e) => e.tag)).toEqual(["PICKED"]);
     expect(outcome.result?.refusedTags).toEqual(["HELD"]);
@@ -7912,7 +8040,7 @@ describe("Dispatcher — the run-scoped quarantine keys the entry as read (QUARA
     // reverted attempt's footprint onto the entry — `observedFiles` is the
     // engine's own accretion and is excluded from the hash by name, so the
     // key the blame was filed under still identifies the entry on disk.
-    const afterBlame = await readPendingFromDisk(fx.repo);
+    const afterBlame = readPendingFromDisk(fx.repo);
     expect(afterBlame[0]?.observedFiles).toEqual(["src/rekey.ts"]);
     expect(firstFailure?.quarantineKey).toBe(entryDeclaredKey(afterBlame[0]!));
 
@@ -8004,14 +8132,18 @@ describe("Dispatcher — the run-scoped quarantine keys the entry as read (QUARA
   });
 });
 
-describe("Dispatcher fanout — corrupt pending.json refuses instead of reading as empty (PENDING-PARSE-FAILURE-REFUSES)", () => {
-  it("a tick whose pending.json fails to parse invokes no agent and returns failed, instead of nothing-pickable plus a clean hibernation", async () => {
-    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+describe("Dispatcher fanout — a corrupt entry file refuses instead of reading as empty (PENDING-PARSE-FAILURE-REFUSES)", () => {
+  it("a tick whose queue fails to parse invokes no agent and returns failed, instead of nothing-pickable plus a clean hibernation", async () => {
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
     // Committed, not left on disk uncommitted — the decide-read now resolves
     // the committed tip (spec/pending.md "Dispatch reads come from the tip,
     // not the tree"), so an uncommitted corrupt file would be invisible to
     // it and the tick would see an empty queue instead of refusing.
-    await commitPendingFile(fx.repo, "{ this is not valid json");
+    await commitEntryFile(
+      fx.repo,
+      entryFileName("CORRUPT"),
+      "{ this is not valid json",
+    );
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     // Not the queue's writer: the carve-out (spec/pending.md "Queue reads are
@@ -8053,22 +8185,22 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
     expect(outcome.hibernated).toBe(false);
     expect(outcome.result).toBeUndefined();
-    expect(errors.some((e) => /pending\.json/.test(e) && /parse/.test(e))).toBe(
-      true,
-    );
+    expect(
+      errors.some((e) => /plan\/pending/.test(e) && /parse/.test(e)),
+    ).toBe(true);
     // No further commit was made — the corrupt tip is untouched.
     expect(await head(fx.repo)).toBe(preHead);
-    expect(await readFile(pendingPath, "utf8")).toBe("{ this is not valid json");
+    expect(await readFile(corruptEntry, "utf8")).toBe("{ this is not valid json");
   });
 
-  it("a wave whose pending.json is corrupted after tick start leaves the file byte-identical rather than committing []", async () => {
+  it("a wave whose queue is corrupted after tick start leaves the entry file byte-identical rather than draining it", async () => {
     const entries = [makeEntry("SHIP-A", ["src/a.ts"])];
     await writePending(fx.repo, entries);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
     const chain: Chain = { phases: [phase], humanOnly: [] };
-    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
 
     // Stands in for a concurrent process corrupting pending.json mid-wave —
     // same mechanism the sibling "commitPendingUpdate rewrite reads fresh"
@@ -8079,7 +8211,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     const corrupt = "{ corrupted mid-wave, not json";
     const agent = fanoutAgent({
       "ship-a": async (cwd) => {
-        await commitPendingFile(fx.repo, corrupt);
+        await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
         await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
       },
     });
@@ -8101,7 +8233,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(outcome.failed).toBe(true);
     // The rewrite never derived `[]` from the corrupted read and overwrote
     // it — the concurrent corruption survives byte-for-byte.
-    expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
+    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
   });
 
   it("LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE: a wave that cherry-picks and gates entries clean, then fails commitPendingUpdate's rewrite read, still writes a tick verdict recording the shipped tags", async () => {
@@ -8111,7 +8243,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
 
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
     const chain: Chain = { phases: [phase], humanOnly: [] };
-    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
 
     // Same mechanism as the sibling test above: the agent corrupts
     // pending.json mid-wave, after the decide-read that picked SHIP-A but
@@ -8122,7 +8254,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     const corrupt = "{ corrupted mid-wave, not json";
     const agent = fanoutAgent({
       "ship-a": async (cwd) => {
-        await commitPendingFile(fx.repo, corrupt);
+        await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
         await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
       },
     });
@@ -8142,7 +8274,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(outcome.failed).toBe(true);
     expect(outcome.ledgerRefusal).toBe("parse-failure");
     expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
-    expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
+    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
 
     // The defect this test pins: the wave's shipped tags used to vanish
     // with the thrown PendingParseFailure instead of reaching a verdict.
@@ -8161,7 +8293,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     await writePending(fx.repo, entries);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
 
     // Same corruption mechanism as the single-entry sibling above, but the
     // wave now carries a second, declined entry (the shouldRun seam)
@@ -8175,7 +8307,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     const agent = fanoutAgent({
       "ship-a": async (cwd) => {
         invoked.push("SHIP-A");
-        await commitPendingFile(fx.repo, corrupt);
+        await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
         await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
       },
       "decline-b": async () => {
@@ -8209,7 +8341,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(outcome.failed).toBe(true);
     expect(outcome.ledgerRefusal).toBe("parse-failure");
     expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
-    expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
+    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
 
     // The defect this test pins: a multi-entry wave's mixed outcomes —
     // one shipped, one declined — must both fold into the verdict carried
@@ -8249,7 +8381,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
       scopeWritesToEntry: true,
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
-    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
 
     // Same mid-wave corruption mechanism as the shipping siblings above: a
     // concurrent writer lands unparseable bytes on trunk after this wave's
@@ -8257,7 +8389,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     const corrupt = "{ corrupted mid-wave, not json";
     const agent = fanoutAgent({
       "revert-only": async (cwd) => {
-        await commitPendingFile(fx.repo, corrupt);
+        await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
         await writeFile(join(cwd, "src", "a.ts"), "a\n");
         await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
         await exec("git", ["add", "."], { cwd });
@@ -8284,7 +8416,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // ledger left byte-identical rather than overwritten with a rewrite
     // derived from `[]`.
     expect(outcome.failed).toBe(true);
-    expect(await readFile(pendingPath, "utf8")).toBe(corrupt);
+    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
 
     const verdict = outcome.verdict;
     expect(verdict).toBeDefined();
@@ -8401,12 +8533,13 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
    * it rather than the one the sibling suites above already cover.
    */
   async function tipQueueTags(): Promise<string[]> {
-    const { stdout } = await exec(
-      "git",
-      ["show", "HEAD:.flume/plan/pending.json"],
-      { cwd: fx.repo },
+    const files = await readQueueAtRef(
+      fx.repo,
+      "HEAD",
+      ".flume/plan/pending",
     );
-    const parsed = parsePending(stdout);
+    expect(files).not.toBeNull();
+    const parsed = parsePendingQueue(files ?? []);
     expect(parsed.ok).toBe(true);
     return parsed.ok ? parsed.entries.map((e) => e.tag) : [];
   }
@@ -8494,21 +8627,21 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     // tip still carries. Without this the message asserted below would be a
     // claim about a file that matches its tip, which is the tip-claim arm's
     // shape, not this one.
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
 
     // The claim: the refusal states that divergence itself, at the path it is
     // standing at, rather than leaving an operator to find a modified queue in
     // `git status` and attribute it (.claude/rules/engineering.md, "A fact the
     // engine holds is reported, never rediscovered"). The path is git's own
-    // spelling of the ledger the chain declared — not the `pending.json`
-    // basename a reader would have to guess a directory for.
+    // spelling of the ledger the chain declared — not a name a reader would
+    // have to guess a directory for.
     expect(outcome?.summary).toContain(
-      "the rewritten queue stands on disk at .flume/plan/pending.json, uncommitted",
+      "the rewritten queue stands on disk at .flume/plan/pending, uncommitted",
     );
     // Both operator-facing surfaces carry it: the tick's summary above, and
     // the verdict written for the next process to read.
     expect(outcome?.verdict?.summary).toContain(
-      "the rewritten queue stands on disk at .flume/plan/pending.json, uncommitted",
+      "the rewritten queue stands on disk at .flume/plan/pending, uncommitted",
     );
     // …and git's own refusal is still quoted inside it, never replaced by it.
     expect(outcome?.summary).toMatch(/partial commit/);
@@ -8575,7 +8708,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     expect(await tipQueueTags()).toEqual(["SHIP-A"]);
     // The disk says the same thing the report will: the refusal came before
     // the write, so the queue in the tree is byte-identical to the tip's.
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "SHIP-A",
     ]);
 
@@ -8590,7 +8723,7 @@ describe("Dispatcher fanout — corrupt pending.json refuses instead of reading 
     );
     expect(line).toBeDefined();
     expect(line).toContain(
-      ".flume/plan/pending.json is unchanged on disk, no rewrite written",
+      ".flume/plan/pending is unchanged on disk, no rewrite written",
     );
   });
 });
@@ -8640,7 +8773,7 @@ describe("Dispatcher fanout — foundations governor skips fork-blocked entries"
 
     // Only the settled entry shipped; the fork-blocked one was never built.
     expect(outcome.result?.shippedTags).toEqual(["SETTLED"]);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([
+    expect(readPendingFromDisk(fx.repo)).toEqual([
       expect.objectContaining({ tag: "BLOCKED" }),
     ]);
   });
@@ -8722,7 +8855,7 @@ describe("Dispatcher fanout — gate=requiresCapability", () => {
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.shippedTags).toEqual(["GATED"]);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
   });
 
   it("skips an entry gated on a capability the chain does not assert", async () => {
@@ -8794,7 +8927,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
 
     expect(outcome.result?.committed).toBe(false);
     expect(await head(fx.repo)).toBe(preHead);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([
+    expect(readPendingFromDisk(fx.repo)).toEqual([
       expect.objectContaining({ tag: "ONLY" }),
     ]);
   });
@@ -8855,7 +8988,7 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
       expect(invoked).toBe(false);
       expect(outcome.result?.committed).toBe(false);
       expect(await head(fx.repo)).toBe(preHead);
-      expect(await readPendingFromDisk(fx.repo)).toEqual([
+      expect(readPendingFromDisk(fx.repo)).toEqual([
         expect.objectContaining({ tag: "ONLY" }),
       ]);
     } finally {
@@ -8971,7 +9104,7 @@ describe("Dispatcher fanout — fork-blocked entry becomes pickable when the pre
     expect(first.result?.committed).toBe(false);
     expect(first.result?.shippedTags).toEqual([]);
     expect(await head(fx.repo)).toBe(preHead);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([
+    expect(readPendingFromDisk(fx.repo)).toEqual([
       expect.objectContaining({ tag: "GATED" }),
     ]);
 
@@ -8982,7 +9115,7 @@ describe("Dispatcher fanout — fork-blocked entry becomes pickable when the pre
     // Tick 2: fork resolved → the same entry is now pickable and ships.
     const second = await dispatcher.tick();
     expect(second.result?.shippedTags).toEqual(["GATED"]);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
   });
 });
 
@@ -9020,7 +9153,7 @@ describe("Dispatcher fanout — no forkResolver supplied never blocks selection"
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.shippedTags).toEqual(["ONLY"]);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
   });
 });
 
@@ -9065,7 +9198,7 @@ describe("Dispatcher fanout — forkResolver invoked once per tick with the repo
     expect(repoRootCalls).toEqual([fx.repo]);
     // The injected predicate governs selection: only the resolved entry ships.
     expect(outcome.result?.shippedTags).toEqual(["DONE"]);
-    expect(await readPendingFromDisk(fx.repo)).toEqual([
+    expect(readPendingFromDisk(fx.repo)).toEqual([
       expect.objectContaining({ tag: "OPEN" }),
     ]);
   });
@@ -9485,7 +9618,7 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     // trunk and the entry is still queued for the next wave.
     expect(existsSync(join(fx.repo, "src/stands.ts"))).toBe(false);
     expect(outcome.result?.shippedTags ?? []).toEqual([]);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "STANDS",
     ]);
 
@@ -10181,7 +10314,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(outcome.noCommit).toBe("gate-revert");
     expect(outcome.verdict?.noCommit).toBe("gate-revert");
-    expect(await readPendingFromDisk(fx.repo)).toHaveLength(4);
+    expect(readPendingFromDisk(fx.repo)).toHaveLength(4);
   });
 
   it("render-refused + platform-preempt + clean-exit, no gate-revert → wave-level noCommit is render-refused", async () => {
@@ -10222,7 +10355,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.noCommit).toBe("render-refused");
     expect(outcome.verdict?.noCommit).toBe("render-refused");
-    expect(await readPendingFromDisk(fx.repo)).toHaveLength(3);
+    expect(readPendingFromDisk(fx.repo)).toHaveLength(3);
   });
 
   it("platform-preempt + clean-exit, no gate-revert/render-refused → wave-level noCommit is platform-preempt", async () => {
@@ -10259,7 +10392,7 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     expect(outcome.result?.committed).toBe(false);
     expect(outcome.noCommit).toBe("platform-preempt");
     expect(outcome.verdict?.noCommit).toBe("platform-preempt");
-    expect(await readPendingFromDisk(fx.repo)).toHaveLength(2);
+    expect(readPendingFromDisk(fx.repo)).toHaveLength(2);
   });
 });
 
@@ -10499,7 +10632,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
     // Entry shipped — gone from pending.json, both commits landed on trunk,
     // both files present (gates ran over the whole span's footprint, and
     // cherry-pick carried both commits, in order).
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
     expect(existsSync(join(fx.repo, "src", "interloper.ts"))).toBe(true);
     expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(true);
     expect(await readFile(join(fx.repo, "src", "a.ts"), "utf8")).toBe(
@@ -10596,7 +10729,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
     expect(parsed.observedTip).toBe(observedHead);
 
     // Entry stays pending, byte-identical — nothing shipped or cherry-picked.
-    expect(await readPendingFromDisk(fx.repo)).toEqual([
+    expect(readPendingFromDisk(fx.repo)).toEqual([
       makeEntry("TEST-A", ["src/a.ts"]),
     ]);
   });
@@ -10654,7 +10787,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
     // Both the interloper's commit and the entry's cherry-picked commit
     // land — the foreign commit sits under the entry's, exactly as if it
     // had landed between ticks.
-    expect(await readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
     expect(await readFile(join(fx.repo, "src/interloper.ts"), "utf8")).toBe(
       "external\n",
     );
@@ -10717,7 +10850,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
 
     // The footprint lands on pending.json anyway — commitPendingUpdate
     // recommitted on top of the interloper's commit rather than refusing.
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk).toEqual([
       { ...makeEntry("TEST-A", ["src/a.ts"]), observedFiles: ["src/a.ts"] },
     ]);
@@ -10782,7 +10915,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
         },
       ]);
 
-      expect(await readPendingFromDisk(fx.repo)).toEqual([
+      expect(readPendingFromDisk(fx.repo)).toEqual([
         makeEntry("TEST-A", ["src/a.ts"]),
       ]);
       expect(existsSync(join(fx.repo, "src/a.ts"))).toBe(false);
@@ -10840,7 +10973,7 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
         expect(await readFile(join(fx.repo, "src/a.ts"), "utf8")).toBe(
           "from-A\n",
         );
-        expect(await readPendingFromDisk(fx.repo)).toEqual([
+        expect(readPendingFromDisk(fx.repo)).toEqual([
           makeEntry("TEST-A", ["src/a.ts"]),
         ]);
       } finally {
@@ -10982,7 +11115,7 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
       // …and the declaration key rides the entry keyspace alone.
       expect(JSON.parse(singletonRecord).declaredAs).toBeUndefined();
       expect(JSON.parse(fanoutRecord).declaredAs).toBe(
-        entryDeclaredKey((await readPendingFromDisk(fx2.repo))[0]!),
+        entryDeclaredKey((readPendingFromDisk(fx2.repo))[0]!),
       );
       expect(JSON.parse(singletonRecord).mode).toBe("tip-moved");
       expect(JSON.parse(fanoutRecord).mode).toBe("tip-moved");
@@ -13108,7 +13241,7 @@ describe("Dispatcher fanout — render-refused: an unresolved inline-exec span a
     expect(outcome.verdict?.gateResults).toEqual([]);
     // Never reached cherry-pick/merge — the entry stays pending for a retry
     // once the span is fixed.
-    expect(await readPendingFromDisk(fx.repo)).toHaveLength(1);
+    expect(readPendingFromDisk(fx.repo)).toHaveLength(1);
   });
 });
 
@@ -13219,7 +13352,7 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
     expect(JSON.parse(fanoutRecord).keyedAs).toBe(slugify("FANOUT-TWIN"));
     expect(JSON.parse(singletonRecord).declaredAs).toBeUndefined();
     expect(JSON.parse(fanoutRecord).declaredAs).toBe(
-      entryDeclaredKey((await readPendingFromDisk(fx.repo))[0]!),
+      entryDeclaredKey((readPendingFromDisk(fx.repo))[0]!),
     );
 
     // Both callsites log through the same template —
@@ -13512,7 +13645,7 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => 
     expect(outcome.verdict?.shippedTags).toEqual([]);
 
     // Never invoked, never shipped — the entry stays pending.
-    expect(await readPendingFromDisk(fx.repo)).toHaveLength(1);
+    expect(readPendingFromDisk(fx.repo)).toHaveLength(1);
 
     expect(handoffCalls).toBe(1);
     expect(outcome.awakeAfter).toEqual(["plan"]);
@@ -13565,7 +13698,7 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => 
     expect(outcome.verdict?.declined).toBe(true);
     expect(outcome.verdict?.shippedTags).toEqual(["SHOULDRUN-SHIP"]);
 
-    const remaining = await readPendingFromDisk(fx.repo);
+    const remaining = readPendingFromDisk(fx.repo);
     expect(remaining.map((e) => e.tag)).toEqual(["SHOULDRUN-DECLINE"]);
   });
 
@@ -14640,15 +14773,12 @@ describe("Dispatcher — GateContext.stateRootRel (GATE-CONTEXT-STATE-ROOT-REL, 
   it("fanout tick: stateRootRel is undefined when flumeDir is relocated outside repoRoot", async () => {
     const dock = await mkTempDir("flume-dock-staterootrel-");
     try {
-      const pendingPath = join(dock, "plan", "pending.json");
-      await mkdir(dirname(pendingPath), { recursive: true });
+      const pendingDir = join(dock, "plan", "pending");
+      await mkdir(pendingDir, { recursive: true });
       await writeFile(
-        pendingPath,
-        JSON.stringify(
-          [makeEntry("SRR-RELOC", ["src/srr-reloc.ts"])],
-          null,
-          2,
-        ) + "\n",
+        join(pendingDir, entryFileName("SRR-RELOC")),
+        JSON.stringify(makeEntry("SRR-RELOC", ["src/srr-reloc.ts"]), null, 2) +
+          "\n",
         "utf8",
       );
       new Baton(dock).wake("build");
@@ -14781,11 +14911,11 @@ describe("Dispatcher — TickContext.stateRootRel (TICKCONTEXT-STATE-ROOT-REL, s
   it("fanout: TickContext.stateRootRel is undefined when flumeDir is relocated outside repoRoot", async () => {
     const dock = await mkTempDir("flume-dock-tcsrr-");
     try {
-      const pendingPath = join(dock, "plan", "pending.json");
-      await mkdir(dirname(pendingPath), { recursive: true });
+      const pendingDir = join(dock, "plan", "pending");
+      await mkdir(pendingDir, { recursive: true });
       await writeFile(
-        pendingPath,
-        JSON.stringify([makeEntry("TCSRR-RELOC", ["src/tcsrr-reloc.ts"])], null, 2) +
+        join(pendingDir, entryFileName("TCSRR-RELOC")),
+        JSON.stringify(makeEntry("TCSRR-RELOC", ["src/tcsrr-reloc.ts"]), null, 2) +
           "\n",
         "utf8",
       );
@@ -15226,7 +15356,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
 });
 
 /**
- * `Chain.pendingPath` is the second consumer of `assertStateRootRelative`
+ * `Chain.pendingDir` is the second consumer of `assertStateRootRelative`
  * (`src/paths.ts`), and the refusal it buys is the queue's containment: a
  * declaration that escapes puts the file every engine read resolves —
  * fanout selection, the wave-end rewrite, `flume status`, `pendingGate` —
@@ -15235,30 +15365,30 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
  * check goes red rather than silently widening where the queue may live
  * (`.claude/rules/engineering.md`, "Loud or nothing").
  */
-describe("Dispatcher — Chain.pendingPath load-time validation (spec/pending.md 'The pending queue')", () => {
-  it("the chain load refuses a pendingPath declared as an absolute path", async () => {
+describe("Dispatcher — Chain.pendingDir load-time validation (spec/pending.md 'The pending queue')", () => {
+  it("the chain load refuses a pendingDir declared as an absolute path", async () => {
     const cfg = await mkTempDir("flume-cfg-pendingpath-abs-");
     try {
       const abs = resolve(tmpdir(), "flume-pendingpath-abs-target", "pending.json");
-      await writeMinimalChain(cfg, { pendingPath: abs });
+      await writeMinimalChain(cfg, { pendingDir: abs });
 
       await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
-        /pendingPath .* as an absolute path/,
+        /pendingDir .* as an absolute path/,
       );
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }
   });
 
-  it("the chain load refuses a pendingPath that resolves outside the state root", async () => {
+  it("the chain load refuses a pendingDir that resolves outside the state root", async () => {
     const cfg = await mkTempDir("flume-cfg-pendingpath-escape-");
     try {
       await writeMinimalChain(cfg, {
-        pendingPath: "../escaped/pending.json",
+        pendingDir: "../escaped/pending",
       });
 
       await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
-        /pendingPath .* resolves outside the state root/,
+        /pendingDir .* resolves outside the state root/,
       );
     } finally {
       await rm(cfg, { recursive: true, force: true });
@@ -15737,15 +15867,12 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
   it("a relocated state root has no worktree-local mirror to harvest from — no-op", async () => {
     const dock = await mkTempDir("flume-dock-friction-");
     try {
-      const pendingPath = join(dock, "plan", "pending.json");
-      await mkdir(dirname(pendingPath), { recursive: true });
+      const pendingDir = join(dock, "plan", "pending");
+      await mkdir(pendingDir, { recursive: true });
       await writeFile(
-        pendingPath,
-        JSON.stringify(
-          [makeEntry("FRICTION-E", ["src/friction-e.ts"])],
-          null,
-          2,
-        ) + "\n",
+        join(pendingDir, entryFileName("FRICTION-E")),
+        JSON.stringify(makeEntry("FRICTION-E", ["src/friction-e.ts"]), null, 2) +
+          "\n",
         "utf8",
       );
       new Baton(dock).wake("build");
@@ -15944,7 +16071,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     // worktree branches from the new trunk tip, so its checkout inherits the
     // harvested note as ordinary tracked content — not anything its own agent
     // produced this tick.
-    const afterFirstPending = await readPendingFromDisk(fx.repo);
+    const afterFirstPending = readPendingFromDisk(fx.repo);
     await writePending(fx.repo, [
       ...afterFirstPending,
       makeEntry("FRICTION-E", ["src/friction-e.ts"]),
@@ -16147,7 +16274,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
 
     // Whole-commit revert: nothing shipped, the entry stays pending.
     expect(outcome.result?.shippedTags).toEqual([]);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "REVERT-NOTE-A",
     ]);
 
@@ -16326,7 +16453,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
 
     // The revert still proceeds despite the note-write failure.
     expect(outcome.result?.shippedTags).toEqual([]);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "REVERT-NOTE-D",
     ]);
     expect(
@@ -16349,7 +16476,7 @@ describe("Dispatcher fanout — revert note to the friction channel", () => {
     await writePending(fx.repo, [makeEntry(tag, ["src/tag-len.ts"])]);
     // The real reader accepts the boundary tag — a value one over would
     // fail TAG_PATTERN and never reach the writer this test pins.
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       tag,
     ]);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -17005,13 +17132,13 @@ describe.runIf(process.platform === "win32")(
 // Same deep-nesting shape as the win32 lane above, applied to the two remaining
 // bare-join fs-call sites this file carried: loadChainModule's existence probe
 // (the single fix point every chain-load caller reaches through) and the
-// pendingPath reads/writes readPending, readPendingTolerant, and
+// pendingDir reads/writes readPending, readPendingTolerant, and
 // commitPendingUpdate share. Pre-fix, each silently misread a genuinely
 // existing/writable path as absent past win32's ~260-char total-path limit
 // instead of failing loud (.claude/rules/platform-facts.md "Windows MAX_PATH
 // (~260 chars) breaks fs calls with no long component").
 describe.runIf(process.platform === "win32")(
-  "Dispatcher — loadChainModule/pendingPath win32 total-path limit (DISPATCHER-NAMESPACEDJOIN-WIN32-PATH-TOTAL-LIMIT)",
+  "Dispatcher — loadChainModule/pendingDir win32 total-path limit (DISPATCHER-NAMESPACEDJOIN-WIN32-PATH-TOTAL-LIMIT)",
   () => {
     it("loadChainModule doesn't misread an existing chain.ts as absent when its resolved path exceeds win32's ~260-char limit", async () => {
       const base = await mkTempDir("flume-chain-w32-");
@@ -17035,7 +17162,7 @@ describe.runIf(process.platform === "win32")(
       }
     });
 
-    it("readPending/readPendingTolerant/commitPendingUpdate don't misread an existing or writable pending.json as absent when pendingPath exceeds win32's ~260-char limit", async () => {
+    it("readPending/readPendingTolerant/commitPendingUpdate don't misread an existing or writable queue as absent when pendingDir exceeds win32's ~260-char limit", async () => {
       const dock = await mkTempDir("flume-dock-w32-");
       // An operator override outranks the chain's declared base
       // (`worktreesBase`, src/paths.ts), and the base below is load-bearing
@@ -17047,21 +17174,19 @@ describe.runIf(process.platform === "win32")(
           dock,
           ...Array.from({ length: 6 }, (_, i) => `seg-${i}-`.padEnd(50, "x")),
         );
-        const pendingPath = join(deepDock, "plan", "pending.json");
-        await mkdir(dirname(pendingPath), { recursive: true });
+        const pendingDir = join(deepDock, "plan", "pending");
+        await mkdir(pendingDir, { recursive: true });
+        const entryFile = join(pendingDir, entryFileName("RELOC-W32"));
         await writeFile(
-          pendingPath,
-          JSON.stringify(
-            [makeEntry("RELOC-W32", ["src/reloc-w32.ts"])],
-            null,
-            2,
-          ) + "\n",
+          entryFile,
+          JSON.stringify(makeEntry("RELOC-W32", ["src/reloc-w32.ts"]), null, 2) +
+            "\n",
           "utf8",
         );
-        expect(pendingPath.length).toBeGreaterThan(260);
+        expect(entryFile.length).toBeGreaterThan(260);
         new Baton(deepDock).wake("build");
 
-        // The deep path is `pendingPath`'s alone. The worktree base is
+        // The deep path is `pendingDir`'s alone. The worktree base is
         // declared back onto the shallow dock: left at its default,
         // `<flumeDir>/worktrees/<slug>` under `deepDock`, `git worktree add`
         // refuses with `fatal: '$GIT_DIR' too big` around 200 chars — a limit
@@ -17102,14 +17227,14 @@ describe.runIf(process.platform === "win32")(
         });
 
         // Pre-fix, readPending's bare-join existsSync check on the
-        // relocated pendingPath silently read it as absent — the pickable
+        // relocated pendingDir silently read it as absent — the pickable
         // entry vanished and the tick shipped nothing.
         const outcome = await dispatcher.tick();
         expect(outcome.result?.shippedTags).toEqual(["RELOC-W32"]);
 
         // commitPendingUpdate's own bare-join reads/writes (the no-op-diff
         // check and the rewrite itself) also landed at the deep path.
-        const parsed = parsePending(await readFile(pendingPath, "utf8"));
+        const parsed = parsePendingQueue(readQueueOnDisk(pendingDir) ?? []);
         expect(parsed.ok).toBe(true);
         if (parsed.ok) expect(parsed.entries).toEqual([]);
         // readPendingTolerant hits the same deep path for pendingAfter.
@@ -17305,7 +17430,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
         headSha: trunkTip,
       },
     ]);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "DECLINED-ONCE",
     ]);
 
@@ -17332,7 +17457,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(record.key).toBe("entry");
     expect(record.keyedAs).toBe(slugify("DECLINED-ONCE"));
     expect(record.declaredAs).toBe(
-      entryDeclaredKey((await readPendingFromDisk(fx.repo))[0]!),
+      entryDeclaredKey((readPendingFromDisk(fx.repo))[0]!),
     );
     expect(record.headSha).toBe(trunkTip);
   });
@@ -17386,7 +17511,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     const declinedSha = await head(fx.repo);
     // The entry the first attempt was declined over is still in the queue,
     // declared exactly as it was — the key the record below stands against.
-    const stillQueued = await readPendingFromDisk(fx.repo);
+    const stillQueued = readPendingFromDisk(fx.repo);
     expect(stillQueued.map((e) => e.tag)).toEqual(["DECLINED-THEN-SHIPS"]);
     baton.wake("build"); // re-wake (handoff () => [] slept it)
     decline = false;
@@ -17646,20 +17771,34 @@ describe("TickVerdict span rows — base beside head", () => {
   });
 });
 
-// `existsSync` collapsed every stat failure to `false`, so a pending.json
-// that is on disk but unstattable read as absent and `pendingAfter` came back
-// looking like a drained queue with nothing said — and a chain hibernates off
-// exactly that (`.flume/chain.ts`: `pickableAfter.length > 0`). The probe now
-// splits ENOENT from the rest (`existsLoud`, src/fsProbe.ts); this reader
+// `existsSync` collapsed every stat failure to `false`, so a queue that is on
+// disk but unlistable read as absent and `pendingAfter` came back looking
+// like a drained queue with nothing said — and a chain hibernates off exactly
+// that (`.flume/chain.ts`: `pickableAfter.length > 0`). The listing now splits
+// ENOENT from the rest (`readQueueOnDisk`, src/pendingLedger.ts); this reader
 // cannot refuse the way its strict twin does — it runs after the tick's work
 // landed, so a throw would lose the TickResult — so it announces, then
 // degrades, exactly as the parse branch beside it already did.
 describe("Dispatcher — a queue the post-tick re-read cannot resolve is loud", () => {
-  it("readPendingTolerant warns naming the stat error when pending.json is present but unstattable", async () => {
+  /**
+   * The vacuity guard both cases below take: the queue the re-read failed
+   * over really holds its entry at the tip, so the `[]` each asserts is a
+   * degradation and not the truth about this repo's queue.
+   */
+  async function expectTipQueue(tags: string[]): Promise<void> {
+    const files = await readQueueAtRef(fx.repo, "HEAD", ".flume/plan/pending");
+    const tipPending = parsePendingQueue(files ?? []);
+    expect(tipPending.ok).toBe(true);
+    if (tipPending.ok) {
+      expect(tipPending.entries.map((e) => e.tag)).toEqual(tags);
+    }
+  }
+
+  it("readPendingTolerant warns naming the listing error when the queue directory is present but unlistable", async () => {
     await writePending(fx.repo, [makeEntry("PTSL-A", ["src/ptsl-a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
-    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    const pendingDir = join(fx.repo, ".flume", "plan", "pending");
     const warnings: string[] = [];
 
     // Broken mid-tick, not before it: the strict decide-read resolves the
@@ -17671,10 +17810,10 @@ describe("Dispatcher — a queue the post-tick re-read cannot resolve is loud", 
     const agent: Agent = {
       name: "breaks-the-queue-path",
       async invoke() {
-        await rm(pendingPath);
-        // ELOOP — present, unstattable. Not a permission bit: a root-run
+        await rm(pendingDir, { recursive: true });
+        // ELOOP — present, unlistable. Not a permission bit: a root-run
         // test would bypass that.
-        await symlink(basename(pendingPath), pendingPath);
+        await symlink(basename(pendingDir), pendingDir);
         return { exitCode: 0, stdout: "", stderr: "" };
       },
     };
@@ -17690,22 +17829,12 @@ describe("Dispatcher — a queue the post-tick re-read cannot resolve is loud", 
 
     const outcome = await dispatcher.tick();
 
-    // Vacuity guard: the queue the re-read failed over is genuinely
-    // non-empty at the tip, so the `[]` below is a degradation and not the
-    // truth about this repo's queue.
-    const tipRaw = await git.readFileAtRef(
-      fx.repo,
-      "HEAD",
-      ".flume/plan/pending.json",
-    );
-    const tipPending = parsePending(tipRaw ?? "");
-    expect(tipPending.ok).toBe(true);
-    if (tipPending.ok) {
-      expect(tipPending.entries.map((e) => e.tag)).toEqual(["PTSL-A"]);
-    }
+    await expectTipQueue(["PTSL-A"]);
 
     expect(warnings).toContainEqual(
-      expect.stringMatching(/pending\.json could not be stat'd \(.*ELOOP/),
+      expect.stringMatching(
+        /plan\/pending could not be read \(.*ELOOP/,
+      ),
     );
     // Declared degradation, not a refusal: the TickResult still lands, and
     // the empty queue it reports is the thing the warn above accounts for.
@@ -17714,16 +17843,17 @@ describe("Dispatcher — a queue the post-tick re-read cannot resolve is loud", 
     expect(outcome.result?.pickableAfter).toEqual([]);
   });
 
-  // The stat catch above was the first half: past it the `readFile` was
-  // bare, so a path that stats fine but cannot be read — a directory at the
-  // path, a mode denying the file itself, a delete racing the probe — threw
-  // out of a reader that runs after the tick's work landed, losing the
-  // TickResult the strict twin deliberately cannot lose.
-  it("readPendingTolerant warns and reports an empty pendingAfter when pending.json stats but cannot be read", async () => {
+  // The listing catch above was the first half: past it the per-file read
+  // was bare, so an entry the listing names but nothing can read — a
+  // directory at the name, a mode denying the file itself, a delete racing
+  // the listing — threw out of a reader that runs after the tick's work
+  // landed, losing the TickResult the strict twin deliberately cannot lose.
+  it("readPendingTolerant warns and reports an empty pendingAfter when an entry file lists but cannot be read", async () => {
     await writePending(fx.repo, [makeEntry("PTRD-A", ["src/ptrd-a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
-    const pendingPath = join(fx.repo, ".flume", "plan", "pending.json");
+    const pendingDir = join(fx.repo, ".flume", "plan", "pending");
+    const entryPath = join(pendingDir, entryFileName("PTRD-A"));
     const warnings: string[] = [];
 
     // Same mid-tick timing as the ELOOP case: the strict decide-read comes
@@ -17732,10 +17862,12 @@ describe("Dispatcher — a queue the post-tick re-read cannot resolve is loud", 
     const agent: Agent = {
       name: "breaks-the-queue-file",
       async invoke() {
-        await rm(pendingPath);
-        // EISDIR — stats fine, reads never. Not a permission bit: a
-        // root-run test would bypass that.
-        await mkdir(pendingPath);
+        await rm(entryPath);
+        // ELOOP — lists fine, reads never. Not a permission bit (a root-run
+        // test would bypass one) and not a directory either: the listing
+        // skips a subdirectory by contract, so it would never reach the read
+        // this case is about.
+        await symlink(basename(entryPath), entryPath);
         return { exitCode: 0, stdout: "", stderr: "" };
       },
     };
@@ -17751,27 +17883,14 @@ describe("Dispatcher — a queue the post-tick re-read cannot resolve is loud", 
 
     const outcome = await dispatcher.tick();
 
-    // Vacuity guard: the queue the re-read failed over really holds an
-    // entry at the tip, so the `[]` below is the degradation and not this
-    // repo's actual queue. And the path really stats — the stat branch
-    // beside this one is not what fired.
-    const tipRaw = await git.readFileAtRef(
-      fx.repo,
-      "HEAD",
-      ".flume/plan/pending.json",
-    );
-    const tipPending = parsePending(tipRaw ?? "");
-    expect(tipPending.ok).toBe(true);
-    if (tipPending.ok) {
-      expect(tipPending.entries.map((e) => e.tag)).toEqual(["PTRD-A"]);
-    }
-    expect(existsSync(pendingPath)).toBe(true);
-    expect(warnings).not.toContainEqual(
-      expect.stringContaining("could not be stat'd"),
-    );
+    await expectTipQueue(["PTRD-A"]);
+    // The directory really listed — the listing branch beside this one is
+    // not what fired, the per-file read is.
+    expect(existsSync(pendingDir)).toBe(true);
+    expect(readdirSync(pendingDir)).toContain(entryFileName("PTRD-A"));
 
     expect(warnings).toContainEqual(
-      expect.stringMatching(/pending\.json could not be read \(.*EISDIR/),
+      expect.stringMatching(/plan\/pending could not be read \(.*ELOOP/),
     );
     // Declared degradation, not a refusal: the TickResult still lands, and
     // the empty queue it reports is the thing the warn above accounts for.
@@ -18142,7 +18261,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     expect(outcome.declined).toBeUndefined();
     expect(outcome.result?.shippedTags).toEqual([]);
     // Both entries stay queued for a retry that can read what raised.
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag).sort()).toEqual(
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag).sort()).toEqual(
       ["PROMPTARGS-THROWS", "SHOULDRUN-THROWS"],
     );
     const records = await renderRefusedRecords(fx.repo);
@@ -18352,7 +18471,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     // Not `false`, but the same outcome `false` already has: entry queued,
     // commit left on trunk.
     expect(outcome.result?.shippedTags).toEqual([]);
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "SHIPPED-THROWS",
     ]);
 
@@ -18797,14 +18916,20 @@ describe("Dispatcher — the trunk tip an afterMerge span landed onto", () => {
 describe("Dispatcher — the queue's declared writer runs over an unparseable queue", () => {
   /** What every case here corrupts the committed queue with. */
   const CORRUPT = "{ this is not valid json";
-  /** The queue's path as the fence names it — repo-relative, git's alphabet. */
-  const QUEUE_REL = ".flume/plan/pending.json";
+  /** The queue directory, repo-relative in git's alphabet — what a refusal names. */
+  const QUEUE_REL = ".flume/plan/pending";
+  /** The fence a queue's writer declares: the entry files, never the directory. */
+  const QUEUE_GLOB = `${QUEUE_REL}/*.json`;
+  /** The one corrupt entry every case here commits, repo-relative. */
+  const CORRUPT_REL = `${QUEUE_REL}/${entryFileName("CORRUPT")}`;
 
   it("a phase whose writable paths include the queue is invoked over an unparseable queue", async () => {
-    await commitPendingFile(fx.repo, CORRUPT);
+    await commitEntryFile(fx.repo, entryFileName("CORRUPT"), CORRUPT);
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
-    const repaired: PendingEntry[] = [makeEntry("REPAIRED", ["src/a.ts"])];
+    // Repaired in place, under the name it is reachable by: the filename and
+    // the tag agree, so the repair is an edit to the file that did not parse.
+    const repaired: PendingEntry[] = [makeEntry("CORRUPT", ["src/a.ts"])];
     let invoked = false;
     const agent: Agent = {
       name: "fake-queue-writer",
@@ -18814,8 +18939,8 @@ describe("Dispatcher — the queue's declared writer runs over an unparseable qu
         // queue, so it writes a parseable one over the corrupt tip.
         await writeAndCommit(
           inv.cwd,
-          QUEUE_REL,
-          JSON.stringify(repaired, null, 2) + "\n",
+          CORRUPT_REL,
+          JSON.stringify(repaired[0], null, 2) + "\n",
           "plan: re-derive the queue",
         );
         return { exitCode: 0, stdout: "", stderr: "" };
@@ -18825,7 +18950,7 @@ describe("Dispatcher — the queue's declared writer runs over an unparseable qu
     const phase = makePhase({
       name: "plan",
       concurrency: "singleton",
-      writablePaths: [QUEUE_REL],
+      writablePaths: [QUEUE_GLOB],
       gates: [],
     });
 
@@ -18841,11 +18966,11 @@ describe("Dispatcher — the queue's declared writer runs over an unparseable qu
     expect(outcome.failed).toBeUndefined();
     expect(outcome.result?.committed).toBe(true);
     // The repair reached trunk, so the next tick's strict read resolves.
-    expect(await readPendingFromDisk(fx.repo)).toEqual(repaired);
+    expect(readPendingFromDisk(fx.repo)).toEqual(repaired);
   });
 
   it("a phase that cannot write the queue is refused over an unparseable one", async () => {
-    await commitPendingFile(fx.repo, CORRUPT);
+    await commitEntryFile(fx.repo, entryFileName("CORRUPT"), CORRUPT);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     let invoked = false;
@@ -18895,24 +19020,24 @@ describe("Dispatcher — the queue's declared writer runs over an unparseable qu
     const refusal = errors.find((e) => e.includes("failed to parse"));
     expect(refusal).toBeDefined();
     expect(refusal).toContain("'build' does not declare");
-    expect(refusal).toContain(QUEUE_REL);
+    // The file the repair would write, not the directory: the fence verdict
+    // is over exactly the entries that did not parse.
+    expect(refusal).toContain(CORRUPT_REL);
     expect(outcome.summary).toContain(QUEUE_REL);
     // Nothing was written over the corrupt tip by the refusal itself.
     expect(await head(fx.repo)).toBe(preHead);
-    expect(
-      await readFile(join(fx.repo, ".flume", "plan", "pending.json"), "utf8"),
-    ).toBe(CORRUPT);
+    expect(await readFile(join(fx.repo, CORRUPT_REL), "utf8")).toBe(CORRUPT);
   });
 
   it("the tick context carries the queue's parse failure as a fact", async () => {
-    await commitPendingFile(fx.repo, CORRUPT);
+    await commitEntryFile(fx.repo, entryFileName("CORRUPT"), CORRUPT);
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
     let seen: TickContext | undefined;
     const phase = makePhase({
       name: "plan",
       concurrency: "singleton",
-      writablePaths: [QUEUE_REL],
+      writablePaths: [QUEUE_GLOB],
       gates: [],
       promptArgs: (ctx) => {
         seen = ctx;
@@ -19020,17 +19145,17 @@ describe("Dispatcher — `priority` is the order every selection takes", () => {
 
     const outcome = await dispatcher.tick();
 
-    // Non-vacuity: the file's own order is the scrambled one, and all three
-    // entries are still in it — so the order below is the selection's, and
-    // not the order the queue was read in.
-    expect((await readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
-      "BETA",
+    // Non-vacuity: the directory's own listing order is alphabetical and all
+    // three entries are still in it — so the order above is the selection's,
+    // and not the order the queue was read in.
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
       "ALPHA",
+      "BETA",
       "GAMMA",
     ]);
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
-      "BETA",
       "ALPHA",
+      "BETA",
       "GAMMA",
     ]);
     // The wave's batch, in the order the wave carried it.
@@ -19063,12 +19188,15 @@ describe("Dispatcher — `priority` is the order every selection takes", () => {
 
     // Non-vacuity: the entry that declares nothing really is on the queue,
     // and really declares no priority on disk.
-    const onDisk = await readPendingFromDisk(fx.repo);
+    const onDisk = readPendingFromDisk(fx.repo);
     expect(onDisk.map((e) => e.tag)).toContain("BETA");
     const raw = JSON.parse(
-      await readFile(join(fx.repo, ".flume", "plan", "pending.json"), "utf8"),
-    ) as Record<string, unknown>[];
-    expect(raw.find((e) => e["tag"] === "BETA")).not.toHaveProperty("priority");
+      await readFile(
+        join(queueDirOf(fx.repo), entryFileName("BETA")),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    expect(raw).not.toHaveProperty("priority");
 
     expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
       "GAMMA",

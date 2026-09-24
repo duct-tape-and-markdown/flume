@@ -20,6 +20,7 @@ import { expect, it, vi } from "vitest";
 
 import { EX_DATAERR } from "../src/cli.ts";
 import { Baton } from "../src/Baton.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import { Dispatcher } from "../src/Dispatcher.ts";
 import {
   priorAttemptPath,
@@ -103,7 +104,7 @@ async function makeRenderRepo(
   await exec("git", ["config", "core.longpaths", "true"], opts);
   const flumeDir = join(dir, ".flume");
   await mkdir(join(flumeDir, "prompts"), { recursive: true });
-  await mkdir(join(flumeDir, "plan"), { recursive: true });
+  await mkdir(join(flumeDir, "plan", "pending"), { recursive: true });
   await mkdir(join(dir, "src"), { recursive: true });
   await writeFile(join(flumeDir, "chain.ts"), CHAIN_SRC, "utf8");
   await writeFile(join(flumeDir, "prompts", "build.md"), promptSrc, "utf8");
@@ -113,11 +114,19 @@ async function makeRenderRepo(
     ".flume/awake/\n.flume/prior-attempts/\n.flume/worktrees/\n.flume/rendered-prompts/\n",
     "utf8",
   );
-  await writeFile(
-    join(flumeDir, "plan", "pending.json"),
-    JSON.stringify(entries, null, 2) + "\n",
-    "utf8",
-  );
+  for (const entry of entries) {
+    const tag = (entry as { tag?: unknown }).tag;
+    await writeFile(
+      join(
+        flumeDir,
+        "plan",
+        "pending",
+        entryFileName(typeof tag === "string" ? tag : "SOME-TAG"),
+      ),
+      JSON.stringify(entry, null, 2) + "\n",
+      "utf8",
+    );
+  }
   await exec("git", ["add", "."], opts);
   await exec("git", ["commit", "-q", "-m", "seed"], opts);
   return {

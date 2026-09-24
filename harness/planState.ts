@@ -27,7 +27,7 @@
  * tick pays to re-read it (`.claude/rules/engineering.md`, *Derived state is
  * computed, never restated beside its source*).
  *
- * Each file is JSON beside `pending.json`, and for the same reasons: an
+ * Each file is JSON beside the queue's entry files, and for the same reasons: an
  * agent writes it, a schema gates it, and the next tick reads fields rather
  * than impressions.
  *

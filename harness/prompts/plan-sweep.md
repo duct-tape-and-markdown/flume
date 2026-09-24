@@ -9,7 +9,7 @@
 </plan-state>
 
 <pending-now>
-!`cat "{{PENDING_PATH}}"`
+!`d="{{PENDING_DIR}}"; test -d "$d" || { echo "queue directory absent: $d" >&2; exit 1; }; n=0; for f in "$d"/*.json; do test -e "$f" || break; n=$((n+1)); printf '=== %s\n' "${f##*/}"; cat "$f"; done; test "$n" -gt 0 || echo "(queue empty)"`
 </pending-now>
 
 {{CLAIMED_ENTRIES}}
@@ -19,7 +19,7 @@
 </open-questions-index>
 
 <artifacts>
-queue: {{PENDING_PATH}}
+queue (one `<tag>.json` per entry): {{PENDING_DIR}}
 your plan state (this slice's own file): {{PLAN_STATE_PATH}}
 open questions: {{QUESTIONS_DIR}}
 record queues: {{RECORD_DIRS}}

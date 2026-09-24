@@ -31,7 +31,8 @@
  * folding a path this module already joined back at its fs call.
  */
 
-import { gitPath, resolvePendingPath } from "../src/paths.js";
+import { gitPath, resolvePendingDir } from "../src/paths.js";
+import { ENTRY_FILE_EXT } from "../src/PendingSchema.js";
 
 import type { PlanSlice } from "./declaration.js";
 
@@ -164,12 +165,12 @@ export const RECORD_EXT = ".md";
 const RECORD_GLOB = `*${RECORD_EXT}`;
 
 /**
- * The queue's path under a state root, in git's alphabet — the spelling a
- * fence glob and a seed's report are both in.
+ * The queue **directory**'s path under a state root, in git's alphabet — the
+ * spelling a fence glob, a seed's report and an `ls` are all in.
  *
  * Addressed through the engine's own resolver rather than spelled here: every
- * surface that reaches the queue reaches it through `resolvePendingPath`, and
- * a second spelling would fence a file none of them reads. That resolver
+ * surface that reaches the queue reaches it through `resolvePendingDir`, and
+ * a second spelling would fence a directory none of them reads. That resolver
  * composes with `node:path`, so the fold back into git's alphabet lives here
  * once rather than at each caller. The fold covers the composed path, which
  * leaves a root already in git's alphabet — the one the engine reports —
@@ -177,10 +178,46 @@ const RECORD_GLOB = `*${RECORD_EXT}`;
  *
  * A caller wanting the queue as **disk** holds it calls that resolver
  * directly: it already answers host-native, which is what a prompt naming a
- * file for an agent to open, and every fs call on it, wants.
+ * directory for an agent to open, and every fs call on it, wants.
  */
-export function queuePath(stateRoot: string): string {
-  return gitPath(resolvePendingPath(stateRoot));
+export function queueDir(stateRoot: string): string {
+  return gitPath(resolvePendingDir(stateRoot));
+}
+
+/**
+ * The queue as a fence glob — what admits the entry file a producer writes
+ * and the one a ship deletes, and nothing else under the directory
+ * (`spec/pending.md`, *The ledger is a directory — one entry per file*).
+ *
+ * A glob, never the directory: the fence has to name the files, so a sidecar
+ * a consumer keeps beside the entries — the `.gitkeep` that holds the
+ * directory in a tree once every entry has shipped — is no slice's to write.
+ */
+export function queueGlob(stateRoot: string): string {
+  return `${queueDir(stateRoot)}/*${ENTRY_FILE_EXT}`;
+}
+
+/**
+ * The file the whole queue was one array in, before each entry was its own
+ * file.
+ *
+ * **A migration allowance, and the only reason it is still spelled.** No
+ * slice reads it and nothing writes it; it rides {@link planArtifacts} so
+ * that the tick which moves a consumer's entries into {@link queueDir} can
+ * `git rm` the page in the same commit — outside the fence, that page is a
+ * file no phase can reach and every plan tick reverts on. Retired with
+ * {@link LEGACY_PLAN_STATE_REL} and {@link LEGACY_QUESTIONS_REL} and for the
+ * same reason: each is a consumer's one-time cutover, and none outlives the
+ * release whose migration page tells consumers to take it.
+ */
+const LEGACY_QUEUE_REL = "plan/pending.json";
+
+/**
+ * The legacy queue page under a state root ({@link LEGACY_QUEUE_REL}) —
+ * addressable so the cutover can delete it, and for nothing else.
+ */
+export function legacyQueuePath(stateRoot: string): string {
+  return underStateRoot(stateRoot, LEGACY_QUEUE_REL);
 }
 
 /**
@@ -358,7 +395,8 @@ export function noteGlobs(stateRoot: string): string[] {
  */
 export function planArtifacts(stateRoot: string, slice: PlanSlice): string[] {
   return [
-    queuePath(stateRoot),
+    queueGlob(stateRoot),
+    legacyQueuePath(stateRoot),
     planStatePath(stateRoot, slice),
     legacyPlanStatePath(stateRoot),
     questionGlob(stateRoot),

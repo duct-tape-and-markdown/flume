@@ -437,7 +437,7 @@ const gateContext = (
   repoRoot: CWD,
   flumeDir: `${CWD}/.flume`,
   stateRootRel: ".flume",
-  pendingPath: `${CWD}/.flume/plan/pending.json`,
+  pendingDir: `${CWD}/.flume/plan/pending`,
   configDir: `${CWD}/.flume`,
   phaseName: "build",
   commitSha: "a".repeat(40),

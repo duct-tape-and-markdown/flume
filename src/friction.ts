@@ -73,7 +73,7 @@ export function validateFrictionDeclaration(chain: Chain): void {
  * the skip is `isDotName` (`src/paths.ts`).
  *
  * An absent dir holds nothing — `ENOENT` is the empty list, the same reading
- * `readPendingLoose` (`src/pendingLedger.ts`) gives an absent `pending.json`,
+ * `readPendingLoose` (`src/pendingLedger.ts`) gives an absent queue directory,
  * because the channel is created lazily by whichever write needs it first.
  * Every other listing failure **throws**: a dir that is there and cannot be
  * listed is a real unresolved input, and must not read as an empty channel

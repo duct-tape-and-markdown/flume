@@ -21,7 +21,7 @@ import {
   matchesAny,
   plainPath,
   queueFenceViolations,
-  resolvePendingPath,
+  resolvePendingDir,
   slugify,
   STATE_ROOT_NAMES,
   stopFlagPath,
@@ -633,7 +633,7 @@ describe("the chain module's path has one derivation", () => {
     cwd: repo,
     flumeDir: configDir,
     stateRootRel: ".flume",
-    pendingPath: join(configDir, "plan", "pending.json"),
+    pendingDir: join(configDir, "plan", "pending"),
     configDir,
     repoRoot: repo,
     phaseName: "paths-pin",
@@ -727,8 +727,8 @@ describe("gitPath — the one host-path-to-git-path rule", () => {
     // And it is the rule the engine keys its own committed paths by: a
     // nested state root's host-dialect offset, joined to the queue's default
     // relative path, is the git path a commit names.
-    expect(gitPath(resolvePendingPath(String.raw`jobs\alpha\.flume`))).toBe(
-      "jobs/alpha/.flume/plan/pending.json",
+    expect(gitPath(resolvePendingDir(String.raw`jobs\alpha\.flume`))).toBe(
+      "jobs/alpha/.flume/plan/pending",
     );
   });
 

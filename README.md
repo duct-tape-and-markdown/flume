@@ -60,8 +60,12 @@ It writes, into the current repository:
   module scope the two files above load in. flume is ESM-only, and a chain
   loaded as CommonJS stops resolving it on node 22. Your own repository's
   manifest is untouched — a CommonJS repo adopts and its chain still loads.
-- **`.flume/plan/pending.json`** — the empty queue. Nothing else creates one,
-  and a plan slice refuses over an absent queue.
+- **`.flume/plan/pending/.gitkeep`** — the empty queue directory, one JSON
+  file per entry once a plan slice writes them. Nothing else creates it, and a
+  plan slice refuses over an absent queue. The placeholder is what keeps the
+  directory in the tree once every entry has shipped — git holds no empty
+  directory, and the engine reads only `*.json` directly under it, so nothing
+  reads the placeholder as work.
 - **`.flume/PROTOCOL.md`** — the project-side conventions no declaration
   encodes.
 - the runtime `.gitignore` lines, and `@dtmd/flume` in your `package.json`.
@@ -142,9 +146,9 @@ A `Chain` is an ordered list of `Phase`s. Each `Phase` declares:
   (per-tick) or `afterMerge` (post-fanout).
 - **`handoff`** — which phase(s) wake after a successful commit.
 
-The pending entries themselves are typed. A plan-style phase emits
-`.flume/plan/pending.json`; the schema (`PendingEntry`, `PendingList`) is the
-contract between plan and build. Built-in gates (`tscGate`, `vitestGate`,
+The pending entries themselves are typed. A plan-style phase writes
+`.flume/plan/pending/<tag>.json`, one file per entry; the schema
+(`PendingEntry`, `PendingList`) is the contract between plan and build. Built-in gates (`tscGate`, `vitestGate`,
 `eslintGate`, `writablePathsGate`) cover the common cases; custom gates are
 plain functions returning `GateResult`.
 
@@ -192,8 +196,10 @@ Harness-managed state — every name here is one the runtime spells itself
 (`STATE_ROOT_NAMES` and the accessors in `src/paths.ts`):
 
 - `.flume/awake/<phase>` — baton flag files. Presence = phase is awake.
-- `.flume/plan/pending.json` — structured handoff between plan and build.
-  This is the default location; a chain moves it with `Chain.pendingPath`.
+- `.flume/plan/pending/<tag>.json` — structured handoff between plan and
+  build, one file per entry so two producers and a ship merge without a
+  conflict. This is the default location; a chain moves the directory with
+  `Chain.pendingDir`.
 - `.flume/prior-attempts/<keyspace>/` — one record per reverted attempt,
   written beside the baton so it outlives the worktree that produced it, and
   scoped by keyspace (`entry/`, `phase/`) so a tag and a phase name that
@@ -426,11 +432,18 @@ follows enough usage signal to commit under semver.
   who owns what, how each is extended from outside, where a finding goes.
 - [`docs/INTENT.md`](docs/INTENT.md) — design rationale: the spine, what
   stays prose, what becomes JSON, non-goals.
-- [`docs/MIGRATING-0.18.md`](docs/MIGRATING-0.18.md) — the note for the line
-  in progress, for a chain on `0.17.x`: one API break so far, the
-  suspect-flake marker off the gate-revert record, with the gate's own
-  `blamesSpan: false` in its place. It grows as further breaks land, and the
-  release's `### Breaking` section is the census at the cut.
+- [`docs/MIGRATING-0.19.md`](docs/MIGRATING-0.19.md) — the note for the line
+  in progress, for a chain on `0.18.x`: two shared files become two
+  directories. The pending queue becomes one JSON file per entry, which moves
+  a chain field, a gate-context field, three parse exports, every fence glob
+  and prompt span naming the queue, and the queue you already have on disk;
+  the harness package's plan state becomes one file per plan slice, which
+  moves the accessors, the fence helper, one prompt arg, and the page you
+  already have on disk. It grows as further breaks land, and the release's
+  `### Breaking` section is the census at the cut.
+- [`docs/MIGRATING-0.18.md`](docs/MIGRATING-0.18.md) — upgrade note for a
+  chain on `0.17.x`: one API break, the suspect-flake marker off the
+  gate-revert record, with the gate's own `blamesSpan: false` in its place.
 - [`docs/MIGRATING-0.17.md`](docs/MIGRATING-0.17.md) — upgrade note for a
   chain on `0.16.x`: no API change, one on-disk one. The loop lock and the
   tip claim each state the holder's pid on the first line and the instant it

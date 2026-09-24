@@ -203,7 +203,7 @@ export class EntryFieldRemovalError extends Error {
  * a tick against (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * Shadowing an **engine-core** field is a different refusal with a different
- * owner: `composePendingList` already throws on it, so nothing here
+ * owner: `composePendingEntry` already throws on it, so nothing here
  * re-derives that check beside it (*The fix lands at the mechanism*). A
  * consumer refining `tag` is passed through untouched — the engine composes
  * a refinement there as an intersection over its own mechanical floor.

@@ -29,7 +29,11 @@ import {
   frictionNotes,
   harvestFriction,
 } from "../src/friction.ts";
-import { parsePending, TAG_MAX_LENGTH } from "../src/PendingSchema.ts";
+import {
+  entryFileName,
+  parsePendingQueue,
+  TAG_MAX_LENGTH,
+} from "../src/PendingSchema.ts";
 import type { Chain } from "../src/Phase.ts";
 import { denyDirectory } from "./helpers/denial.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
@@ -179,7 +183,7 @@ describe("frictionCountLine — EACCES/ENOENT split (dispatcher-frictioncountlin
  * the raw tag against the revert note's *fixed* scaffolding) cannot bound
  * the sum. These drive the real `harvestFriction` at the schema's own
  * ceiling (`.claude/rules/engineering.md`, *A seam gate reads what the real
- * writer wrote*): the tag comes from `parsePending` accepting it, and the
+ * writer wrote*): the tag comes from `parsePendingQueue` accepting it, and the
  * verdict is what landed on the real filesystem, whose NAME_MAX is the thing
  * actually being cleared.
  */
@@ -196,8 +200,14 @@ describe("friction harvest — the destination filename clears NAME_MAX at the s
     files: { new: [], edit: [], retire: [] },
   });
 
+  /** That entry as the one file the real queue parse reads it out of. */
+  const parseOneEntry = (entry: { tag: string }) =>
+    parsePendingQueue([
+      { file: entryFileName(entry.tag), raw: JSON.stringify(entry) },
+    ]);
+
   /**
-   * The longest tag the real parser admits — asserted against `parsePending`
+   * The longest tag the real parser admits — asserted against `parsePendingQueue`
    * itself, and against its refusal one character further, so the cases
    * below cannot quietly drift off the ceiling they claim to sit on.
    */
@@ -205,12 +215,8 @@ describe("friction harvest — the destination filename clears NAME_MAX at the s
 
   beforeEach(async () => {
     fx = await makeFixture();
-    expect(parsePending(JSON.stringify([entryWithTag(longestTag)])).ok).toBe(
-      true,
-    );
-    expect(
-      parsePending(JSON.stringify([entryWithTag(`${longestTag}A`)])).ok,
-    ).toBe(false);
+    expect(parseOneEntry(entryWithTag(longestTag)).ok).toBe(true);
+    expect(parseOneEntry(entryWithTag(`${longestTag}A`)).ok).toBe(false);
   });
 
   afterEach(async () => {
@@ -225,7 +231,7 @@ describe("friction harvest — the destination filename clears NAME_MAX at the s
     return mirrorDir;
   }
 
-  it("harvestFriction delivers a note whose source filename is 13 chars under the longest tag parsePending accepts, within NAME_MAX", async () => {
+  it("harvestFriction delivers a note whose source filename is 13 chars under the longest tag parsePendingQueue accepts, within NAME_MAX", async () => {
     // 13 chars is past the wall, not at it: tag (216) + "--" + the
     // 24-character fsStamp + "--" is 244 already, so anything from 12 up
     // composes a basename the filesystem refuses with ENAMETOOLONG.
@@ -271,7 +277,7 @@ describe("friction harvest — the destination filename clears NAME_MAX at the s
     }
   });
 
-  it("two harvests of one source filename under the longest tag parsePending accepts land as two distinct files, neither overwriting the other", async () => {
+  it("two harvests of one source filename under the longest tag parsePendingQueue accepts land as two distinct files, neither overwriting the other", async () => {
     const sourceName = "friction-1.md";
     const first = "attempt one: the gate is unreachable\n";
     const second = "attempt two: still unreachable\n";

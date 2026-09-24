@@ -72,7 +72,7 @@ project's:
 ## Disk vs git log
 
 When asking "did X ship?" or "is gate Y satisfied?", read the disk artifact —
-the queue at `{{STATE_ROOT}}/plan/pending.json`, or the source file itself.
+the queue at `{{STATE_ROOT}}/plan/pending/`, or the source file itself.
 Git log is orientation, not authority.
 
 ## Push policy

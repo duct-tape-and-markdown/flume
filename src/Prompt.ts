@@ -6,7 +6,7 @@
  *   1. `{{KEY}}` placeholders are replaced from the promptArgs map.
  *   2. `` !`shell command` `` inline-exec blocks are evaluated in the tick's
  *      cwd and replaced with their stdout. This lets prompts bake in dynamic
- *      context (current `pending.json`, recent `git log`, `pnpm tsc` output)
+ *      context (the current queue, recent `git log`, `pnpm tsc` output)
  *      without an authoring round-trip.
  *
  * A `<harness>` block is prepended to every rendered prompt with the phase's
@@ -197,7 +197,7 @@ export interface GateRevertAttempt {
   keyedAs: string;
   /**
    * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
    * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
    * file's path. Entry-keyed records only: a singleton phase has no
    * declaration to hash, and a record whose `key` says `entry` and carries
@@ -255,7 +255,7 @@ export interface CleanExitAttempt {
   keyedAs: string;
   /**
    * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
    * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
    * file's path. Entry-keyed records only: a singleton phase has no
    * declaration to hash, and a record whose `key` says `entry` and carries
@@ -304,7 +304,7 @@ export interface PlatformPreemptAttempt {
   keyedAs: string;
   /**
    * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
    * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
    * file's path. Entry-keyed records only: a singleton phase has no
    * declaration to hash, and a record whose `key` says `entry` and carries
@@ -360,7 +360,7 @@ export interface RenderRefusedAttempt {
   keyedAs: string;
   /**
    * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
    * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
    * file's path. Entry-keyed records only: a singleton phase has no
    * declaration to hash, and a record whose `key` says `entry` and carries
@@ -424,7 +424,7 @@ export interface TipMovedAttempt {
   keyedAs: string;
   /**
    * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
    * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
    * file's path. Entry-keyed records only: a singleton phase has no
    * declaration to hash, and a record whose `key` says `entry` and carries
@@ -504,7 +504,7 @@ export interface NotShippedAttempt {
   keyedAs: string;
   /**
    * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
    * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
    * file's path. Entry-keyed records only: a singleton phase has no
    * declaration to hash, and a record whose `key` says `entry` and carries
@@ -561,7 +561,7 @@ export interface RenderOptions {
   /**
    * Resolved flume state root. Auto-injected as the reserved `{{FLUME_DIR}}`
    * substitution key, so any prompt can reference state-relative paths
-   * (`{{FLUME_DIR}}/plan/pending.json`) with no `promptArgs` boilerplate. A
+   * (`{{FLUME_DIR}}/plan/pending/`) with no `promptArgs` boilerplate. A
    * chain-supplied `FLUME_DIR` in `args` does not override it — the resolved
    * root is authoritative.
    */

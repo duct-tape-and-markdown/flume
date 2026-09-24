@@ -33,13 +33,13 @@ prescription*).
 [living-harness]: https://github.com/duct-tape-and-markdown/flume/tree/main/harness
 
 **Two example chains, one engine.** Cascade is the flagship: multi-phase,
-fanout, `pending.json`, the full derivation pipeline — but it is *an*
+fanout, a pending queue, the full derivation pipeline — but it is *an*
 example, not the engine's assumption. The engine ships mechanism, never
 convention (`.claude/rules/engine-boundary.md`), and the second example
 chain is the proof:
 [`examples/backlog-groomer-chain.ts`](../examples/backlog-groomer-chain.ts)
 is single-phase, has no plan/build split, and reads a plain
-`BACKLOG.json` instead of `pending.json` — yet it composes the same
+`BACKLOG.json` instead of the pending queue — yet it composes the same
 entry-schema, tag-refinement, and capability-gating machinery cascade uses
 (§§10-11 below), declared as its own small extension and its own tag
 convention. Where a section below quotes cascade, skim the groomer file
@@ -359,7 +359,7 @@ stdout, whose `ScriptReader` and `ScriptReport` are exported beside them.
 runner later.
 
 So the shape is fixed: a plan → build derivation pipeline over a
-`pending.json` queue, with citation discipline and a named-lines judge.
+pending queue, with citation discipline and a named-lines judge.
 
 **Read the rest of this page when that shape isn't yours** — a different
 workflow, a single phase, a different queue, a chain embedded in something
@@ -410,7 +410,8 @@ resolve relative to `.flume/`.
     plan.md
     build.md
   plan/
-    pending.json
+    pending/
+      <tag>.json
     state.md
     open-questions.md
 ```
@@ -418,8 +419,8 @@ resolve relative to `.flume/`.
 **Harness-managed state:** the runtime spells the names of its own state
 dirs and files itself, so you neither author nor move them — the set is
 `spec/jobs.md`, "Runtime ignores", which owns it and grows without asking
-your chain. Two neighbours that set doesn't carry: `plan/pending.json` is
-the default the runtime places, and `Chain.pendingPath` moves it;
+your chain. Two neighbours that set doesn't carry: `plan/pending/` is
+the default the runtime places, and `Chain.pendingDir` moves it;
 `sessions/` is a chain's own artifact (`withSessionCapture`), placed by the
 chain that captures it — the runtime never puts a directory there. Per-run
 artifacts your chain writes are yours to place: root them at
@@ -454,7 +455,7 @@ omitted; the rest are required.
 | `promptArgs`    | Optional builder for the `{{KEY}}` substitution map. Receives the per-tick `TickContext`.                                          |
 | `handoff`       | Returns sibling phases to wake based on the tick's `TickResult`.                                                                  |
 | `shouldRun`     | Optional predicate consulted before the agent is invoked. Returning `false` declines the tick — see below.                       |
-| `shipped`       | Optional predicate deciding whether a fanout entry whose commit landed and passed every gate leaves the queue. Reads the facts on `ShipContext`; returning `false` keeps the commit on trunk and the entry in `pending.json`. Undeclared means shipped. |
+| `shipped`       | Optional predicate deciding whether a fanout entry whose commit landed and passed every gate leaves the queue. Reads the facts on `ShipContext`; returning `false` keeps the commit on trunk and the entry in the queue. Undeclared means shipped. |
 | `setupWorktree` | Optional hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. May return `{ extraEnv }`. Fires under either concurrency. See §3. |
 | `teardownWorktree` | Optional hook, `setupWorktree`'s cleanup mirror — best-effort, runs before the worktree is removed. Fires under either concurrency. See §3. |
 
@@ -472,7 +473,8 @@ const slicePhase = (slice: PlanSlice): Phase => ({
     // `stateRoot` is `api.paths.stateRootRel`, read once at chain load —
     // so a run under a relocated `FLUME_DIR` fences the
     // directory that run actually writes.
-    `${stateRoot}/plan/pending.json`,
+    // One entry per file, so the fence is the glob and not the directory.
+    `${stateRoot}/plan/pending/*.json`,
     `${stateRoot}/plan/state.md`,
     `${stateRoot}/plan/open-questions.md`,
     // The inbox is drained by deletion, so the fence has to reach it.
@@ -713,7 +715,7 @@ says so below.
 - `stateRootRel` — the state root's path relative to the primary repo root,
   in git's own alphabet (forward slashes, whatever the host's separator).
   The one value that reads a **tracked** state-root file as the gated commit
-  holds it: `git show <commitSha>:<stateRootRel>/plan/pending.json`. A gate
+  holds it: `git ls-tree <commitSha> -- <stateRootRel>/plan/pending/`. A gate
   that reads such a file off `flumeDir` instead reads the *previous*
   commit's copy under `afterCommit`. The key is always present; its value is
   `undefined` when the state root is relocated outside the repository, and
@@ -722,9 +724,10 @@ says so below.
   `cwd` while it resolves inside the repo (a worktree carries the tracked
   layout at the same offset), passed through verbatim when it is relocated
   outside one.
-- `pendingPath` — the absolute, resolved queue path (`Chain.pendingPath`).
-  Read it directly: re-composing it from `ctx.flumeDir` and literal segments
-  hardcodes a layout the chain can move.
+- `pendingDir` — the absolute, resolved queue **directory** (`Chain.pendingDir`).
+  Every `<tag>.json` directly under it is an entry. Read it directly:
+  re-composing it from `ctx.flumeDir` and literal segments hardcodes a layout
+  the chain can move.
 
 **What is being gated.**
 
@@ -798,7 +801,7 @@ const factory: ChainFactory = (flume) => {
 - `writablePathsGate` — attached automatically by the dispatcher from each
   phase's `writablePaths`. Don't list manually.
 - `pendingGate` — `pendingGate({ targetFence, extension?, fenceWhen?, hint? })`:
-  composed `pending.json` validation plus a plan-time fence pre-check
+  composed queue validation plus a plan-time fence pre-check
   against the target phase. See below.
 - `shellGate` — `shellGate({ name, when, cmd, args, failHint? })`, the escape
   hatch for "run a command, fail on non-zero". `tscGate`, `vitestGate` and
@@ -808,7 +811,7 @@ const factory: ChainFactory = (flume) => {
 
 ### `pendingGate`: composed validation + fence pre-check
 
-`pendingGate` replaces a hand-rolled "does `pending.json` parse" gate
+`pendingGate` replaces a hand-rolled "does the queue parse" gate
 (below) with one that also catches a class of guaranteed-revert bug
 before it reaches build: it validates the queue against the composed
 core+extension schema (§2), then pre-checks every entry's declared
@@ -876,8 +879,8 @@ messages (schema and fence) — the same capability/convention split as
 enforcement. Omitted, the messages read exactly as they did before the option
 existed.
 
-The queue this gate validates is `ctx.pendingPath`, the resolved
-`Chain.pendingPath` — there is no `pendingPath` option, because the path is
+The queue this gate validates is `ctx.pendingDir`, the resolved
+`Chain.pendingDir` — there is no `pendingDir` option, because the path is
 already a fact the dispatcher hands every gate.
 
 ### When to write a bespoke Gate
@@ -892,18 +895,27 @@ genuinely don't fit:
 
 ```ts
 const pendingParseGate: Gate = {
-  name: "pending.json parses",
+  name: "the queue parses",
   when: "afterCommit",
   async run(ctx) {
-    const raw = await readFile(ctx.pendingPath, "utf8");
-    const r = parsePending(raw);
+    const files = await readdir(ctx.pendingDir);
+    const r = parsePendingQueue(
+      await Promise.all(
+        files
+          .filter((file) => file.endsWith(".json"))
+          .map(async (file) => ({
+            file,
+            raw: await readFile(join(ctx.pendingDir, file), "utf8"),
+          })),
+      ),
+    );
     if (r.ok)
       return { ok: true, message: `parsed (${r.entries.length} entries)` };
     return {
       ok: false,
-      message: `pending.json has ${r.errors.length} schema violations`,
+      message: `the queue has ${r.errors.length} schema violations`,
       details: r.errors
-        .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
+        .map((e) => `  [${e.file}] ${e.path}: ${e.message}`)
         .join("\n"),
     };
   },
@@ -922,7 +934,7 @@ The shape to internalize:
   — per-entry under fanout, the phase's own under singleton — not the
   operator's checkout. `ctx.commitSha` is set if you need to
   inspect the commit (`git show`, `git diff`).
-- **Read the roots off `ctx`; never re-compose one.** `ctx.pendingPath` is
+- **Read the roots off `ctx`; never re-compose one.** `ctx.pendingDir` is
   the resolved queue, `ctx.flumeDir` the state root, `ctx.configDir` the
   chain/prompts dir — each resolved once per tick by the dispatcher. A gate
   that rebuilds one of them out of literal segments is keeping a second copy
@@ -1070,7 +1082,7 @@ The choice is structural — it follows from what the phase outputs.
 ### Singleton
 
 Pick `"singleton"` when the phase derives a shared artifact that can't
-admit concurrent edits — plan derives the whole `pending.json` from disk.
+admit concurrent edits — plan derives the whole queue from disk.
 Two parallel ticks would step on each other.
 
 A singleton tick runs in its own worktree too — branch
@@ -1531,16 +1543,16 @@ them over depends on where you are, and there is one for every position:
   decided before a tick exists: artifact placement (the sessions case above,
   off `flumeDir`) and `writablePaths` (off `stateRootRel`).
 - **Gates** receive the resolved roots on `GateContext` — `ctx.flumeDir`
-  (state root), `ctx.configDir` (chain/prompts dir), and `ctx.pendingPath`
-  (the queue, already resolved from `Chain.pendingPath`); *What's on `ctx`*
+  (state root), `ctx.configDir` (chain/prompts dir), and `ctx.pendingDir`
+  (the queue directory, already resolved from `Chain.pendingDir`); *What's on `ctx`*
   (§2) walks the rest of that surface. A gate that reads
-  pending reads `ctx.pendingPath` directly; re-composing that path out of
+  pending reads `ctx.pendingDir` directly; re-composing that path out of
   `ctx.flumeDir` and literal segments both hardcodes a layout the chain can
   move and re-derives a value the dispatcher resolved once per tick. The
   builtin `pendingGate` is the worked example.
 - **Prompts** can use the reserved `{{FLUME_DIR}}` placeholder with **no
   `promptArgs` boilerplate** — the dispatcher auto-injects it into every
-  prompt's substitution map. Write `{{FLUME_DIR}}/plan/pending.json` (or
+  prompt's substitution map. Write `{{FLUME_DIR}}/plan/pending` (or
   `$FLUME_DIR` inside an inline-exec, which inherits the env). `{{FLUME_DIR}}`
   is reserved and dispatcher-authoritative: a `promptArgs` value of the same
   name cannot shadow it.
@@ -1617,9 +1629,9 @@ without round-tripping through `promptArgs`:
 !`git log -n 5 --oneline`
 </recent-commits>
 
-<pending-json>
-!`p="{{FLUME_DIR}}/plan/pending.json"; test -e "$p" || { echo "[]"; exit 0; }; cat "$p"`
-</pending-json>
+<pending-queue>
+!`d="{{FLUME_DIR}}/plan/pending"; test -e "$d" || { echo "(no queue directory yet)"; exit 0; }; find "$d"/ -maxdepth 1 -name '*.json' >/dev/null || exit 1; for f in "$d"/*.json; do test -e "$f" || break; printf '=== %s\n' "${f##*/}"; cat "$f"; done`
+</pending-queue>
 ```
 
 That second span is the idiom for an artifact whose **absence is
@@ -1645,7 +1657,7 @@ Notes:
 - **A `{{KEY}}` inside a span is shell text, not a shell word.** Placeholders
   are substituted before the span runs, and the renderer neither quotes nor
   escapes what it substitutes — the engine cannot know a value was meant as
-  one word. Quote it yourself (`` !`cat "{{PENDING_PATH}}"` ``), or a state
+  one word. Quote it yourself (`` !`ls "{{PENDING_DIR}}"` ``), or a state
   root carrying a space or a backslash word-splits before `sh` opens the file.
 - All inline-execs run in parallel; don't depend on ordering between them.
 - Output is capped at 4 MiB.
@@ -1815,7 +1827,7 @@ The block is **absent on a first attempt** (no false signal), and a record
 clears two ways: an attempt that **ships clean** retires its own, and a
 **fanout wave's queue read** retires every entry-keyed record whose tag the
 queue no longer carries. That second clear runs before selection, so an entry
-you dropped or renamed in `pending.json` leaves nothing behind for a later tick
+you dropped or renamed in the queue leaves nothing behind for a later tick
 to read — the retry those records were written for is never going to happen.
 The wave names the keys it cleared on the tick verdict
 (`clearedPriorAttempts`, absent when it cleared none — the same
@@ -2018,8 +2030,8 @@ const chain: Chain = {
 - **`quarantineScope`** — `"run"` (default): a tagged failure at any of the
   three stages quarantines that entry for the rest of the run, under the key
   the failing tick reported — its slug plus a hash of its bytes in
-  `pending.json`, so a re-scope on trunk is a new key and lifts the hold.
-  Later ticks skip it without touching `pending.json`, so a fresh run
+  its queue file, so a re-scope on trunk is a new key and lifts the hold.
+  Later ticks skip it without touching the queue, so a fresh run
   retries it from scratch. `"none"` disables quarantine outright: every
   entry stays pickable every tick regardless of an earlier failure. The
   consecutive-failure backstop below still applies either way — `"none"`
@@ -2172,7 +2184,7 @@ the parser cannot drift:
   composed entry schema; `parsePending(raw, entryExtension)` does the same
   in your own gates. The composed schema is strict: a field that is neither
   core nor declared fails loudly. (Silent stripping is how plan-authored
-  fields would get destroyed when the dispatcher rewrites `pending.json`
+  fields would get destroyed when the dispatcher rewrites an entry's file
   on ship.) A validator's `~standard.validate` must be synchronous —
   `parsePending` cannot await it, and an async validator is refused at
   first parse, naming the field.
@@ -2193,7 +2205,7 @@ carry only the mechanical fields, and anything extra is rejected.
 
 The extension isn't cascade-specific machinery — `backlog-groomer-chain.ts`
 declares its own, one field (`reason`), and validates a completely
-different queue (`BACKLOG.json`, not `pending.json`) against
+different queue (`BACKLOG.json`, not the pending directory) against
 `composePendingList`/`parsePending` the same way. Same composition, no
 plan/build split in sight.
 

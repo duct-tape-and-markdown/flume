@@ -20,7 +20,6 @@
   "merging/throw-m.json": "the state root's layout — `<flumeDir>`-relative",
   "notes/journal.md": "the journal `examples/minimal-chain.ts` appends to — written in a consumer's repo, never in this one",
   "plan-sweep.json": "a record filename a run writes under the state root",
-  "plan/pending.json": "the state root's layout — `<flumeDir>`-relative",
   "prompts/backlog-groomer.md": "a `Phase.promptPath`, resolved against a chain's config dir",
   "prompts/notes.md": "the prompt `minimal-chain.ts` tells a copying consumer to author",
   "prompts/plan.md": "a `Phase.promptPath`, resolved against a chain's config dir",

@@ -49,7 +49,7 @@ export type Concurrency = "singleton" | "fanout";
  * its own agent wrote can, without the engine knowing such a file exists.
  */
 export interface ShipContext {
-  /** The entry being classified, as it appears in `pending.json`. */
+  /** The entry being classified, as it appears in its queue file. */
   entry: PendingEntry;
   /** Sha of this entry's commit as cherry-picked onto trunk. */
   mergedSha: string;
@@ -254,11 +254,11 @@ export interface TickContext {
  * never launders that into a claim it can't back.
  */
 export interface FanoutEntryOutcome {
-  /** The entry's tag, as it appears in `pending.json`. */
+  /** The entry's tag, as it appears in its queue file. */
   tag: string;
   /**
    * The chain-declared extension fields this entry carried, exactly as the
-   * engine parsed them from `pending.json` — every field
+   * engine parsed them from its queue file — every field
    * `CORE_ENTRY_FIELDS` (`src/PendingSchema.ts`) does not name. `{}` for a
    * chain that declared no extension, never absent: the engine holds the
    * entry for every record here, so "carried no payload" is a fact it can
@@ -268,7 +268,7 @@ export interface FanoutEntryOutcome {
    * it is gone from `pendingAfter`/`pickableAfter` and nothing else on the
    * result carries what it was. A `handoff` routing on the entry's own
    * declaration — the section it cited, a surface field, a risk flag —
-   * would otherwise re-read `pending.json` at `TickResult.baseSha` and
+   * would otherwise re-read the queue at `TickResult.baseSha` and
    * re-parse it with the chain's own extension, which is the engine's parse
    * rebuilt by a second hand (spec/chain.md "What a hook receives").
    *
@@ -308,7 +308,7 @@ export interface FanoutEntryOutcome {
  * (spec/loop.md "Repeated identical failures — quarantine, then abort").
  *
  * The `key` is the hold's own identity — the entry's slug plus a hash of its
- * bytes in `pending.json` (`entryDeclaredKey`, `src/entryKey.ts`) — reported
+ * bytes in its queue file (`entryDeclaredKey`, `src/entryKey.ts`) — reported
  * beside the tag so a chain can see *which read* of the entry the hold
  * stands under. Editing the entry on trunk changes its key and lifts the
  * hold, so a chain comparing the key it saw last tick against this one reads
@@ -502,7 +502,7 @@ export interface TickResult {
    * Empty, never absent, on a nothing-pickable tick with no quarantine in
    * effect; absent entirely on a tick that provisioned an entry. Lets a
    * chain's `handoff` tell a quarantined `open` entry — still `open` in
-   * `pendingAfter`, since `pending.json` itself is untouched — from a
+   * `pendingAfter`, since the queue itself is untouched — from a
    * genuinely pickable one, without re-deriving it.
    */
   quarantinedTags?: readonly QuarantinedTag[];
@@ -717,7 +717,7 @@ export interface Phase {
    * notion of a commit that lands without finishing the work.
    *
    * Returning `false` records the entry `not-shipped`: the commit stays on
-   * trunk, the entry stays in `pending.json`. The engine holds no vocabulary
+   * trunk, the entry stays in the queue. The engine holds no vocabulary
    * for *why* — a park, a partial, a deliberate hand-off are one chain's
    * words for one chain's workflow (`.claude/rules/engine-boundary.md`,
    * *Told, not inferred*). It reports the facts in {@link ShipContext}; the
@@ -823,15 +823,16 @@ export interface Chain {
    */
   friction?: string;
   /**
-   * State-root-relative file path naming the pending queue (spec/pending.md,
-   * *The pending queue*) — the `friction` idiom applied to the queue file
-   * itself. Resolved against the resolved `flumeDir` once per
-   * tick, same as `friction`. Undeclared defaults to `"plan/pending.json"`,
-   * the one default the engine keeps because its own mechanics (fanout
-   * selection, the wave-end rewrite) read the file and a tick cannot run
-   * without one.
+   * State-root-relative **directory** path naming the pending queue
+   * (spec/pending.md, *The pending queue*) — the `friction` idiom applied to
+   * the queue. One JSON file per entry lives directly under it, named
+   * `<tag>.json` (*The ledger is a directory — one entry per file*). Resolved
+   * against the resolved `flumeDir` once per tick, same as `friction`.
+   * Undeclared defaults to `"plan/pending"`, the one default the engine keeps
+   * because its own mechanics (fanout selection, the wave-end rewrite) read
+   * the directory and a tick cannot run without one.
    */
-  pendingPath?: string;
+  pendingDir?: string;
   /**
    * How this chain computes the directory its worktrees are placed under
    * (spec/worktrees.md, *Placement — the worktree base*) — a function of

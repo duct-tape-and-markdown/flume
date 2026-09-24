@@ -129,7 +129,9 @@ describe("tickExitCode — axis classification", () => {
       failed: true,
       ledgerRefusal: "parse-failure",
       awakeAfter: ["build"],
-      summary: "pending.json failed to parse (1 error(s)): [0] : not json",
+      summary:
+        ".flume/plan/pending failed to parse (1 error(s)): " +
+        "[SHIP-B.json] : not json",
     };
     expect(decideRead.verdict).toBeUndefined();
     expect(tickExitCode(decideRead)).toBe(EX_MOUNT_DEAD);
@@ -142,7 +144,8 @@ describe("tickExitCode — axis classification", () => {
       verdict: LEDGER_REFUSAL_VERDICT,
       summary:
         "build shipped SHIP-A — pending-ledger rewrite refused " +
-        "(pending.json failed to parse (1 error(s)): [0] : not json)",
+        "(.flume/plan/pending failed to parse (1 error(s)): " +
+        "[SHIP-B.json] : not json)",
     };
     expect(waveRewrite.verdict?.shippedTags).toEqual(["SHIP-A"]);
     expect(tickExitCode(waveRewrite)).toBe(EX_MOUNT_DEAD);

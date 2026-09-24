@@ -45,6 +45,7 @@ import {
   silent,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer", CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call
@@ -78,7 +79,7 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
     // same as the dispatcher-built case. The dedicated "real afterCommit
     // shape" regression test below overrides both explicitly.
     stateRootRel: computeStateRootRel(repoRoot, flumeDir),
-    pendingPath: join(flumeDir, "plan", "pending.json"),
+    pendingDir: join(flumeDir, "plan", "pending"),
     configDir: join(cwd, ".flume"),
     repoRoot,
     phaseName: "test-phase",
@@ -128,6 +129,26 @@ async function commitFiles(
   return stdout.trim();
 }
 
+/**
+ * A queue directory as a commit holds it: one `<tag>.json` per entry, plus the
+ * `.gitkeep` adoption seeds (`harness/init.ts`) — git holds no empty
+ * directory, so a drained queue needs a file of its own to stay *present* and
+ * empty rather than missing.
+ */
+function queueFiles(
+  entries: readonly unknown[],
+  dirRel = ".flume/plan/pending",
+): Record<string, string> {
+  const files: Record<string, string> = { [`${dirRel}/.gitkeep`]: "" };
+  for (const entry of entries) {
+    const tag = (entry as { tag?: unknown }).tag;
+    files[
+      `${dirRel}/${entryFileName(typeof tag === "string" ? tag : "SOME-TAG")}`
+    ] = JSON.stringify(entry);
+  }
+  return files;
+}
+
 const validEntry = {
   tag: "SOME-TAG",
   gate: { kind: "open" },
@@ -150,10 +171,10 @@ describe("pendingGate — lazy fence read (targetFence populated after construct
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function writePending(entries: unknown): Promise<string> {
-    return commitFiles(dir, {
-      ".flume/plan/pending.json": JSON.stringify(entries),
-    });
+  async function writePending(
+    entries: readonly unknown[],
+  ): Promise<string> {
+    return commitFiles(dir, queueFiles(entries));
   }
 
   it("passes when a getter-backed writablePaths is only populated after pendingGate(...) is called", async () => {
@@ -258,10 +279,10 @@ describe("pendingGate — fence pre-check reads declared files, not observedFile
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function writePending(entries: unknown): Promise<string> {
-    return commitFiles(dir, {
-      ".flume/plan/pending.json": JSON.stringify(entries),
-    });
+  async function writePending(
+    entries: readonly unknown[],
+  ): Promise<string> {
+    return commitFiles(dir, queueFiles(entries));
   }
 
   it("passes an entry whose declared files all sit inside the fence but whose observedFiles names a path outside it", async () => {
@@ -294,10 +315,10 @@ describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, .claude/rules/e
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function writePending(entries: unknown): Promise<string> {
-    return commitFiles(dir, {
-      ".flume/plan/pending.json": JSON.stringify(entries),
-    });
+  async function writePending(
+    entries: readonly unknown[],
+  ): Promise<string> {
+    return commitFiles(dir, queueFiles(entries));
   }
 
   const outsideFenceEntry = {
@@ -327,7 +348,7 @@ describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, .claude/rules/e
     const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
     expect(result.message).toBe(
-      `${join("plan", "pending.json")} has 1 schema violation(s)`,
+      `${join("plan", "pending")} has 1 schema violation(s)`,
     );
   });
 
@@ -354,7 +375,7 @@ describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, .claude/rules/e
   });
 });
 
-describe("pendingGate — reads ctx.pendingPath, not an option of its own (CHAIN-PENDINGPATH)", () => {
+describe("pendingGate — reads ctx.pendingDir, not an option of its own (CHAIN-PENDINGPATH)", () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -365,33 +386,32 @@ describe("pendingGate — reads ctx.pendingPath, not an option of its own (CHAIN
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("reads a custom ctx.pendingPath instead of the default plan/pending.json location", async () => {
-    const sha = await commitFiles(dir, {
-      ".flume/custom/queue.json": JSON.stringify([validEntry]),
-    });
-    // PendingGateOptions carries no pendingPath field at all (acceptance:
-    // "PendingGateOptions no longer has a pendingPath field") — the gate
-    // and the dispatcher can no longer check two different files.
+  it("reads a custom ctx.pendingDir instead of the default plan/pending location", async () => {
+    const sha = await commitFiles(
+      dir,
+      queueFiles([validEntry], ".flume/custom/queue"),
+    );
+    // PendingGateOptions carries no pendingDir field at all (acceptance:
+    // "PendingGateOptions no longer has a pendingDir field") — the gate
+    // and the dispatcher can no longer check two different queues.
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
     const result = await gate.run(
       ctx(dir, {
         commitSha: sha,
-        pendingPath: join(dir, ".flume", "custom", "queue.json"),
+        pendingDir: join(dir, ".flume", "custom", "queue"),
       }),
     );
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/fence pre-check passed/);
   });
 
-  it("undeclared ctx.pendingPath (the default fixture shape) still resolves to plan/pending.json", async () => {
-    const sha = await commitFiles(dir, {
-      ".flume/plan/pending.json": JSON.stringify([validEntry]),
-    });
+  it("undeclared ctx.pendingDir (the default fixture shape) still resolves to plan/pending", async () => {
+    const sha = await commitFiles(dir, queueFiles([validEntry]));
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
     const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
     expect(result.message).toBe(
-      `${join("plan", "pending.json")} valid (1 entries), fence pre-check passed`,
+      `${join("plan", "pending")} valid (1 entries), fence pre-check passed`,
     );
   });
 });
@@ -417,22 +437,18 @@ describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
   };
 
   it("reverts the commit that introduces an off-fence declaration, not the next one", async () => {
-    await commitFiles(dir, {
-      ".flume/plan/pending.json": JSON.stringify([validEntry]),
-    });
-    const violatingSha = await commitFiles(dir, {
-      ".flume/plan/pending.json": JSON.stringify([offFenceEntry]),
-    });
+    await commitFiles(dir, queueFiles([validEntry]));
+    const violatingSha = await commitFiles(dir, queueFiles([offFenceEntry]));
     // The disk/working-tree copy still shows the clean, pre-violation
     // state — as it would for a fanout worktree commit whose branch hasn't
     // merged onto whatever tree `ctx.flumeDir` resolves to. Pre-fix,
-    // `readFile(join(ctx.flumeDir, pendingPath))` reads exactly this stale
+    // `readFile(join(ctx.flumeDir, pendingDir))` reads exactly this stale
     // copy and wrongly passes the commit that introduced the violation —
     // the violation would only surface once some later write finally
     // synced the disk, misattributing it to whatever commit came next.
     await writeFile(
-      join(dir, ".flume", "plan", "pending.json"),
-      JSON.stringify([validEntry]),
+      join(dir, ".flume", "plan", "pending", entryFileName(validEntry.tag)),
+      JSON.stringify(validEntry),
       "utf8",
     );
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
@@ -442,19 +458,15 @@ describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
   });
 
   it("passes a commit that removes a prior off-fence declaration, on its own commit", async () => {
-    await commitFiles(dir, {
-      ".flume/plan/pending.json": JSON.stringify([offFenceEntry]),
-    });
-    const fixSha = await commitFiles(dir, {
-      ".flume/plan/pending.json": JSON.stringify([validEntry]),
-    });
+    await commitFiles(dir, queueFiles([offFenceEntry]));
+    const fixSha = await commitFiles(dir, queueFiles([validEntry]));
     // Mirror of the test above: the disk copy now races *ahead* of the
     // gated commit, reintroducing the violation the fix commit itself
     // removed. Pre-fix, the stale disk read sees this and wrongly reverts
     // the commit that fixed the violation (observed: 70f4632 -> c168d3b).
     await writeFile(
-      join(dir, ".flume", "plan", "pending.json"),
-      JSON.stringify([offFenceEntry]),
+      join(dir, ".flume", "plan", "pending", entryFileName(validEntry.tag)),
+      JSON.stringify(offFenceEntry),
       "utf8",
     );
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
@@ -463,14 +475,14 @@ describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
     expect(result.message).toMatch(/fence pre-check passed/);
   });
 
-  it("reads a relocated flumeDir (pendingPath outside repoRoot) from disk, unchanged", async () => {
+  it("reads a relocated flumeDir (pendingDir outside repoRoot) from disk, unchanged", async () => {
     const outside = await mkTempDir("flume-pendinggate-relocated-");
     try {
-      const pendingDir = join(outside, "plan");
+      const pendingDir = join(outside, "plan", "pending");
       await mkdir(pendingDir, { recursive: true });
       await writeFile(
-        join(pendingDir, "pending.json"),
-        JSON.stringify([validEntry]),
+        join(pendingDir, entryFileName(validEntry.tag)),
+        JSON.stringify(validEntry),
         "utf8",
       );
       // A commit must still exist to gate — the relocated queue lives
@@ -518,14 +530,15 @@ describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, .
 
   it("pendingGate reads the gated commit's queue from a GateContext a real Dispatcher tick built, not a hand-authored one", async () => {
     const flumeDir = join(fx.repo, ".flume");
-    const pendingRel = ".flume/plan/pending.json";
+    const entryRel = `.flume/plan/pending/${entryFileName("SRR-SEAM")}`;
     await commitFiles(
       fx.repo,
       {
-        [pendingRel]:
-          JSON.stringify([{ ...validEntry, tag: "SRR-SEAM" }], null, 2) + "\n",
+        ".flume/plan/pending/.gitkeep": "",
+        [entryRel]:
+          JSON.stringify({ ...validEntry, tag: "SRR-SEAM" }, null, 2) + "\n",
       },
-      "test: pending.json",
+      "test: a queue entry",
     );
     new Baton(flumeDir).wake("build");
 
@@ -546,31 +559,29 @@ describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, .
       name: "fake-fanout",
       async invoke(inv) {
         // Committed inside the entry's worktree only: the primary
-        // checkout's own disk copy of pending.json (under `flumeDir`, the
+        // checkout's own disk copy of the queue (under `flumeDir`, the
         // path a stale read resolves) still holds the on-fence entry
         // asserted below, so an off-fence verdict can only have come from
         // the gated commit.
-        const pj = join(inv.cwd, pendingRel);
+        const pj = join(inv.cwd, entryRel);
         await mkdir(dirname(pj), { recursive: true });
         await writeFile(
           pj,
           JSON.stringify(
-            [
-              {
-                ...validEntry,
-                tag: "SRR-SEAM",
-                files: {
-                  new: [],
-                  edit: [{ path: "spec/loop.md", description: "off-fence" }],
-                  retire: [],
-                },
+            {
+              ...validEntry,
+              tag: "SRR-SEAM",
+              files: {
+                new: [],
+                edit: [{ path: "spec/loop.md", description: "off-fence" }],
+                retire: [],
               },
-            ],
+            },
             null,
             2,
           ) + "\n",
         );
-        await exec("git", ["add", "--", pendingRel], { cwd: inv.cwd });
+        await exec("git", ["add", "--", entryRel], { cwd: inv.cwd });
         await exec(
           "git",
           ["commit", "-q", "-m", "build(SRR-SEAM): off-fence queue"],
@@ -581,9 +592,9 @@ describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, .
     };
 
     const beforeTick = JSON.parse(
-      await readFile(join(flumeDir, "plan", "pending.json"), "utf8"),
-    ) as (typeof validEntry)[];
-    expect(beforeTick[0]?.files.edit[0]?.path).toBe("src/foo.ts");
+      await readFile(join(fx.repo, entryRel), "utf8"),
+    ) as typeof validEntry;
+    expect(beforeTick.files.edit[0]?.path).toBe("src/foo.ts");
 
     const dispatcher = new Dispatcher({
       chainLoader: () => Promise.resolve({ chain }),
@@ -1020,11 +1031,11 @@ describe("writablePathsGate — the fence seam, both sides real", () => {
     await commitFiles(
       fx.repo,
       {
-        ".flume/plan/pending.json":
-          JSON.stringify([{ ...validEntry, tag: "FENCE-SEAM" }], null, 2) +
-          "\n",
+        ".flume/plan/pending/.gitkeep": "",
+        [`.flume/plan/pending/${entryFileName("FENCE-SEAM")}`]:
+          JSON.stringify({ ...validEntry, tag: "FENCE-SEAM" }, null, 2) + "\n",
       },
-      "test: pending.json",
+      "test: a queue entry",
     );
     new Baton(flumeDir).wake("build");
 

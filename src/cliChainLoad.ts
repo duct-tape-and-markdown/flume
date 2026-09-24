@@ -11,7 +11,7 @@
  * `loadChainForObservation` is the best-effort load the read-only surfaces
  * take — `flume status` and `flume wake`/`flume sleep` (`src/cli.ts`). Each
  * reads chain-declared values
- * (`Chain.pendingPath`, `Chain.friction`, `Chain.capabilities`,
+ * (`Chain.pendingDir`, `Chain.friction`, `Chain.capabilities`,
  * `Chain.phases`) to describe or validate against state it will report either
  * way; none may fail on a chain that does not load, because none of them runs
  * an agent.

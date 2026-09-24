@@ -45,7 +45,7 @@ import {
   type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.js";
-import { namespacedJoin, resolvePendingPath } from "../src/paths.js";
+import { namespacedJoin, resolvePendingDir } from "../src/paths.js";
 import { NO_COMMIT_MODES } from "../src/Prompt.js";
 
 import { resolveCiteSync } from "./citeResolver.js";
@@ -136,7 +136,7 @@ export const SHARED_PROMPT_DATA_KEYS = [
   "TESTS_HINT",
   "PINS_HINT",
   "SPEC_LOCUS",
-  "PENDING_PATH",
+  "PENDING_DIR",
   "QUESTIONS_DIR",
   "QUESTIONS_INDEX",
   "RECORD_DIRS",
@@ -191,7 +191,7 @@ export function sharedPromptArgs(
     TESTS_HINT: hintOf(extension, "tests"),
     PINS_HINT: hintOf(extension, "pins"),
     SPEC_LOCUS: backticked(declaration.specLocus),
-    PENDING_PATH: resolvePendingPath(stateRoot),
+    PENDING_DIR: resolvePendingDir(stateRoot),
     QUESTIONS_DIR: questionsDir(stateRoot),
     /**
      * Which questions are open, read off the directory that holds them

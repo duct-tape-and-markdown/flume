@@ -17,7 +17,7 @@
 </queue-parse-failure>
 
 <pending-now>
-!`cat "{{PENDING_PATH}}"`
+!`d="{{PENDING_DIR}}"; test -d "$d" || { echo "queue directory absent: $d" >&2; exit 1; }; n=0; for f in "$d"/*.json; do test -e "$f" || break; n=$((n+1)); printf '=== %s\n' "${f##*/}"; cat "$f"; done; test "$n" -gt 0 || echo "(queue empty)"`
 </pending-now>
 
 {{CLAIMED_ENTRIES}}
@@ -27,7 +27,7 @@
 </open-questions-index>
 
 <artifacts>
-queue: {{PENDING_PATH}}
+queue (one `<tag>.json` per entry): {{PENDING_DIR}}
 your plan state (this slice's own file): {{PLAN_STATE_PATH}}
 open questions: {{QUESTIONS_DIR}}
 record queues: {{RECORD_DIRS}}
@@ -38,7 +38,7 @@ discipline: {{DISCIPLINE}}
 
 # TASK
 
-**A queue that did not parse is this tick's whole job, ahead of everything below.** `<queue-parse-failure>` says the queue resolved, or names the file and every error the parse reported. When it names errors, the queue you were handed is empty *because nothing resolved* — never because it drained — and `<pending-now>` carries the bytes that failed. Repair them: rewrite the queue from those bytes, keeping every entry that survives the read intact and fixing only what the errors name, and route nothing else this tick beyond what the repair needs. Never write `[]`, and never drop an entry you merely could not parse — reconstruct it from the bytes, or leave it and say in the body that it is unreadable. Name the failure and what you recovered in the commit body. Your rewrite is the only repair there is: no other slice runs until the queue reads.
+**A queue that did not parse is this tick's whole job, ahead of everything below.** `<queue-parse-failure>` says the queue resolved, or names every error the parse reported and, on each, the entry file it was read out of. When it names errors, the queue you were handed is empty *because nothing resolved* — never because it drained — and `<pending-now>` carries each file's bytes under its own name. Repair exactly the files the errors name: fix only what those errors say, leave every other entry file byte-identical, and route nothing else this tick beyond what the repair needs. Never delete an entry file you merely could not parse — reconstruct it from the bytes, or leave it and say in the body that it is unreadable. Name the failure and what you recovered in the commit body. Your rewrite is the only repair there is: no other slice runs until the queue reads.
 
 Drain the records. Each file in `<records>` is one record: a finding someone left in the inbox queue, a note a build tick left under the notes queue, or a note the loop left in the declared friction channel. **A record's directory is its kind** — one under `notes/parked/` is a park (the entry could not ship as written and stayed in the queue; widen its `files`, split it, or answer what it parked), one beside that directory is an observation from a tick that shipped, and one under the friction channel is what the loop had to say to its owner. Read the path, never the prose, for which it is. Route every record, then remove its file — `git rm` for a record the tree tracks, plain `rm` for a friction note, which is gitignored by machinery and in no commit to remove it from. The record queues are queues, not logs; never create a record yourself — the records gate refuses a plan commit that does.
 

@@ -6,7 +6,7 @@
  *
  * Where `cascade-chain.ts` is the flagship spec→plan→build derivation
  * pipeline, this is the peer that proves the engine isn't shaped around
- * that pipeline. It has no fanout, no `pending.json`, no multi-phase
+ * that pipeline. It has no fanout, no pending queue, no multi-phase
  * handoff — just one `Phase` — but it wires into the same PendingSchema
  * mechanics cascade uses, declared as its own small extension and its own
  * tag convention, applied to a completely different queue.
@@ -40,6 +40,7 @@ import type {
   ChainFactory,
   EntryExtension,
   Gate,
+  PendingEntry,
   Phase,
 } from "../src/index.ts";
 
@@ -110,7 +111,7 @@ const entryExtension = {
  * engine import, so the chain resolves no engine copy of its own.
  */
 const factory: ChainFactory = (api) => {
-  const { isPickableNow, parsePending, renderSchemaForPrompt, withSessionCapture } = api;
+  const { composePendingEntry, isPickableNow, renderSchemaForPrompt, withSessionCapture } = api;
   // ---------- the groom agent ----------
 
   /** Tags already shipped, read back from `SHIPPED.md` so a `blockedBy` item unblocks across ticks. */
@@ -123,6 +124,46 @@ const factory: ChainFactory = (api) => {
       if (m) tags.add(m[1]!);
     }
     return tags;
+  }
+
+  /**
+   * `BACKLOG.json`'s own parse, shared by the groom agent and the gate below
+   * so the two can never disagree about what a valid backlog is.
+   *
+   * The engine's queue is a directory of one entry per file
+   * (`spec/pending.md`, *The ledger is a directory — one entry per file*);
+   * this backlog is one array in one file, which is this chain's own shape.
+   * So the chain takes the engine's *entry* validator
+   * (`composePendingEntry`) and applies it to each element itself, rather
+   * than the engine growing a second file shape for a convention no mechanic
+   * of its own reads.
+   */
+  const entrySchema = composePendingEntry(entryExtension);
+  function parseBacklog(
+    raw: string,
+  ): { ok: true; entries: PendingEntry[] } | { ok: false; problems: string[] } {
+    let items: unknown;
+    try {
+      items = JSON.parse(raw);
+    } catch (err) {
+      return {
+        ok: false,
+        problems: [`  invalid JSON: ${(err as Error).message}`],
+      };
+    }
+    if (!Array.isArray(items)) {
+      return { ok: false, problems: ["  expected an array of entries"] };
+    }
+    const outcomes = items.map((item) => entrySchema.safeParse(item));
+    const problems = outcomes.flatMap((outcome, index) =>
+      outcome.success
+        ? []
+        : outcome.error.issues.map(
+            (issue) => `  [${index}] ${issue.path.join(".")}: ${issue.message}`,
+          ),
+    );
+    if (problems.length > 0) return { ok: false, problems };
+    return { ok: true, entries: outcomes.map((outcome) => outcome.data!) };
   }
 
   /**
@@ -162,23 +203,25 @@ const factory: ChainFactory = (api) => {
         return { exitCode: 0, stdout: say("no BACKLOG.json; nothing to groom"), stderr: "" };
       }
 
-      const parsed = parsePending(raw, entryExtension);
-      if (!parsed.ok) {
-        const detail = parsed.errors
-          .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
-          .join("\n");
-        return { exitCode: 1, stdout: "", stderr: `BACKLOG.json invalid:\n${detail}` };
+      const backlog = parseBacklog(raw);
+      if (!backlog.ok) {
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: `BACKLOG.json invalid:\n${backlog.problems.join("\n")}`,
+        };
       }
+      const entries = backlog.entries;
 
       const shippedTags = readShippedTags(cwd);
-      const pick = parsed.entries.find((entry) =>
+      const pick = entries.find((entry) =>
         isPickableNow(entry, shippedTags, undefined, new Set()),
       );
       if (!pick) {
         return { exitCode: 0, stdout: say("no pickable backlog item"), stderr: "" };
       }
 
-      const remaining = parsed.entries.filter((entry) => entry !== pick);
+      const remaining = entries.filter((entry) => entry !== pick);
       writeFileSync(backlogPath, `${JSON.stringify(remaining, null, 2)}\n`);
 
       // Narrows the parsed payload's `unknown` to `string`, and re-asserts
@@ -221,9 +264,9 @@ const factory: ChainFactory = (api) => {
   // ---------- gate ----------
 
   /**
-   * Re-validates `BACKLOG.json` post-commit against core + `entryExtension` —
-   * the same `parsePending` call cascade's `pendingParseGate` makes, reused
-   * here for a single-phase chain with no plan/build split. Absence is fine
+   * Re-validates `BACKLOG.json` post-commit against core + `entryExtension`
+   * — the agent's own `parseBacklog`, so the gate and the leg it judges read
+   * one parse, the way cascade's `pendingGate` and its dispatcher do. Absence is fine
    * (a tick with nothing pickable makes no changes at all).
    */
   const backlogParseGate: Gate = {
@@ -237,7 +280,7 @@ const factory: ChainFactory = (api) => {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         return { ok: true, message: "BACKLOG.json absent (nothing groomed this tick)" };
       }
-      const result = parsePending(raw, entryExtension);
+      const result = parseBacklog(raw);
       if (result.ok) {
         return {
           ok: true,
@@ -246,10 +289,8 @@ const factory: ChainFactory = (api) => {
       }
       return {
         ok: false,
-        message: `BACKLOG.json has ${result.errors.length} schema violations`,
-        details: result.errors
-          .map((e) => `  [${e.index}] ${e.path}: ${e.message}`)
-          .join("\n"),
+        message: `BACKLOG.json has ${result.problems.length} schema violations`,
+        details: result.problems.join("\n"),
       };
     },
   };
@@ -259,7 +300,7 @@ const factory: ChainFactory = (api) => {
   /**
    * Singleton: one groom tick at a time, same reasoning as cascade's plan
    * phase — `BACKLOG.json` is a single shared artifact. No fanout, no
-   * `assignedEntry`, no `pending.json` — the queue this phase reads and
+   * `assignedEntry`, no pending queue — the backlog this phase reads and
    * writes is `BACKLOG.json`, entirely of this chain's own naming.
    */
   const groom: Phase = {
@@ -319,6 +360,6 @@ export default factory;
  *      in `claudeCode()` there to let an LLM pick instead.
  *
  * See `docs/CHAIN-AUTHORING.md` for the full walkthrough, and
- * `examples/cascade-chain.ts` for the multi-phase, fanout, pending.json
+ * `examples/cascade-chain.ts` for the multi-phase, fanout, pending-queue
  * shape this chain deliberately does without.
  * -------------------------------------------------------------------------- */

@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 import { existsLoud } from "../src/fsProbe.js";
 import {
   namespacedJoin,
-  resolvePendingPath,
+  resolvePendingDir,
   STATE_ROOT_DIRNAME,
 } from "../src/paths.js";
 import { mergeIgnoreLines } from "../src/runtimeIgnores.js";
@@ -46,7 +46,7 @@ import { readSelfPackage } from "../src/selfPackage.js";
 
 import { detailOf } from "./exec.js";
 import { consumerIgnores } from "./ignores.js";
-import { queuePath } from "./layout.js";
+import { queueDir } from "./layout.js";
 
 /** The directory holding this module, in whichever layout it is running from. */
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -107,18 +107,18 @@ const MANIFEST_REL = "package.json";
 const STATE_ROOT_MANIFEST = `${JSON.stringify({ type: "module" }, null, 2)}\n`;
 
 /**
- * The queue a repository starts life with: the empty JSON list the engine's
- * schema decodes to zero entries (`src/PendingSchema.ts`), with the trailing
- * newline every other file here ends on.
+ * The file a repository's empty queue directory starts life with, so that
+ * directory is in the tree from the first commit and stays there once every
+ * entry has shipped.
  *
- * Spelled as bytes because nothing in the package emits a queue — a plan
- * slice writes it as an agent's output and the engine only ever reads it —
- * so there is no writer to derive this from. What keeps the two sides
- * honest is the parse, driven over exactly these bytes
- * (`tests/harnessInit.test.ts`, *the queue flume-harness init writes parses
- * as an empty pending queue*).
+ * Not an entry, by its name: the engine reads only `*.json` directly under
+ * the directory (`spec/pending.md`, *The ledger is a directory — one entry
+ * per file*), and the fence glob a plan slice is held to admits only those
+ * too, so nothing in the package can write or drain this file after the
+ * seed. `.gitkeep` is git's own idiom for the job and no engine surface
+ * spells it, which is why it is spelled here.
  */
-const EMPTY_QUEUE = "[]\n";
+const QUEUE_KEEP = ".gitkeep";
 
 /**
  * The placeholder the shipped `harness/templates/PROTOCOL.md` carries
@@ -391,24 +391,31 @@ export async function harnessInit(
     written.push(`${stateRoot}/${rel}`);
   }
 
-  // The queue, which nothing else creates. A plan slice opens it with a bare
-  // reader and refuses on absence, and no slice writes one before the first
-  // build wave — so an adoption that stopped at the skeletons would wall
-  // every plan tick a fresh consumer could take (`spec/harness.md`, *Adoption
-  // and upgrade*). It sits a directory below them, hence the `mkdir`.
+  // The queue directory, which nothing else creates — and the placeholder
+  // that keeps it in a tree.
+  //
+  // A plan slice reads the queue with a bare reader, and the pending gate
+  // fails an *absent* queue directory (`spec/pending.md`, *`pendingGate` —
+  // validation and fence pre-check as an opt-in builtin*). Git holds no empty
+  // directory, so without a file of its own the directory would vanish from
+  // the tree the moment the last entry shipped, and the next plan commit
+  // would revert on a queue that was simply drained. The placeholder is that
+  // file: no `*.json`, so the engine never reads it as work (*The ledger is a
+  // directory — one entry per file*: the listing is the queue), and no fence
+  // glob admits it, so no slice can write or drain it either.
   //
   // Addressed through the engine's own resolver rather than spelled here: the
   // dispatcher, `flume check` and `flume status` all reach the queue through
-  // it, and a second spelling would seed a file none of them read
+  // it, and a second spelling would seed a directory none of them read
   // (`.claude/rules/engineering.md`, *Derived state is computed, never
   // restated beside its source*). That resolver answers host-native, which is
   // what the fs calls want; the line this reports is a repo path, so it comes
   // from the layout that states the queue's git spelling for every consumer
-  // of it (`queuePath`, `harness/layout.ts`).
-  const pendingAbs = resolvePendingPath(stateRootAbs);
-  await mkdir(namespacedJoin(dirname(pendingAbs)), { recursive: true });
-  await writeFile(namespacedJoin(pendingAbs), EMPTY_QUEUE, "utf8");
-  written.push(queuePath(stateRoot));
+  // of it (`queueDir`, `harness/layout.ts`).
+  const pendingAbs = resolvePendingDir(stateRootAbs);
+  await mkdir(namespacedJoin(pendingAbs), { recursive: true });
+  await writeFile(namespacedJoin(pendingAbs, QUEUE_KEEP), "", "utf8");
+  written.push(`${queueDir(stateRoot)}/${QUEUE_KEEP}`);
 
   // Derived from the engine's own path record, never hand-listed
   // (`ignores.ts`), and merged rather than replacing: a repository's

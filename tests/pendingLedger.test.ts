@@ -19,15 +19,15 @@
  * here rather than through a tick.
  *
  * And beside both, what this module's reports **name** — the tolerant read's
- * three degrades, the strict read's refusal, and the decide-read's rethrow.
- * Each is a report about the chain's own file, so each is pinned here over a
- * declared path that is not the default one, where a hand-spelled basename
+ * two degrades, the strict read's refusal, and the decide-read's rethrow.
+ * Each is a report about the chain's own queue, so each is pinned here over a
+ * declared directory that is not the default one, where a hand-spelled name
  * shows up as a lie rather than as a coincidence.
  */
 
 import { rmSync, symlinkSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -41,8 +41,8 @@ import {
   readPendingTolerant,
   type PendingLedgerContext,
 } from "../src/pendingLedger.ts";
-import { PendingParseFailure } from "../src/PendingSchema.ts";
-import { denyFile } from "./helpers/denial.ts";
+import { entryFileName, PendingParseFailure } from "../src/PendingSchema.ts";
+import { denyDirectory } from "./helpers/denial.ts";
 import { silent } from "./helpers/dispatcherFixture.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { makeScratchRepo } from "./helpers/scratchRepo.ts";
@@ -57,10 +57,10 @@ vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 const REPO = join("/", "tmp", "flume-ledger-repo");
 
 /** The four fields a read takes; only two of them decide this verdict. */
-function ctx(pendingPath: string): PendingLedgerContext {
+function ctx(pendingDir: string): PendingLedgerContext {
   return {
     repoRoot: REPO,
-    pendingPath,
+    pendingDir,
     entryExtension: undefined,
     log: silent,
   };
@@ -70,17 +70,17 @@ describe(
   "pendingLedger — isPendingRelocated agrees with computeStateRootRel " +
     '(.claude/rules/engineering.md "The fix lands at the mechanism")',
   () => {
-    it("agrees with computeStateRootRel on a relocated (out-of-tree) pendingPath", () => {
+    it("agrees with computeStateRootRel on a relocated (out-of-tree) pendingDir", () => {
       const dock = join("/", "tmp", "flume-ledger-dock");
-      const pendingPath = join(dock, "plan", "pending.json");
-      expect(computeStateRootRel(REPO, pendingPath)).toBeUndefined();
-      expect(isPendingRelocated(ctx(pendingPath))).toBe(true);
+      const pendingDir = join(dock, "plan", "pending");
+      expect(computeStateRootRel(REPO, pendingDir)).toBeUndefined();
+      expect(isPendingRelocated(ctx(pendingDir))).toBe(true);
     });
 
-    it("agrees with computeStateRootRel on a normal in-tree pendingPath", () => {
-      const pendingPath = join(REPO, ".flume", "plan", "pending.json");
-      expect(computeStateRootRel(REPO, pendingPath)).toBeDefined();
-      expect(isPendingRelocated(ctx(pendingPath))).toBe(false);
+    it("agrees with computeStateRootRel on a normal in-tree pendingDir", () => {
+      const pendingDir = join(REPO, ".flume", "plan", "pending");
+      expect(computeStateRootRel(REPO, pendingDir)).toBeDefined();
+      expect(isPendingRelocated(ctx(pendingDir))).toBe(false);
     });
   },
 );
@@ -92,11 +92,11 @@ describe(
  * (`.claude/rules/engineering.md`, "Loud or nothing").
  */
 describe("readPendingLoose — the ENOENT/other split", () => {
-  it("readPendingLoose reads an absent (ENOENT) pending.json as the empty, valid list", async () => {
+  it("an absent pending directory reads as nothing pending", async () => {
     const dir = await mkTempDir("flume-loose-absent-");
     try {
-      const pendingPath = join(dir, "plan", "pending.json");
-      expect(readPendingLoose(pendingPath)).toEqual({
+      const pendingDir = join(dir, "plan", "pending");
+      expect(readPendingLoose(pendingDir)).toEqual({
         ok: true,
         entries: [],
         errors: [],
@@ -106,32 +106,66 @@ describe("readPendingLoose — the ENOENT/other split", () => {
     }
   });
 
-  it("readPendingLoose rethrows a non-ENOENT stat/read failure instead of reading it as absent — existsSync collapses any stat error, not just ENOENT, to false (JOB-READPENDINGLOOSE-NARROW-ENOENT)", async () => {
+  it("readPendingLoose rethrows a non-ENOENT listing failure instead of reading it as absent — existsSync collapses any stat error, not just ENOENT, to false (JOB-READPENDINGLOOSE-NARROW-ENOENT)", async () => {
     const dir = await mkTempDir("flume-loose-denied-");
     try {
-      const planDir = join(dir, "plan");
-      await mkdir(planDir, { recursive: true });
-      const pendingPath = join(planDir, "pending.json");
-      await writeFile(pendingPath, "[]");
+      const pendingDir = join(dir, "plan", "pending");
+      await mkdir(pendingDir, { recursive: true });
       // Non-vacuity: the queue reads before it is denied.
-      expect(readPendingLoose(pendingPath).ok).toBe(true);
+      expect(readPendingLoose(pendingDir).ok).toBe(true);
 
-      // Deny the queue file structurally (`tests/helpers/denial.ts`): the
-      // path is still there to a stat, and the read fails EISDIR — not
-      // ENOENT (`.claude/rules/engineering.md`, "Loud or nothing"). Denying
-      // the *parent* would not arm this on every host: win32 reports a path
-      // through a non-directory as ENOENT, so the gate would take its absent
-      // arm there (`tests/helpers/denial.ts`, *deny the exact path*).
-      denyFile(pendingPath);
+      // Deny the queue directory structurally (`tests/helpers/denial.ts`):
+      // the path is still there to a stat, and the listing fails ENOTDIR —
+      // not ENOENT (`.claude/rules/engineering.md`, "Loud or nothing").
+      // Denying the *parent* would not arm this on every host: win32 reports
+      // a path through a non-directory as ENOENT, so the gate would take its
+      // absent arm there (`tests/helpers/denial.ts`, *deny the exact path*).
+      denyDirectory(pendingDir);
 
       let caught: NodeJS.ErrnoException | undefined;
       try {
-        readPendingLoose(pendingPath);
+        readPendingLoose(pendingDir);
       } catch (err) {
         caught = err as NodeJS.ErrnoException;
       }
       expect(caught).toBeDefined();
       expect(caught?.code).not.toBe("ENOENT");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a *.json directly under the pending directory is an entry and a subdirectory is not walked", async () => {
+    const dir = await mkTempDir("flume-loose-listing-");
+    try {
+      const pendingDir = join(dir, "plan", "pending");
+      const sidecar = join(pendingDir, "drafts");
+      await mkdir(sidecar, { recursive: true });
+      const entry = (tag: string) =>
+        JSON.stringify({
+          tag,
+          gate: { kind: "open" },
+          files: { new: [], edit: [], retire: [] },
+        });
+
+      await writeFile(join(pendingDir, entryFileName("TOP-LEVEL")), entry("TOP-LEVEL"));
+      // Beside the entries and never read as one: not a `*.json`, so the
+      // listing skips it rather than refusing over it.
+      await writeFile(join(pendingDir, ".gitkeep"), "");
+      await writeFile(join(pendingDir, "NOTES.md"), "not an entry\n");
+      // One level down. A valid entry by its bytes, so if the walk descended
+      // the queue would read two — and the sidecar's own name ends in
+      // `.json` too, so a listing that filtered by suffix without asking what
+      // the row *is* would read the directory itself as an entry.
+      await writeFile(join(sidecar, entryFileName("NESTED")), entry("NESTED"));
+      await mkdir(join(pendingDir, "archive.json"), { recursive: true });
+
+      const result = readPendingLoose(pendingDir);
+      expect({ ok: result.ok, errors: result.errors }).toEqual({
+        ok: true,
+        errors: [],
+      });
+      expect(result.entries.map((e) => e.tag)).toEqual(["TOP-LEVEL"]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -144,79 +178,81 @@ describe("readPendingLoose — the ENOENT/other split", () => {
  * operator learns the queue they are looking at came back empty for a reason
  * (`src/pendingLedger.ts`, `readPendingTolerant`). A chain declares where its
  * ledger lives, so the announcement names what the chain declared rather than
- * the basename this repo happens to use
+ * the directory this repo happens to use
  * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
  * rediscovered*).
  *
- * Posix-declared, because the stat arm needs a path that is present and
- * unstattable. Why that host and what it costs is the ledger's
- * (`tests/helpers/host-declarations.json`), which is where a skip's reason
- * lives rather than in a comment per site.
+ * Denied structurally rather than by a mode, so no arm rests on a permission
+ * bit (`tests/helpers/denial.ts`). Posix-declared, because the read arm needs
+ * an entry the listing names and nothing can open: a directory at that name
+ * is a subdirectory the listing skips by contract, so a self-referential
+ * symlink is the only shape left. Why that host and what it costs is the
+ * ledger's (`tests/helpers/host-declarations.json`).
  */
 describe.runIf(process.platform !== "win32")(
   "readPendingTolerant — what a degrade announces",
   () => {
-    it("a tolerant read's stat, read and parse warns each name the chain's declared pending path", async () => {
-      const repoRoot = await mkTempDir("flume-tolerant-warns-");
-      try {
-        // Neither the default basename nor the default dock: this chain
-        // declared `queue/ledger.json`, and that is the only spelling any of
-        // the three announcements below may carry.
-        const dock = join(repoRoot, "queue");
-        await mkdir(dock, { recursive: true });
-        const pendingPath = join(dock, "ledger.json");
-        const declared = "queue/ledger.json";
+  it("a tolerant read's listing, read and parse warns each name the chain's declared pending directory", async () => {
+    const repoRoot = await mkTempDir("flume-tolerant-warns-");
+    try {
+      // Neither the default name nor the default dock: this chain declared
+      // `queue/ledger`, and that is the only spelling any of the
+      // announcements below may carry.
+      const pendingDir = join(repoRoot, "queue", "ledger");
+      const declared = "queue/ledger";
+      await mkdir(pendingDir, { recursive: true });
 
-        const warns: string[] = [];
-        const log: Logger = {
-          info: () => {},
-          warn: (line) => warns.push(line),
-          error: () => {},
-        };
-        const ctx: PendingLedgerContext = {
-          repoRoot,
-          pendingPath,
-          entryExtension: undefined,
-          log,
-        };
+      const warns: string[] = [];
+      const log: Logger = {
+        info: () => {},
+        warn: (line) => warns.push(line),
+        error: () => {},
+      };
+      const ctx: PendingLedgerContext = {
+        repoRoot,
+        pendingDir,
+        entryExtension: undefined,
+        log,
+      };
 
-        // Non-vacuity: the declared ledger reads clean and announces nothing,
-        // so each warn below is the arm above it talking
-        // (`.claude/rules/engineering.md`, *A green verdict is proven
-        // non-vacuous*).
-        await writeFile(pendingPath, "[]\n", "utf8");
-        expect(await readPendingTolerant(ctx)).toEqual([]);
-        expect(warns).toEqual([]);
+      // Non-vacuity: the declared ledger reads clean and announces nothing,
+      // so each warn below is the arm above it talking
+      // (`.claude/rules/engineering.md`, *A green verdict is proven
+      // non-vacuous*).
+      expect(await readPendingTolerant(ctx)).toEqual([]);
+      expect(warns).toEqual([]);
 
-        // Stat arm: a self-referential symlink is present to a listing and
-        // raises ELOOP to `statSync`, which `existsLoud` (`src/fsProbe.ts`)
-        // rethrows rather than reading as absent. Not a permission bit — a
-        // root-run test would bypass one (`tests/helpers/denial.ts`).
-        rmSync(pendingPath);
-        symlinkSync(basename(pendingPath), pendingPath);
-        expect(await readPendingTolerant(ctx)).toEqual([]);
+      // Listing arm: a plain file where the directory is listed refuses with
+      // a non-ENOENT disposition on every host.
+      denyDirectory(pendingDir);
+      expect(await readPendingTolerant(ctx)).toEqual([]);
 
-        // Read arm: stattable and unreadable — a directory where the file is
-        // read, denied at the read path and never at its parent
-        // (`tests/helpers/denial.ts`).
-        rmSync(pendingPath);
-        denyFile(pendingPath);
-        expect(await readPendingTolerant(ctx)).toEqual([]);
+      // Read arm: the directory lists, and an entry it names cannot be read
+      // — ELOOP at the read path and never at its parent. Not a permission
+      // bit, and not a directory either: the listing skips a subdirectory by
+      // contract, so it would never reach the read this arm is about.
+      await rm(pendingDir, { recursive: true, force: true });
+      await mkdir(pendingDir, { recursive: true });
+      symlinkSync(
+        entryFileName("SOME-TAG"),
+        join(pendingDir, entryFileName("SOME-TAG")),
+      );
+      expect(await readPendingTolerant(ctx)).toEqual([]);
 
-        // Parse arm: readable, and not the list the schema takes.
-        rmSync(pendingPath, { recursive: true });
-        await writeFile(pendingPath, "{}", "utf8");
-        expect(await readPendingTolerant(ctx)).toEqual([]);
+      // Parse arm: readable, and not the entry the schema takes.
+      rmSync(join(pendingDir, entryFileName("SOME-TAG")));
+      await writeFile(
+        join(pendingDir, entryFileName("SOME-TAG")),
+        "{}",
+        "utf8",
+      );
+      expect(await readPendingTolerant(ctx)).toEqual([]);
 
-        expect(warns).toHaveLength(3);
-        const [statWarn, readWarn, parseWarn] = warns as [
-          string,
-          string,
-          string,
-        ];
-        expect(statWarn).toContain(`${declared} could not be stat'd`);
-        expect(readWarn).toContain(`${declared} could not be read`);
-        expect(parseWarn).toContain(`${declared} failed to parse`);
+      expect(warns).toHaveLength(3);
+      const [listWarn, readWarn, parseWarn] = warns as [string, string, string];
+      expect(listWarn).toContain(`${declared} could not be read`);
+      expect(readWarn).toContain(`${declared} could not be read`);
+      expect(parseWarn).toContain(`${declared} failed to parse`);
       } finally {
         await rm(repoRoot, { recursive: true, force: true });
       }
@@ -233,27 +269,35 @@ describe.runIf(process.platform !== "win32")(
  * `commitPendingUpdate`'s rewrite read, and re-thrown with the fence verdict
  * behind it, from `readPendingForDecision`.
  *
- * Driven over a real repository on a declared `queue/ledger.json`, because
+ * Driven over a real repository on a declared `queue/ledger`, because
  * the strict read resolves the committed tip rather than the tree
  * (spec/pending.md, "Dispatch reads come from the tip, not the tree"): a
  * corruption only this read can see is one that is committed, and a ledger at
- * the default dock would let a hand-spelled basename read as a coincidence.
+ * the default dock would let a hand-spelled name read as a coincidence.
  */
 describe("readPending — what a strict refusal names", () => {
   it("a strict pending read's parse refusal names the chain's declared ledger path", async () => {
     const repo = await makeScratchRepo("flume-strict-refusal-", "main");
     try {
-      const dock = join(repo.dir, "queue");
-      await mkdir(dock, { recursive: true });
-      const pendingPath = join(dock, "ledger.json");
-      const declared = "queue/ledger.json";
-      await writeFile(pendingPath, "[]\n", "utf8");
+      const pendingDir = join(repo.dir, "queue", "ledger");
+      const declared = "queue/ledger";
+      await mkdir(pendingDir, { recursive: true });
+      const entryPath = join(pendingDir, entryFileName("SOME-TAG"));
+      await writeFile(
+        entryPath,
+        JSON.stringify({
+          tag: "SOME-TAG",
+          gate: { kind: "open" },
+          files: { new: [], edit: [], retire: [] },
+        }) + "\n",
+        "utf8",
+      );
       await exec("git", ["add", "."], { cwd: repo.dir });
       await exec("git", ["commit", "-q", "-m", "ledger"], { cwd: repo.dir });
 
       const ctx: PendingLedgerContext = {
         repoRoot: repo.dir,
-        pendingPath,
+        pendingDir,
         entryExtension: undefined,
         log: silent,
       };
@@ -267,7 +311,7 @@ describe("readPending — what a strict refusal names", () => {
 
       // Committed, not just written: the tree is what the tolerant read sees,
       // and the tip is what this one does.
-      await writeFile(pendingPath, "{}\n", "utf8");
+      await writeFile(entryPath, "{}\n", "utf8");
       await exec("git", ["commit", "-q", "-am", "corrupt the ledger"], {
         cwd: repo.dir,
       });
@@ -280,7 +324,13 @@ describe("readPending — what a strict refusal names", () => {
       }
       expect(caught).toBeInstanceOf(PendingParseFailure);
       expect((caught as Error).message).toMatch(
-        /^queue\/ledger\.json failed to parse \(\d+ error\(s\)\)/,
+        /^queue\/ledger failed to parse \(\d+ error\(s\)\)/,
+      );
+      // The file, not just the directory: a producer repairing the queue
+      // opens exactly the entry that did not resolve (`spec/pending.md`,
+      // *The ledger is a directory — one entry per file*).
+      expect((caught as Error).message).toContain(
+        `[${entryFileName("SOME-TAG")}]`,
       );
     } finally {
       await repo.cleanup();
@@ -290,11 +340,14 @@ describe("readPending — what a strict refusal names", () => {
   it("the decide-read's rethrow names the declared ledger path beside its fence verdict", async () => {
     const repo = await makeScratchRepo("flume-decide-refusal-", "main");
     try {
-      const dock = join(repo.dir, "queue");
-      await mkdir(dock, { recursive: true });
-      const pendingPath = join(dock, "ledger.json");
-      const declared = "queue/ledger.json";
-      await writeFile(pendingPath, "{}\n", "utf8");
+      const pendingDir = join(repo.dir, "queue", "ledger");
+      const declared = "queue/ledger";
+      await mkdir(pendingDir, { recursive: true });
+      await writeFile(
+        join(pendingDir, entryFileName("SOME-TAG")),
+        "{}\n",
+        "utf8",
+      );
       await exec("git", ["add", "."], { cwd: repo.dir });
       await exec("git", ["commit", "-q", "-m", "an unparseable ledger"], {
         cwd: repo.dir,
@@ -302,7 +355,7 @@ describe("readPending — what a strict refusal names", () => {
 
       const ctx: PendingLedgerContext = {
         repoRoot: repo.dir,
-        pendingPath,
+        pendingDir,
         entryExtension: undefined,
         log: silent,
       };
@@ -317,6 +370,9 @@ describe("readPending — what a strict refusal names", () => {
         writablePaths: ["queue/**"],
       });
       expect(asWriter.queueParseFailure?.path).toBe(declared);
+      expect([
+        ...new Set(asWriter.queueParseFailure?.errors.map((e) => e.file)),
+      ]).toEqual([entryFileName("SOME-TAG")]);
 
       let caught: unknown;
       try {
@@ -330,10 +386,13 @@ describe("readPending — what a strict refusal names", () => {
       expect(caught).toBeInstanceOf(PendingParseFailure);
       const message = (caught as Error).message;
       expect(message).toMatch(
-        /^queue\/ledger\.json failed to parse \(\d+ error\(s\)\)/,
+        /^queue\/ledger failed to parse \(\d+ error\(s\)\)/,
       );
+      // The fence verdict is over the files a repair would write, not over
+      // the directory: the glob a producer declares admits the entry files
+      // and never the directory's own path.
       expect(message).toContain(
-        `'build' does not declare ${declared} writable`,
+        `'build' does not declare ${declared}/${entryFileName("SOME-TAG")} writable`,
       );
     } finally {
       await repo.cleanup();
@@ -356,11 +415,14 @@ describe("readPending — what a strict refusal names", () => {
   it("a strict pending read's parse refusal carries the chain's declared ledger path on the error", async () => {
     const repo = await makeScratchRepo("flume-refusal-field-", "main");
     try {
-      const dock = join(repo.dir, "queue");
-      await mkdir(dock, { recursive: true });
-      const pendingPath = join(dock, "ledger.json");
-      const declared = "queue/ledger.json";
-      await writeFile(pendingPath, "{}\n", "utf8");
+      const pendingDir = join(repo.dir, "queue", "ledger");
+      const declared = "queue/ledger";
+      await mkdir(pendingDir, { recursive: true });
+      await writeFile(
+        join(pendingDir, entryFileName("SOME-TAG")),
+        "{}\n",
+        "utf8",
+      );
       await exec("git", ["add", "."], { cwd: repo.dir });
       await exec("git", ["commit", "-q", "-m", "an unparseable ledger"], {
         cwd: repo.dir,
@@ -368,7 +430,7 @@ describe("readPending — what a strict refusal names", () => {
 
       const ctx: PendingLedgerContext = {
         repoRoot: repo.dir,
-        pendingPath,
+        pendingDir,
         entryExtension: undefined,
         log: silent,
       };

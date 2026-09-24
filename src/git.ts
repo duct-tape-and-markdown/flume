@@ -467,7 +467,7 @@ export async function showNameOnly(
 /**
  * Read a path's content as committed at `ref` (`git show <ref>:<path>`) —
  * spec/pending.md "Dispatch reads come from the tip, not the tree": every
- * strict pending.json read resolves the committed tip, never the working
+ * strict queue read resolves the committed tip, never the working
  * tree. Returns `null` when the path is absent from that ref's tree,
  * mirroring a plain absence check for the disk read this replaces rather
  * than a distinct failure mode.
@@ -515,6 +515,54 @@ export async function readFileAtRef(
     maxBuffer: 16 * 1024 * 1024,
   });
   return stdout;
+}
+
+/**
+ * The blob names directly under `relDir` in `ref`'s tree, without the
+ * directory prefix — the queue directory's listing as the committed tip
+ * holds it (`spec/pending.md`, *The ledger is a directory — one entry per
+ * file*), for a caller that then reads each name through
+ * {@link readFileAtRef}.
+ *
+ * `null` when the directory is absent from that tree. A git tree holds no
+ * empty directory, so "absent" and "empty of everything" are one fact and
+ * nothing here pretends to split them; a directory holding only
+ * subdirectories answers `[]`, which is present and carrying no blob.
+ *
+ * **One level, never walked.** `ls-tree` without `-r` lists the named tree's
+ * own children, so a subdirectory appears as a `tree` row and is dropped
+ * here rather than descended into — the listing rule the queue is read under
+ * is git's own behavior, not a filter composed on top of it.
+ *
+ * `-z` for the reason every other listing this module decodes takes it: a
+ * committed name carrying a quote, a backslash or a newline is spelled
+ * verbatim between NULs, where git's default output would C-quote it and the
+ * caller would compose a path that does not exist.
+ */
+export async function listTreeBlobNames(
+  repoRoot: string,
+  ref: string,
+  relDir: string,
+): Promise<string[] | null> {
+  const prefix = gitPath(relDir).replace(/\/+$/, "");
+  const { stdout } = await run(repoRoot, [
+    "ls-tree",
+    "-z",
+    ref,
+    "--",
+    `${prefix}/`,
+  ]);
+  const rows = stdout.split("\0").filter((row) => row.length > 0);
+  if (rows.length === 0) return null;
+  const names: string[] = [];
+  for (const row of rows) {
+    const tab = row.indexOf("\t");
+    if (tab === -1) continue;
+    const type = row.slice(0, tab).split(" ")[1];
+    if (type !== "blob") continue;
+    names.push(row.slice(tab + 1 + prefix.length + 1));
+  }
+  return names;
 }
 
 /**

@@ -62,17 +62,17 @@ export interface ChainModule {
 export type ChainFactory = (api: FlumeApi) => ChainModule;
 
 /**
- * Validate a declared `Chain.pendingPath` (spec/pending.md "The pending
+ * Validate a declared `Chain.pendingDir` (spec/pending.md "The pending
  * queue"): must be relative and must resolve inside the state root, same
  * idiom as `Chain.friction`. Undeclared is a strict no-op — the dispatcher
- * falls back to `plan/pending.json`.
+ * falls back to `plan/pending`.
  */
-function validatePendingPathDeclaration(chain: Chain): void {
-  if (chain.pendingPath === undefined) return;
+function validatePendingDirDeclaration(chain: Chain): void {
+  if (chain.pendingDir === undefined) return;
   assertStateRootRelative(
-    "pendingPath",
-    chain.pendingPath,
-    'file path (e.g. "plan/pending.json")',
+    "pendingDir",
+    chain.pendingDir,
+    'directory path (e.g. "plan/pending")',
   );
 }
 
@@ -331,7 +331,7 @@ export async function loadChainModule(
     );
   }
   validateFrictionDeclaration(chain);
-  validatePendingPathDeclaration(chain);
+  validatePendingDirDeclaration(chain);
   validateSupervisorPolicyDeclaration(chain);
   validateNoDeadDeclarations(chain);
   const result: ChainModule = { chain };

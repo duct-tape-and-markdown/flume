@@ -20,8 +20,8 @@ import { join } from "node:path";
 export interface MinimalChainDeclarations {
   /** `Chain.friction`, verbatim — undeclared turns every friction behavior off. */
   friction?: string;
-  /** `Chain.pendingPath`, verbatim — undeclared leaves the engine's default. */
-  pendingPath?: string;
+  /** `Chain.pendingDir`, verbatim — undeclared leaves the engine's default. */
+  pendingDir?: string;
 }
 
 /** The phase shape {@link minimalChainSrc} renders, plus what it declares beside it. */
@@ -56,7 +56,7 @@ export async function writeRepoConfig(
 /** The chain body both sources below share, `agent` spliced in when one is wanted. */
 function chainSrc(shape: MinimalChainShape, agentSrc = ""): string {
   const { name = "probe", promptPath = "prompts/prompt.md" } = shape;
-  const declared = (["friction", "pendingPath"] as const)
+  const declared = (["friction", "pendingDir"] as const)
     .filter((field) => shape[field] !== undefined)
     .map((field) => `  ${field}: ${JSON.stringify(shape[field])},\n`)
     .join("");

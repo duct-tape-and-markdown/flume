@@ -19,7 +19,7 @@
  * `plan/notes` — so a layout rename moves these cases with it.
  */
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -40,6 +40,8 @@ import {
 import { pendingGate } from "../src/builtinGates.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import { isAncestor, readFileAtRef, statusRecords } from "../src/git.ts";
+import { readQueueAtRef } from "../src/pendingLedger.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
@@ -65,7 +67,7 @@ vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
  */
 const engine: GateEngine = {
   pendingGate,
-  git: { readFileAtRef, isAncestor, statusRecords },
+  git: { readFileAtRef, readQueueAtRef, isAncestor, statusRecords },
 };
 
 /** The state root every case addresses, repo-relative. */
@@ -171,8 +173,31 @@ const queueEntry = (
   pins: [],
 });
 
-const writeQueue = (entries: readonly unknown[]): Promise<void> =>
-  write(`${STATE_ROOT}/plan/pending.json`, `${JSON.stringify(entries, null, 2)}\n`);
+/**
+ * The queue as a commit holds it: one `<tag>.json` per entry directly under
+ * the directory, plus the `.gitkeep` adoption seeds (`harness/init.ts`) —
+ * git holds no empty directory, so a drained queue needs a file of its own to
+ * stay *present* and empty rather than missing.
+ *
+ * Every prior entry file is removed first: the listing is the queue
+ * (`spec/pending.md`, *The ledger is a directory — one entry per file*), so a
+ * fixture that sets the queue sets the directory.
+ */
+const writeQueue = async (entries: readonly unknown[]): Promise<void> => {
+  const dir = join(repo, STATE_ROOT, "plan", "pending");
+  await mkdir(dir, { recursive: true });
+  for (const name of await readdir(dir)) {
+    if (name.endsWith(".json")) await rm(join(dir, name), { force: true });
+  }
+  await write(`${STATE_ROOT}/plan/pending/.gitkeep`, "");
+  for (const entry of entries) {
+    const tag = (entry as { tag?: unknown }).tag;
+    await write(
+      `${STATE_ROOT}/plan/pending/${entryFileName(typeof tag === "string" ? tag : "SOME-TAG")}`,
+      `${JSON.stringify(entry, null, 2)}\n`,
+    );
+  }
+};
 
 /**
  * The context a dispatcher builds for a gate on this repo — `.flume` at the
@@ -196,7 +221,7 @@ function ctxFor(
     repoRoot: repo,
     flumeDir,
     stateRootRel: computeStateRootRel(repo, flumeDir),
-    pendingPath: join(flumeDir, "plan", "pending.json"),
+    pendingDir: join(flumeDir, "plan", "pending"),
     configDir: flumeDir,
     phaseName: over.phaseName,
     commitSha: span.commitSha,
@@ -307,13 +332,12 @@ it("the per gate reports a drained queue as skipped, not as a judged green", asy
   // The queue the gate is about to read, at the commit it reads it from:
   // present and parsing, carrying nothing. Absent would be the gate's
   // refusal arm, which is a different verdict entirely.
-  const raw = await readFileAtRef(
+  const files = await readQueueAtRef(
     repo,
     span.commitSha,
-    `${STATE_ROOT}/plan/pending.json`,
+    `${STATE_ROOT}/plan/pending`,
   );
-  expect(raw).not.toBeNull();
-  expect(JSON.parse(raw ?? "null")).toEqual([]);
+  expect(files).toEqual([]);
 
   const skipped = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
 
@@ -679,6 +703,7 @@ it("the clean-tree gate takes its status records from the engine rather than spa
     pendingGate,
     git: {
       readFileAtRef,
+      readQueueAtRef,
       isAncestor,
       statusRecords: async (cwd: string) => {
         calls.push(cwd);

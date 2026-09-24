@@ -21,7 +21,7 @@
  * them are still the package's.
  */
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -37,9 +37,10 @@ import {
 } from "../harness/index.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
 import { HELP_TOP, isSubcommand } from "../src/cliHelp.ts";
-import { parsePending } from "../src/PendingSchema.ts";
-import { queuePath } from "../harness/layout.ts";
-import { resolvePendingPath } from "../src/paths.ts";
+import { parsePendingQueue } from "../src/PendingSchema.ts";
+import { readQueueOnDisk } from "../src/pendingLedger.ts";
+import { queueDir } from "../harness/layout.ts";
+import { resolvePendingDir } from "../src/paths.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   SPAWN_BUDGET_MS,
@@ -202,46 +203,58 @@ it("flume-harness init writes the state root and its derived ignore lines", asyn
  * plan tick that got to run would write one. Seeded here, or the first wave
  * never starts.
  *
- * Addressed through the engine's own `resolvePendingPath` rather than a
+ * A directory now, and a placeholder file inside it (`spec/pending.md`, *The
+ * ledger is a directory — one entry per file*): git holds no empty directory,
+ * so the seed has to carry a file of its own or the queue vanishes from the
+ * tree and the pending gate fails the first plan commit over a queue that was
+ * simply drained.
+ *
+ * Addressed through the engine's own `resolvePendingDir` rather than a
  * layout spelled by the tester: a queue seeded at a path the dispatcher does
  * not resolve reds here instead of at a consumer's first tick, and the
- * reported line through the package's own `queuePath` (`harness/layout.ts`),
+ * reported line through the package's own `queueDir` (`harness/layout.ts`),
  * which is the one home the fence reads it from too.
  */
-it("flume-harness init seeds an empty queue in the state root", async () => {
+it("flume-harness init seeds an empty queue directory in the state root", async () => {
   const result = await harnessInit({ repoRoot });
 
-  const pending = resolvePendingPath(join(repoRoot, result.stateRoot));
+  const pending = resolvePendingDir(join(repoRoot, result.stateRoot));
   expect(existsSync(pending)).toBe(true);
-  expect(statSync(pending).isFile()).toBe(true);
+  expect(statSync(pending).isDirectory()).toBe(true);
+
+  // Exactly one file, and it is not an entry: the engine reads only
+  // `*.json` directly under the directory, so the seed leaves a queue that
+  // is present and empty rather than present and carrying a phantom.
+  expect(readdirSync(pending)).toEqual([".gitkeep"]);
 
   // And reported: `written` is the list a consumer commits the adoption from,
-  // so a queue on disk that no line names is a file their first commit drops.
+  // so a file on disk that no line names is one their first commit drops.
   // The expectation is the same derivation the writer reports through, in
   // git's alphabet, since that is what the rest of the list is in.
-  expect(result.written).toContain(queuePath(result.stateRoot));
+  expect(result.written).toContain(`${queueDir(result.stateRoot)}/.gitkeep`);
 });
 
 /**
  * The agreement gate behind the case above (`.claude/rules/engineering.md`,
  * *A seam gate reads what the real writer wrote*): the writer is
- * `harnessInit` and the reader is the engine's real `parsePending`, composed
- * with the package's own entry extension — the pair a consumer's first plan
- * tick and its `pending-gate` meet these bytes through. A seed that parsed
- * to something other than zero entries would hand that tick a phantom.
+ * `harnessInit` and the reader is the engine's real listing plus
+ * `parsePendingQueue`, composed with the package's own entry extension — the
+ * pair a consumer's first plan tick and its `pending-gate` meet this
+ * directory through. A seed that read as something other than zero entries
+ * would hand that tick a phantom.
  */
-it("the queue flume-harness init writes parses as an empty pending queue", async () => {
+it("the queue directory flume-harness init writes reads as an empty pending queue", async () => {
   const result = await harnessInit({ repoRoot });
-  const raw = await readFile(
-    resolvePendingPath(join(repoRoot, result.stateRoot)),
-    "utf8",
+  const files = readQueueOnDisk(
+    resolvePendingDir(join(repoRoot, result.stateRoot)),
   );
 
-  // Non-vacuity: there are bytes to judge, so the empty entry list below is
-  // the parser's verdict on a real file rather than on an empty read.
-  expect(raw.length).toBeGreaterThan(0);
+  // Non-vacuity: the directory is there to be listed, so the empty entry
+  // list below is the reader's verdict on a real directory rather than on an
+  // absent one.
+  expect(files).not.toBeNull();
 
-  const parsed = parsePending(raw, entryExtension());
+  const parsed = parsePendingQueue(files ?? [], entryExtension());
   expect({ ok: parsed.ok, errors: parsed.errors }).toEqual({
     ok: true,
     errors: [],

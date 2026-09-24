@@ -156,7 +156,10 @@ beforeAll(async () => {
   );
   await writeFile(join(repo, "src", "index.ts"), "export const seed = 1;\n");
   await writeFile(join(repo, "rules", "posture.md"), "# Posture\n");
-  await writeFile(join(flumeDir, "plan", "pending.json"), "[]\n");
+  // The queue directory, present and empty: git holds no empty directory, so
+  // the placeholder is what keeps it in the tree (`harness/init.ts`).
+  await mkdir(join(flumeDir, "plan", "pending"), { recursive: true });
+  await writeFile(join(flumeDir, "plan", "pending", ".gitkeep"), "");
   await mkdir(join(flumeDir, "plan", "questions"), { recursive: true });
   await writeFile(
     join(flumeDir, "plan", "questions", "a-parked-fork.md"),
@@ -563,7 +566,7 @@ it("the returned build phase is fanout and carries the declaration's fence", () 
       fenced: false,
     });
   }
-  expect(derive.writablePaths).toContain(`${STATE_ROOT}/plan/pending.json`);
+  expect(derive.writablePaths).toContain(`${STATE_ROOT}/plan/pending/*.json`);
   expect(derive.writablePaths).toContain(DECLARATION.fence["plan-derive"][0]);
 });
 
@@ -681,7 +684,7 @@ it("the build fence and the park predicate name one note path under a nested sta
     }),
     "plan-derive",
   );
-  expect(derive.writablePaths).toContain(`${rel}/plan/pending.json`);
+  expect(derive.writablePaths).toContain(`${rel}/plan/pending/*.json`);
 });
 
 it("a note under the parked directory parks its entry", () => {
@@ -1192,7 +1195,7 @@ function gateContext(cwd: string): GateContext {
     repoRoot: repo,
     flumeDir,
     stateRootRel: computeStateRootRel(repo, flumeDir),
-    pendingPath: join(flumeDir, "plan", "pending.json"),
+    pendingDir: join(flumeDir, "plan", "pending"),
     configDir: flumeDir,
     phaseName: BUILD_PHASE,
     commitSha: "0".repeat(40),

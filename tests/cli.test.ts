@@ -51,11 +51,12 @@ import {
   computeStateRootRel,
   DEFAULT_PENDING_REL,
   loopLockPath,
-  resolvePendingPath,
+  resolvePendingDir,
   STATE_ROOT_DIRNAME,
   STATE_ROOT_NAMES,
   stopFlagPath,
 } from "../src/paths.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
@@ -343,8 +344,27 @@ function supervisorPolicyChainSrc(policy?: {
   );
 }
 
+
 /**
- * Committed, not left on disk uncommitted — every strict pending.json read
+ * A queue directory as a fixture seeds one: one `<tag>.json` per entry
+ * directly under `dir` (`spec/pending.md`, *The ledger is a directory — one
+ * entry per file*), each named by the engine's own rule so a fixture cannot
+ * spell a filename the reader would not resolve.
+ */
+async function seedQueue(dir: string, entries: unknown[]): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  for (const entry of entries) {
+    const tag = (entry as { tag?: unknown }).tag;
+    await writeFile(
+      join(dir, entryFileName(typeof tag === "string" ? tag : "SOME-TAG")),
+      JSON.stringify(entry, null, 2) + "\n",
+      "utf8",
+    );
+  }
+}
+
+/**
+ * Committed, not left on disk uncommitted — every strict queue read
  * the dispatcher acts on now resolves the committed `HEAD` tip, never the
  * working tree (spec/pending.md "Dispatch reads come from the tip, not the
  * tree"), so an uncommitted seed would be invisible to the real `flume
@@ -352,33 +372,24 @@ function supervisorPolicyChainSrc(policy?: {
  */
 async function writeStuckEntryPending(root: string): Promise<void> {
   // Placed by the accessor that owns the undeclared-queue default
-  // (`resolvePendingPath`, src/paths.ts), never by a path spelled here — so a
+  // (`resolvePendingDir`, src/paths.ts), never by a path spelled here — so a
   // consumer that resolved the default differently reads an absent queue
   // rather than a fixture the test steered onto its own answer.
-  const queuePath = resolvePendingPath(join(root, ".flume"));
-  await mkdir(dirname(queuePath), { recursive: true });
-  await writeFile(
-    queuePath,
-    JSON.stringify(
-      [
-        {
-          tag: "STUCK-ENTRY",
-          gate: { kind: "open" },
-          dependsOnForks: [],
-          files: {
-            new: [],
-            edit: [{ path: "src/stuck.ts", description: "never reached" }],
-            retire: [],
-          },
-        },
-      ],
-      null,
-      2,
-    ) + "\n",
-    "utf8",
-  );
+  const queueDir = resolvePendingDir(join(root, ".flume"));
+  await seedQueue(queueDir, [
+    {
+      tag: "STUCK-ENTRY",
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      files: {
+        new: [],
+        edit: [{ path: "src/stuck.ts", description: "never reached" }],
+        retire: [],
+      },
+    },
+  ]);
   const opts = { cwd: root };
-  await exec("git", ["add", "--", relative(root, queuePath)], opts);
+  await exec("git", ["add", "--", relative(root, queueDir)], opts);
   await exec("git", ["commit", "-q", "-m", "test: seed STUCK-ENTRY"], opts);
 }
 
@@ -625,7 +636,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
 
 /**
  * A fanout chain whose agent, only for the `ship-a` worktree, corrupts
- * `<flumeDir>/plan/pending.json` mid-invocation (same mechanism
+ * one entry file under `<flumeDir>/plan/pending/` mid-invocation (same mechanism
  * `tests/Dispatcher.test.ts`'s ledger-refusal suite uses) and then
  * commits its declared file — so `commitPendingUpdate`'s rewrite read hits
  * an unparseable ledger after the cherry-pick and (gate-less) afterMerge
@@ -657,8 +668,12 @@ function ledgerRewriteFailureChainSrc(phaseName: string): string {
     `    const slug = basename(inv.cwd);\n` +
     `    if (slug === "ship-a") {\n` +
     `      const flumeDirEnv = process.env.FLUME_DIR ?? "";\n` +
-    `      const pendingPath = join(flumeDirEnv, ${JSON.stringify(DEFAULT_PENDING_REL)});\n` +
-    `      writeFileSync(pendingPath, "{ corrupted mid-wave, not json", "utf8");\n` +
+    `      const entryPath = join(\n` +
+    `        flumeDirEnv,\n` +
+    `        ${JSON.stringify(DEFAULT_PENDING_REL)},\n` +
+    `        ${JSON.stringify(entryFileName("SHIP-A"))},\n` +
+    `      );\n` +
+    `      writeFileSync(entryPath, "{ corrupted mid-wave, not json", "utf8");\n` +
     // Committed on trunk, not left on disk uncommitted: the rewrite read
     // this corruption targets now resolves the committed HEAD tip, never
     // the working tree (spec/pending.md "Dispatch reads come from the tip,
@@ -666,12 +681,12 @@ function ledgerRewriteFailureChainSrc(phaseName: string): string {
     `      const repoRoot = join(flumeDirEnv, "..");\n` +
     `      execFileSync(\n` +
     `        "git",\n` +
-    `        ["add", "--", pendingPath],\n` +
+    `        ["add", "--", entryPath],\n` +
     `        { cwd: repoRoot },\n` +
     `      );\n` +
     `      execFileSync(\n` +
     `        "git",\n` +
-    `        ["commit", "-q", "-m", "test: corrupt pending.json mid-wave"],\n` +
+    `        ["commit", "-q", "-m", "test: corrupt an entry mid-wave"],\n` +
     `        { cwd: repoRoot },\n` +
     `      );\n` +
     `      mkdirSync(join(inv.cwd, "src"), { recursive: true });\n` +
@@ -704,48 +719,39 @@ function ledgerRewriteFailureChainSrc(phaseName: string): string {
  */
 describe("flume tick — tick-verdict.json on disk after a ledger-rewrite PendingParseFailure (LOOP-WAVE-VERDICT-MULTIENTRY-COVERAGE)", () => {
   it(
-    "a multi-entry wave (one shipped, one declined) whose commitPendingUpdate rewrite read hits corrupt pending.json still writes the wave's verdict to tick-verdict.json",
+    "a multi-entry wave (one shipped, one declined) whose commitPendingUpdate rewrite read hits a corrupt entry file still writes the wave's verdict to tick-verdict.json",
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
         await writeRepoConfig(repo.dir, ledgerRewriteFailureChainSrc("build"));
         const flumeDir = join(repo.dir, ".flume");
-        const pendingPath = resolvePendingPath(flumeDir);
-        await mkdir(dirname(pendingPath), { recursive: true });
-        await writeFile(
-          pendingPath,
-          JSON.stringify(
-            [
-              {
-                tag: "SHIP-A",
-                gate: { kind: "open" },
-                dependsOnForks: [],
-                files: {
-                  new: [],
-                  edit: [{ path: "src/a.ts", description: "edit" }],
-                  retire: [],
-                },
-              },
-              {
-                tag: "DECLINE-B",
-                gate: { kind: "open" },
-                dependsOnForks: [],
-                files: {
-                  new: [],
-                  edit: [{ path: "src/b.ts", description: "edit" }],
-                  retire: [],
-                },
-              },
-            ],
-            null,
-            2,
-          ) + "\n",
-          "utf8",
-        );
+        const pendingDir = resolvePendingDir(flumeDir);
+        await seedQueue(pendingDir, [
+          {
+            tag: "SHIP-A",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: {
+              new: [],
+              edit: [{ path: "src/a.ts", description: "edit" }],
+              retire: [],
+            },
+          },
+          {
+            tag: "DECLINE-B",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: {
+              new: [],
+              edit: [{ path: "src/b.ts", description: "edit" }],
+              retire: [],
+            },
+          },
+        ]);
         // Committed, not left on disk uncommitted — the decide-read now
         // resolves the committed HEAD tip (spec/pending.md "Dispatch reads
         // come from the tip, not the tree").
-        await exec("git", ["add", "--", pendingPath], {
+        await exec("git", ["add", "--", pendingDir], {
           cwd: repo.dir,
         });
         await exec("git", ["commit", "-q", "-m", "test: seed SHIP-A/DECLINE-B"], {
@@ -758,9 +764,9 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
         // Exit-69-worthy refusal — the ledger rewrite refused rather than
         // deriving a rewrite from a parse it never trusted.
         expect(r.code).toBe(EX_MOUNT_DEAD);
-        expect(await readFile(pendingPath, "utf8")).toBe(
-          "{ corrupted mid-wave, not json",
-        );
+        expect(
+          await readFile(join(pendingDir, entryFileName("SHIP-A")), "utf8"),
+        ).toBe("{ corrupted mid-wave, not json");
 
         // The defect this test pins: the on-disk artifact, not just the
         // in-memory outcome, must carry both the shipped tag and the
@@ -1105,29 +1111,23 @@ describe("flume status — friction line", () => {
  * chain-less probe pinned per-arm in tests/pendingLedger.test.ts.
  */
 describe("flume status — pending entry count", () => {
-  it("names the entry count for a valid pending.json", async () => {
+  it("names the entry count for a valid queue", async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
     try {
-      const queuePath = resolvePendingPath(join(dir, ".flume"));
-      await mkdir(dirname(queuePath), { recursive: true });
-      await writeFile(
-        queuePath,
-        JSON.stringify([
-          {
-            tag: "A",
-            gate: { kind: "open" },
-            dependsOnForks: [],
-            files: { new: [], edit: [{ path: "src/a.ts", description: "a" }], retire: [] },
-          },
-          {
-            tag: "B",
-            gate: { kind: "open" },
-            dependsOnForks: [],
-            files: { new: [], edit: [{ path: "src/b.ts", description: "b" }], retire: [] },
-          },
-        ]),
-        "utf8",
-      );
+      await seedQueue(resolvePendingDir(join(dir, ".flume")), [
+        {
+          tag: "A",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: { new: [], edit: [{ path: "src/a.ts", description: "a" }], retire: [] },
+        },
+        {
+          tag: "B",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: { new: [], edit: [{ path: "src/b.ts", description: "b" }], retire: [] },
+        },
+      ]);
 
       const r = await runCli(dir, ["status"]);
       expect(r.code).toBe(0);
@@ -1137,12 +1137,16 @@ describe("flume status — pending entry count", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it('prints "pending: unparsable" for a corrupt pending.json instead of dropping it silently', async () => {
+  it('flume status reports pending: unparsable when one entry file is malformed', async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
     try {
-      const queuePath = resolvePendingPath(join(dir, ".flume"));
-      await mkdir(dirname(queuePath), { recursive: true });
-      await writeFile(queuePath, "not json{", "utf8");
+      const queueDir = resolvePendingDir(join(dir, ".flume"));
+      await mkdir(queueDir, { recursive: true });
+      await writeFile(
+        join(queueDir, entryFileName("BROKEN")),
+        "not json{",
+        "utf8",
+      );
 
       const r = await runCli(dir, ["status"]);
       expect(r.code).toBe(0);
@@ -1152,7 +1156,7 @@ describe("flume status — pending entry count", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it('prints "pending: 0" when plan/pending.json is absent', async () => {
+  it('prints "pending: 0" when the queue directory is absent', async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
     try {
       const r = await runCli(dir, ["status"]);
@@ -1163,33 +1167,25 @@ describe("flume status — pending entry count", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it("honors a chain-declared pendingPath (CHAIN-PENDINGPATH) — counts entries at the custom location, not plan/pending.json", async () => {
+  it("honors a chain-declared pendingDir (CHAIN-PENDINGPATH) — counts entries at the custom location, not plan/pending", async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
     try {
-      const customRel = join("custom", "queue.json");
-      await writeRepoConfig(dir, minimalChainSrc({ pendingPath: customRel }));
-      const customDir = join(dir, ".flume", "custom");
-      await mkdir(customDir, { recursive: true });
-      await writeFile(
-        join(customDir, "queue.json"),
-        JSON.stringify([
-          {
-            tag: "A",
-            gate: { kind: "open" },
-            dependsOnForks: [],
-            files: { new: [], edit: [{ path: "src/a.ts", description: "a" }], retire: [] },
-          },
-        ]),
-        "utf8",
-      );
+      const customRel = join("custom", "queue");
+      await writeRepoConfig(dir, minimalChainSrc({ pendingDir: customRel }));
+      await seedQueue(join(dir, ".flume", customRel), [
+        {
+          tag: "A",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: { new: [], edit: [{ path: "src/a.ts", description: "a" }], retire: [] },
+        },
+      ]);
       // A queue at the default location must never be consulted once a
-      // custom pendingPath is declared — so the decoy is placed by the
+      // custom pendingDir is declared — so the decoy is placed by the
       // accessor that owns that default, never by a path spelled here. A
       // decoy at a stale literal would sit somewhere `status` never looks,
       // and this control would pass without controlling anything.
-      const decoyPath = resolvePendingPath(join(dir, ".flume"));
-      await mkdir(dirname(decoyPath), { recursive: true });
-      await writeFile(decoyPath, JSON.stringify([]), "utf8");
+      await mkdir(resolvePendingDir(join(dir, ".flume")), { recursive: true });
 
       const r = await runCli(dir, ["status"]);
       expect(r.code).toBe(0);
@@ -1229,24 +1225,14 @@ async function writeCapabilityGatedPending(
   root: string,
   capability: string,
 ): Promise<void> {
-  const queuePath = resolvePendingPath(join(root, ".flume"));
-  await mkdir(dirname(queuePath), { recursive: true });
-  await writeFile(
-    queuePath,
-    JSON.stringify(
-      [
-        {
-          tag: "GATED",
-          gate: { kind: "requiresCapability", capability },
-          dependsOnForks: [],
-          files: { new: [], edit: [{ path: "src/gated.ts", description: "gated work" }], retire: [] },
-        },
-      ],
-      null,
-      2,
-    ) + "\n",
-    "utf8",
-  );
+  await seedQueue(resolvePendingDir(join(root, ".flume")), [
+    {
+      tag: "GATED",
+      gate: { kind: "requiresCapability", capability },
+      dependsOnForks: [],
+      files: { new: [], edit: [{ path: "src/gated.ts", description: "gated work" }], retire: [] },
+    },
+  ]);
 }
 
 /**
@@ -1300,7 +1286,7 @@ const THROWING_CHAIN_SRC =
 
 /**
  * CHAIN-LOAD-FAILURE-REPORTED — the observational surfaces load the chain
- * best-effort, for `Chain.pendingPath`, `Chain.friction`, and
+ * best-effort, for `Chain.pendingDir`, `Chain.friction`, and
  * `Chain.capabilities`. Best-effort used to mean silent: a chain that threw
  * left `status` printing a pending count rebased on the default queue path,
  * exit 0, with nothing said — a confident wrong number
@@ -1318,7 +1304,7 @@ describe("flume status — a chain that fails to load (CHAIN-LOAD-FAILURE-REPORT
     const dir = await mkFixtureRoot("flume-status-chainfail-");
     try {
       await writeRepoConfig(dir, THROWING_CHAIN_SRC);
-      // The entries the chain's own `pendingPath` would have pointed at —
+      // The entries the chain's own `pendingDir` would have pointed at —
       // unreachable now, so the count below rebases on plan/pending.json
       // (absent) and reads 0. That rebase is exactly what must not be silent.
       await mkdir(join(dir, ".flume", "custom"), { recursive: true });
@@ -3650,7 +3636,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
 function fanoutCheckChainSrc(
   buildWritablePaths: string[],
   buildChannelPaths: string[] = [],
-  pendingPath?: string,
+  pendingDir?: string,
 ): string {
   return (
     `export default () => ({ chain: {\n` +
@@ -3677,8 +3663,8 @@ function fanoutCheckChainSrc(
     `    },\n` +
     `  ],\n` +
     `  humanOnly: [],\n` +
-    (pendingPath !== undefined
-      ? `  pendingPath: ${JSON.stringify(pendingPath)},\n`
+    (pendingDir !== undefined
+      ? `  pendingDir: ${JSON.stringify(pendingDir)},\n`
       : ``) +
     `} });\n`
   );
@@ -3715,13 +3701,11 @@ async function writeCheckPending(
   entries: unknown[],
   rel: string = DEFAULT_PENDING_REL,
 ): Promise<void> {
-  const path = join(root, ".flume", rel);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(entries, null, 2) + "\n", "utf8");
+  await seedQueue(join(root, ".flume", rel), entries);
 }
 
 describe("flume check (spec/cli.md §Subcommand surface)", () => {
-  it("exits EX_DATAERR naming the entry on a parsePending schema violation", async () => {
+  it("exits EX_DATAERR naming the entry file on a schema violation", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
       await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
@@ -3737,7 +3721,8 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       const r = await runCli(repo.dir, ["check"]);
       expect(r.code).toBe(EX_DATAERR);
       expect(r.out).toContain("schema violation");
-      expect(r.out).toContain("[0]");
+      // The entry's own file, which is what a producer opens to repair it.
+      expect(r.out).toContain(`[${entryFileName("BAD")}]`);
     } finally {
       await repo.cleanup();
     }
@@ -3772,7 +3757,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it("exits 0 on a clean pending.json", async () => {
+  it("exits 0 on a clean queue", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
       await writeRepoConfig(
@@ -3806,10 +3791,10 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it("honors a chain-declared pendingPath (CHAIN-PENDINGPATH) — reads and reports the custom location, not plan/pending.json", async () => {
+  it("honors a chain-declared pendingDir (CHAIN-PENDINGPATH) — reads and reports the custom location, not plan/pending", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
-      const customRel = join("custom", "queue.json");
+      const customRel = join("custom", "queue");
       await writeRepoConfig(
         repo.dir,
         fanoutCheckChainSrc(["src/**"], [], customRel),
@@ -3837,7 +3822,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       // The default location was never written or read. Resolved through
       // the accessor that owns it: a stale literal here would assert the
       // absence of a file nothing ever writes, and stay green for free.
-      expect(existsSync(resolvePendingPath(join(repo.dir, ".flume")))).toBe(
+      expect(existsSync(resolvePendingDir(join(repo.dir, ".flume")))).toBe(
         false,
       );
     } finally {
@@ -3845,7 +3830,7 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it("exits 0 when plan/pending.json is absent — nothing to check", async () => {
+  it("exits 0 when the queue directory is absent — nothing to check", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
       await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
@@ -3857,16 +3842,17 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it("exits EX_IOERR naming the error on a non-ENOENT pending.json read failure, instead of reading it as absent", async () => {
+  it("exits EX_IOERR naming the error on a non-ENOENT queue read failure, instead of reading it as absent", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
       await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
-      // A directory in place of pending.json reproduces a non-ENOENT read
-      // failure (EISDIR) without relying on permission bits a root-run test
-      // could bypass (`.claude/rules/engineering.md`, "Loud or nothing").
-      await mkdir(resolvePendingPath(join(repo.dir, ".flume")), {
-        recursive: true,
-      });
+      // A plain file in place of the queue directory reproduces a non-ENOENT
+      // listing failure (ENOTDIR) without relying on permission bits a
+      // root-run test could bypass (`.claude/rules/engineering.md`, "Loud or
+      // nothing").
+      const queueDir = resolvePendingDir(join(repo.dir, ".flume"));
+      await mkdir(dirname(queueDir), { recursive: true });
+      await writeFile(queueDir, "not a directory\n", "utf8");
 
       const r = await runCli(repo.dir, ["check"]);
       expect(r.code).toBe(EX_IOERR);
@@ -3893,8 +3879,11 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
           },
         },
       ]);
-      const pendingPath = resolvePendingPath(join(repo.dir, ".flume"));
-      const before = await readFile(pendingPath, "utf8");
+      const entryPath = join(
+        resolvePendingDir(join(repo.dir, ".flume")),
+        entryFileName("CLEAN"),
+      );
+      const before = await readFile(entryPath, "utf8");
 
       const r = await runCli(repo.dir, ["check"]);
 
@@ -3902,8 +3891,8 @@ describe("flume check (spec/cli.md §Subcommand surface)", () => {
       // No Baton constructed — unlike `status`, whose Baton() call mkdirs
       // awake/ as a side effect even for an all-hibernating read.
       expect(existsSync(join(repo.dir, ".flume", "awake"))).toBe(false);
-      // Read-only: pending.json itself is byte-identical afterward.
-      expect(await readFile(pendingPath, "utf8")).toBe(before);
+      // Read-only: the queue itself is byte-identical afterward.
+      expect(await readFile(entryPath, "utf8")).toBe(before);
       // No worktree/agent machinery ever ran.
       expect(existsSync(join(repo.dir, ".flume", "worktrees"))).toBe(false);
     } finally {
@@ -4090,12 +4079,12 @@ describe("consumer-phase fence pre-check — `flume check` against `pendingGate`
       });
       const consumer = chain.phases.find((p) => p.concurrency === "fanout");
       expect(consumer).toBeDefined();
-      const queuePath = resolvePendingPath(flumeDir, chain.pendingPath);
+      const queuePath = resolvePendingDir(flumeDir, chain.pendingDir);
       const gateResult = await pendingGate({ targetFence: consumer! }).run({
         cwd: repo.dir,
         flumeDir,
         stateRootRel: computeStateRootRel(repo.dir, flumeDir),
-        pendingPath: queuePath,
+        pendingDir: queuePath,
         configDir: flumeDir,
         repoRoot: repo.dir,
         phaseName: "plan",
@@ -4525,7 +4514,7 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
       // A directory in place of the note reproduces a non-ENOENT read
       // failure (EISDIR) without relying on permission bits a root-run test
       // could bypass (`.claude/rules/engineering.md`, "Loud or nothing"),
-      // matching the `check` pendingPath test's approach above.
+      // matching the `check` pendingDir test's approach above.
       await mkdir(join(frictionDir, "note.md"), { recursive: true });
 
       const r = await runCli(repo.dir, ["friction", "note.md"]);
@@ -4819,7 +4808,7 @@ describe("state root layout — `flume loop` writes the lock `liveLoopPid` reads
   );
 });
 
-describe("state root layout — an undeclared Chain.pendingPath is one file for every consumer", () => {
+describe("state root layout — an undeclared Chain.pendingDir is one file for every consumer", () => {
   it(
     "the queue at the default location is the one `flume check` validates and the one the dispatcher picks from",
     async () => {
@@ -4827,7 +4816,7 @@ describe("state root layout — an undeclared Chain.pendingPath is one file for 
       const wtDir = await mkTempDir("flume-queue-default-");
       try {
         // A fanout phase (the sole kind that picks from pending) on a chain
-        // that declares no pendingPath. Worktree provisioning is pointed at
+        // that declares no pendingDir. Worktree provisioning is pointed at
         // a plain file so a picked entry fails immediately after selection —
         // this test is about which file was read, not about shipping.
         await writeRepoConfig(repo.dir, supervisorPolicyChainSrc(undefined));

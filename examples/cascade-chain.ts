@@ -4,7 +4,7 @@
  * itself is the machine phases that derive from it:
  *
  *   - plan-inbox: routes the findings under `.flume/inbox/` (singleton).
- *   - plan-derive: re-derives pending.json + state.md from the spec corpus
+ *   - plan-derive: re-derives the pending queue + state.md from the spec corpus
  *     + src (singleton).
  *   - build: ships pending entries to the trunk (fanout).
  *
@@ -448,7 +448,7 @@ const factory: ChainFactory = (api) => {
    * commit.
    *
    * Hands the baton back to the plan ladder rather than to a phase named
-   * outright, so pending.json reconciles against the new trunk state — see
+   * outright, so the queue reconciles against the new trunk state — see
    * `nextPhase` below, the one place the order lives.
    *
    * Declared above the plan slices (rather than in the plan/build reading
@@ -471,9 +471,9 @@ const factory: ChainFactory = (api) => {
       "tsconfig.json",
       "eslint.config.mjs",
       ".gitignore",
-      // NOTE: build does not touch .flume/plan/pending.json. The harness writes
-      // a separate commit post-merge that removes shipped entries. This avoids
-      // cherry-pick conflicts when N fanout worktrees each touch the same file.
+      // NOTE: build does not touch .flume/plan/pending/. The harness writes
+      // a separate commit post-merge that `git rm`s the shipped entries' files.
+      // One file per entry is what lets N fanout worktrees merge at all.
     ],
     gates: [tscGate, eslintGate, declaredFilesMatchSpan, vitestOnTrunk],
     promptArgs(ctx: TickContext) {
@@ -580,7 +580,7 @@ const factory: ChainFactory = (api) => {
     },
     {
       name: DERIVE,
-      description: "Re-derive .flume/plan/pending.json + state.md from disk.",
+      description: "Re-derive .flume/plan/pending/ + state.md from disk.",
       job: "Re-derive the plan artifacts from current disk reality. Reconcile every entry against the spec section its `per` names, file what the spec states and the code does not, and rewrite state.md from scratch.",
       live: ({ pickable }) => !pickable,
     },
@@ -605,7 +605,7 @@ const factory: ChainFactory = (api) => {
    * same fence and the same `pendingGate`; what a slice varies is the job it
    * is woken for, the material its prompt renders, and when it is live.
    *
-   * Singleton: pending.json and state.md are shared artifacts, and two
+   * Singleton: the queue and state.md are shared artifacts, and two
    * concurrent planners would race — which is also why the slices are a
    * ladder rather than a fanout.
    */
@@ -617,7 +617,9 @@ const factory: ChainFactory = (api) => {
     writablePaths: [
       // Rooted at the offset the engine reported, so a run under a relocated
       // `FLUME_DIR` fences the directory that run actually writes.
-      `${stateRoot}/plan/pending.json`,
+      // One entry per file, so the fence is the glob and not the directory
+      // (`spec/pending.md`, *The ledger is a directory — one entry per file*).
+      `${stateRoot}/plan/pending/*.json`,
       `${stateRoot}/plan/state.md`,
       `${stateRoot}/plan/open-questions.md`,
       // The inbox is drained by deletion, so the fence has to reach it.

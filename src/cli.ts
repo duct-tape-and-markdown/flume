@@ -36,7 +36,7 @@ import {
   type GitVersion,
 } from "./git.js";
 import { diskChainLoader } from "./chainLoad.js";
-import { readPendingLoose } from "./pendingLedger.js";
+import { readPendingLoose, readQueueOnDisk } from "./pendingLedger.js";
 import {
   liveLoopClaim,
   liveLoopPid,
@@ -71,7 +71,7 @@ import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
 import { claudeCode } from "./Agent.js";
 import type { Chain } from "./Phase.js";
-import { parsePending } from "./PendingSchema.js";
+import { parsePendingQueue, type QueueFile } from "./PendingSchema.js";
 import { InlineExecRenderError } from "./Prompt.js";
 import {
   DEFAULT_PENDING_REL,
@@ -81,7 +81,7 @@ import {
   namespacedJoin,
   plainPath,
   queueFenceViolations,
-  resolvePendingPath,
+  resolvePendingDir,
   STATE_ROOT_NAMES,
   stopFlagPath,
 } from "./paths.js";
@@ -111,7 +111,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * sysexits.h `EX_DATAERR` — a declared-world inconsistency the caller can
  * classify from the exit status alone (`.claude/rules/platform-facts.md`,
  * "Exit codes come from sysexits.h"). `flume check`'s only non-zero exit:
- * a `pending.json` that fails to parse or that declares a path outside the
+ * a queue that fails to parse or that declares a path outside the
  * consumer phase's fence.
  */
 export const EX_DATAERR = 65;
@@ -471,7 +471,7 @@ async function main(): Promise<number> {
     // `readPendingLoose` (src/pendingLedger.ts) is the probe, so an absent queue reads
     // 0 and a corrupt one reads "unparsable" rather than failing the verb.
     const pending = readPendingLoose(
-      resolvePendingPath(flumeDir, chain?.pendingPath),
+      resolvePendingDir(flumeDir, chain?.pendingDir),
     );
     console.log(
       pending.ok ? `pending: ${pending.entries.length}` : "pending: unparsable",
@@ -671,32 +671,35 @@ async function main(): Promise<number> {
       return EX_MOUNT_DEAD;
     }
 
-    // spec/pending.md "The pending queue": the queue path is Chain.pendingPath
-    // (default plan/pending.json) — the same resolved value the dispatcher,
-    // `flume status`, and `pendingGate` read, never a hardcoded copy.
-    const pendingRel = chain.pendingPath ?? DEFAULT_PENDING_REL;
-    const pendingPath = resolvePendingPath(flumeDir, chain.pendingPath);
-    let raw: string;
+    // spec/pending.md "The pending queue": the queue directory is
+    // Chain.pendingDir (default plan/pending) — the same resolved value the
+    // dispatcher, `flume status`, and `pendingGate` read, never a hardcoded
+    // copy. The listing under it is read through the engine's own
+    // (`readQueueOnDisk`, `src/pendingLedger.ts`), so this verb and the gate
+    // cannot disagree about which files are entries.
+    const pendingRel = chain.pendingDir ?? DEFAULT_PENDING_REL;
+    const pendingDir = resolvePendingDir(flumeDir, chain.pendingDir);
+    let files: QueueFile[] | null;
     try {
-      raw = readFileSync(namespacedJoin(pendingPath), "utf8");
+      files = readQueueOnDisk(pendingDir);
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        console.log(`${pendingRel} absent — nothing to check`);
-        return 0;
-      }
       console.error(
         `[flume] check: ${pendingRel} failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }
+    if (files === null) {
+      console.log(`${pendingRel} absent — nothing to check`);
+      return 0;
+    }
 
-    const parsed = parsePending(raw, chain.entryExtension);
+    const parsed = parsePendingQueue(files, chain.entryExtension);
     if (!parsed.ok) {
       console.error(
         `[flume] check: ${pendingRel} has ${parsed.errors.length} schema violation(s)`,
       );
       for (const e of parsed.errors) {
-        console.error(`  [${e.index}] ${e.path}: ${e.message}`);
+        console.error(`  [${e.file}] ${e.path}: ${e.message}`);
       }
       return EX_DATAERR;
     }
@@ -862,7 +865,7 @@ async function main(): Promise<number> {
   // boundary via this env var (set by `defaultTickRunner`,
   // `src/loopSupervisor.ts`) — an entry whose quarantine key (`slug@hash` of
   // its bytes in the queue) is named here is skipped by this tick's fanout pick
-  // without touching pending.json. The values are opaque equality keys, split
+  // without touching the queue. The values are opaque equality keys, split
   // apart on the comma the writer joined on and never parsed further: the hash
   // half means an entry re-scoped since the failing tick simply stops
   // matching, which is how a re-scope lifts a hold without a relaunch.

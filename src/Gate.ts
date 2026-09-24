@@ -45,7 +45,7 @@ export interface GateContext {
    * relocatable via `FLUME_DIR`). A gate reads state-relative paths from here
    * (`join(ctx.flumeDir, "prior-attempts")`) instead of hardcoding `.flume/`
    * or reaching into `process.env`. The queue is not one of them — it has its
-   * own resolved field, `pendingPath` below, and a gate that rebuilds the path
+   * own resolved field, `pendingDir` below, and a gate that rebuilds the path
    * from this root instead reads the wrong file the moment a chain relocates
    * the queue.
    *
@@ -64,7 +64,7 @@ export interface GateContext {
    * state root lives inside the repo and absent when it is relocated outside
    * it (an absolute `FLUME_DIR`, or one that climbs out via `..`). The one
    * value a gate needs to read a **tracked** state-root file as a given commit
-   * held it — `git show <commitSha>:<stateRootRel>/plan/pending.json` —
+   * held it — `git ls-tree <commitSha> -- <stateRootRel>/plan/pending/` —
    * without hardcoding `.flume`, re-deriving the offset, or re-folding it: a
    * gate composes a pathspec, a fence glob or a touched-path comparison from
    * this value and each of those is git's alphabet already. Computed
@@ -93,13 +93,14 @@ export interface GateContext {
    */
   configDir: string;
   /**
-   * Absolute, resolved path to the pending queue (`Chain.pendingPath`,
-   * default `<flumeDir>/plan/pending.json`), resolved once per tick by the
-   * dispatcher — same idiom as `flumeDir`/`configDir`. A gate reads this
-   * instead of hardcoding `plan/pending.json` (spec/pending.md, "`pendingGate`
-   * — validation and fence pre-check as an opt-in builtin").
+   * Absolute, resolved path to the pending queue's **directory**
+   * (`Chain.pendingDir`, default `<flumeDir>/plan/pending`), resolved once per
+   * tick by the dispatcher — same idiom as `flumeDir`/`configDir`. Every
+   * `<tag>.json` directly under it is an entry. A gate reads this instead of
+   * hardcoding `plan/pending` (spec/pending.md, "`pendingGate` — validation
+   * and fence pre-check as an opt-in builtin").
    */
-  pendingPath: string;
+  pendingDir: string;
   /**
    * Absolute path of the working-tree root the gate is running in — for an
    * `afterCommit` gate, the worktree root (a fanout entry's, or a singleton

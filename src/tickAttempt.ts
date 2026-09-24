@@ -85,7 +85,7 @@ export interface AttemptContext {
   /** The state root's own escape verdict, reported to every gate as `GateContext.stateRootRel`. */
   readonly stateRootRel: string | undefined;
   /** The pending ledger's resolved path, reported to every gate. */
-  readonly pendingPath: string;
+  readonly pendingDir: string;
   /** Scopes a gate's checkouts, so a gate that crashed mid-run cannot leak the tree it was reading. */
   readonly worktreeCtx: WorktreeContext;
   /** Where this attempt reads its retry input from and writes every refusal record to. */
@@ -584,7 +584,7 @@ async function runAfterCommitGates(
         repoRoot: cwd,
         flumeDir: ctx.flumeDir,
         stateRootRel: ctx.stateRootRel,
-        pendingPath: ctx.pendingPath,
+        pendingDir: ctx.pendingDir,
         configDir,
         phaseName: phase.name,
         commitSha,

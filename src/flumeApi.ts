@@ -32,6 +32,7 @@ import {
 } from "./builtinGates.js";
 import { CjsContextLoadError } from "./chainLoad.js";
 import { PendingParseFailure } from "./PendingSchema.js";
+import { readQueueAtRef } from "./pendingLedger.js";
 import { readTickVerdicts, readLatestVerdictsSync } from "./tickVerdict.js";
 import {
   isAncestor,
@@ -56,9 +57,9 @@ import {
   recordAttemptKey,
 } from "./priorAttempts.js";
 import {
-  composePendingList,
-  parsePending,
-  parsePendingLoose,
+  composePendingEntry,
+  parsePendingQueue,
+  parsePendingQueueLoose,
   renderSchemaForPrompt,
   touchedPaths,
   isPickableNow,
@@ -163,9 +164,9 @@ export interface FlumeApi {
   writablePathsGate: typeof writablePathsGate;
   pendingGate: typeof pendingGate;
   setupWorktree: typeof setupWorktree;
-  composePendingList: typeof composePendingList;
-  parsePending: typeof parsePending;
-  parsePendingLoose: typeof parsePendingLoose;
+  composePendingEntry: typeof composePendingEntry;
+  parsePendingQueue: typeof parsePendingQueue;
+  parsePendingQueueLoose: typeof parsePendingQueueLoose;
   renderSchemaForPrompt: typeof renderSchemaForPrompt;
   touchedPaths: typeof touchedPaths;
   isPickableNow: typeof isPickableNow;
@@ -226,6 +227,19 @@ export interface FlumeApi {
      * commit", so a bad ref reads as a missing path instead of failing loud.
      */
     readFileAtRef: typeof readFileAtRef;
+    /**
+     * The queue directory's listing as of a commit, every entry file read out
+     * of it — the engine's own (`readQueueAtRef`, `src/pendingLedger.ts`),
+     * which is what `pendingGate` runs on. A gate judging the queue at the
+     * commit it is attached to wants this rather than its own `ls-tree` plus
+     * a `show` per name: the queue is a directory of one file per entry
+     * (`spec/pending.md`, *The ledger is a directory — one entry per file*),
+     * so "which files are entries" and "the directory is absent, which is
+     * nothing pending" are two facts the engine already decides, and a
+     * second spelling of either is how a gate comes to read a queue the
+     * dispatcher does not.
+     */
+    readQueueAtRef: typeof readQueueAtRef;
     /**
      * Whether one commit is a (non-strict) ancestor of another — the engine's
      * own `git merge-base --is-ancestor`, exit code as data.
@@ -352,9 +366,9 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     writablePathsGate,
     pendingGate,
     setupWorktree,
-    composePendingList,
-    parsePending,
-    parsePendingLoose,
+    composePendingEntry,
+    parsePendingQueue,
+    parsePendingQueueLoose,
     renderSchemaForPrompt,
     touchedPaths,
     isPickableNow,
@@ -374,6 +388,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     git: {
       showNameOnly,
       readFileAtRef,
+      readQueueAtRef,
       isAncestor,
       statusRecords,
       readWorktreeRegistry,

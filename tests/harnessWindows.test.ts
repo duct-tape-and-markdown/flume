@@ -1308,8 +1308,10 @@ it("the inbox window spells the empty CI lane case when the declaration names no
 
 /** The engine's own decide-read fact, as `readPendingForDecision` reports one. */
 const parseFailure = (): QueueParseFailure => ({
-  path: ".flume/plan/pending.json",
-  errors: [{ index: 1, path: "tag", message: "Invalid input: expected string" }],
+  path: ".flume/plan/pending",
+  errors: [
+    { file: "SOME-ENTRY.json", path: "tag", message: "Invalid input: expected string" },
+  ],
 });
 
 it("a queue that fails to parse makes the inbox slice live", () => {
