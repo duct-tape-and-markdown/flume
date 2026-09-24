@@ -1,0 +1,25 @@
+{
+  "tag": "THE-BUDGET-LINE-IS-READ-OFF-THE-TRANSCRIPT",
+  "gate": { "kind": "open" },
+  "files": {
+    "new": [
+      {
+        "path": "src/budgetLine.ts",
+        "description": "the transcript reader and the line it composes, per the section"
+      },
+      {
+        "path": "tests/budgetLine.test.ts",
+        "description": "fixture transcripts through the reader"
+      }
+    ]
+  },
+  "summary": "The budget line the adapter's hook hands an agent has no reader: context used, elapsed clock and tool calls off a transcript path",
+  "per": { "path": "spec/chain.md", "section": "The agent seam" },
+  "acceptance": "a transcript path yields the budget line the section names — context against a declared window, elapsed, tool calls — and nothing at all when the latest assistant event carries no usage",
+  "tests": [
+    "the budget line reports context used against the declared window from the latest assistant message's input, cache-read and cache-creation tokens",
+    "the budget line counts tool calls and elapsed clock from the transcript's own first message",
+    "a transcript whose latest assistant event carries no usage yields no budget line and says why"
+  ],
+  "notes": "Stateless by construction: everything comes from the transcript the provider hands the hook. The usage shape and its expiry condition are `.claude/rules/platform-facts.md`, *stream-json assistant events carry per-message usage*. Spend is not on the line — the verdict's invocation row prices it."
+}

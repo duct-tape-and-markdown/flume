@@ -1,0 +1,38 @@
+{
+  "tag": "A-COMPLETED-ENTRY-TAKES-ITS-CONTINUING-NOTE-WITH-IT",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": [
+      "A-CONTINUATION-KEEPS-ITS-ENTRY-IN-THE-QUEUE"
+    ]
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/gates.ts",
+        "description": "the records gate refuses a shipping build span that leaves its entry's continuing note standing"
+      },
+      {
+        "path": "harness/prompts/build.md",
+        "description": "the completing tick removes the note it was handed"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "a shipping span over a standing note, and one that removed it"
+      }
+    ]
+  },
+  "summary": "Nothing refuses a completing commit that leaves its continuing note standing, so an orphan outlives the entry it described",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "A tick puts work down"
+  },
+  "acceptance": "a build commit that ships its entry while a continuing note for that tag still stands is refused, naming the path it left behind",
+  "tests": [
+    "a build commit shipping its entry over a standing continuing note is refused"
+  ],
+  "notes": "The note leaves with the ship (per the section). Build's own commit removes it — same channel, same fence, same tick that was handed it — and the gate is what keeps that from being prose alone (`.claude/rules/engineering.md`, *Loud or nothing*). A tick that wrote a continuing note this span touched the path, so it is not the case this refuses.",
+  "pins": [
+    "a build commit that removed its entry's continuing note passes the records gate"
+  ]
+}

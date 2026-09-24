@@ -1,0 +1,52 @@
+{
+  "tag": "A-CONTINUING-NOTE-IS-A-THIRD-NOTE-HOME",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/layout.ts",
+        "description": "`notes/continuing` joins the note homes the fence globs compose from; its own path builder beside the park's"
+      },
+      {
+        "path": "harness/records.ts",
+        "description": "the drain's listing stays the two homes it already names — the continuing home is build's channel to its own next tick"
+      },
+      {
+        "path": "harness/gates.ts",
+        "description": "the records gate admits the third home under the tick's own tag"
+      },
+      {
+        "path": "harness/prompts.ts",
+        "description": "a `CONTINUING_NOTE_PATH` arg beside `PARK_NOTE_PATH`"
+      },
+      {
+        "path": "harness/prompts/build.md",
+        "description": "the path, and the thresholds at which an agent lands what is green and writes it"
+      },
+      {
+        "path": "tests/harnessLayout.test.ts",
+        "description": "the home and its fence globs"
+      },
+      {
+        "path": "tests/harnessRecords.test.ts",
+        "description": "the drain's listing over a standing continuing note"
+      },
+      {
+        "path": "tests/harnessBuildArgs.test.ts",
+        "description": "the prompt arg"
+      }
+    ]
+  },
+  "summary": "A build tick has nowhere to put down work: no `notes/continuing/<TAG>.md` home, no fence for it, no prompt naming it",
+  "per": { "path": "spec/harness.md", "section": "A tick puts work down" },
+  "acceptance": "`notes/continuing/<TAG>.md` is a note home build's fence and the records gate admit under the tick's own tag, and the build prompt names the path and the thresholds",
+  "tests": [
+    "the continuing note directory is a note home the build fence admits",
+    "the records gate admits a build commit writing its entry's continuing note",
+    "the build prompt args name the entry's continuing note path"
+  ],
+  "pins": [
+    "the record drain lists no note under the continuing directory"
+  ],
+  "notes": "Location is kind (*Records as one file each*), so this is a third home beside notes/ and notes/parked/ — one spelling, composed from, per `layout.ts`'s own constant. It is NOT a drained record: a continuation is not plan's to reconcile, and a drain that routed it would take it away from the tick it was written for."
+}

@@ -1,0 +1,32 @@
+{
+  "tag": "A-CONTINUATION-KEEPS-ITS-ENTRY-IN-THE-QUEUE",
+  "gate": { "kind": "blockedBy", "tags": ["A-CONTINUING-NOTE-IS-A-THIRD-NOTE-HOME"] },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/chain.ts",
+        "description": "the `shipped` predicate reads a continuing note as not shipped, beside the park it already reads"
+      },
+      {
+        "path": "harness/judgeGate.ts",
+        "description": "the named-lines gate skips a continuation as it skips a park"
+      },
+      {
+        "path": "tests/harnessChain.test.ts",
+        "description": "the predicate over a commit carrying a continuing note"
+      },
+      {
+        "path": "tests/harnessJudge.test.ts",
+        "description": "the gate's skip over the same span"
+      }
+    ]
+  },
+  "summary": "A segment landed green still leaves the queue as shipped and is judged against the whole entry's named lines",
+  "per": { "path": "spec/harness.md", "section": "A tick puts work down" },
+  "acceptance": "a commit carrying a note at the continuing path keeps its entry in the queue with its span on the trunk, and its named lines are skipped as a park's are",
+  "tests": [
+    "a commit carrying a continuing note keeps its entry in the queue",
+    "the named-lines gate skips a span that wrote a continuing note"
+  ],
+  "notes": "The lines belong to the completed entry, not to a segment of it, so the judge skips rather than reds. Told, not inferred: the predicate reads where the tick wrote, exactly as the park predicate does, and nothing about the shape of the path list around it."
+}

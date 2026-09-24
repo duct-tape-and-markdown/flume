@@ -1,0 +1,26 @@
+{
+  "tag": "A-CONTINUATION-ROUTES-BACK-TO-BUILD-NOT-THE-DRAIN",
+  "gate": { "kind": "blockedBy", "tags": ["A-CONTINUATION-KEEPS-ITS-ENTRY-IN-THE-QUEUE"] },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/standingRefusal.ts",
+        "description": "a `not-shipped` record whose own `touchedPaths` name a continuing note is no standing refusal"
+      },
+      {
+        "path": "tests/harnessHandoff.test.ts",
+        "description": "the classification over both kinds of not-shipped record"
+      }
+    ]
+  },
+  "summary": "`not-shipped` is classified as plan's by mode alone, so a continuation wakes the drain on nothing plan can reconcile",
+  "per": { "path": "spec/harness.md", "section": "A tick puts work down" },
+  "acceptance": "a continuation leaves build in the wake set and the drain's window closed, while a park still opens it",
+  "tests": [
+    "a not-shipped record whose commit wrote a continuing note is not a standing refusal"
+  ],
+  "pins": [
+    "a not-shipped record whose commit wrote a park note is a standing refusal"
+  ],
+  "notes": "Which of the two a not-shipped record is is the chain's vocabulary, read from where it told its agent to say so (`spec/pending.md`, the not-shipped predicate). The record already carries the evidence: `NotShippedAttempt.touchedPaths` is the same list the `shipped` predicate was handed. The per-entry refusal already declines to hold a not-shipped entry, so nothing there changes."
+}
