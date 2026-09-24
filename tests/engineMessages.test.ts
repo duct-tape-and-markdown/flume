@@ -2,19 +2,25 @@
  * `.claude/rules/engineering.md` *Narration is the ladder's bottom rung* is
  * the ladder's bottom rung for its own property, and this file is the rung
  * above it for the citations that sit inside quotes: a string literal naming
- * one of the engine's functions is a reference no other arm resolves, and a
- * rename leaves the name standing inside the message reading as current.
+ * a function of either tree the package ships is a reference no other arm
+ * resolves, and a rename leaves the name standing inside the message reading
+ * as current.
  *
  * The rule the scan reads is `literalSymbols.ts`; what it is resolved against
  * is the surface the package hands out, the same set the interface pages are
  * judged against — a name a message's reader can go and find, rather than a
  * module-private helper in a repository they do not have.
  *
- * The repo pin asserts an absence, so it comes after its detector shown
+ * Each repo pin asserts an absence, so both come after their detector shown
  * working: a tree whose literals name functions by construction, each arm of
  * the subject rule and each spelling it refuses. Without those, "no literal
  * names an unreachable function" is a claim no failing run has ever backed,
  * and it stays green however narrow the subject rule drifts.
+ *
+ * One pin per shipped tree rather than one naming both, because a title is
+ * the claim its body asserts: a single title reading "src/ and harness/"
+ * would go green for either tree carrying the verdict alone, and the tree
+ * whose literals stopped being read would never say so.
  *
  * The scanner is the same one in both, reading a real tsconfig and a real
  * parse, so the fixture cannot drift into testing a second implementation of
@@ -28,7 +34,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { packageSurface } from "./helpers/exportGraph.ts";
+import { packageSurface, type PackageSurface } from "./helpers/exportGraph.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   formatLiteralSymbol,
@@ -123,6 +129,19 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
 let fixtureRoot: string;
 /** The one scan of that fixture's tree, resolved against a surface of one. */
 let fixtureScan: LiteralSymbolScan;
+/** The surface both repo pins resolve against — one emit for the two. */
+let repoSurface: PackageSurface;
+/**
+ * The one scan of both shipped trees — each pin below reads its own tree's
+ * slice of this verdict.
+ *
+ * One scan rather than one per tree, because the subject rule reads the
+ * declarations of the trees it judges: `harness/` imports `src/`, so a
+ * harness message naming an engine function has named a function, and a
+ * harness-only scan would arm the rule on half the declarations and pass over
+ * exactly the citations the two trees make across the seam.
+ */
+let repoScan: LiteralSymbolScan;
 
 beforeAll(async () => {
   fixtureRoot = await mkTempDir("flume-literal-symbol-scan-");
@@ -136,6 +155,17 @@ beforeAll(async () => {
     programConfig: "tsconfig.json",
     trees: ["lib/"],
     surface: new Set(["shippedVerb"]),
+  });
+  repoSurface = packageSurface({
+    root: REPO_ROOT,
+    buildConfig: "tsconfig.build.json",
+    programConfig: "tsconfig.json",
+  });
+  repoScan = scanLiteralSymbols({
+    root: REPO_ROOT,
+    programConfig: "tsconfig.json",
+    trees: ["src/", "harness/"],
+    surface: repoSurface.names,
   });
 });
 
@@ -191,37 +221,53 @@ it("the literal scan flags a string naming a function the surface does not hold"
   ]);
 });
 
-// --- the repo pin ---------------------------------------------------------
+// --- the repo pins, one per shipped tree ----------------------------------
 
-it("no src/ string literal names a function the package's surface does not hold", () => {
-  const surface = packageSurface({
-    root: REPO_ROOT,
-    buildConfig: "tsconfig.build.json",
-    programConfig: "tsconfig.json",
-  });
+/**
+ * One tree's half of the repo verdict: the scan's sites narrowed to that
+ * tree, the non-vacuity each side is read through, and the emptiness.
+ *
+ * Both pins spell the same steps over a different prefix, so they are one
+ * function with two callers (`.claude/rules/engineering.md`, *A module is one
+ * job*). The tree a title names is what its body passes, so each claim is
+ * asserted over the tree it claims and reds on its own.
+ */
+const expectTreeLiteralsResolve = (tree: string): void => {
+  const under = <Site extends { readonly module: string }>(
+    sites: readonly Site[],
+  ): readonly Site[] => sites.filter((site) => site.module.startsWith(tree));
 
   // Non-vacuity on the resolving side: the surface is what the `exports` map
   // reaches. Built from its entry list alone it would hold two module symbols
   // and red every message naming a member, and an emit that resolved nothing
   // would hold none at all.
-  expect(surface.entryModules).toEqual(["src/index.ts", "harness/index.ts"]);
-  expect(surface.names.size).toBeGreaterThan(500);
+  expect(repoSurface.entryModules).toEqual([
+    "src/index.ts",
+    "harness/index.ts",
+  ]);
+  expect(repoSurface.names.size).toBeGreaterThan(500);
 
-  const scan = scanLiteralSymbols({
-    root: REPO_ROOT,
-    programConfig: "tsconfig.json",
-    trees: ["src/"],
-    surface: surface.names,
-  });
+  // Non-vacuity on the judged side, this tree's own: its modules were read,
+  // the subject rule admitted some of what their literals carry and dropped
+  // the rest, and the surface answered some of what it admitted — each read
+  // before the emptiness assertion below, and each over this tree rather than
+  // over a sibling that happens to carry the spans.
+  expect(
+    repoScan.modules.filter((module) => module.startsWith(tree)).length,
+  ).toBeGreaterThan(0);
+  expect(under(repoScan.scanned).length).toBeGreaterThan(0);
+  expect(under(repoScan.spans).length).toBeGreaterThan(
+    under(repoScan.scanned).length,
+  );
+  expect(under(repoScan.resolved).length).toBeGreaterThan(0);
 
-  // Non-vacuity on the judged side: the literals were read, the subject rule
-  // admitted some of what they carry and dropped the rest, and the surface
-  // answered some of what it admitted — each read before the emptiness
-  // assertion below.
-  expect(scan.functions.size).toBeGreaterThan(0);
-  expect(scan.scanned.length).toBeGreaterThan(0);
-  expect(scan.spans.length).toBeGreaterThan(scan.scanned.length);
-  expect(scan.resolved.length).toBeGreaterThan(0);
+  expectNoFindings(under(repoScan.findings).map(formatLiteralSymbol));
+};
 
-  expectNoFindings(scan.findings.map(formatLiteralSymbol));
+it("no src/ string literal names a function the package's surface does not hold", () => {
+  expectTreeLiteralsResolve("src/");
+});
+
+it("no harness/ string literal names a function the package's surface does not hold", () => {
+  expectTreeLiteralsResolve("harness/");
 });
