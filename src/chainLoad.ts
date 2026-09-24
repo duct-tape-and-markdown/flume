@@ -4,11 +4,15 @@
  * refuses on, the CJS-context host refusal, and the default per-tick
  * resolver built over them.
  *
- * spec/chain.md "Chain residency". Three surfaces load a chain — a tick
- * (`src/Dispatcher.ts`), `chainLoadGate` (`src/builtinGates.ts`) validating a
- * just-committed self-edit, and the CLI's own verbs (`src/cliChainLoad.ts`) — so the
- * load is its own job rather than a second one appended to the module that
- * runs ticks (`.claude/rules/engineering.md`, *A module is one job*).
+ * spec/chain.md "Chain residency". Running a tick is not the only reason to
+ * resolve a chain: a gate validating a just-committed self-edit and a
+ * read-only verb reporting on a repo's chain each need the same
+ * resolve-and-refuse, and neither runs a phase. So the load is its own job
+ * here rather than a second one appended to the module that runs ticks
+ * (`.claude/rules/engineering.md`, *A module is one job*). Which modules hold
+ * those loads is the program's answer, never a roll call kept here by hand
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
  */
 
 import { isAbsolute } from "node:path";
@@ -228,10 +232,11 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
  * not the factory shape: a default export that is not a function, or a
  * factory whose return carries no `chain` with a `phases[]` array.
  *
- * This is the single load+validate path the runtime trusts. `diskChainLoader`
- * wraps it (one load per call, no memo); `chainLoadGate` (builtinGates) calls
- * it to validate a just-committed `chain.ts` so a broken self-edit fails its
- * gate and is reverted before the next tick's process resolves it.
+ * This is the single load+validate path the runtime trusts: a gate's
+ * validation load and a tick's own resolution refuse on exactly the same
+ * shapes, so a `chain.ts` that clears the gate is one the next process can
+ * run. A second load+validate spelled beside this one is a self-edit reverted
+ * on a rule this path does not hold, or shipped past one it does.
  *
  * tsImport (tsx/esm/api) compiles the .ts source in-process so the published
  * dist/src/cli.js can resolve consumer chain.ts files without a node loader flag
@@ -256,9 +261,8 @@ export async function loadChainModule(
   // (src/paths.ts) is that computation, shared with the sibling surface that
   // names the same file: `chainLoadGate`'s touched-path key.
   const path = chainModulePath(paths.configDir);
-  // win32 MAX_PATH: the single fix point for this check — every caller
-  // (builtinGates.ts's chainLoadGate, this file's own default loader)
-  // reaches an existing chain.ts through here. namespacedJoin
+  // win32 MAX_PATH: the single fix point for this check, because every path
+  // into an existing chain.ts runs this probe first. namespacedJoin
   // (src/paths.ts) is the shared idiom.
   // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
   // on any other stat failure rather than reporting absence, so a chain.ts
