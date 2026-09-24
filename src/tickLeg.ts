@@ -19,6 +19,7 @@
  * its chain.
  */
 
+import type { EntryClaimStore } from "./entryClaims.js";
 import type { GateRunScope } from "./gateRun.js";
 import type { PendingLedgerContext } from "./pendingLedger.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -85,6 +86,12 @@ export interface TickLegContext extends PendingLedgerContext {
   readonly stateRootRel: string | undefined;
   /** Prior-attempt records: read, write, clear, and the revert snapshots. */
   readonly attempts: PriorAttemptStore;
+  /**
+   * The per-entry claims (`src/entryClaims.ts`): the live set a leg reads
+   * before it selects, and the stake a fanout leg takes on each entry it is
+   * about to provision.
+   */
+  readonly claims: EntryClaimStore;
   /** What one agent attempt (`src/tickAttempt.ts`) reads. */
   readonly attemptCtx: AttemptContext;
   /** What the worktree lifecycle (`src/worktrees.ts`) reads. */
@@ -97,15 +104,17 @@ export interface TickLegContext extends PendingLedgerContext {
    * {@link BatchSelection} under this dispatcher's own quarantine and
    * parallelism ceiling.
    *
-   * `refusalFacts` is the leg's, not the dispatcher's: the records and the
-   * tip a chain's declared refusal is judged against are read *at* the
-   * selection, and a pre-wave batch and a post-wave `pickableAfter` are two
-   * selections over two worlds.
+   * `refusalFacts` and `claimedSlugs` are the leg's, not the dispatcher's:
+   * the records, the tip a chain's declared refusal is judged against, and
+   * the claims standing on disk are all read *at* the selection, and a
+   * pre-wave batch and a post-wave `pickableAfter` are two selections over
+   * two worlds.
    */
   selection(
     chain: Chain,
     pending: readonly PendingEntry[],
     isForkResolved: (slug: string) => boolean,
     refusalFacts: EntryRefusalFacts,
+    claimedSlugs: ReadonlySet<string>,
   ): BatchSelection;
 }

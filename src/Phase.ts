@@ -173,6 +173,25 @@ export interface TickContext {
    */
   pickable?: readonly PendingEntry[];
   /**
+   * The entries another tick holds a claim on, by tag, as this tick read them
+   * off the claims directory before it selected (`spec/pending.md`, *Claims —
+   * an entry in flight is left alone*). A producer's `promptArgs` renders
+   * this so its agent leaves an entry in flight as it stands; nothing
+   * re-reads the directory on its own.
+   *
+   * The set is the tick's own read, so a fanout tick's own entry is never in
+   * it — the claim on the entry it was handed is staked after this selection.
+   * Optional in the type for the same hand-built-fixture reason as
+   * `pickable` above; a dispatcher-built context always carries it, empty
+   * when nothing is in flight.
+   *
+   * A fact, never a verdict: what a producer does about a claimed entry it
+   * would have changed — wait, file a sibling, say so in the commit body — is
+   * the chain's (`.claude/rules/engine-boundary.md`, *Routing rule (plan,
+   * build, and interactive sessions)*).
+   */
+  claimed?: readonly string[];
+  /**
    * Every persisted {@link PriorAttempt} record under
    * `<flumeDir>/prior-attempts/`, keyed by the keyspace and the identity each
    * record was written under — `entry:<tag slug>` for a fanout record,
@@ -510,6 +529,25 @@ export interface TickResult {
    * interactive sessions)*).
    */
   refusedTags?: readonly string[];
+  /**
+   * Every entry another tick held a claim on when this tick took the
+   * selection reported on {@link pickableAfter}, by tag, in queue order
+   * (`spec/pending.md`, *Claims — an entry in flight is left alone*).
+   *
+   * Paired with that set rather than with the tick's opening one, exactly as
+   * `refusedTags` is: a `handoff` routes on what is pickable *now*, and a
+   * claim a sibling still holds is the third reason an entry the gate switch
+   * clears can be missing from it. A tick's own claims are dropped when its
+   * attempts end, so a wave never reports itself here.
+   *
+   * Empty, never absent, on every tick the engine computed a pickable set
+   * for — which is every tick that ran a phase, under either concurrency.
+   *
+   * A fact, never a verdict, the same way {@link TickContext.claimed} is
+   * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+   * interactive sessions)*).
+   */
+  claimedTags?: readonly string[];
   /**
    * spec/loop.md "The no-commit taxonomy": true iff this fanout tick found
    * nothing pickable (after the quarantine drop above) and therefore never

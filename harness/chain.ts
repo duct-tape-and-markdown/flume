@@ -252,7 +252,11 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       // slice cannot be woken over a window its prompt then shows as empty.
       promptArgs: (ctx) => ({
         ...shared(ctx),
-        ...planSlicePromptArgs(name, ctx.flumeDir),
+        // The claimed set is the engine's own read, handed straight through
+        // (`spec/pending.md`, *Claims — an entry in flight is left alone*).
+        // Absent only on a hand-built context, where "nothing in flight" is
+        // the reading that renders no block.
+        ...planSlicePromptArgs(name, ctx.flumeDir, ctx.claimed ?? []),
         ...window.args(ctx),
       }),
       // Every value this phase substitutes is content it did not author, so

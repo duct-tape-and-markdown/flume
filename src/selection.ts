@@ -6,7 +6,8 @@
  * (`src/singletonTick.ts`), `runFanout`'s wave (`src/waveTick.ts`),
  * `render`'s preview and `TickResult.pickableAfter`'s post-tick
  * re-derivation (`src/Dispatcher.ts`). The queue's ordering, the gate switch,
- * the run-scoped quarantine hold, the chain's own declared per-entry refusal,
+ * the run-scoped quarantine hold, the claim a sibling tick holds on an entry
+ * in flight, the chain's own declared per-entry refusal,
  * and the file-overlap partition are spelled here
  * alone, so no two of those surfaces can disagree about what "pickable" means
  * at the moment each is taken (`.claude/rules/engineering.md`, *A module is
@@ -16,6 +17,7 @@
  * `src/entryKey.ts`).
  */
 
+import { entryClaimSlug } from "./entryClaims.js";
 import { entryDeclaredKey } from "./entryKey.js";
 import { partitionByFileOverlap } from "./partition.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -109,6 +111,22 @@ function heldByQuarantine(
 }
 
 /**
+ * Whether another tick holds this entry's claim — keyed on the entry's slug,
+ * which is the name its claim file carries (`entryClaimSlug`,
+ * `src/entryClaims.ts`).
+ *
+ * Not the declaration key the quarantine reads: a claim stands over the entry
+ * itself, so a producer that re-scoped it mid-flight must still find it
+ * claimed (`spec/pending.md`, *Claims — an entry in flight is left alone*).
+ */
+function heldByClaim(
+  entry: PendingEntry,
+  claimedSlugs?: ReadonlySet<string>,
+): boolean {
+  return claimedSlugs?.has(entryClaimSlug(entry.tag)) ?? false;
+}
+
+/**
  * The facts a chain's declared `refusesEntry` (`src/Phase.ts`) is judged
  * against for one selection: every persisted prior-attempt record this tick
  * read, and the trunk tip it read them at.
@@ -185,10 +203,24 @@ interface PickableSelection {
    */
   quarantinedTags: QuarantinedTag[];
   /**
+   * Entries another tick holds a claim on, by tag — the set this selection
+   * read off the claims directory, in the queue's own order
+   * (`spec/pending.md`, *Claims — an entry in flight is left alone*).
+   *
+   * Reported for the reason `quarantinedTags` is: an entry in flight is still
+   * `open` in the queue on disk, so a chain reading a shrunken pickable set
+   * cannot otherwise tell "someone is building it" from "the gate switch
+   * turned it down". Named by tag, because the tag is what a producer's
+   * prompt renders and what its queue edits are addressed by; the slug the
+   * file is named by is the engine's own key and stays inside it.
+   */
+  claimedTags: string[];
+  /**
    * Entries the chain's own `refusesEntry` (`src/Phase.ts`) declined, by tag.
-   * An entry the quarantine already took is never offered to the predicate
-   * and so is named above alone: the engine's own hold is answered first, and
-   * a chain is asked about entries it could otherwise have.
+   * An entry the quarantine or a sibling's claim already took is never
+   * offered to the predicate and so is named above alone: the engine's own
+   * holds are answered first, and a chain is asked about entries it could
+   * otherwise have.
    */
   refusedTags: string[];
 }
@@ -205,6 +237,13 @@ export function pickableSelection(opts: {
   capabilities: ReadonlySet<string>;
   /** This run's live quarantine — `DispatcherOptions.quarantinedSlugs`, absent outside a supervised run. */
   quarantinedSlugs?: ReadonlySet<string>;
+  /**
+   * The entry slugs a live claim stands on, as the caller read them off disk
+   * for this selection (`EntryClaimStore.readLive`, `src/entryClaims.ts`).
+   * Absent is the empty set — a caller with no store to read, which is a
+   * hand-built selection and never a tick.
+   */
+  claimedSlugs?: ReadonlySet<string>;
   refuses: (entry: PendingEntry) => boolean;
 }): PickableSelection {
   // The queue's one ordering, taken once over the eligible set: the pickable
@@ -220,8 +259,17 @@ export function pickableSelection(opts: {
   // pays for it twice and lets two answers disagree inside one selection.
   const pickable: PendingEntry[] = [];
   const refused: PendingEntry[] = [];
+  const claimed: PendingEntry[] = [];
   for (const e of eligible) {
     if (heldByQuarantine(e, opts.quarantinedSlugs)) continue;
+    // An entry in flight is skipped exactly as a quarantined one is, and
+    // ahead of the chain's own predicate: it is the engine's hold, and a
+    // chain asked about an entry it cannot be handed would be answering
+    // about a tick that is not going to happen.
+    if (heldByClaim(e, opts.claimedSlugs)) {
+      claimed.push(e);
+      continue;
+    }
     (opts.refuses(e) ? refused : pickable).push(e);
   }
   return {
@@ -229,6 +277,7 @@ export function pickableSelection(opts: {
     quarantinedTags: eligible
       .filter((e) => heldByQuarantine(e, opts.quarantinedSlugs))
       .map((e) => ({ tag: e.tag, key: entryDeclaredKey(e) })),
+    claimedTags: claimed.map((e) => e.tag),
     refusedTags: refused.map((e) => e.tag),
   };
 }
@@ -267,6 +316,8 @@ export function selectBatch(opts: {
   isForkResolved: (slug: string) => boolean;
   /** This run's live quarantine — `DispatcherOptions.quarantinedSlugs`, absent outside a supervised run. */
   quarantinedSlugs?: ReadonlySet<string>;
+  /** The entry slugs a live claim stands on — see {@link pickableSelection}. */
+  claimedSlugs?: ReadonlySet<string>;
   /** What this queue's entries are offered to the chain's own refusal with. */
   refusalFacts: EntryRefusalFacts;
   /** The dispatcher's own parallelism ceiling, below whatever the chain declares. */
@@ -278,15 +329,19 @@ export function selectBatch(opts: {
   const capabilities = new Set(chain.capabilities ?? []);
   // A slug the supervisor quarantined earlier this run (its worktree
   // provisioning failed on a prior tick) is dropped here — `pending.json`
-  // itself is untouched, so a fresh run/process retries it from scratch.
-  // The chain's own per-entry refusal is answered after it, over the entries
-  // the quarantine left standing.
+  // itself is untouched, so a fresh run/process retries it from scratch. An
+  // entry a sibling tick holds a claim on is dropped beside it, for the
+  // window that tick is carrying it. The chain's own per-entry refusal is
+  // answered after both, over the entries they left standing.
   const selected = pickableSelection({
     pending,
     isForkResolved,
     capabilities,
     ...(opts.quarantinedSlugs !== undefined
       ? { quarantinedSlugs: opts.quarantinedSlugs }
+      : {}),
+    ...(opts.claimedSlugs !== undefined
+      ? { claimedSlugs: opts.claimedSlugs }
       : {}),
     refuses: bindEntryRefusal(chain, opts.refusalFacts),
   });

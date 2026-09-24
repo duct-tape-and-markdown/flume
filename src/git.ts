@@ -5,15 +5,18 @@
  */
 
 import { execFile } from "node:child_process";
-import { unlinkSync } from "node:fs";
-import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, toNamespacedPath } from "node:path";
+import { rm } from "node:fs/promises";
+import { join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { existsLoud } from "./fsProbe.js";
 import { consoleLogger, type Logger } from "./log.js";
 import { gitPath } from "./paths.js";
-import { livePidClaimAt, renderPidClaim } from "./pidClaim.js";
+import {
+  livePidClaimAt,
+  stakePidClaim,
+  type StakedPidClaim,
+} from "./pidClaim.js";
 import { acquireWaitLock, type WaitLock } from "./waitLock.js";
 
 const exec = promisify(execFile);
@@ -825,69 +828,28 @@ export class TipClaimHeldError extends Error {
   }
 }
 
-interface TipClaim {
-  path: string;
-  /** Remove the claim file. Idempotent — safe to call from an exit handler. */
-  release: () => void;
-}
-
 /**
  * Acquire the advisory per-ref tip claim: one flume writer per tip.
- * Exclusive-create (`wx`) the claim file at
- * `<git-common-dir>/flume/tip-claims/<refPath>`. The file states the holder's
- * pid on the first line and the instant of this call on the second — the same
- * shape `loop.pid` carries (`renderPidClaim`, `src/pidClaim.ts`). On
- * `EEXIST`, probe the recorded pid with the same liveness check as the loop
- * lock: live → refuse ({@link TipClaimHeldError}, naming the holder); dead →
- * reclaim (unlink, retry the exclusive create).
+ *
+ * The stake is every exclusive guard's ({@link stakePidClaim},
+ * `src/pidClaim.ts`) at `<git-common-dir>/flume/tip-claims/<refPath>`: `wx`
+ * create carrying this process's pid and the instant of the call, reclaim
+ * over a holder no longer alive. What this guard adds is the reading of a
+ * live one — refuse, naming the holder ({@link TipClaimHeldError}) — which is
+ * where it parts from the entry claim (`EntryClaimStore`,
+ * `src/entryClaims.ts`) and from the wait locks above.
  */
 export async function acquireTipClaim(
   cwd: string,
   refPath: string,
-): Promise<TipClaim> {
+): Promise<StakedPidClaim> {
   const commonDir = await gitCommonDir(cwd);
   const claimPath = tipClaimPath(commonDir, refPath);
-  await mkdir(toNamespacedPath(dirname(claimPath)), { recursive: true });
-  for (;;) {
-    try {
-      await writeFile(
-        toNamespacedPath(claimPath),
-        renderPidClaim(process.pid, new Date()),
-        { flag: "wx" },
-      );
-      break;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-      const holder = await liveTipClaimPid(claimPath);
-      if (holder !== null) {
-        throw new TipClaimHeldError(refPath, holder, claimPath);
-      }
-      // Dead pid — reclaim: unlink and retry the exclusive create. A
-      // concurrent reclaimer may win the unlink race first; the retried
-      // create's own possible EEXIST re-probes rather than assuming this
-      // call won. Loud or nothing (.claude/rules/engineering.md): only
-      // ENOENT (already gone — another reclaimer won the race) is swallowed;
-      // any other failure (e.g. EACCES) rethrows instead of spinning this
-      // loop forever.
-      try {
-        await unlink(toNamespacedPath(claimPath));
-      } catch (unlinkErr) {
-        if ((unlinkErr as NodeJS.ErrnoException).code !== "ENOENT") {
-          throw unlinkErr;
-        }
-      }
-    }
+  const stake = await stakePidClaim(claimPath);
+  if (stake.kind === "held") {
+    throw new TipClaimHeldError(refPath, stake.by.pid, claimPath);
   }
-  return {
-    path: claimPath,
-    release: () => {
-      try {
-        unlinkSync(toNamespacedPath(claimPath));
-      } catch {
-        // already gone
-      }
-    },
-  };
+  return stake.claim;
 }
 
 /**

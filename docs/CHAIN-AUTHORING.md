@@ -2293,6 +2293,35 @@ Three properties worth knowing before you declare one:
   the entry, or hibernate rather than re-picking it) reads `refusedTags`
   beside `pickableAfter`.
 
+## 13. Entries in flight (`TickContext.claimed`)
+
+A fanout tick stakes a claim on each entry it carries — one file per entry
+under the repository's git common dir — before it provisions that entry's
+worktree, and drops it when the attempt ends, with the ship or with the
+teardown. While a claim stands, the entry is that tick's.
+
+Two things follow for a chain, and neither asks it to read the claims itself:
+
+- **Selection skips a claimed entry**, exactly as it skips a quarantined one.
+  The entry stays `open` in the queue on disk, so `pendingAfter` still carries
+  it; `TickResult.claimedTags` names the entries held back that way, in queue
+  order, beside `pickableAfter`. A `handoff` routing on "anything pickable"
+  reads the two together, the same way it reads `quarantinedTags` and
+  `refusedTags`.
+- **A producer phase is told which entries are someone's.**
+  `TickContext.claimed` carries the same tags to a `promptArgs` builder, so a
+  phase that rewrites the queue can render them for its agent. A tick whose
+  own entry is in flight never sees it there: the set is the one the tick read
+  before it staked anything.
+
+What to do about a claimed entry is yours. The engine reports the set and
+nothing else — waiting, filing a sibling entry, or saying so in the commit
+body are all chain decisions, and the harness package makes one of them for
+the prompts it ships.
+
+A claim left behind by a tick that died names a pid no longer alive, and the
+next selection reclaims it; nothing has to be swept by hand.
+
 ## Putting it together
 
 ```ts

@@ -19,6 +19,7 @@ import { bound } from "./bounds.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
 import type { MergingMarker } from "./mergingMarkers.js";
+import type { StakedPidClaim } from "./pidClaim.js";
 import {
   mergingDir,
   mergingMarkerPath,
@@ -244,11 +245,25 @@ export async function runFanout(
   // "quarantined open" from "genuinely pickable" without re-deriving it
   // from pendingAfter. `refusedTags` is the same service for the other
   // hold — the chain's own refusal — and rides the result beside it.
-  const { pickable, quarantinedTags, refusedTags, batches, partitionIgnore } =
-    leg.selection(chain, pending, isForkResolved, {
-      priorAttempts,
-      headSha: preHead,
-    });
+  // spec/pending.md "Claims — an entry in flight is left alone": the entries
+  // a sibling tick is carrying, read before the selection that must skip
+  // them and reported on the result below, so a chain never re-reads the
+  // claims directory itself.
+  const claimedSlugs = await leg.claims.readLive();
+  const {
+    pickable,
+    quarantinedTags,
+    refusedTags,
+    claimedTags,
+    batches,
+    partitionIgnore,
+  } = leg.selection(
+    chain,
+    pending,
+    isForkResolved,
+    { priorAttempts, headSha: preHead },
+    claimedSlugs,
+  );
 
   if (pickable.length === 0) {
     // No agent ran — not a no-commit *agent* tick, so nothing to classify.
@@ -270,6 +285,7 @@ export async function runFanout(
         revertedTags: [],
         quarantinedTags,
         refusedTags,
+        claimedTags,
         nothingPickable: true,
         ...(queueParseFailure ? { queueParseFailure } : {}),
       },
@@ -324,7 +340,23 @@ export async function runFanout(
   // everything downstream.
   const worktrees: Array<{ path: string; branch: string }> = [];
   const provisioned: PendingEntry[] = [];
+  // spec/pending.md "Claims — an entry in flight is left alone": every claim
+  // this wave staked, dropped together once its attempts have ended (below).
+  const staked: StakedPidClaim[] = [];
   for (const entry of batch) {
+    // Staked *before* the worktree exists, which is the whole point of the
+    // ordering: from here until this wave lets go, the entry is this tick's
+    // and a producer that would have re-scoped it is told so. A `held`
+    // answer is a sibling that staked between this wave's selection read and
+    // now — it carries the entry, this wave does not.
+    const claim = await leg.claims.stake(entry.tag);
+    if (claim.kind === "held") {
+      leg.log.warn(
+        `[flume] ${phase.name}: ${entry.tag} was claimed by pid ${claim.by.pid} after this wave selected it; entry stays pending`,
+      );
+      continue;
+    }
+    staked.push(claim.claim);
     try {
       worktrees.push(
         await createWorktree(entry.tag, preHead, leg.worktreeCtx),
@@ -400,6 +432,7 @@ export async function runFanout(
           chain,
           extraEnvByIndex[i],
           pickable,
+          claimedTags,
           priorAttempts,
         ),
       ),
@@ -1019,6 +1052,18 @@ export async function runFanout(
       `[flume] ${phase.name}: ${survivingPaths.length} worktree(s) survived removal (fallback exhausted): ${survivingPaths.join(", ")}`,
     );
   }
+  // spec/pending.md "Claims — an entry in flight is left alone": every claim
+  // this wave staked goes here — with the ship for an entry that shipped,
+  // with the teardown above for one that did not, and at the same point for
+  // an entry whose provisioning never reached a worktree. One site, so no way
+  // out of the wave leaves an entry claimed by a tick that has stopped
+  // carrying it; a death anywhere above leaves files naming a pid that is
+  // gone, and the next selection reclaims them by its liveness probe
+  // (spec/loop.md, *Crash equals stop*). A `WaveLedgerRefusal` thrown past
+  // this line leaves them standing for the same reason it leaves worktrees:
+  // the refusal is the operator's to clear, and the reclaim needs no repair.
+  for (const claim of staked) claim.release();
+
   leg.log.info(
     `[flume] ${phase.name}: wave done in ${Date.now() - waveStart}ms`,
   );
@@ -1073,10 +1118,15 @@ export async function runFanout(
   // opening facts — a refusal judged against the tip this wave started from
   // would hold an entry back over a world that no longer exists.
   const priorAttemptsAfter = await leg.attempts.readAll();
-  const postSelection = leg.selection(chain, pendingAfterWave, isForkResolved, {
-    priorAttempts: priorAttemptsAfter,
-    headSha: await git.revParse(repoRoot),
-  });
+  const postSelection = leg.selection(
+    chain,
+    pendingAfterWave,
+    isForkResolved,
+    { priorAttempts: priorAttemptsAfter, headSha: await git.revParse(repoRoot) },
+    // Re-read like the rest of the second world: this wave dropped its own
+    // claims above, and a sibling's may have landed or lifted while it ran.
+    await leg.claims.readLive(),
+  );
   return {
     result: {
       phaseName: phase.name,
@@ -1088,6 +1138,7 @@ export async function runFanout(
       // Paired with the set above, not with the wave's opening one: a
       // handoff routes on what is pickable now.
       refusedTags: postSelection.refusedTags,
+      claimedTags: postSelection.claimedTags,
       // One read, two readers: the map the refusal above was judged against
       // is the map the handoff is handed, so a chain asking "which records
       // stand" and the engine's own post-wave verdict cannot disagree.
@@ -1138,6 +1189,7 @@ async function runFanoutEntry(
   chain: Chain,
   extraEnv: Record<string, string> | undefined,
   pickable: readonly PendingEntry[],
+  claimed: readonly string[],
   priorAttempts: ReadonlyMap<string, PriorAttempt>,
 ): Promise<EntryAttempt> {
   // The prior-attempt record lives at the repo root (not this fresh
@@ -1152,6 +1204,7 @@ async function runFanoutEntry(
     stateRootRel: leg.stateRootRel,
     assignedEntry: entry,
     pickable,
+    claimed,
     priorAttempts,
   };
 

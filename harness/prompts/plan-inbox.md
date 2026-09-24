@@ -20,6 +20,8 @@
 !`cat "{{PENDING_PATH}}"`
 </pending-now>
 
+{{CLAIMED_ENTRIES}}
+
 <open-questions-index>
 {{QUESTIONS_INDEX}}
 </open-questions-index>

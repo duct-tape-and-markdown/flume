@@ -44,6 +44,7 @@ import {
   resolveWorktreesBaseDeclaration,
   type ChainModule,
 } from "./chainLoad.js";
+import { EntryClaimStore } from "./entryClaims.js";
 import type { FlumePaths } from "./flumeApi.js";
 import type { GateRunScope } from "./gateRun.js";
 import { consoleLogger, type Logger } from "./log.js";
@@ -527,6 +528,12 @@ export class Dispatcher {
   private readonly baton: Baton;
   /** Prior-attempt records: read, write, clear, and the revert snapshots. */
   private readonly attempts: PriorAttemptStore;
+  /**
+   * The repository's per-entry claims (`src/entryClaims.ts`) — one store, so
+   * the preview, both legs and every re-derivation read the same directory
+   * through the same liveness probe.
+   */
+  private readonly claims: EntryClaimStore;
   private readonly log: Logger;
   private readonly maxParallel: number;
   private readonly tickTimeoutMs: number | undefined;
@@ -582,6 +589,7 @@ export class Dispatcher {
       opts.repoRoot,
       this.log,
     );
+    this.claims = new EntryClaimStore(opts.repoRoot);
     this.maxParallel = opts.maxParallel ?? 4;
     this.tickTimeoutMs = opts.tickTimeoutMs;
     this.bounds = resolveAgentBounds(undefined, this.tickTimeoutMs);
@@ -692,14 +700,15 @@ export class Dispatcher {
       flumeDir: this.flumeDir,
       stateRootRel: this.stateRootRel,
       attempts: this.attempts,
+      claims: this.claims,
       attemptCtx: this.attemptCtx,
       worktreeCtx: this.worktreeCtx,
       gateScope: this.gateScope,
       ...(this.opts.quarantinedSlugs !== undefined
         ? { quarantinedSlugs: this.opts.quarantinedSlugs }
         : {}),
-      selection: (chain, pending, isForkResolved, refusalFacts) =>
-        this.selection(chain, pending, isForkResolved, refusalFacts),
+      selection: (chain, pending, isForkResolved, refusalFacts, claimed) =>
+        this.selection(chain, pending, isForkResolved, refusalFacts, claimed),
     };
   }
 
@@ -716,11 +725,13 @@ export class Dispatcher {
     pending: readonly PendingEntry[],
     isForkResolved: (slug: string) => boolean,
     refusalFacts: EntryRefusalFacts,
+    claimedSlugs: ReadonlySet<string>,
   ): BatchSelection {
     return selectBatch({
       chain,
       pending,
       isForkResolved,
+      claimedSlugs,
       ...(this.opts.quarantinedSlugs !== undefined
         ? { quarantinedSlugs: this.opts.quarantinedSlugs }
         : {}),
@@ -1149,15 +1160,22 @@ export class Dispatcher {
     // same map the context carries further down, so a preview asks the
     // chain's predicate about exactly the records a tick would.
     const priorAttempts = await this.attempts.readAll();
+    // And the third fact the selection is taken against: the entries a live
+    // tick is carrying right now (spec/pending.md, "Claims — an entry in
+    // flight is left alone"). A preview that ignored them would show an
+    // entry as the one the next wave picks first while a sibling is already
+    // building it.
+    const claimedSlugs = await this.claims.readLive();
     // The selection a fanout tick would make on this queue, under this
     // chain's declared knobs — taken from the one derivation `runFanout`
     // runs, never re-spelled here (.claude/rules/engineering.md, "A module
     // is one job").
-    const { pickable, batches } = this.selection(
+    const { pickable, batches, claimedTags } = this.selection(
       chain,
       pending,
       isForkResolved,
       { priorAttempts, headSha: await git.revParse(this.opts.repoRoot) },
+      claimedSlugs,
     );
 
     let entry: PendingEntry | undefined;
@@ -1195,6 +1213,7 @@ export class Dispatcher {
       flumeDir: this.flumeDir,
       stateRootRel: this.stateRootRel,
       pickable,
+      claimed: claimedTags,
       priorAttempts,
       ...(entry !== undefined ? { assignedEntry: entry } : { pending }),
       ...(queueParseFailure ? { queueParseFailure } : {}),

@@ -27,6 +27,7 @@ import { Dispatcher, type DispatcherOptions } from "../src/Dispatcher.ts";
 import { tickExitCode } from "../src/cliVerdict.ts";
 import { EX_MOUNT_DEAD } from "../src/exitCodes.ts";
 import { PendingParseFailure as realPendingParseFailure } from "../src/PendingSchema.ts";
+import { entryClaimPath, entryClaimSlug } from "../src/entryClaims.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
 import type { Logger } from "../src/log.ts";
 import { readMergingMarkers } from "../src/mergingMarkers.ts";
@@ -140,6 +141,7 @@ import {
   slugify as indexSlugify,
   priorAttemptPath as indexPriorAttemptPath,
 } from "../src/index.ts";
+import { deadPid } from "./helpers/deadPid.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import {
   makeFixture,
@@ -19078,5 +19080,249 @@ describe("Dispatcher — `priority` is the order every selection takes", () => {
       "BETA",
       "ALPHA",
     ]);
+  });
+});
+
+/**
+ * The per-entry claim (`spec/pending.md`, *Claims — an entry in flight is
+ * left alone*): the file a build tick stakes before it provisions an entry's
+ * worktree, the set every selection reads it as, and the drop that ends it.
+ *
+ * Both sides of the seam are the real writers: the claims a case plants are
+ * written with the engine's own statement (`renderPidClaim`,
+ * `src/pidClaim.ts`) at the engine's own address (`entryClaimPath`,
+ * `src/entryClaims.ts`), and the claims a case reads back are the ones a real
+ * wave staked (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*).
+ */
+describe("Dispatcher fanout — the per-entry claim", () => {
+  /** Where this repository's claim for `tag` lives, through the engine's own address. */
+  const claimPathFor = async (tag: string): Promise<string> =>
+    entryClaimPath(await git.gitCommonDir(fx.repo), entryClaimSlug(tag));
+
+  /** Plant a claim on `tag` held by `pid`, as a sibling tick would have written it. */
+  async function plantClaim(tag: string, pid: number): Promise<string> {
+    const path = await claimPathFor(tag);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, renderPidClaim(pid, new Date()), "utf8");
+    return path;
+  }
+
+  /** A fanout `build` phase and the baton woken for it. */
+  const wakeBuild = (): Phase => {
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    return makePhase({ name: "build", concurrency: "fanout", gates: [] });
+  };
+
+  it("a build tick stakes its entry's claim before provisioning the worktree", async () => {
+    // BLOCKED's worktree path is occupied by a plain file git registers as
+    // nothing, so `createWorktree` refuses it — the entry reaches the
+    // provisioning loop and leaves it with no worktree at all. Its claim can
+    // therefore only stand if the stake ran ahead of the provisioning, which
+    // is the ordering under test.
+    const blockedPath = join(
+      worktreesBase(join(fx.repo, ".flume")),
+      worktreeDirName("BLOCKED"),
+    );
+    await mkdir(dirname(blockedPath), { recursive: true });
+    await writeFile(blockedPath, "not a worktree\n", "utf8");
+
+    await writePending(fx.repo, [
+      makeEntry("BLOCKED", ["src/blocked.ts"]),
+      makeEntry("OBSERVER", ["src/observer.ts"]),
+    ]);
+    const chain: Chain = { phases: [wakeBuild()], humanOnly: [] };
+
+    // Read mid-wave, from inside the sibling entry's agent: a claim asserted
+    // after the tick would be asserting the drop, not the stake.
+    let midWave: { claim: string | null; worktree: boolean } | undefined;
+    const agent = fanoutAgent({
+      observer: async (cwd) => {
+        const path = await claimPathFor("BLOCKED");
+        midWave = {
+          claim: existsSync(path) ? await readFile(path, "utf8") : null,
+          worktree: existsSync(blockedPath) && lstatSync(blockedPath).isDirectory(),
+        };
+        await writeAndCommit(cwd, "src/observer.ts", "ok\n", "build: OBSERVER");
+      },
+    });
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: the wave really did reach the provisioning loop for
+    // BLOCKED and really did fail it, so the claim below is one staked for an
+    // entry whose worktree was never created.
+    expect(outcome.result?.provisionFailures?.map((f) => f.tag)).toEqual([
+      "BLOCKED",
+    ]);
+    expect(midWave, "the observer entry's agent never ran").toBeDefined();
+    expect(midWave!.worktree).toBe(false);
+    // The claim stood, and it names this process — the tick's own holder,
+    // read back through the engine's own decode.
+    expect(midWave!.claim).not.toBeNull();
+    expect(parsePidClaim(midWave!.claim!)?.pid).toBe(process.pid);
+  });
+
+  it("the claim is removed when an attempt ends without shipping", async () => {
+    await writePending(fx.repo, [makeEntry("NOSHIP", ["src/noship.ts"])]);
+    const chain: Chain = { phases: [wakeBuild()], humanOnly: [] };
+
+    // Non-vacuity for the removal below: the claim is read while the attempt
+    // is live, so a tick that never staked one would red here rather than
+    // pass the absence assertion by having nothing to drop.
+    let standingMidAttempt: boolean | undefined;
+    const agent = fanoutAgent({
+      noship: async () => {
+        standingMidAttempt = existsSync(await claimPathFor("NOSHIP"));
+      },
+    });
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+
+    expect(standingMidAttempt).toBe(true);
+    // The attempt ended with the teardown rather than a ship: nothing
+    // committed, and the entry is still queued.
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["NOSHIP"]);
+    expect(existsSync(await claimPathFor("NOSHIP"))).toBe(false);
+  });
+
+  it("selection skips an entry another tick holds a claim on", async () => {
+    // The vitest worker plays the sibling tick — its pid is alive for the
+    // duration of the case, the convention every liveness case here uses.
+    const held = await plantClaim("HELD", process.pid);
+
+    await writePending(fx.repo, [
+      makeEntry("FREE", ["src/free.ts"]),
+      makeEntry("HELD", ["src/held.ts"]),
+    ]);
+    const chain: Chain = { phases: [wakeBuild()], humanOnly: [] };
+
+    // Registered for `FREE` alone: the wave throwing "no action registered
+    // for slug 'held'" is this case's loudest possible failure, so the skip
+    // is proven at dispatch as well as in the reported sets.
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        free: async (cwd) =>
+          writeAndCommit(cwd, "src/free.ts", "ok\n", "build: FREE"),
+      }),
+      log: silent,
+    }).tick();
+
+    // The unclaimed entry shipped; the claimed one never reached an agent and
+    // is still `open` on disk, since the claim touches no queue.
+    expect(outcome.result?.shippedTags).toEqual(["FREE"]);
+    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual(["FREE"]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["HELD"]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([]);
+    // And the wave dropped only what it staked: a sibling's claim outlives a
+    // tick that merely read it.
+    expect(existsSync(held)).toBe(true);
+  });
+
+  it("TickResult.claimedTags reports the claims the tick read", async () => {
+    await plantClaim("HELD-ONE", process.pid);
+    await plantClaim("HELD-TWO", process.pid);
+
+    await writePending(fx.repo, [
+      { ...makeEntry("FREE", ["src/free.ts"]), priority: 1 },
+      makeEntry("HELD-ONE", ["src/one.ts"]),
+      makeEntry("HELD-TWO", ["src/two.ts"]),
+    ]);
+    const chain: Chain = { phases: [wakeBuild()], humanOnly: [] };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ free: async () => {} }),
+      log: silent,
+    }).tick();
+
+    // Both held entries, by tag, in the queue's own order — beside a pickable
+    // set that carries neither, which is the pairing the field exists for.
+    expect(outcome.result?.claimedTags).toEqual(["HELD-ONE", "HELD-TWO"]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(["FREE"]);
+    // Non-vacuity: all three are still queued, so the set above is a hold and
+    // not a drained queue.
+    expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
+      "FREE",
+      "HELD-ONE",
+      "HELD-TWO",
+    ]);
+  });
+
+  it("the claimed set the engine reports is the one it hands the tick's own context", async () => {
+    await plantClaim("HELD", process.pid);
+    await writePending(fx.repo, [
+      { ...makeEntry("FREE", ["src/free.ts"]), priority: 1 },
+      makeEntry("HELD", ["src/held.ts"]),
+    ]);
+    const seen: (readonly string[] | undefined)[] = [];
+    const phase = {
+      ...wakeBuild(),
+      promptArgs: (ctx: TickContext) => {
+        seen.push(ctx.claimed);
+        return {};
+      },
+    };
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ free: async () => {} }),
+      log: silent,
+    }).tick();
+
+    expect(seen).toEqual([["HELD"]]);
+    expect(outcome.result?.claimedTags).toEqual(["HELD"]);
+  });
+
+  it("a claim held by a dead pid is reclaimed by the next selection", async () => {
+    const stale = await plantClaim("STALE", deadPid());
+    // Non-vacuity: the file really is on disk and really names the dead
+    // holder, so what the tick does below is a reclaim rather than a read of
+    // an empty directory.
+    expect(parsePidClaim(await readFile(stale, "utf8"))?.pid).not.toBe(
+      process.pid,
+    );
+
+    await writePending(fx.repo, [makeEntry("STALE", ["src/stale.ts"])]);
+    const chain: Chain = { phases: [wakeBuild()], humanOnly: [] };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        stale: async (cwd) =>
+          writeAndCommit(cwd, "src/stale.ts", "ok\n", "build: STALE"),
+      }),
+      log: silent,
+    }).tick();
+
+    // The stale file held nothing back: the entry was selected, carried and
+    // shipped, and the claim it left behind is gone.
+    expect(outcome.result?.claimedTags).toEqual([]);
+    expect(outcome.result?.shippedTags).toEqual(["STALE"]);
+    expect(existsSync(stale)).toBe(false);
   });
 });

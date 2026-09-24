@@ -215,14 +215,18 @@ export function sharedPromptArgs(
  * its inline-exec scan reads them as commands (`spec/prompt.md`, *The render
  * pipeline*).
  */
-export const PLAN_SLICE_PROMPT_DATA_KEYS = ["PLAN_STATE_PATH"] as const;
+export const PLAN_SLICE_PROMPT_DATA_KEYS = [
+  "PLAN_STATE_PATH",
+  "CLAIMED_ENTRIES",
+] as const;
 
 /** One argument every plan slice's prompt is given, beyond the shared set. */
 export type PlanSlicePromptArg = (typeof PLAN_SLICE_PROMPT_DATA_KEYS)[number];
 
 /**
  * The arguments one plan slice's prompt is given beyond the shared set: the
- * path of the state file that slice owns.
+ * path of the state file that slice owns, and the entries a build tick holds
+ * a claim on as this tick read them.
  *
  * **Not a shared arg, because the value is not shared.** Plan state is one
  * file per writer (`spec/harness.md`, *Plan state as declared state*), so
@@ -231,13 +235,57 @@ export type PlanSlicePromptArg = (typeof PLAN_SLICE_PROMPT_DATA_KEYS)[number];
  * `cat`s it would read a sibling's cursor and the fence would revert the tick
  * that wrote back what it read. Composed here rather than in each window,
  * because it is a path off the layout and not a scan of a tree
- * (`sliceWindow.ts`).
+ * (`sliceWindow.ts`). The claimed set is here for the mirror of that reason:
+ * it is a fact the engine already reported on the tick, not a scan either
+ * ({@link claimedBlock}).
+ *
+ * `claimed` defaults to the empty set for the reason `TickContext.claimed`
+ * is optional — a hand-built context carries no engine read — and a
+ * dispatcher-built one always names it.
  */
 export function planSlicePromptArgs(
   slice: PlanSlice,
   stateRoot: string,
+  claimed: readonly string[] = [],
 ): Record<PlanSlicePromptArg, string> {
-  return { PLAN_STATE_PATH: planStatePath(stateRoot, slice) };
+  return {
+    PLAN_STATE_PATH: planStatePath(stateRoot, slice),
+    CLAIMED_ENTRIES: claimedBlock(claimed),
+  };
+}
+
+/**
+ * The entries a build tick is carrying, as the block a plan slice's prompt
+ * renders — or no bytes at all when nothing is in flight.
+ *
+ * **The set is the engine's, and so is the list.** A tick reads the claims
+ * directory once and reports the tags on its context (`TickContext.claimed`,
+ * `src/Phase.ts`); a slice that scanned for them itself would be a second
+ * reader of a fact the engine already handed it
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ *
+ * **What the block says about them is the package's.** The engine states
+ * which entries are someone's; leaving them as they stand, and filing what
+ * a slice would have changed as its own entry, is flume's opinion about
+ * producers, which is what the harness package is for
+ * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
+ *
+ * Nothing renders on an empty set, for the reason {@link slot} renders
+ * nothing for an undeclared slot: an empty block is a section the agent has
+ * to read and rule out, and a quiet queue should cost it nothing.
+ */
+function claimedBlock(claimed: readonly string[]): string {
+  if (claimed.length === 0) return "";
+  return [
+    "<in-flight>",
+    `A build tick is carrying ${backticked(claimed)} right now.`,
+    "Each is its holder's until the attempt ends: leave the entry as the",
+    "queue states it — no re-scope, no retire, no gate change — and file what",
+    "you would have changed as an entry of its own, or say so in the commit",
+    "body.",
+    "</in-flight>",
+  ].join("\n");
 }
 
 /** A list as prompt prose: each item in backticks, comma-separated. */

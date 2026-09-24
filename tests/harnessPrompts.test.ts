@@ -137,6 +137,7 @@ const isPlanSlice = (name: PromptName): name is PlanSlice =>
 function args(
   root: string = stateRoot,
   name?: PromptName,
+  claimed: readonly string[] = [],
 ): Record<string, string> {
   return {
     ...sharedPromptArgs({
@@ -145,7 +146,7 @@ function args(
       stateRoot: root,
     }),
     ...(name !== undefined && isPlanSlice(name)
-      ? planSlicePromptArgs(name, root)
+      ? planSlicePromptArgs(name, root, claimed)
       : {}),
   };
 }
@@ -173,10 +174,11 @@ function phase(name: string): Phase {
 async function render(
   name: PromptName,
   root: string = stateRoot,
+  claimed: readonly string[] = [],
 ): Promise<string> {
   const promptFile = promptPath(name);
   const raw = await readFile(promptFile, "utf8");
-  const shared = args(root, name);
+  const shared = args(root, name, claimed);
   const perTick = Object.fromEntries(
     [...raw.matchAll(PLACEHOLDER)]
       .map((match) => match[1]!)
@@ -1028,5 +1030,50 @@ it("every phase prompt the package renders substitutes the shared turn-boundary 
       names: raw.includes("{{TURN_BOUNDARY}}"),
       carries: rendered.includes(boundary!),
     }).toEqual({ name, names: true, carries: true });
+  }
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The entries a build tick is carrying reach every producer's prompt, from
+ * the engine's own report of them (`TickContext.claimed`, `src/Phase.ts`;
+ * `spec/pending.md`, *Claims — an entry in flight is left alone*).
+ *
+ * An agreement gate like the rest of this file: the real
+ * `planSlicePromptArgs` over the real shipped markdown through the engine's
+ * real renderer. What the block *says* is not judged — prose against prose is
+ * not this suite's — but that a slice renders the tags it was handed, and
+ * renders nothing at all when none are in flight, is the mechanical half
+ * prose cannot hold.
+ */
+it("every plan slice prompt renders the claimed entries the tick reported", async () => {
+  // Non-vacuity: a roster that collapsed to zero would pass the loop below
+  // over nothing (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*).
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  for (const name of PLAN_SLICES) {
+    const raw = await readFile(promptPath(name), "utf8");
+    const rendered = await render(name, stateRoot, ["ONE-IN-FLIGHT", "TWO"]);
+    expect({
+      name,
+      names: raw.includes("{{CLAIMED_ENTRIES}}"),
+      one: rendered.includes("`ONE-IN-FLIGHT`"),
+      two: rendered.includes("`TWO`"),
+    }).toEqual({ name, names: true, one: true, two: true });
+  }
+}, SPAWN_BUDGET_MS);
+
+it("a plan slice tick with nothing in flight renders no claimed block at all", async () => {
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  for (const name of PLAN_SLICES) {
+    // The producer's own empty answer, so the assertion is about what the
+    // renderer put in the file rather than about a value this case invented.
+    expect(args(stateRoot, name, [])["CLAIMED_ENTRIES"]).toBe("");
+    const rendered = await render(name);
+    expect({ name, block: rendered.includes("<in-flight>") }).toEqual({
+      name,
+      block: false,
+    });
   }
 }, SPAWN_BUDGET_MS);

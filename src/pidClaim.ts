@@ -1,13 +1,14 @@
 /**
- * pidClaim — the statement both of flume's process guards write, held in one
- * place so the two spell it once (`.claude/rules/engineering.md`, "The fix
- * lands at the mechanism").
+ * pidClaim — the statement every one of flume's process guards writes, held
+ * in one place so they spell it once (`.claude/rules/engineering.md`, "The
+ * fix lands at the mechanism").
  *
- * The loop lock (`<flumeDir>/loop.pid`) and the tip claim
- * (`<git-common-dir>/flume/tip-claims/<ref path>`) guard different resources
- * under different keying, and each records the same two facts about its
- * holder: the pid on the first line, the instant it took the guard on the
- * second (spec/loop.md, "The loop lock and the tip claim").
+ * The loop lock (`<flumeDir>/loop.pid`), the tip claim
+ * (`<git-common-dir>/flume/tip-claims/<ref path>`) and the per-entry claim
+ * (`<git-common-dir>/flume/claims/<slug>`) guard different resources under
+ * different keying, and each records the same two facts about its holder:
+ * the pid on the first line, the instant it took the guard on the second
+ * (spec/loop.md, "The loop lock and the tip claim").
  *
  * **The pid stays first because liveness is what every reader needs and the
  * instant is what one reader needs.** A reader after liveness takes line one,
@@ -26,11 +27,21 @@
  * one is `liveTipClaimPid` (`src/git.ts`), and the two git-common-dir wait
  * locks hand `acquireWaitLock` (`src/waitLock.ts`) theirs.
  *
- * Nothing beyond the statement and that read here: what to do about a live
- * claim — refuse, wait, total a window — belongs to the guard that read it.
+ * The refuse-and-reclaim *stake* the two exclusive guards take sits here too
+ * ({@link stakePidClaim}), for the reason the read does: one `wx` create, one
+ * `EEXIST` probe and one dead-holder reclaim, so the tip claim and the entry
+ * claim cannot come to disagree about what a stale file is. The wait locks
+ * keep their own loop, which parts from it at exactly one decision
+ * (`acquireWaitLock`, `src/waitLock.ts`).
+ *
+ * Nothing beyond the statement, that read and that stake here: what to do
+ * about a live claim — refuse, wait, leave the entry to its holder — belongs
+ * to the guard that read it.
  */
 
-import { readFile } from "node:fs/promises";
+import { unlinkSync } from "node:fs";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import { loopLockPath, namespacedJoin } from "./paths.js";
 
@@ -131,4 +142,90 @@ export async function liveLoopClaim(dir: string): Promise<PidClaim | null> {
  */
 export async function liveLoopPid(dir: string): Promise<number | null> {
   return (await liveLoopClaim(dir))?.pid ?? null;
+}
+
+/** A guard file this process created, and the one way to give it up. */
+export interface StakedPidClaim {
+  /** The file on disk this holder created. */
+  readonly path: string;
+  /**
+   * Remove the claim file. Idempotent and synchronous, so an exit handler can
+   * call it.
+   */
+  release: () => void;
+}
+
+/**
+ * What {@link stakePidClaim} found at the path: the guard, or the live holder
+ * that already had it.
+ *
+ * A union rather than a throw, because the two guards built on it answer a
+ * live holder differently — the tip claim refuses by name
+ * (`TipClaimHeldError`, `src/git.ts`), the entry claim leaves the entry to
+ * its holder (`EntryClaimStore`, `src/entryClaims.ts`) — and neither reading
+ * is this module's (see the module doc above).
+ */
+export type PidClaimStake =
+  | { readonly kind: "staked"; readonly claim: StakedPidClaim }
+  | { readonly kind: "held"; readonly by: PidClaim };
+
+/**
+ * Take the guard file at `path`: exclusive-create (`wx`) it carrying this
+ * process's statement ({@link renderPidClaim}), reclaiming over a holder that
+ * is no longer alive.
+ *
+ * Exclusive-create is the whole arbitration: the loser of a race gets
+ * `EEXIST` and reads the winner's statement rather than deciding anything
+ * from timing. On `EEXIST` the recorded holder is probed with
+ * {@link livePidClaimAt}:
+ *
+ * - **live** — `held`, naming the holder. What that means is the caller's.
+ * - **dead, or a statement naming no usable pid** — reclaim: unlink and retry
+ *   the create. A concurrent reclaimer may win the unlink race, so the
+ *   retry's own `EEXIST` re-probes rather than assuming this call won.
+ *
+ * Loud or nothing (`.claude/rules/engineering.md`, *Loud or nothing*): only
+ * `ENOENT` on the reclaim unlink — another reclaimer won the race — is
+ * swallowed, so an `EACCES` throws here instead of spinning this loop
+ * forever, and a claim file that is present but unreadable throws out of the
+ * probe rather than reading as an unclaimed guard.
+ *
+ * The wait-and-reclaim guards do not build on this: their `EEXIST` leg sleeps
+ * and re-probes rather than answering, which is a different loop over the
+ * same two primitives (`acquireWaitLock`, `src/waitLock.ts`).
+ */
+export async function stakePidClaim(path: string): Promise<PidClaimStake> {
+  const target = namespacedJoin(path);
+  await mkdir(namespacedJoin(dirname(path)), { recursive: true });
+  for (;;) {
+    try {
+      await writeFile(target, renderPidClaim(process.pid, new Date()), {
+        flag: "wx",
+      });
+      return {
+        kind: "staked",
+        claim: {
+          path,
+          release: () => {
+            try {
+              unlinkSync(target);
+            } catch {
+              // already gone
+            }
+          },
+        },
+      };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      const holder = await livePidClaimAt(path);
+      if (holder !== null) return { kind: "held", by: holder };
+      try {
+        await unlink(target);
+      } catch (unlinkErr) {
+        if ((unlinkErr as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw unlinkErr;
+        }
+      }
+    }
+  }
 }

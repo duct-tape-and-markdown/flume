@@ -8,6 +8,8 @@
 !`cat "{{PENDING_PATH}}"`
 </pending-now>
 
+{{CLAIMED_ENTRIES}}
+
 <plan-state>
 !`p="{{PLAN_STATE_PATH}}"; test -e "$p" || { echo "(no plan state yet)"; exit 0; }; cat "$p"`
 </plan-state>

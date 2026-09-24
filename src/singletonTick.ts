@@ -76,11 +76,18 @@ export async function runSingleton(
   // refusal is judged against each entry's own record and the tip this tick
   // starts from — the same map `ctxFacts` hands the agent below.
   const priorAttempts = await leg.attempts.readAll();
+  // spec/pending.md "Claims — an entry in flight is left alone": the entries
+  // a build tick is carrying right now. Read here for the same reason the
+  // records above are — the selection is where they are consulted — and
+  // handed to the agent below as `TickContext.claimed`, so a producer
+  // rendering the queue is told which of its entries are someone's.
+  const claimedSlugs = await leg.claims.readLive();
   const selected = pickableSelection({
     pending,
     isForkResolved,
     capabilities,
     ...(quarantinedSlugs !== undefined ? { quarantinedSlugs } : {}),
+    claimedSlugs,
     refuses: bindEntryRefusal(chain, { priorAttempts, headSha: preHead }),
   });
   const pickable = selected.pickable;
@@ -94,6 +101,9 @@ export async function runSingleton(
     pendingAfter: pending,
     pickableAfter: pickable,
     refusedTags: selected.refusedTags,
+    // The set this tick read, paired with the selection above: no agent ran,
+    // so nothing about the claims on disk changed under it.
+    claimedTags: selected.claimedTags,
     // Re-read, not the map above: a `shouldRun` that threw persisted its own
     // render-refused record between the two reads, and a handoff handed the
     // opening map would be told this tick left no refusal behind
@@ -116,6 +126,7 @@ export async function runSingleton(
     stateRootRel: leg.stateRootRel,
     pending,
     pickable,
+    claimed: selected.claimedTags,
     priorAttempts,
     ...(queueParseFailure ? { queueParseFailure } : {}),
   };
@@ -522,6 +533,10 @@ export async function runSingleton(
     isForkResolved,
     capabilities,
     ...(quarantinedSlugs !== undefined ? { quarantinedSlugs } : {}),
+    // Re-read with the rest: a build wave that shipped while this tick ran
+    // has dropped its claims, and an entry this tick's handoff routes on is
+    // free again.
+    claimedSlugs: await leg.claims.readLive(),
     refuses: bindEntryRefusal(chain, {
       priorAttempts: priorAttemptsAfter,
       headSha: await git.revParse(repoRoot),
@@ -538,6 +553,7 @@ export async function runSingleton(
       // Paired with the set above, not with the tick's opening one: a
       // handoff routes on what is pickable now.
       refusedTags: postSelection.refusedTags,
+      claimedTags: postSelection.claimedTags,
       // One read, two readers: the map the refusal above was judged against
       // is the map the handoff is handed.
       priorAttempts: priorAttemptsAfter,
