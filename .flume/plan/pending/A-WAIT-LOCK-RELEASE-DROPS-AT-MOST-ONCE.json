@@ -1,0 +1,33 @@
+{
+  "tag": "A-WAIT-LOCK-RELEASE-DROPS-AT-MOST-ONCE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/pidClaim.ts",
+        "description": "the at-most-once drop is one helper, taken by the stake and by the wait locks"
+      },
+      {
+        "path": "src/waitLock.ts",
+        "description": "`WaitLock.release` takes that drop, so its doc's claim to the stake's shape is true again"
+      },
+      {
+        "path": "tests/waitLock.test.ts",
+        "description": "a wait lock released twice over a later holder's file"
+      }
+    ]
+  },
+  "summary": "`WaitLock.release` unlinks unconditionally while its doc claims the tip claim's shape, so a second release deletes a later holder's lock",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "a wait lock released a second time removes nothing, through the same drop the stake hands out rather than a second spelling of it",
+  "tests": [
+    "a wait lock released a second time leaves a later holder's lock file standing"
+  ],
+  "pins": [
+    "a wait lock released once removes the file it created"
+  ],
+  "notes": "Per note A-RELEASED-CLAIM-NEVER-UNLINKS-A-LATER-HOLDERS. `WaitLock.release`'s doc (`src/waitLock.ts`) says \"the same shape the tip claim's release carries\"; since the stake gained its guard the two have parted, and the body is the bare `unlinkSync` that guard was added to fix. No caller double-releases a wait lock today, so this is the latent half of the same defect."
+}

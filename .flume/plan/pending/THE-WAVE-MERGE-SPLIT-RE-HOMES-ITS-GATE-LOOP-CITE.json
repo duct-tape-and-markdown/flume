@@ -1,0 +1,19 @@
+{
+  "tag": "THE-WAVE-MERGE-SPLIT-RE-HOMES-ITS-GATE-LOOP-CITE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the stranded dedup cite names the file the job moved to, backticked so the citation pin reads it"
+      }
+    ]
+  },
+  "summary": "The merge stage cites `runAfterCommitGates` \"above\"; the split moved that function to another file and left the pointer",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A module is one job"
+  },
+  "acceptance": "the merge stage's dedup comment cites the gate loop at the file that holds it, in the backticked form the citation pin resolves",
+  "notes": "Verified this tick: `src/waveMerge.ts:488` reads \"same dedup as runAfterCommitGates above\"; the function is `src/tickAttempt.ts:515`. The cite is unbackticked, so the comment-citation pin never read it and the dispatcher split left it green at the wrong door. Backticking it is the rung up. Claims no property: behavior-free, held by the citation pin once the span is backticked."
+}
