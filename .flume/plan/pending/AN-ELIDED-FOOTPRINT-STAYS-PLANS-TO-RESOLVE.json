@@ -1,16 +1,19 @@
 {
   "tag": "AN-ELIDED-FOOTPRINT-STAYS-PLANS-TO-RESOLVE",
   "gate": {
-    "kind": "blockedBy",
-    "tags": ["A-CONTINUATION-ROUTES-BACK-TO-BUILD-NOT-THE-DRAIN"]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "tests/harnessHandoff.test.ts",
         "description": "the classification over a not-shipped record whose path list was elided"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "A not-shipped record's `touchedPaths` is bounded, so the put-down classifier reads a wide commit's footprint with the deciding path possibly missing",
   "per": {
@@ -18,6 +21,7 @@
     "section": "Loud or nothing"
   },
   "acceptance": "the arm the blocker adds is pinned on a record carrying `omittedPaths`: an elided footprint decides no continuation and the record stays plan's to resolve",
+  "tests": [],
   "pins": [
     "a not-shipped record whose touchedPaths was elided stays a standing refusal"
   ],
