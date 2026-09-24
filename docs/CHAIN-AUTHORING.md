@@ -2298,7 +2298,7 @@ const factory: ChainFactory = (flume) => {
   // ... phases defined here, composing with the destructured values ...
 
   const cascadeChain: Chain = {
-    phases: [plan, build],
+    phases: [build, plan],
     humanOnly: [],
   };
   return { chain: cascadeChain };
@@ -2311,11 +2311,17 @@ Everything that needs an engine value lives inside the factory; anything
 that does not — a `zod` entry extension, plain constants — can stay at
 module scope. `examples/cascade-chain.ts` is this shape end to end.
 
-`phases` is the ordered list, and the order is a contract: the first phase
-is the chain's entry point, by position rather than by name (machinery never
-hardcodes a phase name). Put the phase a cold start should begin with first;
-cascade leads with `plan` because a fresh state root must derive pending
-before anything can build.
+`phases` is the ordered list, and the order is the priority, by position
+rather than by name (machinery never hardcodes a phase name). A bare `flume
+tick` runs the first phase down the list whose flag is awake, and `flume
+loop`'s supervisor starts one child per awake phase in declared order until
+`supervisorPolicy.maxTicks` of them are running. At the default budget of one
+that makes this list the whole schedule, so the phase that ships the product
+goes first and the rest fill whatever room is left: cascade leads with
+`build`, its planners behind it. Which phase runs *after* which is a
+different question, answered by each phase's `handoff` — cascade's plan
+ladder lives in one `nextPhase` helper, and reordering this list does not
+move it.
 
 `humanOnly` lists phases the dispatcher
 cannot wake via another phase's `handoff` — humans wake them by touching

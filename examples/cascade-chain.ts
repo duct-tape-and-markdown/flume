@@ -662,7 +662,17 @@ const factory: ChainFactory = (api) => {
   // ---------- chain ----------
 
   const cascadeChain: Chain = {
-    phases: [...planSlices, build],
+    // Build first, the plan slices behind it in ladder order. This list is
+    // the budget's priority, not the dependency ladder: the supervisor starts
+    // one child per awake phase in declared order until
+    // `supervisorPolicy.maxTicks` are running, and a bare `flume tick` takes
+    // the first awake phase down it (spec/loop.md, *Which phases run*). At
+    // the engine's default budget of one that order is the whole schedule, so
+    // the product ships and the planners fill whatever room is left; a chain
+    // that copies this list and declares no ladder inherits that economics
+    // rather than the inverse. Which phase a tick hands the baton to is
+    // `nextPhase`'s answer alone, and this line does not move it.
+    phases: [build, ...planSlices],
     entryExtension,
     humanOnly: [], // both phases are machine-woken; the spec corpus a human edits is not a phase
   };

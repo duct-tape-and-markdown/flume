@@ -128,12 +128,13 @@ describe("cascade-chain.ts — the shipped phase list", () => {
     // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
     // non-vacuous"): an empty phase list would satisfy every absence assertion
     // below.
+    // Which phases, not in which order — the order is its own claim, pinned
+    // by the case below.
     expect(cascadeChain.phases.length).toBeGreaterThan(0);
-    expect(cascadeChain.phases.map((p) => p.name)).toEqual([
-      "plan-inbox",
-      "plan-derive",
-      "build",
-    ]);
+    expect(cascadeChain.phases).toHaveLength(3);
+    expect(new Set(cascadeChain.phases.map((p) => p.name))).toEqual(
+      new Set(["build", "plan-inbox", "plan-derive"]),
+    );
 
     // The retired phase's fence partition goes with it — a `specs/**` or
     // `workshop/**` glob surviving on a sibling phase would keep teaching the
@@ -145,6 +146,30 @@ describe("cascade-chain.ts — the shipped phase list", () => {
     // `humanOnly` named the cut phase; nothing else in this chain is
     // human-woken, so the list is empty rather than stale.
     expect(cascadeChain.humanOnly).toEqual([]);
+  });
+
+  /**
+   * The list is the budget's priority, not the dependency ladder
+   * (spec/loop.md, *Which phases run*): the supervisor starts children down
+   * it until `supervisorPolicy.maxTicks` are running, and at the engine's
+   * default of one that order is the whole schedule. The flagship is copied
+   * into chains that declare no ladder of their own, so a plan slice sitting
+   * ahead of `build` in the shipped file inverts the loop's economics for
+   * every one of them — insurance scheduled ahead of the product.
+   */
+  it("the cascade example declares build first and its plan slices after it", () => {
+    const names = cascadeChain.phases.map((p) => p.name);
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a chain of one phase, or one that lost its planners,
+    // satisfies a "build is first" claim over nothing.
+    expect(names.length).toBeGreaterThan(1);
+    expect(names.filter((n) => n.startsWith("plan")).length).toBeGreaterThan(0);
+
+    expect(names[0]).toBe("build");
+    expect(names.slice(1).every((n) => n.startsWith("plan"))).toBe(true);
+    // The ladder's own order survives behind it: the inbox rung ahead of the
+    // re-derive, the order `nextPhase` walks.
+    expect(names.slice(1)).toEqual(["plan-inbox", "plan-derive"]);
   });
 });
 
@@ -1091,9 +1116,12 @@ describe("cascade-chain.ts — the plan ladder", () => {
       "cascade's plan is a ladder — one slice orders nothing",
     ).toBeGreaterThan(1);
     expect(buildPhase, "cascade declares a build phase").toBeDefined();
+    // The declared list is build-first — the budget's priority — so every
+    // routing claim below is the ladder's answer rather than the list read
+    // back.
     expect(cascadeChain.phases.map((p) => p.name)).toEqual([
-      ...planSlices.map((p) => p.name),
       buildPhase!.name,
+      ...planSlices.map((p) => p.name),
     ]);
     const [first, second] = planSlices as [Phase, Phase];
     expect(planSlices.every((p) => p.concurrency === "singleton")).toBe(true);
@@ -1355,7 +1383,12 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
 
       // The engine's half, off a real tick of that chain through the drive's
       // own `tick`: the state root the dispatcher resolved is the fixture's.
-      const outcome = await l.tick(l.chain.phases[0]!.name, commitsNothing);
+      // A plan slice, because this fixture writes `prompts/plan.md` alone and
+      // build wants an assigned entry — which phase the chain declares first
+      // is a scheduling fact, and nothing here is about it.
+      const slice = l.chain.phases.find((p) => p.name !== "build");
+      expect(slice, "cascade declares a plan slice").toBeDefined();
+      const outcome = await l.tick(slice!.name, commitsNothing);
       expect(outcome.result?.flumeDir).toBe(l.paths.flumeDir);
       expect(outcome.result?.flumeDir).not.toBe(EXAMPLE_PATHS.flumeDir);
     } finally {
