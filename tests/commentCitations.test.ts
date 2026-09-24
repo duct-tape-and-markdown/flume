@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
+import { declaration } from "../.flume/declaration.ts";
 import {
   type CitationScan,
   type CitationSite,
@@ -498,18 +499,36 @@ const PAGE_ARM_DOMAIN: ScanDomain = {
 };
 
 /**
- * Every tree the sweep domain names, as the posture page reads it this tick.
- * The union of the two scans' modules is asserted to cover it, so a tree
- * added to the sweep and to neither scan reds here rather than going unjudged.
+ * Every tree the sweep domain names, read off the domain this repository
+ * declares rather than spelled a second time beside it: a tree the
+ * declaration gains or loses moves the coverage pin with it. The union of
+ * the two scans' modules is asserted to cover this, so a tree the sweep
+ * reads and neither scan opens reds rather than going unjudged.
+ *
+ * The domain is written in globs and the scans report modules, so each entry
+ * is folded to the prefix a module is matched on. A glob naming anything but
+ * a whole tree is refused here rather than silently covering nothing — the
+ * prefix fold is the only reading this pin has for one.
  */
-const SWEEP_DOMAIN: readonly string[] = [
-  "src/",
-  "harness/",
-  "tests/",
-  "bin/",
-  "examples/",
-  "scripts/",
-];
+function declaredSweepTrees(): readonly string[] {
+  const sweep = declaration.slices.sweep;
+  if (sweep === undefined) {
+    throw new Error(
+      "this repo enables the sweep slice, so its declaration carries the domain this pin covers — nothing to read",
+    );
+  }
+  return sweep.domain.map((glob) => {
+    const tree = /^([^*?]+\/)\*\*$/.exec(glob)?.[1];
+    if (tree === undefined) {
+      throw new Error(
+        `sweep domain entry \`${glob}\` names no whole tree; the coverage pin reads modules by prefix`,
+      );
+    }
+    return tree;
+  });
+}
+
+const SWEEP_DOMAIN: readonly string[] = declaredSweepTrees();
 
 let fixtureRoot = "";
 /** The one scan of that tree — every case below reads the same verdict. */
@@ -1787,16 +1806,6 @@ it("every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.t
   }
   expect(repoPageScan.modules).toContain(".flume/chain.ts");
 
-  // And nothing the sweep domain names is judged by neither scan. The two
-  // domains are exclusive, so this union is what keeps a tree from falling
-  // between them as either list is edited.
-  const read = [...repoScan.modules, ...repoPageScan.modules];
-  for (const tree of SWEEP_DOMAIN) {
-    expect(`${tree} -> ${read.some((m) => m.startsWith(tree))}`).toBe(
-      `${tree} -> true`,
-    );
-  }
-
   // The judged set is populated in both fencings before any verdict is read
   // off it: these comments cite pages backticked and bare, and a subject rule
   // that stopped admitting either would leave the emptiness below green over
@@ -1841,6 +1850,25 @@ it("every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.t
   expect(
     repoPageScan.findings.filter((site) => excluded.includes(site.text)).length,
   ).toBeGreaterThan(0);
+});
+
+it("the two citation scans cover every tree the repository's declared sweep domain names", () => {
+  // Vacuity guard: the domain came off the declaration populated, and both
+  // scans opened modules. A declaration read as empty — or a scan that read
+  // nothing — would leave the coverage below green over no trees at all.
+  expect(SWEEP_DOMAIN.length).toBeGreaterThan(0);
+  expect(repoScan.modules.length).toBeGreaterThan(0);
+  expect(repoPageScan.modules.length).toBeGreaterThan(0);
+
+  // Nothing the sweep reads is judged by neither scan. The two scan domains
+  // are exclusive, so this union is what keeps a tree from falling between
+  // them as either list — or the declared domain itself — is edited.
+  const read = [...repoScan.modules, ...repoPageScan.modules];
+  for (const tree of SWEEP_DOMAIN) {
+    expect(`${tree} -> ${read.some((m) => m.startsWith(tree))}`).toBe(
+      `${tree} -> true`,
+    );
+  }
 });
 
 it("every section a comment in bin/, examples/, scripts/ or .flume/chain.ts cites is a section its page still carries", () => {
