@@ -794,7 +794,7 @@ async function acquireCommonDirLock(
  * every cherry-pick onto the trunk, the `afterMerge` gates over each merged
  * tree, and the ledger commit that ships the span (spec/loop.md, *The ship
  * lock and the worktree lock — sibling ticks take turns at git*). The two
- * legs that have a merge span take it (`src/waveTick.ts`,
+ * legs that have a merge span take it (`src/waveMerge.ts`,
  * `src/singletonTick.ts`); nothing else does.
  *
  * Held by a live sibling means waiting, never refusing: a sibling tick

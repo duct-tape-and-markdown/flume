@@ -976,7 +976,7 @@ export interface Chain {
      * Globs (matched by `matchesAny`, `src/paths.ts`) whose paths never
      * count toward the fanout partition's collision set —
      * `partitionByFileOverlap` (`src/partition.ts`) and the wave-end
-     * `observedFiles` footprint recorder (`src/waveTick.ts`) both read
+     * `observedFiles` footprint recorder (`src/waveMerge.ts`) both read
      * `touchedPaths` through this filter. `declaredPaths` itself — the
      * fence, the write guard, ship detection — is untouched; this widens
      * only what counts as a partition collision, never a permission.

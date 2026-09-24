@@ -2,10 +2,10 @@
  * bounds — the three truncation idioms the harness digests strings with.
  *
  * A leaf module on purpose: two independent consumers need the same three
- * shapes — the two tick legs (`src/singletonTick.ts`, `src/waveTick.ts`) for
- * their failure signatures, `src/priorAttempts.ts` for the persisted record
- * fields — and a copy on
- * either side is how the two drift apart. Nothing here reads disk or git,
+ * shapes — the tick legs and the wave's merge stage
+ * (`src/singletonTick.ts`, `src/waveTick.ts`, `src/waveMerge.ts`) for their
+ * failure signatures, `src/priorAttempts.ts` for the persisted record fields
+ * — and a copy on either side is how the two drift apart. Nothing here reads disk or git,
  * so both can import it without a cycle.
  *
  * Every one of them marks its own elision: a bounded string that reads as a

@@ -4,7 +4,7 @@
  * ref, and whether the commit a revert is about to reset past is still the
  * tip it was.
  *
- * Both legs reach them (`src/singletonTick.ts`, `src/waveTick.ts`), and the
+ * Both legs reach them (`src/singletonTick.ts`, `src/waveMerge.ts`), and the
  * wave's ledger commit reaches the first one a third time, so the pair lives
  * in the file its name is rather than as two methods on the class that
  * dispatches between the legs (`.claude/rules/engineering.md`, *A module is

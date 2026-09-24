@@ -81,7 +81,7 @@ describe("tickExitCode — axis classification", () => {
 
   /**
    * A wave that shipped, then met a ledger commit git refused. The verdict is
-   * the one `WaveLedgerRefusal` carries (`src/waveTick.ts`) — present here
+   * the one `WaveLedgerRefusal` carries (`src/waveMerge.ts`) — present here
    * because it is what tells this outcome apart from a chain that never
    * mounted, and because the two cases below have to differ in `ledgerRefusal`
    * alone for the classification to be what decides them.

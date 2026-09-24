@@ -588,7 +588,7 @@ export interface QueueParseFailure {
  *
  * Lives beside the parse it wraps rather than at the reader, because the wave
  * leg's own ledger refusal carries one as its cause (`WaveLedgerRefusal`,
- * `src/waveTick.ts`) and a chain's gate reaches it through
+ * `src/waveMerge.ts`) and a chain's gate reaches it through
  * `FlumeApi.PendingParseFailure` (`src/flumeApi.ts`).
  */
 export class PendingParseFailure extends Error {

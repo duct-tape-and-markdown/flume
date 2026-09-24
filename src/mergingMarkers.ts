@@ -4,7 +4,7 @@
  * "is a merge still staked out under this state root?"
  *
  * spec/loop.md "Crash equals stop". The wave's merge stage writes a marker
- * around each cherry-pick (`src/waveTick.ts`); the CLI's startup refusal
+ * around each cherry-pick (`src/waveMerge.ts`); the CLI's startup refusal
  * (`flume loop`) is the reader. The shape sits with the
  * reader rather than inside the leg that stakes it because it is the
  * vocabulary of that seam, not of a tick (`.claude/rules/engineering.md`, *A

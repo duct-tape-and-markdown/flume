@@ -10,8 +10,9 @@
  * reaches it (`.claude/rules/engineering.md`, *A module is one job*). The
  * `shouldRun` consult that decides whether to make the attempt at all comes
  * with it, since its refusal record is the attempt's own. What surrounds the
- * attempt — the merge stage, the verdict vocabulary each concurrency reports
- * in — stays with the legs (`src/singletonTick.ts`, `src/waveTick.ts`).
+ * attempt — the merge stage (`src/waveMerge.ts` for a wave,
+ * `src/singletonTick.ts` for a singleton), the verdict vocabulary each
+ * concurrency reports in — stays outside this file.
  *
  * Every function here takes its runtime state as an {@link AttemptContext}
  * rather than reading a field off the orchestrator, so the sequence is

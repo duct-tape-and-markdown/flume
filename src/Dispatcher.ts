@@ -82,10 +82,10 @@ import {
 } from "./tickVerdict.js";
 import * as git from "./git.js";
 import {
-  runFanout,
   WaveLedgerRefusal,
   type LedgerRefusalClass,
-} from "./waveTick.js";
+} from "./waveMerge.js";
+import { runFanout } from "./waveTick.js";
 import {
   sweepStaleWorktrees,
   type WorktreeContext,
@@ -436,7 +436,7 @@ export interface TickOutcome {
    * `usageError`, or `terminal`. One exception on `failed`: a fanout wave
    * whose `commitPendingUpdate` refused — for any reason, the rewrite read
    * that would not parse and the `git commit --only` that fatals alike
-   * (`WaveLedgerRefusal`, `src/waveTick.ts`) — still ran a phase and shipped
+   * (`WaveLedgerRefusal`, `src/waveMerge.ts`) — still ran a phase and shipped
    * tags onto trunk before that refusal, so `failed: true` carries `verdict`
    * too in that one case — every other `failed` path (chain resolution, a
    * decide-read parse failure with no agent run) carries none. The CLI's

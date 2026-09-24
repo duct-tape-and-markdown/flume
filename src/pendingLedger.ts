@@ -20,7 +20,7 @@
  * tolerant one announces and degrades, and the rewrite reports the sha, the
  * tip verdict it got, and where the queue it was moving stands — what a tick
  * does about any of it stays with the dispatcher (`src/Dispatcher.ts`) and the
- * wave (`src/waveTick.ts`).
+ * wave (`src/waveMerge.ts`).
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -379,8 +379,9 @@ export interface PendingRewriteResult {
  * spec/loop.md "Tip verify", "Harness-driven commits carry no expected-tip
  * bookkeeping": no sha comparison — `liveForeignClaimPid`, checked fresh
  * immediately before this function's own harness-driven `commitPaths` call,
- * the wave's other tip-verify site beside `cherryPickRange` (`runFanout`,
- * `src/waveTick.ts`). Checked before the writes: a refusal here leaves every
+ * the wave's other tip-verify site beside `cherryPickRange`
+ * (`runWaveMerge`, `src/waveMerge.ts`). Checked before the writes: a refusal
+ * here leaves every
  * entry file untouched on disk rather than a write with no commit behind
  * it. No live claim means the rewrite recommits on whatever tip is current —
  * its content derives from the wave's own outcomes, never from a recorded

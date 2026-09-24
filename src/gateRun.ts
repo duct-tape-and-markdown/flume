@@ -3,7 +3,7 @@
  * called, for every gate-run site in the engine.
  *
  * The attempt's afterCommit loop (`src/tickAttempt.ts`) and the two legs'
- * afterMerge loops (`src/singletonTick.ts`, `src/waveTick.ts`) call through
+ * afterMerge loops (`src/singletonTick.ts`, `src/waveMerge.ts`) call through
  * here rather than pasting their own
  * guard, so what a throwing gate becomes, and what a gate's checkout is
  * reclaimed by, is spelled once (`.claude/rules/engineering.md`, *The fix
