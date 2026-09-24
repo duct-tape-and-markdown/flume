@@ -40,7 +40,6 @@ import { harnessInit } from "../harness/init.ts";
 import {
   QUESTION_EXT,
   QUESTIONS_DIR_REL,
-  legacyQuestionsPath,
   planStatePath,
 } from "../harness/layout.ts";
 import { PLAN_STATE_SCHEMAS, writePlanState } from "../harness/planState.ts";
@@ -1042,27 +1041,35 @@ it("renderQuestions refuses when a plain file sits above the questions directory
 });
 
 /**
- * The migration leg (`harness/layout.ts`): a consumer upgrading into the
- * questions directory has questions open inside the page that preceded it,
- * and none of them is in the listing. Rendering the none-open placeholder
- * over that page would tell plan its parked forks are closed
- * (`.claude/rules/engineering.md`, *Loud or nothing*), so the page's presence
- * is stated and it is the one thing that suppresses the placeholder.
+ * The migration leg the 0.17 line carried is spent
+ * (`docs/MIGRATING-0.17.md`): the page that preceded the directory is no
+ * longer a thing the render knows, so it states what the directory says and
+ * nothing else. A consumer who never drained the page reads "nothing open"
+ * from a state root that still holds it, which is the cost the retirement
+ * names — and what keeps this render from carrying a cutover forever
+ * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+ *
+ * Spelled as a literal because nothing in the package addresses the page any
+ * more, which is the property this case is here for.
  */
-it("a legacy open-questions page still on disk is named in the questions block", async () => {
+it("a state root carrying the legacy open-questions page renders the none-open line", async () => {
   const root = await coldRoot("flume-prompts-legacy-questions-");
-  // The page at the accessor that still addresses it, so this case moves with
-  // the migration allowance rather than pinning a literal that outlives it.
-  const page = legacyQuestionsPath(root);
+  const page = join(root, "plan", "open-questions.md");
   await mkdir(dirname(page), { recursive: true });
   await writeFile(page, "# Open questions\n\n## A parked fork\n", "utf8");
+  // The reading the case turns on: the page really is on disk, so the
+  // none-open line below is the render ignoring it rather than a fixture that
+  // wrote nothing.
+  expect(existsSync(page)).toBe(true);
+  expect(existsSync(join(root, QUESTIONS_DIR_REL))).toBe(false);
+
+  // The placeholder the package produces, never one spelled here.
+  expect(renderQuestions(root)).toBe(NONE_OPEN);
 
   const carrying = await slicesCarryingQuestions();
   let asserted = 0;
   for (const name of carrying) {
-    const block = questionsBlock(await render(name, root), name);
-    expect(block.join("\n")).toContain(page);
-    expect(block).not.toContain(NONE_OPEN);
+    expect(questionsBlock(await render(name, root), name)).toEqual([NONE_OPEN]);
     asserted++;
   }
   expect(asserted).toBe(carrying.length);

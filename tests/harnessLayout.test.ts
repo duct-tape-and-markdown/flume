@@ -19,7 +19,6 @@ import {
   continuingNotePath,
   continuingNotesDir,
   legacyPlanStatePath,
-  legacyQuestionsPath,
   noteGlobs,
   notePath,
   notePaths,
@@ -74,7 +73,6 @@ it("the plan fence admits every artifact the package's own accessors address", (
     legacyQueuePath(STATE_ROOT),
     planStatePath(STATE_ROOT, SOME_SLICE),
     `${questionsDir(STATE_ROOT)}/a-parked-fork${QUESTION_EXT}`,
-    legacyQuestionsPath(STATE_ROOT),
     notePath(STATE_ROOT, "SOME-ENTRY"),
     parkedNotePath(STATE_ROOT, "SOME-ENTRY"),
     ...recordDirs(STATE_ROOT).map((dir) => `${dir}/2026-09-15-a-finding.md`),
@@ -130,14 +128,27 @@ it("the plan fence admits a file under the questions directory", () => {
   ).toBe(false);
 });
 
-it("the plan fence admits the legacy open-questions page a drain deletes", () => {
-  // The migration allowance (`harness/layout.ts`): a consumer upgrading into
-  // the questions directory has open questions inside the page, and the drain
-  // that moves them out `git rm`s it in the same commit. Outside the fence,
-  // that page is a file no phase can reach.
+it("the plan fence does not admit the legacy open-questions page", () => {
+  // The migration allowance the 0.17 line carried is spent
+  // (`docs/MIGRATING-0.17.md`): a consumer whose questions still sit in the
+  // page drains it by hand, and no plan commit may touch the page any more.
+  // Spelled as a literal because nothing in the package addresses it — which
+  // is the property, so there is no accessor left to compose it from.
   const fence = planArtifacts(STATE_ROOT, SOME_SLICE);
   expect(fence.length).toBeGreaterThan(0);
-  expect(matchesAny(legacyQuestionsPath(STATE_ROOT), fence)).toBe(true);
+  expect(
+    matchesAny(underStateRoot(STATE_ROOT, "plan/open-questions.md"), fence),
+  ).toBe(false);
+
+  // Bounded against a fence that admits nothing at all: the questions
+  // directory's own file is still on it, so the refusal above is the fence
+  // being specific rather than empty or broken.
+  expect(
+    matchesAny(
+      `${questionsDir(STATE_ROOT)}/a-parked-fork${QUESTION_EXT}`,
+      fence,
+    ),
+  ).toBe(true);
 });
 
 it("each plan slice's fence admits its own state file and no sibling's", () => {

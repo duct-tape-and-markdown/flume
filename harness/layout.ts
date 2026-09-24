@@ -83,10 +83,10 @@ const PLAN_STATE_EXT = ".json";
  * slice reads it and nothing writes it; it rides {@link planArtifacts} so
  * that the tick which splits a consumer's plan state into the per-slice files
  * can `git rm` the page in the same commit — outside the fence, that page is
- * a file no phase can reach and every plan tick reverts on. Retired with
- * {@link LEGACY_QUESTIONS_REL} and for the same reason: both are a consumer's
- * one-time cutover, and neither outlives the release whose migration page
- * tells consumers to take it.
+ * a file no phase can reach and every plan tick reverts on. Retired by the
+ * maintainer cutting the release after `docs/MIGRATING-0.19.md`, whose § 6 is
+ * what tells consumers to take the split; this constant, its accessor and its
+ * fence line go with it in that commit.
  */
 const LEGACY_PLAN_STATE_REL = "plan/state.json";
 
@@ -102,22 +102,6 @@ export const QUESTIONS_DIR_REL = "plan/questions";
  * tree is not a question and must not read as one still open.
  */
 export const QUESTION_EXT = ".md";
-
-/**
- * Where the single page open questions were sections of sat, before they
- * were one file each.
- *
- * **A migration allowance, and the only reason it is still spelled.** No
- * slice renders it and nothing writes it; it rides {@link planArtifacts} so
- * that the drain which moves a consumer's open questions into
- * {@link questionsDir} can `git rm` the page in the same commit — outside
- * the fence, that page is a file no phase can reach and every plan tick
- * reverts on. Retired by the maintainer cutting the release after
- * `docs/MIGRATING-0.17.md`, whose migration section is what tells consumers
- * to take the drain; this constant, its accessor and its fence line go with
- * it in that commit.
- */
-const LEGACY_QUESTIONS_REL = "plan/open-questions.md";
 
 /** Where a build tick's observation to plan sits under a state root. */
 const NOTES_REL = "plan/notes";
@@ -228,10 +212,10 @@ export function queueGlob(stateRoot: string): string {
  * slice reads it and nothing writes it; it rides {@link planArtifacts} so
  * that the tick which moves a consumer's entries into {@link queueDir} can
  * `git rm` the page in the same commit — outside the fence, that page is a
- * file no phase can reach and every plan tick reverts on. Retired with
- * {@link LEGACY_PLAN_STATE_REL} and {@link LEGACY_QUESTIONS_REL} and for the
- * same reason: each is a consumer's one-time cutover, and none outlives the
- * release whose migration page tells consumers to take it.
+ * file no phase can reach and every plan tick reverts on. Retired by the
+ * maintainer cutting the release after `docs/MIGRATING-0.19.md`, whose § 5 is
+ * what tells consumers to take the split; this constant, its accessor and its
+ * fence line go with it in that commit.
  */
 const LEGACY_QUEUE_REL = "plan/pending.json";
 
@@ -289,14 +273,6 @@ export function questionsDir(stateRoot: string): string {
  */
 export function questionGlob(stateRoot: string): string {
   return `${questionsDir(stateRoot)}/*${QUESTION_EXT}`;
-}
-
-/**
- * The legacy questions page under a state root ({@link LEGACY_QUESTIONS_REL})
- * — addressable so a drain can delete it, and for nothing else.
- */
-export function legacyQuestionsPath(stateRoot: string): string {
-  return underStateRoot(stateRoot, LEGACY_QUESTIONS_REL);
 }
 
 /**
@@ -464,7 +440,6 @@ export function planArtifacts(stateRoot: string, slice: PlanSlice): string[] {
     planStatePath(stateRoot, slice),
     legacyPlanStatePath(stateRoot),
     questionGlob(stateRoot),
-    legacyQuestionsPath(stateRoot),
     ...recordGlobs(stateRoot),
   ];
 }

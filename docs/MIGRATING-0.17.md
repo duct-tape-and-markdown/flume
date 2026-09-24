@@ -172,17 +172,16 @@ write two files instead of conflicting on one.
 
 **What to do.** Give each question still open in the page its own file under
 `<stateRoot>/plan/questions/`, named for the question it asks, and delete the
-page in the same commit. A plan tick can do it: the slice fence still admits
-the old page for exactly that commit, and while the page is on disk the
-questions block names it rather than reporting nothing open, so the migration
-cannot be passed over silently. Nothing needs creating up front — a state
-root with no directory reads as nothing open, and the first question opened
-creates it.
+page in the same commit. Nothing needs creating up front — a state root with
+no directory reads as nothing open, and the first question opened creates it.
 
-**The allowance is temporary.** The fence line that lets a plan commit delete
-the page is retired in the release after this one. A page still on disk then
-is a file no plan phase can touch, and the questions it holds are invisible
-to every slice.
+**The allowance this section offered is gone.** For the 0.17 line a plan tick
+could do the drain itself: the slice fence admitted the old page for exactly
+that commit, and while the page was on disk the questions block named it
+rather than reporting nothing open. Both were retired in the release after
+this one, so the drain is now a commit you make by hand. A page still on disk
+is a file no plan phase can touch, every slice reads the state root as having
+nothing open, and the questions the page holds are invisible.
 
 ## 4. A build tick parks by writing under `plan/notes/parked/`
 
