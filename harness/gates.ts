@@ -50,14 +50,12 @@
  * the sentence above holds here.
  */
 
-import { relative } from "node:path";
-
 import type { PendingGateOptions } from "../src/builtinGates.js";
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 import type { GitStatusRecord } from "../src/git.js";
 import { matchesAny } from "../src/paths.js";
-import { readQueueOnDisk } from "../src/pendingLedger.js";
-import type { EntryExtension, QueueFile } from "../src/PendingSchema.js";
+import type { GatedQueue } from "../src/pendingLedger.js";
+import type { EntryExtension } from "../src/PendingSchema.js";
 import type { Phase } from "../src/Phase.js";
 
 import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js";
@@ -68,7 +66,6 @@ import {
   notePaths,
   planStatePath,
   recordOrNoteGlobs,
-  underStateRoot,
 } from "./layout.js";
 import { JUDGED_SLICES, judgeSliceState } from "./planState.js";
 import type { PutDownPredicate } from "./putDown.js";
@@ -86,6 +83,15 @@ import type { PutDownPredicate } from "./putDown.js";
 export interface GateEngine {
   /** The engine's `pendingGate` builtin — queue schema plus fence pre-check. */
   readonly pendingGate: (options: PendingGateOptions) => Gate;
+  /**
+   * The queue the gated commit holds — its directory's name, its
+   * repo-relative spelling, and every entry file already read out of that
+   * commit's tree; `files` is `null` when no queue was readable at all. The
+   * engine's own (`FlumeApi.readGatedQueue`), so the gate below judges
+   * exactly the listing `pendingGate` ahead of it parsed, over an offset
+   * neither of them composed.
+   */
+  readonly readGatedQueue: (ctx: GateContext) => Promise<GatedQueue>;
   /** The read-only git helpers the gates read a commit through. */
   readonly git: {
     /**
@@ -97,17 +103,6 @@ export interface GateEngine {
       ref: string,
       path: string,
     ) => Promise<string | null>;
-    /**
-     * The queue directory's entry files as of a commit, each already read;
-     * `null` when that commit carries no queue directory. The engine's own
-     * (`FlumeApi.git.readQueueAtRef`), so a gate judges exactly the listing
-     * the dispatcher would.
-     */
-    readonly readQueueAtRef: (
-      repoRoot: string,
-      ref: string,
-      dirRel: string,
-    ) => Promise<QueueFile[] | null>;
     /**
      * Whether `ancestor` reaches `descendant` — non-strict, so a sha is its
      * own ancestor and a cursor carried forward unchanged answers `true`. A
@@ -173,48 +168,6 @@ export interface HarnessGatesOptions {
 const short = (sha: string): string => sha.slice(0, 7);
 
 /**
- * The queue directory's path relative to the state root — read off the two
- * resolved values the engine hands every gate, never a second spelling of
- * `plan/pending`, which a chain is free to relocate. Host-native, being
- * `relative`'s answer: the caller that hands it to git folds it
- * (`underStateRoot`, `layout.ts`).
- */
-const queueRel = (ctx: GateContext): string =>
-  relative(ctx.flumeDir, ctx.pendingDir);
-
-/**
- * The queue's entry files as the gated commit holds them, or `null` when the
- * commit carries no queue directory at all.
- *
- * Read through the engine's own queue-at-ref read, never a listing composed
- * here: which files under the directory are entries is the engine's fact, and
- * a second spelling of it is a gate judging a queue the dispatcher does not
- * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
- * never rediscovered*).
- *
- * A relocated state root (`stateRootRel` absent) has no tracked copy in the
- * commit's tree to read, so the disk read stands in — the same branch, for
- * the same reason, the engine's own pending gate takes.
- */
-async function queueAtCommit(
-  ctx: GateContext,
-  engine: GateEngine,
-): Promise<QueueFile[] | null> {
-  if (ctx.stateRootRel === undefined) {
-    try {
-      return readQueueOnDisk(ctx.pendingDir);
-    } catch {
-      return null;
-    }
-  }
-  return engine.git.readQueueAtRef(
-    ctx.repoRoot,
-    ctx.commitSha,
-    underStateRoot(ctx.stateRootRel, queueRel(ctx)),
-  );
-}
-
-/**
  * An at-ref reader bound to the gated commit, one read per distinct path.
  *
  * The memo is the caller's job by the cite resolver's contract, and this is
@@ -263,18 +216,18 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
     name: "per cites resolve",
     when: "afterCommit",
     async run(ctx) {
-      const files = await queueAtCommit(ctx, engine);
-      if (files === null) {
+      const queue = await engine.readGatedQueue(ctx);
+      if (queue.files === null) {
         return {
           ok: false,
-          message: `${queueRel(ctx)} missing at ${short(ctx.commitSha)}`,
+          message: `${queue.rel} missing at ${short(ctx.commitSha)}`,
         };
       }
       // Each file's own bytes, so an unparseable entry names its file here
       // the way the pending gate ahead of this one already named it — that
       // gate is what proves the queue parses at all, and this one runs only
       // behind it.
-      const queued = files.map(
+      const queued = queue.files.map(
         (f) => JSON.parse(f.raw) as { tag: string; per?: unknown },
       );
       if (queued.length === 0) {

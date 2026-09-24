@@ -1,9 +1,9 @@
 /**
  * The pending ledger's I/O: the queue directory's listing, every way a tick
- * reads the entry files under it, the chain-less read a CLI verb counts
- * through, the relocation check those reads turn on, the fence verdict that
- * decides whose read may survive a parse failure, and the one rewrite that
- * retires what a wave shipped.
+ * reads the entry files under it, the queue a gate's own commit holds, the
+ * chain-less read a CLI verb counts through, the relocation check those reads
+ * turn on, the fence verdict that decides whose read may survive a parse
+ * failure, and the one rewrite that retires what a wave shipped.
  *
  * Calls that share one fact each — where the ledger lives, which
  * alphabet it is read out of, and whether git can see it at all — so they
@@ -27,6 +27,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
+import type { GateContext } from "./Gate.js";
 import * as git from "./git.js";
 import type { Logger } from "./log.js";
 import { escapesRoot, gitPath, matchesAny, namespacedJoin } from "./paths.js";
@@ -220,14 +221,13 @@ export function readQueueOnDisk(dir: string): QueueFile[] | null {
  * of that commit's tree: {@link readQueueOnDisk}'s at-ref twin, and `null`
  * for the same fact — the directory is not in that tree.
  *
- * Exported because `pendingGate` (`src/builtinGates.ts`) judges the commit it
- * is attached to and the package's own gates judge theirs, and a second
- * spelling of "list the directory, then read each file" is how a gate comes
- * to read a queue the dispatcher does not (`.claude/rules/engineering.md`,
- * *A fact the engine holds is reported, never rediscovered*).
- *
  * `dirRel` is repo-relative in git's own alphabet; both legs hand it to git
- * unchanged.
+ * unchanged. A **gate** asking what queue the commit it is attached to holds
+ * asks {@link readGatedQueue} below rather than this: which ref, which
+ * offset, and what a relocated root reads instead are that question's facts,
+ * and a gate composing them is one divergence from judging a queue the gate
+ * beside it never parsed (`.claude/rules/engineering.md`, *A fact the engine
+ * holds is reported, never rediscovered*).
  */
 export async function readQueueAtRef(
   repoRoot: string,
@@ -249,6 +249,110 @@ export async function readQueueAtRef(
         "",
     })),
   );
+}
+
+/**
+ * What {@link readGatedQueue} reads a gated commit's queue with — the five
+ * resolved values every {@link GateContext} already carries, so a gate hands
+ * its own context straight in and nothing here is re-derived from disk or
+ * from the environment (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
+ */
+export type GatedQueueContext = Pick<
+  GateContext,
+  "repoRoot" | "commitSha" | "stateRootRel" | "flumeDir" | "pendingDir"
+>;
+
+/**
+ * The queue a gated commit holds: where its directory sits, in each of the
+ * two spellings a gate needs, and the entry files that commit carries under
+ * it.
+ */
+export interface GatedQueue {
+  /**
+   * The queue directory relative to the **state root**, in git's alphabet —
+   * the name a gate's message calls the queue by (`plan/pending` by default,
+   * and whatever a chain relocated it to otherwise).
+   */
+  readonly rel: string;
+  /**
+   * The same directory relative to the **repo root**, in git's alphabet —
+   * what a pathspec or a touched-path comparison is composed from — and
+   * `undefined` for a state root relocated outside the repo, which no commit
+   * can name at all.
+   */
+  readonly dirRel: string | undefined;
+  /**
+   * The entry files as that commit holds them, sorted, each already read; or
+   * `null` for no readable queue — absent from the commit's tree, or, on the
+   * relocated root's disk leg, present and unreadable. A gate refuses on
+   * `null` rather than judging the empty queue it is not
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  readonly files: QueueFile[] | null;
+}
+
+/**
+ * The one read of {@link GatedQueue} — what `pendingGate`
+ * (`src/builtinGates.ts`) judges and what a chain's own gate judges through
+ * the seam that reports it (`FlumeApi.readGatedQueue`, `src/flumeApi.ts`).
+ * Two gates on one commit read one queue, or the divergence is a gate
+ * refusing over a listing the gate beside it passed
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ *
+ * `spec/pending.md`, *Dispatch reads come from the tip, not the tree*: the
+ * files come out of the gated commit's own tree, never the working tree — a
+ * disk read here would see trunk's queue even while gating a commit that has
+ * not merged to trunk yet.
+ *
+ * Keyed by `ctx.stateRootRel`, the state root's offset from the *primary*
+ * repo root (`spec/chain.md`, *What a gate receives*), never by rebasing
+ * `ctx.flumeDir` onto `ctx.repoRoot`: under an `afterCommit` gate
+ * `ctx.repoRoot` is a worktree that mirrors the primary checkout's tracked
+ * layout at that same offset, while `ctx.flumeDir` is the primary checkout's
+ * own state root and is never nested under the worktree — `relative` between
+ * the two climbs out through the worktree root whether or not the state root
+ * is actually relocated, misreading every real `afterCommit` tick as
+ * relocated and falling back to the primary checkout's on-disk (pre-commit)
+ * copy.
+ *
+ * Absent `stateRootRel` — a genuinely relocated state root — has no shared
+ * tracked history to read the gated commit's copy out of, so it reads the
+ * disk instead: the same branch, for the same fact, that {@link
+ * readQueueFiles} takes for a dispatch read. Its throw folds
+ * into the `null` the reader already carries for an absent queue: a gate's
+ * verdict on either is the same refusal, and the fold is stated here rather
+ * than caught twice by the callers.
+ *
+ * The offset and the queue's own leg are folded once, here, rather than at
+ * each reader: `relative` answers in the host's dialect and every consumer of
+ * these two values hands them to git — a tree listing at a ref, a
+ * touched-path comparison, a message naming a path an operator greps for —
+ * where a backslash matches nothing (`.claude/rules/posture-sweep.md`, *A
+ * repo-relative path composed with `node:path`*).
+ */
+export async function readGatedQueue(
+  ctx: GatedQueueContext,
+): Promise<GatedQueue> {
+  const rel = gitPath(relative(ctx.flumeDir, ctx.pendingDir));
+  if (ctx.stateRootRel === undefined) {
+    let files: QueueFile[] | null;
+    try {
+      files = readQueueOnDisk(ctx.pendingDir);
+    } catch {
+      files = null;
+    }
+    return { rel, dirRel: undefined, files };
+  }
+  // Both halves are in git's alphabet already — the offset as the engine
+  // reports it, the leg as folded above — so this is a plain join.
+  const dirRel = `${ctx.stateRootRel}/${rel}`;
+  return {
+    rel,
+    dirRel,
+    files: await readQueueAtRef(ctx.repoRoot, ctx.commitSha, dirRel),
+  };
 }
 
 /**

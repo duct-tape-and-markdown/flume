@@ -6,7 +6,7 @@
  * project-specific check; promote new gates here only when ≥2 chains want them.
  */
 
-import { join, relative } from "node:path";
+import { relative } from "node:path";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
 import type { Phase } from "./Phase.js";
@@ -21,14 +21,13 @@ import {
   matchesAny,
   queueFenceViolations,
 } from "./paths.js";
-import { readQueueAtRef, readQueueOnDisk } from "./pendingLedger.js";
+import { readGatedQueue } from "./pendingLedger.js";
 import { execFileWithShimRetry } from "./spawnShim.js";
 import {
   entryTagFromFileName,
   parsePendingQueue,
   type EntryExtension,
   type PendingEntry,
-  type QueueFile,
 } from "./PendingSchema.js";
 
 /**
@@ -351,52 +350,21 @@ export function pendingGate(opts: PendingGateOptions): Gate {
     name: "pending-gate",
     when: opts.when ?? "afterCommit",
     async run(ctx: GateContext): Promise<GateResult> {
-      // spec/pending.md "The pending queue": `ctx.pendingDir` is the one
-      // resolved value (`Chain.pendingDir ?? "plan/pending"`, absolute,
-      // under `ctx.flumeDir`) — the gate and the dispatcher can no longer
-      // check two different queues. `displayPath` is only for messages:
-      // flumeDir-relative, matching the pre-`ctx.pendingDir` text.
-      const displayPath = relative(ctx.flumeDir, ctx.pendingDir);
-      // spec/pending.md "Dispatch reads come from the tip, not the tree":
-      // the gate judges the commit it is attached to, not whatever the
-      // working tree happens to hold — a disk read here would see trunk's
-      // queue even while gating a commit that hasn't merged to trunk yet
-      // (`.claude/rules/engineering.md` "Loud or nothing").
-      // `readQueueAtRef` (`src/pendingLedger.ts`) resolves the queue
-      // directory as of `ctx.commitSha` instead — keyed by `ctx.stateRootRel`,
-      // the state root's offset from the *primary* repo root (spec/chain.md
-      // "What a gate receives"), not by rebasing `ctx.flumeDir` onto
-      // `ctx.repoRoot`: under `afterCommit` `ctx.repoRoot` is a worktree that
-      // mirrors the primary checkout's tracked layout at that same offset,
-      // while `ctx.flumeDir` is the primary checkout's own state root and is
-      // never nested under the worktree — `relative(ctx.repoRoot,
-      // ctx.flumeDir)` climbs out through the worktree root regardless of
-      // whether the state root is actually relocated, misreading every real
-      // afterCommit tick as relocated and falling back to the primary
-      // checkout's on-disk (pre-commit) copy. Absent `stateRootRel` (a
-      // genuinely relocated state root) has no shared tracked history to read
-      // the gated commit's copy from, so it stays the disk read.
-      //
-      // The offset and the queue's own leg are joined and folded once, here,
-      // rather than at each of the two readers below: `relative` answers in
-      // the host's dialect and every consumer of this value hands it to git
-      // — a tree listing at a ref, a touched-path comparison — where a
-      // backslash matches nothing (`.claude/rules/posture-sweep.md`, *A
-      // repo-relative path composed with `node:path`*).
-      const queueDirRel =
-        ctx.stateRootRel === undefined
-          ? undefined
-          : gitPath(join(ctx.stateRootRel, displayPath));
-      let files: QueueFile[] | null;
-      if (queueDirRel === undefined) {
-        try {
-          files = readQueueOnDisk(ctx.pendingDir);
-        } catch {
-          files = null;
-        }
-      } else {
-        files = await readQueueAtRef(ctx.repoRoot, ctx.commitSha, queueDirRel);
-      }
+      // spec/pending.md "The pending queue": which queue the commit under
+      // inspection holds is the engine's own read (`readGatedQueue`,
+      // `src/pendingLedger.ts`) — the ref it resolves against, the state
+      // root's offset it is keyed by, the relocated root's disk leg and the
+      // null that stands for no readable queue all live there, so this gate
+      // and every chain gate reading the same commit judge one listing
+      // (`.claude/rules/engineering.md`, *A fact the engine holds is
+      // reported, never rediscovered*). `GatedQueue.rel` is the name the
+      // messages below call the queue by; `GatedQueue.dirRel` is what the
+      // claim check compares touched paths against.
+      const {
+        rel: displayPath,
+        dirRel: queueDirRel,
+        files,
+      } = await readGatedQueue(ctx);
       if (files === null) {
         return { ok: false, message: `${displayPath} missing after commit` };
       }

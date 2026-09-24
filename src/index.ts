@@ -71,6 +71,14 @@ export { type GitStatusRecord } from "./git.js";
 
 export { type StandardSchemaV1 } from "./standardSchema.js";
 
+// And for `FlumeApi.readGatedQueue`: what it takes — the slice of a
+// `GateContext` the read is keyed by, so a chain gate can hand one on — and
+// the three facts it answers about the queue that commit holds.
+export {
+  type GatedQueue,
+  type GatedQueueContext,
+} from "./pendingLedger.js";
+
 export {
   composePendingEntry,
   parsePendingQueue,

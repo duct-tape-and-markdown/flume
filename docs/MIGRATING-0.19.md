@@ -101,17 +101,23 @@ engine's own listing rather than composing its own:
 -  join(ctx.stateRootRel, "plan", "pending.json"),
 -);
 -const parsed = parsePending(raw ?? "");
-+const files = await api.git.readQueueAtRef(
-+  ctx.repoRoot,
-+  ctx.commitSha,
-+  `${ctx.stateRootRel}/plan/pending`,
-+);
-+const parsed = parsePendingQueue(files ?? []);
++const queue = await api.readGatedQueue(ctx);
++const parsed = parsePendingQueue(queue.files ?? []);
 ```
 
-`readQueueAtRef` answers `null` when that commit carries no queue directory —
-a git tree holds no empty directory, so absent and empty are one fact, and it
-is the same branch `pendingGate` takes.
+`readGatedQueue` takes the gate's own context and answers three facts about
+the queue that commit holds: `rel`, the directory's name relative to the state
+root, for a message; `dirRel`, its repo-relative spelling in git's alphabet,
+for a pathspec or a touched-path comparison; and `files`, every entry file
+already read out of the commit's tree. Nothing about the offset is composed by
+the gate — including the one case that is not a tree read at all, a state root
+relocated outside the repo, which no commit can name and which falls back to
+the disk listing.
+
+`files` is `null` when no queue was readable — absent from that commit's tree
+(a git tree holds no empty directory, so absent and empty are one fact), or
+unreadable on the relocated root's disk leg. It is the same value, from the
+same read, that `pendingGate` refuses on.
 
 ## 3. The parse surface is per-entry, and a `ParseError` names a file
 
@@ -125,7 +131,7 @@ renamed and one takes a different shape:
 | `composePendingList(ext)` | `composePendingEntry(ext)` |
 
 `files` is a `QueueFile[]` — `{ file, raw }` per entry, the shape
-`readQueueAtRef` and the engine's own disk listing hand back. `ParseResult`
+`readGatedQueue` and the engine's own disk listing hand back. `ParseResult`
 is unchanged otherwise: `ok`, `entries`, `errors`.
 
 `composePendingEntry` validates **one entry**, not a list — a chain keeping

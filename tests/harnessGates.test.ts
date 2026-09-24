@@ -42,7 +42,7 @@ import {
 import { pendingGate } from "../src/builtinGates.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import { isAncestor, readFileAtRef, statusRecords } from "../src/git.ts";
-import { readQueueAtRef } from "../src/pendingLedger.ts";
+import { readGatedQueue, readQueueAtRef } from "../src/pendingLedger.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
@@ -61,17 +61,19 @@ import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 /**
- * The engine, as a chain hands it in: the real builtin, the real at-ref
- * reader and the real status decode, never a stand-in. A stubbed reader
- * would decide for itself what "absent from the commit" means, which is half
- * of what the records gate is; a stubbed decode would re-author, by the
- * tester's hand, the porcelain vocabulary the clean-tree gate exists to read
- * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
- * wrote*).
+ * The engine, as a chain hands it in: the real builtin, the real at-ref and
+ * gated-queue reads and the real status decode, never a stand-in. A stubbed
+ * reader would decide for itself what "absent from the commit" means, which
+ * is half of what the records gate is — and, for the queue, which offset the
+ * gated commit's listing comes out of; a stubbed decode would re-author, by
+ * the tester's hand, the porcelain vocabulary the clean-tree gate exists to
+ * read (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
  */
 const engine: GateEngine = {
   pendingGate,
-  git: { readFileAtRef, readQueueAtRef, isAncestor, statusRecords },
+  readGatedQueue,
+  git: { readFileAtRef, isAncestor, statusRecords },
 };
 
 /** The state root every case addresses, repo-relative. */
@@ -839,9 +841,9 @@ it("the clean-tree gate takes its status records from the engine rather than spa
   ];
   const wired: GateEngine = {
     pendingGate,
+    readGatedQueue,
     git: {
       readFileAtRef,
-      readQueueAtRef,
       isAncestor,
       statusRecords: async (cwd: string) => {
         calls.push(cwd);
