@@ -525,9 +525,10 @@ function cleanTreeGate(
  *
  * Each slice is keyed on **its own file** (`layout.ts`, `planStatePath`),
  * which is what one file per writer buys this gate: a commit stamping one
- * slice's state is judged on that slice's invariants alone, and a slice that
- * states none and holds no cursor — the inbox's lane stamps — is skipped on
- * the path like any other untouched file (`JUDGED_SLICES`, `planState.ts`).
+ * slice's state is judged on that slice's invariants alone, and a slice whose
+ * file the commit left alone is skipped on the path. A slice stating neither
+ * a rule nor a cursor would be skipped on every commit instead, and the
+ * package declares none today (`JUDGED_SLICES`, `planState.ts`).
  *
  * The **leading-run** half of the bound — whether the span a cursor stepped
  * over was one this tick actually derived or swept — is judgement, and stays

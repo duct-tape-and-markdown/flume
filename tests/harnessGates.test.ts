@@ -913,15 +913,18 @@ const writeSweepState = (
     rotation,
   });
 
+/** Every lane's drained-run stamp as the inbox slice's own writer takes them. */
+type LaneStamps = NonNullable<PlanStateWriteOf<"plan-inbox">["drainedRuns"]>;
+
 /**
  * The inbox slice's state, same writer — plan state that holds **no cursor**,
- * so a commit carrying it alone is what the gate's path skip is about now
- * that both cursor files are judged.
+ * so a commit carrying it alone is judged on the slice's own rule and on
+ * nothing the ancestry probe reads.
  */
-const writeInboxState = (): void =>
-  writePlanState(join(repo, STATE_ROOT), "plan-inbox", {
-    drainedRuns: { lint: { run: "17", titles: [] } },
-  });
+const writeInboxState = (
+  drainedRuns: LaneStamps = { lint: { run: "17", titles: [] } },
+): void =>
+  writePlanState(join(repo, STATE_ROOT), "plan-inbox", { drainedRuns });
 
 /**
  * A real commit the gated branch cannot reach — what a cursor stepped
@@ -947,6 +950,7 @@ async function offHistory(): Promise<string> {
 const sliceState = (): Gate => named("slice-state");
 const STATE_PATH = planStatePath(STATE_ROOT, "plan-derive");
 const SWEEP_STATE_PATH = planStatePath(STATE_ROOT, "plan-sweep");
+const INBOX_STATE_PATH = planStatePath(STATE_ROOT, "plan-inbox");
 
 it("the slice-state gate refuses a plan commit whose derive cursor is not an ancestor of the tip", async () => {
   const stray = await offHistory();
@@ -1034,9 +1038,10 @@ it("a plan commit touching no judged slice's state file is skipped by the slice-
   expect(judged.skipped).toBeUndefined();
 
   await write("src/widget.ts", `export const widget = "shipped";\n`);
-  const span = commitAll("build: ship the work, write no cursor");
+  const span = commitAll("build: ship the work, write no plan state");
   expect(span.touchedPaths).not.toContain(STATE_PATH);
   expect(span.touchedPaths).not.toContain(SWEEP_STATE_PATH);
+  expect(span.touchedPaths).not.toContain(INBOX_STATE_PATH);
 
   const skipped = await sliceState().run(
     ctxFor(span, { phaseName: "build", entry: assigned("MINE") }),
@@ -1050,13 +1055,12 @@ it("a plan commit touching no judged slice's state file is skipped by the slice-
   );
   expect(skipped.message).toContain("moves nothing this gate holds");
 
-  // And plan state holding no cursor at all is the same skip, on the same
-  // path test: the inbox slice's file is one file per writer like any other,
-  // and no field of it is a cursor, so this gate has nothing to judge
-  // (`spec/harness.md`, *Plan state as declared state*).
+  // And the skip is the path's verdict rather than a slice's: the inbox's
+  // file holds no cursor, and a commit carrying it alone is still judged —
+  // on the one rule that slice states about itself.
   writeInboxState();
   const sibling = commitAll("plan: stamp the inbox's drained run alone");
-  expect(sibling.touchedPaths).toContain(planStatePath(STATE_ROOT, "plan-inbox"));
+  expect(sibling.touchedPaths).toContain(INBOX_STATE_PATH);
   expect(sibling.touchedPaths).not.toContain(STATE_PATH);
   expect(sibling.touchedPaths).not.toContain(SWEEP_STATE_PATH);
 
@@ -1064,9 +1068,73 @@ it("a plan commit touching no judged slice's state file is skipped by the slice-
     ctxFor(sibling, { phaseName: "plan-inbox" }),
   );
   expect(elsewhere.ok).toBe(true);
-  expect(elsewhere.skipped).toBe(
-    "no judged slice's state file is in the gated span",
+  expect(elsewhere.skipped).toBeUndefined();
+});
+
+/**
+ * The inbox's lane stamps, held to the one thing its own file says about a
+ * move: a lane the slice has drained stays drained. No cursor rides this
+ * file, so the ancestry halves are not reached and the rule is the whole
+ * verdict (`harness/planState.ts`, `JUDGED_SLICES`).
+ */
+it("a plan commit that stamps a new lane beside a standing one is not refused", async () => {
+  writeInboxState({ lint: { run: "17", titles: ["a lint title"] } });
+  const standing = commitAll("plan: stamp the lane this slice drained");
+  // Vacuity pin: the base really carries the lane the commit below stands a
+  // second one beside, so the pair is a real move and not a first write.
+  expect(standing.touchedPaths).toContain(INBOX_STATE_PATH);
+  expect(
+    await sliceState().run(ctxFor(standing, { phaseName: "plan-inbox" })),
+  ).toMatchObject({ ok: true });
+
+  // A second lane drained this tick, the first copied forward, and the first
+  // advanced to a later run: each keeps every lane the base stamped.
+  writeInboxState({
+    lint: { run: "17", titles: ["a lint title"] },
+    e2e: { run: "5", titles: [] },
+  });
+  const beside = commitAll("plan: drain a second lane, copy the first forward");
+  expect(
+    await sliceState().run(ctxFor(beside, { phaseName: "plan-inbox" })),
+  ).toMatchObject({ ok: true });
+
+  writeInboxState({
+    lint: { run: "23", titles: [] },
+    e2e: { run: "5", titles: [] },
+  });
+  const advanced = commitAll("plan: drain the first lane's later run");
+  expect(
+    await sliceState().run(ctxFor(advanced, { phaseName: "plan-inbox" })),
+  ).toMatchObject({ ok: true });
+});
+
+it("the slice-state gate refuses a plan commit that drops a lane's drained-run stamp", async () => {
+  writeInboxState({
+    lint: { run: "17", titles: ["a lint title"] },
+    e2e: { run: "5", titles: [] },
+  });
+  const standing = commitAll("plan: stamp the two lanes this slice drained");
+  expect(standing.touchedPaths).toContain(INBOX_STATE_PATH);
+  const passed = await sliceState().run(
+    ctxFor(standing, { phaseName: "plan-inbox" }),
   );
+  // Judged, not skipped — so the refusal below is the slice's own rule and
+  // not a gate that refuses every inbox state it is handed.
+  expect(passed).toMatchObject({ ok: true });
+  expect(passed.skipped).toBeUndefined();
+
+  // The lane the tick did not drain, not copied forward. Nothing about the
+  // file says it was ever drained after this, so the slice wakes back into
+  // the run it already filed.
+  writeInboxState({ e2e: { run: "5", titles: [] } });
+  const span = commitAll("plan: rewrite the stamp file without the lane it drained");
+
+  const refused = await sliceState().run(ctxFor(span, { phaseName: "plan-inbox" }));
+
+  expect(refused.ok).toBe(false);
+  expect((refused.details ?? "").split("\n")).toHaveLength(1);
+  expect(refused.details).toContain("plan-inbox state at");
+  expect(refused.details).toContain("1 lane(s) (lint)");
 });
 
 /**

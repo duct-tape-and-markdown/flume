@@ -416,6 +416,32 @@ const coveredOnlyGrowsWhileOpen: SliceStateRule<"plan-sweep"> = (at, base) => {
 };
 
 /**
+ * A lane the slice has drained stays drained. A lane missing from the map
+ * reads as never drained — the one absence this state reads as a state
+ * ({@link InboxStateSchema}) — so a tick that drops a standing lane's stamp
+ * is not clearing a note: it re-opens that lane over the run it already
+ * filed, and the slice wakes into findings it has already queued
+ * (`spec/harness.md`, *CI lanes as a findings source*).
+ *
+ * Read on the lane key alone. Where a standing lane's stamp *moves to* is
+ * the forge's to order and not this file's — a run identity is opaque here
+ * ({@link DrainedRun}) — so a lane restamped at another run is a drain like
+ * any other, and only its disappearance is the loss no later tick can see.
+ */
+const lanesKeepTheStampsTheyHave: SliceStateRule<typeof INBOX_PHASE> = (
+  at,
+  base,
+) => {
+  if (base === undefined) return undefined;
+  const standing = at.drainedRuns ?? {};
+  const dropped = Object.keys(base.drainedRuns ?? {}).filter(
+    (lane) => !Object.hasOwn(standing, lane),
+  );
+  if (dropped.length === 0) return undefined;
+  return `the drained-run stamp the base carried for ${dropped.length} lane(s) (${dropped.join(", ")}) is gone from the file, so the next tick wakes this slice over a run it already drained`;
+};
+
+/**
  * Every slice's invariants over its own state file, under the slice that
  * writes it — **the one table a judge of plan state reads**, and the one a
  * fourth slice's rule joins.
@@ -424,8 +450,7 @@ const coveredOnlyGrowsWhileOpen: SliceStateRule<"plan-sweep"> = (at, base) => {
  * is a typecheck failure rather than a state file nothing judges. A slice
  * whose state holds no invariant says so with an empty list, spelled at the
  * table: derive's cursor is bounded by its step through history and by
- * nothing its own file says, and the inbox's lane stamps are bounded by
- * neither.
+ * nothing its own file says.
  *
  * **The rules ride the table beside the accessors, not the caller.** A gate
  * holding a state file at two refs asks this table what that slice forbids,
@@ -436,7 +461,7 @@ const coveredOnlyGrowsWhileOpen: SliceStateRule<"plan-sweep"> = (at, base) => {
 const SLICE_STATE_RULES = {
   "plan-derive": [],
   "plan-sweep": [stampsOnlyOnTheTickThatCloses, coveredOnlyGrowsWhileOpen],
-  [INBOX_PHASE]: [],
+  [INBOX_PHASE]: [lanesKeepTheStampsTheyHave],
 } as const satisfies { [S in PlanSlice]: readonly SliceStateRule<S>[] };
 
 /** Any slice's state, as the one table above holds them all. */
@@ -642,9 +667,10 @@ export const readCursor = (
  * a judge of plan state walks, and what it skips a touched file on.
  *
  * Read off the two tables rather than listed: a slice holds a cursor, or
- * states a rule, or there is nothing about its file to judge. The inbox's
- * lane stamps are the third case today, and a slice that gains its first
- * rule joins this set by gaining it.
+ * states a rule, or there is nothing about its file to judge. No slice the
+ * package declares is the third case today — the inbox joined this set by
+ * stating a rule over its lane stamps, not by being added to a list — and a
+ * fourth slice joins the same way.
  */
 export const JUDGED_SLICES: readonly PlanSlice[] = (
   Object.keys(SLICE_STATE_RULES) as readonly PlanSlice[]

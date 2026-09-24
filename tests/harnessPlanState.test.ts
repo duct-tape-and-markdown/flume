@@ -191,14 +191,54 @@ it("a slice stating no rule over its own state is spelled at the table, not left
     cursors: [{ field: "derivedThrough", value: DERIVED, before: SWEPT }],
   });
 
-  // And a slice holding neither a cursor nor a rule is not judged at all: the
-  // inbox's lane stamps are bounded by nothing its own file states, so a
-  // commit carrying that file alone has nothing for the pair to rule on.
-  expect(PLAN_SLICES.length).toBeGreaterThan(JUDGED_SLICES.length);
-  expect(JUDGED_SLICES).not.toContain(INBOX_PHASE);
-  expect([...JUDGED_SLICES]).toEqual(
-    PLAN_SLICES.filter((slice) => slice !== INBOX_PHASE),
-  );
+  // And the judged set is read off the two tables rather than listed: the
+  // inbox holds no cursor at all, so it is in this set exactly because it
+  // states a rule over its own lane stamps.
+  expect(JUDGED_SLICES).toContain(INBOX_PHASE);
+  expect([...JUDGED_SLICES].sort()).toEqual([...PLAN_SLICES].sort());
+});
+
+it("a plan commit that drops a lane's drained-run stamp is not a move the inbox's own invariants allow", async () => {
+  const base = await artifactOf(INBOX_PHASE, {
+    drainedRuns: { lint: { run: "17", titles: ["a lint title"] }, e2e: "41" },
+  });
+  // Vacuity pin: the base really stamps the two lanes every arm below is
+  // about, so none of them rules over an empty map.
+  expect(
+    Object.keys((base.parsed as { drainedRuns: object }).drainedRuns),
+  ).toEqual(["lint", "e2e"]);
+
+  // Advancing one standing lane and adding a third beside it is the slice's
+  // ordinary tick: nothing left the file.
+  const advanced = await artifactOf(INBOX_PHASE, {
+    drainedRuns: {
+      lint: { run: "23", titles: [] },
+      e2e: "41",
+      types: { run: "5", titles: ["a types title"] },
+    },
+  });
+  expect(judgeSliceState(INBOX_PHASE, advanced, base)).toEqual({
+    problems: [],
+    // The inbox holds no cursor, so the judged pair is its rule alone.
+    cursors: [],
+  });
+
+  // Dropping one is the loss no cursor and no later read can show: the lane
+  // reads as never drained again, and the slice re-wakes over the same run.
+  const dropped = judgeSliceState(
+    INBOX_PHASE,
+    await artifactOf(INBOX_PHASE, { drainedRuns: { e2e: "41" } }),
+    base,
+  ).problems;
+  expect(dropped).toHaveLength(1);
+  expect(dropped[0]).toContain("lint");
+  expect(dropped[0]).not.toContain("e2e");
+
+  // Dropping the map whole is the same loss spelled as an absent field, and
+  // a base with no artifact at all is no pair for the rule to read.
+  const emptied = await artifactOf(INBOX_PHASE, {});
+  expect(judgeSliceState(INBOX_PHASE, emptied, base).problems).toHaveLength(1);
+  expect(judgeSliceState(INBOX_PHASE, emptied, undefined).problems).toEqual([]);
 });
 
 it("each plan slice reads and writes only its own state file", async () => {
