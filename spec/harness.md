@@ -142,6 +142,39 @@ state as declared state*). What a slice needs to
 know before it reads a file, it knows from where the file is.
 
 
+### A tick puts work down
+
+The entry is the goal and the judge's unit; the tick is not the bound. A
+build agent that has landed a coherent, green segment of its entry and judges
+the rest to be another tick's work commits what it has and writes a
+**continuing note** at `notes/continuing/<TAG>.md` — what landed, what is
+next, and where the next tick should look — the way a park writes one under
+`notes/parked/`. Location is kind (*Records as one file each*): the `shipped`
+predicate reads a commit carrying a note at that path as not shipped, so the
+entry stays in the queue with its span on the trunk; the judge's named-lines
+gate skips the commit as it skips a park, since the lines belong to the
+completed entry and not to a segment of it; the per-entry refusal does not
+hold the entry, and the handoff routes it back to build rather than to the
+drain, since nothing about a continuation is plan's to reconcile. The next
+tick on that entry is handed the note beside the prior-attempt record, and
+the note leaves with the tick that completes the entry: its ship commit
+removes the note with the entry's file.
+
+Continuing is the agent's declaration, never an inference. A tick that runs
+out of context, turns, or wall clock without writing one is a preempt, and
+its uncommitted work dies with the worktree as it always has. What makes the
+declaration reachable is the budget line the adapter hands the agent
+mid-session (`spec/chain.md`, *The agent seam*): the build prompt names the
+thresholds at which an agent lands what is green and writes the note.
+
+**Why:** a bound the planner chose is right by accident. Measured over the
+scheduler's derivation, entries plan sized in ten minutes ran sixty to
+seventy-six, and one revert over a single mis-declared line discarded the
+longest of them whole. A span with a partial outcome loses at most a segment.
+This is an experiment, and the verdict log is where it is judged: reverts and
+parks per shipped entry, plan's share of agent time, and the median build
+invocation, before and after.
+
 ### CI lanes as a findings source
 
 A declared CI lane is a findings source beside the inbox. The inbox slice
@@ -296,7 +329,7 @@ declaration already resolves.
 | `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
 | `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree, under the declared `shell` (its own row), with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the trunk the span landed onto (`FLUME_LANDED_ON_SHA`, `afterMerge` only), the state root and its repo-relative offset, the touched paths — so a gate that measures trunk before and after this entry reads `FLUME_LANDED_ON_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong, and a gate that needs what the tick saw reads `FLUME_BASE_SHA`. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
-| `agents` | Model per phase, extra agent arguments, and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
+| `agents` | Model per phase, extra agent arguments, the model's context window in tokens (`contextWindow`, forwarded to the adapter's budget line — `spec/chain.md`, *The agent seam*), and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `shell` | The shell every command line the declaration carries runs under — a shell gate's, a script gate's, `setup.restore` — `sh` by default. Chain load refuses a shell the host does not resolve, naming the site that would have run it, since a win32 host resolves `sh` from one launch shell and not another; a bad shell surfaces at load, never hours in as a worktree that would not provision. |
 | `setup` | Directories to install and a restore command, run under the declared `shell` in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. `serialize` is a property of the declared restore: a declaration naming no restore has nothing to serialize, parses, and holds nothing — the engine's own install is never what it covers. |

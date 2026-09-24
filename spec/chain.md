@@ -252,6 +252,28 @@ presentation, and it lives in the same module.
   nor `ChainModule.agent` runs every tick with permissions skipped. The other
   defaults: `claude` off `PATH`, `outputFormat: "text"`, `model` unset (no
   `--model` flag emitted), `extraArgs` appended after the format flags.
+- **The adapter reports the budget mid-session.** `claudeCode({ budget })`
+  declares the model's context window in tokens and, optionally, a cadence in
+  tool calls and a list of thresholds as fractions of that window. Declared,
+  the adapter registers a hook on that invocation alone — through the
+  provider's per-invocation settings, never the user's — that hands the
+  agent a **budget line** after a tool call: context used against the
+  window, elapsed wall clock, and tool calls so far, at every Nth call and
+  at each threshold crossed. The hook is the adapter's own script, and it
+  reads what the provider hands it: the transcript path in the hook's input,
+  from which the latest assistant message's usage — input, cache-read, and
+  cache-creation tokens together are the context that turn occupied
+  (`.claude/rules/platform-facts.md`, *stream-json assistant events carry
+  per-message usage*) — the tool-call count, and the first message's clock
+  all follow, so the hook holds no state and the adapter passes it nothing
+  it could not read. Facts, never a verdict: what an agent does at eighty
+  percent is the prompt's to say (`spec/harness.md`, *A tick puts work
+  down*). Spend is not on the line — it is priced only on the result event,
+  where the verdict's invocation row already reads it. Undeclared, no hook
+  is registered and nothing changes. The window is declared rather than
+  looked up, because a model's context size is a provider fact the engine
+  does not hold; a chain that declares no window still gets elapsed and
+  calls.
 - **Decorators wrap an `Agent` and return one, and the stack order is
   load-bearing.** `withTerminalRenderer` replaces `inv.onStdout`, so
   `withSessionCapture` must sit **inside** it to tee the raw stream —

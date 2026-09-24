@@ -409,3 +409,17 @@ a vitest folds unhandled errors into `success`, at which point the fixture
 that produces the contradiction (`UNHANDLED_TEST`,
 `tests/harnessRunner.test.ts`) stops producing it and its case reds with
 nothing wrong in the runner.
+
+## stream-json assistant events carry per-message usage
+
+`claude -p --output-format stream-json --verbose` emits each `assistant`
+event with the API message whole, `message.usage` included: `input_tokens`,
+`cache_read_input_tokens`, `cache_creation_input_tokens`, `output_tokens`.
+Their sum less output is the context that turn occupied, so a reader of the
+stream — or of the session transcript the same events land in — knows the
+live context size after every turn. The headless documentation describes
+usage on the final `result` event only, so a reader that trusts the page
+builds a budget on the result and learns nothing until the run is over.
+Measured on a captured session, 2026-09-24; the fact expires when an
+`assistant` event arrives without `message.usage`, at which point the
+budget hook's transcript read returns nothing and the hook says so.

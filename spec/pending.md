@@ -408,6 +408,11 @@ exists.
 - **The engine holds no vocabulary for why.** Not "park", not "channel-only" — those are one
   chain's words for one chain's workflow. The engine records that the chain said no.
 - **The commit still lands either way.** This gates *classification*, not *landing*.
+- **A no is not always a park.** A chain that lets an agent land a segment and continue on a
+  later tick declares that through the same predicate: `not-shipped` says the chain declined
+  to remove the entry, and whether the reason was a refusal or a continuation is the chain's
+  vocabulary, read from wherever it told its agent to say so (`spec/harness.md`, *A tick puts
+  work down*).
 - **Nothing is inferred.** Not from paths — `entry.files` is a partition prediction rather than
   a ship contract (above), and a phase's channel globs would be the same inference one layer
   over. Not from the agent's output stream, which is state the engine is holding rather than
