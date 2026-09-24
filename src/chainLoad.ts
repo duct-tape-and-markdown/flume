@@ -292,7 +292,7 @@ export async function loadChainModule(
   // the factory under a second `default`, or the factory as `ns.default`
   // directly — and which one is not read off the module in hand
   // (`.claude/rules/platform-facts.md`, *tsx decides a module's interop shape
-  // from its whole import graph*). Both are normalized here because keying on
+  // from the nearest `package.json` `type`*). Both are normalized here because keying on
   // one would refuse a chain the other spelling loads fine.
   const d = ns.default as Record<string, unknown> | undefined;
   const interop =

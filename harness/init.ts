@@ -246,7 +246,7 @@ export function protocolTemplatePath(): string {
  * default export so a consumer's `chain.ts` never has to unwrap it: what
  * `tsImport` hands back for a default-only `.ts` module is not that module's
  * to decide (`.claude/rules/platform-facts.md`, *tsx decides a module's
- * interop shape from its whole import graph*).
+ * interop shape from the nearest `package.json` `type`*).
  *
  * It annotates itself with `DeclarationInput`, so the shape the schema
  * refuses at load is the shape a consumer's editor completes and their
