@@ -1,1 +1,55 @@
-[]
+[
+  {
+    "tag": "ESCALATION-ARM-READS-ITS-GRACE-OFF-THE-ANNOUNCE-LINE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/cli.test.ts",
+          "description": "the ignores-SIGTERM escalation arm: drop the teardownMs ceiling for the announce line the sibling case already reads"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Replace the escalation arm's wall-clock teardown ceiling with the event-based read of the tick's own announce line",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "The ignores-SIGTERM case holds no wall-clock comparison; \"the declared grace timed this, not the default\" is read off the tick's announce line, and nothing in the arm is sized for a quiet host.",
+    "notes": "Two records claim this: the inbox flake finding and the ONE-STATE-ROOT-LISTING-PROVES-ITS-ABSENCE note, whose entry a 4141ms teardown reverted against the 2500ms ceiling (case alone: 1436ms). The sibling case already reads `signalled; waiting for <n>ms (supervisorPolicy.killGraceMs)`. A wider or tighter number is not the fix — the cited section rules the assertion event-based. Whole diff is the file holding the case, so no tests[] line is judgeable."
+  },
+  {
+    "tag": "THE-SPAWN-SCAN-FOLLOWS-A-PROCESS-START-THROUGH-A-HELPER",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "tests/helpers/spawnBudget.ts",
+          "description": "seed the spawn propagation from a test-helper's exported names that reach a process start, not from the lane file alone"
+        },
+        {
+          "path": "tests/subprocessHelper.test.ts",
+          "description": "the scan's own case for a helper-mediated spawner"
+        },
+        {
+          "path": "tests/loopSupervisor.test.ts",
+          "description": "declare the lane's one budget at file scope, as the widened scan then requires"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Seed the spawn scan from a test-helper's names that reach a process start, so a file spawning only via makeFixture declares the lane's budget",
+    "per": {
+      "path": "spec/worktrees.md",
+      "section": "The default test lane must stay fast"
+    },
+    "acceptance": "The scan reports tests/loopSupervisor.test.ts as a spawning file carrying no file-scope budget, that file declares the budget, and the default lane is green.",
+    "tests": [
+      "the spawn scan names a lane file whose only process start is reached through a test-helper import"
+    ],
+    "notes": "`reachingNames` is per-SourceFile, so `makeFixture` (tests/helpers/dispatcherFixture.ts, which calls `exec`) is invisible and tests/loopSupervisor.test.ts inherits vitest's 5s default — it timed out there beside a wave, reverting CITATION-VERDICTS-NAME-THEIR-SITES-IN-THE-FIRST-LINE. The carve-out the file declares is for TIMERS (`waitFor`), not for process starts. Measured: that is the only default-lane file the widening newly names."
+  }
+]
