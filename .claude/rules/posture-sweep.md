@@ -8,8 +8,11 @@ Binds on plan's **Sweep** dimension.
 
 ## The pages are the authority as they read this tick
 
-The sweep domain is `src/`, `harness/`, `tests/`, `bin/`, `examples/`, `scripts/`
-(build surface that no typecheck reads, so the sweep is its only lens). The posture pages
+The sweep domain is `src/`, `harness/`, `bin/`, `examples/`, `scripts/`
+(the last three are build surface no typecheck reads, so the sweep is their
+only lens). `tests/` is not a frontier of its own: a test is read as part of
+the neighborhood of the module it exercises, and a test-only finding files
+against that module. The posture pages
 are `.claude/rules/engineering.md` and `.claude/rules/engine-boundary.md`.
 
 Every section of those pages, as written at this tick, is in scope. Nothing
@@ -126,8 +129,11 @@ vacuous verdict over load-bearing machinery.
   citing the owning section of the posture page.
 - A cohesion finding — a module carrying a second job, a job with no file,
   a helper or vocabulary spelled three ways, a sequence copied across legs
-  (`engineering.md`, *A module is one job*) → a **pending entry** naming the
-  target shape, on that section's own terms.
+  (`engineering.md`, *A module is one job*) → an **accepted-debt line**,
+  like any other shape, unless the shape can change behavior or hide a
+  failure, in which case it is the correctness-adjacent entry above. The
+  three-notes rule below is how a persistent cohesion family reaches the
+  queue: once, naming the target shape, in a wave of its own.
 - Pure shape — duplication, narration drift, style, a vacuity whose subject
   is not load-bearing → an **accepted-debt line in the plan commit body**.
   A later rotation re-noting the same debt is cheaper than a queue that

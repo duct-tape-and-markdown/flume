@@ -130,7 +130,7 @@ export const declaration: DeclarationInput = {
   slices: {
     enabled: ["plan-inbox", "plan-derive", "plan-sweep"],
     sweep: {
-      domain: ["src/**", "harness/**", "tests/**", "bin/**", "examples/**", "scripts/**"],
+      domain: ["src/**", "harness/**", "bin/**", "examples/**", "scripts/**"],
       posturePages: [".claude/rules/engineering.md", ".claude/rules/engine-boundary.md"],
     },
   },

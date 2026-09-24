@@ -243,10 +243,13 @@ ticks produce by default, and this section is how the sweep sees it.
   pointer is the split's to move, in the same commit, or the split has left a
   green citation at the wrong door.
 
-A finding under this section files as an **entry**, never a debt line: the
-refactor is behavior-free, and the typecheck, the suite, and the export and
-citation pins hold it. The entry names the target shape — which file takes
-which job — so build moves code rather than judging it.
+A finding under this section is **debt until it recurs or bites**: the
+refactor is behavior-free, so it queues only when the shape can change
+behavior or hide a failure, or when the same family is noted three times in
+one rotation (`posture-sweep.md`, *Routing*). When it does queue, the entry
+names the target shape — which file takes which job — so build moves code
+rather than judging it, and the typecheck, the suite, and the export and
+citation pins hold the move.
 
 **Why:** seams stay sound while files accumulate, because nothing re-reads a
 module for what it has become; a job appended today is the module someone
