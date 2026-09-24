@@ -10,7 +10,7 @@
       "new": [
         {
           "path": "docs/MIGRATING-0.19.md",
-          "description": "the ledger cutover a consumer takes"
+          "description": "the 0.19 series a consumer takes: the ledger cutover and the plan-state split"
         }
       ],
       "edit": [
@@ -104,19 +104,20 @@
     "summary": "`Chain.pendingDir` replaces `Chain.pendingPath`: the ledger is a directory of `<tag>.json`, its own `*.json` is the listing, and a ship `git rm`s exactly what shipped",
     "per": {
       "path": "spec/pending.md",
-      "section": "The ledger is a directory — one entry per file"
+      "section": "The ledger is a directory \u2014 one entry per file"
     },
-    "acceptance": "Every queue read and the ship resolve `Chain.pendingDir`; a `*.json` directly under it is an entry and a subdirectory is not walked; a file whose `tag` disagrees with its filename is refused naming both; an absent or empty directory reads as nothing pending; `flume status` and `flume check` read the directory.",
+    "acceptance": "Every queue read and the ship resolve `Chain.pendingDir`; a `*.json` directly under it is an entry and a subdirectory is not walked; a file whose `tag` disagrees with its filename is refused naming both; `flume status` and `flume check` read the directory; `docs/MIGRATING-0.19.md` carries the series' breaking changes, the plan-state split among them.",
     "tests": [
       "a *.json directly under the pending directory is an entry and a subdirectory is not walked",
       "an entry file whose tag disagrees with its filename is refused naming both",
       "a parse failure names the entry file it read",
-      "an absent pending directory reads as nothing pending",
       "a ship removes exactly the shipped entries' files and edits no other entry",
       "flume status reports pending: unparsable when one entry file is malformed"
     ],
-    "pins": [],
-    "notes": "Tag uniqueness becomes the filesystem's, so the composed list schema's duplicate issue goes; the `pendingGate` drift blockquote is already retired. This repo's own live queue is an operator cutover — `.flume/` is outside every phase's fence — and the legacy file rides planArtifacts so a plan tick can `git rm` it, the allowance LEGACY_QUESTIONS_REL already takes.",
+    "pins": [
+      "an absent pending directory reads as nothing pending"
+    ],
+    "notes": "Tag uniqueness becomes the filesystem's, so the composed list schema's duplicate issue goes. This repo's own live queue is an operator cutover \u2014 `.flume/` is outside every phase's fence \u2014 and the legacy file rides planArtifacts so a plan tick can `git rm` it. MIGRATING-0.19 is the series page: it also owes the plan-state split (b6f882c3) and `PLAN_STATE_PATH` leaving `SHARED_PROMPT_DATA_KEYS`.",
     "contractTouching": true,
     "observedFiles": [
       ".flume/plan/notes/THE-LEDGER-IS-A-DIRECTORY-ONE-ENTRY-PER-FILE.md",
@@ -258,7 +259,7 @@
     "summary": "A build tick stakes `<git-common-dir>/flume/claims/<slug>` before provisioning and drops it when the attempt ends; selection skips a claimed entry",
     "per": {
       "path": "spec/pending.md",
-      "section": "Claims — an entry in flight is left alone"
+      "section": "Claims \u2014 an entry in flight is left alone"
     },
     "acceptance": "A claim exists from before its entry's worktree is provisioned until the attempt ends, with the ship or the teardown; `TickContext.claimed` and `TickResult.claimedTags` report the set the tick read; selection skips a claimed entry and a claim held by a dead pid is reclaimed.",
     "tests": [
@@ -311,7 +312,7 @@
     "summary": "pendingGate's third check: a gated commit leaves a claimed entry's file byte-identical, or is refused naming the entry and its holder",
     "per": {
       "path": "spec/pending.md",
-      "section": "`pendingGate` — validation and fence pre-check as an opt-in builtin"
+      "section": "`pendingGate` \u2014 validation and fence pre-check as an opt-in builtin"
     },
     "acceptance": "A commit that edits or removes a claimed entry's file fails pendingGate naming the entry and the holding pid; an edit to an unclaimed entry passes; the check runs afterMerge over the merged tree and `opts.hint` appends to its message as to the other two.",
     "tests": [
@@ -321,6 +322,122 @@
       "opts.hint appends to the claim-check violation message"
     ],
     "pins": [],
-    "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. It is the section's only merged-tree gate: there is no duplicate refusal beside it — the drain folds a duplicate instead (THE-DRAIN-FOLDS-A-DUPLICATE-FINDING)."
+    "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. It is the section's only merged-tree gate: there is no duplicate refusal beside it \u2014 the drain folds a duplicate instead (THE-DRAIN-FOLDS-A-DUPLICATE-FINDING)."
+  },
+  {
+    "tag": "THE-HANDOFF-READS-THE-RECORD-SET-THE-ENGINE-HOLDS",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "src/Phase.ts",
+          "description": "`TickResult.priorAttempts` beside `pickableAfter`"
+        },
+        {
+          "path": "src/Dispatcher.ts",
+          "description": "re-read the store after the tick's work, onto the handoff result"
+        },
+        {
+          "path": "harness/handoff.ts",
+          "description": "`refusedForPlan` reads the reported set, not the no-commit tables"
+        },
+        {
+          "path": "tests/Dispatcher.test.ts",
+          "description": "the reported set"
+        },
+        {
+          "path": "tests/harnessHandoff.test.ts",
+          "description": "the leg over reported records"
+        },
+        {
+          "path": "tests/harnessWindows.test.ts",
+          "description": "the window/handoff agreement pin, now over one evidence"
+        },
+        {
+          "path": "docs/CHAIN-AUTHORING.md",
+          "description": "the field a handoff may read"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "`TickResult` reports the standing prior-attempt records, so a handoff reads the refusal set instead of rebuilding it from no-commit and merge modes",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A fact the engine holds is reported, never rediscovered"
+    },
+    "acceptance": "`TickResult` carries the prior-attempt store as the tick left it; `refusedForPlan` (`harness/handoff.ts`) decides off that set rather than off `PLAN_RESOLVES_NO_COMMIT`/`PLAN_RESOLVES_MERGE`; the inbox window and the handoff read one evidence, so the two-table agreement they were kept in by hand has no second side.",
+    "tests": [
+      "TickResult carries the standing prior-attempt records as the tick left them",
+      "the default handoff routes a walled entry to the inbox off the reported record set"
+    ],
+    "pins": [],
+    "notes": "`TickContext.priorAttempts` already reports the set at tick start (`src/Dispatcher.ts`); the handoff runs after and has no such field, which is why the package reconstructs it from modes. Reported as a fact \u2014 what a chain does about a standing refusal stays the chain's (`engine-boundary.md`). The store is written mid-tick, so the handoff's copy is a fresh `readAll()`, not the tick-start one."
+  },
+  {
+    "tag": "THE-WAVE-MERGE-STAGE-IS-ITS-OWN-MODULE",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [
+        {
+          "path": "src/waveMerge.ts",
+          "description": "the wave's merge/gate/revert/ledger stage: takes the per-entry results, answers the merge outcomes and gate rows the verdict needs"
+        }
+      ],
+      "edit": [
+        {
+          "path": "src/waveTick.ts",
+          "description": "`runFanout` calls the stage; the ship lock's span becomes a signature, not a brace pair"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "Split `runFanout`'s merge stage \u2014 the ~500-line try from the cherry-pick loop to `clearMergingMarkers` \u2014 out of `src/waveTick.ts` into its own module",
+    "per": {
+      "path": ".claude/rules/engineering.md",
+      "section": "A module is one job"
+    },
+    "acceptance": "`src/waveTick.ts` holds the wave's provisioning and agent fanout; the merge stage is a named function in its own file, taking the per-entry results and answering the merge outcomes and gate rows. Behavior-free: tsc, the default lane, and the export and citation pins hold it.",
+    "tests": [],
+    "pins": [],
+    "notes": "Observed by the tick that shipped SIBLING-TICKS-TAKE-TURNS-AT-GIT: after the ship lock landed, the stage is one `try` whose only marker is an indent level (src/waveTick.ts is 1234 lines). No behavior moves \u2014 a split that changes an outcome is the wrong split."
+  },
+  {
+    "tag": "THE-CASCADE-EXAMPLE-DECLARES-BUILD-FIRST",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "examples/cascade-chain.ts",
+          "description": "`phases: [build, ...planSlices]`; the list's narration names budget priority, and the ladder stays `nextPhase`'s"
+        },
+        {
+          "path": "tests/examples.test.ts",
+          "description": "the order the example ships"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The cascade example declares build ahead of its plan slices, and says the phase list is budget priority \u2014 its cascade lives in `nextPhase`, not in the list",
+    "per": {
+      "path": ".claude/rules/engine-boundary.md",
+      "section": "Surface, not prescription"
+    },
+    "acceptance": "`examples/cascade-chain.ts` returns `phases: [build, ...planSlices]`, and the prose at the list names it as the budget's priority (`spec/harness.md`, *The phases*) distinct from the dependency ladder `nextPhase` holds. `tests/examples.test.ts` pins the shipped order.",
+    "tests": [
+      "the cascade example declares build first and its plan slices after it"
+    ],
+    "pins": [],
+    "notes": "Decides nothing for the example itself \u2014 its ladder holds one flag at a time \u2014 but the list is public surface a chain author copies, and copied into a chain with no ladder it inverts the loop's economics at the default budget of one. The `Ladder order is dependency order` comment stays true of `nextPhase` and must not be moved onto the list."
   }
 ]
