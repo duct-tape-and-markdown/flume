@@ -714,6 +714,96 @@ export interface TickVerdict {
 }
 
 /**
+ * What a producer hands {@link buildTickVerdict} — the facts, in the shape
+ * each producer already holds them. Optional here means the same thing the
+ * verdict's own field docs mean by "absent/empty": a fact the tick did not
+ * hit. A producer passes what it has, empty or undefined alike, and never
+ * spells the emptiness test itself.
+ *
+ * Deliberately not exported: it is the builder's parameter, named by no
+ * shipped signature, so it earns no place on the package surface
+ * (`.claude/rules/engineering.md`, *An export earns its consumer*).
+ */
+interface TickVerdictFacts {
+  phaseName: string;
+  tags: readonly string[];
+  committed: boolean;
+  noCommit?: NoCommitMode | undefined;
+  tipMoved?: boolean | undefined;
+  declined?: boolean | undefined;
+  bystanderCheckpointSha?: string | undefined;
+  gateResults: readonly ReportedGateResult[];
+  shippedTags: readonly string[];
+  mergeOutcomes?: readonly TickVerdictMergeOutcome[] | undefined;
+  invocations?: readonly TickVerdictInvocation[] | undefined;
+  provisionFailures?: readonly ProvisionFailure[] | undefined;
+  stakeLosses?: readonly StakeLoss[] | undefined;
+  mergeFailures?: readonly MergeFailure[] | undefined;
+  gateFailures?: readonly GateFailure[] | undefined;
+  clearedPriorAttempts?: readonly string[] | undefined;
+  summary: string;
+  /**
+   * The trunk tip, read by the producer at the point its own stage says the
+   * tip is final — after a tick's own commits landed, or after the picks a
+   * refused ledger rewrite left standing. Not read here, because which read
+   * point is the right one is the producer's fact, not the shaping's.
+   */
+  headSha: string;
+}
+
+/**
+ * The one shaping of a {@link TickVerdict}: every field, in one order, under
+ * one rule for which optional fact is omitted.
+ *
+ * Two producers call it — the dispatcher at the end of a tick, and the wave's
+ * merge stage for the partial verdict a refused pending-ledger rewrite rides
+ * out on. They differ in the facts they hold and the summary they name,
+ * nothing else, so the sequence is one function with two callers rather than
+ * two copies that agree by discipline (`.claude/rules/engineering.md`, *A
+ * module is one job*). A field the shape gains cannot reach one producer's
+ * verdict and miss the other's.
+ *
+ * `at` is read here because here is when the verdict was built; every array
+ * is copied, so a producer's own bookkeeping cannot mutate a verdict it
+ * already handed over.
+ */
+export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
+  return {
+    phaseName: facts.phaseName,
+    tags: [...facts.tags],
+    committed: facts.committed,
+    ...(facts.noCommit ? { noCommit: facts.noCommit } : {}),
+    ...(facts.tipMoved ? { tipMoved: facts.tipMoved } : {}),
+    ...(facts.declined ? { declined: facts.declined } : {}),
+    ...(facts.bystanderCheckpointSha
+      ? { bystanderCheckpointSha: facts.bystanderCheckpointSha }
+      : {}),
+    gateResults: [...facts.gateResults],
+    shippedTags: [...facts.shippedTags],
+    mergeOutcomes: [...(facts.mergeOutcomes ?? [])],
+    invocations: [...(facts.invocations ?? [])],
+    ...(facts.provisionFailures?.length
+      ? { provisionFailures: [...facts.provisionFailures] }
+      : {}),
+    ...(facts.stakeLosses?.length
+      ? { stakeLosses: [...facts.stakeLosses] }
+      : {}),
+    ...(facts.mergeFailures?.length
+      ? { mergeFailures: [...facts.mergeFailures] }
+      : {}),
+    ...(facts.gateFailures?.length
+      ? { gateFailures: [...facts.gateFailures] }
+      : {}),
+    ...(facts.clearedPriorAttempts?.length
+      ? { clearedPriorAttempts: [...facts.clearedPriorAttempts] }
+      : {}),
+    summary: facts.summary,
+    headSha: facts.headSha,
+    at: new Date().toISOString(),
+  };
+}
+
+/**
  * Two files under the state dir, both stable paths, neither a
  * dogfood convention. Their names live in `STATE_ROOT_NAMES`
  * (`src/paths.ts`) with the rest of the state root's layout, so the job

@@ -74,6 +74,7 @@ import { runSingleton } from "./singletonTick.js";
 import type { AgentBounds, AttemptContext } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import {
+  buildTickVerdict,
   throwFacts,
   type GateFailure,
   type MergeFailure,
@@ -1046,38 +1047,35 @@ export class Dispatcher {
     // `Dispatcher.tick()` unit tests), so it costs the existing computed
     // fields (`summary` et al.) nothing extra.
     //
-    // headSha/at (spec/loop.md "The tick verdict"): the trunk tip read here,
+    // headSha (spec/loop.md "The tick verdict"): the trunk tip read here,
     // after this phase's own commits (if any) already landed — never
     // inferred from which paths the last commit touched, and left behind
-    // even on a quiet no-commit tick.
-    const verdict: TickVerdict = {
+    // even on a quiet no-commit tick. The shaping itself, `at` included, is
+    // `buildTickVerdict`'s (`src/tickVerdict.ts`), shared with the partial
+    // verdict a refused ledger rewrite rides out on.
+    const verdict = buildTickVerdict({
       phaseName: phase.name,
       tags: tags ?? [],
       committed: result.committed,
-      ...(noCommit ? { noCommit } : {}),
-      ...(tipMoved ? { tipMoved } : {}),
-      ...(declined ? { declined } : {}),
-      ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
-      gateResults: [...result.gateResults],
-      shippedTags: [...result.shippedTags],
-      mergeOutcomes: mergeOutcomes ?? [],
-      invocations: invocations ?? [],
-      ...(provisionFailures && provisionFailures.length > 0
-        ? { provisionFailures }
-        : {}),
+      noCommit,
+      tipMoved,
+      declined,
+      bystanderCheckpointSha,
+      gateResults: result.gateResults,
+      shippedTags: result.shippedTags,
+      mergeOutcomes,
+      invocations,
+      provisionFailures,
       // The wave's lost stake races, on the artifact the next tick reads —
       // the same records `result.stakeLosses` already handed `handoff`, so
       // the two surfaces cannot disagree about which entries a sibling took.
-      ...(stakeLosses && stakeLosses.length > 0 ? { stakeLosses } : {}),
-      ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
-      ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
-      ...(clearedPriorAttempts && clearedPriorAttempts.length > 0
-        ? { clearedPriorAttempts }
-        : {}),
+      stakeLosses,
+      mergeFailures,
+      gateFailures,
+      clearedPriorAttempts,
       summary,
       headSha: await git.revParse(this.opts.repoRoot),
-      at: new Date().toISOString(),
-    };
+    });
 
     return {
       hibernated: false,

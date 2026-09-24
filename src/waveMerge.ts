@@ -46,6 +46,7 @@ import type { AttemptOutcome } from "./tickAttempt.js";
 import type { TickLegContext } from "./tickLeg.js";
 import { checkMergedTipUnmoved, liveForeignClaimPid } from "./tipVerify.js";
 import {
+  buildTickVerdict,
   gateFailureSignature,
   MAX_FAILURE_SIGNATURE,
   reportedGateRow,
@@ -772,24 +773,22 @@ export async function runWaveMerge(
           perEntry,
           [...mergeReverted, ...revertRefused],
         );
-        const verdict: TickVerdict = {
+        const verdict = buildTickVerdict({
           phaseName: phase.name,
           tags: provisioned.map((e) => e.tag),
           committed: committedWave,
-          ...(noCommit ? { noCommit } : {}),
-          ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
-          ...(waveDeclined ? { declined: waveDeclined } : {}),
-          ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
-          gateResults: [...allGateResults],
+          noCommit,
+          tipMoved: waveTipMoved,
+          declined: waveDeclined,
+          bystanderCheckpointSha,
+          gateResults: allGateResults,
           shippedTags,
           mergeOutcomes,
           invocations,
-          ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
-          ...(mergeFailures.length > 0 ? { mergeFailures } : {}),
-          ...(gateFailures.length > 0 ? { gateFailures } : {}),
-          ...(clearedPriorAttempts.length > 0
-            ? { clearedPriorAttempts }
-            : {}),
+          provisionFailures,
+          mergeFailures,
+          gateFailures,
+          clearedPriorAttempts,
           summary:
             shippedTags.length > 0
               ? `${phase.name} shipped ${shippedTags.join(", ")} — pending-ledger rewrite refused (${why})`
@@ -799,8 +798,7 @@ export async function runWaveMerge(
           // landed — a fresh read rather than reusing `preUpdate` so this
           // stays correct if a future revision moves the read point.
           headSha: await git.revParse(repoRoot),
-          at: new Date().toISOString(),
-        };
+        });
         throw new WaveLedgerRefusal(err, verdict);
       }
       const updSha = update.sha;
