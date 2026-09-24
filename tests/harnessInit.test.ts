@@ -23,7 +23,7 @@
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -31,10 +31,17 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   consumerIgnores,
   harnessInit,
+  parseDeclaration,
+  planSliceWindows,
+  readPlanState,
   DEFAULT_STATE_ROOT,
+  planStatePath,
   protocolTemplatePath,
   type HarnessInitResult,
+  type PlanSlice,
+  type PlanSliceWindow,
 } from "../harness/index.ts";
+import { INBOX_PHASE, PLAN_SLICES } from "../harness/declaration.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
 import { HELP_TOP, isSubcommand } from "../src/cliHelp.ts";
 import { parsePendingQueue } from "../src/PendingSchema.ts";
@@ -45,6 +52,8 @@ import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   SPAWN_BUDGET_MS,
   TSX_CLI,
+  exec,
+  gitOut,
   runNodeStreams,
 } from "./helpers/subprocess.ts";
 
@@ -261,6 +270,199 @@ it("the queue directory flume-harness init writes reads as an empty pending queu
   });
   expect(parsed.entries).toEqual([]);
 });
+
+/**
+ * A repository with one commit in it, for the cases below that need an
+ * adopting tip. Not `makeScratchRepo`: that fixture roots at a bay, and init
+ * refuses a state root that is already there — the whole subject here is what
+ * the adoption puts in one.
+ *
+ * Returns the tip it committed, so a case compares the cursors init stamped
+ * against the sha git reports rather than against one the writer reported
+ * about itself.
+ */
+async function commitInto(
+  dir: string,
+  files: Record<string, string>,
+): Promise<string> {
+  const opts = { cwd: dir };
+  await exec("git", ["init", "-q", "-b", "main"], opts);
+  await exec("git", ["config", "user.email", "test@example.com"], opts);
+  await exec("git", ["config", "user.name", "Test User"], opts);
+  await exec("git", ["config", "commit.gpgsign", "false"], opts);
+  for (const [rel, body] of Object.entries(files)) {
+    const path = join(dir, ...rel.split("/"));
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, body, "utf8");
+  }
+  await exec("git", ["add", "-A"], opts);
+  await exec("git", ["commit", "-q", "-m", "seed"], opts);
+  return (await gitOut(dir, ["rev-parse", "HEAD"])).trim();
+}
+
+/**
+ * The plan state is the other artifact an adopted repository needs before its
+ * first tick that no tick writes (`spec/harness.md`, *Adoption and upgrade*).
+ * Absent, a cursor reads as "nothing derived yet" — which is honest for a
+ * state root that has been ticking and true of nothing in a repository that
+ * adopted the package this minute: the first derive tick opens over the whole
+ * declared spec corpus and the sweep goes live over the whole declared domain,
+ * all of it written before the package was ever part of this repository.
+ *
+ * Seeded at the tip the adopter ran init on, so the first plan wave is about
+ * what lands next.
+ */
+it("flume-harness init seeds each cursor-carrying slice's state at the tip it adopted", async () => {
+  const tip = await commitInto(repoRoot, { "spec/loop.md": "# Loop\n" });
+
+  const result = await harnessInit({ repoRoot });
+  const stateRootAbs = join(repoRoot, result.stateRoot);
+
+  // The clause as a fact on the result, not inferred from the files: the tip
+  // stamped is the one the repository was standing at when init read it.
+  expect(result.planState).toEqual({ kind: "seeded", tip });
+
+  // Read back through the package's own reader — the one every window opens
+  // a cursor through — so a seed this package would refuse reds here rather
+  // than at a consumer's first tick.
+  const states = PLAN_SLICES.map(
+    (slice) => [slice, readPlanState(stateRootAbs, slice)] as const,
+  ).filter(([, state]) => state !== undefined);
+
+  // Non-vacuity, and the general claim in the direction the title makes it:
+  // the seed wrote something, and every sha-valued field across whatever it
+  // wrote stands at the adopting tip — read off the artifacts rather than
+  // from a list of cursor names by the tester's hand.
+  expect(states.length).toBeGreaterThan(0);
+  const stamped = states.flatMap(([, state]) =>
+    Object.values(state as Record<string, unknown>).filter(
+      (value): value is string => typeof value === "string",
+    ),
+  );
+  expect(stamped.length).toBeGreaterThan(0);
+  expect([...new Set(stamped)]).toEqual([tip]);
+
+  // And what each slice starts as, spelled: derive has derived through the
+  // tip; the sweep has swept through it with no rotation open, since a
+  // rotation over a domain whose whole history predates the adoption is a
+  // frontier nobody drew; and the inbox, which carries no cursor, has no file
+  // at all — absence is its declared state.
+  expect(readPlanState(stateRootAbs, "plan-derive")).toEqual({
+    derivedThrough: tip,
+  });
+  expect(readPlanState(stateRootAbs, "plan-sweep")).toEqual({
+    sweptThrough: tip,
+    rotation: { kind: "closed" },
+  });
+  expect(readPlanState(stateRootAbs, INBOX_PHASE)).toBeUndefined();
+
+  // Reported among what was written, like every other file: `written` is the
+  // list a consumer commits their adoption from, so a cursor on disk that no
+  // line names is one that first commit drops — and the paths come off the
+  // package's own layout, which is where the fence and the accessor read them
+  // from too.
+  for (const [slice] of states) {
+    expect(result.written).toContain(planStatePath(result.stateRoot, slice));
+  }
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The agreement gate behind the case above (`.claude/rules/engineering.md`,
+ * *A seam gate reads what the real writer wrote*): the writer is `harnessInit`
+ * over a real repository with real history, and the reader is the real derive
+ * window — the one the wake set and the prompt both come off — over the state
+ * the adoption left. A seed at a sha the window cannot resolve, or in a field
+ * it does not read, renders as the bootstrap corpus and would pass every
+ * assertion about the bytes on disk.
+ */
+it("a derive window over the state init seeded opens on no commits rather than the bootstrap corpus", async () => {
+  const tip = await commitInto(repoRoot, { "spec/loop.md": "# Loop\n" });
+  const result = await harnessInit({ repoRoot });
+  const stateRootAbs = join(repoRoot, result.stateRoot);
+
+  const built = planSliceWindows({
+    declaration: parseDeclaration({
+      specLocus: ["spec/**"],
+      fence: { build: ["src/**"] },
+      runner: () => ({ run: async () => [], runAtBase: async () => [], lanes: [] }),
+      slices: { enabled: ["plan-derive"] },
+    }),
+    repoRoot,
+    stateRootRel: result.stateRoot,
+  });
+  const windows = Object.fromEntries(
+    built.map((window) => [window.name, window]),
+  ) as Record<PlanSlice, PlanSliceWindow>;
+  const derive = windows["plan-derive"];
+
+  // Non-vacuity: the corpus a bootstrap window would have listed in full is
+  // really in this tree, committed before the adoption ran — so the empty
+  // window below is the seed's doing rather than an empty repository's.
+  expect(existsSync(join(repoRoot, "spec", "loop.md"))).toBe(true);
+
+  // Not live: the slice the adopter's first tick would otherwise have spent
+  // re-deriving a whole spec history.
+  expect(derive.live({ flumeDir: stateRootAbs, pickable: false })).toBe(false);
+
+  // And what its prompt would have been rendered with, read at the line that
+  // tells the two windows apart: a range window opens on its own count and
+  // names the cursor it counted from; a bootstrap one opens on a bare
+  // announcement and the listing of every file in the locus.
+  const rendered = derive.args({ cwd: repoRoot, flumeDir: stateRootAbs });
+  const specWindow = rendered["SPEC_WINDOW"] ?? "";
+  expect(specWindow.length).toBeGreaterThan(0);
+  expect(specWindow.split("\n")[0]).toBe(
+    `=== 0 commit(s) in the spec locus since ${tip}, among 0 landed alongside ===`,
+  );
+  expect(specWindow).toContain("(no spec changes since the cursor)");
+}, SPAWN_BUDGET_MS);
+
+/**
+ * Adopting before the first commit is a real thing to do — the install smoke
+ * `git init`s a repository and adopts into it without committing — and a
+ * directory that is no checkout at all gives the same answer: no sha for a
+ * cursor to stand at. Not a refusal, so the report has to say it: an adopter
+ * who reads nothing else learns here why their first plan tick opens over
+ * everything they declared.
+ */
+it("flume-harness init over a repository with no commit reports the plan state it left unseeded", async () => {
+  await exec("git", ["init", "-q", "-b", "main"], { cwd: repoRoot });
+
+  const adopted = await runNodeStreams(repoRoot, [TSX_CLI, HARNESS_CLI, "init"]);
+  expect({ code: adopted.code, stderr: adopted.stderr }).toEqual({
+    code: 0,
+    stderr: "",
+  });
+
+  // Non-vacuity: the adoption ran and wrote its files, so the absence below
+  // is this arm's doing rather than a verb that never got in.
+  expect(adopted.stdout).toContain(`wrote     ${DEFAULT_STATE_ROOT}/declaration.ts`);
+
+  // One line about the cursors, and it names the fact rather than a sha it
+  // could not have had.
+  const cursors = adopted.stdout
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("  cursors "));
+  expect(cursors.length).toBe(1);
+  expect(cursors[0] ?? "").toContain("plan state left unseeded");
+
+  // And nothing on disk for it — no slice's state file, and no line in the
+  // written list claiming one.
+  const stateRootAbs = join(repoRoot, DEFAULT_STATE_ROOT);
+  for (const slice of PLAN_SLICES) {
+    expect(readPlanState(stateRootAbs, slice)).toBeUndefined();
+  }
+
+  // The same adoption as a library call, where the fact is typed rather than
+  // printed: a second bare directory inside the same commitless repository.
+  const adopter = join(repoRoot, "adopter");
+  await mkdir(adopter, { recursive: true });
+  const result = await harnessInit({ repoRoot: adopter });
+  expect(result.planState).toEqual({ kind: "no-commit" });
+  for (const slice of PLAN_SLICES) {
+    expect(result.written).not.toContain(planStatePath(result.stateRoot, slice));
+  }
+}, SPAWN_BUDGET_MS);
 
 /**
  * The module scope the two `.ts` files beside it load in (`spec/harness.md`,

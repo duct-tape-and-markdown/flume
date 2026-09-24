@@ -45,8 +45,10 @@ import { mergeIgnoreLines } from "../src/runtimeIgnores.js";
 import { readSelfPackage } from "../src/selfPackage.js";
 
 import { detailOf } from "./exec.js";
+import { resolvesInTree, tipOf } from "./gitRange.js";
 import { consumerIgnores } from "./ignores.js";
-import { queueDir } from "./layout.js";
+import { planStatePath, queueDir } from "./layout.js";
+import { seedPlanState } from "./planState.js";
 
 /** The directory holding this module, in whichever layout it is running from. */
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -170,6 +172,35 @@ export type DependencyOutcome =
    */
   | { readonly kind: "absent"; readonly range: string };
 
+/**
+ * What became of the plan-state clause of adoption — again a **fact, never a
+ * verdict**: init says which tip it stamped the cursors at, or that the
+ * repository named none, and what an unseeded state root then means for the
+ * first tick is the consumer's to read.
+ *
+ * The seed is what keeps a fresh adopter's first plan wave about the
+ * repository's present: with no cursor on disk, derive opens over the whole
+ * of the declared spec locus and the sweep goes live over the whole declared
+ * domain, all of it written before the repository adopted the package
+ * (`cursorWindow.ts`).
+ */
+export type PlanStateOutcome =
+  /** Every cursor-carrying slice's state written, stamped at this tip. */
+  | { readonly kind: "seeded"; readonly tip: string }
+  /**
+   * The repository named no commit for a cursor to stand at, so init wrote
+   * no plan state at all.
+   *
+   * Not a refusal: adopting before the first commit is a real thing to do —
+   * the install smoke does exactly that — and a repository is not obliged to
+   * be a git checkout at the moment it is adopted into. A cursor is a sha,
+   * there is no sha, and a seed here would have to invent one. Degraded but
+   * proceeding, and bounded by what it leaves behind: no state file, which
+   * is the state every window already reads as "nothing derived yet" and
+   * opens in full over (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  | { readonly kind: "no-commit" };
+
 export interface HarnessInitResult {
   /** The repository adopted into, absolute. */
   readonly repoRoot: string;
@@ -189,6 +220,8 @@ export interface HarnessInitResult {
   readonly packageName: string;
   /** What became of the dependency clause. */
   readonly dependency: DependencyOutcome;
+  /** What became of the plan-state clause. */
+  readonly planState: PlanStateOutcome;
 }
 
 /**
@@ -377,6 +410,18 @@ export async function harnessInit(
   const protocol = renderProtocol(template, stateRoot);
   const manifest = await readConsumerManifest(repoRoot);
 
+  // The tip the cursors this adoption seeds will stand at — resolved here,
+  // in the preflight, rather than at the write, so the sha stamped is one
+  // this adoption read before it touched the tree.
+  //
+  // Asked as a question with two answers rather than as a read that throws:
+  // a repository with no commit yet, and a directory that is not a git
+  // checkout at all, both name no tip, and neither is a reason to refuse an
+  // adoption ({@link PlanStateOutcome}). The engine's own predicate answers
+  // it — `HEAD` is a revision like any other, and a second spelling of
+  // "does git resolve this" beside it is the copy that drifts.
+  const tip = resolvesInTree(repoRoot, "HEAD") ? tipOf(repoRoot) : undefined;
+
   await mkdir(namespacedJoin(stateRootAbs), { recursive: true });
   const written: string[] = [];
   for (const [rel, body] of [
@@ -417,6 +462,21 @@ export async function harnessInit(
   await writeFile(namespacedJoin(pendingAbs, QUEUE_KEEP), "", "utf8");
   written.push(`${queueDir(stateRoot)}/${QUEUE_KEEP}`);
 
+  // The plan state, stamped at the tip above: each cursor-carrying slice
+  // starts life having derived and swept everything up to the moment this
+  // repository adopted the package, so its first plan wave is about what
+  // lands after it rather than about the whole history that came before.
+  //
+  // Which slices those are, and what each one's starting state says, is
+  // `planState.ts`'s — the module that owns the artifacts. This one reports
+  // the paths, in git's alphabet, off the same layout the fence and the
+  // accessor read them from.
+  if (tip !== undefined) {
+    for (const slice of seedPlanState(stateRootAbs, tip)) {
+      written.push(planStatePath(stateRoot, slice));
+    }
+  }
+
   // Derived from the engine's own path record, never hand-listed
   // (`ignores.ts`), and merged rather than replacing: a repository's
   // `.gitignore` is the consumer's file and everything already in it stays.
@@ -432,6 +492,7 @@ export async function harnessInit(
     ignoreLines,
     packageName: self.name,
     dependency: await addDependency(manifest, self.name, `^${self.version}`),
+    planState: tip === undefined ? { kind: "no-commit" } : { kind: "seeded", tip },
   };
 }
 

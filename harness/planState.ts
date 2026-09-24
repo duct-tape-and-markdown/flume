@@ -48,7 +48,7 @@ import { z } from "zod";
 
 import { namespacedJoin } from "../src/paths.js";
 
-import { INBOX_PHASE, type PlanSlice } from "./declaration.js";
+import { INBOX_PHASE, PLAN_SLICES, type PlanSlice } from "./declaration.js";
 import { planStatePath } from "./layout.js";
 import { parseOrThrow, strict } from "./refusal.js";
 
@@ -521,15 +521,83 @@ const CURSORS = {
 } as const satisfies Record<AnyCursorField, Cursor>;
 
 /**
+ * The fields of `S`'s own state that hold a git object name — the cursors
+ * that one slice carries, read off its schema's shape rather than listed.
+ *
+ * Spelled once because two tables stand on it: {@link CURSORS}, which must
+ * name every cursor across the slices, and {@link PLAN_STATE_SEEDS}, which
+ * must carry a starting state for every slice that has one and none for the
+ * slice that has not.
+ */
+type CursorFieldsOf<S extends PlanSlice> = {
+  [K in keyof PlanStateOf<S>]-?: PlanStateOf<S>[K] extends string ? K : never;
+}[keyof PlanStateOf<S>];
+
+/**
  * Every field across the slice states that holds a git object name — read off
  * the schemas' own shapes rather than listed, which is what makes
  * {@link CURSORS} exhaustive by the typecheck.
  */
-type AnyCursorField = {
-  [S in PlanSlice]: {
-    [K in keyof PlanStateOf<S>]-?: PlanStateOf<S>[K] extends string ? K : never;
-  }[keyof PlanStateOf<S>];
-}[PlanSlice];
+type AnyCursorField = { [S in PlanSlice]: CursorFieldsOf<S> }[PlanSlice];
+
+/**
+ * What each slice's state file says at a tip nothing has been derived or
+ * swept past yet — the adoption's starting state, as a function of the tip
+ * it is stamped at.
+ *
+ * **A slice carries a seed exactly while it carries a cursor.** The key's
+ * type is read off {@link CursorFieldsOf}, so a slice holding one must state
+ * what it starts as and a slice holding none must state nothing — the inbox's
+ * absence is its declared state ({@link InboxStateSchema}), and a seed for it
+ * would be an adoption claiming a lane was drained by a run that never
+ * happened. A fourth slice added with a cursor is a typecheck failure at this
+ * table rather than a slice silently left unseeded, which every window reads
+ * as "run" over everything.
+ *
+ * The sweep's rotation rides its cursor here for the reason the two share a
+ * file: a stamp with no rotation beside it is half a statement. Closed, so an
+ * adoption opens no rotation over a domain whose whole history predates it —
+ * the frontier re-arms from the first commit that touches the domain past
+ * this stamp (`.claude/rules/posture-sweep.md`, *The stamp*).
+ */
+const PLAN_STATE_SEEDS: {
+  readonly [S in PlanSlice]: [CursorFieldsOf<S>] extends [never]
+    ? undefined
+    : (tip: string) => PlanStateWriteOf<S>;
+} = {
+  "plan-derive": (tip) => ({ derivedThrough: tip }),
+  "plan-sweep": (tip) => ({ sweptThrough: tip, rotation: { kind: "closed" } }),
+  [INBOX_PHASE]: undefined,
+};
+
+/**
+ * Write the starting state of every slice that has one under `stateRoot`,
+ * each cursor stamped at `tip`, and report which slices that was.
+ *
+ * The caller is an adoption laying down a state root (`init.ts`): a state
+ * root with no plan state in it sends the first derive tick over the whole
+ * spec corpus and makes the sweep live over the whole domain, all of it from
+ * before the repository adopted the package.
+ *
+ * `tip` is the caller's, never resolved here: the adoption reads the tip it
+ * ran against in its own preflight, and a second resolution inside the write
+ * would stamp a sha nobody read (`.claude/rules/posture-sweep.md`, *The
+ * stamp*). Written through {@link writePlanState}, so what lands is what this
+ * package's own reader would accept.
+ */
+export function seedPlanState(
+  stateRoot: string,
+  tip: string,
+): readonly PlanSlice[] {
+  const seeded: PlanSlice[] = [];
+  for (const slice of PLAN_SLICES) {
+    const seed = PLAN_STATE_SEEDS[slice];
+    if (seed === undefined) continue;
+    writePlanState(stateRoot, slice, seed(tip));
+    seeded.push(slice);
+  }
+  return seeded;
+}
 
 /** A cursor a plan slice window may be drawn past, by name. */
 export type CursorField = keyof typeof CURSORS;

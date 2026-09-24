@@ -48,6 +48,7 @@ export {
   type DependencyOutcome,
   type HarnessInitOptions,
   type HarnessInitResult,
+  type PlanStateOutcome,
 } from "./init.js";
 
 export {

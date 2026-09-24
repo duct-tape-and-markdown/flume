@@ -63,6 +63,14 @@ async function main(argv: readonly string[]): Promise<number> {
   const here = (path: string): string => relative(result.repoRoot, path) || path;
 
   const lines = result.written.map((path) => `  wrote     ${path}`);
+  // Where the plan state this adoption wrote starts from, or the fact that
+  // it wrote none — the difference between a first plan wave about what
+  // lands next and one about everything that came before it.
+  lines.push(
+    result.planState.kind === "seeded"
+      ? `  cursors   plan state starts at ${result.planState.tip} — nothing before this adoption enters a plan window`
+      : `  cursors   no commit here to start from — plan state left unseeded, so the first plan tick opens over everything the declaration names`,
+  );
   lines.push(
     result.ignoreLines.length === 0
       ? `  ignores   .gitignore already carried every runtime line`
