@@ -46,7 +46,7 @@ Drain the records. Each file in `<records>` is one record: a finding someone lef
 
 Each record routes to exactly one of:
 
-- a **pending entry**, with a `per` cite inside the spec locus ({{SPEC_LOCUS}});
+- a **pending entry**, with a `per` cite inside the spec locus ({{SPEC_LOCUS}}). Read `<pending-now>` first, as you read the question index: a standing entry that already covers this finding takes an amendment to that entry — a widened `files`, a sharpened `acceptance`, one more `tests[]` line — not a sibling filed beside it. Two producers filing one finding is a shape every honest decomposition reaches, so nothing refuses it for you; folding it is this route's job. A duplicate left standing is picked as a second entry over work its sibling already shipped, and comes back a `clean-exit` record a later drain spends a tick dropping;
 - an **open question**, when human input is needed before code can land or no clean cite exists. Read the index above first: it names one file per question already open, and one that covers this finding takes an amendment to that file, not a sibling beside it;
 - **accepted debt**: one line in the commit body with the reason.
 
