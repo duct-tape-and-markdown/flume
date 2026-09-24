@@ -172,9 +172,12 @@ Continuing is the agent's declaration, never an inference. A tick that runs
 out of context, turns, or wall clock without writing one is a preempt, and
 its uncommitted work dies with the worktree as it always has. What makes the
 declaration reachable is the budget line the adapter hands the agent
-mid-session (`spec/chain.md`, *The agent seam*): the build prompt names a threshold for each fact the line can carry — a
-fraction of a declared window, an elapsed clock — and an agent reads the
-ones its line printed; a chain declares the window when it wants the
+mid-session (`spec/chain.md`, *The agent seam*): every phase's prompt names a threshold for each fact the line can carry
+— a fraction of a declared window, an elapsed clock — and the act that
+phase takes at it: build lands what is green and writes the note, derive
+advances its cursor only through the commits it finished, the inbox leaves
+unrouted records on disk, the sweep records what it covered and leaves the
+rotation open. An agent reads the thresholds its line printed; a chain declares the window when it wants the
 percentage arm live, and leaves it undeclared when the clock is the dial.
 
 **Why:** a bound the planner chose is right by accident. Measured over the
