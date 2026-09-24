@@ -659,20 +659,19 @@ it("the inbox window ignores a phase-keyed prior-attempt record whose key matche
 
 /**
  * The same question — "is this refusal only a plan slice's to resolve" —
- * asked by the two readers that carry it, over **one evidence**: the
- * prior-attempt store the engine reports beside the queue it left. This
- * window reads it at a `shouldRun` consult (`TickContext`), the default
- * handoff's refusal leg reads it at the tick that follows (`TickResult`),
- * and both real readers run here. Neither side's table is restated by the
- * test.
+ * asked on the **two surfaces** that carry it, by one reader: this window.
+ * It is consulted at `shouldRun` off a `TickContext`, and again off the
+ * window the default handoff builds from the `TickResult` that follows, and
+ * both real paths run here. No table is restated by the test, and none is
+ * restated by the handoff either.
  *
- * One evidence is the property under test. The handoff used to rebuild this
- * verdict from the tick's own `noCommit` and `entries[].mergeOutcome` — the
- * fates the engine had already stamped onto the very records the window
- * reads — so the two sides agreed only as long as a hand kept two tables in
- * step. Handed the store, the agreement is structural: a mode the engine
- * mints cannot route to the inbox from one surface and nowhere from the
- * other.
+ * One reader is the property under test. The handoff used to answer this for
+ * itself — first from the tick's own `noCommit` and `entries[].mergeOutcome`,
+ * then from a second call to the same classifier behind a build-phase guard —
+ * so the two surfaces agreed only while a hand kept them in step. Handed the
+ * queue and the store on its window, the agreement is structural: the only
+ * way the inbox wakes on one surface and not the other is a fact the handoff
+ * failed to carry, which is what the equality below is about.
  */
 it("the inbox window and the build handoff agree on every prior-attempt mode", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
@@ -694,12 +693,11 @@ it("the inbox window and the build handoff agree on every prior-attempt mode", (
   const windowSays = (mode: PriorAttemptMode): boolean =>
     inbox.live({ flumeDir: stateRoot(), pickable: true, ...facts(mode) });
 
-  // Every slice is dead, so a tick whose wake set carries the inbox got it
-  // there through the handoff's refusal leg and not through an open window.
+  // The real windows, so the handoff's side of this agreement is the very
+  // window the `shouldRun` side asks — the only thing left between them is
+  // whether the handoff hands it the pair it reads.
   const handoff = defaultHandoff(
-    ([INBOX_PHASE, "plan-derive", "plan-sweep"] satisfies PlanSlice[]).map(
-      (name) => ({ name, live: () => false }),
-    ),
+    planSliceWindows({ declaration: declaration(), repoRoot: repo }),
   );
 
   /** One build tick reporting that same store, with the same queue behind it. */

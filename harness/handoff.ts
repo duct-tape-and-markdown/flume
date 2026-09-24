@@ -16,19 +16,22 @@
  * same post-tick re-read the dispatcher took it at, never `isPickableNow`
  * re-run here with a default resolver and an empty capability set. Which
  * phase this handoff is running for is `TickResult.phaseName`, not a copy
- * closed over at construction. A standing build refusal is the record store
- * as the tick left it — `TickResult.priorAttempts` against
- * `TickResult.pendingAfter` — never a re-parse of the agent's final message
- * and never the engine's own fates re-classified into the records they were
- * stamped onto (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
- * What the engine reports, this module reads; what it does not, this module
- * does not invent.
+ * closed over at construction. The queue and the record store the tick left
+ * — `TickResult.pendingAfter` and `TickResult.priorAttempts` — reach the
+ * slices as the engine reported them, never a re-parse of the agent's final
+ * message and never the engine's own fates re-classified into the records
+ * they were stamped onto (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*). What the engine reports, this module reads; what it does not,
+ * this module does not invent.
  *
- * **The taxonomy is keyed by the engine's own types**, and it lives beside
- * the other reader of it rather than here (`standingRefusal.ts`): the inbox
- * slice's window asks the same question of the same records at its
- * `shouldRun` consult, and one table with two callers is what keeps the two
- * from drifting.
+ * **No slice is named here.** A standing build refusal is a window the inbox
+ * slice opens on, over the records it already reads at its own `shouldRun`
+ * consult (`inboxWindow.ts`, `standingRefusal.ts`). This module's job is to
+ * hand every slice the facts the tick reported; deciding which of them mean
+ * one particular slice should run would be a second classifier beside that
+ * window, and a second classifier is how one mode comes to route from one
+ * surface and nowhere from the other (`.claude/rules/engineering.md`, *The
+ * fix lands at the mechanism*).
  *
  * **The slices are a parameter.** Which windows a consumer's slices open
  * over, and how each is computed from disk, belong to the slices; this
@@ -37,10 +40,8 @@
  *
  * **Two answers, one question.** The wake set names which phases the next
  * tick may run; {@link defaultRefusesEntry} names which entries build may be
- * handed when it does. Both are "what does the next tick get", both read only
- * facts the engine reported, and splitting them across two modules would put
- * the wave-level refusal and the per-entry one where neither can see that
- * they classify the same records.
+ * handed when it does. Both are "what does the next tick get", and both read
+ * only facts the engine reported.
  *
  * **One write, beside the routing rather than inside it.** A wave that
  * shipped an entry marked {@link CONTRACT_TOUCHING_FIELD} leaves the stop
@@ -55,18 +56,19 @@
 import { writeFileSync } from "node:fs";
 
 import { namespacedJoin, stopFlagPath } from "../src/paths.js";
-import type { QueueParseFailure } from "../src/PendingSchema.js";
+import type {
+  PendingEntry,
+  QueueParseFailure,
+} from "../src/PendingSchema.js";
 import type { EntryRefusalContext, Phase, TickResult } from "../src/Phase.js";
 import type { PriorAttempt } from "../src/Prompt.js";
 
 import {
   BUILD_PHASE,
-  INBOX_PHASE,
   type HarnessPhase,
   type PlanSlice,
 } from "./declaration.js";
 import { CONTRACT_TOUCHING_FIELD } from "./entryExtension.js";
-import { standingRefusals } from "./standingRefusal.js";
 
 /**
  * A phase's `handoff` as the engine declares it, aliased so the declaration
@@ -77,14 +79,22 @@ export type Handoff = Phase["handoff"];
 
 /**
  * What a slice's liveness predicate is handed: the tick's own reported state
- * root, whether the engine reports anything pickable, and whether the queue
- * this tick read resolved at all.
+ * root, whether the engine reports anything pickable, whether the queue this
+ * tick read resolved at all, and the queue and record store the tick left
+ * behind.
  *
- * All three are read off the `TickResult`, so a predicate never reaches for a
- * cwd, re-derives pickability, or re-parses the queue. A slice wanting more
- * than this is a fact the handoff should be handed, not one the predicate
- * should go find (`.claude/rules/engineering.md`, *A fact the engine holds is
- * reported, never rediscovered*).
+ * Every one of them is read off the `TickResult`, so a predicate never
+ * reaches for a cwd, re-derives pickability, or re-parses the queue. A slice
+ * wanting more than this is a fact the handoff should be handed, not one the
+ * predicate should go find (`.claude/rules/engineering.md`, *A fact the
+ * engine holds is reported, never rediscovered*).
+ *
+ * The queue and the store are here so that the slice which classifies them is
+ * the only thing that does. The inbox slice's standing-refusal leg asks
+ * `standingRefusals` of that pair at its `shouldRun` consult
+ * (`inboxWindow.ts`); handing it the same pair here is what lets one window
+ * answer on both surfaces instead of a compensating arm answering on this
+ * one.
  */
 export interface SliceWindow {
   /** The tick's resolved state root — `TickResult.flumeDir`. */
@@ -103,11 +113,22 @@ export interface SliceWindow {
    * makes "did it resolve" the first question each liveness leg asks, not a
    * detail one of them happens to notice.
    *
-   * Optional rather than required, like `TickFacts`' own fields
-   * (`sliceWindow.ts`): a hand-built window that omits it reads as a queue
-   * that resolved, which is the answer that leaves the wake set where it was.
+   * Optional rather than required, like the two facts below it: a hand-built
+   * window that omits it reads as a queue that resolved, which is the answer
+   * that leaves the wake set where it was.
    */
   readonly queueParseFailure?: QueueParseFailure | undefined;
+  /**
+   * The queue as the tick left it — `TickResult.pendingAfter`.
+   *
+   * Optional for the same reason, and absent reads the same way a reader
+   * handed no queue answers: no standing refusal (`standingRefusal.ts`).
+   * Every dispatcher-built surface carries it, so no live tick takes that
+   * arm.
+   */
+  readonly pending?: readonly PendingEntry[] | undefined;
+  /** The record store as the tick left it — `TickResult.priorAttempts`. */
+  readonly priorAttempts?: ReadonlyMap<string, PriorAttempt> | undefined;
 }
 
 /**
@@ -192,34 +213,6 @@ export function defaultRefusesEntry(ctx: EntryRefusalContext): boolean {
 }
 
 /**
- * Whether a standing refusal only a plan slice can resolve is keyed to an
- * entry this tick's queue still carries.
- *
- * **This is the inbox slice's own liveness question, over the inbox slice's
- * own evidence.** The engine reports the record store as the tick left it
- * (`TickResult.priorAttempts`) beside the queue it left
- * (`pendingAfter`), so the handoff asks {@link standingRefusals} — the one
- * function that slice's window asks — rather than rebuilding the answer from
- * the wave's `noCommit` and each entry's `mergeOutcome`. Those two fields
- * are the fates the engine *stamped onto* the records being read here, so
- * routing on them was the engine's own classification respelled by the
- * package (`.claude/rules/engineering.md`, *A fact the engine holds is
- * reported, never rediscovered*).
- *
- * Reading the store rather than this tick's fates also widens the leg in the
- * one direction that was a hole: a refusal a *previous* wave left standing
- * is still waiting on a producer, and a wave that shipped something else
- * reported nothing about it. The record is what outlives the tick.
- *
- * It puts the inbox in the wake set; it never takes build out of it.
- * Re-dispatching the walled entry is what {@link defaultRefusesEntry} holds
- * back, per entry, and the wave still has every other pickable entry to ship.
- */
-function refusedForPlan(result: TickResult): boolean {
-  return standingRefusals(result.pendingAfter, result.priorAttempts).length > 0;
-}
-
-/**
  * End the run when this tick shipped an entry the plan marked
  * contract-touching (`spec/loop.md`, *One tick is one fresh process*).
  *
@@ -276,14 +269,8 @@ function wakeSet(
   result: TickResult,
 ): string[] {
   const walled = result.committed ? undefined : result.phaseName;
-  const refused =
-    result.phaseName === BUILD_PHASE && refusedForPlan(result);
   const woken = slices
-    .filter(
-      (slice) =>
-        slice.name !== walled &&
-        (slice.live(window) || (refused && slice.name === INBOX_PHASE)),
-    )
+    .filter((slice) => slice.name !== walled && slice.live(window))
     .map((slice) => slice.name);
   return window.pickable ? [...woken, BUILD_PHASE] : woken;
 }
@@ -292,28 +279,15 @@ function wakeSet(
  * The package's default handoff, over the plan slices a consumer enabled.
  *
  * One value serves every phase the package constructs: which phase a result
- * came from is on the result, so a build tick takes the refusal leg and a
- * plan slice takes the no-self-rewake leg without either needing its own
- * closure over a name the engine already reports.
+ * came from is on the result, so a plan slice takes the no-self-rewake leg
+ * without needing its own closure over a name the engine already reports.
  *
- * Refuses a slice set with no {@link INBOX_PHASE} in it. The refusal leg has
- * nowhere to wake without it, and the alternatives are both silent: naming a
- * phase the chain does not carry, or leaving a wave's refusal in front of no
- * producer for the rest of the run
- * (`.claude/rules/engineering.md`, *Loud or nothing*). A consumer running
- * without the inbox slice declares its own handoff instead, which is the
- * override this default exists to be replaced by.
+ * It names no slice of its own, so the slice set is a parameter all the way
+ * down: a consumer running a subset of them — or one the package never shipped
+ * — gets this same answer over the windows it declared, and no phase is
+ * required to be present for the set to be computable.
  */
 export function defaultHandoff(slices: readonly HandoffSlice[]): Handoff {
-  if (!slices.some((slice) => slice.name === INBOX_PHASE)) {
-    throw new Error(
-      `the default handoff routes a build refusal to \`${INBOX_PHASE}\`, ` +
-        `which is not among the slices it was given ` +
-        `(${slices.map((slice) => slice.name).join(", ") || "none"}) — ` +
-        `enable that slice or declare a handoff for the phases that need one`,
-    );
-  }
-
   return (result: TickResult): string[] => {
     stopAfterContractTouchingShip(result);
 
@@ -328,6 +302,12 @@ export function defaultHandoff(slices: readonly HandoffSlice[]): Handoff {
     const window: SliceWindow = {
       flumeDir: result.flumeDir,
       pickable: result.pickableAfter.length > 0,
+      // The queue and the store the tick left, handed over unclassified: a
+      // standing refusal is the inbox slice's window to open on, and this is
+      // the surface that carries it the same pair its `shouldRun` consult
+      // reads (`standingRefusal.ts`).
+      pending: result.pendingAfter,
+      priorAttempts: result.priorAttempts,
       ...(result.queueParseFailure
         ? { queueParseFailure: result.queueParseFailure }
         : {}),

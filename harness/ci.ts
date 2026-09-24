@@ -37,7 +37,7 @@
  * scratch branch the forge has never seen (`spec/worktrees.md`), so a run
  * keyed to it would never exist and every lane would read unread forever.
  * The branch that has runs is the one the repository's own tip sits on, which
- * is also the only tree a liveness predicate can consult — `SliceInputs`
+ * is also the only tree a liveness predicate can consult — `SliceWindow`
  * carries no working tree — so reading it here is what lets the two readers
  * of one window agree on which runs they are talking about (`ciLane.ts`).
  *

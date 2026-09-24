@@ -11,9 +11,6 @@
  * forge or a state root.
  */
 
-import type { PendingEntry } from "../src/PendingSchema.js";
-import type { PriorAttempt } from "../src/Prompt.js";
-
 import { INBOX_PHASE, type Declaration, type PlanSlice } from "./declaration.js";
 import type { HandoffSlice, SliceWindow } from "./handoff.js";
 
@@ -29,39 +26,8 @@ import type { HandoffSlice, SliceWindow } from "./handoff.js";
 export const WINDOW_LINE_BUDGET = 1200;
 
 /**
- * The two facts a tick reports about its own records, as every reader of a
- * window spells them.
- *
- * `pending` and `priorAttempts` are `TickContext`'s own fields, optional here
- * for the reason they are optional there: a hand-built fixture may omit
- * either, and a dispatcher-built context always carries both. Their absence
- * reads as "no standing refusal" — the answer a reader that was handed no
- * store can truthfully give (`standingRefusal.ts`).
- *
- * A window the handoff builds omits them too, and loses nothing by it: the
- * engine reports the same two facts on the `TickResult`
- * (`pendingAfter`/`priorAttempts`), and the handoff's own refusal leg asks
- * `standingRefusals` (`harness/standingRefusal.ts`) of them directly — one
- * classification over one evidence, whichever surface the reader is on
- * (`handoff.ts`).
- */
-export interface TickFacts {
-  /** The queue as the tick sees it — `TickContext.pending`. */
-  readonly pending?: readonly PendingEntry[] | undefined;
-  /** Standing prior-attempt records — `TickContext.priorAttempts`. */
-  readonly priorAttempts?: ReadonlyMap<string, PriorAttempt> | undefined;
-}
-
-/**
- * What a slice's liveness predicate reads — the two facts every tick reports
- * ({@link SliceWindow}), plus the two only a `shouldRun` consult is handed
- * ({@link TickFacts}).
- */
-export interface SliceInputs extends SliceWindow, TickFacts {}
-
-/**
  * What rendering a window reads: the tick's own tree, its state root, and the
- * same two facts {@link TickFacts} names.
+ * same three facts a liveness predicate is handed off the tick's own records.
  *
  * Shaped so a `TickContext` satisfies it as given — the chain factory hands
  * `ctx` straight through rather than unpacking it into a second vocabulary
@@ -70,15 +36,17 @@ export interface SliceInputs extends SliceWindow, TickFacts {}
  * about to work in rather than whatever a sibling wave left at the repo
  * root.
  *
- * The queue's parse failure is `Pick`ed off {@link SliceWindow} rather than
- * declared again here: both readers are handed the same engine fact — the
+ * Every one of those three is `Pick`ed off {@link SliceWindow} rather than
+ * declared again here: both readers are handed the same engine facts — the
  * liveness leg off `TickResult`, the render off `TickContext` — and two
  * spellings of one field is the copy that drifts (`.claude/rules/engineering.md`,
  * *Derived state is computed, never restated beside its source*).
  */
 export interface WindowContext
-  extends TickFacts,
-    Pick<SliceWindow, "queueParseFailure"> {
+  extends Pick<
+    SliceWindow,
+    "pending" | "priorAttempts" | "queueParseFailure"
+  > {
   /** The tick's working tree — `TickContext.cwd`. */
   readonly cwd: string;
   /** The tick's resolved state root — `TickContext.flumeDir`. */
@@ -130,8 +98,6 @@ export type SliceArgs<S extends PlanSlice> = Record<
  * agent has to split by eye.
  */
 export interface PlanSliceWindow extends HandoffSlice {
-  readonly name: PlanSlice;
-  readonly live: (inputs: SliceInputs) => boolean;
   /** The `{{…}}` arguments this slice's prompt is rendered with, for one tick. */
   readonly args: (ctx: WindowContext) => Record<string, string>;
   /**
@@ -183,5 +149,5 @@ export const budgetOf = (options: PlanSliceWindowsOptions): number =>
  * this rather than by remembering to (`.claude/rules/engineering.md`, *The fix
  * lands at the mechanism*).
  */
-export const queueResolved = (inputs: SliceInputs): boolean =>
-  inputs.queueParseFailure === undefined;
+export const queueResolved = (window: SliceWindow): boolean =>
+  window.queueParseFailure === undefined;

@@ -5,10 +5,17 @@
  *
  * Every case drives the real `defaultHandoff` over a real `TickResult`. The
  * facts it reads are the engine's own — `pickableAfter`, `phaseName`,
- * `committed`, `noCommit`, `entries[].mergeOutcome` — so the fixtures here
- * are typed as `TickResult` rather than as the subset this module happens to
+ * `committed`, `pendingAfter`, `priorAttempts` — so the fixtures here are
+ * typed as `TickResult` rather than as the subset this module happens to
  * touch: a field the engine renames is a typecheck failure in these cases,
  * not a silently-undefined read.
+ *
+ * What the wake set does with a standing refusal is *carry it*, never
+ * classify it: which modes only a plan slice can resolve is the inbox
+ * window's question, and the two surfaces are held to one answer in
+ * `tests/harnessWindows.test.ts`. So the cases below stand the inbox slice
+ * up around the real classifier ({@link refusalReader}) and ask what the
+ * handoff hands it.
  *
  * Each case carries its control — the same result with the one fact changed
  * — so "the inbox is in the set" is proven to be that fact's doing and not
@@ -39,6 +46,7 @@ import {
   INBOX_PHASE,
   type PlanSlice,
 } from "../harness/declaration.ts";
+import { standingRefusals } from "../harness/standingRefusal.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
 import { recordAttemptKey } from "../src/priorAttempts.ts";
 import type {
@@ -90,8 +98,9 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
  * identity the engine writes a fanout record with (`priorAttemptRef`,
  * `src/priorAttempts.ts`): the `entry` keyspace, keyed by the tag's slug.
  *
- * Every mode, because the refusal leg discriminates on this field and a
- * fixture that can only build one of them judges that leg over one arm.
+ * Every mode, because the classifier the slices read discriminates on this
+ * field and a fixture that can only build one of them judges the wake set
+ * over one arm.
  */
 function record(tag: string, mode: PriorAttempt["mode"]): PriorAttempt {
   const anchor = {
@@ -169,6 +178,23 @@ function slice(
   };
 }
 
+/**
+ * The inbox slice on the one leg these cases are about: a window that opens
+ * over a standing refusal, read through the real `standingRefusals`
+ * (`harness/standingRefusal.ts`) rather than a mode table respelled here.
+ *
+ * The rest of `inboxWindow`'s legs read a state root on disk, which this
+ * file's fixtures are deliberately without — so the slice is stood up around
+ * the classifier, and that the whole window agrees with the handoff over
+ * every mode is the windows suite's case.
+ */
+const refusalReader = (): HandoffSlice & { asked: SliceWindow[] } =>
+  slice(
+    INBOX_PHASE,
+    (window) =>
+      standingRefusals(window.pending, window.priorAttempts).length > 0,
+  );
+
 /** The package's three slices in order, each dead unless a case revives it. */
 const sliceSet = (
   ...over: HandoffSlice[]
@@ -230,7 +256,7 @@ describe("the harness package's default handoff", () => {
   });
 
   it("the default handoff routes a walled entry to the inbox off the reported record set", () => {
-    const handoff = defaultHandoff(sliceSet());
+    const handoff = defaultHandoff(sliceSet(refusalReader()));
     const queued = {
       pendingAfter: [entry("PARKED")],
       pickableAfter: [entry("PARKED")],
@@ -275,7 +301,7 @@ describe("the harness package's default handoff", () => {
   });
 
   it("a build tick whose prompt never rendered wakes the inbox slice", () => {
-    const handoff = defaultHandoff(sliceSet());
+    const handoff = defaultHandoff(sliceSet(refusalReader()));
     const queued = {
       pendingAfter: [entry("UNRENDERABLE")],
       pickableAfter: [entry("UNRENDERABLE")],
@@ -413,31 +439,40 @@ describe("the harness package's default handoff", () => {
 });
 
 describe("the default handoff's reading of the engine's facts", () => {
-  it("wakes the inbox on exactly the standing record modes only a plan slice can resolve", () => {
-    const handoff = defaultHandoff(sliceSet());
-    const routed = PRIOR_ATTEMPT_MODES.filter((mode) =>
-      handoff(
-        tickResult({
-          pendingAfter: [entry("READY")],
-          pickableAfter: [entry("READY")],
-          priorAttempts: store(record("READY", mode)),
-        }),
-      ).includes(INBOX_PHASE),
-    );
+  it("a standing refusal left by a plan tick puts the inbox slice in the wake set", () => {
+    const handoff = defaultHandoff(sliceSet(refusalReader()));
+    const queued = {
+      pendingAfter: [entry("PARKED")],
+      pickableAfter: [entry("PARKED")],
+      priorAttempts: store(record("PARKED", "not-shipped")),
+    };
 
-    // Read off the engine's own roster, so a mode it mints is classified
-    // here rather than passing unexercised as "not a refusal".
-    expect(PRIOR_ATTEMPT_MODES.length).toBeGreaterThan(0);
-    expect([...routed].sort()).toEqual([
-      "clean-exit",
-      "not-shipped",
-      "render-refused",
+    // The record outlives the wave that wrote it, so which phase happens to
+    // report it decides nothing: a plan slice's own tick reports the same
+    // store, and the entry behind it is still waiting on a producer.
+    const planTick = tickResult({ ...queued, phaseName: DERIVE });
+    expect(planTick.phaseName).not.toBe(BUILD_PHASE);
+    expect(handoff(planTick)).toEqual([INBOX_PHASE, BUILD_PHASE]);
+
+    // The same answer off a build tick: the set is one window's reading of
+    // the facts the tick reported, never a branch on who reported them.
+    expect(handoff(tickResult({ ...queued }))).toEqual([
+      INBOX_PHASE,
+      BUILD_PHASE,
     ]);
-    expect(routed.length).toBeLessThan(PRIOR_ATTEMPT_MODES.length);
+
+    // The control, one fact at a time: the same plan tick with the store
+    // drained keeps the inbox out, so the name above is the record's doing
+    // and not the phase's.
+    expect(
+      handoff(
+        tickResult({ ...queued, phaseName: DERIVE, priorAttempts: new Map() }),
+      ),
+    ).toEqual([BUILD_PHASE]);
   });
 
   it("reads a refusal off one entry of a wave whose siblings shipped", () => {
-    const handoff = defaultHandoff(sliceSet());
+    const handoff = defaultHandoff(sliceSet(refusalReader()));
 
     // A wave where anything shipped reports no wave-level `noCommit` at all,
     // and the shipped entry's own record is cleared — so the only thing left
@@ -456,27 +491,42 @@ describe("the default handoff's reading of the engine's facts", () => {
     expect(handoff(mixed)).toEqual([INBOX_PHASE, BUILD_PHASE]);
   });
 
-  it("asks each slice's window with the tick's own state root and pickable verdict", () => {
+  it("asks each slice's window with every fact the tick reported and nothing else", () => {
     const inbox = slice(INBOX_PHASE, false);
     const handoff = defaultHandoff(sliceSet(inbox));
+    const queue = [entry("READY")];
+    const records = store(record("READY", "not-shipped"));
 
-    handoff(tickResult({ pickableAfter: [entry("READY")] }));
-    expect(inbox.asked).toEqual([{ flumeDir: FLUME_DIR, pickable: true }]);
-
-    handoff(tickResult({ pickableAfter: [] }));
-    expect(inbox.asked[1]).toEqual({ flumeDir: FLUME_DIR, pickable: false });
-  });
-
-  it("refuses a slice set with nothing to wake on a build refusal", () => {
-    expect(() => defaultHandoff([slice(DERIVE, true), slice(SWEEP, true)])).toThrow(
-      new RegExp(`${INBOX_PHASE}[\\s\\S]*${DERIVE}, ${SWEEP}`),
+    handoff(
+      tickResult({
+        pendingAfter: queue,
+        pickableAfter: queue,
+        priorAttempts: records,
+      }),
     );
 
-    // The same set with the refusal's target present constructs fine — the
-    // refusal is about that slice's absence, not about the set's shape.
-    expect(() =>
-      defaultHandoff([slice(INBOX_PHASE), slice(DERIVE), slice(SWEEP)]),
-    ).not.toThrow();
+    // The whole window, not a subset of it: a slice's liveness leg reads the
+    // queue and the store off this object, so a fact the handoff failed to
+    // carry is a window answering `false` where the same slice's `shouldRun`
+    // consult answers `true` — and nothing about either verdict would say so.
+    expect(inbox.asked).toEqual([
+      {
+        flumeDir: FLUME_DIR,
+        pickable: true,
+        pending: queue,
+        priorAttempts: records,
+      },
+    ]);
+
+    // The control, one fact at a time: a tick reporting nothing pickable and
+    // an empty pair hands the same four fields with the values it has.
+    handoff(tickResult({ pickableAfter: [] }));
+    expect(inbox.asked[1]).toEqual({
+      flumeDir: FLUME_DIR,
+      pickable: false,
+      pending: [],
+      priorAttempts: new Map(),
+    });
   });
 });
 
@@ -521,7 +571,7 @@ describe("the default handoff's stop after a contract-touching ship", () => {
   });
 
   it("the default handoff writes no stop flag when no shipped entry is contractTouching", () => {
-    const handoff = defaultHandoff(sliceSet());
+    const handoff = defaultHandoff(sliceSet(refusalReader()));
 
     // An unmarked ship: the ordinary wave, which must leave the loop running.
     expect(handoff(wave(outcome({ tag: "PLAIN" })))).toEqual([BUILD_PHASE]);

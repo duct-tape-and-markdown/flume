@@ -2,15 +2,15 @@
  * Which standing prior-attempt records are refusals only a plan slice can
  * resolve, and which of those are keyed to an entry the queue still carries.
  *
- * **One question, one evidence, two readers.** The inbox slice's window
- * opens on it (`inboxWindow.ts`) and the default handoff's refusal leg
- * routes on it (`handoff.ts`), and both are handed the same pair of engine
- * facts — the queue and the record store — off whichever surface each is
- * reading: `TickContext.pending`/`priorAttempts` at the `shouldRun` consult,
- * `TickResult.pendingAfter`/`priorAttempts` at the handoff that follows. A
- * table beside either reader is how a mode comes to route to the inbox from
- * one surface and nowhere from the other (`.claude/rules/engineering.md`,
- * *The fix lands at the mechanism*).
+ * **One question, one reader, two surfaces.** The inbox slice's window is
+ * the only thing that asks it (`inboxWindow.ts`), and it asks the same way
+ * whichever surface hands it the pair of engine facts — the queue and the
+ * record store: `TickContext.pending`/`priorAttempts` at the `shouldRun`
+ * consult, `TickResult.pendingAfter`/`priorAttempts` off the window the
+ * default handoff builds for the tick that follows (`handoff.ts`). A second
+ * classifier beside either surface is how a mode comes to route to the inbox
+ * from one and nowhere from the other (`.claude/rules/engineering.md`, *The
+ * fix lands at the mechanism*).
  *
  * Nothing here re-derives an engine fact. The record's `mode` is the one the
  * engine stamped, and the key each record is looked up under is the engine's
@@ -81,9 +81,10 @@ const PLAN_RESOLVES_STANDING: Record<PriorAttempt["mode"], boolean> = {
  * looking each queued entry up finds exactly the entry-keyspace records a
  * scan of the map's values would have kept.
  *
- * Both inputs are optional because both are optional on the context a window
- * render may be hand-built from (`TickFacts`, `sliceWindow.ts`). Absent, the
- * answer is the empty set — "no standing refusal" — which is what a reader
+ * Both inputs are optional because both are optional wherever a reader is
+ * handed them — `SliceWindow` at the liveness leg (`handoff.ts`),
+ * `WindowContext` at the render (`sliceWindow.ts`). Absent, the answer is the
+ * empty set — "no standing refusal" — which is what a reader
  * that was handed no store can truthfully say. Every dispatcher-built surface
  * carries both, so no live tick takes that arm.
  *

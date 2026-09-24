@@ -146,8 +146,6 @@ export {
   WINDOW_LINE_BUDGET,
   type PlanSliceWindow,
   type PlanSliceWindowsOptions,
-  type SliceInputs,
-  type TickFacts,
   type WindowContext,
 } from "./sliceWindow.js";
 
