@@ -1157,7 +1157,7 @@ it("the package's judge runs after a consumer's declared gates at the same when"
     "clean-tree",
     "pending-gate",
     "per cites resolve",
-    "derive cursor",
+    "plan cursors",
   ];
   expect(chain.phases.length).toBeGreaterThan(0);
   for (const phase of chain.phases) {

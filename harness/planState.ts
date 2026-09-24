@@ -335,6 +335,18 @@ interface Cursor {
   readonly slice: PlanSlice;
   /** Its value, or `undefined` where that slice has written no file yet. */
   readonly at: (stateRoot: string) => string | undefined;
+  /**
+   * Its value off an already-parsed artifact, refused by the owning slice's
+   * own schema when that artifact is not one.
+   *
+   * The read a caller holding the bytes rather than the disk needs — a gate
+   * reading a state file at a commit, where the artifact never existed in a
+   * working tree it could name a path in. Without it such a caller indexes
+   * the schema table by a slice it spelled itself and reaches past the field
+   * extractor, which is the branch on one cursor this table exists to
+   * replace.
+   */
+  readonly of: (parsed: unknown, locus: string) => string;
 }
 
 /**
@@ -354,6 +366,7 @@ function cursorOf<S extends PlanSlice>(
       const state = readPlanState(stateRoot, slice);
       return state === undefined ? undefined : field(state);
     },
+    of: (parsed, locus) => field(parseOrThrow(schemaFor(slice), parsed, locus)),
   };
 }
 
@@ -395,6 +408,18 @@ export const cursorSlice = (field: CursorField): PlanSlice =>
   CURSORS[field].slice;
 
 /**
+ * Every cursor the package declares, in the order {@link CURSORS} states
+ * them — what a caller that holds all of them at once walks.
+ *
+ * Read off the table rather than listed, so a cursor a fourth slice adds is
+ * judged by every such caller without one of them being edited: the table is
+ * already exhaustive by the typecheck, and this is that exhaustiveness handed
+ * out (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ */
+export const CURSOR_FIELDS = Object.keys(CURSORS) as readonly CursorField[];
+
+/**
  * The cursor `field` names under `stateRoot`, or `undefined` where the slice
  * that owns it has written no state file yet.
  */
@@ -402,3 +427,18 @@ export const readCursor = (
   stateRoot: string,
   field: CursorField,
 ): string | undefined => CURSORS[field].at(stateRoot);
+
+/**
+ * The cursor `field` names inside `parsed` — an artifact already decoded from
+ * bytes, judged against the schema of the slice that owns `field` and
+ * refused by name at `locus` when it is not that slice's shape.
+ *
+ * For the caller whose artifact is not on a disk it can name: a state file
+ * read at a commit, a fixture under test. `readCursor` is the same read with
+ * the file access in front of it.
+ */
+export const parseCursor = (
+  field: CursorField,
+  parsed: unknown,
+  locus: string,
+): string => CURSORS[field].of(parsed, locus);

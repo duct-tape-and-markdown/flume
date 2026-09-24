@@ -2,7 +2,7 @@
  * The gates the package's discipline needs (`spec/harness.md`, *The gates the
  * discipline needs*) — the `per` gate, the records gate, the clean-tree gate,
  * the engine's pending gate wired to the consumer's fence, and the cursor
- * gate over a plan commit's derive cursor — as one ordered set per phase,
+ * gate over every cursor a plan commit moves — as one ordered set per phase,
  * always ahead of whatever gates the consumer declared.
  *
  * **Always first is mechanism here, not a promise.** {@link harnessGates}
@@ -70,9 +70,8 @@ import {
   recordOrNoteGlobs,
   underStateRoot,
 } from "./layout.js";
-import { PLAN_STATE_SCHEMAS } from "./planState.js";
+import { CURSOR_FIELDS, cursorSlice, parseCursor } from "./planState.js";
 import type { PutDownPredicate } from "./putDown.js";
-import { parseOrThrow } from "./refusal.js";
 
 /**
  * The engine values the package's gates run through, named by the shape they
@@ -520,14 +519,21 @@ function cleanTreeGate(
 }
 
 /**
- * A plan commit's derive cursor steps **forward, and only over history the
+ * Every cursor a plan commit moves steps **forward, and only over history the
  * commit itself carries** (`spec/harness.md`, *The gates the discipline
- * needs*): `derivedThrough` at the gated commit is an ancestor of that
+ * needs*): each cursor's value at the gated commit is an ancestor of that
  * commit, and a descendant of the value the tick read before it.
  *
+ * **Every cursor the package declares, not derive's alone.** The set is
+ * `CURSOR_FIELDS` (`planState.ts`), so sweep's `sweptThrough` is held to the
+ * same bound as derive's `derivedThrough` and a fourth slice's cursor joins
+ * this gate by joining that table — where judging one named field would be a
+ * branch on a single instance inside machinery already generic over the type
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
  * Both halves fail the same silent way and that is why they are gated. A
- * cursor stepped past commits nobody derived does not red anything — the
- * derive slice simply never opens on the span that was skipped, every tick
+ * cursor stepped past commits nobody derived or swept does not red anything —
+ * the slice simply never opens on the span that was skipped, every tick
  * after, and the window it renders looks exactly like a quiet tree. A cursor
  * stepped *backwards*, or sideways onto a sha this commit cannot reach,
  * re-derives history or names a window the next tick cannot draw at all.
@@ -543,19 +549,19 @@ function cleanTreeGate(
  * step from, so that half is not judged and the ancestor half still is.
  *
  * **Plan phases are selected by the path, never by their name.** A commit
- * that did not touch the derive slice's own state file changed no derive
- * cursor, and build's fence admits the artifact at all, so the skip is read
- * off `touchedPaths` rather than off a phase-name branch that would have to
- * stay in step with the fence (`.claude/rules/engine-boundary.md`, *Told, not
- * inferred*).
+ * that touched no cursor's state file moved no cursor, and build's fence
+ * admits the artifacts at all, so the skip is read off `touchedPaths` rather
+ * than off a phase-name branch that would have to stay in step with the
+ * fence (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
  *
- * The path is derive's file alone (`layout.ts`, `planStatePath`), which is
- * what one file per writer buys this gate: a sweep or inbox commit stamping
- * its own state writes a sibling file and is skipped here on the path, rather
- * than being read at a shared page and found to have moved no cursor.
+ * Each cursor is keyed on **its own slice's file** (`layout.ts`,
+ * `planStatePath`, over `cursorSlice`), which is what one file per writer
+ * buys this gate: a commit stamping one slice's state is judged on that
+ * slice's cursor alone, and the inbox's state — which holds no cursor — is
+ * skipped on the path like any other untouched file.
  *
- * The **leading-run** half of the bound — whether the span the cursor
- * stepped over was one this tick actually derived — is judgement, and stays
+ * The **leading-run** half of the bound — whether the span a cursor stepped
+ * over was one this tick actually derived or swept — is judgement, and stays
  * prose in the slice's own prompt. What is decidable is direction and
  * reachability, and that is what this holds.
  *
@@ -568,67 +574,78 @@ function cleanTreeGate(
  */
 function cursorGate(engine: GateEngine): Gate {
   return {
-    name: "derive cursor",
+    name: "plan cursors",
     when: "afterCommit",
     async run(ctx) {
-      if (ctx.stateRootRel === undefined) {
+      const stateRootRel = ctx.stateRootRel;
+      if (stateRootRel === undefined) {
         return {
           ok: true,
           message: "the state root is outside the repository",
           skipped: "no commit can carry the plan state under a relocated state root",
         };
       }
-      const path = planStatePath(ctx.stateRootRel, "plan-derive");
-      if (!ctx.touchedPaths.includes(path)) {
+      const moved = CURSOR_FIELDS.map((field) => ({
+        field,
+        path: planStatePath(stateRootRel, cursorSlice(field)),
+      })).filter(({ path }) => ctx.touchedPaths.includes(path));
+
+      if (moved.length === 0) {
         return {
           ok: true,
           message:
-            "the commit writes no derive state, so it moves no derive cursor",
-          skipped: "the derive slice's state file is not in the gated span",
+            "the commit writes no slice's cursor state, so it moves no cursor",
+          skipped: "no declared cursor's state file is in the gated span",
         };
       }
 
-      const raw = await engine.git.readFileAtRef(ctx.repoRoot, ctx.commitSha, path);
-      if (raw === null) {
-        return {
-          ok: false,
-          message: `${path} touched by ${short(ctx.commitSha)} and absent from it: a plan tick that deletes the derive slice's state leaves its window without a cursor`,
-        };
-      }
-      const at = (sha: string, text: string) =>
-        parseOrThrow(PLAN_STATE_SCHEMAS["plan-derive"], JSON.parse(text), `plan state at ${short(sha)}`);
-
-      const after = at(ctx.commitSha, raw).derivedThrough;
       const problems: string[] = [];
-      if (!(await engine.git.isAncestor(ctx.repoRoot, after, ctx.commitSha))) {
-        problems.push(
-          `derivedThrough ${short(after)} is not an ancestor of the gated commit ${short(ctx.commitSha)}`,
-        );
-      }
+      const steps: string[] = [];
+      for (const { field, path } of moved) {
+        const raw = await engine.git.readFileAtRef(ctx.repoRoot, ctx.commitSha, path);
+        if (raw === null) {
+          problems.push(
+            `${path} touched by ${short(ctx.commitSha)} and absent from it: a plan tick that deletes the ${cursorSlice(field)} slice's state leaves its window without ${field}`,
+          );
+          continue;
+        }
+        const at = (sha: string, text: string) =>
+          parseCursor(field, JSON.parse(text), `plan state at ${short(sha)}`);
 
-      const baseRaw = await engine.git.readFileAtRef(ctx.repoRoot, ctx.baseSha, path);
-      const before = baseRaw === null ? undefined : at(ctx.baseSha, baseRaw).derivedThrough;
-      if (
-        before !== undefined &&
-        !(await engine.git.isAncestor(ctx.repoRoot, before, after))
-      ) {
-        problems.push(
-          `derivedThrough ${short(before)} -> ${short(after)} is not a step forward: ${short(after)} is not a descendant of the value the tick read at ${short(ctx.baseSha)}`,
+        const after = at(ctx.commitSha, raw);
+        if (!(await engine.git.isAncestor(ctx.repoRoot, after, ctx.commitSha))) {
+          problems.push(
+            `${field} ${short(after)} is not an ancestor of the gated commit ${short(ctx.commitSha)}`,
+          );
+        }
+
+        const baseRaw = await engine.git.readFileAtRef(ctx.repoRoot, ctx.baseSha, path);
+        const before = baseRaw === null ? undefined : at(ctx.baseSha, baseRaw);
+        if (
+          before !== undefined &&
+          !(await engine.git.isAncestor(ctx.repoRoot, before, after))
+        ) {
+          problems.push(
+            `${field} ${short(before)} -> ${short(after)} is not a step forward: ${short(after)} is not a descendant of the value the tick read at ${short(ctx.baseSha)}`,
+          );
+        }
+
+        steps.push(
+          before === undefined
+            ? `${field} ${short(after)}`
+            : `${field} ${short(before)} -> ${short(after)}`,
         );
       }
 
       if (problems.length > 0) {
         return refuse(
-          `${problems.length} derive-cursor problem(s); a cursor stepped past commits nobody derived fails silently on every tick after`,
+          `${problems.length} plan-cursor problem(s); a cursor stepped past commits nobody derived or swept fails silently on every tick after`,
           problems,
         );
       }
       return {
         ok: true,
-        message:
-          before === undefined
-            ? `derivedThrough ${short(after)} is within ${short(ctx.commitSha)}`
-            : `derivedThrough ${short(before)} -> ${short(after)}, within ${short(ctx.commitSha)}`,
+        message: `${steps.join("; ")}, within ${short(ctx.commitSha)}`,
       };
     },
   };
