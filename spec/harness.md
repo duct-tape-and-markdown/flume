@@ -94,9 +94,10 @@ The `per` gate (the cited file is in the
 gated commit and the section is a heading in it), the records gate (one file
 per record, titled, under the tick's own tag), the
 clean-tree gate, the pending gate wired to the consumer's fence, and the
-cursor gate: a plan commit's derive cursor is an ancestor of the tip and a
-descendant of its pre-commit value, refused otherwise, because a cursor
-stepped past commits nobody derived fails silently on every tick after. One
+cursor gate: each cursor a plan commit moves — derive's and sweep's alike,
+every one the package declares — is an ancestor of the tip and a descendant
+of its pre-commit value, refused otherwise, because a cursor stepped past
+commits nobody derived or swept fails silently on every tick after. One
 more over the merged tree, because it judges what two concurrent producers did
 to one queue: the **claim check** the engine's pending gate carries, refusing
 a commit that edits or removes an entry a build tick holds
