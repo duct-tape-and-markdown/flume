@@ -87,6 +87,36 @@ export function minimalChainSrc(shape: MinimalChainShape = {}): string {
 }
 
 /**
+ * {@link minimalChainSrc} with an agent that leaves `marker` on disk when the
+ * dispatcher invokes it, and otherwise behaves as
+ * {@link stubbedAgentChainSrc}'s does. For a suite whose property is *which*
+ * phase a tick chose, or whether it reached an agent at all: a file either
+ * present or absent is decidable evidence, where a negative read over a
+ * process's whole output turns on whatever else that output quotes
+ * (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+ *
+ * `marker` is written verbatim, so callers pass an absolute path and the
+ * evidence does not depend on which cwd the invocation ran under.
+ */
+export function markerAgentChainSrc(
+  marker: string,
+  shape: MinimalChainShape = {},
+): string {
+  return chainSrc(
+    shape,
+    `,\n` +
+      `agent: {\n` +
+      `  name: "marker-agent",\n` +
+      `  async invoke() {\n` +
+      `    const { writeFileSync } = await import("node:fs");\n` +
+      `    writeFileSync(${JSON.stringify(marker)}, "invoked\\n");\n` +
+      `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+      `  },\n` +
+      `}`,
+  );
+}
+
+/**
  * {@link minimalChainSrc}, but with an agent declared so the dispatcher never
  * falls through to the real `claudeCode()` agent (`src/Dispatcher.ts`) —
  * for tests that only need a tick to complete cleanly, not to observe what

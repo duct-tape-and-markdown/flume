@@ -260,6 +260,10 @@ const TICK_OUTCOME_SPACE: {
   tipMoved: [ABSENT, false, true],
   declined: [ABSENT, false, true],
   terminal: [ABSENT, { kind: "orphaned-awake", phases: ["ghost"] }],
+  undeclaredPhase: [
+    ABSENT,
+    { requested: "ghost", declared: ["plan", "build"] },
+  ],
   phaseName: [ABSENT, "plan"],
   result: [ABSENT, A_TICK_RESULT],
   noCommit: [ABSENT, "clean-exit"],

@@ -73,6 +73,7 @@ import { HERMETIC_ENV_STRIP_KEYS, hermeticEnv } from "./helpers/gitEnv.ts";
 import { helpExitCodeRow } from "./helpers/cliHelpRows.ts";
 import {
   minimalChainSrc,
+  markerAgentChainSrc,
   stubbedAgentChainSrc,
   writeRepoConfig,
 } from "./helpers/repoChain.ts";
@@ -4232,6 +4233,87 @@ describe("flume tick/stop/check refuse stray positionals; wake/sleep refuse extr
     SPAWN_BUDGET_MS,
   );
 });
+
+/**
+ * `flume tick --phase <name>` — the other half of gh#1's refusal above. A
+ * phase is named with a flag, and the named phase runs whatever the baton
+ * says: the supervisor spawns one child per phase it starts and tells each
+ * one what it is for (spec/loop.md, *Baton — presence wakes, absence
+ * hibernates*), which a child re-reading the flags could not honour.
+ *
+ * Both arms read "did an agent run" off a marker the fixture's agent writes
+ * when it is invoked, rather than off the process output — a decidable file
+ * either way, where a negative read of a whole stream turns on whatever else
+ * the stream happens to quote (`.claude/rules/posture-sweep.md`, *Standing
+ * lenses*).
+ */
+describe("flume tick --phase <name> (spec/loop.md §Baton — presence wakes, absence hibernates)", () => {
+
+  it(
+    "flume tick --phase runs the named phase when no flag is awake",
+    async () => {
+      const repo = await makeScratchRepo("flume-tick-phase-", "main");
+      try {
+        const marker = join(repo.dir, "agent-ran");
+        await writeRepoConfig(repo.dir, markerAgentChainSrc(marker));
+        // Nothing is woken: the baton is empty for both runs below.
+        const awakeFlag = join(repo.dir, ".flume", "awake", "probe");
+
+        // The control the claim rests on — bare, this same repo hibernates
+        // and invokes nothing, so the run below is the flag's doing rather
+        // than a phase that would have ticked anyway.
+        const bare = await runCli(repo.dir, ["tick"]);
+        expect(bare.code).toBe(0);
+        expect(bare.out).toContain("no phases awake; hibernating");
+        expect(existsSync(marker)).toBe(false);
+
+        const named = await runCli(repo.dir, ["tick", "--phase", "probe"]);
+
+        expect(named.code).toBe(0);
+        expect(named.out).toMatch(/tick → probe/);
+        // The agent really ran, over an empty baton.
+        expect(existsSync(marker)).toBe(true);
+        // And the flag the tick never needed is not one it left behind: the
+        // named phase is slept after it runs, like any other.
+        expect(existsSync(awakeFlag)).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume tick --phase refuses a name the chain does not declare, naming the phases it does",
+    async () => {
+      const repo = await makeScratchRepo("flume-tick-phase-", "main");
+      try {
+        const marker = join(repo.dir, "agent-ran");
+        await writeRepoConfig(repo.dir, markerAgentChainSrc(marker));
+        // A phase standing awake, so a refusal that silently fell back to
+        // the baton would tick `probe` and be visible as such.
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const r = await runCli(repo.dir, ["tick", "--phase", "ghost"]);
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain("no phase named 'ghost'");
+        // Naming what the chain does declare is the refusal's own job — an
+        // operator reading it never re-opens chain.ts to find the spelling.
+        expect(r.out).toContain("this chain declares probe");
+        // No agent ran, and the awake flag was neither ticked nor cleared.
+        expect(existsSync(marker)).toBe(false);
+        expect(
+          existsSync(join(repo.dir, ".flume", "awake", "probe")),
+        ).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
 
 describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md §Subcommand surface)", () => {
   it(

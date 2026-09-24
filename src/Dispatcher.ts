@@ -267,6 +267,24 @@ export interface TerminalMisconfiguration {
 }
 
 /**
+ * What one {@link Dispatcher.tick} run was asked for. Empty is the bare
+ * tick: the baton decides which phase runs.
+ */
+export interface TickRequest {
+  /**
+   * Run this phase, awake or not — `flume tick --phase <name>`, and how the
+   * supervisor tells a child what it is for (spec/loop.md, *Baton — presence
+   * wakes, absence hibernates*). The baton is not consulted for selection:
+   * neither a flag's absence nor a flag naming some other phase changes what
+   * runs. A name the chain does not declare refuses before any work, on
+   * {@link TickOutcome.undeclaredPhase}.
+   *
+   * Absent: the first phase in declared order whose name is awake.
+   */
+  phase?: string;
+}
+
+/**
  * Per-tick summary returned by `Dispatcher.tick()`. The loop inspects
  * `hibernated` to decide when to exit; `summary` is the one-liner the
  * dispatcher surfaces through the logger after each tick.
@@ -302,6 +320,22 @@ export interface TickOutcome {
    * interactive sessions)*).
    */
   ledgerRefusal?: LedgerRefusalClass;
+  /**
+   * Set when the tick was asked for a phase by name ({@link TickRequest})
+   * and the chain that loaded declares no such phase: the request named a
+   * world this chain is not. Rides `failed` and narrows it the way
+   * {@link ledgerRefusal} does — `tickExitCode` (`src/cliVerdict.ts`) exits 1
+   * rather than `EX_MOUNT_DEAD`, because the chain mounted fine and the only
+   * thing wrong is the name it was handed.
+   *
+   * Both halves are facts, never a verdict: what was asked for, and what the
+   * chain declares instead — so a caller names the alternatives without
+   * re-resolving a chain of its own (`.claude/rules/engineering.md`, *A fact
+   * the engine holds is reported, never rediscovered*). No agent ran, no
+   * baton flag moved, and a bare tick's selection is untouched — this arm is
+   * reachable only through an explicit name.
+   */
+  undeclaredPhase?: { requested: string; declared: readonly string[] };
   /**
    * Set when chain resolution failed with the CJS-context
    * signature — a usage error (the host repo's package.json is missing
@@ -715,8 +749,13 @@ export class Dispatcher {
     return this.bounds.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   }
 
-  /** Run one phase × one tick. Returns hibernated outcome if nothing awake. */
-  async tick(): Promise<TickOutcome> {
+  /**
+   * Run one phase × one tick. Bare, the baton picks the phase and a tick
+   * over an empty baton returns the hibernated outcome; {@link
+   * TickRequest.phase} names one instead, which runs awake or not and never
+   * hibernates.
+   */
+  async tick(request: TickRequest = {}): Promise<TickOutcome> {
     const awake = this.baton.awake();
 
     // Disk is truth: this process resolves chain.ts exactly once, here. A
@@ -791,9 +830,38 @@ export class Dispatcher {
     // constructor default per tick, mirroring the `agent` override.
     const forkResolver = chainModule.forkResolver ?? this.opts.forkResolver;
 
-    const phase = chain.phases.find((p) => awake.includes(p.name));
+    // Which phase this tick is: the name it was handed, or the first awake
+    // one in declared order. A named phase runs whatever the baton says —
+    // the request is the statement, and re-reading the flags behind it would
+    // be the engine second-guessing what it was told
+    // (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+    const requested = request.phase;
+    const phase =
+      requested === undefined
+        ? chain.phases.find((p) => awake.includes(p.name))
+        : chain.phases.find((p) => p.name === requested);
 
     if (!phase) {
+      if (requested !== undefined) {
+        // A name this chain does not declare. Not orphaned-awake below (no
+        // flag is involved, and nothing is left on disk to inspect) and not
+        // hibernation (a named tick has no baton verdict to reach): the
+        // request named a phase, the chain loaded, and the two do not meet.
+        // Refused here — after the one chain load that can say what *is*
+        // declared, and before the baton, the queue, or an agent.
+        const declared = chain.phases.map((p) => p.name);
+        const msg =
+          `no phase named '${requested}'; this chain declares ` +
+          (declared.length > 0 ? declared.join(", ") : "no phases");
+        this.log.error(`[flume] ${msg}`);
+        return {
+          hibernated: false,
+          failed: true,
+          undeclaredPhase: { requested, declared },
+          awakeAfter: awake,
+          summary: msg,
+        };
+      }
       if (awake.length > 0) {
         // Axis C: every awake flag names a phase the chain does not
         // declare. Not Axis B (nothing here is quiescent — the flags persist)

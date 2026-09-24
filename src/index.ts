@@ -131,6 +131,7 @@ export {
   type RenderResolution,
   type TerminalMisconfiguration,
   type TickOutcome,
+  type TickRequest,
 } from "./Dispatcher.js";
 
 // `TickOutcome.ledgerRefusal`'s own type: a chain reading a failed tick needs

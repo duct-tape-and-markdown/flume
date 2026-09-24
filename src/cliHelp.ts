@@ -71,7 +71,9 @@ Usage: flume <command> [options]
 
 Commands:
   status              Print baton state (awake phases + pending count).
-  tick                Run one tick of whichever phase is awake.
+  tick [--phase <name>]
+                      Run one tick of whichever phase is awake, or of the
+                      named phase, awake or not.
   loop [--max N]      Run ticks until hibernation (default cap 50).
   wake <phase>        Mark <phase> awake (touch .flume/awake/<phase>).
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
@@ -140,11 +142,20 @@ Exit codes:
       states a run that has spent nothing.
       ${bayDiscoveryRefusal(6)}
 `,
-  tick: `Usage: flume tick
+  tick: `Usage: flume tick [--phase <name>]
 
 Run one phase × one tick of whichever phase is awake. Loads .flume/chain.ts,
 picks the next pending entry (for fanout phases) or runs the singleton phase,
 invokes the agent, and applies validation gates.
+
+Options:
+  --phase <name>  Run this phase, awake or not, instead of whichever phase
+                  the baton names — how \`flume loop\`'s supervisor tells a
+                  child what it is for. The baton decides nothing here: no
+                  flag awake still runs the named phase, and a flag naming
+                  another phase does not run it. Handoff is unchanged, so
+                  the phase that ran is slept and whatever it hands off to
+                  wakes.
 
 Exit codes:
   0   Success, or hibernation (no phase awake).
@@ -155,12 +166,16 @@ Exit codes:
       then refused — a paused merge or cherry-pick in the checkout, a lost
       index.lock: the shipped entries are on trunk, the chain is fine, and
       a fresh process has every reason to get further. Clear the refusal and
-      re-run; the queue still names what has not shipped.
+      re-run; the queue still names what has not shipped. Also
+      \`--phase <name>\` naming a phase the chain does not declare: the
+      refusal names the phases it does, no agent runs, and the chain
+      mounted fine — what failed is the name it was handed.
   2   Usage: a stray trailing positional (\`tick\` consumes none — running
       something other than whichever phase is awake is refused, not
-      honored); or the chain load failed with the CJS-context refusal — the
-      host repo's package.json (or the one beside .flume/chain.ts) lacks
-      "type": "module". Add it and re-run.
+      honored), or \`--phase\` with no name after it; or the chain load
+      failed with the CJS-context refusal — the host repo's package.json
+      (or the one beside .flume/chain.ts) lacks "type": "module". Add it
+      and re-run.
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
       fix the chain (or its state root) and re-run. Also pending.json

@@ -134,6 +134,25 @@ function parseMaxValue(value: string | undefined): number | null {
 }
 
 /**
+ * Take a `--flag <value>` pair out of `words` in place, leaving the
+ * positionals its caller then refuses on: `undefined` when the flag is
+ * absent, `null` when it is present carrying nothing usable — the end of the
+ * argv, or the next flag, which is an operator who typed the flag and then
+ * forgot its value rather than one naming a value that starts with a dash.
+ * Both `--phase <name>` and `--entry <tag>` are this one sequence
+ * (`.claude/rules/engineering.md`, *A module is one job*); the numeric flags
+ * (`--max`, `-n`) keep their own parse, which decides more than presence.
+ */
+function takeFlagValue(words: string[], flag: string): string | null | undefined {
+  const idx = words.indexOf(flag);
+  if (idx < 0) return undefined;
+  const value = words[idx + 1];
+  if (!value || value.startsWith("-")) return null;
+  words.splice(idx, 2);
+  return value;
+}
+
+/**
  * What a signal handler says at receipt, before the wait it is announcing
  * starts (spec/loop.md, "The loop lock and the tip claim"). One spelling for
  * both handlers below: a `flume loop` waiting on its tick child and a bare
@@ -885,17 +904,12 @@ async function main(): Promise<number> {
 
   if (cmd === "render") {
     const words = [...rest];
-    let entryTag: string | undefined;
-    const entryIdx = words.indexOf("--entry");
-    if (entryIdx >= 0) {
-      const value = words[entryIdx + 1];
-      if (!value || value.startsWith("-")) {
-        console.error("usage: flume render <phase> [--entry <tag>]");
-        return 2;
-      }
-      entryTag = value;
-      words.splice(entryIdx, 2);
+    const taken = takeFlagValue(words, "--entry");
+    if (taken === null) {
+      console.error("usage: flume render <phase> [--entry <tag>]");
+      return 2;
     }
+    const entryTag: string | undefined = taken;
     const phaseName = words[0];
     // One positional, `<phase>` — same class as `tick`'s stray-arg refusal
     // (spec/cli.md "Subcommand surface", gh#1): rendering a phase other than
@@ -969,15 +983,27 @@ async function main(): Promise<number> {
   }
 
   if (cmd === "tick") {
-    // `tick` consumes no positionals (spec/cli.md "Subcommand surface") — a
-    // stray trailing arg (gh#1's field-reported shape: `flume tick plan`
-    // silently ticking whichever phase was awake, instead of the named one)
-    // is refused before any tick runs, not honored as something the
-    // operator never typed.
-    if (rest.length > 0) {
-      console.error("usage: flume tick");
+    // Which phase to run is said with a flag, never a positional: `flume
+    // tick plan` is gh#1's field-reported shape — the word was dropped and
+    // whichever phase happened to be awake ticked in its name — so the
+    // spelling that names a phase is `--phase plan` and a bare word stays
+    // refused (spec/cli.md "Subcommand surface").
+    const words = [...rest];
+    const named = takeFlagValue(words, "--phase");
+    // `tick` consumes no positionals — a stray trailing arg past the flag is
+    // refused before any tick runs, not honored as something the operator
+    // never typed.
+    if (named === null || words.length > 0) {
+      console.error("usage: flume tick [--phase <name>]");
       return 2;
     }
+    // The name goes to the dispatcher unchecked: what a chain declares is
+    // read off the one chain load `tick()` makes, and the refusal comes back
+    // as a fact this branch reports (`TickOutcome.undeclaredPhase`), rather
+    // than from a second chain resolved here to pre-validate a string
+    // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+    // never rediscovered*).
+    const tickRequest = named !== undefined ? { phase: named } : {};
     // Clear any stale verdict before this tick's own work — a tick that
     // returns below without an agent having run (chain-load failure,
     // hibernation, terminal misconfiguration, the detached-HEAD refusal below)
@@ -1089,7 +1115,7 @@ async function main(): Promise<number> {
       }
     }
     try {
-      tickRun = dispatcher.tick();
+      tickRun = dispatcher.tick(tickRequest);
       const outcome = await tickRun;
       console.log(outcome.summary);
       if (outcome.verdict) {
