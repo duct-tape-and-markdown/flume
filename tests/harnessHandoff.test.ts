@@ -49,7 +49,11 @@ import {
 import { continuingNotePath, parkedNotePath } from "../harness/layout.ts";
 import { standingRefusals } from "../harness/standingRefusal.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
-import { entryAttemptKey, recordAttemptKey } from "../src/priorAttempts.ts";
+import {
+  buildNotShipped,
+  entryAttemptKey,
+  recordAttemptKey,
+} from "../src/priorAttempts.ts";
 import type {
   EntryRefusalContext,
   FanoutEntryOutcome,
@@ -102,9 +106,25 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
 }
 
 /**
- * One standing prior-attempt record for `tag`, in the keyspace and under the
- * identity the engine writes a fanout record with (`priorAttemptRef`,
+ * The anchor the engine stamps on a fanout record (`priorAttemptRef`,
  * `src/priorAttempts.ts`): the `entry` keyspace, keyed by the tag's slug.
+ *
+ * Its own name because two builders take it — {@link record} for a body
+ * written by hand, and the elided case below for one the real writer
+ * produced — and a record filed under a second spelling of the identity
+ * would be looked up by nothing the classifier walks.
+ */
+const entryAnchor = (tag: string) =>
+  ({
+    key: "entry",
+    keyedAs: slugify(tag),
+    headSha: "0".repeat(40),
+    at: "2026-09-16T00:00:00.000Z",
+  }) as const;
+
+/**
+ * One standing prior-attempt record for `tag`, anchored as {@link entryAnchor}
+ * says.
  *
  * Every mode, because the classifier the slices read discriminates on this
  * field and a fixture that can only build one of them judges the wake set
@@ -122,22 +142,17 @@ function record(
   mode: PriorAttempt["mode"],
   touched: readonly string[] = [],
 ): PriorAttempt {
-  const anchor = {
-    key: "entry",
-    keyedAs: slugify(tag),
-    headSha: "0".repeat(40),
-    at: "2026-09-16T00:00:00.000Z",
-  } as const;
+  const anchored = entryAnchor(tag);
   switch (mode) {
     case "not-shipped":
       return {
         mode,
         mergedSha: "a".repeat(40),
         touchedPaths: [...touched],
-        ...anchor,
+        ...anchored,
       };
     case "clean-exit":
-      return { mode, finalMessage: "nothing to do here", ...anchor };
+      return { mode, finalMessage: "nothing to do here", ...anchored };
     case "gate-revert":
       return {
         mode,
@@ -145,18 +160,18 @@ function record(
         gate: "tsc",
         message: "failed",
         diffStat: "",
-        ...anchor,
+        ...anchored,
       };
     case "platform-preempt":
-      return { mode, failureClass: "timeout", ...anchor };
+      return { mode, failureClass: "timeout", ...anchored };
     case "render-refused":
-      return { mode, failures: "span failed", ...anchor };
+      return { mode, failures: "span failed", ...anchored };
     case "tip-moved":
       return {
         mode,
         expectedTip: "b".repeat(40),
         observedTip: "c".repeat(40),
-        ...anchor,
+        ...anchored,
       };
   }
 }
@@ -934,4 +949,82 @@ it("a not-shipped record whose commit wrote a park note is a standing refusal", 
     // held back per entry and the queue's other work is still the wave's.
     woke: handoff(parked),
   }).toEqual({ standing: [park], woke: [INBOX_PHASE, BUILD_PHASE] });
+});
+
+/**
+ * The third kind of footprint: one the record's own writer cut.
+ *
+ * `buildNotShipped` bounds `touchedPaths` and states the remainder as
+ * `omittedPaths` (`src/priorAttempts.ts`), so a commit wide enough can push
+ * its own note past the bound and leave the classifier reading a list the
+ * deciding path is missing from. The safe direction is the park — the drain
+ * opens on a record that states its own elision rather than a continuation
+ * being inferred from an absence — and nothing pinned it.
+ *
+ * The elision is the real writer's, never a hand-set `omittedPaths`: a
+ * fixture that stamped the field itself would agree with the classifier on a
+ * cut the engine never makes (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*).
+ */
+
+/** The widest footprint {@link elidedFootprint} will ask the writer for. */
+const MAX_FOOTPRINT_SEARCH = 1 << 16;
+
+/**
+ * A declined ship whose footprint ends in `tail` and is wide enough that the
+ * writer elides it — whatever bound the engine holds, which is the engine's
+ * and is exported nowhere.
+ *
+ * Doubles until the writer states an omission, and refuses rather than
+ * searching forever: a writer that stopped bounding is a fact this case must
+ * say out loud, since the cut it is about would no longer happen
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function elidedFootprint(tail: string): ReturnType<typeof buildNotShipped> {
+  for (let width = 64; width <= MAX_FOOTPRINT_SEARCH; width *= 2) {
+    const filler = Array.from({ length: width }, (_, i) => `src/f${i}.ts`);
+    const built = buildNotShipped("a".repeat(40), [...filler, tail]);
+    if (built.omittedPaths !== undefined) return built;
+  }
+  throw new Error(
+    `buildNotShipped elided nothing from ${MAX_FOOTPRINT_SEARCH} paths: the bound this case is about is gone`,
+  );
+}
+
+it("a not-shipped record whose touchedPaths was elided stays a standing refusal", () => {
+  const handoff = defaultHandoff(sliceSet(refusalReader()));
+  const tag = "WIDE-CONTINUATION";
+  const note = continuingNotePath(STATE_ROOT_REL, tag);
+
+  // The commit a continuing tick would write, widened past the record's
+  // bound: the note is in the footprint the predicate was handed and out of
+  // the one the record carries.
+  const elided = { ...elidedFootprint(note), ...entryAnchor(tag) };
+  const wide = tickResult({
+    pendingAfter: [entry(tag)],
+    pickableAfter: [entry(tag)],
+    priorAttempts: store(elided),
+    entries: [outcome({ tag, shipped: false, mergeOutcome: "not-shipped" })],
+  });
+
+  // Vacuity: the writer really cut the list, and really cut the one path the
+  // classification turns on — so the verdict below is the elision's doing
+  // and not a note the case forgot to put in.
+  expect(elided.omittedPaths).toBeGreaterThan(0);
+  expect(elided.touchedPaths).not.toContain(note);
+  expect(wide.priorAttempts.get(entryAttemptKey(wide.pendingAfter[0]!))).toBe(
+    elided,
+  );
+
+  expect({
+    standing: standingRefusals(
+      STATE_ROOT_REL,
+      wide.pendingAfter,
+      wide.priorAttempts,
+    ),
+    // Plan's to resolve: the drain is woken, and what it reads is the record
+    // whole, `omittedPaths` included, so the elision is visible to the only
+    // phase that can act on it.
+    woke: handoff(wide),
+  }).toEqual({ standing: [elided], woke: [INBOX_PHASE, BUILD_PHASE] });
 });
