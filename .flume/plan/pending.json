@@ -1,100 +1,5 @@
 [
   {
-    "tag": "BUILD-IS-DECLARED-FIRST",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/chain.ts",
-          "description": "`phases: [build, ...planSlices]` at the factory's return"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the declared order, with the sweep enabled and disabled"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The package declares `[build, ...planSlices]`, the sweep last of those: at the default budget of one the schedule is product-first",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The phases"
-    },
-    "acceptance": "`chain.phases` names build first and the enabled plan slices after it in `PLAN_SLICES` order, the sweep last of them, whichever slices a declaration enables.",
-    "tests": [
-      "the package declares build first and the plan slices after it, the sweep last of them"
-    ],
-    "pins": [],
-    "notes": "One line at the `phases:` return; `PHASES` in `declaration.ts` is a roster (prompt names, per-phase fence keys), not the chain's order, and reads unchanged. Unblocks EVERY-WINDOW-IS-LIVE-ON-ITS-OWN-WORK, which starves build at the default budget without it. The budget itself stays the consumer's knob."
-  },
-  {
-    "tag": "THE-SUPERVISOR-HOLDS-ONE-CHILD-PER-AWAKE-PHASE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/Phase.ts",
-          "description": "`maxTicks` on the supervisor policy"
-        },
-        {
-          "path": "src/chainLoad.ts",
-          "description": "its declaration validation"
-        },
-        {
-          "path": "src/loopSupervisor.ts",
-          "description": "the child table, one child per awake phase in declared order, baton and stop re-read at every child boundary; the `--max N` iteration cap keeps its meaning under a name of its own"
-        },
-        {
-          "path": "src/cli.ts",
-          "description": "forward the policy value; the two caps stay distinct on the loop's summary"
-        },
-        {
-          "path": "src/cliHelp.ts",
-          "description": "the policy default on the loop's help"
-        },
-        {
-          "path": "tests/loopSupervisor.test.ts",
-          "description": "the concurrency, hibernation and stop arms"
-        },
-        {
-          "path": "tests/chain.test.ts",
-          "description": "the declaration arm"
-        },
-        {
-          "path": "docs/CHAIN-AUTHORING.md",
-          "description": "the knob"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The supervisor starts one child per awake phase with no child in flight, declared order, up to supervisorPolicy.maxTicks — default 1, the serial loop",
-    "per": {
-      "path": "spec/loop.md",
-      "section": "One tick is one fresh process"
-    },
-    "acceptance": "With `maxTicks` undeclared the run is the serial loop it is today; declared 2, two children run at once, one per awake phase; the run ends only once no flag stands and no child is in flight, and the stop flag starts no new child while every in-flight tick finishes.",
-    "tests": [
-      "the supervisor starts one child per awake phase up to supervisorPolicy.maxTicks",
-      "a phase whose child is in flight gets no second child while its flag stands",
-      "the run ends only once no flag stands and no child is in flight",
-      "the stop flag starts no new child and lets every in-flight tick finish",
-      "each child is told its phase"
-    ],
-    "pins": [
-      "an undeclared supervisorPolicy.maxTicks runs one child at a time"
-    ],
-    "notes": "`superviseLoop` already takes `opts.maxTicks` for the `--max N` iteration cap (default 50) — the ratified name collides with it, and one of the two is renamed here; the spec names only the policy field, so the other name is build's. Raising this repo's own budget is an operator edit to `.flume/declaration.ts`, outside every phase's fence.",
-    "contractTouching": true
-  },
-  {
     "tag": "SIBLING-TICKS-TAKE-TURNS-AT-GIT",
     "gate": {
       "kind": "open"
@@ -608,10 +513,7 @@
   {
     "tag": "EVERY-WINDOW-IS-LIVE-ON-ITS-OWN-WORK",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "BUILD-IS-DECLARED-FIRST"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
