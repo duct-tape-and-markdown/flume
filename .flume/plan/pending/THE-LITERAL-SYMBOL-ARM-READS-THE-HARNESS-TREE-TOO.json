@@ -1,0 +1,22 @@
+{
+  "tag": "THE-LITERAL-SYMBOL-ARM-READS-THE-HARNESS-TREE-TOO",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/engineMessages.test.ts",
+        "description": "the repo pin's `trees` takes `harness/` beside `src/`, under a second `it` carrying its own title"
+      }
+    ]
+  },
+  "summary": "The literal-symbol pin judges `src/` alone, so the package's other shipped tree spells 30 more literal spans against a surface nothing resolves them on",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the literals of `src/` and of `harness/` are both judged against the package's surface, each tree's claim carried by a test titled for that tree",
+  "pins": [
+    "no harness/ string literal names a function the package's surface does not hold"
+  ],
+  "notes": "Per note A-REFUSAL-NAMES-NO-FUNCTION-OFF-THE-PACKAGES-SURFACE. `trees` is already a request field (`tests/helpers/literalSymbols.ts`), so the change is the request plus a second `it` — the standing title names `src/`, and a title is the claim its body asserts. Measured this drain: `src/` scans 10 spans and resolves 10; with `harness/` it scans 40, resolves 40, finds nothing. `tests/` is no candidate — 281 findings, its literals naming internal helpers by design."
+}
