@@ -519,10 +519,23 @@ function cleanTreeGate(
 }
 
 /**
- * Every cursor a plan commit moves steps **forward, and only over history the
- * commit itself carries** (`spec/harness.md`, *The gates the discipline
- * needs*): each cursor's value at the gated commit is an ancestor of that
- * commit, and a descendant of the value the tick read before it.
+ * Every cursor a plan commit moves steps **forward, over history the commit
+ * itself carries, and only where its own slice was in a state to step it**
+ * (`spec/harness.md`, *The gates the discipline needs*): each cursor's value
+ * at the gated commit is an ancestor of that commit, a descendant of the
+ * value the tick read before it, and a value that slice's state at the same
+ * commit allows it to hold.
+ *
+ * **The third half is the slice's rule, read off the cursor.** Each declared
+ * cursor carries its own may-move rule beside its value — `CURSORS`
+ * (`planState.ts`) — so sweep's — closed rotation only — is judged here without this
+ * gate naming the sweep, the rotation, or the field, and derive's states none
+ * and is held to the two ancestry halves alone. It fires on a cursor whose
+ * value actually **changed**: a slice rewriting its own state to arm or
+ * extend a rotation moves no cursor, and a gate keying on the touched file
+ * alone would refuse exactly the tick that opens one. A cursor absent at the
+ * base is not a move either, for the same reason the descendant half skips
+ * it — there is no prior value it stepped from.
  *
  * **Every cursor the package declares, not derive's alone.** The set is
  * `CURSOR_FIELDS` (`planState.ts`), so sweep's `sweptThrough` is held to the
@@ -537,8 +550,11 @@ function cleanTreeGate(
  * after, and the window it renders looks exactly like a quiet tree. A cursor
  * stepped *backwards*, or sideways onto a sha this commit cannot reach,
  * re-derives history or names a window the next tick cannot draw at all.
- * Neither is recoverable by reading the artifact, because the artifact reads
- * as a cursor either way (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * A cursor stamped under an open rotation loses that rotation's covered set
+ * on the next tick, which re-derives a frontier from the new stamp and reads
+ * as a smaller neighborhood rather than as a failure. None of the three is
+ * recoverable by reading the artifact, because the artifact reads as a cursor
+ * either way (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * **Both shas the gate judges are ones the commit already carries.** The new
  * value is the plan state at `ctx.commitSha`; the pre-commit value is the
@@ -613,27 +629,39 @@ function cursorGate(engine: GateEngine): Gate {
           parseCursor(field, JSON.parse(text), `plan state at ${short(sha)}`);
 
         const after = at(ctx.commitSha, raw);
-        if (!(await engine.git.isAncestor(ctx.repoRoot, after, ctx.commitSha))) {
+        if (
+          !(await engine.git.isAncestor(ctx.repoRoot, after.value, ctx.commitSha))
+        ) {
           problems.push(
-            `${field} ${short(after)} is not an ancestor of the gated commit ${short(ctx.commitSha)}`,
+            `${field} ${short(after.value)} is not an ancestor of the gated commit ${short(ctx.commitSha)}`,
           );
         }
 
         const baseRaw = await engine.git.readFileAtRef(ctx.repoRoot, ctx.baseSha, path);
-        const before = baseRaw === null ? undefined : at(ctx.baseSha, baseRaw);
+        const before = baseRaw === null ? undefined : at(ctx.baseSha, baseRaw).value;
         if (
           before !== undefined &&
-          !(await engine.git.isAncestor(ctx.repoRoot, before, after))
+          !(await engine.git.isAncestor(ctx.repoRoot, before, after.value))
         ) {
           problems.push(
-            `${field} ${short(before)} -> ${short(after)} is not a step forward: ${short(after)} is not a descendant of the value the tick read at ${short(ctx.baseSha)}`,
+            `${field} ${short(before)} -> ${short(after.value)} is not a step forward: ${short(after.value)} is not a descendant of the value the tick read at ${short(ctx.baseSha)}`,
+          );
+        }
+
+        if (
+          before !== undefined &&
+          before !== after.value &&
+          after.heldBy !== undefined
+        ) {
+          problems.push(
+            `${field} ${short(before)} -> ${short(after.value)} is not a move its slice's own state at ${short(ctx.commitSha)} allows: ${after.heldBy}`,
           );
         }
 
         steps.push(
           before === undefined
-            ? `${field} ${short(after)}`
-            : `${field} ${short(before)} -> ${short(after)}`,
+            ? `${field} ${short(after.value)}`
+            : `${field} ${short(before)} -> ${short(after.value)}`,
         );
       }
 

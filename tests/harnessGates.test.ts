@@ -36,6 +36,7 @@ import {
   recordDirs,
   writePlanState,
   type Declaration,
+  type PlanStateWriteOf,
   type GateEngine,
 } from "../harness/index.ts";
 import { pendingGate } from "../src/builtinGates.ts";
@@ -896,11 +897,18 @@ const writeState = (derivedThrough: string): void =>
  * declares, in the second slice's own file. One file per writer, so a commit
  * carrying this one is judged on `sweptThrough` alone (`spec/harness.md`,
  * *Plan state as declared state*).
+ *
+ * The rotation rides the same write because it is the same file and the same
+ * writer: a case about a cursor stamped under an open rotation cannot hand
+ * the gate a rotation the slice's own writer never accepted.
  */
-const writeSweepState = (sweptThrough: string): void =>
+const writeSweepState = (
+  sweptThrough: string,
+  rotation: PlanStateWriteOf<"plan-sweep">["rotation"] = { kind: "closed" },
+): void =>
   writePlanState(join(repo, STATE_ROOT), "plan-sweep", {
     sweptThrough,
-    rotation: { kind: "closed" },
+    rotation,
   });
 
 /**
@@ -1119,6 +1127,84 @@ it("a plan commit whose sweptThrough is not a descendant of its pre-commit value
   // The one half that could fire did; the tip half agrees the cursor is reachable.
   expect((refused.details ?? "").split("\n")).toHaveLength(1);
   expect(refused.details).not.toContain("is not an ancestor of the gated commit");
+});
+
+/**
+ * The sweep's third half: its own state at the commit has to allow the step.
+ * A rotation stands open over the frontier the *old* stamp drew, and its
+ * covered set is settled for that window — so a tick that moves the stamp
+ * while the rotation is still open throws away the coverage nobody re-derives
+ * (`spec/harness.md`, *The gates the discipline needs*).
+ */
+it("a plan commit moving sweptThrough while its rotation is open is refused", async () => {
+  const first = git(repo, ["rev-parse", "HEAD"]);
+  await write("src/widget.ts", `export const widget = "second";\n`);
+  const second = commitAll("build: a commit for the sweep to stamp past").commitSha;
+
+  // A rotation armed over the first stamp, cursor unchanged: a real sweep
+  // tick, and green — the rule is about moving the stamp, not about holding
+  // an open rotation, so this arm proves the gate is not refusing the latter.
+  writeSweepState(first, { kind: "open", covered: ["src/widget.ts"] });
+  const armed = commitAll("plan: arm a rotation over the frontier at the stamp");
+  expect(armed.touchedPaths).toContain(SWEEP_STATE_PATH);
+  const opened = await cursor().run(ctxFor(armed, { phaseName: "plan-sweep" }));
+  expect(opened).toMatchObject({ ok: true });
+  expect(opened.skipped).toBeUndefined();
+
+  // Same open rotation, stamp stepped forward over history the commit does
+  // carry: both ancestry halves agree, and only the slice's own rule can
+  // catch it.
+  writeSweepState(second, { kind: "open", covered: ["src/widget.ts"] });
+  const span = commitAll("plan: stamp the sweep cursor with the rotation still open");
+  const refused = await cursor().run(ctxFor(span, { phaseName: "plan-sweep" }));
+
+  expect(refused.ok).toBe(false);
+  expect((refused.details ?? "").split("\n")).toHaveLength(1);
+  expect(refused.details).toContain(
+    `sweptThrough ${short(first)} -> ${short(second)} is not a move its slice's own state at ${short(span.commitSha)} allows`,
+  );
+  expect(refused.details).toContain("the rotation it stamps under is still open");
+  // The two ancestry halves are not what fired: the step itself was sound.
+  expect(refused.details).not.toContain("is not an ancestor of the gated commit");
+  expect(refused.details).not.toContain("is not a step forward");
+});
+
+/**
+ * The same move on the tick that closes the rotation — the one tick the sweep
+ * stamps on. Derive's cursor beside it, declaring no such rule and held to
+ * the ancestry bound alone, so the rule is read off the cursor rather than
+ * applied to whichever field the gate happens to be judging.
+ */
+it("a plan commit moving sweptThrough on the tick that closes its rotation is allowed", async () => {
+  const first = git(repo, ["rev-parse", "HEAD"]);
+  writeSweepState(first, { kind: "open", covered: ["src/widget.ts"] });
+  writeState(first);
+  const stamped = commitAll("plan: stamp both cursors, sweep mid-rotation");
+  // Vacuity pin: both files ride the span, so both cursors have a pre-commit
+  // value for the move below to be judged against.
+  expect(stamped.touchedPaths).toContain(SWEEP_STATE_PATH);
+  expect(stamped.touchedPaths).toContain(STATE_PATH);
+  expect(await cursor().run(ctxFor(stamped, { phaseName: "plan-sweep" }))).toMatchObject({
+    ok: true,
+  });
+
+  await write("src/widget.ts", `export const widget = "second";\n`);
+  const second = commitAll("build: a commit for both cursors to step over").commitSha;
+  writeSweepState(second, { kind: "closed" });
+  writeState(second);
+  const span = commitAll("plan: close the rotation and stamp both cursors at the tip");
+
+  const passed = await cursor().run(ctxFor(span, { phaseName: "plan-sweep" }));
+
+  expect(passed.ok).toBe(true);
+  // Judged, not skipped, and naming both steps it read.
+  expect(passed.skipped).toBeUndefined();
+  expect(passed.message).toContain(
+    `sweptThrough ${short(first)} -> ${short(second)}`,
+  );
+  expect(passed.message).toContain(
+    `derivedThrough ${short(first)} -> ${short(second)}`,
+  );
 });
 
 it("the cursor gate judges both declared cursors in one commit that moves them", async () => {

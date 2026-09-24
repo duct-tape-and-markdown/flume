@@ -323,10 +323,30 @@ export function writePlanState<S extends PlanSlice>(
 }
 
 /**
- * One cursor a plan slice window may be drawn past: the slice whose file
- * holds it, and the read of it off that file.
+ * One cursor read off one artifact: what it says there, and what that same
+ * artifact says about moving it.
  *
- * The pair rather than the field name alone, because a window owes two
+ * The two travel together because they come out of one parse of one slice's
+ * state, and because a caller judging a move needs both: the value is what
+ * the move stepped to, and the hold is whether the slice was in a state to
+ * take that step at all.
+ */
+interface CursorRead {
+  /** The cursor's value in that artifact. */
+  readonly value: string;
+  /**
+   * Why the slice's own state there forbids moving this cursor, as a clause
+   * naming the state that forbids it — or `undefined` where that state allows
+   * the move, which includes every cursor whose slice states no such rule.
+   */
+  readonly heldBy: string | undefined;
+}
+
+/**
+ * One cursor a plan slice window may be drawn past: the slice whose file
+ * holds it, the read of it off that file, and the read of it off bytes.
+ *
+ * The bundle rather than the field name alone, because a window owes two
  * answers about a cursor — its value, and where a tick repairs it when it
  * names no commit — and the second one is now a different file per cursor.
  */
@@ -336,7 +356,7 @@ interface Cursor {
   /** Its value, or `undefined` where that slice has written no file yet. */
   readonly at: (stateRoot: string) => string | undefined;
   /**
-   * Its value off an already-parsed artifact, refused by the owning slice's
+   * Its read off an already-parsed artifact, refused by the owning slice's
    * own schema when that artifact is not one.
    *
    * The read a caller holding the bytes rather than the disk needs — a gate
@@ -346,19 +366,32 @@ interface Cursor {
    * extractor, which is the branch on one cursor this table exists to
    * replace.
    */
-  readonly of: (parsed: unknown, locus: string) => string;
+  readonly of: (parsed: unknown, locus: string) => CursorRead;
 }
 
 /**
- * One cursor, bound to the slice state that holds it.
+ * The may-move rule of a cursor whose slice states none: nothing in that
+ * slice's state holds the cursor still, so a move of it is judged on its
+ * step through history alone.
  *
- * The slice is named once and the field read off that slice's own type, so a
- * field this schema renames is a typecheck failure here rather than a cursor
- * silently read as absent — which every window reads as "run".
+ * Spelled at the table rather than left out, so a fourth slice's cursor
+ * arrives with the question answered either way instead of inheriting
+ * "whenever" from an argument its author did not write.
+ */
+const movesWhenever = (): undefined => undefined;
+
+/**
+ * One cursor, bound to the slice state that holds it and to the rule that
+ * state states about moving it.
+ *
+ * The slice is named once and both reads taken off that slice's own type, so
+ * a field this schema renames is a typecheck failure here rather than a
+ * cursor silently read as absent — which every window reads as "run".
  */
 function cursorOf<S extends PlanSlice>(
   slice: S,
   field: (state: PlanStateOf<S>) => string,
+  mayMove: (state: PlanStateOf<S>) => string | undefined,
 ): Cursor {
   return {
     slice,
@@ -366,23 +399,47 @@ function cursorOf<S extends PlanSlice>(
       const state = readPlanState(stateRoot, slice);
       return state === undefined ? undefined : field(state);
     },
-    of: (parsed, locus) => field(parseOrThrow(schemaFor(slice), parsed, locus)),
+    of: (parsed, locus) => {
+      const state = parseOrThrow(schemaFor(slice), parsed, locus);
+      return { value: field(state), heldBy: mayMove(state) };
+    },
   };
 }
 
 /**
  * Every cursor the package's slices keep, under the field name a window is
- * drawn past it by.
+ * drawn past it by — each with its value, the slice whose file holds it, and
+ * the rule that slice's own state states about moving it.
  *
  * Keyed by the string-valued fields the slice states declare
  * ({@link AnyCursorField}), so a cursor the schemas rename, drop or add is a
  * typecheck failure at this table rather than a window drawn past a field
  * nothing holds (`.claude/rules/engineering.md`, *Derived state is computed,
  * never restated beside its source*).
+ *
+ * **The may-move rule rides the table, not the caller.** Sweep's cursor may
+ * step only where its rotation is closed, because a cursor stamped past a
+ * frontier still being worked loses that frontier's covered set; derive's
+ * states no such rule. A gate judging moves reads the rule off whichever
+ * cursor it holds, where branching on one named field inside machinery
+ * already generic over every declared cursor would be the special case this
+ * table exists to absorb (`.claude/rules/engineering.md`, *The fix lands at
+ * the mechanism*).
  */
 const CURSORS = {
-  derivedThrough: cursorOf("plan-derive", (state) => state.derivedThrough),
-  sweptThrough: cursorOf("plan-sweep", (state) => state.sweptThrough),
+  derivedThrough: cursorOf(
+    "plan-derive",
+    (state) => state.derivedThrough,
+    movesWhenever,
+  ),
+  sweptThrough: cursorOf(
+    "plan-sweep",
+    (state) => state.sweptThrough,
+    (state) =>
+      state.rotation.kind === "open"
+        ? "the rotation it stamps under is still open, so the frontier that rotation has covered is lost to the next tick"
+        : undefined,
+  ),
 } as const satisfies Record<AnyCursorField, Cursor>;
 
 /**
@@ -435,10 +492,14 @@ export const readCursor = (
  *
  * For the caller whose artifact is not on a disk it can name: a state file
  * read at a commit, a fixture under test. `readCursor` is the same read with
- * the file access in front of it.
+ * the file access in front of it, and the value alone — a caller drawing a
+ * window has a cursor to step past, not a move to judge.
+ *
+ * Both halves come out of the one parse, so a caller asking whether a move
+ * was allowed never decodes the same bytes a second time to find out.
  */
 export const parseCursor = (
   field: CursorField,
   parsed: unknown,
   locus: string,
-): string => CURSORS[field].of(parsed, locus);
+): CursorRead => CURSORS[field].of(parsed, locus);
