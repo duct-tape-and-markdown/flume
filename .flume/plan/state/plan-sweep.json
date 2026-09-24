@@ -158,7 +158,11 @@
       "src/waitLock.ts",
       "src/log.ts",
       "tests/helpers/deadPid.ts",
-      "tests/helpers/scratchRepo.ts"
+      "tests/helpers/scratchRepo.ts",
+      "src/cliStateDirs.ts",
+      "harness/dirListing.ts",
+      "src/entryKey.ts",
+      "src/exitCodes.ts"
     ]
   }
 }

@@ -1,0 +1,39 @@
+{
+  "tag": "THE-FOUR-CLI-EXIT-CODES-ARE-ONE-VOCABULARY",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/exitCodes.ts",
+        "description": "takes `EX_DATAERR` and `EX_IOERR` beside the two it holds; the header names the vocabulary it actually carries, every verb's rather than `flume tick`'s alone"
+      },
+      {
+        "path": "src/cli.ts",
+        "description": "imports all four instead of declaring two of them"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the two exit-code imports fold into one"
+      },
+      {
+        "path": "tests/cliVerdict.test.ts",
+        "description": "the two exit-code imports fold into one"
+      },
+      {
+        "path": "tests/cliStateDirs.test.ts",
+        "description": "the `EX_IOERR` import moves to the vocabulary's home"
+      },
+      {
+        "path": "tests/cliRender.test.ts",
+        "description": "the `EX_DATAERR` import moves to the vocabulary's home"
+      }
+    ]
+  },
+  "summary": "Two of the CLI's four exit codes are declared in `src/cli.ts` and two in `src/exitCodes.ts` — one vocabulary, two homes, imported both ways inside one test file",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A module is one job"
+  },
+  "acceptance": "every `flume` process-boundary exit code is declared in `src/exitCodes.ts`, `src/cli.ts` imports them like every other reader, and no site reaches into the CLI entry module for one",
+  "notes": "Verified this tick. `src/exitCodes.ts:1`-`:9` states the file exists so neither the writer's module nor the reader's owns these, then holds only `EX_TERMINAL_MISCONFIG` (`:18`) and `EX_MOUNT_DEAD` (`:32`); `src/cli.ts:117` and `:125` declare `EX_DATAERR` and `EX_IOERR`. `tests/cliVerdict.test.ts:17`-`:18` imports from both. No citation pairs either constant with `src/cli.ts`, so the move strands none. Claims no property: behavior-free, held by tsc, the suite and the export pin."
+}
