@@ -33,7 +33,10 @@
  * the entry claim cannot come to disagree about what a stale file is or about
  * whose file a release removes. The wait locks keep their own loop, which
  * parts from it at exactly one decision (`acquireWaitLock`,
- * `src/waitLock.ts`).
+ * `src/waitLock.ts`) — but not their own drop: giving a guard file up is
+ * {@link atMostOnceDrop} here, taken by the stake and by the wait locks
+ * alike, because "whose file does this release remove" is one answer for
+ * every guard flume has and the loop they differ in does not reach it.
  *
  * Nothing beyond the statement, that read and that stake here: what to do
  * about a live claim — refuse, wait, leave the entry to its holder — belongs
@@ -145,16 +148,45 @@ export async function liveLoopPid(dir: string): Promise<number | null> {
   return (await liveLoopClaim(dir))?.pid ?? null;
 }
 
+/**
+ * The drop every guard flume takes gives its file up through: unlink `target`
+ * on the first call, and nothing on any later one.
+ *
+ * A guard file is a shared address, not the holder's private one. A holder is
+ * released twice by design wherever an exit handler stands beside a `finally`
+ * (`flume tick`'s bare tip claim and `flume loop`'s, `src/cli.ts`), and by the
+ * second call a later holder — the next tick, a sibling run — may have taken
+ * the same path. An unconditional unlink there deletes a live claim this
+ * process does not hold, so the guard rides the drop rather than each guard's
+ * own `held` flag beside it (`.claude/rules/engineering.md`, *The fix lands at
+ * the mechanism*).
+ *
+ * `target` is the platform-folded path the create wrote (`namespacedJoin`,
+ * `src/paths.ts`), not the caller's unfolded one. Synchronous throughout, so
+ * an exit handler can call it, and an absent file is already the outcome the
+ * caller asked for.
+ */
+export function atMostOnceDrop(target: string): () => void {
+  let dropped = false;
+  return () => {
+    if (dropped) return;
+    dropped = true;
+    try {
+      unlinkSync(target);
+    } catch {
+      // already gone
+    }
+  };
+}
+
 /** A guard file this process created, and the one way to give it up. */
 export interface StakedPidClaim {
   /** The file on disk this holder created. */
   readonly path: string;
   /**
-   * Remove the claim file **this stake created**, and only that one. Drops at
-   * most once: a second call unlinks nothing, so a holder released twice — an
-   * exit handler after a `finally`, a rollback after a signal — cannot delete
-   * the claim a later holder has since staked at the same path. Synchronous,
-   * so an exit handler can call it.
+   * Remove the claim file **this stake created**, and only that one —
+   * {@link atMostOnceDrop}, which is what "and only that one" is bought
+   * with. Synchronous, so an exit handler can call it.
    */
   release: () => void;
 }
@@ -206,29 +238,11 @@ export async function stakePidClaim(path: string): Promise<PidClaimStake> {
       await writeFile(target, renderPidClaim(process.pid, new Date()), {
         flag: "wx",
       });
-      // The release drops at most once, at the stake that took the file. A
-      // guard file is a shared address, not this process's private one: the
-      // holder that gives it up may be released again — an exit handler after
-      // a `finally`, a rollback after a signal — and by then a later holder
-      // may have staked the same path. An unlink on that second call deletes a
-      // claim this process does not hold. The guard rides the stake rather
-      // than each caller's own `held` flag beside it
-      // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
-      let released = false;
+      // The drop is `atMostOnceDrop` above, which is where whose-file-does-
+      // this-remove is decided for every guard.
       return {
         kind: "staked",
-        claim: {
-          path,
-          release: () => {
-            if (released) return;
-            released = true;
-            try {
-              unlinkSync(target);
-            } catch {
-              // already gone
-            }
-          },
-        },
+        claim: { path, release: atMostOnceDrop(target) },
       };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;

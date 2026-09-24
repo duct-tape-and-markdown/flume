@@ -5,8 +5,10 @@
  *
  * The two differ in exactly one decision and share everything else. Both
  * exclusive-create a file carrying the holder's pid and instant
- * (`renderPidClaim`, `src/pidClaim.ts`), and both reclaim a file whose
- * recorded pid names no live process. What a live holder means is where they
+ * (`renderPidClaim`, `src/pidClaim.ts`), both reclaim a file whose recorded
+ * pid names no live process, and both give the file up through the one drop
+ * that removes only what the holder calling it created (`atMostOnceDrop`,
+ * `src/pidClaim.ts`). What a live holder means is where they
  * part: the tip claim says "another engine run owns this tip" and refuses,
  * while the guards here say "a sibling tick of *this* run is at git right
  * now" and wait for its turn to end (spec/loop.md, *The ship lock and the
@@ -19,13 +21,16 @@
  */
 
 import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { Logger } from "./log.js";
 import { namespacedJoin } from "./paths.js";
-import { livePidClaimAt, renderPidClaim } from "./pidClaim.js";
+import {
+  atMostOnceDrop,
+  livePidClaimAt,
+  renderPidClaim,
+} from "./pidClaim.js";
 
 /**
  * How long an acquirer sleeps between two liveness probes of a live holder.
@@ -44,8 +49,11 @@ export interface WaitLock {
   /** The file on disk this holder created. */
   readonly path: string;
   /**
-   * Remove the lock file. Idempotent and synchronous, the same shape the tip
-   * claim's release carries, so an exit handler can call it.
+   * Remove the lock file **this acquire created**, and only that one. The tip
+   * claim's release and this one are the same drop, not the same shape twice
+   * (`atMostOnceDrop`, `src/pidClaim.ts`): a second call unlinks nothing, so
+   * a lock released twice cannot take a waiting sibling's turn from under it.
+   * Synchronous, so an exit handler can call it.
    */
   release: () => void;
 }
@@ -123,14 +131,5 @@ export async function acquireWaitLock(opts: {
       }
     }
   }
-  return {
-    path,
-    release: () => {
-      try {
-        unlinkSync(target);
-      } catch {
-        // already gone
-      }
-    },
-  };
+  return { path, release: atMostOnceDrop(target) };
 }

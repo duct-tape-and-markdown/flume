@@ -107,6 +107,85 @@ describe("acquireWaitLock — the wait-and-reclaim guard", () => {
   });
 });
 
+/**
+ * The release's reach — whose lock file it removes, and how many times.
+ *
+ * A lock file is a shared address, not the holder's private one: the acquirer
+ * that gives it up may be released again — an exit handler after a `finally`,
+ * a rollback after a signal — and by then a sibling tick of this run may hold
+ * the same path. The drop the wait lock returns is the stake's own
+ * (`atMostOnceDrop`, `src/pidClaim.ts`), so the second call removes nothing
+ * rather than taking a waiting sibling's turn out from under it.
+ */
+describe("acquireWaitLock — the release drops the file its own acquire created", () => {
+  it("a wait lock released once removes the file it created", async () => {
+    const dir = await mkTempDir("flume-wait-lock-release-");
+    try {
+      const path = join(dir, "flume", "some.lock");
+      const lock = await acquireWaitLock({
+        path,
+        label: "the ship lock",
+        log: recording(),
+        pollMs: 10,
+      });
+
+      // Non-vacuity: the subject is a file this acquire really created,
+      // naming this process. Absent here, the assertion below would be about
+      // a path nothing ever wrote.
+      expect(existsSync(lock.path)).toBe(true);
+      expect(await holderAt(lock.path)).toBe(process.pid);
+
+      lock.release();
+
+      expect(existsSync(lock.path)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a wait lock released a second time leaves a later holder's lock file standing", async () => {
+    const dir = await mkTempDir("flume-wait-lock-rerelease-");
+    try {
+      const path = join(dir, "flume", "some.lock");
+      const first = await acquireWaitLock({
+        path,
+        label: "the ship lock",
+        log: recording(),
+        pollMs: 10,
+      });
+      first.release();
+      expect(existsSync(path)).toBe(false);
+
+      // The later holder: the path is free, so this acquire creates a file of
+      // its own rather than reclaiming over the first — and its holder is the
+      // vitest worker, alive for the duration of the call, the convention
+      // every liveness fixture here uses.
+      const later = await acquireWaitLock({
+        path,
+        label: "the ship lock",
+        log: recording(),
+        pollMs: 10,
+      });
+      expect(await holderAt(path)).toBe(process.pid);
+
+      // The first acquirer's exit handler, firing after its `finally` already
+      // dropped: the drop is spent, so this call unlinks nothing.
+      first.release();
+
+      expect(
+        existsSync(path),
+        "a spent release removed the later holder's lock file",
+      ).toBe(true);
+      expect(await holderAt(path)).toBe(process.pid);
+
+      later.release();
+      expect(existsSync(path)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("the ship lock and the worktree lock — sibling ticks take turns at git", () => {
   let scratch: ScratchRepo | undefined;
 
