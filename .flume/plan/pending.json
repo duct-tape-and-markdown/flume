@@ -5,6 +5,7 @@
       "kind": "open"
     },
     "dependsOnForks": [],
+    "priority": 0,
     "files": {
       "new": [
         {
@@ -124,6 +125,7 @@
       "kind": "open"
     },
     "dependsOnForks": [],
+    "priority": 0,
     "files": {
       "new": [],
       "edit": [
@@ -176,7 +178,27 @@
       "a claim held by a dead pid is reclaimed by the next selection"
     ],
     "pins": [],
-    "notes": "Reported, never inferred: nothing outside the engine re-reads the claims directory. What a producer does about a claimed entry it would have changed stays the chain's."
+    "notes": "Reported, never inferred: nothing outside the engine re-reads the claims directory. What a producer does about a claimed entry it would have changed stays the chain's.",
+    "observedFiles": [
+      ".flume/plan/notes/A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT.md",
+      "harness/chain.ts",
+      "harness/prompts.ts",
+      "harness/prompts/plan-derive.md",
+      "harness/prompts/plan-inbox.md",
+      "harness/prompts/plan-sweep.md",
+      "src/Dispatcher.ts",
+      "src/Phase.ts",
+      "src/entryClaims.ts",
+      "src/git.ts",
+      "src/index.ts",
+      "src/pidClaim.ts",
+      "src/selection.ts",
+      "src/singletonTick.ts",
+      "src/tickLeg.ts",
+      "src/waveTick.ts",
+      "tests/Dispatcher.test.ts",
+      "tests/harnessPrompts.test.ts"
+    ]
   },
   {
     "tag": "THE-PENDING-GATE-CARRIES-THE-CLAIM-CHECK",
@@ -188,6 +210,7 @@
       ]
     },
     "dependsOnForks": [],
+    "priority": 0,
     "files": {
       "new": [],
       "edit": [
@@ -230,57 +253,12 @@
     "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. It is the section's only merged-tree gate: there is no duplicate refusal beside it — the drain folds a duplicate instead (THE-DRAIN-FOLDS-A-DUPLICATE-FINDING)."
   },
   {
-    "tag": "A-BUILD-REFUSAL-KEYS-ON-THE-ENTRY-AS-DECLARED",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/priorAttempts.ts",
-          "description": "stamp and report the entry-as-declared key on the record"
-        },
-        {
-          "path": "src/Prompt.ts",
-          "description": "the key on the PriorAttempt shape"
-        },
-        {
-          "path": "harness/handoff.ts",
-          "description": "the refusal reads the key, not the tip sha"
-        },
-        {
-          "path": "tests/priorAttempts.test.ts",
-          "description": "the stamped key"
-        },
-        {
-          "path": "tests/harnessHandoff.test.ts",
-          "description": "survives a moved tip, lifts on a rewrite"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The per-entry build refusal keys on the record's slug and declared hash, not the tip sha: it lifts on a producer's rewrite or drop, never on a tip that moved",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The phases"
-    },
-    "acceptance": "A standing refusal survives an unrelated commit that moves the tip, lifts the moment the producer rewrites the entry, and ends when the producer drops it; the key is read off the engine's reported record, never composed by the package.",
-    "tests": [
-      "a standing build refusal survives an operator commit that moves the tip",
-      "a producer's rewrite of the refused entry lifts the refusal",
-      "the engine reports the entry-as-declared key on the prior-attempt record"
-    ],
-    "pins": [],
-    "notes": "`REPEATS_AT_ONE_HEAD` currently anchors on `prior.headSha === ctx.headSha`, which the spec says already lapses under an operator commit. The declared hash is the shape `quarantineKey` already computes, `observedFiles` excluded — one derivation, not a second."
-  },
-  {
     "tag": "EVERY-WINDOW-IS-LIVE-ON-ITS-OWN-WORK",
     "gate": {
       "kind": "open"
     },
     "dependsOnForks": [],
+    "priority": 0,
     "files": {
       "new": [],
       "edit": [
