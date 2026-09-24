@@ -22,6 +22,7 @@ import {
 } from "./streamJson.js";
 import {
   budgetHookCommand,
+  HOOK_EVENT_NAME,
   type BudgetDeclaration,
 } from "./budgetHook.js";
 import { spawnProcessTree, terminateProcessTree } from "./processTree.js";
@@ -400,7 +401,7 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
 function budgetSettings(budget: BudgetDeclaration): string {
   return JSON.stringify({
     hooks: {
-      PostToolUse: [
+      [HOOK_EVENT_NAME]: [
         {
           matcher: "*",
           hooks: [{ type: "command", command: budgetHookCommand(budget) }],

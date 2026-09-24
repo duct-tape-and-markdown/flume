@@ -72,6 +72,16 @@ const CONTEXT_WINDOW_FLAG = "--context-window";
 const EVERY_CALLS_FLAG = "--every-calls";
 const THRESHOLDS_FLAG = "--thresholds";
 
+/**
+ * The provider's event this hook runs on. One declaration because both ends
+ * of the registration spell it: the settings key the adapter arms the hook
+ * under (`budgetSettings`, `src/Agent.ts`) and the `hookEventName` the hook
+ * echoes back to claim its output. The provider matches the two, so an event
+ * renamed on one side alone is a line the agent's next turn never sees, with
+ * nothing failing to say so.
+ */
+export const HOOK_EVENT_NAME = "PostToolUse";
+
 /** This module's own path — the script the rendered command invokes. */
 const HOOK_MODULE_PATH = fileURLToPath(import.meta.url);
 
@@ -307,13 +317,13 @@ export async function budgetHookOutcome(
 }
 
 /**
- * The line in the shape a PostToolUse hook hands text to the agent's next
- * turn. Provider shape, spelled at the one site that writes it.
+ * The line in the shape {@link HOOK_EVENT_NAME} hands text to the agent's
+ * next turn. Provider shape, spelled at the one site that writes it.
  */
 function additionalContext(line: string): unknown {
   return {
     hookSpecificOutput: {
-      hookEventName: "PostToolUse",
+      hookEventName: HOOK_EVENT_NAME,
       additionalContext: line,
     },
   };
