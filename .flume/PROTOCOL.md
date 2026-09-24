@@ -67,7 +67,7 @@ No schema holds these; they are the plan tick's actual work.
 
 ## Plan slices
 
-Plan is three singleton phases, one job each — `plan-inbox`, `plan-derive`, `plan-sweep` — in that priority. Each owns one cursor in the plan state (`plan/state.json`, typed fields the package reads through its own accessor — `spec/harness.md`, *Plan state as declared state*, names them); the windows a slice reads, the predicates and the ladder, and the shared writer discipline are the package's — the slice prompts point at the discipline page by the address the package resolves.
+Plan is three singleton phases, one job each — `plan-inbox`, `plan-derive`, `plan-sweep` — in that priority. Each owns its own plan-state file (`plan/state/<slice>.json` — derive and sweep a cursor each, inbox the drained CI runs — typed fields the package reads through its own accessor; `spec/harness.md`, *Plan state as declared state*, names them); the windows a slice reads, the predicates and the wake set, and the shared writer discipline are the package's — the slice prompts point at the discipline page by the address the package resolves.
 
 ## Records: one file each
 
@@ -81,7 +81,7 @@ A finding for plan and a note from build are **records**: one file per record, n
 
 Drained means **deleted**: the inbox slice routes each record to an entry, an open question, or an accepted-debt line in its commit body, then removes the file. An empty directory is the steady state.
 
-**A landing does not wake plan.** A record or a spec edit landed from an interactive session rides the next plan tick that runs for its own reasons; the drain takes every record in the directory at once, so batching is free. No landing earns `flume wake plan-inbox`: the inbox slice yields to pickable work whatever the marker says, so a wake against a live queue is declined, and a ruling that unblocks a queued entry reaches the queue at the next drain, one wave later at most. Waking per landing turns the drain into a synchronous round-trip and doubles plan's tick count for nothing shipped.
+**A landing does not wake plan.** A record or a spec edit landed from an interactive session rides the next plan tick that runs for its own reasons; the drain takes every record in the directory at once, so batching is free. No landing earns `flume wake plan-inbox`: a record makes the slice live on its own, so the wake adds nothing the next tick would not do, and a ruling that unblocks a queued entry reaches the queue at the next drain, one wave later at most. Waking per landing turns the drain into a synchronous round-trip and doubles plan's tick count for nothing shipped.
 
 ## Disk vs git log
 
