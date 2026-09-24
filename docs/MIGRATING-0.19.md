@@ -57,6 +57,7 @@ grep -rn 'PlanStateSchema\|readPlanState\|writePlanState\|planStatePath\|planArt
 ls "$(git rev-parse --show-toplevel)"/.flume/plan/state.json             # § 6
 grep -rn 'tick-verdict\.json' --include='*.ts' --include='*.md' \
   --include='.gitignore' .                                                # § 7
+grep -rn 'flume tick.*[^-]-\?1\b\|exit 1' --include='*.sh' --include='*.yml' .  # § 9
 ```
 
 The path greps are the ones to run even if the API greps come back empty: a
@@ -343,3 +344,51 @@ The stale `tick-verdict.json` left on disk is inert — nothing reads it — and
 `rm` is the whole cleanup. `tick-verdicts.jsonl` is untouched: it is still one
 append-only history log for every phase, and `readTickVerdicts` /
 `readLatestVerdictsSync` still serve it unchanged.
+
+## 8. The default schedule is build first, and every live slice wakes
+
+The package's declared phase order is now `[build, ...planSlices]`, the
+sweep last of the slices, and the default `handoff` answers with every
+slice whose window is live plus build whenever anything is pickable —
+where before it named the first live slice on a ladder and build only when
+no slice was.
+
+Why: each phase is a worker now. `supervisorPolicy.maxTicks` says how many
+run at once, and declared order is the priority when the budget is short.
+At the engine default of one, that order *is* the schedule, so build now
+outranks every plan slice: a queue with pickable work builds, and the drain
+runs when build declines or when a refusal routes to it. Under the old
+ladder the inbox ran between every wave.
+
+**What changes for you.** Nothing in code; the schedule is the package's.
+If your chain relied on a plan slice running after every build tick — a
+drain you expected to fold notes before the next wave — that now happens
+when build has nothing pickable, or on the next iteration once you raise
+`maxTicks` above one and the drain runs beside build. A declared `handoff`
+still replaces the wake set, and still runs beneath the two floors: the
+per-entry refusal and the stop write after a contract-touching ship.
+
+```ts
+// .flume/declaration.ts — optional: run a build wave beside one plan slice
+supervisor: { maxParallel: 2, maxTicks: 2 },
+```
+
+Two ticks at once means two agents plus a wave's width; the judge suites
+serialize under the ship lock, so memory grows by the agents, not the
+suites.
+
+## 9. An unknown `--phase` exits 2
+
+`flume tick --phase <name>` names the phase a child runs — the supervisor
+uses it for every child it starts. A name the chain does not declare is
+refused before any work at exit **2**, the usage class every verb shares,
+where `tick` first shipped it at 1. `wake`, `sleep`, and `render` already
+answered 2 for the same refusal.
+
+```sh
+grep -rn 'tick.*--phase' --include='*.sh' --include='*.yml' .   # any script reading the code
+```
+
+A script keying on exit 1 for this case reads 2 now; nothing else moves.
+The supervisor never spawns a child for an undeclared phase — it reports an
+orphaned baton flag itself — so the code is argv's alone.

@@ -11,14 +11,126 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-24
+
+The scheduler release: **every phase is a worker, and the tick bound is the
+agent's.** The supervisor holds one child per awake phase up to a declared
+budget instead of walking a ladder; the ledger and the plan state became
+directories so two writers merge; a build tick stakes a claim on the entry
+it carries; two locks serialize git; and a build agent that has landed a
+green segment can put its entry down with a continuing note and pick it up
+next tick, guided by a budget line the adapter hands it after every tool
+call. `docs/MIGRATING-0.19.md` walks the cutovers. Measured on this repo's
+own loop: agent minutes per wall minute rose from 1.0 to 1.65, and the
+queue's depth after a plan tick from one entry to twenty.
+
+### Breaking
+
+- **The pending queue is a directory.** `Chain.pendingPath` is
+  `Chain.pendingDir`, defaulting to `plan/pending`, one `<tag>.json` per
+  entry; `GateContext.pendingPath` follows; `parsePending`,
+  `parsePendingLoose`, and `composePendingList` are `parsePendingQueue`,
+  `parsePendingQueueLoose`, and `composePendingEntry`, and a parse failure
+  names its file. Order is a `priority` field, never array position. The
+  queue on disk is an operator cutover (`MIGRATING-0.19.md` §§ 1–5).
+- **Plan state is one file per slice**, `plan/state/<slice>.json`; the
+  accessors take the slice, `planArtifacts` is per slice, and the inbox no
+  longer advances the derive cursor (§ 6).
+- **The tick verdict is a directory**, `tick-verdict/<phase>.json`, one
+  file per phase, since sibling children shared one path and the last to
+  finish erased the rest (§ 7).
+- **The package's declared order is build first**, the plan slices after
+  it and the sweep last; the default handoff wakes every live slice and
+  build together instead of naming the first live one. At the default
+  budget of one, build now outranks every plan slice (§ 8).
+- **An unknown `--phase` exits 2** at every verb, the usage class, where
+  `tick` answered 1 (§ 9).
+
+### Added
+
+- **`supervisorPolicy.maxTicks`.** The supervisor starts one `flume tick`
+  child per awake phase, in declared order, up to this many at once; each
+  child is told its phase with `flume tick --phase <name>`. Default one,
+  byte-identical to the serial loop. Read once per run.
+- **The ship lock and the worktree lock**, under `<git-common-dir>/flume/`:
+  every cherry-pick, afterMerge gate run, and ledger commit takes the ship
+  lock; every `git worktree` mutation takes the worktree lock. Both wait on
+  a live holder and reclaim a dead one. Judge suites therefore never
+  overlap.
+- **A per-entry claim.** A build tick stakes `<git-common-dir>/flume/claims/<slug>`
+  on selection and drops it when the attempt ends; selection skips a
+  claimed entry, `TickContext.claimed` and `TickResult.claimedTags` report
+  the set, every plan slice's queue listing marks it, and `pendingGate`
+  refuses a producer commit that edits or removes a claimed entry — now
+  attachable `afterMerge` through `opts.when`.
+- **A wake token.** A wake writes a fresh token into the phase's flag and a
+  tick sleeps its phase only while the flag still carries the token it
+  started on, so a wake landing mid-tick is kept.
+- **The budget line.** `claudeCode({ budget })` registers a hook on that
+  invocation's own settings whose script reads the transcript the provider
+  hands it and injects `budget: context N/W tokens (p%) | elapsed | tool
+  calls` after tool calls, at a cadence and at thresholds; the harness
+  declaration's `agents.<phase>.contextWindow` forwards the window. A
+  threshold declared with no window is refused at load.
+- **A tick puts work down.** A build agent that has landed a green segment
+  writes `notes/continuing/<TAG>.md`; the `shipped` predicate keeps the
+  entry, the named-lines judge skips the segment, the refusal does not
+  hold it, and the handoff routes it back to build. The next tick on the
+  entry is handed the note beside its prior-attempt record, and the
+  completing ship removes the note or is refused.
+- **`TickResult.priorAttempts`**, the record store as the tick left it,
+  which the package's refusal leg reads instead of re-pairing rows.
+- **`TickResult.stakeLosses`**, the entries a wave lost the claim race for.
+- **The slice-state gate** holds every declared cursor — derive's and
+  sweep's — an ancestor of the tip and a descendant of its pre-commit
+  value, and holds each to its slice's own state: the sweep's stamp moves
+  only on the tick that closes its rotation.
+- **The sweep window** renders the frontier as a path union rather than a
+  commit walk, cutting 133 KB from a 245 KB prompt; the sweep's per-tick
+  bound is its budget line, not one neighborhood.
+- **Every plan slice's prompt renders its state file's literal shape**,
+  typed against the schema, after a downstream first tick wrote a bare
+  word where the rotation wants an object. (PR #20.)
+- **`flume-harness init` seeds each slice's state file** at the adopting
+  tip with a closed rotation.
+- **An elided footprint stays plan's to resolve**: a prior-attempt record
+  carrying `omittedPaths` decides no collision on its own.
+- **Docs and pins.** `MIGRATING-0.19.md`; the interface pages' backticked
+  identifiers and the shipped help literals' section cites are judged
+  against the package's surface; a quoted section cite resolves like an
+  italicized one; the authoring page's declaration walk reaches the
+  shipped subfields; the cite scan's coverage reads the declared sweep
+  domain; the discipline page prices under-declaring at the tick's span
+  and tells a derive that cuts one section into siblings to declare the
+  seam they share.
+
 ### Fixed
 
-- **Each plan slice's prompt shows its state file's exact JSON shape.** A
-  `<plan-state-shape>` block renders every arm of the slice's state schema
-  (`{ "kind": "closed" }` and `{ "kind": "open", "covered": [...] }` for the
-  sweep's rotation), so a slice with no file of its own yet no longer guesses
-  the shape from prose — a first tick wrote `"rotation": "closed"`, which the
-  cursor gate refused and reverted.
+- **The per-entry build refusal keys on the entry as declared**, not on
+  an unchanged tip, so an operator commit no longer lapses a standing
+  refusal into a re-pick of the same wall.
+- **A released claim never unlinks a later holder's stake**, and a wait
+  lock's file is dropped at most once, through the stake's own drop; the
+  loop lock is taken as a stake by the same exclusive create.
+- **A ledger-refusal verdict names the wave's stake losses**, as the
+  completing path already did.
+- **The escalation arm reads its grace off the tick's announce line**, and
+  the spawn-budget scan follows a process start through a helper — the two
+  timing flakes under load.
+- **The CI consumer smoke installs the shipped groomer example** as a
+  checked file instead of an untypechecked heredoc, which is how a retired
+  export reached a red lane no tick read.
+- **The async-validator refusal names no engine function.**
+
+### Changed
+
+- **The wave's merge stage is its own module** (`src/waveMerge.ts`); every
+  tick verdict is shaped through one builder; the stream-json vocabulary
+  lives in `src/streamJson.ts`.
+- **The four CLI exit codes have one home**, and each `flume tick` code
+  carries its cause at the arm that returns it, rendered into `--help`.
+- **The drain folds a duplicate finding** into the entry that covers it
+  rather than filing a sibling.
 
 ## [0.18.0] - 2026-09-23
 
