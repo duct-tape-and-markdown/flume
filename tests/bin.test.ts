@@ -389,6 +389,25 @@ it("the install smoke's chain-load fixture is verified by a CLI verb that exits 
 }, SPAWN_BUDGET_MS);
 
 /**
+ * The lines a named `ci.yml` step owns: its own, up to the next sibling list
+ * item, with blank and comment lines dropped. One reader, shared by every
+ * case below that asks what a step runs, so a step's body is delimited the
+ * same way whichever case is asking.
+ */
+function stepBody(lines: string[], name: string): string[] {
+  const start = lines.findIndex((l) => l.trimEnd() === `      - name: ${name}`);
+  expect(
+    start,
+    `${CI_WORKFLOW} must carry a step named "${name}" — this case reads ` +
+      `what that step runs`,
+  ).toBeGreaterThanOrEqual(0);
+  const after = lines.findIndex((l, i) => i > start && /^      - /.test(l));
+  return lines
+    .slice(start + 1, after === -1 ? lines.length : after)
+    .filter((l) => l.trim() !== "" && !/^\s*#/.test(l));
+}
+
+/**
  * ci.yml's "Consumer-install smoke" used to re-spell the script's steps
  * inline as a shell heredoc, and the two sides drifted exactly as a second
  * spelling does: the POSIX copy fell behind on the chain-load verb and never
@@ -405,24 +424,9 @@ it("the install smoke's chain-load fixture is verified by a CLI verb that exits 
  * type-resolution gate reads its consumer dir and tarball out of.
  */
 it("the CI consumer-install smoke runs scripts/smoke-install.mjs rather than re-spelling its steps", async () => {
-  const workflowPath = fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url));
-  const lines = (await readFile(workflowPath, "utf8")).split(/\r?\n/);
+  const lines = (await readFile(CI_WORKFLOW, "utf8")).split(/\r?\n/);
 
-  /** The lines a named step owns: its own, up to the next sibling list item. */
-  const stepBody = (name: string): string[] => {
-    const start = lines.findIndex((l) => l.trimEnd() === `      - name: ${name}`);
-    expect(
-      start,
-      `${workflowPath} must carry a step named "${name}" — this case reads ` +
-        `what that step runs`,
-    ).toBeGreaterThanOrEqual(0);
-    const after = lines.findIndex((l, i) => i > start && /^      - /.test(l));
-    return lines
-      .slice(start + 1, after === -1 ? lines.length : after)
-      .filter((l) => l.trim() !== "" && !/^\s*#/.test(l));
-  };
-
-  const smoke = stepBody("Consumer-install smoke");
+  const smoke = stepBody(lines, "Consumer-install smoke");
 
   // Non-vacuity: the step runs something at all, so the equality below is
   // judging a command rather than an empty body.
@@ -455,8 +459,97 @@ it("the CI consumer-install smoke runs scripts/smoke-install.mjs rather than re-
       `\`--scratch "<dir>"\`, for the type-resolution gate to read`,
   ).toBeTypeOf("string");
 
-  const gate = stepBody("Consumer type-resolution gate");
+  const gate = stepBody(lines, "Consumer type-resolution gate");
   expect(gate.some((l) => l.includes(scratch![1]!))).toBe(true);
+});
+
+/**
+ * A tsconfig `include` entry as a matcher over repo-relative paths: `**` and
+ * `*` only, which is every form this repo's `include` uses.
+ */
+function includeMatcher(pattern: string): RegExp {
+  const body = pattern
+    .split(/(\*\*\/|\*\*|\*)/)
+    .map((part) =>
+      part === "**/"
+        ? "(?:[^/]+/)*"
+        : part === "**"
+          ? ".*"
+          : part === "*"
+            ? "[^/]*"
+            : part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"),
+    )
+    .join("");
+  return new RegExp(`^${body}$`);
+}
+
+/**
+ * The same defect as the case above, one step over. ci.yml's groomer-consumer
+ * smoke carried its chain as an inline heredoc — a condensed second spelling
+ * of `examples/backlog-groomer-chain.ts` that no typecheck and no suite read.
+ * It drifted the way a second spelling does: it went on calling an engine
+ * export the api had renamed out from under it, red only when the lane ran,
+ * while the step still claimed publish acceptance under its own name
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * The step now copies a committed chain in, and this case is what holds it
+ * there: the one command that puts a chain at the consumer's
+ * `.flume/chain.ts` must be a copy of a repo path, that path must exist, and
+ * `tsconfig.json`'s `include` must cover it. "Checked" is the whole claim, so
+ * it resolves against the manifest that decides what `tsc` reads rather than
+ * against a directory name remembered here.
+ */
+it("the consumer-smoke workflow step installs a checked chain file rather than an inline heredoc", async () => {
+  const lines = (await readFile(CI_WORKFLOW, "utf8")).split(/\r?\n/);
+  const step = stepBody(lines, "Second reference chain smoke (backlog-groomer)");
+
+  // Non-vacuity: the step runs something at all, so what follows judges a
+  // body rather than an empty one.
+  expect(step.length).toBeGreaterThan(0);
+
+  const installs = step.filter((l) => l.includes(".flume/chain.ts"));
+  // Non-vacuity in the step's own terms: a body naming no chain at all would
+  // satisfy every "not a heredoc" claim below over nothing.
+  expect(
+    installs.length,
+    `the groomer-consumer step must put a chain at the consumer's ` +
+      `.flume/chain.ts — no command in it names that path`,
+  ).toBeGreaterThan(0);
+
+  // One command puts it there, and it is a copy. A `cat > .flume/chain.ts
+  // <<'EOF'` heredoc lands here as a line this pattern refuses.
+  expect(installs).toHaveLength(1);
+  const copied = /^cp\s+"?\$REPO\/([^"\s]+)"?\s+"?\.flume\/chain\.ts"?$/.exec(
+    installs[0]!.trim(),
+  );
+  expect(
+    copied,
+    `the groomer-consumer step must install its chain as ` +
+      `\`cp "$REPO/<path>" .flume/chain.ts\` — found: ${installs[0]!.trim()}`,
+  ).not.toBeNull();
+
+  const source = copied![1]!;
+
+  // The path it names really resolves, so the step is not green over a file a
+  // rename left behind — and what it resolves to is a chain module.
+  await expect(
+    readFile(fileURLToPath(new URL(`../${source}`, import.meta.url)), "utf8"),
+  ).resolves.toContain("export default");
+
+  const tsconfig = JSON.parse(
+    await readFile(fileURLToPath(new URL("../tsconfig.json", import.meta.url)), "utf8"),
+  ) as { include?: string[] };
+  const include = tsconfig.include ?? [];
+  // Non-vacuity: `some` over an absent or empty `include` is false for a
+  // reason this case is not about.
+  expect(include.length, "tsconfig.json must declare `include`").toBeGreaterThan(0);
+  expect(
+    include.some((pattern) => includeMatcher(pattern).test(source)),
+    `${source} is the chain the groomer-consumer smoke installs, but no ` +
+      `tsconfig.json \`include\` pattern covers it — the next api rename would ` +
+      `red in that lane rather than in \`pnpm typecheck\`. include: ` +
+      include.join(", "),
+  ).toBe(true);
 });
 
 /**

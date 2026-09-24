@@ -180,6 +180,17 @@ jobs:
         # the same engine core cascade's ALL-CAPS convention uses), and a
         # requiresCapability-gated backlog item that must stay parked while
         # the top open item ships — one real tick, one real commit.
+        #
+        # The chain and its prompt are the shipped `examples/` files, copied
+        # in rather than re-spelled here. The condensed heredoc this step
+        # used to carry was a second spelling no typecheck read, and it went
+        # on calling an engine export the api had renamed out from under it
+        # while the step still claimed acceptance under its own name
+        # (.claude/rules/engineering.md, "The fix lands at the mechanism").
+        # Copied verbatim, `../src/index.ts` import and all: a chain's only
+        # engine import is `import type`, so the loader erases it and this
+        # consumer resolves no path of that name — the property that makes
+        # every `examples/` chain copyable at all, exercised here.
         run: |
           set -euo pipefail
           REPO="$PWD"
@@ -202,78 +213,8 @@ jobs:
           git config user.name "CI"
           git config commit.gpgsign false
 
-          # Same shape as examples/backlog-groomer-chain.ts, condensed: a
-          # deterministic (non-LLM) groom agent, so this needs no API key.
-          cat > .flume/chain.ts <<'EOF'
-          import { execFileSync } from "node:child_process";
-          import { existsSync, readFileSync, writeFileSync } from "node:fs";
-          import { join } from "node:path";
-          import { z } from "zod";
-
-          export default function (api) {
-            const { isPickableNow, parsePending, renderSchemaForPrompt } = api;
-
-            const BACKLOG_PATH = "BACKLOG.json";
-            const SHIPPED_PATH = "SHIPPED.md";
-
-            const entryExtension = {
-              reason: { schema: z.string().min(1).max(280), hint: `"why this item ships next"` },
-              tag: {
-                schema: z.string().regex(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/, "lowercase-kebab"),
-                hint: `"lowercase-kebab"`,
-              },
-            };
-
-            function readShippedTags(cwd) {
-              const path = join(cwd, SHIPPED_PATH);
-              if (!existsSync(path)) return new Set();
-              const tags = new Set();
-              for (const line of readFileSync(path, "utf8").split("\n")) {
-                const m = /^- ([a-z0-9-]+):/.exec(line);
-                if (m) tags.add(m[1]);
-              }
-              return tags;
-            }
-
-            const groomAgent = {
-              name: "backlog-groomer",
-              async invoke({ cwd }) {
-                const backlogPath = join(cwd, BACKLOG_PATH);
-                const parsed = parsePending(readFileSync(backlogPath, "utf8"), entryExtension);
-                if (!parsed.ok) return { exitCode: 1, stdout: "", stderr: "BACKLOG.json invalid" };
-                const shippedTags = readShippedTags(cwd);
-                const pick = parsed.entries.find((e) => isPickableNow(e, shippedTags, undefined, new Set()));
-                if (!pick) return { exitCode: 0, stdout: "nothing pickable", stderr: "" };
-                const remaining = parsed.entries.filter((e) => e !== pick);
-                writeFileSync(backlogPath, JSON.stringify(remaining, null, 2) + "\n");
-                const shippedPath = join(cwd, SHIPPED_PATH);
-                const prior = existsSync(shippedPath) ? readFileSync(shippedPath, "utf8") : "";
-                writeFileSync(shippedPath, `${prior}- ${pick.tag}: ${pick.reason}\n`);
-                execFileSync("git", ["add", BACKLOG_PATH, SHIPPED_PATH], { cwd });
-                execFileSync("git", ["commit", "-q", "-m", `groom: ship ${pick.tag}`], { cwd });
-                return { exitCode: 0, stdout: `shipped ${pick.tag}`, stderr: "" };
-              },
-            };
-
-            const groom = {
-              name: "groom",
-              description: "Read BACKLOG.json, ship the top pickable item, commit.",
-              promptPath: "prompts/backlog-groomer.md",
-              concurrency: "singleton",
-              agent: groomAgent,
-              writablePaths: [BACKLOG_PATH, SHIPPED_PATH],
-              gates: [],
-              promptArgs() {
-                return { BACKLOG_SCHEMA: renderSchemaForPrompt(entryExtension) };
-              },
-              handoff: () => [],
-            };
-
-            const chain = { phases: [groom], entryExtension, humanOnly: [], capabilities: [] };
-            return { chain };
-          }
-          EOF
-          printf 'Groom BACKLOG.json: ship the top pickable item.\n{{BACKLOG_SCHEMA}}\n' > .flume/prompts/backlog-groomer.md
+          cp "$REPO/examples/backlog-groomer-chain.ts" .flume/chain.ts
+          cp "$REPO/examples/prompts/backlog-groomer.md" .flume/prompts/backlog-groomer.md
 
           cat > BACKLOG.json <<'EOF'
           [
