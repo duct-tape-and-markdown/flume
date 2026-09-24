@@ -1,11 +1,10 @@
 {
   "tag": "THE-ADAPTER-REGISTERS-THE-BUDGET-HOOK",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "THE-BUDGET-LINE-IS-READ-OFF-THE-TRANSCRIPT"
-    ]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
     "new": [
       {
@@ -22,7 +21,8 @@
         "path": "tests/Agent.test.ts",
         "description": "declared and undeclared, over the argv the adapter builds"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "`claudeCode({ budget })` is undeclarable: no option, no per-invocation hook, no cadence or thresholds",
   "per": {
@@ -33,8 +33,8 @@
   "tests": [
     "a declared budget puts the adapter's hook on that invocation's own settings and never on the user's"
   ],
-  "notes": "The window is declared, not looked up — a model's context size is a provider fact the engine does not hold; a chain declaring none still gets elapsed and calls. The hook holds no state: it reads the transcript path the provider hands it.",
   "pins": [
     "an undeclared budget registers no hook and leaves the adapter's argv unchanged"
-  ]
+  ],
+  "notes": "The window is declared, not looked up — a model's context size is a provider fact the engine does not hold; a chain declaring none still gets elapsed and calls. The hook holds no state: it reads the transcript path the provider hands it."
 }
