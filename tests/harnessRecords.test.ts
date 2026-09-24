@@ -25,6 +25,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 
 import {
   RECORD_MAX_BYTES,
+  continuingNotePath,
   notePath,
   notesDir,
   recordDirs,
@@ -193,6 +194,47 @@ it("recordFiles refuses when a plain file sits above a record directory", async 
       message: `[flume] record queue is unreadable: ${above} is present but is not a directory`,
     });
   }
+});
+
+/**
+ * The one note home the drain does not walk (`spec/harness.md`, *A tick puts
+ * work down*). Location is kind, and this kind is addressed to build's own
+ * next tick on the entry: a listing that carried it would wake the inbox
+ * slice on a file no plan tick can reconcile, and route the note away from
+ * the tick it was written for.
+ */
+it("the record drain lists no note under the continuing directory", async () => {
+  const dirs = recordDirs(stateRoot);
+  expect(dirs.length).toBeGreaterThan(0);
+
+  // A record in every queue the drain does list, so the listing the absence
+  // is asserted against is populated and the absence below is the continuing
+  // home's alone (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*).
+  for (const dir of dirs) {
+    const file = join(onDisk(dir), "2026-09-24-a-record.md");
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, "# a record\n");
+  }
+  expect(recordFiles(stateRoot)).toHaveLength(dirs.length);
+
+  // The continuation sits one segment across from the park, under a notes
+  // directory the drain *does* walk — so it is skipped by the layout saying
+  // it is no record, never by it being somewhere the walk cannot reach.
+  const continuing = continuingNotePath(stateRoot, "PUT-DOWN");
+  expect(continuing.startsWith(`${notesDir(stateRoot)}/`)).toBe(true);
+  await mkdir(dirname(onDisk(continuing)), { recursive: true });
+  await writeFile(onDisk(continuing), "# what landed\n\nThe first segment.\n");
+
+  expect(recordFiles(stateRoot)).not.toContain(onDisk(continuing));
+  expect(recordFiles(stateRoot)).toHaveLength(dirs.length);
+
+  // And a continuation standing alone leaves the drain's window shut: the
+  // inbox slice is not woken by a note addressed to build.
+  await rm(stateRoot, { recursive: true, force: true });
+  await mkdir(dirname(onDisk(continuing)), { recursive: true });
+  await writeFile(onDisk(continuing), "# what landed\n\nThe first segment.\n");
+  expect(recordsPending(stateRoot)).toBe(false);
 });
 
 it("a record's byte cap is the package's own value, not a per-consumer knob", () => {

@@ -16,6 +16,8 @@ import { expect, it } from "vitest";
 import { PLAN_SLICES, type PlanSlice } from "../harness/declaration.ts";
 import {
   QUESTION_EXT,
+  continuingNotePath,
+  continuingNotesDir,
   legacyPlanStatePath,
   legacyQuestionsPath,
   noteGlobs,
@@ -288,6 +290,7 @@ it("a build note's kind is the directory it sits in", () => {
   expect(notePaths(STATE_ROOT, "SOME-ENTRY")).toEqual([
     notePath(STATE_ROOT, "SOME-ENTRY"),
     parkedNotePath(STATE_ROOT, "SOME-ENTRY"),
+    continuingNotePath(STATE_ROOT, "SOME-ENTRY"),
   ]);
 
   // And both directories are record directories, so the drain lists a park
@@ -296,4 +299,52 @@ it("a build note's kind is the directory it sits in", () => {
   const dirs = recordDirs(STATE_ROOT);
   expect(dirs).toContain(notesDir(STATE_ROOT));
   expect(dirs).toContain(parkedNotesDir(STATE_ROOT));
+});
+
+it("the continuing note directory is a note home the build fence admits", () => {
+  // The spelling the spec states (`spec/harness.md`, *A tick puts work down*:
+  // a continuing note at `notes/continuing/<TAG>.md`), pinned against the
+  // accessors every reader composes with rather than spelled at each of them.
+  expect(continuingNotesDir(STATE_ROOT)).toBe(
+    `${STATE_ROOT}/plan/notes/continuing`,
+  );
+  const continuing = continuingNotePath(STATE_ROOT, "SOME-ENTRY");
+  expect(continuing).toBe(`${STATE_ROOT}/plan/notes/continuing/SOME-ENTRY.md`);
+
+  // Same tag, same extension, one segment apart from each of the others:
+  // nothing but the directory tells the three kinds apart, which is what
+  // makes the location the kind.
+  const kinds = [
+    notePath(STATE_ROOT, "SOME-ENTRY"),
+    parkedNotePath(STATE_ROOT, "SOME-ENTRY"),
+    continuing,
+  ];
+  expect(new Set(kinds).size).toBe(kinds.length);
+  // And the set a tick may write names it, so the records gate holds a
+  // continuation to the tick's own tag the way it holds the other two.
+  expect(notePaths(STATE_ROOT, "SOME-ENTRY")).toEqual(kinds);
+
+  // Build's fence globs, judged by the engine's real matcher: a home the
+  // fence did not admit would have the commit carrying the note reverted.
+  const globs = noteGlobs(STATE_ROOT);
+  // Vacuity pin: an empty glob list would pass the arm below by admitting
+  // nothing and matching nothing.
+  expect(globs.length).toBeGreaterThan(0);
+  expect(matchesAny(continuing, globs)).toBe(true);
+
+  // Each glob is its own directory's alone. The three directories nest, so a
+  // sibling's glob reaching this note would collapse exactly the distinction
+  // the continuation is declared by.
+  expect(matchesAny(continuing, [`${notesDir(STATE_ROOT)}/*.md`])).toBe(false);
+  expect(matchesAny(continuing, [`${parkedNotesDir(STATE_ROOT)}/*.md`])).toBe(
+    false,
+  );
+
+  // A note home and not a record queue: no drain lists it and the plan fence
+  // does not admit its deletion, because a continuation is build's channel to
+  // its own next tick on the entry rather than anything plan reconciles.
+  expect(recordDirs(STATE_ROOT)).not.toContain(continuingNotesDir(STATE_ROOT));
+  expect(matchesAny(continuing, planArtifacts(STATE_ROOT, SOME_SLICE))).toBe(
+    false,
+  );
 });

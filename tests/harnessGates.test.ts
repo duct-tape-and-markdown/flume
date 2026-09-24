@@ -26,6 +26,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import {
   RECORD_MAX_BYTES,
+  continuingNotePath,
   harnessGates,
   noteGlobs,
   notePath,
@@ -447,6 +448,44 @@ it("the records gate refuses a parked note written under another tick's tag", as
   expect(refused.details).toContain(parkedNotePath(STATE_ROOT, "OTHER"));
   // And the refusal names both notes this tick may write, so a tick that
   // wrote the wrong tag is told where its own two are.
+  expect(refused.details).toContain(own);
+  expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
+});
+
+it("the records gate admits a build commit writing its entry's continuing note", async () => {
+  const entry = assigned("MINE");
+  const own = continuingNotePath(STATE_ROOT, "MINE");
+
+  // The third note home, and no drain's: the gate judges it because what it
+  // stands between is two ticks writing one file, which is a property of the
+  // path and not of who reads it afterwards.
+  await write(own, "# what landed\n\nThe layout; the gate is next.\n");
+  const span = commitAll("build: put the rest of the entry down");
+  // Non-vacuity: git named the continuing note, so the verdict below is the
+  // gate reading a real touched path and not an empty span skipping past.
+  expect(span.touchedPaths).toContain(own);
+
+  const admitted = await records(span, { phaseName: "build", entry });
+  expect(admitted).toMatchObject({ ok: true });
+  expect(admitted.skipped).toBeUndefined();
+  expect(admitted.message).toContain("1 record(s) touched, 1 written");
+
+  // Another tick's continuation, in the same directory and differing only in
+  // the tag — the collision the gate exists to refuse, in the home the drain
+  // never walks.
+  await write(
+    continuingNotePath(STATE_ROOT, "OTHER"),
+    "# not mine\n\nAnother tag's continuation.\n",
+  );
+  const refused = await records(
+    commitAll("build: write another tag's continuation"),
+    { phaseName: "build", entry },
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain(continuingNotePath(STATE_ROOT, "OTHER"));
+  // And the refusal names every note this tick may write, its own
+  // continuation among them.
   expect(refused.details).toContain(own);
   expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
 });

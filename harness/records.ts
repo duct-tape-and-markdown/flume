@@ -9,8 +9,8 @@
  * the whole reason these are paths at all, and it is why the directories
  * they sit in are named once, in `layout.ts`, beside every other plan
  * artifact — the records gate deciding whether a commit's touched path is a
- * record, the build fence admitting a note of either kind, and the build
- * prompt telling a tick where to write all read them from there
+ * record or a note, the build fence admitting a note of any kind, and the
+ * build prompt telling a tick where to write all read them from there
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*). This module is the fourth reader: the
  * queue's order and the liveness predicate below.
@@ -66,6 +66,13 @@ export const RECORD_MAX_BYTES = 2000;
  * listing filters on the record extension, so the parked directory's *name*
  * is not a record of the directory above it, and its files are named once,
  * under the directory they sit in.
+ *
+ * **Build's continuing notes are not in it**, and that is the layout's
+ * statement rather than a filter here: a continuation is addressed to build's
+ * own next tick on the entry, so it is a note home {@link RECORD_DIR_NAMES}
+ * does not name (`spec/harness.md`, *A tick puts work down*). A listing that
+ * carried one would wake the drain on a file no plan tick can reconcile, and
+ * route it away from the tick it was written for.
  *
  * `stateRoot` here is the absolute one, and every reading of a directory
  * under it — the host-native paths these are rendered, opened and compared

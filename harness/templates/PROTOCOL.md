@@ -68,6 +68,12 @@ project's:
 - **Build parks** — `{{STATE_ROOT}}/plan/notes/parked/<TAG>.md`, the same note
   one directory down. **The directory is the signal**: the entry cannot ship
   as written and stays in the queue, whatever else that commit touched.
+- **Build continuations** — `{{STATE_ROOT}}/plan/notes/continuing/<TAG>.md`,
+  the same note one directory across. The directory is the signal here too:
+  the tick landed a green segment and judged the rest another tick's work, so
+  the entry stays in the queue. Not a record the drain takes — it is build's
+  channel to its own next tick on that entry, and it leaves with the commit
+  that completes the entry.
 
 ## Disk vs git log
 

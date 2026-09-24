@@ -94,6 +94,8 @@ export {
 } from "./citeResolver.js";
 
 export {
+  continuingNotePath,
+  continuingNotesDir,
   legacyPlanStatePath,
   noteGlobs,
   notePath,

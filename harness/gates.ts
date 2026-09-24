@@ -66,7 +66,7 @@ import { entryExtension, PerSchema } from "./entryExtension.js";
 import {
   notePaths,
   planStatePath,
-  recordGlobs,
+  recordOrNoteGlobs,
   underStateRoot,
 } from "./layout.js";
 import { PLAN_STATE_SCHEMAS } from "./planState.js";
@@ -300,9 +300,14 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
 /**
  * Records are one file each (`spec/harness.md`, *Records as one file each*),
  * and the two rules that are not layout hold at the commit: a build tick
- * touches only a note its own tag names — either kind, since the kind is the
- * directory and the chain is what reads it — and a plan slice drains records
- * rather than writing one. A written record opens with a title line.
+ * touches only a note its own tag names — whichever kind, since the kind is
+ * the directory and the chain is what reads it — and a plan slice drains
+ * records rather than writing one. A written record opens with a title line.
+ *
+ * Build's continuing note is held here like the other two even though no
+ * drain lists it (`recordOrNoteGlobs`, `layout.ts`): what this gate
+ * stands between is two ticks writing one file, and that is a property of the
+ * path rather than of who reads it afterwards.
  *
  * **The byte cap is not this gate's** (`spec/harness.md`, *The gates the
  * discipline needs*). What this gate reverts is what protects the tree — two
@@ -337,12 +342,16 @@ function recordsGate(engine: GateEngine): Gate {
       // below are built from it straight (`computeStateRootRel`,
       // `src/paths.ts`).
       const stateRoot = ctx.stateRootRel;
-      // What a record *is*, off the layout's own globs rather than a prefix
-      // rule spelled here: the matcher's `*` stops at the separator, so
-      // `inbox` cannot claim `inbox-archive`, and the notes directory cannot
-      // claim the parked one nested inside it — which is the distinction the
-      // park predicate then reads (`recordGlobs`, `layout.ts`).
-      const globs = recordGlobs(stateRoot);
+      // What a record or a build note *is*, off the layout's own globs rather
+      // than a prefix rule spelled here: the matcher's `*` stops at the
+      // separator, so `inbox` cannot claim `inbox-archive`, and the notes
+      // directory cannot claim the parked or the continuing one nested inside
+      // it — which is the distinction the park predicate then reads
+      // (`recordOrNoteGlobs`, `layout.ts`). Build's note homes are in the set
+      // as well as the drained queues: a continuation is no drain's, and a
+      // gate reading the queues alone would leave the one home a tick can
+      // write another tick's tag into unjudged.
+      const globs = recordOrNoteGlobs(stateRoot);
       const touched = ctx.touchedPaths.filter((path) => matchesAny(path, globs));
       if (touched.length === 0) {
         return {
@@ -353,9 +362,9 @@ function recordsGate(engine: GateEngine): Gate {
       }
 
       const isBuild = ctx.phaseName === BUILD_PHASE;
-      // The tick's own two notes, one per kind: which of them it wrote is the
-      // park verdict and the chain's to read (`chain.ts`), so what this holds
-      // is only that whichever it wrote carries *its* tag.
+      // The tick's own notes, one per kind: which of them it wrote is the
+      // tick's own verdict and the chain's to read (`chain.ts`), so what this
+      // holds is only that whichever it wrote carries *its* tag.
       const entry = ctx.entry;
       const own =
         isBuild && entry ? notePaths(stateRoot, entry.tag) : undefined;

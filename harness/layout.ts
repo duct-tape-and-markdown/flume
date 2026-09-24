@@ -132,13 +132,32 @@ const NOTES_REL = "plan/notes";
 const PARKED_NOTES_REL = `${NOTES_REL}/parked`;
 
 /**
- * Both homes a build note has, in the order a listing names them:
- * observations, then parks. The one spelling of the pair — everything that
- * addresses a note home composes from here — so a third home added here
- * reaches the fence, the listing and the gate together rather than one at a
- * time.
+ * Where a build tick's **continuation** sits — a third segment beside the
+ * parks, because a note that puts the rest of its entry down says so by
+ * where it sits and by nothing else (`spec/harness.md`, *Records as one file
+ * each*: location is kind).
+ *
+ * A note home and **not** a record queue: {@link RECORD_DIR_NAMES} does not
+ * name it, so no drain lists it and no plan fence admits its deletion. A
+ * continuation is build's channel to its own next tick on the same entry, and
+ * a drain that routed it would take it away from the tick it was written for
+ * (`spec/harness.md`, *A tick puts work down*). It leaves with the tick that
+ * completes the entry, which is a build commit like the one that wrote it.
  */
-const NOTE_DIR_RELS = [NOTES_REL, PARKED_NOTES_REL] as const;
+const CONTINUING_NOTES_REL = `${NOTES_REL}/continuing`;
+
+/**
+ * Every home a build note has, in the order a listing names them:
+ * observations, parks, then continuations. The one spelling of the set —
+ * everything that addresses a note home composes from here — so a fourth home
+ * added here reaches the fence, the gate and the prompt together rather than
+ * one at a time.
+ */
+const NOTE_DIR_RELS = [
+  NOTES_REL,
+  PARKED_NOTES_REL,
+  CONTINUING_NOTES_REL,
+] as const;
 
 /**
  * The record directories' names under a state root, in the order
@@ -148,11 +167,15 @@ const NOTE_DIR_RELS = [NOTES_REL, PARKED_NOTES_REL] as const;
  * gate's record test differ only in the separator they join with, never in
  * which directories exist or in what order they are named.
  *
- * The parked directory rides it like any other: a park is a record, so the
- * drain lists it, the plan fence admits its deletion, and the records gate
- * holds it to the same two rules.
+ * **A record is a file plan drains**, which is what decides membership here
+ * rather than being one file each — a property every note home has. The
+ * parked directory rides it for that reason: a park is plan's to reconcile,
+ * so the drain lists it, the plan fence admits its deletion, and the records
+ * gate holds it to the same two rules. {@link CONTINUING_NOTES_REL} is the
+ * one note home that does not ride it, because a continuation is addressed
+ * to build's own next tick on the entry and never to the drain.
  */
-export const RECORD_DIR_NAMES = ["inbox", ...NOTE_DIR_RELS] as const;
+export const RECORD_DIR_NAMES = ["inbox", NOTES_REL, PARKED_NOTES_REL] as const;
 
 /**
  * The extension a record carries. A record is markdown a human reads; a
@@ -296,8 +319,24 @@ export function recordDirs(stateRoot: string): string[] {
  * distinction the layout exists to carry. The matcher's `*` stops at the
  * separator, so each glob claims exactly its own directory's own records.
  */
-export function recordGlobs(stateRoot: string): string[] {
+function recordGlobs(stateRoot: string): string[] {
   return recordDirs(stateRoot).map((dir) => `${dir}/${RECORD_GLOB}`);
+}
+
+/**
+ * Every one-file-each artifact a commit may touch, as fence globs — the
+ * record queues a drain lists, and build's note homes.
+ *
+ * The union, because the records gate asks one question of a touched path:
+ * is this a one-file-each artifact, and whose? The two sets overlap at the
+ * drained notes and diverge at {@link CONTINUING_NOTES_REL}, which build
+ * writes and no drain takes — so a gate built on the queues alone would let
+ * a tick write a continuation under another tick's tag, and a gate built on
+ * the note homes alone would stop judging the inbox. Deduplicated, so a home
+ * that is both is matched against once.
+ */
+export function recordOrNoteGlobs(stateRoot: string): string[] {
+  return [...new Set([...recordGlobs(stateRoot), ...noteGlobs(stateRoot)])];
 }
 
 /**
@@ -315,6 +354,14 @@ export function notesDir(stateRoot: string): string {
  */
 export function parkedNotesDir(stateRoot: string): string {
   return underStateRoot(stateRoot, PARKED_NOTES_REL);
+}
+
+/**
+ * Where a build tick's continuation lives — the directory under
+ * {@link notesDir} that *is* the continuation signal.
+ */
+export function continuingNotesDir(stateRoot: string): string {
+  return underStateRoot(stateRoot, CONTINUING_NOTES_REL);
 }
 
 /**
@@ -350,10 +397,25 @@ export function parkedNotePath(stateRoot: string, tag: string): string {
 }
 
 /**
- * Both notes a build tick assigned `tag` may write, in the order
- * {@link RECORD_DIR_NAMES} names their directories — the pair a gate admits
- * from that tick, since which of the two it wrote is the park verdict and not
- * a gate's business.
+ * The note a build tick assigned `tag` writes when it lands a green segment
+ * and judges the rest another tick's work: its continuation, under
+ * {@link continuingNotesDir} (`spec/harness.md`, *A tick puts work down*).
+ *
+ * One spelling, and — like the park's — the one whose location *is* the
+ * declaration: continuing is what the agent says by writing here, never
+ * something read out of how much the commit touched. A second spelling is a
+ * continuation nothing downstream recognizes, and an entry that leaves the
+ * queue with the rest of the work undone.
+ */
+export function continuingNotePath(stateRoot: string, tag: string): string {
+  return `${continuingNotesDir(stateRoot)}/${tag}${RECORD_EXT}`;
+}
+
+/**
+ * Every note a build tick assigned `tag` may write, in the order
+ * {@link NOTE_DIR_RELS} names their directories — the set a gate admits from
+ * that tick, since which of them it wrote is the tick's own verdict and not a
+ * gate's business.
  */
 export function notePaths(stateRoot: string, tag: string): string[] {
   return NOTE_DIR_RELS.map(
@@ -365,8 +427,10 @@ export function notePaths(stateRoot: string, tag: string): string[] {
  * Build's note directories as fence globs, one per kind — the paths a build
  * tick's fence adds to whatever the consumer declared.
  *
- * Both, always: a tick that could write an observation but not a park would
- * have its refusal reverted by the very fence that was meant to carry it.
+ * All of them, always: a tick that could write an observation but not a park
+ * would have its refusal reverted by the very fence that was meant to carry
+ * it, and one that could not write a continuation would be held to finishing
+ * or losing the work.
  */
 export function noteGlobs(stateRoot: string): string[] {
   return NOTE_DIR_RELS.map(

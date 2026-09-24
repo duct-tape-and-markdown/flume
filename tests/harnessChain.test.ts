@@ -41,6 +41,7 @@ import { promptPath, type PromptName } from "../harness/prompts.ts";
 import {
   noteGlobs,
   notePath,
+  notePaths,
   parkedNotePath,
   parkedNotesDir,
   planStatePath,
@@ -532,12 +533,16 @@ it("the returned build phase is fanout and carries the declaration's fence", () 
   }
   // Beside the consumer's fence, the package's own channel: the notes a tick
   // writes are the package's paths, never globs every consumer copies — and
-  // both kinds ride it, because which one a tick wrote is what says whether
-  // it parked (`spec/harness.md`, *Records as one file each*).
+  // every kind rides it, because which one a tick wrote is what says whether
+  // it shipped, parked, or put the rest of the entry down
+  // (`spec/harness.md`, *Records as one file each*).
   //
   // Non-vacuity: one glob per kind, so the containment below covers every
-  // home a note has rather than whichever one came first.
-  expect(globs.length).toBe(2);
+  // home a note has rather than whichever one came first. Read off the paths
+  // a tick may write rather than a count spelled here, which a home added to
+  // both sides would red for nothing.
+  expect(globs.length).toBeGreaterThan(0);
+  expect(globs.length).toBe(notePaths(STATE_ROOT, "SOME-TAG").length);
   for (const glob of globs) {
     expect({ glob, fenced: build.writablePaths.includes(glob) }).toEqual({
       glob,

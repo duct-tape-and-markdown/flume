@@ -1,9 +1,9 @@
 /**
  * Build's per-tick prompt arguments (`spec/harness.md`, *The prompts and
  * their discipline*): the entry the tick was handed, the section its `per`
- * cites as this tick's tree holds it, and the one note the tick may write —
- * the placeholders the shipped `harness/prompts/build.md` names and the
- * shared args do not supply.
+ * cites as this tick's tree holds it, and the notes the tick may write, one
+ * per kind — the placeholders the shipped `harness/prompts/build.md` names
+ * and the shared args do not supply.
  *
  * The rendering case is an agreement gate (`.claude/rules/engineering.md`, *A
  * seam gate reads what the real writer wrote*): the real writers are
@@ -39,8 +39,10 @@ import {
   BUILD_PROMPT_DATA_KEYS,
   SHARED_PROMPT_DATA_KEYS,
   buildPromptArgs,
+  continuingNotePath,
   entryExtension,
   notePath,
+  parkedNotePath,
   parseDeclaration,
   promptPath,
   resolveCite,
@@ -295,6 +297,49 @@ it("build's per-tick args name the entry's note path from the tick context alone
   // trunk checkout instead.
   expect(isAbsolute(args.NOTE_PATH!)).toBe(false);
   expect(args.NOTE_PATH!.startsWith(cwd)).toBe(false);
+});
+
+it("the build prompt args name the entry's continuing note path", async () => {
+  const assigned = entry();
+  const args = argsFor(assigned);
+
+  // Non-vacuity: the context under test carries a state root, so the path
+  // below was composed from a populated field and not from an absent one.
+  expect(tick(assigned).stateRootRel).toBe(".flume");
+  // The path the agent writes when it puts the rest of the entry down,
+  // composed from the same `continuingNotePath` and the same repo-relative
+  // state root the records gate keys it by.
+  expect(args.CONTINUING_NOTE_PATH).toBe(
+    continuingNotePath(".flume", assigned.tag),
+  );
+
+  // Repo-relative, never absolute: the agent writes it inside its own
+  // worktree, and a path resolved from the state root would land in the
+  // trunk checkout instead.
+  expect(isAbsolute(args.CONTINUING_NOTE_PATH!)).toBe(false);
+  expect(args.CONTINUING_NOTE_PATH!.startsWith(cwd)).toBe(false);
+
+  // One path per kind, all three distinct: which of them the tick wrote is
+  // the whole statement, so two that collided would make the declaration
+  // unreadable.
+  const kinds = [
+    args.NOTE_PATH,
+    args.PARK_NOTE_PATH,
+    args.CONTINUING_NOTE_PATH,
+  ];
+  expect(kinds).toEqual([
+    notePath(".flume", assigned.tag),
+    parkedNotePath(".flume", assigned.tag),
+    continuingNotePath(".flume", assigned.tag),
+  ]);
+  expect(new Set(kinds).size).toBe(kinds.length);
+
+  // And the arg has a placeholder to fill: the shipped prompt names it, so
+  // the path is one an agent reads rather than one only this case sees.
+  const raw = await readFile(promptPath("build"), "utf8");
+  const named = [...raw.matchAll(PLACEHOLDER)].map((match) => match[1]!);
+  expect(named.length).toBeGreaterThan(0);
+  expect(named).toContain("CONTINUING_NOTE_PATH");
 });
 
 it("buildPromptArgs renders NOTE_PATH from the offset the engine reports for a nested state root", () => {

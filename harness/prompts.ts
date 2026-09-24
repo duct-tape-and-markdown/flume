@@ -27,7 +27,7 @@
  * render refusal rather than a `{{TOKEN}}` an agent reads as prose.
  *
  * **Build's per-tick arguments are here too, and a slice's path is.** Build's
- * five — the entry, its cite's path, section and section text, and the note
+ * own — the entry, its cite's path, section and section text, and the notes
  * it may write — are the shipped build prompt's own placeholders, composed
  * from the tick's `TickContext` and read from the surfaces that own them: the
  * cite through the resolver the `per` gate drives, the note path through
@@ -52,6 +52,7 @@ import { resolveCiteSync } from "./citeResolver.js";
 import { PHASES, type Declaration, type PlanSlice } from "./declaration.js";
 import { PerSchema } from "./entryExtension.js";
 import {
+  continuingNotePath,
   notePath,
   parkedNotePath,
   planStatePath,
@@ -354,8 +355,8 @@ export interface BuildTickContext {
 
 /**
  * Every key {@link buildPromptArgs} returns — the entry as the queue holds
- * it, its cite's path, section and section text, and the two note paths, one
- * per kind (`layout.ts`).
+ * it, its cite's path, section and section text, and the note paths, one per
+ * kind (`layout.ts`).
  *
  * Data, every one of them, and the two that most need saying so: an entry's
  * own prose and a cited spec section are content the package did not author,
@@ -370,6 +371,7 @@ export const BUILD_PROMPT_DATA_KEYS = [
   "PER_SECTION_TEXT",
   "NOTE_PATH",
   "PARK_NOTE_PATH",
+  "CONTINUING_NOTE_PATH",
 ] as const;
 
 /** One argument build's prompt is rendered with for a tick. */
@@ -403,11 +405,12 @@ export interface BuildPromptArgsInput {
  * own worktree, where an absolute path resolved from the state root would
  * target the trunk checkout's copy instead.
  *
- * **Both kinds are named, because the kind is the path** (`spec/harness.md`,
- * *Records as one file each*). A tick says whether it shipped or parked by
- * which of the two it wrote, and the park predicate reads exactly that back
- * (`chain.ts`) — so a prompt naming only one would leave the other for the
- * agent to compose, at a spelling nothing downstream looks for.
+ * **Every kind is named, because the kind is the path** (`spec/harness.md`,
+ * *Records as one file each*). A tick says whether it shipped, parked, or put
+ * the rest of the entry down by which of the three it wrote, and the
+ * predicates read exactly that back (`chain.ts`) — so a prompt naming only
+ * some of them would leave the rest for the agent to compose, at a spelling
+ * nothing downstream looks for.
  */
 export function buildPromptArgs(
   input: BuildPromptArgsInput,
@@ -438,6 +441,7 @@ export function buildPromptArgs(
     PER_SECTION_TEXT: verdict.text,
     NOTE_PATH: notePath(noteRoot(ctx), entry.tag),
     PARK_NOTE_PATH: parkedNotePath(noteRoot(ctx), entry.tag),
+    CONTINUING_NOTE_PATH: continuingNotePath(noteRoot(ctx), entry.tag),
   };
 }
 
@@ -467,8 +471,8 @@ function inTree(cwd: string): (path: string) => string | null {
  *
  * A state root outside the repo tree has no path in any commit, so the notes
  * the prompt would name are ones the records gate cannot admit and the park
- * predicate cannot read back — the channel build's prompt promises is not
- * there. The engine reports that case as an absent `stateRootRel`; refused
+ * and continuation predicates cannot read back — the channel build's prompt
+ * promises is not there. The engine reports that case as an absent `stateRootRel`; refused
  * here rather than rendered as a path that silently writes nowhere the tick's
  * commit reaches (*Loud or nothing*).
  *
