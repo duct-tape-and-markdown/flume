@@ -1,0 +1,31 @@
+{
+  "tag": "THE-SWEEP-WINDOW-LISTS-THE-DOMAIN-A-PHRASE-DELTA-ARMS",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/sweepWindow.ts",
+        "description": "the phrase-delta arm lists the declared domain's own tracked files, as the bootstrap window already lists its corpus"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the listing on a touched page, and none on a range that touched none"
+      }
+    ]
+  },
+  "summary": "A touched posture page arms every domain module and the window says so without naming one, so the frontier it renders is un-enumerable from the window alone",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "The frontier is decidable; the neighborhood is judged"
+  },
+  "acceptance": "a sweep window whose range touched a posture page renders the domain modules that delta arms, drawn from the declared domain through the listing the bootstrap window already uses; a range that touched none renders no such listing",
+  "tests": [
+    "a sweep window whose range touched a posture page lists the domain modules the phrase delta arms"
+  ],
+  "pins": [
+    "a sweep window whose range touched no posture page lists no domain module"
+  ],
+  "notes": "Verified against this tick's own window: `frontierListing` (`harness/sweepWindow.ts:200`) renders the touched union, the pages, and the phrase-delta sentence at `:213` \u2014 never the domain. `filesMatching` (`harness/gitRange.ts:119`) is what `bootstrap` (`harness/cursorWindow.ts:94`) draws the analogous whole-corpus frontier from; 108 tracked files today. This tick read the domain off `.claude/rules/posture-sweep.md:11` instead. Seams both files with THE-SWEEP-CARRIES-A-RETIRED-CLAIM-CURSOR."
+}

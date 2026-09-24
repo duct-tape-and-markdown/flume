@@ -1,4 +1,14 @@
 {
   "sweptThrough": "196e0f6c7733644f4ab12c974ad3211bacf697ea",
-  "rotation": { "kind": "closed" }
+  "rotation": {
+    "kind": "open",
+    "covered": [
+      "harness/cursorWindow.ts",
+      "harness/gitRange.ts",
+      "harness/planState.ts",
+      "harness/sweepWindow.ts",
+      "src/budgetHook.ts",
+      "src/budgetLine.ts"
+    ]
+  }
 }
