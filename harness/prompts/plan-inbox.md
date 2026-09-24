@@ -26,6 +26,11 @@
 {{QUESTIONS_INDEX}}
 </open-questions-index>
 
+<plan-state-shape>
+Your plan state file takes one of these JSON shapes; each `<...>` is a value you fill, and a field not shown is refused:
+{{PLAN_STATE_SHAPE}}
+</plan-state-shape>
+
 <artifacts>
 queue (one `<tag>.json` per entry): {{PENDING_DIR}}
 your plan state (this slice's own file): {{PLAN_STATE_PATH}}

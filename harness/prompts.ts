@@ -59,6 +59,7 @@ import {
   questionsDir,
   recordDirs,
 } from "./layout.js";
+import { PLAN_STATE_SHAPES } from "./planState.js";
 import { renderQuestions } from "./questions.js";
 import { RECORD_MAX_BYTES } from "./records.js";
 
@@ -218,6 +219,7 @@ export function sharedPromptArgs(
  */
 export const PLAN_SLICE_PROMPT_DATA_KEYS = [
   "PLAN_STATE_PATH",
+  "PLAN_STATE_SHAPE",
   "CLAIMED_ENTRIES",
 ] as const;
 
@@ -251,8 +253,24 @@ export function planSlicePromptArgs(
 ): Record<PlanSlicePromptArg, string> {
   return {
     PLAN_STATE_PATH: planStatePath(stateRoot, slice),
+    PLAN_STATE_SHAPE: planStateShape(slice),
     CLAIMED_ENTRIES: claimedBlock(claimed),
   };
+}
+
+/**
+ * The literal JSON `slice`'s state file takes, one arm per line — read off
+ * {@link PLAN_STATE_SHAPES}, which the typecheck holds to the schema the
+ * cursor gate enforces.
+ *
+ * Rendered on every tick, not only a slice's first: the tick with no file of
+ * its own is the one that most needs the shape, and it is the one whose
+ * `<plan-state>` block has nothing to show.
+ */
+function planStateShape(slice: PlanSlice): string {
+  return (PLAN_STATE_SHAPES[slice] as readonly unknown[])
+    .map((arm) => JSON.stringify(arm))
+    .join("\n");
 }
 
 /**
