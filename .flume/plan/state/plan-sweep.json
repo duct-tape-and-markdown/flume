@@ -162,7 +162,8 @@
       "src/cliStateDirs.ts",
       "harness/dirListing.ts",
       "src/entryKey.ts",
-      "src/exitCodes.ts"
+      "src/exitCodes.ts",
+      "src/budgetHook.ts"
     ]
   }
 }
