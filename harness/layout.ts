@@ -1,6 +1,7 @@
 /**
- * Where every plan artifact sits under a state root — the queue, the plan
- * state, the questions directory, the record queues and build's two notes —
+ * Where every plan artifact sits under a state root — the queue, each plan
+ * slice's own state file, the questions directory, the record queues and
+ * build's two notes —
  * and the fence that is their list (`spec/harness.md`, *Committed-path discipline*:
  * every mechanic the package wires addresses a path some commit holds).
  *
@@ -13,7 +14,7 @@
  * beside its source*).
  *
  * This module is the layout alone — names and nothing else. What an artifact
- * *holds* belongs to whatever reads it: the plan state's fields to
+ * *holds* belongs to whatever reads it: a slice state's fields to
  * `planState.ts`, a record's cap and title line to `records.ts` and the gate
  * that judges one, a rendered path's prompt slot to `prompts.ts`.
  *
@@ -31,6 +32,8 @@
  */
 
 import { gitPath, resolvePendingPath } from "../src/paths.js";
+
+import type { PlanSlice } from "./declaration.js";
 
 /**
  * A path under a state root, in git's alphabet — the join every name spelled
@@ -52,8 +55,39 @@ export function underStateRoot(stateRoot: string, rel: string): string {
   return `${stateRoot}/${gitPath(rel)}`;
 }
 
-/** Where the plan state artifact sits under a state root. */
-const PLAN_STATE_REL = "plan/state.json";
+/**
+ * The directory each plan slice's own state file sits in, under a state root
+ * — **one file per writer** (`spec/harness.md`, *Plan state as declared
+ * state*).
+ *
+ * A directory rather than a page, because the writers are concurrent: two
+ * slices stamping in one wave land on disjoint paths and merge as disjoint
+ * files, where two hands on one file merge as a conflict over facts neither
+ * of them changed.
+ */
+const PLAN_STATE_DIR_REL = "plan/state";
+
+/**
+ * The extension a slice's state file carries. JSON for the reason the queue
+ * is: an agent writes it, a schema gates it, and the next tick reads fields
+ * rather than impressions (`planState.ts`).
+ */
+const PLAN_STATE_EXT = ".json";
+
+/**
+ * Where the single page every slice's state was a field of sat, before each
+ * slice's state was its own file.
+ *
+ * **A migration allowance, and the only reason it is still spelled.** No
+ * slice reads it and nothing writes it; it rides {@link planArtifacts} so
+ * that the tick which splits a consumer's plan state into the per-slice files
+ * can `git rm` the page in the same commit — outside the fence, that page is
+ * a file no phase can reach and every plan tick reverts on. Retired with
+ * {@link LEGACY_QUESTIONS_REL} and for the same reason: both are a consumer's
+ * one-time cutover, and neither outlives the release whose migration page
+ * tells consumers to take it.
+ */
+const LEGACY_PLAN_STATE_REL = "plan/state.json";
 
 /**
  * The questions directory's name under a state root — the directory a plan
@@ -150,12 +184,29 @@ export function queuePath(stateRoot: string): string {
 }
 
 /**
- * Where the plan state artifact lives under `stateRoot`. One spelling, so the
- * fence admitting the artifact and the accessor reading it cannot name
- * different files.
+ * Where `slice`'s own state file lives under `stateRoot`. One spelling, so
+ * the fence admitting one slice's artifact and the accessor reading it cannot
+ * name different files.
+ *
+ * Named for the slice that writes it, which is what makes the fence able to
+ * say the thing the spec says: a phase fenced to this path alone cannot write
+ * a cursor it does not own, whatever its prompt tells it
+ * ({@link planArtifacts}).
  */
-export function planStatePath(stateRoot: string): string {
-  return underStateRoot(stateRoot, PLAN_STATE_REL);
+export function planStatePath(stateRoot: string, slice: PlanSlice): string {
+  return underStateRoot(
+    stateRoot,
+    `${PLAN_STATE_DIR_REL}/${slice}${PLAN_STATE_EXT}`,
+  );
+}
+
+/**
+ * The legacy plan state page under a state root
+ * ({@link LEGACY_PLAN_STATE_REL}) — addressable so a split can delete it, and
+ * for nothing else.
+ */
+export function legacyPlanStatePath(stateRoot: string): string {
+  return underStateRoot(stateRoot, LEGACY_PLAN_STATE_REL);
 }
 
 /**
@@ -287,9 +338,15 @@ export function noteGlobs(stateRoot: string): string[] {
 }
 
 /**
- * Every artifact the package's plan slices own under `stateRoot`, as fence
- * globs — the list every plan phase is fenced to, whatever a consumer
- * declared.
+ * Every artifact `slice` may write under `stateRoot`, as fence globs — the
+ * list that plan phase is fenced to, whatever a consumer declared.
+ *
+ * **Per slice, because one line of it is.** Every artifact here is shared by
+ * the slices except the plan state, which is one file per writer: the fence
+ * names the asking slice's own file and no sibling's, so "no slice writes a
+ * cursor it does not own" (`spec/harness.md`, *Plan state as declared
+ * state*) is held by the fence gate rather than by a paragraph each slice
+ * prompt has to be trusted to obey.
  *
  * The record queues ride it because a slice drains a record by deleting its
  * file; the records gate (`gates.ts`) is what refuses a slice that writes one
@@ -299,10 +356,11 @@ export function noteGlobs(stateRoot: string): string[] {
  * happened to hold each name: the fence is the layout's own statement of what
  * the layout is, so an artifact added below joins the fence with it.
  */
-export function planArtifacts(stateRoot: string): string[] {
+export function planArtifacts(stateRoot: string, slice: PlanSlice): string[] {
   return [
     queuePath(stateRoot),
-    planStatePath(stateRoot),
+    planStatePath(stateRoot, slice),
+    legacyPlanStatePath(stateRoot),
     questionGlob(stateRoot),
     legacyQuestionsPath(stateRoot),
     ...recordGlobs(stateRoot),

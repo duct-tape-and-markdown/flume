@@ -14,14 +14,14 @@
  * renders as empty (`.claude/rules/engineering.md`, *Derived state is
  * computed, never restated beside its source*).
  *
- * The three states a cursor itself can be in — no artifact yet, a cursor
- * naming no commit, a tree git will not read — are `cursorWindow.ts`'s, shared
- * with the sweep.
+ * The three states a cursor itself can be in — no state file for this slice
+ * yet, a cursor naming no commit, a tree git will not read — are
+ * `cursorWindow.ts`'s, shared with the sweep.
  */
 
 import { cursorWindow } from "./cursorWindow.js";
 import { diffPrefix, touchedPast, touches } from "./gitRange.js";
-import { readPlanState } from "./planState.js";
+import { readCursor } from "./planState.js";
 import {
   SLICE_DATA_KEYS,
   budgetOf,
@@ -56,7 +56,7 @@ export function deriveWindow(
     name: "plan-derive",
     live: (inputs) => {
       if (!queueResolved(inputs)) return false;
-      const cursor = readPlanState(inputs.flumeDir)?.derivedThrough;
+      const cursor = readCursor(inputs.flumeDir, "derivedThrough");
       if (cursor === undefined) return true;
       return touchedPast(options.repoRoot, cursor, locus);
     },

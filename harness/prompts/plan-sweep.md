@@ -18,7 +18,7 @@
 
 <artifacts>
 queue: {{PENDING_PATH}}
-plan state: {{PLAN_STATE_PATH}}
+your plan state (this slice's own file): {{PLAN_STATE_PATH}}
 open questions: {{QUESTIONS_DIR}}
 record queues: {{RECORD_DIRS}}
 discipline: {{DISCIPLINE}}

@@ -65,8 +65,10 @@ import { namedLinesGate } from "./judgeGate.js";
 import { noteGlobs, parkedNotePath, planArtifacts } from "./layout.js";
 import {
   BUILD_PROMPT_DATA_KEYS,
+  PLAN_SLICE_PROMPT_DATA_KEYS,
   SHARED_PROMPT_DATA_KEYS,
   buildPromptArgs,
+  planSlicePromptArgs,
   promptPath,
   sharedPromptArgs,
 } from "./prompts.js";
@@ -175,18 +177,6 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   /** The notes a build tick may write, as fence globs — one per kind. */
   const notes = noteGlobs(stateRoot);
 
-  /**
-   * The artifacts the package's plan slices own, whatever a consumer
-   * declared — taken whole from the layout that states where each sits
-   * (`layout.ts`) rather than assembled here, so an artifact added there
-   * joins this fence with it.
-   *
-   * Every path in it is in git's alphabet, which is the one the fence and a
-   * commit's touched paths are compared in, and which the root arrives in
-   * from {@link repoRelativeStateRoot}.
-   */
-  const artifacts = planArtifacts(stateRoot);
-
   const agentFor = agentFactory(api, declaration);
   const setup = worktreeSetup(declaration, provision);
 
@@ -235,8 +225,17 @@ export function harnessChain(options: HarnessChainOptions): Chain {
 
   const planPhase = (window: PlanSliceWindow): Phase => {
     const name: PlanSlice = window.name;
+    // The artifacts this slice owns, whatever a consumer declared — taken
+    // whole from the layout that states where each sits (`layout.ts`) rather
+    // than assembled here, so an artifact added there joins this fence with
+    // it. Per slice, because the plan state is one file per writer and the
+    // fence is what holds a slice to its own (`planArtifacts`).
+    //
+    // Every path in it is in git's alphabet, which is the one the fence and a
+    // commit's touched paths are compared in, and which the root arrives in
+    // from `repoRelativeStateRoot`.
     const writablePaths = unique([
-      ...artifacts,
+      ...planArtifacts(stateRoot, name),
       ...(declaration.fence[name] ?? []),
     ]);
     return {
@@ -251,13 +250,21 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       // decides whether this slice runs, and the material its prompt
       // renders (`windows.ts`). Both come off the same value here, so a
       // slice cannot be woken over a window its prompt then shows as empty.
-      promptArgs: (ctx) => ({ ...shared(ctx), ...window.args(ctx) }),
+      promptArgs: (ctx) => ({
+        ...shared(ctx),
+        ...planSlicePromptArgs(name, ctx.flumeDir),
+        ...window.args(ctx),
+      }),
       // Every value this phase substitutes is content it did not author, so
       // the engine neutralizes the inline-exec spans in all of them before
       // its own scan reads them as commands (`spec/prompt.md`, *The render
       // pipeline*). Both halves are read off the producers that build the
       // map above, never spelled again here.
-      promptDataKeys: [...SHARED_PROMPT_DATA_KEYS, ...window.dataKeys],
+      promptDataKeys: [
+        ...SHARED_PROMPT_DATA_KEYS,
+        ...PLAN_SLICE_PROMPT_DATA_KEYS,
+        ...window.dataKeys,
+      ],
       shouldRun: (ctx) =>
         window.live({
           flumeDir: ctx.flumeDir,

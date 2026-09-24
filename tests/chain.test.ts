@@ -218,7 +218,16 @@ describe("this repo's chain is the harness factory applied to its declaration (s
     for (const name of ["plan-inbox", "plan-derive", "plan-sweep"]) {
       const paths = byName[name]!.writablePaths;
       expect(paths, name).toContain(".flume/plan/pending.json");
-      expect(paths, name).toContain(".flume/plan/state.json");
+      // Plan state is one file per writer, so each slice's fence names its
+      // own and no sibling's (`spec/harness.md`, *Plan state as declared
+      // state*).
+      expect(paths, name).toContain(`.flume/plan/state/${name}.json`);
+      for (const other of ["plan-inbox", "plan-derive", "plan-sweep"]) {
+        if (other === name) continue;
+        expect(paths, `${name} may not write ${other}'s state`).not.toContain(
+          `.flume/plan/state/${other}.json`,
+        );
+      }
       expect(paths.some((p) => p.startsWith(".flume/inbox/")), name).toBe(true);
       expect(paths.some((p) => p.startsWith("src/")), name).toBe(false);
     }

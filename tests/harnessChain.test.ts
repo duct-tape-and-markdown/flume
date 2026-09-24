@@ -29,6 +29,7 @@ import { harnessChain } from "../harness/chain.ts";
 import {
   BUILD_PHASE,
   DEFAULT_SHELL,
+  INBOX_PHASE,
   PHASES,
   PLAN_SLICES,
   parseDeclaration,
@@ -42,7 +43,9 @@ import {
   notePath,
   parkedNotePath,
   parkedNotesDir,
+  planStatePath,
 } from "../harness/layout.ts";
+import { writePlanState } from "../harness/planState.ts";
 import type { RunnerContext, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
 import type { ClaudeCodeOptions } from "../src/Agent.ts";
@@ -171,16 +174,15 @@ beforeAll(async () => {
   git(["add", "-A"]);
   git(["commit", "-qm", "spec: reword the phases"]);
 
-  // Written after the commits because its fields name them. The windows read
-  // the artifact off disk, which is where a plan slice writes it.
-  await writeFile(
-    join(flumeDir, "plan", "state.json"),
-    `${JSON.stringify(
-      { derivedThrough: cursor, sweptThrough: cursor, rotation: { kind: "closed" } },
-      null,
-      2,
-    )}\n`,
-  );
+  // Written after the commits because its fields name them, and one file per
+  // writing slice, through the package's own writer — the windows read each
+  // slice's own file off disk, which is where that slice writes it
+  // (`spec/harness.md`, *Plan state as declared state*).
+  writePlanState(flumeDir, "plan-derive", { derivedThrough: cursor });
+  writePlanState(flumeDir, "plan-sweep", {
+    sweptThrough: cursor,
+    rotation: { kind: "closed" },
+  });
 
   api = buildFlumeApi({ repoRoot: repo, configDir: flumeDir, flumeDir });
 });
@@ -543,6 +545,73 @@ it("the returned build phase is fanout and carries the declaration's fence", () 
   }
   expect(derive.writablePaths).toContain(`${STATE_ROOT}/plan/pending.json`);
   expect(derive.writablePaths).toContain(DECLARATION.fence["plan-derive"][0]);
+});
+
+/**
+ * The leg the inbox drain no longer has: plan state is one file per writer, so
+ * the derive cursor is derive's alone and a drain that routed a spec commit's
+ * derivation says so in its commit body rather than stamping
+ * (`spec/harness.md`, *Plan state as declared state*).
+ *
+ * Asserted at both layers the old leg lived at — the fence the phase carries
+ * and the arguments its prompt is rendered with — because either alone leaves
+ * the property half held: a block the prompt no longer names is still a cursor
+ * a drain could write, and a fence that admitted derive's file is still a tick
+ * the gates would let ship.
+ *
+ * Read off key sets and one arg's value rather than out of the rendered text:
+ * a negative over a whole rendered prompt turns on whatever else that prompt
+ * happens to quote (`.claude/rules/posture-sweep.md`, *Standing lenses*), and
+ * this drain's prose names the cursor it is told not to touch.
+ */
+it("the inbox drain leaves the derive cursor untouched", async () => {
+  const inbox = phaseNamed(chainFor(), INBOX_PHASE);
+
+  // Its own state file, and no sibling's: a drain that stamped `derivedThrough`
+  // anyway has the commit reverted rather than the cursor moved.
+  expect(inbox.writablePaths.length).toBeGreaterThan(0);
+  expect(inbox.writablePaths).toContain(planStatePath(STATE_ROOT, INBOX_PHASE));
+  for (const slice of PLAN_SLICES) {
+    if (slice === INBOX_PHASE) continue;
+    expect({
+      slice,
+      fenced: inbox.writablePaths.includes(planStatePath(STATE_ROOT, slice)),
+    }).toEqual({ slice, fenced: false });
+  }
+
+  // And no argument of the drain's carries the cursor's window. Read off the
+  // phase's own `promptArgs` over a real context — the producer a tick renders
+  // with (`.claude/rules/engineering.md`, *A seam gate reads what the real
+  // writer wrote*).
+  const args = inbox.promptArgs?.(tickContext(inbox)) ?? {};
+  // Vacuity pin: the drain really is handed material, so the absences below
+  // are this leg's removal and not an empty arg map.
+  expect(Object.keys(args).length).toBeGreaterThan(0);
+  expect(args["RECORDS"]).toBeDefined();
+  expect(Object.keys(args)).not.toContain("DERIVE_CURSOR");
+  expect(inbox.promptDataKeys).not.toContain("DERIVE_CURSOR");
+
+  // The one plan state path it is handed is its own file, so the block that
+  // sends the drain to a state artifact cannot send it to derive's.
+  expect(args["PLAN_STATE_PATH"]).toBe(planStatePath(flumeDir, INBOX_PHASE));
+
+  // And the shipped prompt names no placeholder for the removed leg — a key
+  // set, not a text scan, so prose that mentions the cursor cannot answer it.
+  const raw = await readFile(promptPath(INBOX_PHASE as PromptName), "utf8");
+  const named = [...raw.matchAll(PLACEHOLDER)].map((m) => m[1]);
+  expect(named.length).toBeGreaterThan(0);
+  expect(named).not.toContain("DERIVE_CURSOR");
+
+  // The render still resolves, which is what says the prompt and the args
+  // agree after the key left both.
+  const rendered = await renderPrompt({
+    phase: inbox,
+    promptFile: promptPath(INBOX_PHASE as PromptName),
+    cwd: repo,
+    flumeDir,
+    args,
+  });
+  expect([...rendered.matchAll(PLACEHOLDER)].map((m) => m[0])).toEqual([]);
 });
 
 it("the build fence and the park predicate name one note path under a nested state root", () => {

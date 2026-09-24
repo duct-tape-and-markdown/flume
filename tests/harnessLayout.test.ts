@@ -13,8 +13,10 @@
 
 import { expect, it } from "vitest";
 
+import { PLAN_SLICES, type PlanSlice } from "../harness/declaration.ts";
 import {
   QUESTION_EXT,
+  legacyPlanStatePath,
   legacyQuestionsPath,
   noteGlobs,
   notePath,
@@ -40,8 +42,16 @@ import {
 /** A state root as the engine reports one: repo-relative, in git's alphabet. */
 const STATE_ROOT = ".flume";
 
+/**
+ * The slice a fence case is drawn for, where the case is not about which
+ * slice it is. Plan state is one file per writer, so `planArtifacts` is per
+ * slice; every other artifact in it is shared, and a case about one of those
+ * names a slice only because the fence has to be asked for one.
+ */
+const SOME_SLICE: PlanSlice = "plan-derive";
+
 it("the plan fence admits every artifact the package's own accessors address", () => {
-  const fence = planArtifacts(STATE_ROOT);
+  const fence = planArtifacts(STATE_ROOT, SOME_SLICE);
 
   // Each artifact at the spelling its reader or writer composes, never one
   // spelled here: the queue through the engine's resolver every consumer of
@@ -56,7 +66,7 @@ it("the plan fence admits every artifact the package's own accessors address", (
   // against.
   const artifacts = [
     gitPath(resolvePendingPath(STATE_ROOT)),
-    planStatePath(STATE_ROOT),
+    planStatePath(STATE_ROOT, SOME_SLICE),
     `${questionsDir(STATE_ROOT)}/a-parked-fork${QUESTION_EXT}`,
     legacyQuestionsPath(STATE_ROOT),
     notePath(STATE_ROOT, "SOME-ENTRY"),
@@ -88,7 +98,7 @@ it("the plan fence admits a file under the questions directory", () => {
   // file each*), so opening one adds a file and answering one deletes it —
   // both are the plan commit's touched paths, and a fence that did not reach
   // them would revert the tick that asked or the tick that answered.
-  const fence = planArtifacts(STATE_ROOT);
+  const fence = planArtifacts(STATE_ROOT, SOME_SLICE);
   expect(fence.length).toBeGreaterThan(0);
 
   // At the spelling the writer composes: the directory accessor every slice
@@ -119,9 +129,66 @@ it("the plan fence admits the legacy open-questions page a drain deletes", () =>
   // the questions directory has open questions inside the page, and the drain
   // that moves them out `git rm`s it in the same commit. Outside the fence,
   // that page is a file no phase can reach.
-  const fence = planArtifacts(STATE_ROOT);
+  const fence = planArtifacts(STATE_ROOT, SOME_SLICE);
   expect(fence.length).toBeGreaterThan(0);
   expect(matchesAny(legacyQuestionsPath(STATE_ROOT), fence)).toBe(true);
+});
+
+it("each plan slice's fence admits its own state file and no sibling's", () => {
+  // Vacuity pin: one slice would make every exclusion arm below trivial, and
+  // the property is what two slices writing at once cannot do
+  // (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*).
+  expect(PLAN_SLICES.length).toBeGreaterThan(1);
+
+  for (const slice of PLAN_SLICES) {
+    const fence = planArtifacts(STATE_ROOT, slice);
+    expect(fence.length).toBeGreaterThan(0);
+
+    // Its own, at the spelling the accessor its tick writes through composes.
+    const own = planStatePath(STATE_ROOT, slice);
+    expect({ slice, fenced: matchesAny(own, fence) }).toEqual({
+      slice,
+      fenced: true,
+    });
+
+    // And no sibling's: the fence is how "no slice writes a cursor it does
+    // not own" (`spec/harness.md`, *Plan state as declared state*) is held by
+    // the fence gate rather than by a prompt paragraph.
+    for (const other of PLAN_SLICES) {
+      if (other === slice) continue;
+      const sibling = planStatePath(STATE_ROOT, other);
+      expect({ slice, other, fenced: matchesAny(sibling, fence) }).toEqual({
+        slice,
+        other,
+        fenced: false,
+      });
+    }
+  }
+});
+
+it("the plan fence admits the legacy plan state page a split deletes", () => {
+  // The migration allowance (`harness/layout.ts`): a consumer upgrading into
+  // the per-slice state files holds its cursors in the single page, and the
+  // tick that splits them `git rm`s it in the same commit. Outside the fence,
+  // that page is a file no phase can reach. Every slice, because which one
+  // runs first is the loop's call and not the layout's.
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+  for (const slice of PLAN_SLICES) {
+    const fence = planArtifacts(STATE_ROOT, slice);
+    expect({
+      slice,
+      fenced: matchesAny(legacyPlanStatePath(STATE_ROOT), fence),
+    }).toEqual({ slice, fenced: true });
+  }
+
+  // And it is not one of the per-slice files wearing the old name: the page
+  // the split deletes and the file a slice writes are different paths.
+  for (const slice of PLAN_SLICES) {
+    expect(planStatePath(STATE_ROOT, slice)).not.toBe(
+      legacyPlanStatePath(STATE_ROOT),
+    );
+  }
 });
 
 it("the queue's fence path is the engine's resolved queue, in git's alphabet", () => {
@@ -133,7 +200,7 @@ it("the queue's fence path is the engine's resolved queue, in git's alphabet", (
   expect(queuePath(STATE_ROOT)).toBe(
     `${STATE_ROOT}/${gitPath(DEFAULT_PENDING_REL)}`,
   );
-  expect(planArtifacts(STATE_ROOT)).toContain(queuePath(STATE_ROOT));
+  expect(planArtifacts(STATE_ROOT, SOME_SLICE)).toContain(queuePath(STATE_ROOT));
 });
 
 it("a path under a state root is git-alphabet whatever alphabet its tail arrived in", () => {

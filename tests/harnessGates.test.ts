@@ -36,7 +36,6 @@ import {
   writePlanState,
   type Declaration,
   type GateEngine,
-  type PlanState,
 } from "../harness/index.ts";
 import { pendingGate } from "../src/builtinGates.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
@@ -713,19 +712,26 @@ it("the clean-tree gate takes its status records from the engine rather than spa
 const short = (sha: string): string => sha.slice(0, 7);
 
 /**
- * A plan state through the package's **own writer** — the one a slice's
- * tick writes this artifact with. A hand-authored JSON fixture here would
- * re-author, by the tester's hand, the vocabulary the gate's reader decodes,
- * which is the half of this seam worth holding
+ * The derive slice's state through the package's **own writer** — the one a
+ * slice's tick writes this artifact with. A hand-authored JSON fixture here
+ * would re-author, by the tester's hand, the vocabulary the gate's reader
+ * decodes, which is the half of this seam worth holding
  * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
  * wrote*).
  */
-const writeState = (derivedThrough: string, over: Partial<PlanState> = {}): void =>
-  writePlanState(join(repo, STATE_ROOT), {
-    derivedThrough,
-    sweptThrough: derivedThrough,
+const writeState = (derivedThrough: string): void =>
+  writePlanState(join(repo, STATE_ROOT), "plan-derive", { derivedThrough });
+
+/**
+ * The sweep slice's state, same writer — a sibling plan artifact the derive
+ * cursor is not in. One file per writer, so a commit carrying this one moves
+ * no derive cursor and the gate says so on the path (`spec/harness.md`, *Plan
+ * state as declared state*).
+ */
+const writeSweepState = (sweptThrough: string): void =>
+  writePlanState(join(repo, STATE_ROOT), "plan-sweep", {
+    sweptThrough,
     rotation: { kind: "closed" },
-    ...over,
   });
 
 /**
@@ -746,7 +752,7 @@ async function offHistory(): Promise<string> {
 
 /** The derive cursor's gate, and the plan state path it keys on. */
 const cursor = (): Gate => named("derive cursor");
-const STATE_PATH = planStatePath(STATE_ROOT);
+const STATE_PATH = planStatePath(STATE_ROOT, "plan-derive");
 
 it("the cursor gate refuses a plan commit whose derive cursor is not an ancestor of the tip", async () => {
   const stray = await offHistory();
@@ -799,26 +805,28 @@ it("the cursor gate refuses a plan commit whose derive cursor is not a descendan
   expect(refused.details).not.toContain("is not an ancestor of the gated commit");
 });
 
-it("the cursor gate passes a plan commit that carries its derive cursor forward unchanged", async () => {
-  const carried = git(repo, ["rev-parse", "HEAD"]);
-  writeState(carried);
-  const first = commitAll("plan: arm the rotation and stamp the cursor");
-  expect(await cursor().run(ctxFor(first, { phaseName: "plan-derive" }))).toMatchObject({
+it("the cursor gate passes a plan commit that steps its derive cursor forward within its own history", async () => {
+  const first = git(repo, ["rev-parse", "HEAD"]);
+  writeState(first);
+  const stamped = commitAll("plan: stamp the first cursor");
+  expect(await cursor().run(ctxFor(stamped, { phaseName: "plan-derive" }))).toMatchObject({
     ok: true,
   });
 
-  // The artifact moves — the rotation opens — and the derive cursor does not.
-  writeState(carried, { rotation: { kind: "open", covered: [] } });
-  const span = commitAll("plan: open the rotation, carry the derive cursor");
+  await write("src/widget.ts", `export const widget = "second";\n`);
+  const second = commitAll("build: a commit for the cursor to step over").commitSha;
+  writeState(second);
+  const span = commitAll("plan: step the derive cursor over the commit it derived");
   // Vacuity pin: the gate only judges a cursor the span actually carries.
   expect(span.touchedPaths).toContain(STATE_PATH);
 
   const passed = await cursor().run(ctxFor(span, { phaseName: "plan-derive" }));
 
   expect(passed.ok).toBe(true);
-  // Judged, not skipped, and naming the step it read as a step of zero.
+  // Judged, not skipped, and naming both ends of the step it read — which is
+  // the arm a commit with no pre-commit value never reaches.
   expect(passed.skipped).toBeUndefined();
-  expect(passed.message).toContain(`${short(carried)} -> ${short(carried)}`);
+  expect(passed.message).toContain(`${short(first)} -> ${short(second)}`);
 });
 
 it("the cursor gate reports a commit that touched no plan state as skipped", async () => {
@@ -842,8 +850,27 @@ it("the cursor gate reports a commit that touched no plan state as skipped", asy
   // Vacuous by design, and spelled: the plan state the commit did not touch
   // still holds whatever the commit that wrote it was held to.
   expect(skipped.ok).toBe(true);
-  expect(skipped.skipped).toBe("the plan state is not in the gated span");
-  expect(skipped.message).toContain("moves no cursor");
+  expect(skipped.skipped).toBe(
+    "the derive slice's state file is not in the gated span",
+  );
+  expect(skipped.message).toContain("moves no derive cursor");
+
+  // And a sibling slice's own state is the same skip, on the same path test:
+  // plan state is one file per writer, so a sweep tick stamping its cursor
+  // writes a file the derive cursor is not in and this gate has nothing to
+  // judge (`spec/harness.md`, *Plan state as declared state*).
+  writeSweepState(git(repo, ["rev-parse", "HEAD"]));
+  const sibling = commitAll("plan: stamp the sweep cursor alone");
+  expect(sibling.touchedPaths).toContain(planStatePath(STATE_ROOT, "plan-sweep"));
+  expect(sibling.touchedPaths).not.toContain(STATE_PATH);
+
+  const elsewhere = await cursor().run(
+    ctxFor(sibling, { phaseName: "plan-sweep" }),
+  );
+  expect(elsewhere.ok).toBe(true);
+  expect(elsewhere.skipped).toBe(
+    "the derive slice's state file is not in the gated span",
+  );
 });
 
 it("the package's gates precede a consumer's declared gates for the same phase", async () => {

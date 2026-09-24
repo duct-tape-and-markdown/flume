@@ -8,8 +8,10 @@
  * this module's idea of git's output rather than git's. Each case builds a
  * tiny repo, commits real files, and reads the window back — the writer is
  * git and the reader is the window (`.claude/rules/engineering.md`, *A seam
- * gate reads what the real writer wrote*). The plan state is written by the
- * package's own `writePlanState`, never hand-authored, for the same reason.
+ * gate reads what the real writer wrote*). Each slice's state is written by
+ * the package's own `writePlanState`, never hand-authored, for the same
+ * reason — one file per writer, so {@link writeState} lays down every slice's
+ * and a case asserting an absent cursor removes the one file it is about.
  *
  * **Every liveness case carries its control.** A predicate that answered
  * `true` for the whole fixture would satisfy a one-sided assertion, so each
@@ -33,10 +35,11 @@ import {
   planSliceWindows,
   RECORD_MAX_BYTES,
   recordsPending,
+  planStatePath,
   writePlanState,
   type Declaration,
   type PlanSliceWindow,
-  type PlanState,
+  type PlanStateWriteOf,
 } from "../harness/index.ts";
 import {
   BUILD_PHASE,
@@ -103,15 +106,31 @@ const body = (marker: string, n: number): string =>
 /** The state root is the repo's own `.flume`, as a real consumer's is. */
 const stateRoot = (): string => join(repo, ".flume");
 
-/** The three cursor facts, varied per case off a closed rotation at HEAD. */
-function planState(overrides: Partial<PlanState> = {}): PlanState {
+/** The three cursor facts a case varies, off a closed rotation at HEAD. */
+interface StateOverrides {
+  readonly derivedThrough?: string;
+  readonly sweptThrough?: string;
+  readonly rotation?: PlanStateWriteOf<"plan-sweep">["rotation"];
+}
+
+/**
+ * Every cursor-bearing slice's state on disk, through the package's own
+ * writer.
+ *
+ * Both files, always: plan state is one file per writer, and a case about one
+ * window wants its sibling's file present too — otherwise an assertion about
+ * this window's absent leg could be answered by a state root carrying nothing
+ * at all (`spec/harness.md`, *Plan state as declared state*).
+ */
+function writeState(overrides: StateOverrides = {}): void {
   const head = git("rev-parse", "HEAD").trim();
-  return {
-    derivedThrough: head,
-    sweptThrough: head,
-    rotation: { kind: "closed" },
-    ...overrides,
-  };
+  writePlanState(stateRoot(), "plan-derive", {
+    derivedThrough: overrides.derivedThrough ?? head,
+  });
+  writePlanState(stateRoot(), "plan-sweep", {
+    sweptThrough: overrides.sweptThrough ?? head,
+    rotation: overrides.rotation ?? { kind: "closed" },
+  });
 }
 
 /** The runner factory a declaration carries; no case here drives the judge. */
@@ -244,7 +263,7 @@ const FRICTION_DIR = "friction";
 
 it("the derive window is live exactly while commits past the derive cursor touch the declared spec locus", () => {
   commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const derive = windows()["plan-derive"];
 
   // Vacuity guard: the cursor is at HEAD, so the window is provably empty
@@ -279,7 +298,7 @@ it.runIf(process.platform !== "win32")(
   "the derive window is live when a commit touches a spec path whose name carries a control character",
   () => {
     const base = commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
-    writePlanState(stateRoot(), planState());
+    writeState();
     const derive = windows()["plan-derive"];
 
     // Vacuity guard: the cursor is at HEAD, so the window is provably empty
@@ -316,13 +335,10 @@ it("the sweep window is live while the plan state's rotation is open", () => {
 
   // The cursor sits at HEAD in both arms, so nothing but the rotation
   // differs — a frontier commit would make the window live either way.
-  writePlanState(stateRoot(), planState({ rotation: { kind: "closed" } }));
+  writeState({ rotation: { kind: "closed" } });
   const closed = sweep.live({ flumeDir: stateRoot(), pickable: false });
 
-  writePlanState(
-    stateRoot(),
-    planState({ rotation: { kind: "open", covered: [] } }),
-  );
+  writeState({ rotation: { kind: "open", covered: [] } });
   const open = sweep.live({ flumeDir: stateRoot(), pickable: false });
 
   expect({ closed, open }).toEqual({ closed: false, open: true });
@@ -330,10 +346,7 @@ it("the sweep window is live while the plan state's rotation is open", () => {
 
 it("the sweep window is not live while the queue carries a pickable entry", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(
-    stateRoot(),
-    planState({ rotation: { kind: "open", covered: [] } }),
-  );
+  writeState({ rotation: { kind: "open", covered: [] } });
   const sweep = windows()["plan-sweep"];
 
   // Control: the same open rotation, which is live on its own.
@@ -345,7 +358,7 @@ it("the sweep window is not live while the queue carries a pickable entry", () =
 
 it("the inbox window is live while a standing build refusal is keyed to an entry the queue still carries", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const inbox = windows()[INBOX_PHASE];
 
   const pending = [entry("HARNESS-SLICE-WINDOWS")];
@@ -385,7 +398,7 @@ it("the inbox window is live while a standing build refusal is keyed to an entry
  */
 it("the inbox slice is not live for a waiting record while the engine reports anything pickable", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   writeRecord(
     "plan/notes/AN-OBSERVATION.md",
     "# An observation\n\nThe gate names its own command twice.\n",
@@ -413,7 +426,7 @@ it("the inbox slice is not live for a waiting record while the engine reports an
  */
 it("the inbox slice is live for a standing park even while entries are pickable", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const inbox = windows()[INBOX_PHASE];
 
   const pending = [entry("HARNESS-STANDING-PARK")];
@@ -445,7 +458,7 @@ it("the inbox slice is live for a standing park even while entries are pickable"
  */
 it("the inbox slice is live for a waiting record when nothing is pickable", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const inbox = windows()[INBOX_PHASE];
 
   // Vacuity: nothing waits and nothing is pickable, so the record written
@@ -488,7 +501,7 @@ it("the inbox slice is live for a waiting record when nothing is pickable", () =
  */
 it("the inbox slice renders a declared friction directory's files as records", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
 
   const inboxRecord = writeRecord(
     "inbox/2026-09-16-a-finding.md",
@@ -531,7 +544,7 @@ it("the inbox slice renders a declared friction directory's files as records", (
 
 it("the inbox slice is live for a waiting friction file", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const declared = () => windows({ friction: FRICTION_DIR })[INBOX_PHASE];
 
   // Vacuity: the channel exists and holds only a placeholder, so the note
@@ -580,7 +593,7 @@ it("the inbox slice is live for a waiting friction file", () => {
  */
 it("the inbox slice's standing refusals key a tag slugify rewrites the way the engine's own entry-attempt key does", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const inbox = windows()[INBOX_PHASE];
 
   // A tag `slugify` rewrites: uppercase, a space and a slash all leave the
@@ -616,7 +629,7 @@ it("the inbox slice's standing refusals key a tag slugify rewrites the way the e
  */
 it("the inbox window ignores a phase-keyed prior-attempt record whose key matches a queued entry's slug", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const inbox = windows()[INBOX_PHASE];
 
   // A queued tag that slugs to a phase name the engine also keys records by.
@@ -664,7 +677,7 @@ it("the inbox window ignores a phase-keyed prior-attempt record whose key matche
  */
 it("the inbox window and the build handoff agree on every prior-attempt mode", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const inbox = windows()[INBOX_PHASE];
 
   const tag = "HARNESS-STANDING-REFUSAL";
@@ -751,7 +764,7 @@ it("the inbox window and the build handoff agree on every prior-attempt mode", (
 
 it("a standing tip-moved prior-attempt record leaves the inbox window shut", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const inbox = windows()[INBOX_PHASE];
 
   const tag = "HARNESS-TIP-MOVED";
@@ -787,7 +800,7 @@ it("a standing tip-moved prior-attempt record leaves the inbox window shut", () 
 
 it("a rendered window names the sha its cursor may advance to and defers the commits past its budget", () => {
   const base = commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
-  writePlanState(stateRoot(), planState());
+  writeState();
 
   const first = commit({ "spec/loop.md": body("first", 20) }, "spec: first");
   const second = commit({ "spec/loop.md": body("second", 20) }, "spec: second");
@@ -821,7 +834,7 @@ it.runIf(process.platform !== "win32")(
   "a window diff narrows by a path whose name carries a glob metacharacter",
   () => {
     const base = commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
-    writePlanState(stateRoot(), planState());
+    writeState();
 
     // One commit, two paths: only the top-level `.md` is in the declared
     // locus, and the window narrows the diff to it by name. Read as a
@@ -854,10 +867,7 @@ it.runIf(process.platform !== "win32")(
 it("a window refuses a cursor sha that does not resolve in the tick's tree", () => {
   commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
   const absent = "0123456789abcdef0123456789abcdef01234567";
-  writePlanState(
-    stateRoot(),
-    planState({ derivedThrough: absent, sweptThrough: absent }),
-  );
+  writeState({ derivedThrough: absent, sweptThrough: absent });
   const built = windows();
   const ctx = { cwd: repo, flumeDir: stateRoot() };
 
@@ -934,7 +944,7 @@ it("the sweep window carries the frontier commits and the spec lines the window 
     { "src/a.ts": "export const a = 1;\n", "spec/loop.md": "# Loop\n\nA ratified claim.\n" },
     "build: a",
   );
-  writePlanState(stateRoot(), planState());
+  writeState();
 
   commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
   commit({ "spec/loop.md": "# Loop\n" }, "spec: retire the claim");
@@ -985,7 +995,7 @@ it("the retired-claim delta carries a deleted line that begins with two dashes",
     },
     "build: a",
   );
-  writePlanState(stateRoot(), planState());
+  writeState();
 
   commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
   commit({ "spec/loop.md": "# Loop\n" }, "spec: retire both claims");
@@ -1011,7 +1021,7 @@ it("the retired-claim delta excludes the diff's own file-header lines", () => {
     },
     "build: a",
   );
-  writePlanState(stateRoot(), planState());
+  writeState();
 
   commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
   commit({ "spec/loop.md": "# Loop\n" }, "spec: retire the claim");
@@ -1032,7 +1042,7 @@ it("the retired-claim delta excludes the diff's own file-header lines", () => {
 
 it("a rendered sweep window names the tip its frontier was drawn from", () => {
   const base = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
 
   commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
   // The tip is the tree's, not the frontier's last commit: the rotation this
@@ -1057,7 +1067,7 @@ it("a rendered sweep window names the tip its frontier was drawn from", () => {
 
 it("a sweep window with no commits past its cursor names the cursor as its tip", () => {
   const base = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
 
   const rendered = windows()["plan-sweep"].args({
     cwd: repo,
@@ -1077,7 +1087,7 @@ it("a sweep window with no commits past its cursor names the cursor as its tip",
 
 it("the inbox window renders every waiting record's bytes and marks the refusals it must reconcile", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
 
   const inboxDir = join(stateRoot(), "inbox");
   mkdirSync(inboxDir, { recursive: true });
@@ -1114,7 +1124,7 @@ it("the inbox window renders every waiting record's bytes and marks the refusals
 
 it("the rendered records block names the byte count of a record over the cap", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
 
   const inboxDir = join(stateRoot(), "inbox");
   mkdirSync(inboxDir, { recursive: true });
@@ -1155,70 +1165,44 @@ it("the rendered records block names the byte count of a record over the cap", (
 });
 
 /**
- * The fourth leg of the inbox window, and the only one that is not a findings
- * source: a drain that routed a spec commit's derivation may close that
- * commit out of the derive slice's window, so it has to be told which commits
- * those are (`spec/harness.md`, *Plan state as declared state*).
- *
- * The candidates are named by the window rather than resolved by the tick,
- * which is why this asserts the shas rather than merely that a block exists —
- * a block naming no sha would leave the drain to find one itself, which is
- * the stamp discipline this leg is here to keep
- * (`.claude/rules/posture-sweep.md`, *The stamp*).
- *
- * Its controls are the two states with nothing to name: a consumer that
- * enabled no derive slice, and a state root with no cursor written yet.
- * Each spells its case rather than rendering an empty listing, which would
- * read as a quiet tree.
+ * Absence is per slice, because the files are: a consumer mid-cutover has one
+ * slice's file written and another's not, and each window opens on its own
+ * slice's answer rather than on whether any plan state exists at all.
  */
-it("the inbox slice's rendered window names the derive cursor", () => {
+it("a missing slice state file renders as no state yet", () => {
   const cursor = commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
-  writePlanState(stateRoot(), planState());
-  // Past the cursor: one commit inside the declared locus and one outside it,
-  // so the listing is a claim about the locus and not about the range.
-  const inLocus = commit(
-    { "spec/loop.md": "# Loop\n\nAmended.\n" },
-    "spec: amend the loop",
-  );
-  const outsideLocus = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+  commit({ "rules/posture.md": "# Posture\n" }, "rules: a posture page");
 
-  const inbox = windows()[INBOX_PHASE];
-  const args = inbox.args({ cwd: repo, flumeDir: stateRoot() });
+  const built = windows();
+  const ctx = { cwd: repo, flumeDir: stateRoot() };
 
-  // Declared as data like every other key this window returns: the block
-  // carries commit subjects the package did not author.
-  expect(inbox.dataKeys).toContain("DERIVE_CURSOR");
-  expect(Object.keys(args).sort()).toEqual([...inbox.dataKeys].sort());
+  // Control: with both files on disk, both windows render past their cursors
+  // rather than bootstrapping — so the bootstrap below is the removed file's
+  // doing and not the fixture's.
+  expect(built["plan-derive"].args(ctx).SPEC_WINDOW).not.toContain("bootstrap");
+  expect(built["plan-sweep"].args(ctx).SWEEP_WINDOW).not.toContain("bootstrap");
 
-  const rendered = args["DERIVE_CURSOR"]!;
-  expect(rendered).toContain(
-    "=== `derivedThrough` is at " +
-      `${cursor}; 1 spec-locus commit(s) stand past it, oldest first ===`,
-  );
-  // The candidate the drain may advance to, named with the subject that lets
-  // a routed record be recognised as its derivation.
-  expect(rendered).toContain(`${inLocus} spec: amend the loop`);
-  // And the commit outside the locus is no candidate: advancing to it would
-  // step the cursor over a spec commit nobody derived.
-  expect(rendered).not.toContain(outsideLocus);
+  // Derive's file alone removed: derive reads no state yet and opens over its
+  // whole declared corpus, while the sweep still reads the cursor in its own
+  // file — the sibling's absence is not its absence.
+  rmSync(planStatePath(stateRoot(), "plan-derive"));
+  const half = windows();
+  const bootstrapped = half["plan-derive"].args(ctx).SPEC_WINDOW;
+  expect(bootstrapped).toContain("bootstrap");
+  expect(bootstrapped).toContain("`derivedThrough`");
+  expect(bootstrapped).toContain("spec/loop.md");
+  expect(bootstrapped).not.toContain("REFUSE");
 
-  // Control one: nothing consults `derivedThrough` here, so no sha is offered
-  // and no `git log` is paid for.
-  const noDerive = windows({ slices: { enabled: [INBOX_PHASE] } })[INBOX_PHASE];
-  const withoutDerive = noDerive.args({ cwd: repo, flumeDir: stateRoot() })[
-    "DERIVE_CURSOR"
-  ]!;
-  expect(withoutDerive).toContain("the derive slice is not enabled");
-  expect(withoutDerive).not.toContain(cursor);
-  expect(withoutDerive).not.toContain(inLocus);
+  const sweep = half["plan-sweep"].args(ctx).SWEEP_WINDOW;
+  expect(sweep).not.toContain("bootstrap");
+  expect(sweep).toContain(`commit(s) since ${cursor}`);
 
-  // Control two: a state root with no artifact yet has no cursor to advance,
-  // and says so rather than listing a corpus this slice would never read.
-  rmSync(join(stateRoot(), "plan"), { recursive: true, force: true });
-  const cold = inbox.args({ cwd: repo, flumeDir: stateRoot() })["DERIVE_CURSOR"]!;
-  expect(cold).toContain("no plan state yet");
-  expect(cold).not.toContain(cursor);
-  expect(cold).not.toContain(inLocus);
+  // And the liveness leg reads the same absence: a slice with no state file
+  // of its own is live, because no state yet is every window's "run".
+  expect(
+    half["plan-derive"].live({ flumeDir: stateRoot(), pickable: false }),
+  ).toBe(true);
 });
 
 it("a state root with no plan state opens every window over the whole declared corpus", () => {
@@ -1313,7 +1297,7 @@ it("the windows a declaration builds are the slices it enabled, in the ladder's 
  */
 it("the inbox window spells the empty CI lane case when the declaration names none", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const inbox = windows()[INBOX_PHASE];
 
   const args = inbox.args({ cwd: repo, flumeDir: stateRoot() });
@@ -1345,7 +1329,7 @@ const parseFailure = (): QueueParseFailure => ({
 
 it("a queue that fails to parse makes the inbox slice live", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const inbox = windows()[INBOX_PHASE];
 
   // Vacuity and control in one: no record waits, no refusal stands and the
@@ -1367,7 +1351,7 @@ it("a queue that fails to parse makes the inbox slice live", () => {
 
 it("the inbox render carries the queue's parse failure as the drain's input", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const failure = parseFailure();
 
   // Non-vacuity: the fact really carries an error, so the block below is
@@ -1407,11 +1391,7 @@ it("the inbox render carries the queue's parse failure as the drain's input", ()
  */
 it("the derive and sweep slices shut over a queue that did not parse", () => {
   const cursor = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), {
-    derivedThrough: cursor,
-    sweptThrough: cursor,
-    rotation: { kind: "closed" },
-  });
+  writeState({ derivedThrough: cursor, sweptThrough: cursor });
   // Past both cursors: the spec locus for derive, the sweep domain for sweep.
   commit(
     { "spec/loop.md": "# Loop\n", "src/b.ts": "export const b = 2;\n" },
@@ -1447,7 +1427,7 @@ it("the derive and sweep slices shut over a queue that did not parse", () => {
  */
 it("the default handoff names the inbox slice over a queue that did not parse", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writePlanState(stateRoot(), planState());
+  writeState();
   const handoff = defaultHandoff(
     planSliceWindows({ declaration: declaration(), repoRoot: repo }),
   );

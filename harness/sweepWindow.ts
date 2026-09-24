@@ -55,7 +55,8 @@ import {
  * the tick goes to the slice whose rewrite is the repair rather than to a
  * sweep that would file its findings into a queue derived from nothing
  * (`queueResolved`, `sliceWindow.ts`). Nothing is lost by it — the cursor and
- * the rotation are plan state, untouched by a tick the sweep did not take.
+ * the rotation are this slice's own state file, untouched by a tick the sweep
+ * did not take.
  */
 export function sweepWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
   const { domain, posturePages } = sweepInputs(options.declaration);
@@ -66,7 +67,7 @@ export function sweepWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       if (!queueResolved(inputs)) return false;
       const { flumeDir, pickable } = inputs;
       if (pickable) return false;
-      const state = readPlanState(flumeDir);
+      const state = readPlanState(flumeDir, "plan-sweep");
       if (state === undefined) return true;
       if (state.rotation.kind === "open") return true;
       return touchedPast(options.repoRoot, state.sweptThrough, frontier);

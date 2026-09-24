@@ -3,15 +3,16 @@
  * spelled reason there are none to read.
  *
  * The derive and sweep slices differ only in which cursor they are drawn past,
- * which globs they are drawn over, and what they make of the commits they get;
- * the inbox slice differs further, reading a cursor it is not drawn past but
- * may advance — so the three states a cursor can be in are decided once here
- * rather than three times beside them (`.claude/rules/engineering.md`, *A
- * module is one job*).
+ * which globs they are drawn over, and what they make of the commits they get
+ * — so the three states a cursor can be in are decided once here rather than
+ * twice beside them (`.claude/rules/engineering.md`, *A module is one job*).
  *
  * **The cursors are fields, never prose.** `derivedThrough` and `sweptThrough`
- * arrive through {@link readPlanState}; nothing here regexes a sha out of a
- * narrative document (`spec/harness.md`, *Plan state as declared state*).
+ * arrive through {@link readCursor}, each off the file of the slice that owns
+ * it; nothing here regexes a sha out of a narrative document
+ * (`spec/harness.md`, *Plan state as declared state*). Which file that is
+ * comes from the same place, so the repair a refusal names is the file the
+ * value was missing from.
  *
  * **A range that cannot be read refuses, in the window itself.** A state root
  * with no artifact yet, a cursor naming no commit, or any git failure under
@@ -32,55 +33,17 @@ import {
   type RangeCommit,
 } from "./gitRange.js";
 import { planStatePath } from "./layout.js";
-import { readPlanState, type PlanState } from "./planState.js";
+import { cursorSlice, readCursor, type CursorField } from "./planState.js";
 import type { WindowContext } from "./sliceWindow.js";
 
 /**
- * A plan-state field a window is drawn past — read off the artifact's own
- * shape rather than listed here, so a cursor the schema renames or drops is a
- * typecheck failure at every window that names it
- * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
- * beside its source*).
- */
-type CursorField = {
-  [K in keyof PlanState]-?: NonNullable<PlanState[K]> extends string ? K : never;
-}[keyof PlanState];
-
-/**
- * The commits past this window's cursor, handed to `render`, or the refusal
- * that stands in for them — with `absent` deciding what a state root carrying
- * no artifact yet opens over.
+ * The window a slice drawn past this cursor opens: the commits past it handed
+ * to `render`, the bootstrap corpus where the slice that owns the cursor has
+ * written no state file yet, or the refusal that stands in for either.
  *
- * The absent leg is the one of the three states a reader can legitimately
- * differ on: a slice drawn past a cursor opens over the whole corpus
- * ({@link cursorWindow}), while a slice that only *may* advance one has
- * nothing to advance and says so. The other two — a cursor naming no commit,
- * a tree git will not read — are the same refusal for every reader, so they
- * are decided here rather than beside each caller
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
- */
-export function cursorRange(
-  field: CursorField,
-  ctx: WindowContext,
-  legs: {
-    readonly absent: () => string;
-    readonly render: (cursor: string, commits: RangeCommit[]) => string;
-  },
-): string {
-  return bounded(field, ctx, () => {
-    const state = readPlanState(ctx.flumeDir);
-    if (state === undefined) return legs.absent();
-    const cursor = state[field];
-    if (!resolvesInTree(ctx.cwd, cursor)) {
-      return unresolvedCursor(field, cursor, ctx.flumeDir);
-    }
-    return legs.render(cursor, commitsPast(ctx.cwd, cursor));
-  });
-}
-
-/**
- * The window a slice drawn past this cursor opens: {@link cursorRange} with
- * the bootstrap corpus as its absent leg.
+ * The three states are decided here rather than beside each caller
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*): a
+ * cursor absent, a cursor naming no commit, a tree git will not read.
  *
  * `globs` is what the window looks at, and it is declared rather than assumed:
  * the bootstrap listing is drawn from it, and `render` narrows the same list
@@ -93,20 +56,23 @@ export function cursorWindow(
   ctx: WindowContext,
   render: (cursor: string, commits: RangeCommit[]) => string,
 ): string {
-  return cursorRange(field, ctx, {
-    absent: () => bootstrap(field, ctx, globs),
-    render,
+  return bounded(field, ctx, () => {
+    const cursor = readCursor(ctx.flumeDir, field);
+    if (cursor === undefined) return bootstrap(field, ctx, globs);
+    if (!resolvesInTree(ctx.cwd, cursor)) {
+      return unresolvedCursor(field, cursor, ctx.flumeDir);
+    }
+    return render(cursor, commitsPast(ctx.cwd, cursor));
   });
 }
 
 /**
- * The window a state root with no artifact yet opens over: everything the
- * globs name, read in full, ending on the tip the cursor is stamped at.
+ * The window a slice with no state file yet opens over: everything the globs
+ * name, read in full, ending on the tip the cursor is stamped at.
  *
- * Absence is the first tick's real state, not a degradation — a consumer
- * whose state root was just written has no cursor, and the only honest
- * window over "nothing has been derived" is the whole corpus
- * (`planState.ts`).
+ * Absence is the first tick's real state, not a degradation — a slice whose
+ * own file was never written has no cursor, and the only honest window over
+ * "nothing has been derived" is the whole corpus (`planState.ts`).
  *
  * **The tip is named here, not rediscovered by the tick.** A window that
  * said "stamp HEAD" would have the stamping tick resolve its own sha, so a
@@ -133,6 +99,17 @@ function bootstrap(
 }
 
 /**
+ * The file a refusal sends a tick to repair `field` in: the state file of the
+ * slice that owns the cursor, never a plan state in general.
+ *
+ * Composed from the cursor's own owner rather than named per refusal, so a
+ * cursor that moves to another slice's file moves both refusals with it
+ * (`planState.ts`, {@link cursorSlice}).
+ */
+const stateFileFor = (field: CursorField, flumeDir: string): string =>
+  planStatePath(flumeDir, cursorSlice(field));
+
+/**
  * The window an unreadable range opens over: nothing, loudly.
  *
  * Rendered into the prompt rather than thrown out of it, and that is
@@ -156,8 +133,8 @@ const unresolvedCursor = (
   refusal(
     `\`${field}\` is \`${cursor}\`, which does not resolve to a commit in ` +
       `this tick's tree`,
-    `repair \`${field}\` in ${planStatePath(flumeDir)} and say in the ` +
-      `commit body what it was and what you set it to.`,
+    `repair \`${field}\` in ${stateFileFor(field, flumeDir)} and say in ` +
+      `the commit body what it was and what you set it to.`,
   );
 
 /**
@@ -188,8 +165,8 @@ function bounded(
     return refusal(
       `the \`${field}\` window could not be read: ${detailOf(err)}`,
       `say in the commit body what failed; \`${field}\` in ` +
-        `${planStatePath(ctx.flumeDir)} is untouched, so the window re-opens ` +
-        `over the same range next tick.`,
+        `${stateFileFor(field, ctx.flumeDir)} is untouched, so the window ` +
+        `re-opens over the same range next tick.`,
     );
   }
 }

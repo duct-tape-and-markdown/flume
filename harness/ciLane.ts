@@ -23,11 +23,16 @@ import {
   type CiLaneStatus,
   type CiRun,
 } from "./ci.js";
-import type { Declaration } from "./declaration.js";
-import { readPlanState, type PlanState } from "./planState.js";
+import { INBOX_PHASE, type Declaration } from "./declaration.js";
+import { readPlanState, type PlanStateOf } from "./planState.js";
 
-/** A lane's drained-run stamp as the artifact holds it, once read. */
-type Stamp = NonNullable<PlanState["drainedRuns"]>[string];
+/**
+ * A lane's drained-run stamp as the inbox slice's own state file holds it,
+ * once read — the stamps are that slice's, and this leg is that slice's leg.
+ */
+type Stamp = NonNullable<
+  PlanStateOf<typeof INBOX_PHASE>["drainedRuns"]
+>[string];
 
 /** One lane's reading, fetched on first ask and handed out unchanged after. */
 type Readings = (status: CiLaneStatus) => CiLaneReading;
@@ -136,7 +141,7 @@ export function laneLeg(options: LaneLegOptions): LaneLeg {
  * A lane read as green, and a lane that could not be read at all, are live
  * for nothing: unread is not a reason to wake, only a thing to say on a tick
  * something else woke. A consumer declaring no lanes never asks the forge,
- * and never reads the plan state to ask this either.
+ * and never reads the inbox slice's state to ask this either.
  *
  * **A set rather than a boolean, because the render owes the same verdict by
  * name.** The leg's two readers are one derivation: the ladder asks whether
@@ -149,7 +154,7 @@ function wokenLanes(
   reading: Readings,
 ): ReadonlySet<string> {
   if (statuses.length === 0) return new Set();
-  const drained = readPlanState(flumeDir)?.drainedRuns ?? {};
+  const drained = readPlanState(flumeDir, INBOX_PHASE)?.drainedRuns ?? {};
   return new Set(
     statuses.flatMap((status) =>
       woke(status, drained[status.lane.name], reading)

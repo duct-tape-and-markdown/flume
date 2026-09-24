@@ -220,9 +220,13 @@ Everything else under the state root is its chain's — placed by the chain
 rather than the runtime, and the chain's alone to move. This repo's own chain
 writes:
 
-- `.flume/plan/state.json` — the plan state the harness package keeps across
-  ticks: its derive and sweep cursors and the sweep's continuation signal, as
-  fields of a typed artifact read through the package's own accessor.
+- `.flume/plan/state/` — the plan state the harness package keeps across
+  ticks, one file per writing slice: the derive cursor in the derive slice's
+  file, the sweep cursor and the sweep's continuation signal in the sweep
+  slice's, the per-lane drained-run stamps in the inbox slice's. Each is a
+  typed artifact read through the package's own accessor, and each plan
+  phase's fence admits its own file alone, so two slices stamping in one wave
+  merge as disjoint files.
 - `.flume/plan/questions/` — the forks plan parks for a human, one file per
   open question: present while the question is open, deleted when it is
   answered, so any session can add one without conflicting with another.

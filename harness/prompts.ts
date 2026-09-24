@@ -26,14 +26,15 @@
  * the agent is invoked, so an arg this module stops supplying is a loud
  * render refusal rather than a `{{TOKEN}}` an agent reads as prose.
  *
- * **Build's per-tick arguments are here too, and a slice's are not.** Build's
+ * **Build's per-tick arguments are here too, and a slice's path is.** Build's
  * five — the entry, its cite's path, section and section text, and the note
  * it may write — are the shipped build prompt's own placeholders, composed
  * from the tick's `TickContext` and read from the surfaces that own them: the
  * cite through the resolver the `per` gate drives, the note path through
- * `layout.ts`. A slice's window is a scan with a liveness predicate on the
- * other end of it, which is `sliceWindow.ts`'s subject and its windows', not
- * this module's.
+ * `layout.ts`. A plan slice's own state file is here for the same reason —
+ * a path off the layout ({@link planSlicePromptArgs}). What is not here is a
+ * slice's *window*: that is a scan with a liveness predicate on the other end
+ * of it, which is `sliceWindow.ts`'s subject and its windows'.
  */
 
 import { readFileSync } from "node:fs";
@@ -48,7 +49,7 @@ import { namespacedJoin, resolvePendingPath } from "../src/paths.js";
 import { NO_COMMIT_MODES } from "../src/Prompt.js";
 
 import { resolveCiteSync } from "./citeResolver.js";
-import { PHASES, type Declaration } from "./declaration.js";
+import { PHASES, type Declaration, type PlanSlice } from "./declaration.js";
 import { PerSchema } from "./entryExtension.js";
 import {
   notePath,
@@ -138,7 +139,6 @@ export const SHARED_PROMPT_DATA_KEYS = [
   "PENDING_PATH",
   "QUESTIONS_DIR",
   "QUESTIONS_INDEX",
-  "PLAN_STATE_PATH",
   "RECORD_DIRS",
   "DOMAIN",
   "AUTONOMY",
@@ -200,11 +200,44 @@ export function sharedPromptArgs(
      * and the three prompts carrying the block share one render of it.
      */
     QUESTIONS_INDEX: renderQuestions(stateRoot),
-    PLAN_STATE_PATH: planStatePath(stateRoot),
     RECORD_DIRS: backticked(recordDirs(stateRoot)),
     DOMAIN: slot("environment", declaration.slots?.domain),
     AUTONOMY: slot("autonomy", declaration.slots?.autonomy),
   };
+}
+
+/**
+ * Every key {@link planSlicePromptArgs} returns — a plan slice's own, on top
+ * of the shared ones.
+ *
+ * Declared here for the reason {@link SHARED_PROMPT_DATA_KEYS} is: a phase
+ * hands these to the engine as data so the renderer neutralizes them before
+ * its inline-exec scan reads them as commands (`spec/prompt.md`, *The render
+ * pipeline*).
+ */
+export const PLAN_SLICE_PROMPT_DATA_KEYS = ["PLAN_STATE_PATH"] as const;
+
+/** One argument every plan slice's prompt is given, beyond the shared set. */
+export type PlanSlicePromptArg = (typeof PLAN_SLICE_PROMPT_DATA_KEYS)[number];
+
+/**
+ * The arguments one plan slice's prompt is given beyond the shared set: the
+ * path of the state file that slice owns.
+ *
+ * **Not a shared arg, because the value is not shared.** Plan state is one
+ * file per writer (`spec/harness.md`, *Plan state as declared state*), so
+ * "the plan state path" is a different file per slice, and a single shared
+ * value would be one slice's file handed to all three — the prompt that
+ * `cat`s it would read a sibling's cursor and the fence would revert the tick
+ * that wrote back what it read. Composed here rather than in each window,
+ * because it is a path off the layout and not a scan of a tree
+ * (`sliceWindow.ts`).
+ */
+export function planSlicePromptArgs(
+  slice: PlanSlice,
+  stateRoot: string,
+): Record<PlanSlicePromptArg, string> {
+  return { PLAN_STATE_PATH: planStatePath(stateRoot, slice) };
 }
 
 /** A list as prompt prose: each item in backticks, comma-separated. */

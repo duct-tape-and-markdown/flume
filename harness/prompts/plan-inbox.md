@@ -12,10 +12,6 @@
 {{CI_LANES}}
 </ci-lanes>
 
-<derive-cursor>
-{{DERIVE_CURSOR}}
-</derive-cursor>
-
 <queue-parse-failure>
 {{QUEUE_PARSE_FAILURE}}
 </queue-parse-failure>
@@ -30,7 +26,7 @@
 
 <artifacts>
 queue: {{PENDING_PATH}}
-plan state: {{PLAN_STATE_PATH}}
+your plan state (this slice's own file): {{PLAN_STATE_PATH}}
 open questions: {{QUESTIONS_DIR}}
 record queues: {{RECORD_DIRS}}
 discipline: {{DISCIPLINE}}
@@ -60,9 +56,7 @@ Route what routes cleanly. Leave the rest on disk rather than guess; the next in
 
 **A red CI lane is a findings source too.** `<ci-lanes>` carries each declared lane's latest completed run of its workflow job, for the branch the repository's tip sits on. A `FAILING` lane's log is material, not a verdict: take the failing test titles out of it yourself and route each one exactly as you route a record — a pending entry, an open question, or an accepted-debt line. A finding is keyed by **lane name and title**, so a title already heading a queue entry or an open question is amended, never re-filed as a sibling. Then stamp the run you drained under that lane's name in `drainedRuns` (the plan state artifact — see the discipline file), exactly as you stamp a cursor: the block names the whole value to write, run and failing titles together, and a failing lane holds this slice live until its latest run is the one stamped there reporting the titles stamped with it — so a tick that drains without stamping wakes into the same run and re-files it. Write the value the block names rather than titles you lifted yourself: the titles in it are the lane's declared reader's answer, and the wake compares against that reader. A `FAILING` lane that did not wake you says so and still names its stamp — a red that persists unchanged advances on the tick that ran anyway, with nothing to drain out of it. A `GREEN` lane needs no drain, and a title it no longer reports closes in the commit body. An `UNREAD` lane is not a green one: file nothing and close nothing against it, and say in the body that it was unread. Every block says whether that lane is what woke this slice; a lane whose run failed and whose log the forge then refused says so **and** names the run it woke you over, so name that lane and that run in the body — and stamp that run under the lane's name exactly as you stamp a drained one, which the block names for you. There is nothing to drain out of an unread run, but leaving it unstamped wakes this slice into the same run every tick for as long as the forge withholds the log; its findings arrive from the next run that fails.
 
-**What you routed, you derived — advance the derive cursor through it.** `<derive-cursor>` names `derivedThrough` and every spec-locus commit standing past it, oldest first. A record you route into an entry or an open question often *is* one of those commits' derivation: the finding was about what that commit changed, and the queue now carries it. When the records you drained leave nothing in a listed commit's spec change unqueued, set `derivedThrough` to that commit's sha in the plan state artifact — otherwise the derive slice wakes on it, finds every section already queued, and spends a whole tick moving the cursor alone.
-
-Two bounds, and neither is negotiable. **Advance only through a leading run**: the oldest listed commit whose derivation no record here claimed stops the advance, and no commit behind it is ever stepped over — a cursor past an underived commit is that commit derived by nobody. And **advance only to a sha the block above names**: never one you resolved yourself, never HEAD, never a commit you found by reading git. The block is a closed list of candidates; a block that names none, or that refuses, is a tick that advances nothing. Say in the commit body which commit you advanced through and which record claimed it — or that you carried `derivedThrough` forward untouched.
+**You do not touch the derive cursor.** A record you route may well *be* a spec commit's derivation — the finding was about what that commit changed, and the queue now carries it — and even so `derivedThrough` is the derive slice's alone: your state file is your own, and the fence reverts a commit that writes a sibling's. Say in the body which spec commit a record you routed covers; the derive tick that wakes on it judges those sections done and moves its own cursor. One cheap tick, paid so that no cursor has two hands on it.
 
 Entry and artifact discipline: `{{DISCIPLINE}}` — read it before writing the queue or a question.
 

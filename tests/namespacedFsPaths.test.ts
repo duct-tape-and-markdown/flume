@@ -67,7 +67,7 @@ import {
   planStatePath,
   readPlanState,
   writePlanState,
-  type PlanState,
+  type PlanStateOf,
 } from "../harness/index.ts";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -639,14 +639,21 @@ async function deepStateRoot(): Promise<string> {
   let root = base;
   // Each segment is well under NAME_MAX; only the total is out of bounds,
   // which is precisely the case `toNamespacedPath` exists for.
-  while (planStatePath(root).length <= MAX_PATH) {
+  while (planStatePath(root, DEEP_SLICE).length <= MAX_PATH) {
     root = join(root, "nested-consumer-state-root");
   }
   return root;
 }
 
-const DEEP_STATE: PlanState = {
-  derivedThrough: "4758d60f6de696904d8d5692107889af26bba625",
+/**
+ * The slice whose state file the depth is measured and driven against. Plan
+ * state is one file per writer, so a case over one path names the slice it is
+ * about; the sweep's is the longest-named of the three and carries the
+ * rotation, which is the deepest shape the reader folds at that depth.
+ */
+const DEEP_SLICE = "plan-sweep" as const;
+
+const DEEP_STATE: PlanStateOf<typeof DEEP_SLICE> = {
   sweptThrough: "b7972ec41f41adfeaecaf947a4cafe2b9970dee1",
   rotation: { kind: "open", covered: ["harness/planState.ts"] },
 };
@@ -654,11 +661,11 @@ const DEEP_STATE: PlanState = {
 describe("harness plan state — a state root past win32's path limit", () => {
   it("readPlanState and writePlanState round-trip a plan state under a state root nesting past win32's ~260-char limit", async () => {
     const stateRoot = await deepStateRoot();
-    expect(planStatePath(stateRoot).length).toBeGreaterThan(MAX_PATH);
+    expect(planStatePath(stateRoot, DEEP_SLICE).length).toBeGreaterThan(MAX_PATH);
 
-    writePlanState(stateRoot, DEEP_STATE);
+    writePlanState(stateRoot, DEEP_SLICE, DEEP_STATE);
 
-    expect(readPlanState(stateRoot)).toEqual(DEEP_STATE);
+    expect(readPlanState(stateRoot, DEEP_SLICE)).toEqual(DEEP_STATE);
   });
 
   it("reads absent as absent at that depth, rather than reporting a read failure as no cursor", async () => {
@@ -669,6 +676,6 @@ describe("harness plan state — a state root past win32's path limit", () => {
     // `undefined` is the honest answer and the arm is exercised as itself.
     const stateRoot = await deepStateRoot();
 
-    expect(readPlanState(stateRoot)).toBeUndefined();
+    expect(readPlanState(stateRoot, DEEP_SLICE)).toBeUndefined();
   });
 });

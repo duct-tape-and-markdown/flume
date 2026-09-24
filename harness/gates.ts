@@ -58,7 +58,7 @@ import {
   recordGlobs,
   underStateRoot,
 } from "./layout.js";
-import { PlanStateSchema } from "./planState.js";
+import { PLAN_STATE_SCHEMAS } from "./planState.js";
 import { parseOrThrow } from "./refusal.js";
 
 /**
@@ -442,10 +442,16 @@ function cleanTreeGate(
  * step from, so that half is not judged and the ancestor half still is.
  *
  * **Plan phases are selected by the path, never by their name.** A commit
- * that did not touch the plan state changed no cursor, and build's fence
- * admits the artifact at all, so the skip is read off `touchedPaths` rather
- * than off a phase-name branch that would have to stay in step with the
- * fence (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ * that did not touch the derive slice's own state file changed no derive
+ * cursor, and build's fence admits the artifact at all, so the skip is read
+ * off `touchedPaths` rather than off a phase-name branch that would have to
+ * stay in step with the fence (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
+ *
+ * The path is derive's file alone (`layout.ts`, `planStatePath`), which is
+ * what one file per writer buys this gate: a sweep or inbox commit stamping
+ * its own state writes a sibling file and is skipped here on the path, rather
+ * than being read at a shared page and found to have moved no cursor.
  *
  * The **leading-run** half of the bound — whether the span the cursor
  * stepped over was one this tick actually derived — is judgement, and stays
@@ -471,12 +477,13 @@ function cursorGate(engine: GateEngine): Gate {
           skipped: "no commit can carry the plan state under a relocated state root",
         };
       }
-      const path = planStatePath(ctx.stateRootRel);
+      const path = planStatePath(ctx.stateRootRel, "plan-derive");
       if (!ctx.touchedPaths.includes(path)) {
         return {
           ok: true,
-          message: "the commit writes no plan state, so it moves no cursor",
-          skipped: "the plan state is not in the gated span",
+          message:
+            "the commit writes no derive state, so it moves no derive cursor",
+          skipped: "the derive slice's state file is not in the gated span",
         };
       }
 
@@ -484,11 +491,11 @@ function cursorGate(engine: GateEngine): Gate {
       if (raw === null) {
         return {
           ok: false,
-          message: `${path} touched by ${short(ctx.commitSha)} and absent from it: a plan tick that deletes its own state leaves every window without a cursor`,
+          message: `${path} touched by ${short(ctx.commitSha)} and absent from it: a plan tick that deletes the derive slice's state leaves its window without a cursor`,
         };
       }
       const at = (sha: string, text: string) =>
-        parseOrThrow(PlanStateSchema, JSON.parse(text), `plan state at ${short(sha)}`);
+        parseOrThrow(PLAN_STATE_SCHEMAS["plan-derive"], JSON.parse(text), `plan state at ${short(sha)}`);
 
       const after = at(ctx.commitSha, raw).derivedThrough;
       const problems: string[] = [];

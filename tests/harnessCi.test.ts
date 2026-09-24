@@ -47,7 +47,7 @@ import {
   planSliceWindows,
   writePlanState,
   type DeclarationInput,
-  type PlanStateWrite,
+  type PlanStateWriteOf,
 } from "../harness/index.ts";
 
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
@@ -159,25 +159,21 @@ const laneBlock = (budget?: number): string => lane(budget).render(stateRoot());
 const laneLive = (): boolean => lane().live(stateRoot());
 
 /**
- * A plan state under that root stamping each named lane at a run.
+ * The inbox slice's state under that root, stamping each named lane at a run.
  *
  * Written through the package's own writer rather than as hand-shaped JSON —
  * the artifact the liveness leg reads is the one a plan tick would have left
  * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
- * wrote*). The cursors are this repository's own tip, which is the only sha
- * the schema's object-name shape accepts here.
+ * wrote*). The stamps are the inbox slice's own file and nothing else's, so
+ * no cursor is written to arrange a lane's state (`spec/harness.md`, *Plan
+ * state as declared state*).
  */
-function stampLanes(
-  drainedRuns: NonNullable<PlanStateWrite["drainedRuns"]>,
-): void {
-  const tip = git("rev-parse", "HEAD").trim();
-  writePlanState(stateRoot(), {
-    derivedThrough: tip,
-    sweptThrough: tip,
-    rotation: { kind: "closed" },
-    drainedRuns,
-  });
+function stampLanes(drainedRuns: Stamps): void {
+  writePlanState(stateRoot(), INBOX_PHASE, { drainedRuns });
 }
+
+/** The stamp map as the inbox slice's state holds one. */
+type Stamps = NonNullable<PlanStateWriteOf<typeof INBOX_PHASE>["drainedRuns"]>;
 
 /** Where the stub appends one JSON line per invocation. */
 const callLog = (): string => join(binDir, "calls.jsonl");
@@ -846,9 +842,7 @@ it("a drained-run stamp carries the failing titles the reader gave it", () => {
   // own writer, the lane it names stops being live — the render, the schema
   // and the wake read one stamp (`.claude/rules/engineering.md`, *A seam
   // gate reads what the real writer wrote*).
-  const named = JSON.parse(stampNamed(rendered)) as NonNullable<
-    PlanStateWrite["drainedRuns"]
-  >[string];
+  const named = JSON.parse(stampNamed(rendered)) as Stamps[string];
   stampLanes({ [LANE.name]: named });
   expect(lane(undefined, [reading(FAIL_LINE)]).live(stateRoot())).toBe(false);
 }, SPAWN_BUDGET_MS);

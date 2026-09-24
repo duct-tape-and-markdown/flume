@@ -94,6 +94,7 @@ export {
 } from "./citeResolver.js";
 
 export {
+  legacyPlanStatePath,
   noteGlobs,
   notePath,
   notePaths,
@@ -104,11 +105,11 @@ export {
 } from "./layout.js";
 
 export {
-  PlanStateSchema,
+  PLAN_STATE_SCHEMAS,
   readPlanState,
   writePlanState,
-  type PlanState,
-  type PlanStateWrite,
+  type PlanStateOf,
+  type PlanStateWriteOf,
 } from "./planState.js";
 
 export {
@@ -119,14 +120,17 @@ export {
 
 export {
   BUILD_PROMPT_DATA_KEYS,
+  PLAN_SLICE_PROMPT_DATA_KEYS,
   PROMPT_NAMES,
   SHARED_PROMPT_DATA_KEYS,
   buildPromptArgs,
+  planSlicePromptArgs,
   promptPath,
   sharedPromptArgs,
   type BuildPromptArg,
   type BuildPromptArgsInput,
   type BuildTickContext,
+  type PlanSlicePromptArg,
   type PromptName,
   type SharedPromptArg,
   type SharedPromptArgsInput,

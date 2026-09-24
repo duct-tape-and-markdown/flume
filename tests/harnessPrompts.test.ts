@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
-import { PHASES, PLAN_SLICES } from "../harness/declaration.ts";
+import { PHASES, PLAN_SLICES, type PlanSlice } from "../harness/declaration.ts";
 import { entryExtension } from "../harness/entryExtension.ts";
 import { harnessInit } from "../harness/init.ts";
 import {
@@ -40,8 +40,10 @@ import {
 import { NONE_OPEN, renderQuestions } from "../harness/questions.ts";
 import {
   PROMPT_NAMES,
+  planSlicePromptArgs,
   promptPath,
   sharedPromptArgs,
+  type PlanSlicePromptArg,
   type PromptName,
   type SharedPromptArg,
 } from "../harness/prompts.ts";
@@ -115,12 +117,37 @@ afterAll(async () => {
   for (const root of oddRoots) await rm(root, { recursive: true, force: true });
 });
 
-function args(root: string = stateRoot): Record<string, string> {
-  return sharedPromptArgs({
-    declaration,
-    extension: entryExtension(),
-    stateRoot: root,
-  });
+/**
+ * Whether `name` is a plan slice — the roster's own membership test, so a
+ * slice added to the package reaches the per-slice producer below without
+ * this file naming it.
+ */
+const isPlanSlice = (name: PromptName): name is PlanSlice =>
+  (PLAN_SLICES as readonly string[]).includes(name);
+
+/**
+ * Every argument the package supplies for one prompt: the shared set, plus a
+ * plan slice's own.
+ *
+ * Both real producers, never a hand-built map: the per-slice half is where a
+ * plan state path comes from now that it is one file per writer
+ * (`harness/prompts.ts`, `planSlicePromptArgs`), and a fixture spelling it
+ * here would re-author the seam this file exists to hold.
+ */
+function args(
+  root: string = stateRoot,
+  name?: PromptName,
+): Record<string, string> {
+  return {
+    ...sharedPromptArgs({
+      declaration,
+      extension: entryExtension(),
+      stateRoot: root,
+    }),
+    ...(name !== undefined && isPlanSlice(name)
+      ? planSlicePromptArgs(name, root)
+      : {}),
+  };
 }
 
 function phase(name: string): Phase {
@@ -149,7 +176,7 @@ async function render(
 ): Promise<string> {
   const promptFile = promptPath(name);
   const raw = await readFile(promptFile, "utf8");
-  const shared = args(root);
+  const shared = args(root, name);
   const perTick = Object.fromEntries(
     [...raw.matchAll(PLACEHOLDER)]
       .map((match) => match[1]!)
@@ -295,8 +322,8 @@ it("every plan slice the package declares points its reader at the discipline pa
  * unguarded-span cases below pin.
  */
 const ARTIFACTS: ReadonlyArray<{
-  readonly key: SharedPromptArg;
-  readonly at: (root: string) => string;
+  readonly key: PromptArg;
+  readonly at: (root: string, prompt: PromptName) => string | undefined;
   readonly body: string;
   readonly sentinel: string;
   readonly placeholder?: string;
@@ -308,27 +335,52 @@ const ARTIFACTS: ReadonlyArray<{
     sentinel: "PENDING-SENTINEL",
   },
   {
+    // One file per writing slice, so this artifact's path is the *prompt's*
+    // own: a case damaging it damages the file that prompt opens, and a
+    // prompt with no state file of its own (build's) has none to damage
+    // (`spec/harness.md`, *Plan state as declared state*).
     key: "PLAN_STATE_PATH",
-    at: planStatePath,
+    at: (root, prompt) =>
+      isPlanSlice(prompt) ? planStatePath(root, prompt) : undefined,
     body: '{ "note": "PLAN-STATE-SENTINEL" }\n',
     sentinel: "PLAN-STATE-SENTINEL",
     placeholder: "(no plan state yet)",
   },
 ];
 
+/** An argument the package supplies to a prompt — shared, or a slice's own. */
+type PromptArg = SharedPromptArg | PlanSlicePromptArg;
+
+/**
+ * Every path an artifact sits at across the whole roster — one for a shared
+ * artifact, one per plan slice for a per-slice one. Deduplicated, since a
+ * shared artifact answers the same path for every prompt.
+ */
+const pathsOf = (
+  artifact: (typeof ARTIFACTS)[number],
+  root: string,
+): string[] => [
+  ...new Set(
+    PHASES.map((name) => artifact.at(root, name)).filter(
+      (at): at is string => at !== undefined,
+    ),
+  ),
+];
+
 /** A scratch state root carrying every artifact above, torn down at the end. */
 async function seed(root: string): Promise<string> {
   oddRoots.push(root);
   for (const artifact of ARTIFACTS) {
-    const at = artifact.at(root);
-    await mkdir(dirname(at), { recursive: true });
-    await writeFile(at, artifact.body, "utf8");
+    for (const at of pathsOf(artifact, root)) {
+      await mkdir(dirname(at), { recursive: true });
+      await writeFile(at, artifact.body, "utf8");
+    }
   }
   return root;
 }
 
 /** Whether any inline-exec span in `raw` substitutes `key` into its command. */
-function spanSubstitutes(raw: string, key: SharedPromptArg): boolean {
+function spanSubstitutes(raw: string, key: PromptArg): boolean {
   return [...raw.matchAll(SPAN)].some((m) => m[1]!.includes(`{{${key}}}`));
 }
 
@@ -346,8 +398,8 @@ function spanSubstitutes(raw: string, key: SharedPromptArg): boolean {
  */
 async function promptsReadingEachArtifact(
   roster: readonly PromptName[] = PHASES,
-): Promise<ReadonlyMap<SharedPromptArg, PromptName[]>> {
-  const readers = new Map<SharedPromptArg, PromptName[]>(
+): Promise<ReadonlyMap<PromptArg, PromptName[]>> {
+  const readers = new Map<PromptArg, PromptName[]>(
     ARTIFACTS.map((a) => [a.key, []]),
   );
   for (const name of roster) {
@@ -371,7 +423,7 @@ async function promptsReadingEachArtifact(
  * still being read.
  */
 function expectEveryArtifactRead(
-  readers: ReadonlyMap<SharedPromptArg, PromptName[]>,
+  readers: ReadonlyMap<PromptArg, PromptName[]>,
   over: ReadonlyArray<(typeof ARTIFACTS)[number]> = ARTIFACTS,
 ): void {
   expect(over.length).toBeGreaterThan(0);
@@ -386,7 +438,7 @@ function expectEveryArtifactRead(
  * detector the loop itself skips by.
  */
 function pairsToAssert(
-  readers: ReadonlyMap<SharedPromptArg, PromptName[]>,
+  readers: ReadonlyMap<PromptArg, PromptName[]>,
   over: ReadonlyArray<(typeof ARTIFACTS)[number]>,
 ): number {
   return over.reduce((n, a) => n + readers.get(a.key)!.length, 0);
@@ -484,9 +536,10 @@ async function coldRoot(prefix: string): Promise<string> {
   const root = await scratchRoot(prefix);
   for (const artifact of ARTIFACTS) {
     if (artifact.placeholder !== undefined) continue;
-    const at = artifact.at(root);
-    await mkdir(dirname(at), { recursive: true });
-    await writeFile(at, artifact.body, "utf8");
+    for (const at of pathsOf(artifact, root)) {
+      await mkdir(dirname(at), { recursive: true });
+      await writeFile(at, artifact.body, "utf8");
+    }
   }
   return root;
 }
@@ -586,8 +639,12 @@ async function eachSliceVerdictFollowsItsSpansOn(
   for (const name of PLAN_SLICES) {
     const raw = await readFile(promptPath(name), "utf8");
     const root = await seed(await scratchRoot(`flume-prompts-${key}-`));
-    const path = artifact.at(root);
-    await damage.apply(path);
+    // This prompt's own copy of the artifact, which for a per-slice one is the
+    // only file its spans open — a sibling slice's stays readable, which is
+    // what makes the verdict below this prompt's spans and not the root's.
+    const path = artifact.at(root, name);
+    expect(path, `${name}: ${key} names a path`).toBeDefined();
+    await damage.apply(path!);
 
     const outcome = await outcomeOf(name, root);
 
@@ -608,7 +665,7 @@ async function eachSliceVerdictFollowsItsSpansOn(
     expect(error).toBeInstanceOf(InlineExecRenderError);
     const failures = (error as InlineExecRenderError).failures;
     // This artifact's span is the one failure — its siblings all resolve.
-    expect(failures.map((f) => f.cmd)).toEqual([expect.stringContaining(path)]);
+    expect(failures.map((f) => f.cmd)).toEqual([expect.stringContaining(path!)]);
     // Loud, not merely non-zero: the reader's own complaint survived to the
     // failure record rather than being sent to `/dev/null`.
     expect(
@@ -629,7 +686,7 @@ async function eachSliceVerdictFollowsItsSpansOn(
  * same bytes, and a plan slice re-derived the queue against prose saying it
  * could not see its own state.
  */
-async function everySliceOverWrongKindAt(key: SharedPromptArg): Promise<void> {
+async function everySliceOverWrongKindAt(key: PromptArg): Promise<void> {
   const artifact = GUARDED.find((a) => a.key === key);
   expect(artifact, `${key} is a guarded artifact`).toBeDefined();
   await eachSliceVerdictFollowsItsSpansOn(artifact!, WRONG_KIND);
@@ -653,7 +710,7 @@ it("each plan slice prompt's verdict on a plan state directory in place follows 
  * and the package does not.
  */
 async function everySliceOverAbsentArtifactAt(
-  key: SharedPromptArg,
+  key: PromptArg,
 ): Promise<void> {
   const artifact = UNGUARDED.find((a) => a.key === key);
   expect(artifact, `${key} is an unguarded artifact`).toBeDefined();
@@ -712,7 +769,11 @@ it("a cold state root renders every plan slice prompt's placeholder as its block
   expect(PLAN_SLICES.length).toBeGreaterThan(0);
   const root = await coldRoot("flume-prompts-cold-root-");
   for (const artifact of GUARDED) {
-    expect(existsSync(artifact.at(root))).toBe(false);
+    // Every path it sits at across the roster, since a per-slice artifact is
+    // one file per plan slice and a cold root has written none of them.
+    for (const at of pathsOf(artifact, root)) {
+      expect({ at, exists: existsSync(at) }).toEqual({ at, exists: false });
+    }
   }
 
   // The skip below and the count that closes the loop read one detector, so a
@@ -801,9 +862,10 @@ it("a plan slice's questions span lists one file per open question", async () =>
   // The queue, because an absent one refuses the render before the questions
   // block is reached.
   for (const artifact of UNGUARDED) {
-    const at = artifact.at(root);
-    await mkdir(dirname(at), { recursive: true });
-    await writeFile(at, artifact.body, "utf8");
+    for (const at of pathsOf(artifact, root)) {
+      await mkdir(dirname(at), { recursive: true });
+      await writeFile(at, artifact.body, "utf8");
+    }
   }
 
   // Under the directory the package names, composed the way the listing
