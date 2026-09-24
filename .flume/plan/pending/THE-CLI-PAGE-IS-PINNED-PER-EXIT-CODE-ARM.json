@@ -1,0 +1,29 @@
+{
+  "tag": "THE-CLI-PAGE-IS-PINNED-PER-EXIT-CODE-ARM",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM"]
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "`sentencesNamingExitCode`'s one-code window read against the arm's own label, per code"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "an arm whose sentence the pin finds does not carry its phrase"
+      }
+    ]
+  },
+  "summary": "`docs/CLI.md` § `flume tick` states a cause per code that nothing reads back — the standing pin compares the set of codes and nothing else",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Derived state is computed, never restated beside its source"
+  },
+  "acceptance": "each `flume tick` exit code's sentences on the page are read against that arm's labelled cause, through the reader already scoped to one code",
+  "pins": [
+    "docs/CLI.md's flume tick section states each exit code's cause under the phrase its arm is labelled with"
+  ],
+  "notes": "Second half of the 46446dc9 ruling: the page is pinned against the producer's map, never against the help text — two prose copies agree while both are wrong (`.claude/rules/engineering.md`, *A seam gate reads what the real writer wrote*). The reader exists; what it lacked was a source of truth for what each sentence must say."
+}

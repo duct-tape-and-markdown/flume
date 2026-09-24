@@ -1,0 +1,30 @@
+{
+  "tag": "THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/cliVerdict.ts",
+        "description": "each arm `tickExitCode` returns a code from carries that code's cause phrase, labelled once beside the branch"
+      },
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the tick page's exit-code block renders each row's cause from that map instead of spelling it a second time"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the rendered block against the map the producer holds"
+      }
+    ]
+  },
+  "summary": "Each tick exit code's cause is hand-copied into `--help`, so a re-route between two codes already in the range ships green over both prose copies",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Derived state is computed, never restated beside its source"
+  },
+  "acceptance": "every code `tickExitCode` can return carries one cause phrase at the arm that returns it, and `flume tick --help`'s exit-code block renders each row's cause from that map",
+  "tests": [
+    "flume tick --help renders each exit code's cause from the label its arm carries"
+  ],
+  "notes": "Ruled 46446dc9, the question's second fork. Help text is engine surface already — `cliHelp.ts` renders it — so a cause phrase beside the arm is derived state computed at its source, not prose smuggled into the engine. The existing range pin (CLI-HELP-TICK-MISSING-EXIT2) is unchanged: it proves the set, this proves the arm."
+}

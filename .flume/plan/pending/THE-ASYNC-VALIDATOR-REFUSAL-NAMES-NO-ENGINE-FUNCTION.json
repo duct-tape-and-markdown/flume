@@ -1,0 +1,26 @@
+{
+  "tag": "THE-ASYNC-VALIDATOR-REFUSAL-NAMES-NO-ENGINE-FUNCTION",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/PendingSchema.ts",
+        "description": "`AsyncEntryExtensionValidatorError`'s message states the field and the fix; the parser's name stays in the doc comment above it"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "description": "the message the refusal carries"
+      }
+    ]
+  },
+  "summary": "The async-validator refusal names the queue parser by symbol — a citation no resolution arm reaches, which the last rename left stale until a human found it",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "The chain-declared extension"
+  },
+  "acceptance": "the async-validator refusal names the field and what to declare instead, and no engine function",
+  "tests": [
+    "the async-validator refusal names the field and the fix, naming no engine function"
+  ],
+  "notes": "Ruled 46446dc9: a refusal string is not a fourth interface surface, so the fix is to drop the identifier rather than widen the identifier arm to literals. The spec sentence says the refusal names the field; the symbol beyond that is a cite in the one place the ladder cannot resolve one. The doc comment keeps it — `src/` is in the arm's domain."
+}
