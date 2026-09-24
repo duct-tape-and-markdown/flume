@@ -95,6 +95,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
     build: {
       model: "claude-opus-5",
       extraArgs: ["--verbose"],
+      contextWindow: 200_000,
       inheritUserMcp: true,
     },
     "plan-sweep": { model: "claude-sonnet-5" },
@@ -199,6 +200,12 @@ describe("the harness declaration schema", () => {
     expect(parsed.shell).toBe("bash");
     expect(parsed.agents?.build?.model).toBe("claude-opus-5");
     expect(parsed.agents?.build?.inheritUserMcp).toBe(true);
+    // The provider fact beside the model it describes — and the row that
+    // names a model alone parses just the same, since a consumer who never
+    // declared a window gets an agent built without one.
+    expect(parsed.agents?.build?.contextWindow).toBe(200_000);
+    expect(parsed.agents?.["plan-sweep"]?.model).toBe("claude-sonnet-5");
+    expect(parsed.agents?.["plan-sweep"]?.contextWindow).toBeUndefined();
     expect(parsed.supervisor?.maxParallel).toBe(4);
     expect(parsed.setup?.directories).toEqual(["."]);
     // The restore's concurrency claim rides with it: a consumer whose shared

@@ -440,8 +440,9 @@ export const DeclarationSchema = strict({
    */
   shell: z.string().min(1).default(DEFAULT_SHELL),
   /**
-   * Model per phase, extra agent arguments, and whether the tick inherits
-   * the user's own MCP servers; absent means the package's default.
+   * Model per phase, extra agent arguments, the model's context window, and
+   * whether the tick inherits the user's own MCP servers; absent means the
+   * package's default.
    *
    * `inheritUserMcp` is the engine's own knob (`ClaudeCodeOptions`), spelled
    * here because the schema is strict: without a field a consumer whose
@@ -449,11 +450,23 @@ export const DeclarationSchema = strict({
    * declaration refuses the one they would reach for. Undeclared it stays
    * off, which is the engine's default rather than the package's opinion —
    * a tick loads only the MCP configuration the chain hands it.
+   *
+   * `contextWindow` is the same shape for the same reason: how many tokens
+   * the declared model holds is a provider fact neither the engine nor the
+   * package can look up (`BudgetDeclaration`, `src/budgetHook.ts`), and it
+   * belongs beside the `model` it describes, in the one file that holds this
+   * consumer's environment. Declared, the phase's agent is built with a
+   * budget of exactly this window — no cadence and no thresholds, because
+   * the package recommends neither: the engine's line then reports on every
+   * tool call, which is what a prompt reading its own percentages needs.
+   * Absent, the phase's agent carries no budget at all and no hook is
+   * registered.
    */
   agents: byPhase(
     strict({
       model: z.string().min(1).optional(),
       extraArgs: z.array(z.string().min(1)).optional(),
+      contextWindow: z.number().int().positive().optional(),
       inheritUserMcp: z.boolean().optional(),
     }),
   ).optional(),

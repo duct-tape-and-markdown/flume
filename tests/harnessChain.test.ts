@@ -1236,6 +1236,108 @@ it("a declared agents inheritUserMcp reaches the phase's claudeCode options", ()
   }
 });
 
+/**
+ * One `claudeCode` call per phase, keyed back to its phase by the model that
+ * phase declared — the same link the MCP case above uses, so neither leans
+ * on the order the factory happens to build phases in.
+ */
+const MODELS: Record<HarnessPhase, string> = {
+  build: "claude-opus-5",
+  "plan-inbox": "claude-sonnet-5",
+  "plan-derive": "claude-haiku-4-5-20251001",
+  "plan-sweep": "claude-fable-5-1",
+};
+
+/**
+ * The real factory over a real declaration, with every `claudeCode` call it
+ * makes captured — and a reader from a phase to the options that phase's
+ * agent was built with.
+ */
+function capturedAgentOptions(agents: Record<string, unknown>): {
+  chain: Chain;
+  captured: ClaudeCodeOptions[];
+  optionsFor: (phase: HarnessPhase) => ClaudeCodeOptions;
+} {
+  const captured: ClaudeCodeOptions[] = [];
+  const chain = harnessChain({
+    api: {
+      ...api,
+      claudeCode: (opts) => {
+        captured.push(opts ?? {});
+        return api.claudeCode(opts);
+      },
+    },
+    declaration: { ...DECLARATION, runner: recordingRunner([]), agents },
+  });
+  const optionsFor = (phase: HarnessPhase): ClaudeCodeOptions => {
+    const found = captured.find((opts) => opts.model === MODELS[phase]);
+    if (found === undefined) {
+      throw new Error(
+        `no claudeCode call carried ${phase}'s model; captured ${captured
+          .map((opts) => String(opts.model))
+          .join(", ")}`,
+      );
+    }
+    return found;
+  };
+  return { chain, captured, optionsFor };
+}
+
+it("a declared agents.contextWindow reaches the adapter as its budget window", () => {
+  // How many tokens a model holds is a provider fact nothing in the tree can
+  // look up, so the declaration is where it lives — and the engine takes it
+  // inside a budget declaration rather than as a flag of its own. The claim
+  // is the whole forward: the number a consumer wrote arrives as the
+  // adapter's window, and the package adds nothing beside it.
+  const windows: Record<HarnessPhase, number> = {
+    build: 200_000,
+    "plan-inbox": 400_000,
+    "plan-derive": 1_000_000,
+    "plan-sweep": 120_000,
+  };
+  const { chain, captured, optionsFor } = capturedAgentOptions(
+    Object.fromEntries(
+      PHASES.map((phase) => [
+        phase,
+        { model: MODELS[phase], contextWindow: windows[phase] },
+      ]),
+    ),
+  );
+
+  // Vacuity pin: one call per phase the factory wired, so a chain that built
+  // no agent at all cannot satisfy the assertions below.
+  expect(captured).toHaveLength(chain.phases.length);
+  expect(chain.phases.length).toBeGreaterThan(0);
+
+  for (const phase of PHASES) {
+    // The window each phase declared, on the phase that declared it — and
+    // nothing else in the budget: the package recommends no cadence and no
+    // thresholds, so the engine's line reports on every tool call, which is
+    // what a prompt naming its own percentages reads.
+    expect([phase, optionsFor(phase).budget]).toEqual([
+      phase,
+      { contextWindow: windows[phase] },
+    ]);
+  }
+});
+
+it("a declaration naming no contextWindow builds its phase agent with no budget", () => {
+  // The absent case is the one a consumer who never heard of the field gets:
+  // no budget passed at all, so the adapter registers no hook and the argv is
+  // unchanged. A window the package picked would be a provider fact invented
+  // on the consumer's behalf.
+  const { chain, captured, optionsFor } = capturedAgentOptions(
+    Object.fromEntries(PHASES.map((phase) => [phase, { model: MODELS[phase] }])),
+  );
+
+  expect(captured).toHaveLength(chain.phases.length);
+  expect(chain.phases.length).toBeGreaterThan(0);
+
+  for (const phase of PHASES) {
+    expect([phase, "budget" in optionsFor(phase)]).toEqual([phase, false]);
+  }
+});
+
 /** The context a gate is handed, as the dispatcher builds one, over `cwd`. */
 function gateContext(cwd: string): GateContext {
   return {

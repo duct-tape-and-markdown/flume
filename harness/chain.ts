@@ -427,6 +427,16 @@ export function harnessChain(options: HarnessChainOptions): Chain {
  * Every declared agent field is handed to the engine's own option of the
  * same name and nothing else: the MCP inheritance the declaration spells is
  * the engine's knob, defaulted by the engine when no consumer states one.
+ *
+ * The one field that is not spelled the same on both sides is the context
+ * window, which the engine takes inside a budget declaration
+ * (`BudgetDeclaration`, `src/budgetHook.ts`) beside a cadence and a set of
+ * thresholds. The package fills in neither: how often an agent should be
+ * told about its room is not an opinion this package holds either, and an
+ * empty cadence is the engine's every-call line, which is what a prompt
+ * naming its own percentages reads. Undeclared, no budget is passed at all,
+ * so no hook is registered and the argv is the one a consumer who never
+ * heard of the field gets.
  */
 function agentFactory(
   api: FlumeApi,
@@ -442,6 +452,9 @@ function agentFactory(
           ...(declared?.model !== undefined ? { model: declared.model } : {}),
           ...(declared?.extraArgs !== undefined
             ? { extraArgs: [...declared.extraArgs] }
+            : {}),
+          ...(declared?.contextWindow !== undefined
+            ? { budget: { contextWindow: declared.contextWindow } }
             : {}),
           ...(declared?.inheritUserMcp !== undefined
             ? { inheritUserMcp: declared.inheritUserMcp }
