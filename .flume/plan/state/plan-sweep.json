@@ -163,7 +163,25 @@
       "harness/dirListing.ts",
       "src/entryKey.ts",
       "src/exitCodes.ts",
-      "src/budgetHook.ts"
+      "src/budgetHook.ts",
+      "src/runtimeIgnores.ts",
+      "src/streamJson.ts",
+      "harness/standingRefusal.ts",
+      "harness/prompts/plan-derive.md",
+      "harness/prompts/plan-inbox.md",
+      "harness/prompts/plan-sweep.md",
+      "harness/prompts/plan-discipline.md",
+      "harness/templates/PROTOCOL.md",
+      "tests/agentBudget.test.ts",
+      "tests/budgetHook.test.ts",
+      "tests/cliRender.test.ts",
+      "tests/exportConsumers.test.ts",
+      "tests/helpers/externalVocabulary.ts",
+      "tests/helpers/cliHelpRows.ts",
+      "tests/helpers/denial.ts",
+      "tests/helpers/gitEnv.ts",
+      "tests/helpers/repoChain.ts",
+      "tests/helpers/literalSymbols.ts"
     ]
   }
 }

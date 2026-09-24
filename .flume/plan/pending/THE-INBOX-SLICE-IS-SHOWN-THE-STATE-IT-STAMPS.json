@@ -1,0 +1,28 @@
+{
+  "tag": "THE-INBOX-SLICE-IS-SHOWN-THE-STATE-IT-STAMPS",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/prompts/plan-inbox.md",
+        "description": "the `<plan-state>` block, as the two cursor-carrying slices' prompts already carry it"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "the block over a stamped state, beside the shape block it already reads"
+      }
+    ]
+  },
+  "summary": "The inbox slice's prompt renders no plan state, so the one slice whose state is a per-lane map is never shown the stamps it must carry forward",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "Plan state as declared state"
+  },
+  "acceptance": "the inbox slice's rendered prompt carries the `<plan-state>` block the derive and sweep prompts carry, read off the file that slice owns",
+  "tests": [
+    "the inbox slice's prompt renders the plan state its own file holds"
+  ],
+  "notes": "Verified this tick: `plan-inbox.md` names `{{PLAN_STATE_PATH}}` at `:36` in `<artifacts>` alone — no `<plan-state>` span, unlike `plan-derive.md:13`-`:15` and `plan-sweep.md:7`-`:9`. `renderStamp` runs only on a failing lane and on an unread one carrying a run (`harness/ciLane.ts:296`, `:331`), so a green sibling's stamp appears nowhere; dropping it re-wakes the slice over a drained run. `harness/gates.ts:576` skips the inbox file, and `harness/prompts.ts:268` already narrates the block."
+}
