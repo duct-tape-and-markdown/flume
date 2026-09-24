@@ -96,8 +96,11 @@ per record, titled, under the tick's own tag), the
 clean-tree gate, the pending gate wired to the consumer's fence, and the
 cursor gate: each cursor a plan commit moves — derive's and sweep's alike,
 every one the package declares — is an ancestor of the tip and a descendant
-of its pre-commit value, refused otherwise, because a cursor stepped past
-commits nobody derived or swept fails silently on every tick after. One
+of its pre-commit value, and moves only when its slice's own state at that
+commit allows it — the sweep's on the tick that closes the rotation, never
+while one stands open; derive's whenever — refused otherwise, because a
+cursor stepped past commits nobody derived or swept, or stamped under a
+frontier still being worked, fails silently on every tick after. One
 more over the merged tree, because it judges what two concurrent producers did
 to one queue: the **claim check** the engine's pending gate carries, refusing
 a commit that edits or removes an entry a build tick holds

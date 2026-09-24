@@ -160,8 +160,9 @@ scheduler consumes cannot double as the evidence that the predicted work happene
 
 `files` is a **prediction, not a permission**. The producer declares what the work will touch —
 accurately, neither defensively nor aspirationally. Over-declaring costs wave width, because the
-partition treats a shared path as a collision; under-declaring costs at most a cherry-pick
-conflict, which the dispatcher aborts and leaves pending for a retry. Where a phase may write is
+partition treats a shared path as a collision; under-declaring costs the tick's span: a cherry-pick conflict, which the dispatcher
+aborts, discards the work already done before it leaves the entry pending, and the retry
+re-earns that span at full agent price. Where a phase may write is
 `phase.writablePaths`, not any entry's business (see *The entry-scoped write guard is opt-in*).
 
 ## Pickability
