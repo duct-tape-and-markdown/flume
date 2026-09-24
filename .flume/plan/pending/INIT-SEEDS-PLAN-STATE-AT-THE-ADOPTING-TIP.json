@@ -1,0 +1,34 @@
+{
+  "tag": "INIT-SEEDS-PLAN-STATE-AT-THE-ADOPTING-TIP",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/init.ts",
+        "description": "each cursor-carrying slice's state file, written at the adopting tip beside the queue adoption already seeds"
+      },
+      {
+        "path": "harness/cli.ts",
+        "description": "the report's line for a repository that named no commit to seed from"
+      },
+      {
+        "path": "tests/harnessInit.test.ts",
+        "description": "the seed, the window it opens, and the no-commit arm"
+      }
+    ]
+  },
+  "summary": "A fresh adopter's state root carries no plan state, so its first derive tick bootstraps the whole spec corpus and its sweep goes live over the whole domain \u2014 all of it from before adoption",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "Adoption and upgrade"
+  },
+  "acceptance": "init writes each cursor-carrying slice's state file at the tip the adopter ran it on \u2014 derive's cursor there, sweep's there with a closed rotation \u2014 and reports them among what it wrote; a repository naming no commit is seeded with none and told so",
+  "tests": [
+    "flume-harness init seeds each cursor-carrying slice's state at the tip it adopted",
+    "a derive window over the state init seeded opens on no commits rather than the bootstrap corpus",
+    "flume-harness init over a repository with no commit reports the plan state it left unseeded"
+  ],
+  "notes": "Ruled off the inbox record (PR #20's open question): derive nothing before adoption, sweep nothing before it. Verified this tick: init writes the manifest, declaration, chain, PROTOCOL and the queue alone, so absence sends derive to `bootstrap` (`harness/cursorWindow.ts`) and makes sweep live (`harness/sweepWindow.ts`). `tipOf` throws on a repo with no commit, and the smoke's `git init` precedes init with none. Inbox state stays unwritten: absence is its declared state."
+}
