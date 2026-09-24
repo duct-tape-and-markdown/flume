@@ -1,0 +1,41 @@
+{
+  "tag": "THE-LEGACY-QUESTIONS-PAGE-ALLOWANCE-IS-RETIRED",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/layout.ts",
+        "description": "the legacy questions constant, its accessor and its `planArtifacts` line go; the two live allowances name their own cutover instead of this one"
+      },
+      {
+        "path": "harness/questions.ts",
+        "description": "the legacy-page arm of the questions block, and the paragraph declaring it"
+      },
+      {
+        "path": "docs/MIGRATING-0.17.md",
+        "description": "§ 3's closing paragraph states the allowance as gone rather than due"
+      },
+      {
+        "path": "tests/harnessLayout.test.ts",
+        "description": "the fence case and the `planArtifacts` listing"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "the questions-block case over a page on disk"
+      }
+    ]
+  },
+  "summary": "The 0.17 page promises the open-questions-page allowance retires in the next release; 0.18.0 shipped and the constant, its accessor, its fence line and the render arm all stand",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "no layout constant, accessor, fence line or questions-block arm carries `plan/open-questions.md`; the queue-page and plan-state allowances name their own cutover; § 3 of the 0.17 page states the allowance is gone rather than due",
+  "tests": [
+    "the plan fence does not admit the legacy open-questions page",
+    "a state root carrying the legacy open-questions page renders the none-open line"
+  ],
+  "notes": "Off the reverted sweep tick, re-verified: v0.18.0 is tagged and package.json reads 0.18.0, so § 3's trigger fired a release ago while `LEGACY_QUESTIONS_REL` (`harness/layout.ts:120`), `legacyQuestionsPath` (:298), the `planArtifacts` line (:467) and the render arm (`harness/questions.ts:79`) stand. The queue-page (:232) and plan-state (:87) allowances say they retire *with* this one; their own cutover is `docs/MIGRATING-0.19.md` §§ 5-6 and is live."
+}

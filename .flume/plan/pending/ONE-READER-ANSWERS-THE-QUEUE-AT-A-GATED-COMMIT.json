@@ -1,0 +1,41 @@
+{
+  "tag": "ONE-READER-ANSWERS-THE-QUEUE-AT-A-GATED-COMMIT",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/pendingLedger.ts",
+        "description": "one reader for the queue a gated commit holds — the offset fold, the relocated-root disk fallback and the null verdict in one place"
+      },
+      {
+        "path": "src/builtinGates.ts",
+        "description": "the pending gate reads through it instead of composing the path itself"
+      },
+      {
+        "path": "src/flumeApi.ts",
+        "description": "the seam a gate reaches the read through"
+      },
+      {
+        "path": "harness/gates.ts",
+        "description": "`queueAtCommit` and `queueRel`'s fold go; the cite gate reads through the engine's reader"
+      },
+      {
+        "path": "harness/chain.ts",
+        "description": "the engine value the factory hands the gates"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the engine fixture the cite-gate cases build"
+      }
+    ]
+  },
+  "summary": "Which queue a gated commit holds is composed twice — the engine's pending gate and the harness's cite gate — same offset, same fold, same disk fallback, same swallowed throw",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "one engine reader answers the queue a gated commit holds, and both the pending gate and the harness's cite gate read through it rather than composing the state-root offset and the relocated-root fallback each for itself",
+  "notes": "Off the reverted sweep tick, re-verified: `src/builtinGates.ts:386`-`:399` composes `gitPath(join(stateRootRel, displayPath))` then falls back to `readQueueOnDisk` in a swallowed catch; `queueAtCommit` (`harness/gates.ts:199`-`:215`) composes the same fold (`harness/layout.ts:56`) with the same catch. A divergence leaves the cite gate judging a queue the pending gate never parsed. `engine.git.readQueueAtRef` has one caller. No property: behavior-free, held by tsc and the suite."
+}

@@ -1,0 +1,32 @@
+{
+  "tag": "THE-SHIPPED-HELP-PAGE-NAMES-A-PAGE-THAT-RESOLVES",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/helpers/commentCitations.ts",
+        "description": "the rendered-surface scan reads the page-name arm beside the section arm, and the paragraph declaring the section arm as all that reaches a literal"
+      },
+      {
+        "path": "tests/commentCitations.test.ts",
+        "description": "the arm over the shipped pages, non-vacuous in the names it scanned"
+      },
+      {
+        "path": "harness/cliHelp.ts",
+        "description": "the one red — the protocol file named at no path the tree holds"
+      }
+    ]
+  },
+  "summary": "A `*.md` name inside a page the bins print is resolved by nothing, and the harness page's bare `PROTOCOL.md` names no file the tree holds",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "every `*.md` page name a page the bins print states is resolved on disk through the reader the comment scan already uses, and the harness page names the protocol file at the path init writes it to",
+  "tests": [
+    "every *.md page name a shipped help page states resolves on disk"
+  ],
+  "notes": "Off note THE-HARNESS-HELP-PAGE-IS-READ-BY-THE-SHIPPED-SCAN, item 2 — the ladder's carve-out rules a class the predicate admits and the suite does not resolve a plan entry, not a question. Measured over `shippedHelpPages()`: four page names, three resolving (`spec/loop.md` twice, `spec/chain.md`); `PROTOCOL.md` (`harness/cliHelp.ts:28`) reds, `holdsFile` resolving against the repo root while init writes `.flume/PROTOCOL.md`. Seams `commentCitations.ts` with the two section-cite entries."
+}
