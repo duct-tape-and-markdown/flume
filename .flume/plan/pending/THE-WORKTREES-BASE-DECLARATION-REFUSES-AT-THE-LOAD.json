@@ -1,0 +1,31 @@
+{
+  "tag": "THE-WORKTREES-BASE-DECLARATION-REFUSES-AT-THE-LOAD",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/chainLoad.ts",
+        "description": "the declaration is evaluated once inside `loadChainModule`, beside the four validations it already runs, and its resolved base rides the module the load composes"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "both tick-entry sites read the resolved base off the loaded module instead of re-running chain code"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "both refusal legs, beside the pendingDir and maxTicks load-validation blocks"
+      }
+    ]
+  },
+  "summary": "A relative or empty `worktreesBase` clears `chainLoadGate` and kills the next tick mount-dead: three sites promise the refusal is at the load and `loadChainModule` never runs it",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a `worktreesBase` answering a relative path or an empty string refuses at `loadChainModule`, so the gate that validates through it reds the commit declaring one; every reader takes the base off the loaded module, evaluated once per load",
+  "tests": [
+    "the chain load refuses a worktreesBase that answers a relative path",
+    "the chain load refuses a worktreesBase that answers an empty string"
+  ],
+  "notes": "Verified this tick: chains answering \"relative/not/absolute\" and \"\" both load clean through `loadChainModule` (`src/chainLoad.ts:254`), which never calls `resolveWorktreesBaseDeclaration` (`:99`); the dispatcher does, at `src/Dispatcher.ts:810` and `:1286`. Three sites state otherwise — `src/chainLoad.ts:86`, the shipped hover on `Chain.worktreesBase` (`src/Phase.ts:877`), `harness/declaration.ts:239` — and all three read true once the evaluation moves, so none needs editing."
+}

@@ -150,7 +150,8 @@
       "harness/putDown.ts",
       "tests/processTree.test.ts",
       "src/processTree.ts",
-      "tests/helpers/fixtureRoot.ts"
+      "tests/helpers/fixtureRoot.ts",
+      "src/chainLoad.ts"
     ]
   }
 }
