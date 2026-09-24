@@ -243,9 +243,10 @@ export function protocolTemplatePath(): string {
  *
  * A module rather than JSON because `runner` is a factory with behavior
  * (`spec/harness.md`, *What a consumer declares*), and named beside its
- * default export because a `.ts` module carrying only a default is compiled
- * to CJS interop by the chain loader's `tsImport` — a namespace shape a
- * consumer's `chain.ts` would then have to unwrap.
+ * default export so a consumer's `chain.ts` never has to unwrap it: what
+ * `tsImport` hands back for a default-only `.ts` module is not that module's
+ * to decide (`.claude/rules/platform-facts.md`, *tsx decides a module's
+ * interop shape from its whole import graph*).
  *
  * It annotates itself with `DeclarationInput`, so the shape the schema
  * refuses at load is the shape a consumer's editor completes and their

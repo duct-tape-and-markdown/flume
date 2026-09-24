@@ -288,11 +288,12 @@ export async function loadChainModule(
     throw err;
   }
 
-  // tsx compiles a default-ONLY .ts module to CJS interop, so the namespace
-  // is { default: { __esModule: true, default: <realDefault> } }. A module
-  // with named exports stays true ESM: ns.default is the value directly.
-  // Normalize both shapes — the documented minimal chain (default export
-  // only) hits the interop path.
+  // `tsImport` hands the module back in either shape — `__esModule` set with
+  // the factory under a second `default`, or the factory as `ns.default`
+  // directly — and which one is not read off the module in hand
+  // (`.claude/rules/platform-facts.md`, *tsx decides a module's interop shape
+  // from its whole import graph*). Both are normalized here because keying on
+  // one would refuse a chain the other spelling loads fine.
   const d = ns.default as Record<string, unknown> | undefined;
   const interop =
     !!d &&
