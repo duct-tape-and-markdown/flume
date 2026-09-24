@@ -1,53 +1,8 @@
 [
   {
-    "tag": "ENTRY-PRIORITY-ORDERS-THE-QUEUE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/PendingSchema.ts",
-          "description": "`priority` on the core, and the rendered schema's line for it"
-        },
-        {
-          "path": "src/selection.ts",
-          "description": "the one ordering every selection surface takes"
-        },
-        {
-          "path": "tests/PendingSchema.test.ts",
-          "description": "the field and the render"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "the ordering across the selection surfaces"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "`priority` — optional integer, default 0 — is the queue's one ordering: descending, then tag ascending, at every surface that selects",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "The entry core"
-    },
-    "acceptance": "A queue read in any order yields the same selection order — priority descending, then tag ascending — at the singleton read, the fanout wave, `render`'s preview and `pickableAfter`; an entry declaring no priority sorts as 0.",
-    "tests": [
-      "selection orders entries by priority descending, then tag ascending",
-      "an entry declaring no priority sorts as zero",
-      "a non-integer priority fails validation"
-    ],
-    "pins": [],
-    "notes": "Lands ahead of the directory so the ledger never spends a tick with no ordering at all: array position is what priority replaces, and the position goes with THE-LEDGER-IS-A-DIRECTORY-ONE-ENTRY-PER-FILE."
-  },
-  {
     "tag": "THE-LEDGER-IS-A-DIRECTORY-ONE-ENTRY-PER-FILE",
     "gate": {
-      "kind": "blockedBy",
-      "tags": [
-        "ENTRY-PRIORITY-ORDERS-THE-QUEUE"
-      ]
+      "kind": "open"
     },
     "dependsOnForks": [],
     "files": {
@@ -273,44 +228,6 @@
     ],
     "pins": [],
     "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. It is the section's only merged-tree gate: there is no duplicate refusal beside it — the drain folds a duplicate instead (THE-DRAIN-FOLDS-A-DUPLICATE-FINDING)."
-  },
-  {
-    "tag": "THE-DEFAULT-HANDOFF-WAKES-EVERY-LIVE-SLICE",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/handoff.ts",
-          "description": "the wake set replaces the ladder: every live slice plus build while anything is pickable"
-        },
-        {
-          "path": "tests/harnessHandoff.test.ts",
-          "description": "the set, the exception, and the consumer override"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "the wired default"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "The default handoff answers with a wake set, not a ladder: every slice whose window is live, plus build whenever anything is pickable",
-    "per": {
-      "path": "spec/harness.md",
-      "section": "The default `handoff`"
-    },
-    "acceptance": "One handoff answer names every live slice and build together; the slice that just ran and committed nothing is absent from it; a consumer's declared handoff replaces the set and still runs beneath the per-entry refusal and the contract-touching stop write.",
-    "tests": [
-      "the default handoff names every live slice and build in one answer",
-      "the slice that just ran and committed nothing is not re-woken",
-      "a consumer's declared handoff replaces the wake set and still runs beneath the per-entry refusal"
-    ],
-    "pins": [],
-    "notes": "Which of the woken phases run at once is the budget's, not the handoff's; which runs first is the declared order's, and build is declared first (BUILD-IS-DECLARED-FIRST)."
   },
   {
     "tag": "A-BUILD-REFUSAL-KEYS-ON-THE-ENTRY-AS-DECLARED",
