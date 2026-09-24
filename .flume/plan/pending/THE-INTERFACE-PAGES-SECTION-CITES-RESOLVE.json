@@ -30,5 +30,5 @@
   "tests": [
     "a section cite on an interface page naming a heading its cited page does not hold is a page finding"
   ],
-  "notes": "Per note A-SHIPPED-HELP-LITERALS-SECTION-CITES-RESOLVE, class 2. Measured this drain over `INTERFACE_PAGES` (`tests/helpers/pageAnchors.ts:449`): 26 cites in the drawn spelling, 1 red — `docs/CLI.md:59` states (`spec/loop.md`, \"Graceful stop\") for *Graceful stop — the stop flag*. `scanRenderedSections` is page-agnostic, so the arm is a walk feeding it. Sibling on this section: THE-DOTTED-PAGE-SPAN-IS-JUDGED, which names the same three seam paths."
+  "notes": "Per note A-SHIPPED-HELP-LITERALS-SECTION-CITES-RESOLVE, class 2. Measured this drain over `INTERFACE_PAGES` (`tests/helpers/pageAnchors.ts:449`): 26 cites in the drawn spelling, 1 red — `docs/CLI.md:59` states (`spec/loop.md`, \"Graceful stop\") for *Graceful stop — the stop flag*. `scanRenderedSections` is page-agnostic, so the arm is a walk feeding it. Sibling on this reader: THE-SECTION-CITE-READER-TAKES-THE-PAREN-LESS-SPELLING, which widens the grammar this walk feeds."
 }

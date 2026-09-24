@@ -1,0 +1,31 @@
+{
+  "tag": "THE-AUTHORING-PAGE-WALK-REACHES-THE-SHIPPED-SUBFIELDS",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/harnessDeclaration.test.ts",
+        "description": "the authoring page's walk reaches the level beneath each shipped field, past a phase-keyed level; the LAYERS arm keeps the top-level walk"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the shipped subfields the widened walk reds"
+      }
+    ]
+  },
+  "summary": "The authoring page's declaration walk reads top-level keys alone, so a subfield the package ships can land, be renamed or retire with nothing red",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the authoring page's walk demands a backticked name for each field the package ships and for the level beneath it \u2014 descending past a phase-keyed level to the package's own keys, never a consumer's",
+  "tests": [
+    "docs/CHAIN-AUTHORING.md names the level beneath each field DeclarationSchema declares"
+  ],
+  "pins": [
+    "the authoring page's declaration walk demands no phase name a consumer declares"
+  ],
+  "notes": "Ruled off the page-depth record: fork (2) with (3)'s reason. Measured this drain: 27 shipped subfields under `gates`, `agents`, `supervisor`, `setup`, `slices`, `slots`, `ci`, of which 11 are named nowhere on the page (`gates.kind`, `gates.path`, `setup.*`, `slices.*`, `slots.*`, `ci.workflow`, `ci.job`) \u2014 and the pin reads a cut span, so its count can only be higher. The unwrap instrument is at `tests/harnessDeclaration.test.ts:237`. The ruling names the authoring page; LAYERS keeps top level."
+}

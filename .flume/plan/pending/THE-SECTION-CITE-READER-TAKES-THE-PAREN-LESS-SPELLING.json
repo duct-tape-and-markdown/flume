@@ -1,0 +1,46 @@
+{
+  "tag": "THE-SECTION-CITE-READER-TAKES-THE-PAREN-LESS-SPELLING",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/helpers/commentCitations.ts",
+        "description": "`SECTION_CITE` and its doc take the ratified grammar — the emphasized or quoted half adjacent to the page name, parenthetical and comma optional"
+      },
+      {
+        "path": "tests/commentCitations.test.ts",
+        "description": "the widened arm's cases, and the aside the adjacency clause still draws nothing from"
+      },
+      { "path": "src/Agent.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/Dispatcher.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/chainLoad.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/cli.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/friction.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/git.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/loopSupervisor.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/pendingLedger.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/priorAttempts.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/singletonTick.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/tickAttempt.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/tickVerdict.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/tipVerify.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/waveMerge.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "src/waveTick.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "tests/Dispatcher.test.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "tests/cli.test.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "tests/cliHelp.test.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "tests/harnessGates.test.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "tests/paths.test.ts", "description": "a stale section half the widened arm reds" },
+      { "path": "tests/priorAttempts.test.ts", "description": "a stale section half the widened arm reds" }
+    ]
+  },
+  "summary": "The section-cite reader requires the parenthetical, so the 354 comment cites in the ratified comma-less spelling are unjudged — and 50 of them name a heading their page does not hold",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "a section cite resolves whenever its emphasized or quoted half sits adjacent to the page name, comma and parenthetical optional, and every span the widened arm reads names a heading its page holds",
+  "tests": ["the citation scan reads a section cite spelled without its parenthetical"],
+  "pins": ["an emphasized aside that does not sit adjacent to a page name draws no section cite"],
+  "notes": "Ruled off the cite-grammar record, fork (a). Re-measured this drain over `src/`, `harness/`, `tests/`: 354 spans in the widened spelling, 304 resolving, 50 stale across the 21 files named here — near-uniformly abbreviations the page already rules a rewrite. Today's narrowness is spelled in `SECTION_CITE`'s own doc, which the widening rewrites. The rendered-surface and page-arm readers add nothing: measured red-free. Seams the same reader with THE-INTERFACE-PAGES-SECTION-CITES-RESOLVE."
+}
