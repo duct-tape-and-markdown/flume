@@ -26,5 +26,5 @@ never invent work to fill the tick.
 
 # OUTPUT
 
-One commit, prefixed `groom:`. Touch only `BACKLOG.json` and `SHIPPED.md` —
-anything else reverts the commit.
+One commit, prefixed `groom:`. Write only within the writable paths the
+`<harness>` block above states — anything outside them reverts the commit.
