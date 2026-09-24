@@ -583,7 +583,10 @@ export async function superviseLoop(
     // hot-spin to the budget against a wall that cannot clear itself.
     let verdict: TickVerdict | undefined;
     try {
-      verdict = await readTickVerdict(flumeDir);
+      // Read by the phase this supervisor named the child with, which is the
+      // name that child wrote its verdict under — no inference, and no path
+      // two children of one run can share.
+      verdict = await readTickVerdict(flumeDir, child.phase);
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
       erroredTicks.push(
@@ -593,7 +596,7 @@ export async function superviseLoop(
         stop: { hibernated: false },
         finish: async () => {
           log.error(
-            `[flume] this tick's verdict at ${tickVerdictPath(flumeDir)} is ` +
+            `[flume] this tick's verdict at ${tickVerdictPath(flumeDir, child.phase)} is ` +
               `present but could not be read (${why}); stopping after ${ticks} ` +
               `tick(s) rather than counting the tick as one that reported ` +
               `nothing. Make the path readable, then re-run.`,

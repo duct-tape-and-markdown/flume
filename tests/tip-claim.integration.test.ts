@@ -21,6 +21,7 @@ import { describe, expect, it } from "vitest";
 import { Baton } from "../src/Baton.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { parsePidClaim } from "../src/pidClaim.ts";
+import { tickVerdictPath } from "../src/tickVerdict.ts";
 import { deadPid } from "./helpers/deadPid.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
@@ -449,14 +450,18 @@ describe("flume loop/tick — tip claim wiring", () => {
     // detached-HEAD refusal must clear a prior tick's stale verdict before
     // returning, not leave it for a loop's supervisor to misread as this
     // tick's own on every subsequent iteration.
-    "flume tick on detached HEAD clears a stale tick-verdict.json before refusing",
+    "flume tick on detached HEAD clears a stale tick verdict before refusing",
     async () => {
       const repo = await makeRepo("main");
       try {
         await writeRepoConfig(repo.dir, minimalChainSrc());
         const flumeDir = join(repo.dir, ".flume");
         await mkdir(flumeDir, { recursive: true });
-        const verdictPath = join(flumeDir, "tick-verdict.json");
+        // The phase this stale record names, which is the phase the refused
+        // tick would have run: a bare `flume tick` names none on the way in,
+        // so its pre-tick clear takes the whole directory.
+        const verdictPath = tickVerdictPath(flumeDir, "probe");
+        await mkdir(dirname(verdictPath), { recursive: true });
         await writeFile(
           verdictPath,
           JSON.stringify({

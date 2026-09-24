@@ -9,12 +9,13 @@
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
+import { mkdirSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { Logger } from "../../src/log.ts";
-import type { TickVerdict } from "../../src/tickVerdict.ts";
+import { tickVerdictPath, type TickVerdict } from "../../src/tickVerdict.ts";
 import { RUNTIME_IGNORES } from "../../src/runtimeIgnores.ts";
 
 import { mkTempDir } from "./fixtureRoot.ts";
@@ -34,7 +35,7 @@ export const silent: Logger = {
 /**
  * A minimally-valid {@link TickVerdict} — every field `readTickVerdicts`'s
  * structural check requires, defaulted to a clean committed tick. Tests that
- * stub a real `flume tick` child process (writing `tick-verdict.json`
+ * stub a real `flume tick` child process (writing the verdict file
  * directly, as `superviseLoop`'s own suites do) build off this so a stub
  * missing a required field doesn't silently read back as "no verdict".
  */
@@ -52,6 +53,24 @@ export function verdictFixture(over: Partial<TickVerdict> = {}): TickVerdict {
     at: "2024-01-01T00:00:00.000Z",
     ...over,
   };
+}
+
+/**
+ * Where a child `flume tick` of `phase` leaves its verdict, with the
+ * directory the real writer creates (`writeTickVerdict`, `src/tickVerdict.ts`)
+ * already in place.
+ *
+ * A stub standing in for that child writes there and the supervisor reads
+ * there, so the two agree by taking one accessor rather than by both
+ * spelling a path. The `mkdir` is what a stub would otherwise repeat at
+ * every site — and a suite that goes on to deny the path structurally
+ * (`tests/helpers/denial.ts`) needs the parent standing, since denial never
+ * creates one.
+ */
+export function childVerdictPath(flumeDir: string, phase: string): string {
+  const p = tickVerdictPath(flumeDir, phase);
+  mkdirSync(dirname(p), { recursive: true });
+  return p;
 }
 
 // ---------- temp-repo fixture ----------

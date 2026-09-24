@@ -25,6 +25,7 @@ import {
   slugify,
   STATE_ROOT_NAMES,
   stopFlagPath,
+  tickVerdictDir,
   tickVerdictPath,
   tickVerdictsLogPath,
   worktreesBase,
@@ -571,7 +572,7 @@ describe("STATE_ROOT_NAMES owns the tick-verdict filenames", () => {
       STATE_ROOT_NAMES.tickVerdict,
       STATE_ROOT_NAMES.tickVerdictsLog,
     ];
-    expect(names).toEqual(["tick-verdict.json", "tick-verdicts.jsonl"]);
+    expect(names).toEqual(["tick-verdict", "tick-verdicts.jsonl"]);
 
     const modules = readdirSync(SRC).filter((n) => n.endsWith(".ts"));
     // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
@@ -592,10 +593,31 @@ describe("STATE_ROOT_NAMES owns the tick-verdict filenames", () => {
 
     // The accessors read the record, so a rename moves the paths with it.
     const root = join("state", "root");
-    expect(tickVerdictPath(root)).toBe(join(root, STATE_ROOT_NAMES.tickVerdict));
+    expect(tickVerdictDir(root)).toBe(join(root, STATE_ROOT_NAMES.tickVerdict));
+    expect(tickVerdictPath(root, "plan")).toBe(
+      join(root, STATE_ROOT_NAMES.tickVerdict, "plan.json"),
+    );
     expect(tickVerdictsLogPath(root)).toBe(
       join(root, STATE_ROOT_NAMES.tickVerdictsLog),
     );
+  });
+
+  // LOOP-WAVE-VERDICT-PER-PHASE: the verdict artifact became a directory, and
+  // its ignore entry has to move with it. Left spelling the old filename the
+  // line matches nothing under a state root that now holds a `tick-verdict/`
+  // tree, so every phase a consumer ticks leaves an untracked verdict behind
+  // — and the trailing slash rides along because that is the shape its
+  // directory siblings declare.
+  it("the runtime ignore set names the verdict directory, not a verdict file", () => {
+    expect(RUNTIME_IGNORES).toContain(`${STATE_ROOT_NAMES.tickVerdict}/`);
+    // And no entry spells the artifact as a file: the shape rides the name.
+    expect(RUNTIME_IGNORES).not.toContain(STATE_ROOT_NAMES.tickVerdict);
+    expect(RUNTIME_IGNORES).not.toContain(
+      `${STATE_ROOT_NAMES.tickVerdict}.json`,
+    );
+    // The history log beside it is still a file, so the slash is the
+    // directory's alone rather than something every verdict entry grew.
+    expect(RUNTIME_IGNORES).toContain(STATE_ROOT_NAMES.tickVerdictsLog);
   });
 });
 

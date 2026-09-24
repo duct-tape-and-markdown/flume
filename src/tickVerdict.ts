@@ -23,7 +23,12 @@ import type { AgentUsage } from "./Agent.js";
 import { bound } from "./bounds.js";
 import { existsLoud } from "./fsProbe.js";
 import type { GateResult } from "./Gate.js";
-import { namespacedJoin, tickVerdictPath, tickVerdictsLogPath } from "./paths.js";
+import {
+  namespacedJoin,
+  tickVerdictDir,
+  tickVerdictPath,
+  tickVerdictsLogPath,
+} from "./paths.js";
 import type { NoCommitMode } from "./Prompt.js";
 
 /**
@@ -677,21 +682,27 @@ export interface TickVerdict {
  * (`src/paths.ts`) with the rest of the state root's layout, so the job
  * `.gitignore` seed carries them without a second spelling; the accessors
  * are re-exported here, where what each file carries is defined:
- *  - {@link tickVerdictPath} — this tick's verdict alone, overwritten
- *    every real `flume tick` process (the CLI's `tick` command writes it,
+ *  - {@link tickVerdictPath} — this tick's verdict alone, one file per phase
+ *    under {@link tickVerdictDir}, overwritten
+ *    every real `flume tick` process of that phase (the CLI's `tick` command writes it,
  *    from the `TickVerdict` its own `dispatcher.tick()` call returned —
  *    never `Dispatcher.tick()` itself, which plain unit tests call directly
  *    and must not gain an untracked side effect underfoot). `clearTickVerdict`
  *    removes it before that same tick's own work begins, so a tick that
  *    never reaches the write (chain-load failure, hibernation, terminal
  *    misconfiguration) leaves nothing for `superviseLoop` to misread as its
- *    own.
+ *    own. Per phase because a supervisor run holds one child per awake phase
+ *    at once: on a single path the second child to finish overwrote the
+ *    first's facts before the supervisor read them, and the loss was silent —
+ *    the reader saw a well-formed verdict, just not the one it was waiting
+ *    for. The supervisor names each child's phase on the way in, so it opens
+ *    the file it named the child by.
  *  - {@link tickVerdictsLogPath} — every verdict ever written, appended
  *    and bounded to {@link MAX_TICK_VERDICTS}, read back by the exported
  *    `readTickVerdicts` accessor so a chain can render recent tick history
  *    into a prompt. Never cleared — it is history, not a per-tick signal.
  */
-export { tickVerdictPath, tickVerdictsLogPath };
+export { tickVerdictDir, tickVerdictPath, tickVerdictsLogPath };
 
 /** Bound on {@link tickVerdictsLogPath}'s file — a rolling window, not an unbounded log. */
 const MAX_TICK_VERDICTS = 200;
@@ -761,11 +772,18 @@ export async function writeTickVerdict(
   flumeDir: string,
   verdict: TickVerdict,
 ): Promise<void> {
-  // win32 MAX_PATH: flumeDir nests under a job/worktree root; namespacedJoin
-  // (src/paths.ts) is the shared idiom.
-  await mkdir(namespacedJoin(flumeDir), { recursive: true });
+  // The verdict dir nests inside the state root, so one recursive mkdir
+  // creates both — and the history log below is written straight under
+  // `flumeDir`. win32 MAX_PATH: flumeDir nests under a job/worktree root;
+  // namespacedJoin (src/paths.ts) is the shared idiom.
+  await mkdir(namespacedJoin(tickVerdictDir(flumeDir)), { recursive: true });
+  // The phase is read off the verdict rather than taken as a second argument:
+  // the record already states which phase produced it, and a caller passing
+  // that name again is a fact restated beside its source
+  // (`.claude/rules/engineering.md`, *Derived state is computed, never
+  // restated beside its source*).
   await writeFile(
-    namespacedJoin(tickVerdictPath(flumeDir)),
+    namespacedJoin(tickVerdictPath(flumeDir, verdict.phaseName)),
     JSON.stringify(verdict),
     "utf8",
   );
@@ -788,15 +806,33 @@ export async function writeTickVerdict(
  * the CLI's `tick` command before invoking `dispatcher.tick()`. Leaves the
  * history log untouched: clearing is a per-tick-signal concern, not a
  * history one.
+ *
+ * `phase` is the name the tick was invoked under, and clears that phase's
+ * file alone — every supervisor child carries one (`flume tick --phase
+ * <name>`), so a child never clears a sibling's verdict out from under the
+ * supervisor. A bare `flume tick`, which chooses its phase from the baton
+ * after this call and so cannot name one yet, clears the whole directory
+ * instead: it takes the tip claim for itself, so no sibling child of its own
+ * run exists to lose a verdict.
  */
-export async function clearTickVerdict(flumeDir: string): Promise<void> {
-  await rm(namespacedJoin(tickVerdictPath(flumeDir)), { force: true });
+export async function clearTickVerdict(
+  flumeDir: string,
+  phase?: string,
+): Promise<void> {
+  if (phase === undefined) {
+    await rm(namespacedJoin(tickVerdictDir(flumeDir)), {
+      force: true,
+      recursive: true,
+    });
+    return;
+  }
+  await rm(namespacedJoin(tickVerdictPath(flumeDir, phase)), { force: true });
 }
 
 /**
- * Read the last-written verdict, if any — consulted by `superviseLoop`
+ * Read `phase`'s last-written verdict, if any — consulted by `superviseLoop`
  * (`src/loopSupervisor.ts`), this export's only consumer, between child
- * ticks. Corrupt or absent (the CLI clears it before every
+ * ticks, with the phase it named the child by. Corrupt or absent (the CLI clears it before every
  * tick and writes it only once that tick's `dispatcher.tick()` call has
  * returned) degrades to "nothing to report" — a missing record must never
  * be misread as a prior tick's stale one.
@@ -812,8 +848,9 @@ export async function clearTickVerdict(flumeDir: string): Promise<void> {
  */
 export async function readTickVerdict(
   flumeDir: string,
+  phase: string,
 ): Promise<TickVerdict | undefined> {
-  const p = namespacedJoin(tickVerdictPath(flumeDir));
+  const p = namespacedJoin(tickVerdictPath(flumeDir, phase));
   if (!existsLoud(p)) return undefined;
   const raw = await readFile(p, "utf8");
   try {

@@ -1012,7 +1012,14 @@ async function main(): Promise<number> {
     // hibernation, terminal misconfiguration, the detached-HEAD refusal below)
     // must leave no record for `flume loop`'s supervisor to misread as its
     // own.
-    await clearTickVerdict(flumeDir);
+    //
+    // Scoped to the phase this tick was named with, because a supervisor run
+    // holds one child per awake phase and a clear of the whole directory
+    // would take a sibling's verdict with it. A bare tick names no phase —
+    // it picks one off the baton inside `tick()`, past this point — and
+    // clears the directory whole, which costs nothing: a bare tick takes the
+    // tip claim itself, so it has no sibling child to strip.
+    await clearTickVerdict(flumeDir, named);
     // Tick and loop both refuse before any tick when HEAD does not name a ref
     // — the tick record's meaning is advancing a named tip, and the
     // (loop-level) claim that guards it keys on a ref. A bare tick takes no

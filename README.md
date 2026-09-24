@@ -219,8 +219,11 @@ Harness-managed state — every name here is one the runtime spells itself
   runs against this state root (below).
 - `.flume/stop` — graceful-stop flag: `flume stop` writes it, a live loop
   ends on it and `flume loop` refuses to start over it.
-- `.flume/tick-verdict.json`, `.flume/tick-verdicts.jsonl` — the last tick's
-  verdict and the bounded history behind it (`readTickVerdicts`).
+- `.flume/tick-verdict/<phase>.json`, `.flume/tick-verdicts.jsonl` — each
+  phase's last verdict and the bounded history behind them
+  (`readTickVerdicts`). One file per phase because a `flume loop` run holds
+  one child per awake phase at once, and the supervisor reads each child's
+  facts back under the phase it named that child with.
 
 Everything else under the state root is its chain's — placed by the chain
 rather than the runtime, and the chain's alone to move. This repo's own chain

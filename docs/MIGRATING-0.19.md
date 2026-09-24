@@ -24,7 +24,13 @@ The second is the harness package's plan state, one JSON file per plan slice
 (§ 6) — the same shape for the same reason, and it moves the accessors, the
 fence helper, one prompt arg, and the page you already have on disk.
 
-Your typecheck names §§ 1–3 and the API half of § 6; §§ 4, 5 and the disk
+A third artifact became a directory on the same line for a different reason:
+the tick verdict, now one file per phase (§ 7), because a supervisor run
+holds one child per awake phase and a single path lost every child's facts
+but the last. Nothing in a chain reads it, so § 7 is an ignore line and a
+stale file.
+
+Your typecheck names §§ 1–3 and the API half of § 6; §§ 4, 5, 7 and the disk
 half of § 6 are the halves nothing catches.
 
 **This page is the `0.19` line's census as it stands, not the cut's.** A
@@ -49,6 +55,8 @@ ls "$(git rev-parse --show-toplevel)"/.flume/plan/pending.json            # § 5
 grep -rn 'PlanStateSchema\|readPlanState\|writePlanState\|planStatePath\|planArtifacts\|PLAN_STATE_PATH' \
   --include='*.ts' --include='*.md' .                                     # § 6
 ls "$(git rev-parse --show-toplevel)"/.flume/plan/state.json             # § 6
+grep -rn 'tick-verdict\.json' --include='*.ts' --include='*.md' \
+  --include='.gitignore' .                                                # § 7
 ```
 
 The path greps are the ones to run even if the API greps come back empty: a
@@ -303,3 +311,35 @@ The legacy `plan/state.json` rides the plan fence for exactly one release —
 the same one-time allowance § 5 gives the legacy queue, and retired with it —
 so a plan tick can `git rm` it if you would rather the split land in a
 `plan:` commit.
+
+## 7. The tick verdict is a directory, one file per phase
+
+`<stateRoot>/tick-verdict.json` is now `<stateRoot>/tick-verdict/<phase>.json`
+— one file per phase, written by `flume tick` and read back by `flume loop`'s
+supervisor under the phase it named each child with.
+
+Why: a supervisor run holds one child per awake phase at once, and every one
+of them wrote to the same path. The last child to finish overwrote its
+siblings' facts before the supervisor read them, and the loss was silent —
+the supervisor read a well-formed verdict that simply belonged to another
+phase. Above a `maxTicks` of 1 the run's shipped tags, errored-tick count and
+agent spend were all short by however many children raced.
+
+**Your `.gitignore` is the one thing to change.** The engine seeds its own
+ignore set into `<stateRoot>/.gitignore` at every `loop` start, so that file
+picks up the new entry on its own; a line you wrote yourself — in a
+repository-root `.gitignore`, or one `flume-harness init` wrote for you
+before this release — still names the old file and ignores nothing:
+
+```diff
+-.flume/tick-verdict.json
++.flume/tick-verdict/
+```
+
+The trailing slash is load-bearing: a bare `tick-verdict` line reads as a
+file pattern, and the directory's contents stay untracked-visible.
+
+The stale `tick-verdict.json` left on disk is inert — nothing reads it — and
+`rm` is the whole cleanup. `tick-verdicts.jsonl` is untouched: it is still one
+append-only history log for every phase, and `readTickVerdicts` /
+`readLatestVerdictsSync` still serve it unchanged.

@@ -61,6 +61,7 @@ import { gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import {
+  tickVerdictPath,
   tickVerdictsLogPath,
   writeTickVerdict,
   type TickVerdict,
@@ -717,9 +718,9 @@ function ledgerRewriteFailureChainSrc(phaseName: string): string {
  * survive onto the on-disk artifact, not just the shipped tag the existing
  * single-entry suite already covers.
  */
-describe("flume tick — tick-verdict.json on disk after a ledger-rewrite PendingParseFailure (LOOP-WAVE-VERDICT-MULTIENTRY-COVERAGE)", () => {
+describe("flume tick — the tick verdict on disk after a ledger-rewrite PendingParseFailure (LOOP-WAVE-VERDICT-MULTIENTRY-COVERAGE)", () => {
   it(
-    "a multi-entry wave (one shipped, one declined) whose commitPendingUpdate rewrite read hits a corrupt entry file still writes the wave's verdict to tick-verdict.json",
+    "a multi-entry wave (one shipped, one declined) whose commitPendingUpdate rewrite read hits a corrupt entry file still writes the wave's verdict to the phase's verdict file",
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
@@ -771,7 +772,7 @@ describe("flume tick — tick-verdict.json on disk after a ledger-rewrite Pendin
         // The defect this test pins: the on-disk artifact, not just the
         // in-memory outcome, must carry both the shipped tag and the
         // declined sibling.
-        const verdictPath = join(flumeDir, "tick-verdict.json");
+        const verdictPath = tickVerdictPath(flumeDir, "build");
         const verdict = JSON.parse(await readFile(verdictPath, "utf8")) as {
           phaseName: string;
           tags: string[];

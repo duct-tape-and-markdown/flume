@@ -8,8 +8,8 @@ dist/
 .flume/rendered-prompts/
 .flume/worktrees/
 .flume/merging/
+.flume/tick-verdict/
 .flume/loop.pid
-.flume/tick-verdict.json
 .flume/tick-verdicts.jsonl
 .flume/stop
 .env

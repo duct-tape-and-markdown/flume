@@ -1086,7 +1086,10 @@ describe("ReportedGateResult.verdict — a chain's own reason, carried not re-pa
     const flumeDir = join(fx.repo, ".flume");
     await writeTickVerdict(flumeDir, outcome.verdict!);
     const onDisk = JSON.parse(
-      await readFile(tickVerdictPath(flumeDir), "utf8"),
+      await readFile(
+        tickVerdictPath(flumeDir, outcome.verdict!.phaseName),
+        "utf8",
+      ),
     ) as TickVerdict;
     expect(
       onDisk.gateResults.map((g) => [g.gate, g.verdict]),
@@ -1503,7 +1506,10 @@ describe("ReportedGateResult.failingFiles — what the gate blamed, reported not
     const flumeDir = join(fx.repo, ".flume");
     await writeTickVerdict(flumeDir, outcome.verdict!);
     const onDisk = JSON.parse(
-      await readFile(tickVerdictPath(flumeDir), "utf8"),
+      await readFile(
+        tickVerdictPath(flumeDir, outcome.verdict!.phaseName),
+        "utf8",
+      ),
     ) as TickVerdict;
     expect(onDisk.gateResults.find((g) => g.gate === "suite")?.failingFiles).toEqual(
       blamed,
@@ -11162,7 +11168,10 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
  * shape they are not the judge of.
  */
 describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-verdict artifact", () => {
-  const latestPath = (): string => tickVerdictPath(join(fx.repo, ".flume"));
+  // Keyed by the phase `verdictFixture` reports, which is the phase the real
+  // writer files a verdict under.
+  const latestPath = (): string =>
+    tickVerdictPath(join(fx.repo, ".flume"), verdictFixture().phaseName);
   const historyPath = (): string =>
     tickVerdictsLogPath(join(fx.repo, ".flume"));
 
@@ -11217,8 +11226,11 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     ): Promise<string[]> => {
       expect(v).toBeDefined();
       await writeTickVerdict(flumeDir, v!);
+      // Read back at the phase's own file, the way the supervisor does: the
+      // two verdicts folded below come from two phases, and a single path
+      // would have the second's keys read as the first's.
       const onDisk = JSON.parse(
-        await readFile(latestPath(), "utf8"),
+        await readFile(tickVerdictPath(flumeDir, v!.phaseName), "utf8"),
       ) as Record<string, unknown>;
       return Object.keys(onDisk);
     };
@@ -11361,6 +11373,61 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     ).resolves.not.toThrow();
   });
 
+  /**
+   * LOOP-WAVE-VERDICT-PER-PHASE (spec/loop.md, *The tick verdict — one facts
+   * artifact*): the supervisor holds one child per awake phase at once, so a
+   * single verdict path made every child but the last one lossy — and lossy
+   * silently, since the supervisor read a well-formed verdict that simply
+   * belonged to a sibling. The write and the read both key by phase here, so
+   * two children of one run can never share a path.
+   */
+  it("two ticks of different phases each leave their own verdict file", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const plan = verdictFixture({
+      phaseName: "plan",
+      summary: "plan shipped nothing",
+      shippedTags: [],
+    });
+    const build = verdictFixture({
+      phaseName: "build",
+      summary: "build shipped ENTRY-ONE",
+      shippedTags: ["ENTRY-ONE"],
+    });
+    // The real writer, twice, in the order a supervisor's two children would
+    // finish — nothing hand-authored between them
+    // (`.claude/rules/engineering.md`, *A seam gate reads what the real
+    // writer wrote*).
+    await writeTickVerdict(flumeDir, plan);
+    await writeTickVerdict(flumeDir, build);
+
+    // Two files, not one: the second write did not land where the first did.
+    expect(tickVerdictPath(flumeDir, "plan")).not.toBe(
+      tickVerdictPath(flumeDir, "build"),
+    );
+    expect(existsSync(tickVerdictPath(flumeDir, "plan"))).toBe(true);
+    expect(existsSync(tickVerdictPath(flumeDir, "build"))).toBe(true);
+
+    // And the real reader, handed the phase the supervisor named each child
+    // by, gets that child's own facts back — the plan verdict survives the
+    // build tick that followed it.
+    expect(await readTickVerdict(flumeDir, "plan")).toEqual(plan);
+    expect(await readTickVerdict(flumeDir, "build")).toEqual(build);
+
+    // Clearing one phase's verdict leaves the other's standing, which is what
+    // a child's pre-tick clear must not take from its sibling.
+    await clearTickVerdict(flumeDir, "build");
+    expect(await readTickVerdict(flumeDir, "build")).toBeUndefined();
+    expect((await readTickVerdict(flumeDir, "plan"))?.summary).toBe(
+      "plan shipped nothing",
+    );
+
+    // History is untouched by either: both records are in the log, in order.
+    expect((await readTickVerdicts(flumeDir)).map((v) => v.phaseName)).toEqual([
+      "plan",
+      "build",
+    ]);
+  });
+
   it("readTickVerdicts serves the last N, oldest first, for a chain to render recent history", async () => {
     for (let i = 0; i < 5; i++) {
       await writeTickVerdict(
@@ -11405,13 +11472,13 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     const flumeDir = join(fx.repo, ".flume");
     await writeTickVerdict(flumeDir, verdictFixture({ summary: "tick 0" }));
     // Non-vacuity: the latest-tick file reads back before it is denied.
-    expect((await readTickVerdict(flumeDir))?.summary).toBe("tick 0");
+    expect((await readTickVerdict(flumeDir, "build"))?.summary).toBe("tick 0");
 
     denyFile(latestPath());
 
     let caught: NodeJS.ErrnoException | undefined;
     try {
-      await readTickVerdict(flumeDir);
+      await readTickVerdict(flumeDir, "build");
     } catch (err) {
       caught = err as NodeJS.ErrnoException;
     }
@@ -11421,7 +11488,7 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     // `clearTickVerdict` leaves nothing behind, and that absence still reads
     // as "nothing to report" — the one silent arm this reader keeps.
     await rm(latestPath(), { recursive: true, force: true });
-    expect(await readTickVerdict(flumeDir)).toBeUndefined();
+    expect(await readTickVerdict(flumeDir, "build")).toBeUndefined();
   });
 });
 

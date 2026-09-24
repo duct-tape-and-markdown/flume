@@ -432,7 +432,7 @@ export const STATE_ROOT_NAMES = {
   merging: "merging",
   loopLock: "loop.pid",
   stopFlag: "stop",
-  tickVerdict: "tick-verdict.json",
+  tickVerdict: "tick-verdict",
   tickVerdictsLog: "tick-verdicts.jsonl",
 } as const;
 
@@ -520,7 +520,7 @@ export function worktreesBase(flumeDir: string, declared?: string): string {
  * the ship bookkeeping has landed, so a file here at the next `loop` start
  * is a merge a crash interrupted and the run refuses.
  *
- * Same split as {@link tickVerdictPath}: this module owns the name so the
+ * Same split as {@link tickVerdictDir}: this module owns the name so the
  * CLI's startup refusal can reach it without importing the marker's reader,
  * and `src/mergingMarkers.ts` owns what the file carries and when.
  */
@@ -556,20 +556,42 @@ export function stopFlagPath(flumeDir: string): string {
 }
 
 /**
- * The latest tick's verdict alone, overwritten every real `flume tick` and
- * removed by `clearTickVerdict` before that tick's own work begins.
- * Re-exported from `src/tickVerdict.ts`, which owns what the file carries and
- * when — this module owns only the name, so the runtime ignore set can
- * reach it without importing the verdict's I/O.
+ * The directory holding one latest-tick verdict per phase —
+ * `<flumeDir>/tick-verdict`. A directory rather than a file because a
+ * supervisor run holds several children at once, one per awake phase, and a
+ * single path would have every child but the last one overwritten before the
+ * supervisor read it.
+ *
+ * Same split as {@link mergingDir}: this module owns the name so the runtime
+ * ignore set can reach it without importing the verdict's I/O, and
+ * `src/tickVerdict.ts` owns what each file carries and when.
  */
-export function tickVerdictPath(flumeDir: string): string {
+export function tickVerdictDir(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.tickVerdict);
+}
+
+/**
+ * One phase's latest verdict — `<flumeDir>/tick-verdict/<phase>.json`,
+ * overwritten every real `flume tick` of that phase and removed by
+ * `clearTickVerdict` before that tick's own work begins.
+ *
+ * Keyed by the phase name exactly as the chain declares it, the way
+ * `Baton`'s awake flag under {@link awakeDir} already is: a phase never runs
+ * twice at once (spec/loop.md, *Baton — presence wakes, absence hibernates*)
+ * and the supervisor names each child's phase on the way in, so the reader
+ * opens the file it named the child by.
+ * No slug, for the same reason the baton takes none — two spellings of a
+ * phase's own filename is how a flag and a verdict come to disagree about
+ * which phase they belong to.
+ */
+export function tickVerdictPath(flumeDir: string, phase: string): string {
+  return join(tickVerdictDir(flumeDir), `${phase}.json`);
 }
 
 /**
  * The append-only verdict history `readTickVerdicts` (`src/tickVerdict.ts`)
  * reads back for a chain's recent-tick rendering. Same split as
- * {@link tickVerdictPath}: the name here, the semantics there.
+ * {@link tickVerdictDir}: the name here, the semantics there.
  */
 export function tickVerdictsLogPath(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.tickVerdictsLog);

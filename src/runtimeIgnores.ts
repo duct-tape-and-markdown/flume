@@ -31,6 +31,12 @@ import { gitPath, namespacedJoin, STATE_ROOT_NAMES } from "./paths.js";
  * pointing at the old one. `node_modules/` is not the runtime's to name, so
  * it stays spelled here.
  *
+ * An entry's trailing slash states the artifact's shape: git reads a bare
+ * name as matching a file or a directory alike, so the slash is what says
+ * which one this is, and every directory above carries it. The shape moves
+ * with the name — an artifact that becomes a directory whose entry keeps its
+ * old filename goes on matching the file it used to be, which is nothing.
+ *
  * `worktrees/` is the default base alone (`worktreesBase`, `src/paths.ts`):
  * a base relocated by the operator (`FLUME_WORKTREES_DIR`) or by the chain
  * (`Chain.worktreesBase`) has already moved outside the state root, so there
@@ -42,9 +48,9 @@ export const RUNTIME_IGNORES = [
   `${STATE_ROOT_NAMES.renderedPrompts}/`,
   `${STATE_ROOT_NAMES.worktrees}/`,
   `${STATE_ROOT_NAMES.merging}/`,
+  `${STATE_ROOT_NAMES.tickVerdict}/`,
   "node_modules/",
   STATE_ROOT_NAMES.loopLock,
-  STATE_ROOT_NAMES.tickVerdict,
   STATE_ROOT_NAMES.tickVerdictsLog,
   STATE_ROOT_NAMES.stopFlag,
 ] as const;

@@ -19,7 +19,11 @@ import {
   ensureRuntimeIgnores,
   RUNTIME_IGNORES,
 } from "../src/runtimeIgnores.ts";
-import { mergingMarkerPath, STATE_ROOT_NAMES } from "../src/paths.ts";
+import {
+  mergingMarkerPath,
+  STATE_ROOT_NAMES,
+  tickVerdictPath,
+} from "../src/paths.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec, gitOut } from "./helpers/subprocess.ts";
 
@@ -129,27 +133,29 @@ describe("ensureRuntimeIgnores — create-or-merge", () => {
 
 // Mechanism pin (RUNTIME-IGNORES-NAMES-THE-TICK-ARTIFACTS, per spec/jobs.md
 // "Runtime ignores"): the seeded set covered the dirs and the loop lock but
-// stopped short of the three runtime *files* a tick drops beside them — the
-// stop flag and the two tick-verdict artifacts — so every state root the
-// merge touched left them trackable, and the first `git add -A` after a tick
-// committed harness runtime state. The names are the state root's own
-// (`STATE_ROOT_NAMES`, `src/paths.ts`), so this drives the real ignore file
-// through the real reader — git — rather than asserting the set against a
-// list respelled here.
+// stopped short of the runtime artifacts a tick drops beside them — the stop
+// flag, the verdict history log and the per-phase verdict dir — so every
+// state root the merge touched left them trackable, and the first `git add
+// -A` after a tick committed harness runtime state. The names are the state
+// root's own (`STATE_ROOT_NAMES`, `src/paths.ts`), so this drives the real
+// ignore file through the real reader — git — rather than asserting the set
+// against a list respelled here.
 describe("ensureRuntimeIgnores — the runtime files a tick drops", () => {
   it("RUNTIME_IGNORES names the stop flag, the latest-tick verdict and the verdict log", async () => {
     // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
     // non-vacuous"): an empty set would leave `check-ignore` below judging
     // nothing.
     expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
-    const tickArtifacts = [
+    const tickFiles = [
       STATE_ROOT_NAMES.stopFlag,
-      STATE_ROOT_NAMES.tickVerdict,
       STATE_ROOT_NAMES.tickVerdictsLog,
     ];
-    for (const name of tickArtifacts) {
+    for (const name of tickFiles) {
       expect(RUNTIME_IGNORES).toContain(name);
     }
+    // The verdict is a directory of per-phase files, so its entry carries the
+    // trailing slash a directory needs — a bare name ignores nothing here.
+    expect(RUNTIME_IGNORES).toContain(`${STATE_ROOT_NAMES.tickVerdict}/`);
 
     const repo = await makeRepo();
     try {
@@ -158,8 +164,16 @@ describe("ensureRuntimeIgnores — the runtime files a tick drops", () => {
       await ensureRuntimeIgnores(stateRoot);
       // The artifacts as a tick leaves them: git only reports an ignore for
       // a path it would otherwise see, so write each one first.
-      for (const name of tickArtifacts) {
+      for (const name of tickFiles) {
         await writeFile(join(stateRoot, name), "");
+      }
+      // The verdict through its own accessor rather than a path spelled here
+      // — two phases, because that is what the directory exists for and a
+      // single file would have matched the artifact's old shape too.
+      for (const phase of ["plan", "build"]) {
+        const verdict = tickVerdictPath(stateRoot, phase);
+        await mkdir(dirname(verdict), { recursive: true });
+        await writeFile(verdict, "{}");
       }
       // git's own verdict on what it would track under the state root: the
       // merged `.gitignore` and nothing else.
