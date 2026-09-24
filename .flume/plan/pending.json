@@ -192,93 +192,11 @@
     "contractTouching": true
   },
   {
-    "tag": "A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "priority": 0,
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "src/pidClaim.ts",
-          "description": "the per-entry claim under `<git-common-dir>/flume/claims/<slug>`"
-        },
-        {
-          "path": "src/waveTick.ts",
-          "description": "stake before provisioning, drop at ship or teardown"
-        },
-        {
-          "path": "src/selection.ts",
-          "description": "skip a claimed entry as a quarantined one is skipped"
-        },
-        {
-          "path": "src/Phase.ts",
-          "description": "`TickContext.claimed` and `TickResult.claimedTags`"
-        },
-        {
-          "path": "harness/prompts.ts",
-          "description": "the claimed set on a producer's rendered block"
-        },
-        {
-          "path": "tests/pidClaim.test.ts",
-          "description": "stake, drop, dead-pid reclaim"
-        },
-        {
-          "path": "tests/Dispatcher.test.ts",
-          "description": "selection and the reported set"
-        },
-        {
-          "path": "tests/harnessPrompts.test.ts",
-          "description": "the rendered block"
-        }
-      ],
-      "retire": []
-    },
-    "observedFiles": [
-      ".flume/plan/notes/A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT.md",
-      "harness/chain.ts",
-      "harness/prompts.ts",
-      "harness/prompts/plan-derive.md",
-      "harness/prompts/plan-inbox.md",
-      "harness/prompts/plan-sweep.md",
-      "src/Dispatcher.ts",
-      "src/Phase.ts",
-      "src/entryClaims.ts",
-      "src/git.ts",
-      "src/index.ts",
-      "src/pidClaim.ts",
-      "src/selection.ts",
-      "src/singletonTick.ts",
-      "src/tickLeg.ts",
-      "src/waveTick.ts",
-      "tests/Dispatcher.test.ts",
-      "tests/harnessPrompts.test.ts"
-    ],
-    "summary": "A build tick stakes `<git-common-dir>/flume/claims/<slug>` before provisioning and drops it when the attempt ends; selection skips a claimed entry",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "Claims — an entry in flight is left alone"
-    },
-    "acceptance": "A claim exists from before its entry's worktree is provisioned until the attempt ends, with the ship or the teardown; `TickContext.claimed` and `TickResult.claimedTags` report the set the tick read; selection skips a claimed entry and a claim held by a dead pid is reclaimed.",
-    "tests": [
-      "a build tick stakes its entry's claim before provisioning the worktree",
-      "the claim is removed when an attempt ends without shipping",
-      "selection skips an entry another tick holds a claim on",
-      "TickResult.claimedTags reports the claims the tick read",
-      "a claim held by a dead pid is reclaimed by the next selection"
-    ],
-    "pins": [],
-    "notes": "Reported, never inferred: nothing outside the engine re-reads the claims directory. What a producer does about a claimed entry it would have changed stays the chain's."
-  },
-  {
     "tag": "THE-PENDING-GATE-CARRIES-THE-CLAIM-CHECK",
     "gate": {
       "kind": "blockedBy",
       "tags": [
-        "THE-LEDGER-IS-A-DIRECTORY-ONE-ENTRY-PER-FILE",
-        "A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT"
+        "THE-LEDGER-IS-A-DIRECTORY-ONE-ENTRY-PER-FILE"
       ]
     },
     "dependsOnForks": [],
