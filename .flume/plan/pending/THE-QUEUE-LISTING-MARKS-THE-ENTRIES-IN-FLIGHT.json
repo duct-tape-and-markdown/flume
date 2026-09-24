@@ -1,0 +1,38 @@
+{
+  "tag": "THE-QUEUE-LISTING-MARKS-THE-ENTRIES-IN-FLIGHT",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/prompts.ts",
+        "description": "the claimed set is handed to the prompt as the tags too, beside the block it already composes"
+      },
+      {
+        "path": "harness/prompts/plan-inbox.md",
+        "description": "the queue listing marks a claimed entry at that entry's own line"
+      },
+      {
+        "path": "harness/prompts/plan-derive.md",
+        "description": "the same mark in this slice's listing"
+      },
+      {
+        "path": "harness/prompts/plan-sweep.md",
+        "description": "the same mark in this slice's listing"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "the mark rides the entry's own line, and nothing renders on an empty set"
+      }
+    ]
+  },
+  "summary": "The claimed set renders only as a block after the queue listing, so the entry a build tick holds carries no mark at the line a drain decides on it",
+  "per": { "path": "spec/pending.md", "section": "Claims — an entry in flight is left alone" },
+  "acceptance": "every plan slice's queue listing marks a claimed entry at that entry's own line, from the same set the `<in-flight>` block names; with nothing in flight neither the mark nor the block renders",
+  "tests": [
+    "a plan slice's queue listing marks an entry a build tick holds at that entry's own line"
+  ],
+  "pins": [
+    "a plan slice tick with nothing in flight renders no in-flight mark and no claimed block"
+  ],
+  "notes": "Measured: 688b8481 and its retry each amended a claimed entry and were reverted by the claim check — two ticks for one fact the block stated. The third route the finding named already exists: the refusal's detail names the tag (`src/builtinGates.ts`) and rides the prior-attempt record. What is missing is the mark where the decision is made. A tag carries no shell metacharacter, and a placeholder inside an exec span resolves before the span runs (`spec/prompt.md`, *The render pipeline*)."
+}

@@ -1,0 +1,16 @@
+{
+  "tag": "CHAIN-LOAD-DOC-STATES-THE-RULE-NOT-ITS-SURFACES",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/chainLoad.ts",
+        "description": "the module header states why loading is its own job and names no roll call of the modules that load; the two inner rosters go the same way"
+      }
+    ]
+  },
+  "summary": "`src/chainLoad.ts`'s header names three surfaces that load a chain; the tree holds four, and the CLI's own loads do not go through the module the roll call cites",
+  "per": { "path": ".claude/rules/engineering.md", "section": "Derived state is computed, never restated beside its source" },
+  "acceptance": "the module's docs state the rule that makes chain loading its own job and leave which modules load to the program, the shape LAYOUT-DOC-STATES-THE-RULE-NOT-ITS-CALLERS already landed",
+  "notes": "Routed from the friction note of the reverted sweep tick; re-verified on disk this tick. `src/chainLoad.ts:7` names a tick, `chainLoadGate` and `src/cliChainLoad.ts`, while `src/loopSupervisor.ts:400` is a fourth loader and `src/cli.ts:664`, `:763`, `:1435` call `diskChainLoader` directly. Two more rosters at `:232` and `:260`, accurate today and the same hand-kept copy. Claims no property: a roll call's completeness reads the list's meaning, which no citation arm resolves."
+}

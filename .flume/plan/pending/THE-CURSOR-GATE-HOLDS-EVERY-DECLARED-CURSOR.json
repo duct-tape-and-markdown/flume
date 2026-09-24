@@ -1,0 +1,31 @@
+{
+  "tag": "THE-CURSOR-GATE-HOLDS-EVERY-DECLARED-CURSOR",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/gates.ts",
+        "description": "the cursor gate walks every declared cursor, keying each on its own slice's state file"
+      },
+      {
+        "path": "harness/planState.ts",
+        "description": "the cursor table hands out its fields at runtime, not as a type alone"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "both halves of the bound over the sweep cursor; the derive cases and the path skip unchanged"
+      }
+    ]
+  },
+  "summary": "The cursor gate judges `derivedThrough` alone, so a sweep tick may stamp `sweptThrough` backwards or past commits nobody swept and nothing reds",
+  "per": { "path": "spec/harness.md", "section": "The gates the discipline needs" },
+  "acceptance": "every cursor the package declares is judged at its own slice's state file — an ancestor of the gated commit and a descendant of its pre-commit value — and a commit touching no cursor's file is still skipped on the path",
+  "tests": [
+    "a plan commit whose sweptThrough is not an ancestor of the commit is refused",
+    "a plan commit whose sweptThrough is not a descendant of its pre-commit value is refused"
+  ],
+  "pins": [
+    "a plan commit touching no slice's cursor file is skipped by the cursor gate"
+  ],
+  "notes": "Ruled 5985a904; the question closed this tick. The mechanism is already generic over the type — `CURSORS` and `CursorField` (`harness/planState.ts`) name both cursors and `cursorSlice` gives each its file — so today's single-cursor read is a branch on one instance inside generic code. Both shas are as reachable for sweep as for derive: the window hands the closing tick the tip it was drawn from, and `ctx.baseSha` carries the pre-commit value the derive arm already reads."
+}

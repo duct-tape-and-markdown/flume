@@ -1,0 +1,16 @@
+{
+  "tag": "SIBLINGS-OF-ONE-SECTION-DECLARE-THE-SEAM-THEY-SHARE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/prompts/plan-discipline.md",
+        "description": "the `files` prediction section states what siblings cut from one section owe each other"
+      }
+    ]
+  },
+  "summary": "Two entries cut from one spec section share that section's seam and neither declares it, so the partition runs them together and the loser's whole span is discarded",
+  "per": { "path": "spec/pending.md", "section": "Fanout partition — disjoint touched paths" },
+  "acceptance": "the plan discipline tells a slice cutting one section into siblings to declare the shared seam on each or chain them with `blockedBy`, so the partition serializes what the section couples",
+  "notes": "Measured twice on 2026-09-24: A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT against the refusal entry (`src/selection.ts`, `src/waveTick.ts`), then A-CONTINUATION-ROUTES-BACK-TO-BUILD against A-COMPLETED-ENTRY-TAKES-ITS-CONTINUING-NOTE-WITH-IT (`harness/chain.ts`, `harness/judgeGate.ts`, `harness/putDown.ts`). Each cost the losing agent's span and a quarantine. Not an engine change: the partition did what its inputs said. The prediction is honest per entry and wrong per pair."
+}
