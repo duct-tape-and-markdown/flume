@@ -95,16 +95,15 @@ gated commit and the section is a heading in it), the records gate (one file
 per record, titled, under the tick's own tag), the
 clean-tree gate, the pending gate wired to the consumer's fence, and the
 slice-state gate: each slice's state file moves only as that slice's own
-invariants allow, read as a rule over the file at the base and at the commit
-— a cursor an ancestor of the tip and a descendant of its pre-commit value,
-the sweep's stamp moving only on the tick that closes its rotation, the
-covered set only growing while a rotation stands open, the retired-claim
-cursor advancing only over lines the commit could have searched — refused
-otherwise, because every one of these fails the same silent way: the next
-tick reads a file that looks like work done and re-draws what was paid for,
-or never opens on what was skipped. The rules ride the table beside each
-slice's accessors, so a fourth slice's invariant arrives at a table that
-exists. One
+invariants allow, read as a rule over the file at the base and at the
+commit, and refused otherwise, because every such invariant fails the same
+silent way — the next tick reads a file that looks like work done and
+re-draws what was paid for, or never opens on what was skipped. One check
+is the gate's own over every declared cursor: an ancestor of the tip and a
+descendant of its pre-commit value. The rest ride the table beside each
+slice's accessors, which is the set, and this sentence names none of them:
+a slice's invariant arrives at a table that exists, and a roster here would
+be a second copy the next rule forgets to join. One
 more over the merged tree, because it judges what two concurrent producers did
 to one queue: the **claim check** the engine's pending gate carries, refusing
 a commit that edits or removes an entry a build tick holds
