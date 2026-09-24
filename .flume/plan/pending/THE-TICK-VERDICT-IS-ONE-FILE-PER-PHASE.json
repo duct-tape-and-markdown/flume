@@ -1,0 +1,53 @@
+{
+  "tag": "THE-TICK-VERDICT-IS-ONE-FILE-PER-PHASE",
+  "gate": { "kind": "open" },
+  "priority": 1,
+  "contractTouching": true,
+  "files": {
+    "edit": [
+      {
+        "path": "src/paths.ts",
+        "description": "`STATE_ROOT_NAMES.tickVerdict` becomes the directory; `tickVerdictPath` takes the phase"
+      },
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "write/clear/read the phase's own file"
+      },
+      {
+        "path": "src/cli.ts",
+        "description": "the pre-tick clear: the named phase's file under `--phase`, the whole directory for a bare tick, which has no sibling child by construction"
+      },
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": "the child's verdict read opens the file it named the child by"
+      },
+      {
+        "path": "src/runtimeIgnores.ts",
+        "description": "the ignore entry gains the trailing slash its directory siblings carry — a bare `tick-verdict.json` line ignores no directory"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "verdict write/read sites"
+      },
+      {
+        "path": "tests/loopSupervisor.test.ts",
+        "description": "supervisor verdict reads"
+      },
+      {
+        "path": "tests/paths.test.ts",
+        "description": "the path rule and the runtime-ignore set"
+      }
+    ]
+  },
+  "summary": "One verdict path for every supervisor child is silently lossy above `maxTicks` 1; key the file by phase",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "The tick verdict — one facts artifact"
+  },
+  "acceptance": "each child writes and the supervisor reads `<flumeDir>/tick-verdict/<phase>.json`; two children of one run never share a verdict path, and the directory is ignored",
+  "tests": [
+    "two ticks of different phases each leave their own verdict file",
+    "the runtime ignore set names the verdict directory, not a verdict file"
+  ],
+  "notes": "Ruled 2026-09-24 (inbox), first fork: a phase never runs twice at once and the supervisor names each child's phase, so the reader opens the file it named the child by — no new contract, no inference. This is the gate on raising this repo's `maxTicks`. `spec/jobs.md`'s runtime-ignore listing still spells the file; carried in the open question on spec sentences that trail shipped behavior."
+}

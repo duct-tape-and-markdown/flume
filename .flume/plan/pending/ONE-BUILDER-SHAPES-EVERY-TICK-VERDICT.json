@@ -1,0 +1,24 @@
+{
+  "tag": "ONE-BUILDER-SHAPES-EVERY-TICK-VERDICT",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "takes the builder both legs call — the module that owns what the file carries"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the `commitPendingUpdate` catch calls it instead of spreading the fields by hand"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the normal path calls the same builder"
+      }
+    ]
+  },
+  "summary": "The ledger-refusal verdict and `Dispatcher.tick()`'s spell the same field sequence and differ only in their summary",
+  "per": { "path": ".claude/rules/engineering.md", "section": "A module is one job" },
+  "acceptance": "one function shapes a `TickVerdict`, with two callers; `src/waveMerge.ts` carries merging and no verdict shaping",
+  "notes": "Per note THE-WAVE-MERGE-STAGE-IS-ITS-OWN-MODULE. The note held it back fearing a behavior question about which fields a partial verdict may omit; both legs spread identically field for field, so the fold is behavior-free and the typecheck, the suite and the citation pins hold it. `src/waveMerge.ts` is 922 lines and this is the second job in it."
+}

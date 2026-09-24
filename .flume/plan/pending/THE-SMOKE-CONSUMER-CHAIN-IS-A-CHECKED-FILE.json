@@ -1,0 +1,29 @@
+{
+  "tag": "THE-SMOKE-CONSUMER-CHAIN-IS-A-CHECKED-FILE",
+  "gate": { "kind": "open" },
+  "priority": 2,
+  "files": {
+    "new": [
+      {
+        "path": "examples/smoke-consumer-chain.ts",
+        "description": "the groomer consumer the CI smoke installs, as a file `tsc` and `tests/examples.test.ts` already reach; `import type` only, so tsx erases it in the consumer"
+      }
+    ],
+    "edit": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "description": "the groomer-consumer step copies that file into `$GROOMER/.flume/chain.ts` instead of heredoc'ing a hand-maintained copy"
+      }
+    ]
+  },
+  "summary": "CI's consumer-smoke chain is an unchecked heredoc calling the removed `parsePending`; make it a file tsc reads",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "the posix lane's groomer-consumer step passes; the chain it installs is a repo file the default typecheck covers, so the next api rename reds before CI",
+  "tests": [
+    "the consumer-smoke workflow step installs a checked chain file rather than an inline heredoc"
+  ],
+  "notes": "Red today: `parsePending is not a function` — the api carries `parsePendingQueue(QueueFile[], ext)` since the ledger became a directory, and the heredoc was never moved with it. Detection tsc already performs for every examples/ chain, re-derived as a runtime failure in a lane no tick reads. `examples/` is the prediction; a fixture under `tests/` is build's call if the examples scans object."
+}

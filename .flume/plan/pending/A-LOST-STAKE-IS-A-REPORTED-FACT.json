@@ -1,0 +1,38 @@
+{
+  "tag": "A-LOST-STAKE-IS-A-REPORTED-FACT",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "the verdict field the dropped entry and its holder ride"
+      },
+      {
+        "path": "src/waveTick.ts",
+        "description": "the stake-race arm collects the fact instead of only warning"
+      },
+      {
+        "path": "src/Phase.ts",
+        "description": "the same fact on `TickResult`, so a handoff reads it without opening the verdict"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "fold it into the verdict the normal path builds"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "a wave whose entry is claimed between selection and stake"
+      }
+    ]
+  },
+  "summary": "A wave that loses the stake race drops the entry and says so only on stdout",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "an entry dropped from the batch to a live holder is on the tick verdict and the tick result, with the holder named; nothing downstream reads it out of the log",
+  "tests": [
+    "a wave that loses the stake race reports the dropped entry and its holder on the tick verdict"
+  ],
+  "notes": "Per note A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT. Not `provisionFailures`: that list feeds the run quarantine, and losing a race to a sibling is neither a failure nor this entry's fault. A fact, never a verdict — what to do about it stays the chain's."
+}

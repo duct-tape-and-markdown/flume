@@ -1,0 +1,30 @@
+{
+  "tag": "THE-WAKE-SET-ASKS-ONE-REFUSAL-READER",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/sliceWindow.ts",
+        "description": "`SliceWindow` gains the two `TickFacts` fields; the comment saying a handoff-built window omits them goes with them"
+      },
+      {
+        "path": "harness/handoff.ts",
+        "description": "the window carries `pendingAfter`/`priorAttempts`; `refusedForPlan` and `wakeSet`'s `refused && slice.name === INBOX_PHASE` arm both go"
+      },
+      {
+        "path": "tests/harnessHandoff.test.ts",
+        "description": "the wake set over a standing refusal, from a non-build phase too"
+      }
+    ]
+  },
+  "summary": "Two readers classify one standing refusal; widen `SliceWindow` so `inbox.live` is the only one",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "`inboxWindow.live`'s standing-refusal leg is live on the handoff path, and the wake set names no slice by name",
+  "tests": [
+    "a standing refusal left by a plan tick puts the inbox slice in the wake set"
+  ],
+  "notes": "Per note THE-HANDOFF-READS-THE-RECORD-SET-THE-ENGINE-HOLDS: the result now carries `pendingAfter` + `priorAttempts`, so the compensating arm has a reader that can answer for itself. Dropping it also drops the `BUILD_PHASE` guard, which was right when the evidence was a wave's own fates and is arbitrary now that a standing record outlives the tick."
+}
