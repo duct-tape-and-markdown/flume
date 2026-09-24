@@ -1,0 +1,41 @@
+{
+  "tag": "THE-ENGINE-PROSE-STATES-WHAT-THE-TREE-HOLDS",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/Agent.ts",
+        "description": ":43 names `TickVerdictInvocation.tag`; that row's field is `entryTag` (`src/tickVerdict.ts:409`), as two sibling docs already spell it"
+      },
+      {
+        "path": "src/git.ts",
+        "description": ":4 says eight git subcommands is all the module uses; it runs sixteen"
+      },
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": ":460 justifies the shared totals by reaching \"all seven exits\"; :898 is the module's only `return settled(`"
+      },
+      {
+        "path": "src/Phase.ts",
+        "description": ":4 calls the Dispatcher \"added later\"; :826 lists four engine-core entry fields where `CORE_ENTRY_FIELDS` names six"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": ":2 claims the class builds the TickContext, invokes the agent and runs gates; :34 of the same comment says the legs do"
+      },
+      {
+        "path": "src/cli.ts",
+        "description": ":7 points the reader at `HELP_TEXT` below; the help pages moved to `src/cliHelp.ts` and no such name exists"
+      }
+    ]
+  },
+  "summary": "Seven doc comments across six `src/` modules state a name, a count or a scope the tree does not hold \u2014 the shape family's third plan-commit body this rotation",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "each of the seven sites states what its own module holds now \u2014 the field's real name, the real count, the real scope, a pointer that resolves \u2014 or drops the claim; no behavior changes",
+  "notes": "Three-notes escalation, counted off `git log` from the rotation's cursor 196e0f6c: d62ad2fb (`harness/prompts.ts:301` singular over a set a wave gives more than one holder) and 439dd293 (`harness/prompts/plan-inbox.md:62`'s `<build-records>` overclaim) are bodies one and two. Every site above verified on disk this tick. Claims no property, per this section. Collides `src/Agent.ts` and `src/cli.ts` with THE-SECTION-CITE-READER-TAKES-THE-PAREN-LESS-SPELLING, serializing the two."
+}
