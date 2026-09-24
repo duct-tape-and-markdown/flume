@@ -35,7 +35,7 @@ export const WINDOW_LINE_BUDGET = 1200;
  * `pending` and `priorAttempts` are `TickContext`'s own fields, and they are
  * optional because the handoff has neither: a `TickResult` reports no record
  * set at all. Their absence reads as "no standing refusal", which is the
- * answer the ladder wants — a standing record is a reason to be *woken*,
+ * answer the wake set wants — a standing record is a reason to be *woken*,
  * never a reason a slice re-wakes itself, since only a build wave clears
  * one. Nothing is lost by it: the build tick that *produced* the refusal
  * routes it through the handoff's own refusal leg (`handoff.ts`), reading
@@ -116,7 +116,7 @@ export type SliceArgs<S extends PlanSlice> = Record<
 >;
 
 /**
- * One plan slice's window: the {@link HandoffSlice} the ladder consults, plus
+ * One plan slice's window: the {@link HandoffSlice} the wake set reads, plus
  * the prompt arguments that slice's own prompt names.
  *
  * `args` returns a map rather than a single string because the inbox slice's

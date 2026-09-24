@@ -1,7 +1,7 @@
 /**
  * The harness package's default handoff (`spec/harness.md`, *The default
- * `handoff`*): the ladder from one tick's reported facts to the phases the
- * next tick wakes, and the declaration that replaces it.
+ * `handoff`*): the wake set it reads off one tick's reported facts, the one
+ * slice that set leaves out, and the declaration that replaces it.
  *
  * Every case drives the real `defaultHandoff` over a real `TickResult`. The
  * facts it reads are the engine's own — `pickableAfter`, `phaseName`,
@@ -10,9 +10,9 @@
  * touch: a field the engine renames is a typecheck failure in these cases,
  * not a silently-undefined read.
  *
- * Each routing case carries its control — the same result with the one fact
- * changed — so "routes to the inbox" is proven to be that fact's doing and
- * not the ladder's default answer for the whole fixture.
+ * Each case carries its control — the same result with the one fact changed
+ * — so "the inbox is in the set" is proven to be that fact's doing and not
+ * the answer this handoff gives the whole fixture.
  *
  * The stop-flag cases run over a real temp state root, and ask about the
  * flag through the engine's own `stopFlagPath` — the accessor the supervisor
@@ -61,7 +61,7 @@ const SWEEP = "plan-sweep" as const satisfies PlanSlice;
 /** The state root every fixture reports, distinct enough to be recognized. */
 const FLUME_DIR = "/tmp/flume-handoff-fixture/.flume";
 
-/** One queue entry — the ladder reads only whether the set is non-empty. */
+/** One queue entry — the handoff reads only whether the set is non-empty. */
 const entry = (tag: string): PendingEntry => ({
   tag,
   gate: { kind: "open" },
@@ -115,7 +115,7 @@ function slice(
 }
 
 /** The package's three slices in order, each dead unless a case revives it. */
-const ladder = (
+const sliceSet = (
   ...over: HandoffSlice[]
 ): HandoffSlice[] => {
   const byName = new Map<PlanSlice, HandoffSlice>(over.map((s) => [s.name, s]));
@@ -125,23 +125,29 @@ const ladder = (
 };
 
 describe("the harness package's default handoff", () => {
-  it("the default handoff names the first live slice ahead of build", () => {
-    const handoff = defaultHandoff(ladder(slice(INBOX_PHASE, true), slice(SWEEP, true)));
+  it("the default handoff names every live slice and build in one answer", () => {
+    const handoff = defaultHandoff(sliceSet(slice(INBOX_PHASE, true), slice(SWEEP, true)));
 
-    // Build is a live alternative here — the queue has pickable work — so
-    // naming a slice is the ladder's ordering, not the absence of a choice.
+    // Two open windows and a pickable queue: three phases the next tick may
+    // run, and nothing here to choose between them — which of them run at
+    // once is the supervisor's budget, and which runs first is the chain's
+    // declared order.
     const result = tickResult({ pickableAfter: [entry("READY")] });
     expect(result.pickableAfter.length).toBeGreaterThan(0);
-    expect(handoff(result)).toEqual([INBOX_PHASE]);
+    expect(handoff(result)).toEqual([INBOX_PHASE, SWEEP, BUILD_PHASE]);
 
-    // "First live", not "first declared": with the inbox window shut, the
-    // next open one is named rather than the head of the list.
-    const later = defaultHandoff(ladder(slice(DERIVE, true), slice(SWEEP, true)));
-    expect(later(result)).toEqual([DERIVE]);
+    // The control, one fact at a time: each name in that answer is the leg
+    // that put it there, not a set this handoff returns for any fixture.
+    const noSweep = defaultHandoff(sliceSet(slice(INBOX_PHASE, true)));
+    expect(noSweep(result)).toEqual([INBOX_PHASE, BUILD_PHASE]);
+    expect(handoff(tickResult({ pickableAfter: [] }))).toEqual([
+      INBOX_PHASE,
+      SWEEP,
+    ]);
   });
 
   it("the default handoff names build when no slice is live and the engine reports a pickable entry", () => {
-    const handoff = defaultHandoff(ladder());
+    const handoff = defaultHandoff(sliceSet());
 
     const result = tickResult({
       pendingAfter: [entry("READY"), entry("BLOCKED")],
@@ -155,7 +161,7 @@ describe("the harness package's default handoff", () => {
   });
 
   it("the default handoff hibernates when no slice is live and nothing is pickable", () => {
-    const handoff = defaultHandoff(ladder());
+    const handoff = defaultHandoff(sliceSet());
 
     // A queue that still holds an entry the dispatcher did not report as
     // pickable is the case hibernation must survive: reading `pendingAfter`
@@ -168,21 +174,23 @@ describe("the harness package's default handoff", () => {
     expect(handoff(result)).toEqual([]);
   });
 
-  it("a build tick the chain declined routes to the inbox slice whatever is pickable", () => {
-    const handoff = defaultHandoff(ladder());
+  it("a build tick the chain declined wakes the inbox slice beside build", () => {
+    const handoff = defaultHandoff(sliceSet());
     const pickable = { pickableAfter: [entry("PARKED")] };
 
     // A commit that landed and passed every gate which `shipped` declined:
     // the park. Its reason is in the note the tick wrote, and only a plan
-    // slice can act on it.
+    // slice can act on it — so the inbox joins the set. Build stays in it:
+    // the walled entry is held back per entry, and the queue's other work is
+    // still the wave's.
     const parked = tickResult({
       ...pickable,
       entries: [outcome({ tag: "PARKED", shipped: false, mergeOutcome: "not-shipped" })],
     });
-    expect(handoff(parked)).toEqual([INBOX_PHASE]);
+    expect(handoff(parked)).toEqual([INBOX_PHASE, BUILD_PHASE]);
 
-    // The control: the same wave with the park's one fact changed goes back
-    // to build, so the routing above is the refusal's doing.
+    // The control: the same wave with the park's one fact changed leaves the
+    // inbox out, so the wake above is the refusal's doing.
     const shipped = tickResult({ ...pickable, entries: [outcome({ tag: "PARKED" })] });
     expect(handoff(shipped)).toEqual([BUILD_PHASE]);
 
@@ -197,8 +205,8 @@ describe("the harness package's default handoff", () => {
     expect(handoff(conflicted)).toEqual([BUILD_PHASE]);
   });
 
-  it("a build tick whose prompt never rendered routes to the inbox slice", () => {
-    const handoff = defaultHandoff(ladder());
+  it("a build tick whose prompt never rendered wakes the inbox slice", () => {
+    const handoff = defaultHandoff(sliceSet());
     const walled = tickResult({
       committed: false,
       noCommit: "render-refused",
@@ -206,10 +214,11 @@ describe("the harness package's default handoff", () => {
     });
 
     // Nothing about the tree changes between attempts on a refused render,
-    // so the ladder naming build again is the wall, forever.
-    expect(handoff(walled)).toEqual([INBOX_PHASE]);
+    // so a set with no producer in it is the wall, forever.
+    expect(handoff(walled)).toEqual([INBOX_PHASE, BUILD_PHASE]);
 
-    // The control: a reverted commit is worth retrying from the same queue.
+    // The control: a reverted commit is worth retrying from the same queue,
+    // and asks no producer for anything.
     const reverted = tickResult({
       committed: false,
       noCommit: "gate-revert",
@@ -218,66 +227,121 @@ describe("the harness package's default handoff", () => {
     expect(handoff(reverted)).toEqual([BUILD_PHASE]);
   });
 
-  it("a slice that committed nothing is not named by its own handoff", () => {
-    const handoff = defaultHandoff(ladder(slice(DERIVE, true), slice(SWEEP, true)));
+  it("the slice that just ran and committed nothing is not re-woken", () => {
+    const handoff = defaultHandoff(sliceSet(slice(DERIVE, true), slice(SWEEP, true)));
     const ran = { phaseName: DERIVE, pickableAfter: [entry("READY")] };
 
     // Committed nothing: its window is open for the reason it was open last
-    // tick, so naming itself would spend the run on the same wall.
-    expect(handoff(tickResult({ ...ran, committed: false }))).toEqual([SWEEP]);
+    // tick, so naming itself would spend the run on the same wall. Its live
+    // sibling and build are in the answer regardless — the exception takes
+    // one name out of the set, it does not collapse the set to one.
+    expect(handoff(tickResult({ ...ran, committed: false }))).toEqual([
+      SWEEP,
+      BUILD_PHASE,
+    ]);
 
     // Committed: a window larger than one tick's budget is progress, and the
-    // slice re-wakes itself.
-    expect(handoff(tickResult({ ...ran, committed: true }))).toEqual([DERIVE]);
+    // slice re-wakes itself beside the same two.
+    expect(handoff(tickResult({ ...ran, committed: true }))).toEqual([
+      DERIVE,
+      SWEEP,
+      BUILD_PHASE,
+    ]);
+
+    // And the exception is the slice's, never build's: a wave that committed
+    // nothing because a gate reverted it is the one the next tick retries.
+    expect(
+      handoff(
+        tickResult({
+          phaseName: BUILD_PHASE,
+          committed: false,
+          noCommit: "gate-revert",
+          pickableAfter: [entry("READY")],
+        }),
+      ),
+    ).toEqual([DERIVE, SWEEP, BUILD_PHASE]);
   });
 
-  it("a declared handoff replaces the package's default", () => {
-    const slices = ladder(slice(INBOX_PHASE, true));
+  it("a declared handoff is resolved per phase, never wholesale", () => {
+    const slices = sliceSet(slice(INBOX_PHASE, true));
     const declaredBuild: Handoff = () => [SWEEP];
+    const declared = { [BUILD_PHASE]: declaredBuild };
 
     // The default would name the live inbox slice for either phase; the
     // declaration replaces that decision outright for the phase it names.
     expect(defaultHandoff(slices)(tickResult())).toEqual([INBOX_PHASE]);
-
-    const forBuild = resolveHandoff({
-      phase: BUILD_PHASE,
-      declared: { [BUILD_PHASE]: declaredBuild },
-      slices,
-    });
-    expect(forBuild).toBe(declaredBuild);
-    expect(forBuild(tickResult())).toEqual([SWEEP]);
+    expect(
+      resolveHandoff({ phase: BUILD_PHASE, declared, slices })(tickResult()),
+    ).toEqual([SWEEP]);
 
     // Per phase: a phase the declaration does not name keeps the package's
-    // ladder rather than inheriting build's override.
-    const forInbox = resolveHandoff({
-      phase: INBOX_PHASE,
-      declared: { [BUILD_PHASE]: declaredBuild },
-      slices,
-    });
-    expect(forInbox).not.toBe(declaredBuild);
-    expect(forInbox(tickResult({ phaseName: INBOX_PHASE, committed: true }))).toEqual([
-      INBOX_PHASE,
-    ]);
+    // own answer rather than inheriting build's override.
+    expect(
+      resolveHandoff({ phase: INBOX_PHASE, declared, slices })(
+        tickResult({ phaseName: INBOX_PHASE, committed: true }),
+      ),
+    ).toEqual([INBOX_PHASE]);
 
     // No declaration at all is the default, same as naming no phase.
     expect(resolveHandoff({ phase: BUILD_PHASE, slices })(tickResult())).toEqual([
       INBOX_PHASE,
     ]);
   });
+
+  it("a consumer's declared handoff replaces the wake set and still runs beneath the per-entry refusal", () => {
+    const slices = sliceSet(slice(INBOX_PHASE, true), slice(SWEEP, true));
+    const declaredBuild: Handoff = () => [SWEEP];
+    const result = tickResult({ pickableAfter: [entry("READY")] });
+
+    // What the declaration displaces, stated: the package's answer for this
+    // same result names three phases, and the consumer's names one.
+    expect(defaultHandoff(slices)(result)).toEqual([
+      INBOX_PHASE,
+      SWEEP,
+      BUILD_PHASE,
+    ]);
+    expect(
+      resolveHandoff({
+        phase: BUILD_PHASE,
+        declared: { [BUILD_PHASE]: declaredBuild },
+        slices,
+      })(result),
+    ).toEqual([SWEEP]);
+
+    // And what it does not displace: the per-entry refusal is the package's
+    // floor on the chain's own surface, so an entry walled at this very tip
+    // is no more dispatchable for the consumer having named build's next
+    // phases itself. Re-dispatching it is the same outcome whoever schedules.
+    const head = "9".repeat(40);
+    const walled: PriorAttempt = {
+      mode: "clean-exit",
+      finalMessage: "nothing to do here",
+      key: "entry",
+      keyedAs: "ready",
+      headSha: head,
+      at: "2026-09-16T00:00:00.000Z",
+    };
+    expect(
+      defaultRefusesEntry({ entry: entry("READY"), priorAttempt: walled, headSha: head }),
+    ).toBe(true);
+
+    // Non-vacuity for that floor: the same predicate hands over an entry
+    // nothing has walled on, so the refusal above is the record's doing.
+    expect(defaultRefusesEntry({ entry: entry("READY"), headSha: head })).toBe(false);
+  });
 });
 
 describe("the default handoff's reading of the engine's facts", () => {
-  it("routes exactly the no-commit modes only a plan slice can resolve", () => {
-    const handoff = defaultHandoff(ladder());
-    const routed = NO_COMMIT_MODES.filter(
-      (mode: NoCommitMode) =>
-        handoff(
-          tickResult({
-            committed: false,
-            noCommit: mode,
-            pickableAfter: [entry("READY")],
-          }),
-        )[0] === INBOX_PHASE,
+  it("wakes the inbox on exactly the no-commit modes only a plan slice can resolve", () => {
+    const handoff = defaultHandoff(sliceSet());
+    const routed = NO_COMMIT_MODES.filter((mode: NoCommitMode) =>
+      handoff(
+        tickResult({
+          committed: false,
+          noCommit: mode,
+          pickableAfter: [entry("READY")],
+        }),
+      ).includes(INBOX_PHASE),
     );
 
     // Read off the engine's own list, so a mode it gains is classified here
@@ -288,7 +352,7 @@ describe("the default handoff's reading of the engine's facts", () => {
   });
 
   it("reads a refusal off one entry of a wave whose siblings shipped", () => {
-    const handoff = defaultHandoff(ladder());
+    const handoff = defaultHandoff(sliceSet());
 
     // A wave where anything shipped reports no wave-level `noCommit` at all,
     // so the sibling's refusal is visible only per entry.
@@ -301,12 +365,12 @@ describe("the default handoff's reading of the engine's facts", () => {
       ],
     });
     expect(mixed.noCommit).toBeUndefined();
-    expect(handoff(mixed)).toEqual([INBOX_PHASE]);
+    expect(handoff(mixed)).toEqual([INBOX_PHASE, BUILD_PHASE]);
   });
 
   it("asks each slice's window with the tick's own state root and pickable verdict", () => {
     const inbox = slice(INBOX_PHASE, false);
-    const handoff = defaultHandoff(ladder(inbox));
+    const handoff = defaultHandoff(sliceSet(inbox));
 
     handoff(tickResult({ pickableAfter: [entry("READY")] }));
     expect(inbox.asked).toEqual([{ flumeDir: FLUME_DIR, pickable: true }]);
@@ -315,7 +379,7 @@ describe("the default handoff's reading of the engine's facts", () => {
     expect(inbox.asked[1]).toEqual({ flumeDir: FLUME_DIR, pickable: false });
   });
 
-  it("refuses a slice set with nothing to route a build refusal to", () => {
+  it("refuses a slice set with nothing to wake on a build refusal", () => {
     expect(() => defaultHandoff([slice(DERIVE, true), slice(SWEEP, true)])).toThrow(
       new RegExp(`${INBOX_PHASE}[\\s\\S]*${DERIVE}, ${SWEEP}`),
     );
@@ -351,7 +415,7 @@ describe("the default handoff's stop after a contract-touching ship", () => {
     });
 
   it("the default handoff writes the stop flag after a contractTouching entry ships", () => {
-    const handoff = defaultHandoff(ladder());
+    const handoff = defaultHandoff(sliceSet());
     const shipped = wave(
       outcome({ tag: "CONTRACT", extension: { [CONTRACT_TOUCHING_FIELD]: true } }),
     );
@@ -360,16 +424,16 @@ describe("the default handoff's stop after a contract-touching ship", () => {
     // the fresh state root before the handoff ran.
     expect(stopped()).toBe(false);
 
-    // Routing is untouched — the queue still holds pickable work and the
-    // ladder still names build. The run ends at the supervisor's next tick
-    // boundary, with build awake for the relaunch.
+    // The wake set is untouched — the queue still holds pickable work and
+    // build is still in the answer. The run ends at the supervisor's next
+    // tick boundary, with build awake for the relaunch.
     expect(shipped.pickableAfter.length).toBeGreaterThan(0);
     expect(handoff(shipped)).toEqual([BUILD_PHASE]);
     expect(stopped()).toBe(true);
   });
 
   it("the default handoff writes no stop flag when no shipped entry is contractTouching", () => {
-    const handoff = defaultHandoff(ladder());
+    const handoff = defaultHandoff(sliceSet());
 
     // An unmarked ship: the ordinary wave, which must leave the loop running.
     expect(handoff(wave(outcome({ tag: "PLAIN" })))).toEqual([BUILD_PHASE]);
@@ -386,7 +450,7 @@ describe("the default handoff's stop after a contract-touching ship", () => {
         extension: { [CONTRACT_TOUCHING_FIELD]: true },
       }),
     );
-    expect(handoff(parked)).toEqual([INBOX_PHASE]);
+    expect(handoff(parked)).toEqual([INBOX_PHASE, BUILD_PHASE]);
     expect(stopped()).toBe(false);
 
     // The control for both: the same wave with the one fact changed does
@@ -398,8 +462,28 @@ describe("the default handoff's stop after a contract-touching ship", () => {
     expect(stopped()).toBe(true);
   });
 
+  it("a consumer's declared handoff still writes the stop flag", () => {
+    const declared: Handoff = () => [];
+    const handoff = resolveHandoff({
+      phase: BUILD_PHASE,
+      declared: { [BUILD_PHASE]: declared },
+      slices: sliceSet(),
+    });
+    const shipped = wave(
+      outcome({ tag: "CONTRACT", extension: { [CONTRACT_TOUCHING_FIELD]: true } }),
+    );
+
+    // The consumer's answer stands — no phase woken, which the package's own
+    // would never say over a queue with pickable work in it — and the write
+    // beneath it happened anyway: the mark is the package's entry extension,
+    // and declaring a handoff is not a request to opt out of it.
+    expect(stopped()).toBe(false);
+    expect(handoff(shipped)).toEqual([]);
+    expect(stopped()).toBe(true);
+  });
+
   it("a singleton slice's tick writes no stop flag", () => {
-    const handoff = defaultHandoff(ladder(slice(DERIVE, true)));
+    const handoff = defaultHandoff(sliceSet(slice(DERIVE, true)));
 
     // A plan slice reports no `entries` at all, so the mark has nowhere to
     // be read from and the write is scoped to a fanout wave by that fact

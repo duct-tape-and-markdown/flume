@@ -463,7 +463,7 @@ package's, and that is the trade:
 | a vitest invocation the judge drives | `runner: vitestRunner()` — one value, if your suite is vitest. Cargo, dotnet or a script means a `RunnerFactory` of your own over `run` / `runAtBase` / `lanes`, and that is the largest single piece of the whole port: priced below |
 | where a `per` cite may point | `specLocus` |
 | a typed spec resolved other than by heading text | `resolver` |
-| `handoff` | `handoff`, **per phase** — overriding build's routing never means copying the slice ladder |
+| `handoff` | `handoff`, **per phase** — overriding build's routing never means copying the package's slice wake set |
 | which plan phases exist | `slices.enabled`; `plan-sweep` additionally needs `sweep.domain` and `sweep.posturePages` |
 | prompt preamble text you want kept | `slots.autonomy` / `slots.domain` — text only; a slot cannot add a directive the package's discipline already states |
 

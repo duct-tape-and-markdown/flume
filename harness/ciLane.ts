@@ -3,7 +3,7 @@
  * source*): whether a declared lane makes the slice live, and the block the
  * slice's prompt carries for every lane.
  *
- * **One reading, two readers.** The ladder asks whether any lane is undrained;
+ * **One reading, two readers.** The wake set asks whether a lane is undrained;
  * the render asks which, and says so per lane. Both come off the one status
  * read {@link laneLeg} memoizes, so the render can never name a different lane
  * than the one that woke the tick (`.claude/rules/engineering.md`, *Derived
@@ -144,7 +144,7 @@ export function laneLeg(options: LaneLegOptions): LaneLeg {
  * and never reads the inbox slice's state to ask this either.
  *
  * **A set rather than a boolean, because the render owes the same verdict by
- * name.** The leg's two readers are one derivation: the ladder asks whether
+ * name.** The leg's two readers are one derivation: the wake set asks whether
  * any lane is in here, the render asks which, and a render recomputing its own
  * answer would be free to disagree with the one that woke the tick.
  */
@@ -250,7 +250,7 @@ function renderStamp(
  * that woke a tick is the one thing a drain has to start from
  * (`spec/harness.md`, *CI lanes as a findings source*). The verdict is
  * {@link wokenLanes}'s, handed in rather than recomputed here, so the render
- * cannot name a different lane than the one the ladder woke over.
+ * cannot name a different lane than the one the wake set woke over.
  *
  * `woke` is the lane's verdict, not the reading's — a lane whose failing run
  * is past its stamp woke the slice whether or not the job's log then came

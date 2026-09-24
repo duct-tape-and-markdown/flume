@@ -932,11 +932,11 @@ it("each returned phase runs the handoff the declaration names for it, else the 
   ]);
 
   // Control: without the declaration, the same result takes the package's
-  // own ladder — so the line above is the declaration's doing, not the
-  // ladder's answer for this fixture.
+  // own wake set — so the line above is the declaration's doing, not the
+  // package's answer for this fixture.
   const fallback = defaultHandoff(
     planSliceWindows({
-      // Through the package's own parse, so the control ladder and the
+      // Through the package's own parse, so the control set and the
       // factory's read one schema rather than two.
       declaration: parseDeclaration(DECLARATION),
       repoRoot: repo,
@@ -957,6 +957,39 @@ it("each returned phase runs the handoff the declaration names for it, else the 
       woke: fallback(sliceResult),
     });
   }
+});
+
+it("the chain's default handoff wakes every live slice and build together", () => {
+  // The wired default over the fixture's real tree: the derive window is
+  // open on a spec commit past its cursor, the sweep's rotation is closed
+  // over a domain that commit never touched, and the queue reports pickable
+  // work — three separate facts, and the answer carries each one that says
+  // yes rather than the first of them.
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const windows = planSliceWindows({
+    declaration: parseDeclaration(DECLARATION),
+    repoRoot: repo,
+  });
+  const window = { flumeDir, pickable: true };
+
+  // Vacuity, read off the same windows the chain wired: this tree really
+  // does open one of them and shut another, so the answer below is those
+  // verdicts and not a set the handoff returns over any tree.
+  expect(
+    windows.map((w) => [w.name, w.live(window)] as const),
+  ).toEqual([
+    [INBOX_PHASE, false],
+    ["plan-derive", true],
+    ["plan-sweep", false],
+  ]);
+
+  const result = tickResult({ pickableAfter: [entry("READY")] });
+  expect(result.pickableAfter.length).toBeGreaterThan(0);
+  expect(build.handoff(result)).toEqual(["plan-derive", BUILD_PHASE]);
+
+  // The control: with nothing pickable the same open window answers alone,
+  // so build's name above is the queue's doing.
+  expect(build.handoff(tickResult())).toEqual(["plan-derive"]);
 });
 
 it("the chain the factory builds declines a clean exit at the tick's own HEAD", () => {

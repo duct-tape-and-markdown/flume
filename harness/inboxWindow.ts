@@ -38,7 +38,7 @@
  * friction legs yield to it, the refusal leg does not. Which is which is at
  * the predicate below.
  *
- * **One derivation per leg, two readers.** The ladder asks "is this slice
+ * **One derivation per leg, two readers.** The wake set asks "is this slice
  * live"; the prompt asks "what is in it". Both answers come from the same
  * scan, so the slice cannot be woken over material its prompt then renders as
  * empty (`.claude/rules/engineering.md`, *Derived state is computed, never

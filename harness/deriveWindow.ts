@@ -8,7 +8,7 @@
  * resolves a cite against — so a path is judged here by exactly what a cite is
  * judged by.
  *
- * **One derivation, two readers.** The ladder asks whether the locus moved
+ * **One derivation, two readers.** The wake set asks whether the locus moved
  * past the cursor; the prompt asks what moved. Both come off the same scan
  * (`gitRange.ts`), so the slice cannot be woken over a window its prompt then
  * renders as empty (`.claude/rules/engineering.md`, *Derived state is

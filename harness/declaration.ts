@@ -59,12 +59,13 @@ export const INBOX_PHASE = "plan-inbox" as const;
 
 /**
  * The plan slices the package ships (`spec/harness.md`, *The phases*), in
- * the order that section lists them — which is also the order the ladder
- * consults their windows in (`windows.ts`): records first, since either an
- * operator's finding or a build refusal can invalidate anything below;
- * derive next, so intent is current before work is planned against it; the
- * posture sweep last, insurance behind product. Exported so the ladder reads
- * that order off this list rather than keeping a second one beside it
+ * the order that section lists them — which is also the order the chain
+ * declares them in behind build (`chain.ts`), and so the priority a short
+ * budget spends first: records before the rest, since either an operator's
+ * finding or a build refusal can invalidate anything behind it; derive next,
+ * so intent is current before work is planned against it; the posture sweep
+ * last, insurance behind product. Exported so every reader takes that order
+ * off this list rather than keeping a second one beside it
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*).
  */
@@ -188,7 +189,7 @@ const ResolverValue = z.custom<SectionResolver>(
 /**
  * A consumer's own handoff for one phase (`spec/harness.md`, *The default
  * `handoff`*) — the third declared value with behavior, and the override
- * that means no consumer copies the package's ladder to change one leg of
+ * that means no consumer copies the package's wake set to change one part of
  * it.
  *
  * Checked as a function and nothing more, for the resolver's reason: what a
@@ -397,9 +398,9 @@ export const DeclarationSchema = strict({
   resolver: ResolverValue.optional(),
   /**
    * The handoff each phase runs with, where the package's default is not
-   * what this consumer wants. Declared per phase and replacing outright:
-   * overriding build's routing leaves the plan slices on the package's
-   * ladder rather than forcing a copy of it.
+   * what this consumer wants. Declared per phase and replacing that phase's
+   * wake set outright: overriding build's routing leaves the plan slices on
+   * the package's own answer rather than forcing a copy of it.
    */
   handoff: byPhase(HandoffValue).optional(),
   /**

@@ -695,8 +695,8 @@ it("the inbox window and the build handoff agree on every prior-attempt mode", (
     });
   };
 
-  // Every slice is dead, so a tick the handoff routes to the inbox got there
-  // through its refusal leg and not through an open window.
+  // Every slice is dead, so a tick whose wake set carries the inbox got it
+  // there through the handoff's refusal leg and not through an open window.
   const handoff = defaultHandoff(
     ([INBOX_PHASE, "plan-derive", "plan-sweep"] satisfies PlanSlice[]).map(
       (name) => ({ name, live: () => false }),
@@ -740,7 +740,7 @@ it("the inbox window and the build handoff agree on every prior-attempt mode", (
   const verdicts = PRIOR_ATTEMPT_MODES.map((mode) => ({
     mode,
     window: windowSays(mode),
-    handoff: handoff(reported(mode))[0] === INBOX_PHASE,
+    handoff: handoff(reported(mode)).includes(INBOX_PHASE),
   }));
 
   // Vacuity: every mode the engine mints is judged, and both verdicts occur
@@ -1422,7 +1422,7 @@ it("the derive and sweep slices shut over a queue that did not parse", () => {
 });
 
 /**
- * The ladder over the real windows: without this the loop hibernates on a
+ * The wake set over the real windows: without this the loop hibernates on a
  * queue that never resolved, because a parse failure reports nothing pickable
  * and every other leg reads a quiet disk.
  */
@@ -1446,7 +1446,7 @@ it("the default handoff names the inbox slice over a queue that did not parse", 
   };
 
   // Vacuity: the same tick with a queue that resolved hibernates, so "inbox"
-  // below is the parse failure's routing and not the ladder's only option.
+  // below is the parse failure's doing and not the set's only member.
   expect({
     resolved: handoff(base),
     failed: handoff({ ...base, queueParseFailure: parseFailure() }),

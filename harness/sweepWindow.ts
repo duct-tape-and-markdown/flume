@@ -8,7 +8,7 @@
  * `matchesAny`, so the declaration is read in exactly one dialect and git is
  * never handed a second one to reinterpret (`gitRange.ts`).
  *
- * **One derivation, two readers.** The ladder asks whether the frontier moved
+ * **One derivation, two readers.** The wake set asks whether the frontier moved
  * past the cursor; the prompt asks what moved and what the window retired.
  * Both come off the same scan (`.claude/rules/engineering.md`, *Derived state
  * is computed, never restated beside its source*).

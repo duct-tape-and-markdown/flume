@@ -7,7 +7,7 @@
  * **The assembly point, and nothing else.** Every part it wires already has
  * a home and its own tests — the gate set in `gates.ts`, the consumer's
  * declared gates in `declaredGates.ts`, the judge's gate in `judgeGate.ts`,
- * the ladder in `handoff.ts`, the windows in `windows.ts`, the args in
+ * the wake set in `handoff.ts`, the windows in `windows.ts`, the args in
  * `prompts.ts`, the fields in `entryExtension.ts`, the ruling in `judge.ts`,
  * the plan artifacts' paths and the fence that is their list in `layout.ts`.
  * What is decided here is only what a `Phase` object needs that none of them
@@ -369,7 +369,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // produce, so nothing here is handoff-unwakeable.
     humanOnly: [],
     // The package's per-entry refusal (`handoff.ts`), unconditional because
-    // it is the floor: whatever ladder a phase runs, declared or default,
+    // it is the floor: whatever handoff a phase runs, declared or default,
     // runs above it (`spec/harness.md`, *The default `handoff`*).
     refusesEntry: defaultRefusesEntry,
     // Whole, and unread: which strings an environment asserts is the

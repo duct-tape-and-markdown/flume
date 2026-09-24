@@ -1,8 +1,15 @@
 /**
  * The package's default `handoff` (`spec/harness.md`, *The default
- * `handoff`*) — the ladder that reads one tick's reported facts and names
- * what runs next: the first live plan slice, else build while the engine
- * reports anything pickable, else hibernation.
+ * `handoff`*) — the wake set it reads off one tick's reported facts: every
+ * slice whose window is live, plus build whenever the engine reports
+ * anything pickable, named together in one answer. Hibernation is that set
+ * coming out empty, never a rung a walk fell off the bottom of.
+ *
+ * **One answer, not a first choice.** How many of the woken phases run at
+ * once is the supervisor's budget, and which of them runs first is the
+ * chain's declared phase order — build first, the plan slices behind it. A
+ * handoff naming one phase would be deciding both on their behalf, and a
+ * consumer that raised its budget would still get one tick at a time.
  *
  * **Every input is a fact the engine reported.** The pickable set is
  * `TickResult.pickableAfter` — the dispatcher's own verdict, taken at the
@@ -17,7 +24,7 @@
  *
  * **The taxonomies are keyed by the engine's own types.** A mode added to
  * `NoCommitMode`, or a fate added to `MergeOutcome`, is a type error in the
- * tables below rather than a fate the ladder silently routes as "not a
+ * tables below rather than a fate the set silently treats as "not a
  * refusal" — the failure the untyped `ReadonlySet<string>` this replaces
  * could not catch.
  *
@@ -26,9 +33,9 @@
  * module knows only their order and whether each says it is live. The chain
  * factory supplies them.
  *
- * **Two answers, one question.** The ladder names which phase runs next;
- * {@link defaultRefusesEntry} names which entries build may be handed when it
- * is build's turn. Both are "what does the next tick get", both read only
+ * **Two answers, one question.** The wake set names which phases the next
+ * tick may run; {@link defaultRefusesEntry} names which entries build may be
+ * handed when it does. Both are "what does the next tick get", both read only
  * facts the engine reported, and splitting them across two modules would put
  * the wave-level refusal and the per-entry one where neither can see that
  * they classify the same records.
@@ -37,9 +44,10 @@
  * shipped an entry marked {@link CONTRACT_TOUCHING_FIELD} leaves the stop
  * flag on disk ({@link stopAfterContractTouchingShip}) — the mechanization
  * `spec/loop.md`, *One tick is one fresh process*, points a chain at. It
- * never changes which phases the ladder names: the run ends at the next tick
+ * never changes which phases the set names: the run ends at the next tick
  * boundary, and whatever this handoff woke is what the relaunched
- * supervisor picks up.
+ * supervisor picks up. It is the package's floor rather than its default, so
+ * a consumer's own handoff runs beneath it too ({@link resolveHandoff}).
  */
 
 import { writeFileSync } from "node:fs";
@@ -72,7 +80,7 @@ export type Handoff = Phase["handoff"];
  *
  * All three are read off the `TickResult`, so a predicate never reaches for a
  * cwd, re-derives pickability, or re-parses the queue. A slice wanting more
- * than this is a fact the ladder should be handed, not one the predicate
+ * than this is a fact the handoff should be handed, not one the predicate
  * should go find (`.claude/rules/engineering.md`, *A fact the engine holds is
  * reported, never rediscovered*).
  */
@@ -95,19 +103,19 @@ export interface SliceWindow {
    *
    * Optional rather than required, like `TickFacts`' own fields
    * (`sliceWindow.ts`): a hand-built window that omits it reads as a queue
-   * that resolved, which is the answer that leaves the ladder where it was.
+   * that resolved, which is the answer that leaves the wake set where it was.
    */
   readonly queueParseFailure?: QueueParseFailure | undefined;
 }
 
 /**
- * One plan slice the ladder may name, with the window that makes it live.
+ * One plan slice the wake set may name, with the window that makes it live.
  *
  * `live` is pure over its inputs and synchronous: it runs on the selection
  * path, and the handoff the engine calls returns phase names, not a promise.
  */
 export interface HandoffSlice {
-  /** The phase name the ladder returns when this slice's window is open. */
+  /** The phase name the set carries when this slice's window is open. */
   readonly name: PlanSlice;
   /** Whether this slice's window is open, given the tick's reported facts. */
   readonly live: (window: SliceWindow) => boolean;
@@ -118,11 +126,11 @@ export interface HandoffSlice {
  *
  * `clean-exit` is a build agent that looked and declined; `render-refused`
  * is a prompt that never resolved, so no agent ran at all. Both leave the
- * entry exactly as pickable as it was, so the ladder naming build again
- * re-picks the same entry into the same wall — for a walled render, forever,
- * since nothing about the tree changes between attempts. Routing them to the
- * slice that drains records is what puts the refusal in front of the only
- * phase that can drop, re-scope, or answer the entry.
+ * entry exactly as pickable as it was, and neither is a state the next wave
+ * can move — for a walled render, forever, since nothing about the tree
+ * changes between attempts. Waking the slice that drains records is what
+ * puts the refusal in front of the only phase that can drop, re-scope, or
+ * answer the entry.
  *
  * `gate-revert` and `platform-preempt` are not plan's: a reverted commit and
  * a killed process are both worth retrying from the same queue, and a build
@@ -245,6 +253,16 @@ export function defaultRefusesEntry(ctx: EntryRefusalContext): boolean {
  * Read per entry as well as per wave: a wave where one entry shipped reports
  * no wave-level `noCommit` at all, and a sibling's refusal would otherwise
  * be invisible here (`TickResult.entries`).
+ *
+ * **This is the inbox slice's own liveness question, asked of the evidence a
+ * handoff has.** That slice's window reads the record still standing on
+ * disk; a `TickResult` reports no record set at all (`TickFacts`,
+ * `harness/sliceWindow.ts`), so the wave that *produced* the refusal is read
+ * here instead, through the two tables above that the window composes its
+ * own answer from. It puts the inbox in the wake set; it never takes build
+ * out of it. Re-dispatching the walled entry is what
+ * {@link defaultRefusesEntry} holds back, per entry, and the wave still has
+ * every other pickable entry to ship.
  */
 function refusedForPlan(result: TickResult): boolean {
   if (result.noCommit !== undefined && PLAN_RESOLVES_NO_COMMIT[result.noCommit]) {
@@ -293,26 +311,38 @@ function stopAfterContractTouchingShip(result: TickResult): void {
 }
 
 /**
- * The ladder itself: the first live slice, else build while anything is
- * pickable, else hibernation.
+ * The set itself: every slice whose window is live, plus build while
+ * anything is pickable. An empty answer is hibernation.
  *
- * `exclude` is the slice that just ran and committed nothing. It made no
- * progress, so its window is open for exactly the reason it was open last
- * tick, and naming itself would spend every remaining tick of the loop on
- * the same wall — an unroutable record, a refused render. Excluded, it costs
- * one tick. A slice that *did* commit and is still live re-wakes itself:
- * that window is larger than one tick's budget, which is progress.
+ * **The one exception is the slice that just ran and committed nothing.** It
+ * made no progress, so its window is open for exactly the reason it was open
+ * last tick, and naming itself would spend every remaining tick of the loop
+ * on the same wall — an unroutable record, a refused render. Excluded, it
+ * costs one tick. A slice that *did* commit and is still live re-wakes
+ * itself: that window is larger than one tick's budget, which is progress.
+ *
+ * The exception is read off the phase the engine says produced this result,
+ * so it lands on a slice and never on build: a wave's repeat is held back
+ * per entry instead ({@link defaultRefusesEntry}), and a wave that committed
+ * nothing because a gate reverted it is exactly the one the next tick should
+ * carry from its new base.
  */
-function ladder(
+function wakeSet(
   slices: readonly HandoffSlice[],
   window: SliceWindow,
-  exclude?: string,
+  result: TickResult,
 ): string[] {
-  const slice = slices.find(
-    (candidate) => candidate.name !== exclude && candidate.live(window),
-  );
-  if (slice) return [slice.name];
-  return window.pickable ? [BUILD_PHASE] : [];
+  const walled = result.committed ? undefined : result.phaseName;
+  const refused =
+    result.phaseName === BUILD_PHASE && refusedForPlan(result);
+  const woken = slices
+    .filter(
+      (slice) =>
+        slice.name !== walled &&
+        (slice.live(window) || (refused && slice.name === INBOX_PHASE)),
+    )
+    .map((slice) => slice.name);
+  return window.pickable ? [...woken, BUILD_PHASE] : woken;
 }
 
 /**
@@ -324,9 +354,9 @@ function ladder(
  * closure over a name the engine already reports.
  *
  * Refuses a slice set with no {@link INBOX_PHASE} in it. The refusal leg has
- * nowhere to route without it, and the alternatives are both silent: naming
- * a phase the chain does not carry, or falling through to a ladder that
- * re-picks the refused entry for the rest of the run
+ * nowhere to wake without it, and the alternatives are both silent: naming a
+ * phase the chain does not carry, or leaving a wave's refusal in front of no
+ * producer for the rest of the run
  * (`.claude/rules/engineering.md`, *Loud or nothing*). A consumer running
  * without the inbox slice declares its own handoff instead, which is the
  * override this default exists to be replaced by.
@@ -345,13 +375,13 @@ export function defaultHandoff(slices: readonly HandoffSlice[]): Handoff {
     stopAfterContractTouchingShip(result);
 
     // The parse failure is the decide-read's fact, so a tick that *repaired*
-    // the queue still reports it and the ladder names the inbox once more.
-    // That costs one declined tick — the next tick's `shouldRun` reads a
-    // queue that now resolves, says no before anything is provisioned, and
-    // its own handoff routes on from there. The alternative is a ladder
-    // guessing from `pickableAfter` whether a repair landed, which is the
-    // inference this module does not make (`.claude/rules/engine-boundary.md`,
-    // *Told, not inferred*).
+    // the queue still reports it and the set names the inbox once more. That
+    // costs one declined tick — the next tick's `shouldRun` reads a queue
+    // that now resolves, says no before anything is provisioned, and its own
+    // handoff routes on from there. The alternative is a handoff guessing
+    // from `pickableAfter` whether a repair landed, which is the inference
+    // this module does not make (`.claude/rules/engine-boundary.md`, *Told,
+    // not inferred*).
     const window: SliceWindow = {
       flumeDir: result.flumeDir,
       pickable: result.pickableAfter.length > 0,
@@ -360,14 +390,7 @@ export function defaultHandoff(slices: readonly HandoffSlice[]): Handoff {
         : {}),
     };
 
-    if (result.phaseName === BUILD_PHASE) {
-      // Regardless of what is pickable: the refusal is build's note to plan,
-      // and a queue with other work in it is exactly the case where the
-      // ladder would otherwise hand the baton straight back to build.
-      return refusedForPlan(result) ? [INBOX_PHASE] : ladder(slices, window);
-    }
-
-    return ladder(slices, window, result.committed ? undefined : result.phaseName);
+    return wakeSet(slices, window, result);
   };
 }
 
@@ -386,25 +409,53 @@ export interface ResolveHandoffOptions {
   readonly declared?:
     | Partial<Record<HarnessPhase, Handoff | undefined>>
     | undefined;
-  /** The plan slices the ladder may name, in order. */
+  /** The plan slices the wake set may name, in order. */
   readonly slices: readonly HandoffSlice[];
+}
+
+/**
+ * A declared handoff under the package's floor: the one write the default
+ * makes, and then the consumer's own answer about which phases wake.
+ *
+ * The wake set is the consumer's to replace; the stop write is not. A wave
+ * that shipped an entry marked {@link CONTRACT_TOUCHING_FIELD} has to end
+ * the run whoever schedules the phases after it — the reason the write
+ * exists is a supervisor resident at a contract that commit just changed
+ * ({@link stopAfterContractTouchingShip}), and that stays true when a
+ * consumer names build's next phases itself. Nothing about declaring a
+ * handoff is a request to opt out of the package's own entry extension.
+ *
+ * The per-entry refusal is this same floor on the other surface, installed
+ * on the chain rather than on a phase (`chain.ts`) — which is why neither is
+ * something a declaration can displace by replacing this one.
+ */
+function beneathTheFloor(declared: Handoff): Handoff {
+  return (result: TickResult): string[] => {
+    stopAfterContractTouchingShip(result);
+    return declared(result);
+  };
 }
 
 /**
  * The handoff one phase runs with: the consumer's declared one when it
  * declared one for that phase, else the package's default.
  *
- * **Replaces, never composes.** A declared handoff is the whole decision for
- * that phase — the package does not run its ladder first and let a
- * declaration amend it, because a handoff that only sometimes decides is a
- * consumer reasoning about two ladders instead of one. Per phase rather than
- * wholesale, so overriding build's routing does not force a consumer to copy
- * the slice ladder it did not want to change — copying is exactly what the
- * override exists to avoid (`spec/harness.md`, *The default `handoff`*).
+ * **The wake set is replaced, never composed.** A declared handoff is the
+ * whole decision about which phases wake — the package does not compute its
+ * own set first and let a declaration amend it, because a handoff that only
+ * sometimes decides is a consumer reasoning about two of them instead of
+ * one. Per phase rather than wholesale, so overriding build's routing does
+ * not force a consumer to copy the slice set it did not want to change —
+ * copying is exactly what the override exists to avoid (`spec/harness.md`,
+ * *The default `handoff`*).
+ *
+ * What a declaration does not replace is the floor beneath it
+ * ({@link beneathTheFloor}).
  *
  * The default is constructed only where no declaration displaces it, so a
  * consumer that declared a handoff for every phase never meets its refusal.
  */
 export function resolveHandoff(options: ResolveHandoffOptions): Handoff {
-  return options.declared?.[options.phase] ?? defaultHandoff(options.slices);
+  const declared = options.declared?.[options.phase];
+  return declared ? beneathTheFloor(declared) : defaultHandoff(options.slices);
 }
