@@ -1,0 +1,21 @@
+{
+  "tag": "THE-QUEUE-NAME-ASSERTION-READS-GITS-ALPHABET",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/builtinGates.test.ts",
+        "description": "the two whole-message assertions name the queue in the alphabet the gate reports it in, rather than composing the host's separator"
+      }
+    ]
+  },
+  "summary": "Two pendingGate message assertions compose the expected queue name with `node:path`, so they demand the host separator from a value the engine folds into git's alphabet",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Standing lenses"
+  },
+  "acceptance": "both whole-message assertions read the queue name as the gate reports it \u2014 git's alphabet on every host \u2014 so neither case's verdict turns on the separator the test process happens to run under",
+  "notes": "Drained off CI lane `windows`, run 36068212284, both red titles. `readGatedQueue` folds deliberately (`src/pendingLedger.ts:338`, documented :224), and every composer downstream folds too (`entryFileRel` :129 cites this lens). The test is the only unfolded side: `tests/builtinGates.test.ts:356`, `:419`. No `tests[]`: the repro is win32-only and the default lane has no separator to drive it \u2014 the named exception in *A fix ships the test that would have caught it*."
+}

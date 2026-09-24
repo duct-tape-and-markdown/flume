@@ -1,0 +1,25 @@
+{
+  "tag": "THE-PROVIDER-EVENT-LITERALS-DECLARE-THEIR-DIVERGENCE",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/budgetHook.test.ts",
+        "description": "the hook-input and echoed-output literals cite why they stay hand-spelled rather than folding onto the constant"
+      },
+      {
+        "path": "tests/agentBudget.test.ts",
+        "description": "the settings-reader literals carry the same citation"
+      }
+    ]
+  },
+  "summary": "Five hand-spelled `PostToolUse` literals sit beside a constant that would absorb them, with nothing at the sites saying the divergence is deliberate",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "each hand-spelled provider event literal states at its site that it is the only thing holding the production sites in agreement with the provider, so a sweep reading the neighborhood reads a declared divergence rather than residue",
+  "notes": "Off note THE-HOOK-EVENT-NAME-IS-ONE-CONSTANT, whose whole content is this rationale \u2014 and the note leaves with this drain. Folding them would compare the constant to itself and leave a provider rename green on both sides. Verified: `tests/budgetHook.test.ts:83`, `:114` and `tests/agentBudget.test.ts:84`, `:88`, `:90` spell it; none cites the reason. This section's closing line is the warrant: a sweep never files against a divergence the site declares."
+}
