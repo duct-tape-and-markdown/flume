@@ -632,7 +632,7 @@ export async function teardownWorktreeInstance(
     await git.deleteBranch(ctx.repoRoot, wt.branch);
   } catch (err) {
     ctx.log.warn(
-      `[flume] deleteBranch failed for ${wt.branch}: ${(err as Error).message}`,
+      `[flume] deleting branch ${wt.branch} failed: ${(err as Error).message}`,
     );
   }
   return removed;
@@ -808,7 +808,7 @@ export async function sweepStaleWorktrees(
       await git.deleteBranch(repoRoot, branch);
     } catch (err) {
       ctx.log.warn(
-        `[flume] startup sweep: deleteBranch failed for ${branch}: ${(err as Error).message}`,
+        `[flume] startup sweep: deleting branch ${branch} failed: ${(err as Error).message}`,
       );
     }
   }

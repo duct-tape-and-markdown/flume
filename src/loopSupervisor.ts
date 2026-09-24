@@ -887,7 +887,7 @@ export async function superviseLoop(
       // hold no child. Loud rather than reported as a quiet hibernation
       // (`.claude/rules/engineering.md`, *Loud or nothing*).
       throw new Error(
-        `superviseLoop started no child for awake phase(s) ${awake.join(", ")} ` +
+        `the loop supervisor started no child for awake phase(s) ${awake.join(", ")} ` +
           `with ${tickBudget - started} of its ${tickBudget}-tick budget left: ` +
           `maxTicks is ${maxTicks}, and a supervisor that may hold no child can ` +
           `never run one. Declare supervisorPolicy.maxTicks as a positive integer.`,

@@ -23,6 +23,7 @@ import {
 } from "../src/PendingSchema.ts";
 import type { StandardSchemaV1 } from "../src/standardSchema.ts";
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
+import { camelSpans } from "./helpers/literalSymbols.ts";
 import { filesUnder } from "./helpers/repoProgram.ts";
 
 const SRC_DIR = fileURLToPath(new URL("../src", import.meta.url));
@@ -803,15 +804,6 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
   });
 });
 
-/**
- * The camelCase spans a string carries — how an engine symbol reads when prose
- * names one. A flat lowercase word is English before it is a symbol, so only
- * the humped spelling is read as a name.
- */
-const camelSpans = (text: string): string[] => [
-  ...new Set(text.match(/\b[a-z][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*\b/g) ?? []),
-];
-
 /** Those spans `src/` declares, whatever kind of declaration holds the name. */
 const declaredInSrc = (spans: readonly string[]): string[] => {
   const sources = filesUnder(SRC_FILES).map((file) => readFileSync(file, "utf8"));
@@ -823,10 +815,13 @@ const declaredInSrc = (spans: readonly string[]): string[] => {
 };
 
 /**
- * A refusal string is not an interface surface, so no resolution arm reaches
- * an engine symbol spelled inside one: the name goes stale silently at the
- * next rename. The doc comment above the class keeps the parser's name, where
- * the citation pin does resolve it.
+ * The arm that reaches every refusal resolves a literal's function names
+ * against the package's surface (`tests/engineMessages.test.ts`), which
+ * leaves an export like `parsePendingQueue` nameable in a message. This one
+ * holds the stricter rule on its own terms: what its reader acts on is the
+ * field and the fix, and any other name the engine declares is a second
+ * subject in a message about a chain's own extension. The doc comment above
+ * the class keeps the parser's name, where the citation pin resolves it.
  */
 it("the async-validator refusal names the field and the fix, naming no engine function", () => {
   const { message } = new AsyncEntryExtensionValidatorError("reviewers");

@@ -244,9 +244,9 @@ export async function dropLastCommit(
   const currentTip = await revParse(cwd);
   if (currentTip !== expectedSha) {
     throw new Error(
-      `dropLastCommit refused: current tip ${currentTip} does not match ` +
-        `expected ${expectedSha} — this call did not create the commit at ` +
-        `the current tip, refusing to reset --hard`,
+      `refusing to drop the last commit: current tip ${currentTip} does not ` +
+        `match expected ${expectedSha} — this call did not create the commit ` +
+        `at the current tip, and reset --hard would drop one it never made`,
     );
   }
   await run(cwd, ["reset", "--hard", "HEAD~1"]);
@@ -679,7 +679,10 @@ export async function commitPaths(opts: {
   paths: string[];
 }): Promise<string> {
   if (opts.paths.length === 0) {
-    throw new Error("commitPaths requires at least one path");
+    throw new Error(
+      "a commit of named paths requires at least one path: this call commits " +
+        "the paths it is given, and it was given none",
+    );
   }
   await run(opts.cwd, ["add", "--", ...opts.paths]);
   await run(opts.cwd, [
