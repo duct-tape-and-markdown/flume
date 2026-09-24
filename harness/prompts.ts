@@ -27,11 +27,12 @@
  * render refusal rather than a `{{TOKEN}}` an agent reads as prose.
  *
  * **Build's per-tick arguments are here too, and a slice's path is.** Build's
- * own — the entry, its cite's path, section and section text, and the notes
- * it may write — are the shipped build prompt's own placeholders, composed
- * from the tick's `TickContext` and read from the surfaces that own them: the
- * cite through the resolver the `per` gate drives, the note path through
- * `layout.ts`. A plan slice's own state file is here for the same reason —
+ * own — the entry, its cite's path, section and section text, the notes it
+ * may write and the continuation standing at one of them — are the shipped
+ * build prompt's own placeholders, composed from the tick's `TickContext` and
+ * read from the surfaces that own them: the cite through the resolver the
+ * `per` gate drives, the note path through `layout.ts`, the continuation
+ * through the tick's own tree at that path. A plan slice's own state file is here for the same reason —
  * a path off the layout ({@link planSlicePromptArgs}). What is not here is a
  * slice's *window*: that is a scan with a liveness predicate on the other end
  * of it, which is `sliceWindow.ts`'s subject and its windows'.
@@ -373,11 +374,12 @@ export interface BuildTickContext {
 
 /**
  * Every key {@link buildPromptArgs} returns — the entry as the queue holds
- * it, its cite's path, section and section text, and the note paths, one per
- * kind (`layout.ts`).
+ * it, its cite's path, section and section text, the note paths, one per
+ * kind (`layout.ts`), and the continuing note standing at one of them.
  *
- * Data, every one of them, and the two that most need saying so: an entry's
- * own prose and a cited spec section are content the package did not author,
+ * Data, every one of them, and the three that most need saying so: an entry's
+ * own prose, a prior tick's note and a cited spec section are content the
+ * package did not author,
  * and the section a build entry cites is routinely the one *documenting* the
  * span grammar. Typed against the producer below for the reason
  * {@link SHARED_PROMPT_DATA_KEYS} is.
@@ -390,6 +392,7 @@ export const BUILD_PROMPT_DATA_KEYS = [
   "NOTE_PATH",
   "PARK_NOTE_PATH",
   "CONTINUING_NOTE_PATH",
+  "CONTINUING_NOTE",
 ] as const;
 
 /** One argument build's prompt is rendered with for a tick. */
@@ -406,7 +409,8 @@ export interface BuildPromptArgsInput {
 /**
  * The arguments build's prompt is rendered with for one tick, beside the
  * shared ones: the entry as the queue holds it, the section its `per` cites
- * as this tick's tree holds it, and the one note the tick may write.
+ * as this tick's tree holds it, the one note the tick may write, and the
+ * continuation a prior tick on the entry left standing.
  *
  * **The cite is resolved, never re-read.** The section text comes back from
  * the same resolver the `per` gate drove over the queue that carried this
@@ -429,6 +433,13 @@ export interface BuildPromptArgsInput {
  * predicates read exactly that back (`chain.ts`) — so a prompt naming only
  * some of them would leave the rest for the agent to compose, at a spelling
  * nothing downstream looks for.
+ *
+ * **The standing continuation is read from the tick's own tree, at the path
+ * these args already name.** The worktree is where the prior tick's commit
+ * landed and where this tick will `git rm` the note, so it is the one copy
+ * whose presence answers the question the block exists to ask; composing a
+ * second path from the state root would read the trunk checkout's copy — a
+ * different file, at a different commit.
  */
 export function buildPromptArgs(
   input: BuildPromptArgsInput,
@@ -445,13 +456,15 @@ export function buildPromptArgs(
   // Through the package's own `per` schema — the shape a plan tick was
   // validated against, never a second reading of the same two fields.
   const cite = PerSchema.parse(entry.per);
-  const verdict = resolveCiteSync(cite, declaration, inTree(ctx.cwd));
+  const read = inTree(ctx.cwd);
+  const verdict = resolveCiteSync(cite, declaration, read);
   if (!verdict.ok) {
     throw new Error(
       `prompt args: ${entry.tag}'s per cite does not resolve in this tick's ` +
         `tree — ${verdict.message}`,
     );
   }
+  const continuing = continuingNotePath(noteRoot(ctx), entry.tag);
   return {
     ENTRY_JSON: JSON.stringify(entry, null, 2),
     PER_PATH: cite.path,
@@ -459,14 +472,52 @@ export function buildPromptArgs(
     PER_SECTION_TEXT: verdict.text,
     NOTE_PATH: notePath(noteRoot(ctx), entry.tag),
     PARK_NOTE_PATH: parkedNotePath(noteRoot(ctx), entry.tag),
-    CONTINUING_NOTE_PATH: continuingNotePath(noteRoot(ctx), entry.tag),
+    CONTINUING_NOTE_PATH: continuing,
+    CONTINUING_NOTE: continuingBlock(continuing, read(continuing)),
   };
 }
 
 /**
- * The tick's own working tree as a cite reader: bytes under `cwd`, and
- * `null` for a path the tree does not hold — the two answers the engine's
- * at-ref reader gives a gate, so one resolver serves both.
+ * The continuing note standing for this entry as the block build's prompt
+ * carries it, or no bytes at all when none stands.
+ *
+ * **The segment before this one is only in the note.** A continuation leaves
+ * the entry in the queue with its span already on the trunk
+ * (`spec/harness.md`, *A tick puts work down*), so the next tick on it is
+ * handed a prior-attempt record that says nothing about a commit that
+ * *landed* — what that tick left, and where it said to look, is the note and
+ * nothing else. Written and never read back, the declaration costs a tick and
+ * buys the next one nothing.
+ *
+ * **Verbatim, and quoted as the prior tick's words rather than as this
+ * prompt's instructions.** The note is agent-authored prose addressed to its
+ * own successor; summarizing it here would be this module deciding what the
+ * last tick meant, and folding it into the task body would give one tick's
+ * account the standing of the package's own paragraphs.
+ *
+ * Nothing renders on an absent note, for the reason {@link slot} renders
+ * nothing for an undeclared slot: an empty block is a section the agent has
+ * to read and rule out, and a first tick on an entry should cost it nothing.
+ */
+function continuingBlock(path: string, text: string | null): string {
+  if (text === null) return "";
+  return [
+    `<continuing-note path="${path}">`,
+    `The last tick on this entry landed a green segment and put the rest`,
+    `down. Its own account of what landed, what is next and where to look —`,
+    `no prior-attempt record carries a commit that landed, so this is the`,
+    `only one:`,
+    "",
+    text.trimEnd(),
+    `</continuing-note>`,
+  ].join("\n");
+}
+
+/**
+ * The tick's own working tree as a reader: bytes under `cwd`, and `null` for
+ * a path the tree does not hold — the two answers the engine's at-ref reader
+ * gives a gate, so one resolver serves both the cite and the standing
+ * continuation.
  *
  * Every other read failure travels out: a cited path that is a directory, or
  * one this process may not read, is a fault at the reader rather than a cite

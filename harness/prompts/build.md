@@ -1,3 +1,5 @@
+{{CONTINUING_NOTE}}
+
 # ASSIGNED ENTRY
 
 <entry>

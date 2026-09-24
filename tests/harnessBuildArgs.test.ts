@@ -27,10 +27,19 @@
  *
  * The refusal cases hand-author their cite, which is the sanctioned shape: no
  * plan tick writes the cite a refusal exists to catch.
+ *
+ * The continuation cases are the same agreement gate over a second reader:
+ * the note a prior tick left is planted on the tick's own tree at the path
+ * `continuingNotePath` composes, and the assertion reads the rendered
+ * prompt's own region for it — so a block rendered from a path the args never
+ * named, or a placeholder no arg fills, cannot pass. They seed a real
+ * repository because the shipped prompt carries a `git log` span the renderer
+ * resolves in the tick's cwd.
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
@@ -58,6 +67,7 @@ import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt } from "../src/Prompt.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { makeScratchRepo, type ScratchRepo } from "./helpers/scratchRepo.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -128,6 +138,9 @@ const byKey: SectionResolver = (cite, text) =>
 let repoRoot: string;
 let cwd: string;
 
+/** The seeded repositories the render cases run in, taken down together. */
+const scratches: ScratchRepo[] = [];
+
 beforeAll(async () => {
   repoRoot = await mkTempDir("flume-build-args-");
   cwd = join(repoRoot, ".flume", "worktrees", "HARNESS-BUILD-PROMPT-ARGS");
@@ -139,6 +152,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (repoRoot) await rm(repoRoot, { recursive: true, force: true });
+  await Promise.all(scratches.map((scratch) => scratch.cleanup()));
 });
 
 /**
@@ -498,6 +512,135 @@ it("build's per-tick args reach the renderer through a phase carrying the packag
   const unguarded = await render({ ...phase, promptDataKeys: [] });
   expect(unguarded).toContain(SPAN_OUTPUT);
   expect(unguarded).not.toContain(`\`${SPAN_CMD}\``);
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The note a prior tick on this entry left standing — what landed, what is
+ * next and where to look, in the shape the records gate admits.
+ */
+const CONTINUING = [
+  "# The reader landed, the block is next",
+  "",
+  "What landed: the tick's tree is read at the path the args already name.",
+  "What is next: the block that carries the note into the rendered prompt.",
+  "Where to look: build's per-tick argument producer, beside the note paths.",
+  "",
+].join("\n");
+
+/**
+ * A tick's worktree inside a real repository, seeded the way a dispatcher
+ * hands one over: the cited spec page where the cite names it, and — when
+ * `note` is given — a continuation at exactly the path build's own args
+ * compose for the entry, never one this case spells a second time.
+ *
+ * A real repository, because the shipped prompt carries a `git log` span the
+ * renderer resolves in the tick's cwd: over a tree git does not hold, the
+ * render aborts before any block reaches the agent.
+ */
+async function seedTick(
+  assigned: PendingEntry,
+  note?: string,
+): Promise<BuildTickContext> {
+  const scratch = await makeScratchRepo("flume-build-continuing-", "main");
+  scratches.push(scratch);
+  const flumeDir = join(scratch.dir, ".flume");
+  const tickCwd = join(scratch.dir, ".flume", "worktrees", assigned.tag);
+  await mkdir(join(tickCwd, "spec"), { recursive: true });
+  await writeFile(join(tickCwd, "spec", "harness.md"), SPEC);
+
+  const stateRootRel = computeStateRootRel(scratch.dir, flumeDir);
+  expect(stateRootRel).toBe(".flume");
+  if (note !== undefined) {
+    const at = inWorktree(tickCwd, continuingNotePath(".flume", assigned.tag));
+    await mkdir(dirname(at), { recursive: true });
+    await writeFile(at, note);
+  }
+  return { cwd: tickCwd, flumeDir, stateRootRel, assignedEntry: assigned };
+}
+
+/**
+ * A repo-relative path as the tick's own worktree holds it — git's alphabet
+ * folded to the host's at the one place this file reads disk under a
+ * worktree, which is where the prompt tells the agent to write.
+ */
+function inWorktree(tickCwd: string, gitPath: string): string {
+  return join(tickCwd, ...gitPath.split("/"));
+}
+
+/** The shipped build prompt, rendered whole over one tick. */
+async function renderOver(ctx: BuildTickContext): Promise<string> {
+  const declaration = declare();
+  const promptFile = promptPath("build");
+  return renderPrompt({
+    phase: buildPhase(promptFile),
+    promptFile,
+    cwd: ctx.cwd,
+    flumeDir: ctx.flumeDir,
+    args: {
+      ...sharedPromptArgs({
+        declaration,
+        extension: entryExtension(),
+        stateRoot: ctx.flumeDir,
+      }),
+      ...buildPromptArgs({ declaration, ctx }),
+    },
+  });
+}
+
+/**
+ * The prompt's own region above the task: what renders between the block the
+ * engine prepends and the task's first heading.
+ *
+ * The continuation is read from its own region rather than by a negative over
+ * the whole rendered prompt — that artifact quotes a cited spec section and
+ * five commit subjects, so a negative over it turns on whatever those happen
+ * to say (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+ */
+function aboveTheEntry(rendered: string): string {
+  const prepended = rendered.indexOf("</harness>");
+  const task = rendered.indexOf("# ASSIGNED ENTRY");
+  expect(prepended).toBeGreaterThanOrEqual(0);
+  expect(task).toBeGreaterThan(prepended);
+  return rendered.slice(prepended + "</harness>".length, task);
+}
+
+it("a continuing note standing for the assigned entry rides the build prompt", async () => {
+  const assigned = entry({ tag: "HARNESS-BUILD-CONTINUING-NOTE" });
+  const ctx = await seedTick(assigned, CONTINUING);
+  const at = continuingNotePath(".flume", assigned.tag);
+
+  // Non-vacuity: the note really is on the tick's own tree, at the path the
+  // args name — so what the render quotes below was read from a populated
+  // file and not from a fixture only this case can see.
+  expect(await readFile(inWorktree(ctx.cwd, at), "utf8")).toBe(CONTINUING);
+
+  const above = await renderOver(ctx).then(aboveTheEntry);
+
+  // A block of its own, naming the path this tick rewrites or removes, and
+  // carrying the prior tick's words verbatim.
+  expect(above).toContain(`<continuing-note path="${at}">`);
+  expect(above).toContain(CONTINUING.trimEnd());
+  expect(above).toContain("</continuing-note>");
+}, SPAWN_BUDGET_MS);
+
+it("a build prompt for an entry with no standing continuing note renders no note block", async () => {
+  const assigned = entry({ tag: "HARNESS-BUILD-NO-CONTINUATION" });
+  const ctx = await seedTick(assigned);
+
+  // Non-vacuity: the tree really holds nothing at the path the args name, so
+  // the empty region below is that absence's doing and not a render this case
+  // never reached.
+  const at = inWorktree(ctx.cwd, continuingNotePath(".flume", assigned.tag));
+  expect(existsSync(at)).toBe(false);
+
+  const rendered = await renderOver(ctx);
+
+  // Not an empty block: no bytes at all where one would sit. A first tick on
+  // an entry should have nothing there to read and rule out.
+  expect(aboveTheEntry(rendered).trim()).toBe("");
+  // And the prompt around it rendered — the region is empty, the artifact is
+  // not.
+  expect(rendered).toContain(`"tag": "${assigned.tag}"`);
 }, SPAWN_BUDGET_MS);
 
 /**
