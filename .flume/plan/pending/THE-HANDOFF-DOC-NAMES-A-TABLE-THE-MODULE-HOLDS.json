@@ -1,0 +1,19 @@
+{
+  "tag": "THE-HANDOFF-DOC-NAMES-A-TABLE-THE-MODULE-HOLDS",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/handoff.ts",
+        "description": "the mode table's exhaustiveness note points at a site that exists, in the backticked form the citation pin reads"
+      }
+    ]
+  },
+  "summary": "The handoff's mode table justifies its exhaustiveness by \"the two tables above\"; the split moved both to other files and left the pointer naming nothing",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A module is one job"
+  },
+  "acceptance": "the mode table's doc cites the exhaustiveness rule at sites this tree holds — named by the files that now carry them — rather than at two tables the module no longer has",
+  "notes": "Verified this tick: `RESOLVED_BY_A_PRODUCER` (`harness/handoff.ts:166`) is the module's only such table, and its doc at :160 reads \"for the reason the two tables above are exhaustive over theirs\". At dec69e0e the module held three; the other two left as `PLAN_RESOLVES_STANDING` (`harness/standingRefusal.ts`) and `PUT_DOWN` (`harness/judgeGate.ts`). The span is unbackticked, so no citation pin reads it. Claims no property: behavior-free, and the pin holds it once the pointer names a file."
+}

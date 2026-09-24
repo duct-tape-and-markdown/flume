@@ -1,0 +1,21 @@
+{
+  "tag": "THE-EXAMPLE-BUILD-PROMPT-NAMES-THE-FENCE-THAT-BINDS",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "examples/prompts/build.md",
+        "description": "the write rule names the phase fence that binds, and `entry.files` as the prediction the scheduler reads"
+      }
+    ]
+  },
+  "summary": "The cascade example's build prompt tells its agent `entry.files` is the fence and anything outside reverts; that chain scopes no writes, so the fence is `writablePaths`",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "`files` is a prediction the scheduler consumes"
+  },
+  "acceptance": "the example build prompt states the fence the chain it ships with actually declares, and names `entry.files` as a prediction rather than a permission",
+  "notes": "Verified this tick: `examples/prompts/build.md:27` reads \"Touch only the files declared in `entry.files`. Anything else reverts the commit.\" Its chain declares no `scopeWritesToEntry` and no `entryChannelPaths` (`examples/cascade-chain.ts:461`-`:478`), so nothing narrows a tick to the entry, and `declaredFilesGate` (:266) judges only declared paths the span touched. The package's own build prompt says the opposite (`harness/prompts/build.md:29`). No property: nothing judges `examples/prompts/`."
+}
