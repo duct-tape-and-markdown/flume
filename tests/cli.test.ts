@@ -534,14 +534,21 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
         const pidPath = join(flumeDir, "loop.pid");
         await mkdir(flumeDir, { recursive: true });
         await writeFile(pidPath, String(deadPid()), "utf8");
+        // A chain, so the run this case is about is a real one: a `loop`
+        // whose chain does not resolve ends mount-dead before it reaches
+        // the baton at all.
+        await writeRepoConfig(repo.dir, minimalChainSrc());
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);
 
         // Not refused — the dead holder was reclaimed and the loop ran to
-        // its --max 0 stop.
+        // its stop. Nothing is awake in this fixture, so `--max 0` ends on
+        // the empty baton rather than on the budget: the supervisor reads
+        // the flags before it spends a child, and there was nothing to
+        // start.
         expect(r.code).toBe(0);
         expect(r.out).not.toContain("refusing");
-        expect(r.out).toContain("reached --max 0");
+        expect(r.out).toContain("hibernating after 0 tick(s)");
         // The reclaiming loop took the lock over and dropped it on exit; a
         // refusal would have left the stale pidfile in place.
         expect(existsSync(pidPath)).toBe(false);
@@ -593,6 +600,10 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
         const pidPath = join(flumeDir, "loop.pid");
         await mkdir(flumeDir, { recursive: true });
         await writeFile(pidPath, String(deadPid()), "utf8");
+        // A chain, so the run this case is about is a real one: a `loop`
+        // whose chain does not resolve ends mount-dead before it reaches
+        // the baton at all.
+        await writeRepoConfig(repo.dir, minimalChainSrc());
 
         // status first — before the loop below reclaims and removes the
         // pidfile out from under it.
@@ -2138,11 +2149,15 @@ describe("flume loop — tip claim release (spec/loop.md \"The loop lock and the
         // it somewhere else entirely (`.claude/rules/engineering.md`, "A
         // green verdict is proven non-vacuous").
         expect(existsSync(claimPath)).toBe(true);
+        // A chain, so the run this case is about is a real one: a `loop`
+        // whose chain does not resolve ends mount-dead before it reaches
+        // the baton at all.
+        await writeRepoConfig(repo.dir, minimalChainSrc());
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);
 
         expect(r.code).toBe(0);
-        expect(r.out).toContain("reached --max 0");
+        expect(r.out).toContain("hibernating after 0 tick(s)");
         // Reclaimed over the dead holder on the way in, released on the
         // clean exit on the way out.
         expect(existsSync(claimPath)).toBe(false);
@@ -4910,10 +4925,14 @@ describe("flume loop — runtime ignores at the default state root", () => {
         // Nothing has seeded this root, so the file the merge must create
         // genuinely does not exist yet.
         expect(existsSync(ignorePath)).toBe(false);
+        // A chain, so the run this case is about is a real one: a `loop`
+        // whose chain does not resolve ends mount-dead before it reaches
+        // the baton at all.
+        await writeRepoConfig(repo.dir, minimalChainSrc());
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);
         expect(r.code).toBe(0);
-        expect(r.out).toContain("reached --max 0");
+        expect(r.out).toContain("hibernating after 0 tick(s)");
 
         // Vacuity pin: an empty RUNTIME_IGNORES would let any content pass.
         expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
@@ -4943,7 +4962,7 @@ describe("flume loop — runtime ignores at the default state root", () => {
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);
         expect(r.code).toBe(0);
-        expect(r.out).toContain("reached --max 0");
+        expect(r.out).toContain("hibernating after 0 tick(s)");
 
         const lines = (await readFile(ignorePath, "utf8")).split("\n");
         expect(lines).toContain("scratch/friction/");
@@ -4975,6 +4994,10 @@ describe("flume loop — runtime ignores at the default state root", () => {
         const seeded =
           "sessions/\n" + [...RUNTIME_IGNORES].reverse().join("\n") + "\n";
         await writeFile(ignorePath, seeded, "utf8");
+        // A chain, so the run this case is about is a real one: a `loop`
+        // whose chain does not resolve ends mount-dead before it reaches
+        // the baton at all.
+        await writeRepoConfig(repo.dir, minimalChainSrc());
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);
         expect(r.code).toBe(0);
@@ -5069,7 +5092,7 @@ describe("flume loop — the git floor warning", () => {
 
         // A warning, not a refusal: the run the operator asked for happened.
         expect(r.code).toBe(0);
-        expect(r.out).toContain("reached --max 0");
+        expect(r.out).toContain("hibernating after 0 tick(s)");
         // Once — the read is the run's, never the tick's.
         expect(warnings(r.out)).toBe(1);
         // The version git itself stated, verbatim.
@@ -5101,7 +5124,7 @@ describe("flume loop — the git floor warning", () => {
         });
 
         expect(r.code).toBe(0);
-        expect(r.out).toContain("reached --max 0");
+        expect(r.out).toContain("hibernating after 0 tick(s)");
         expect(warnings(r.out)).toBe(1);
         expect(r.out).toContain("git version 2.35.9");
         // The run really was against the relocated root: nothing landed in
@@ -5130,7 +5153,7 @@ describe("flume loop — the git floor warning", () => {
           withGit(atFloor),
         );
         expect(quiet.code).toBe(0);
-        expect(quiet.out).toContain("reached --max 0");
+        expect(quiet.out).toContain("hibernating after 0 tick(s)");
         expect(warnings(quiet.out)).toBe(0);
         expect(quiet.out).not.toContain("2.36.0");
 
@@ -5173,7 +5196,7 @@ describe("flume loop — the git floor warning", () => {
         );
 
         expect(r.code).toBe(0);
-        expect(r.out).toContain("reached --max 0");
+        expect(r.out).toContain("hibernating after 0 tick(s)");
         // Unconfirmed, never read as met.
         expect(r.out).toContain("git version unread");
         expect(r.out).toContain("a wrapper, not a version");

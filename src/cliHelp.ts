@@ -5,7 +5,11 @@
  * on disk this tick").
  */
 
-import { DEFAULT_ABORT_THRESHOLD } from "./loopSupervisor.js";
+import {
+  DEFAULT_ABORT_THRESHOLD,
+  DEFAULT_MAX_TICKS,
+  DEFAULT_TICK_BUDGET,
+} from "./loopSupervisor.js";
 import { STATE_ROOT_DIRNAME } from "./paths.js";
 
 const SUBCOMMANDS = [
@@ -195,10 +199,18 @@ Exit codes:
 `,
   loop: `Usage: flume loop [--max N]
 
-Run ticks until hibernation or --max iterations have elapsed.
+Run ticks until hibernation or --max ticks have been spent. The supervisor
+holds one \`flume tick\` child per awake phase that has none of its own in
+flight, started in the chain's declared order, up to
+supervisorPolicy.maxTicks at once (default ${DEFAULT_MAX_TICKS} — one phase
+tick at a time, the serial loop). The run ends once no flag stands and no
+child is in flight.
 
 Options:
-  --max N    Maximum number of ticks before bailing (default 50).
+  --max N    How many child ticks this run may start in total before
+             bailing (default ${DEFAULT_TICK_BUDGET}). A budget the run
+             spends, not a width: supervisorPolicy.maxTicks above is how
+             many of them run at once.
 
 Exit codes:
   0   Hibernation reached, or --max ticks completed — including partial
@@ -233,12 +245,17 @@ Exit codes:
       exists but could not be listed: whether a marker stands is
       unknown, so the run refuses rather than reading it as none.
       ${bayDiscoveryRefusal(6)}
-  69  Stopped on a child tick's mount-dead failure (see \`flume tick
-      --help\`): the chain never resolved. The run aborts after that one
-      tick instead of burning the remaining --max ticks against the same
+  69  Mount-dead: the chain never resolved. The supervisor resolves it in
+      its own process before the first child, so a chain that will not load
+      refuses the run there, naming the load error and starting no tick; a
+      chain that loads for the supervisor and not for a child surfaces as
+      that child's own 69 (see \`flume tick --help\`). Either way the run
+      aborts instead of burning the remaining --max ticks against the same
       wall.
-  78  Stopped on a child tick's terminal misconfiguration (see \`flume tick
-      --help\`); the orphaned awake flags are left on disk. Also, at start:
+  78  Stopped on a terminal misconfiguration: a child tick classified one
+      (see \`flume tick --help\`), or every flag still standing names a
+      phase the chain does not declare and no child is left to run — either
+      way the orphaned awake flags are left on disk. Also, at start:
       a merge interrupted before its ship bookkeeping is unreconciled — a
       \`.flume/merging/<slug>.json\` marker survived a crash between the
       cherry-pick and the queue rewrite, so the picked commit may sit on

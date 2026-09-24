@@ -15,7 +15,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FAILURE_STAGES, superviseLoop } from "../src/loopSupervisor.ts";
-import type { FailureStage } from "../src/loopSupervisor.ts";
+import type {
+  FailureStage,
+  SuperviseResult,
+  TickChildRequest,
+} from "../src/loopSupervisor.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import type { Logger } from "../src/log.ts";
 import {
@@ -35,6 +39,7 @@ import {
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { waitFor } from "./helpers/waitFor.ts";
 
 // `makeFixture` seeds a temp repository through real `git` plumbing, so every
 // case and hook here starts processes: the lane's one budget is declared once
@@ -90,7 +95,7 @@ describe("src/loopSupervisor.ts — the supervisor's own module", () => {
 describe("superviseLoop — the run's teardown reaches the in-flight tick", () => {
   it("an aborted stopSignal reaches the running tick's runner, and the run resolves only after that tick settles, spawning no further child", async () => {
     // Awake for the whole case: hibernation never ends this run, and
-    // maxTicks is 5, so a second `runTick` call would mean the abort was
+    // the budget is 5, so a second `runTick` call would mean the abort was
     // read by nothing.
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
@@ -99,10 +104,9 @@ describe("superviseLoop — the run's teardown reaches the in-flight tick", () =
     const seen: AbortSignal[] = [];
     let abortedInsideRunner = false;
     let inFlightSettled = false;
-    const runTick = async (
-      _quarantined: ReadonlySet<string>,
-      stopSignal: AbortSignal,
-    ): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({
+      stopSignal,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       seen.push(stopSignal);
       // The operator's signal lands mid-tick — the moment the real runner
       // turns into a kill on the child it holds.
@@ -116,7 +120,7 @@ describe("superviseLoop — the run's teardown reaches the in-flight tick", () =
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       stopSignal: stop.signal,
       log: silent,
@@ -157,7 +161,7 @@ describe("superviseLoop — tip-moved counts as errored", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: silent,
     });
@@ -195,7 +199,7 @@ describe('superviseLoop — an unstattable stop flag is loud (.claude/rules/engi
     };
 
     await expect(
-      superviseLoop({ repoRoot: fx.repo, maxTicks: 3, runTick, log: silent }),
+      superviseLoop({ repoRoot: fx.repo, tickBudget: 3, runTick, log: silent }),
     ).rejects.toThrow(/ELOOP|stop/);
 
     // The in-flight tick still completed; the throw lands at the very next
@@ -218,7 +222,7 @@ describe('superviseLoop — an unstattable stop flag is loud (.claude/rules/engi
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 3,
+      tickBudget: 3,
       runTick,
       log: silent,
     });
@@ -242,7 +246,7 @@ describe('superviseLoop — an unstattable stop flag is loud (.claude/rules/engi
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 3,
+      tickBudget: 3,
       runTick,
       log: silent,
     });
@@ -270,7 +274,7 @@ describe("superviseLoop — process-per-tick supervisor", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 50,
+      tickBudget: 50,
       runTick,
       log: silent,
     });
@@ -291,7 +295,7 @@ describe("superviseLoop — process-per-tick supervisor", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 4,
+      tickBudget: 4,
       runTick,
       log: silent,
     });
@@ -319,7 +323,7 @@ describe("superviseLoop — process-per-tick supervisor", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 3,
+      tickBudget: 3,
       runTick,
       log: rec,
     });
@@ -383,7 +387,7 @@ describe("superviseLoop — process-per-tick supervisor", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: silent,
     });
@@ -438,7 +442,7 @@ describe("superviseLoop — process-per-tick supervisor", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log,
     });
@@ -480,7 +484,7 @@ describe("superviseLoop — process-per-tick supervisor", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: silent,
     });
@@ -514,7 +518,7 @@ describe("superviseLoop — process-per-tick supervisor", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 3,
+      tickBudget: 3,
       runTick,
       log: silent,
     });
@@ -550,7 +554,7 @@ describe("superviseLoop — process-per-tick supervisor", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: rec,
     });
@@ -613,7 +617,7 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: silent,
     });
@@ -658,7 +662,7 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 3,
+      tickBudget: 3,
       runTick,
       log: silent,
     });
@@ -700,7 +704,7 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: silent,
     });
@@ -759,7 +763,7 @@ describe("superviseLoop — a thrown shipped predicate counts as errored (not-sh
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick: notShippedTick({
         threw: "TypeError: cannot read properties of undefined",
       }),
@@ -779,7 +783,7 @@ describe("superviseLoop — a thrown shipped predicate counts as errored (not-sh
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick: notShippedTick({}),
       log: silent,
     });
@@ -812,9 +816,9 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 
     const receivedSlugs: Array<string[]> = [];
     let calls = 0;
-    const runTick = async (
-      quarantinedSlugs: ReadonlySet<string>,
-    ): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
       if (calls === 1) {
@@ -855,7 +859,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log,
     });
@@ -903,7 +907,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log,
     });
@@ -963,7 +967,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log,
     });
@@ -1021,7 +1025,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log: silent,
     });
@@ -1050,9 +1054,9 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const receivedSlugs: Array<string[]> = [];
     let calls = 0;
-    const runTick = async (
-      quarantinedSlugs: ReadonlySet<string>,
-    ): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
       if (calls === 1) {
@@ -1094,7 +1098,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log,
     });
@@ -1117,9 +1121,9 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const receivedSlugs: Array<string[]> = [];
     let calls = 0;
-    const runTick = async (
-      quarantinedSlugs: ReadonlySet<string>,
-    ): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
       if (calls === 1) {
@@ -1160,7 +1164,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log,
     });
@@ -1210,7 +1214,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log,
     });
@@ -1260,7 +1264,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log,
     });
@@ -1282,9 +1286,9 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const receivedSlugs: Array<string[]> = [];
     let calls = 0;
-    const runTick = async (
-      quarantinedSlugs: ReadonlySet<string>,
-    ): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
       await writeFile(
@@ -1304,7 +1308,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log: silent,
     });
@@ -1365,7 +1369,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log: silent,
     });
@@ -1420,7 +1424,7 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log: silent,
       abortThreshold: 2,
@@ -1442,9 +1446,9 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
 
     const receivedSlugs: Array<string[]> = [];
     let calls = 0;
-    const runTick = async (
-      quarantinedSlugs: ReadonlySet<string>,
-    ): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
       if (calls < 3) {
@@ -1477,7 +1481,7 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: silent,
       quarantineScope: "none",
@@ -1506,9 +1510,9 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
     const SIGNATURE = "git worktree prune: fatal: not a git repository";
     const receivedSlugs: Array<string[]> = [];
     let calls = 0;
-    const runTick = async (
-      quarantinedSlugs: ReadonlySet<string>,
-    ): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
       await writeFile(
@@ -1538,7 +1542,7 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log: silent,
     });
@@ -1597,7 +1601,7 @@ describe("superviseLoop — loop-end friction summary & configDir plumbing", () 
     const res = await superviseLoop({
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
     });
@@ -1625,7 +1629,7 @@ describe("superviseLoop — loop-end friction summary & configDir plumbing", () 
     const res = await superviseLoop({
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
     });
@@ -1659,7 +1663,7 @@ describe("superviseLoop — loop-end friction summary & configDir plumbing", () 
     const res = await superviseLoop({
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
     });
@@ -1687,7 +1691,7 @@ describe("superviseLoop — loop-end friction summary & configDir plumbing", () 
     const res = await superviseLoop({
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
     });
@@ -1712,7 +1716,7 @@ describe("superviseLoop — loop-end friction summary & configDir plumbing", () 
     const res = await superviseLoop({
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      maxTicks: 2,
+      tickBudget: 2,
       runTick,
       log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
     });
@@ -1737,7 +1741,7 @@ describe("superviseLoop — loop-end friction summary & configDir plumbing", () 
     const res = await superviseLoop({
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      maxTicks: 2,
+      tickBudget: 2,
       runTick,
       log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
     });
@@ -1816,7 +1820,7 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
     const errors: string[] = [];
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 10,
+      tickBudget: 10,
       runTick,
       log: { info: () => {}, warn: () => {}, error: (l) => errors.push(l) },
     });
@@ -1955,7 +1959,7 @@ describe("superviseLoop — the run's agent spend, by phase", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: silent,
     });
@@ -2029,7 +2033,7 @@ describe("superviseLoop — the run's agent spend, by phase", () => {
 
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 5,
+      tickBudget: 5,
       runTick,
       log: silent,
     });
@@ -2039,5 +2043,376 @@ describe("superviseLoop — the run's agent spend, by phase", () => {
     expect(loopCompletionSummary(res)).toBe(
       "[flume] 1 tick(s) errored: build: no commit (gate-revert) → hibernate",
     );
+  });
+});
+
+/**
+ * The child table (spec/loop.md, *Baton — presence wakes, absence
+ * hibernates*): one child per awake phase that has none of its own in flight,
+ * started in the chain's declared order, up to `supervisorPolicy.maxTicks` at
+ * once. Every case here drives the real `superviseLoop` through the same
+ * stubbed-`runTick` seam the suites above use; what is new is that several
+ * calls can be outstanding at once, so each stub says when it started and
+ * when it finished rather than being counted.
+ *
+ * `settle()` below is the negative half of each case — "and then nothing
+ * else happened". It is a fixed wait because what it waits for is an absence,
+ * and `waitFor` (`tests/helpers/waitFor.ts`) ends on an event: every case
+ * pairs it with an event-based wait for the thing that *did* happen, so the
+ * fixed wait is never what a positive assertion rests on.
+ */
+describe("superviseLoop — the child table, one child per awake phase", () => {
+  const settle = (): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, 50));
+
+  /** A promise the case resolves by hand, standing in for a long child tick. */
+  function gate(): { held: Promise<void>; release: () => void } {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { held, release };
+  }
+
+  it("the supervisor starts one child per awake phase up to supervisorPolicy.maxTicks", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    for (const phase of ["alpha", "beta", "gamma"]) baton.wake(phase);
+
+    const started: string[] = [];
+    const { held, release } = gate();
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      started.push(phase);
+      await held;
+      baton.sleep(phase);
+      return { exitCode: 0 };
+    };
+
+    // Declared order is deliberately not the baton's own name order: the
+    // flags sort alpha, beta, gamma, and the chain declares gamma first. A
+    // supervisor reading the flags for priority would start the wrong two.
+    const run = superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      maxTicks: 2,
+      phaseOrder: ["gamma", "alpha", "beta"],
+      runTick,
+      log: silent,
+    });
+
+    await waitFor("the supervisor's first two children", () =>
+      started.length >= 2 ? started.length : undefined,
+    );
+    // Two seats, three flags: the third phase waits for a seat rather than
+    // getting a child of its own.
+    await settle();
+    expect(started).toEqual(["gamma", "alpha"]);
+
+    release();
+    const res = await run;
+
+    expect(started).toEqual(["gamma", "alpha", "beta"]);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(true);
+  });
+
+  it("a phase whose child is in flight gets no second child while its flag stands", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("slow");
+    baton.wake("quick");
+
+    const started: string[] = [];
+    const { held, release } = gate();
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      started.push(phase);
+      // `slow`'s flag stands for the whole of its child's life — the shape a
+      // wake landing mid-tick leaves, which is a re-run queued, not a second
+      // worker.
+      if (phase === "slow") await held;
+      else baton.sleep(phase);
+      return { exitCode: 0 };
+    };
+
+    const run = superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      maxTicks: 3,
+      phaseOrder: ["slow", "quick"],
+      runTick,
+      log: silent,
+    });
+
+    // `quick` has come and gone, so the table holds one child in three
+    // seats and `slow`'s flag is standing.
+    await waitFor("the quick phase's child to sleep its flag", () =>
+      baton.isAwake("quick") ? undefined : true,
+    );
+    await settle();
+    expect(started).toEqual(["slow", "quick"]);
+    expect(baton.isAwake("slow")).toBe(true);
+
+    release();
+    baton.sleep("slow");
+    const res = await run;
+
+    expect(started).toEqual(["slow", "quick"]);
+    expect(res.ticks).toBe(2);
+  });
+
+  it("the run ends only once no flag stands and no child is in flight", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("first");
+    baton.wake("second");
+
+    const started: string[] = [];
+    const finished: string[] = [];
+    const { held, release } = gate();
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      started.push(phase);
+      if (phase === "second") {
+        await held;
+        // This child's handoff wakes a successor on its way out, so a flag
+        // stands again at the moment its table seat frees.
+        baton.wake("third");
+      }
+      baton.sleep(phase);
+      finished.push(phase);
+      return { exitCode: 0 };
+    };
+
+    const run = superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      maxTicks: 2,
+      phaseOrder: ["first", "second", "third"],
+      runTick,
+      log: silent,
+    });
+
+    // `first` is done and its flag is gone; `second` is still in flight. One
+    // half of the end condition holds and the run is still going.
+    await waitFor("the first phase's child to finish", () =>
+      finished.includes("first") ? true : undefined,
+    );
+    await settle();
+    expect(finished).toEqual(["first"]);
+
+    release();
+    const res = await run;
+
+    // And the other half on its own does not end it either: `second` exited
+    // into an empty table, but its handoff had left `third` awake.
+    expect(started).toEqual(["first", "second", "third"]);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(true);
+    expect(baton.awake()).toEqual([]);
+  });
+
+  it("the stop flag starts no new child and lets every in-flight tick finish", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const baton = new Baton(flumeDir);
+    for (const phase of ["alpha", "beta", "gamma"]) baton.wake(phase);
+
+    const started: string[] = [];
+    const finished: string[] = [];
+    const { held, release } = gate();
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      started.push(phase);
+      // The operator's stop lands while both children are still running.
+      if (phase === "alpha") await writeFile(join(flumeDir, "stop"), "", "utf8");
+      else await held;
+      baton.sleep(phase);
+      finished.push(phase);
+      return { exitCode: 0 };
+    };
+
+    const run = superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      maxTicks: 2,
+      phaseOrder: ["alpha", "beta", "gamma"],
+      runTick,
+      log: silent,
+    });
+
+    await waitFor("the alpha child to finish", () =>
+      finished.includes("alpha") ? true : undefined,
+    );
+    // `gamma` is awake and a seat is free, and still nothing started.
+    await settle();
+    expect(started).toEqual(["alpha", "beta"]);
+
+    release();
+    const res = await run;
+
+    // `beta` ran to its own end rather than being cut short, and the run
+    // resolved only after it had.
+    expect([...finished].sort()).toEqual(["alpha", "beta"]);
+    expect(started).toEqual(["alpha", "beta"]);
+    expect(res.ticks).toBe(2);
+    expect(res.stoppedByFlag).toBe(true);
+    // A stop is not a hibernation: `gamma`'s flag is still standing.
+    expect(res.hibernated).toBe(false);
+    expect(baton.awake()).toEqual(["gamma"]);
+  });
+
+  it("each child is told its phase", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.wake("build");
+
+    const told: string[] = [];
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      told.push(phase);
+      baton.sleep(phase);
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      maxTicks: 2,
+      phaseOrder: ["build", "plan"],
+      runTick,
+      log: silent,
+    });
+
+    // Every child was told a phase the chain declares, in declared order —
+    // and the run really started children rather than reporting an empty
+    // table (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(told).toEqual(["build", "plan"]);
+    expect(res.ticks).toBe(2);
+    expect(res.hibernated).toBe(true);
+  });
+
+  it("a flag naming a phase the chain never declares ends the run as a terminal misconfiguration, after the declared phases have run", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+    baton.wake("ghost");
+
+    const started: string[] = [];
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      started.push(phase);
+      baton.sleep(phase);
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      maxTicks: 2,
+      phaseOrder: ["build"],
+      runTick,
+      log: silent,
+    });
+
+    // `build` really ran — the orphan verdict is what is left once the work
+    // the chain does declare is done, never a refusal that skipped it.
+    expect(started).toEqual(["build"]);
+    expect(res.ticks).toBe(1);
+    // And the orphan is named rather than read as hibernation: a flag is
+    // standing that no child of this chain can ever answer.
+    expect(res.hibernated).toBe(false);
+    expect(res.terminal).toEqual({ kind: "orphaned-awake", phases: ["ghost"] });
+    expect(baton.awake()).toEqual(["ghost"]);
+  });
+
+  it("a chain that failed to resolve for the supervisor ends the run mount-dead before any child, over an empty baton and a full one alike", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    const errors: string[] = [];
+    const rec: Logger = {
+      info: () => {},
+      warn: () => {},
+      error: (line) => errors.push(line),
+    };
+
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return { exitCode: 0 };
+    };
+
+    const run = (): Promise<SuperviseResult> =>
+      superviseLoop({
+        repoRoot: fx.repo,
+        tickBudget: 10,
+        runTick,
+        chainUnresolved: new Error("simulated broken chain.ts"),
+        log: rec,
+      });
+
+    // The empty baton is the arm that needs this: with nothing awake there
+    // is no child to spawn, so a supervisor waiting to be told by one would
+    // report the broken chain as a clean hibernation.
+    const quiet = await run();
+    expect(quiet.mountDead).toBe(true);
+    expect(quiet.hibernated).toBe(false);
+    expect(quiet.ticks).toBe(0);
+
+    // And the full baton takes the same verdict, rather than spending a
+    // child on a chain the supervisor already failed to load.
+    baton.wake("build");
+    const busy = await run();
+    expect(busy.mountDead).toBe(true);
+    expect(busy.ticks).toBe(0);
+    expect(baton.isAwake("build")).toBe(true);
+
+    // No child either way, and the chain's own failure is what the operator
+    // is told — not a class name they would have to reproduce.
+    expect(calls).toBe(0);
+    expect(
+      errors.filter((e) => /simulated broken chain\.ts/.test(e)),
+    ).toHaveLength(2);
+  });
+
+  it("an undeclared supervisorPolicy.maxTicks runs one child at a time", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("alpha");
+    baton.wake("beta");
+
+    let live = 0;
+    let mostAtOnce = 0;
+    let calls = 0;
+    // No phase read here on purpose: the property is the width of the table,
+    // and a stub that took its phase from the request would be asserting the
+    // seam beside it.
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      live++;
+      mostAtOnce = Math.max(mostAtOnce, live);
+      calls++;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      if (calls >= 2) {
+        baton.sleep("alpha");
+        baton.sleep("beta");
+      }
+      live--;
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      runTick,
+      log: silent,
+    });
+
+    // Vacuity: two flags stood and the run started a child for each, so
+    // "never two at once" is a serial loop rather than a run that only ever
+    // had one child to hold.
+    expect(calls).toBeGreaterThan(1);
+    expect(mostAtOnce).toBe(1);
+    expect(res.hibernated).toBe(true);
   });
 });

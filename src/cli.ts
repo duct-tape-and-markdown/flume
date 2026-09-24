@@ -1408,13 +1408,26 @@ async function main(): Promise<number> {
     // `superviseLoop` falls through to the engine defaults meanwhile.
     let supervisorPolicy: Chain["supervisorPolicy"];
     let friction: Chain["friction"];
+    // The chain's phases in declared order, for the supervisor's own
+    // scheduling: declaration order is the priority and the tiebreak for
+    // which awake phase gets a child (spec/loop.md, *Baton — presence wakes,
+    // absence hibernates*). Read off the same resolve as the policy rather
+    // than left for the supervisor to rebuild — it is a fact this process
+    // already holds (`.claude/rules/engineering.md`, *A fact the engine holds
+    // is reported, never rediscovered*).
+    let phaseOrder: string[] | undefined;
+    // What that resolve threw, when it threw — handed to the supervisor,
+    // which ends the run mount-dead before its first child rather than
+    // spending one to hear the same failure said again. Swallowed here, it
+    // was reported by nothing at all over an empty baton.
+    let chainUnresolved: Error | undefined;
     try {
-      ({
-        chain: { supervisorPolicy, friction },
-      } = await diskChainLoader(paths)());
+      const { chain } = await diskChainLoader(paths)();
+      ({ supervisorPolicy, friction } = chain);
+      phaseOrder = chain.phases.map((p) => p.name);
       childKillGraceMs = supervisorPolicy?.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
-    } catch {
-      // unresolved chain — defaults apply; the child tick names the failure
+    } catch (err) {
+      chainUnresolved = err instanceof Error ? err : new Error(String(err));
     }
     // spec/jobs.md "Runtime ignores": the state root this run writes under
     // takes the runtime-owned merge — declared `Chain.friction` included,
@@ -1437,26 +1450,36 @@ async function main(): Promise<number> {
     // live sibling owning anything under this state root's worktree base. A
     // bare `flume tick` never sweeps.
     await dispatcher.sweepStaleWorktrees();
-    // Supervisor: one fresh `flume tick` process per iteration. Past the sweep
-    // call above, the dispatcher constructed above is otherwise unused on this
-    // path — each child builds its own and resolves chain.ts in its own
-    // process. A terminal stop or a mount-dead abort propagates the child's
-    // exit code out of `flume loop` too: exiting 0 here would re-mask either
-    // as clean at the next process boundary up.
+    // Supervisor: one fresh `flume tick` process per phase it starts, each
+    // told its phase. Past the sweep call above, the dispatcher constructed
+    // above is otherwise unused on this path — each child builds its own and
+    // resolves chain.ts in its own process. A terminal stop or a mount-dead
+    // abort propagates the child's exit code out of `flume loop` too: exiting
+    // 0 here would re-mask either as clean at the next process boundary up.
     //
-    // `supervisorPolicy` was read above, alongside the ignore merge's
-    // `friction`, from the one best-effort chain resolve this start makes.
+    // `supervisorPolicy` and `phaseOrder` were read above, alongside the
+    // ignore merge's `friction`, from the one best-effort chain resolve this
+    // start makes.
+    //
+    // Two caps, and they stay two: `--max N` is this run's whole budget of
+    // children (`tickBudget`), the chain's `supervisorPolicy.maxTicks` is how
+    // many of them run at once. One is spent, the other is held.
     supervisedRun = superviseLoop({
       repoRoot,
       flumeDir,
       configDir,
-      maxTicks: max,
+      tickBudget: max,
       stopSignal: stopRun.signal,
+      ...(phaseOrder !== undefined ? { phaseOrder } : {}),
+      ...(chainUnresolved !== undefined ? { chainUnresolved } : {}),
       ...(supervisorPolicy?.quarantineScope !== undefined
         ? { quarantineScope: supervisorPolicy.quarantineScope }
         : {}),
       ...(supervisorPolicy?.abortThreshold !== undefined
         ? { abortThreshold: supervisorPolicy.abortThreshold }
+        : {}),
+      ...(supervisorPolicy?.maxTicks !== undefined
+        ? { maxTicks: supervisorPolicy.maxTicks }
         : {}),
     });
     const supervised = await supervisedRun;

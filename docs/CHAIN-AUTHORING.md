@@ -1987,12 +1987,13 @@ tick in between — the non-entry-scoped class quarantine can't isolate, which i
 a repo-level failure like `git worktree prune` *and* every singleton failure,
 since a singleton tick has no entry to blame.
 
-Beside the net, the block carries the knobs that shape the tick itself and
-have nowhere else to be set from a chain: how wide a fanout wave runs, the
-wall-clock cap on one agent invocation, the paths the fanout partition
-ignores, and the grace a signalled tick gives the agent tree it started before
-it stops waiting. Each knob ships as an engine default; `Chain.supervisorPolicy`
-lets a chain choose otherwise:
+Beside the net, the block carries the knobs that shape the run and the tick
+themselves and have nowhere else to be set from a chain: how many tick
+children the supervisor holds at once, how wide a fanout wave inside one of
+them runs, the wall-clock cap on one agent invocation, the paths the fanout
+partition ignores, and the grace a signalled tick gives the agent tree it
+started before it stops waiting. Each knob ships as an engine default;
+`Chain.supervisorPolicy` lets a chain choose otherwise:
 
 ```ts
 const chain: Chain = {
@@ -2001,6 +2002,7 @@ const chain: Chain = {
   supervisorPolicy: {
     quarantineScope: "none",
     abortThreshold: 5,
+    maxTicks: 2,
     killGraceMs: 30_000,
     maxParallel: 2,
     tickTimeoutMs: 45 * 60_000,
@@ -2025,6 +2027,24 @@ const chain: Chain = {
   between them, before the supervisor aborts the run rather than burning
   the remaining `--max` ticks against the same wall. Default 3. Bound **once
   per run** too: the streak is accounting that accumulates across the run.
+- **`maxTicks`** — how many `flume tick` children the supervisor holds at
+  once. Default 1, which is the serial loop: one phase tick at a time, and
+  every consumer's behavior until it declares otherwise. Above one, the
+  supervisor starts one child per awake phase that has none of its own in
+  flight, in the order `phases` declares them, until this many are running —
+  so declaration order is the priority when the budget is shorter than the
+  baton, and a phase never gets a second child while its first is still
+  going. What keeps siblings off each other is engine mechanism, not this
+  number: the entry claim, the ship lock and the worktree lock
+  (`spec/loop.md`, "The ship lock and the worktree lock — sibling
+  ticks take turns at git"). Raise it when the
+  chain has phases that genuinely do independent work — a queue-deriving
+  phase beside a shipping one — and leave it alone when every phase writes
+  the same files. A positive integer; anything else refuses the chain at
+  load rather than at the boundary where a supervisor holding no child would
+  read the standing flags as an orphaned baton. Distinct from `flume loop
+  --max N`, which is how many children the run may start in *total*. Bound
+  **once per run**: the supervisor is the one process that never reloads.
 - **`killGraceMs`** — milliseconds between the `SIGTERM` a signalled `flume
   tick` sends the agent tree it started and the `SIGKILL` that follows — the
   window an agent mid-invocation gets to finish writing under the state root.
@@ -2089,9 +2109,13 @@ accumulates no run-scoped state — so a mid-run change governs from the next
 tick onward (`spec/chain.md`, "Supervisor policy is a chain-overridable
 default").
 
-A chain that fails to load at supervisor start surfaces nothing new here: the
-defaults apply for that run and the first child tick still reports the load
-failure exactly as it does today.
+A chain that fails to load at supervisor start takes the run with it: the
+supervisor resolves the chain in its own process for the phase order it
+schedules by, so there is nothing left for a default to apply to. The run ends
+mount-dead (exit `69`) naming the load error, before any child — a chain that
+will not resolve in the supervisor's process will not resolve in a child's
+either, and over an empty baton there is no child that would have reported it
+at all.
 
 ## 10. Declaring an entry extension (`entryExtension`)
 

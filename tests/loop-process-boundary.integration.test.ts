@@ -346,24 +346,29 @@ describe("process-boundary env inheritance — supervisor → child tick", () =>
 
 describe("Axis-C fail-fast — real `flume loop` over an orphaned awake flag", () => {
   it(
-    "supervisor stops on the child's 78 after one tick, names the orphaned phase, leaves the flag; loop exits 78",
+    "supervisor stops on the orphaned flag before any child, names the orphaned phase, leaves the flag; loop exits 78",
     async () => {
       // The chain declares only "alpha"; the awake flag names "beta". Every
       // child tick would exit 78 forever — before the fail-fast this hot-spun
-      // to --max as a parade of "clean" hibernation reports.
+      // to --max as a parade of "clean" hibernation reports. The supervisor
+      // now reads the chain's declared phases for its own scheduling, so it
+      // holds both halves and says so itself: there is no phase it could
+      // name a child for.
       await writeFile(join(repo.dir, ".flume", "chain.ts"), chainSrc("alpha"), "utf8");
       const baton = new Baton(join(repo.dir, ".flume"));
       baton.wake("beta");
 
       const loop = await runLoop(repo.dir, hermeticEnv(), 3);
 
-      // Fail-fast: one child, then stop — never --max, never "hibernating".
+      // Fail-fast with no child spent at all — never --max, never
+      // "hibernating". The tick count the refusal names is the positive
+      // reading of "no child ran": zero.
       expect(loop.code).toBe(EX_TERMINAL_MISCONFIG);
       expect(loop.out).toMatch(/terminal misconfiguration/);
       expect(loop.out).toMatch(/beta/);
+      expect(loop.out).toMatch(/stopping after 0 tick\(s\)/);
       expect(loop.out).not.toMatch(/reached --max/);
       expect(loop.out).not.toMatch(/hibernating after/);
-      expect(loop.out.match(/tick exited 78/g)).toHaveLength(1);
 
       // The orphaned flag survives supervisor and child alike — the human
       // inspects, then `flume sleep beta` or fixes the chain.
@@ -375,12 +380,15 @@ describe("Axis-C fail-fast — real `flume loop` over an orphaned awake flag", (
 
 describe("mount-dead fail-fast — real `flume loop` over an unloadable chain.ts", () => {
   it(
-    "supervisor aborts on the first mount-dead tick instead of burning to --max; loop exits 69 (EX_MOUNT_DEAD)",
+    "supervisor aborts before its first tick instead of burning to --max; loop exits 69 (EX_MOUNT_DEAD)",
     async () => {
       // chain.ts throws at module-evaluation time — every child tick's
       // chainLoader would reject identically forever. Before the fail-fast
       // this hot-spun to --max as a parade of exit-1 "failed" ticks that
-      // never surfaced non-zero to CI.
+      // never surfaced non-zero to CI. The supervisor's own resolve hits the
+      // same wall before any child, and reports it: nothing is awake in this
+      // fixture, so a supervisor that waited for a child to say it would
+      // have started none and called the run a clean hibernation.
       await writeFile(
         join(repo.dir, ".flume", "chain.ts"),
         `throw new Error("simulated broken chain.ts");\n` +
@@ -390,11 +398,15 @@ describe("mount-dead fail-fast — real `flume loop` over an unloadable chain.ts
 
       const loop = await runLoop(repo.dir, hermeticEnv(), 3);
 
-      // Fail-fast: one child, then stop — never --max.
+      // Fail-fast before the first child — never --max, and never the
+      // quiet 0 an empty baton would otherwise have produced.
       expect(loop.code).toBe(EX_MOUNT_DEAD);
       expect(loop.out).toMatch(/mount-dead/);
+      // The chain's own failure, verbatim, rather than a class name the
+      // operator then has to reproduce.
+      expect(loop.out).toMatch(/simulated broken chain\.ts/);
       expect(loop.out).not.toMatch(/reached --max/);
-      expect(loop.out.match(/tick exited 69/g)).toHaveLength(1);
+      expect(loop.out).not.toMatch(/hibernating after/);
     },
     30_000,
   );

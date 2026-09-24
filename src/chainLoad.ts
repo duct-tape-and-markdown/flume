@@ -117,6 +117,39 @@ export function resolveWorktreesBaseDeclaration(
 }
 
 /**
+ * Validate the one supervisor knob whose out-of-range value is a run that
+ * cannot happen: `supervisorPolicy.maxTicks` is how many `flume tick`
+ * children the supervisor holds at once (`src/Phase.ts`), and a supervisor
+ * that may hold none can never start one — the run would report the flags
+ * still standing as an orphaned baton and stop having done nothing. Refused
+ * here, at the load, rather than at the boundary where the symptom appears
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * A positive integer, because the value counts processes: `1.5` children is
+ * not a budget anyone declared on purpose. Undeclared is a strict no-op —
+ * `superviseLoop` falls back to `DEFAULT_MAX_TICKS`
+ * (`src/loopSupervisor.ts`), the serial loop.
+ *
+ * The other knobs in the block are deliberately not checked beside it: each
+ * of them degrades to something an operator can read off a run, and the
+ * engine validates only what its mechanics consume
+ * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
+ */
+function validateSupervisorPolicyDeclaration(chain: Chain): void {
+  const maxTicks = chain.supervisorPolicy?.maxTicks;
+  if (maxTicks === undefined) return;
+  if (!Number.isInteger(maxTicks) || maxTicks < 1) {
+    throw new Error(
+      `chain declares supervisorPolicy.maxTicks: ${JSON.stringify(maxTicks)}; ` +
+        `it must be a positive integer — it is how many flume tick children ` +
+        `the loop supervisor holds at once, and a supervisor that may hold ` +
+        `none can never run one. Omit it for the default of one (the serial ` +
+        `loop).`,
+    );
+  }
+}
+
+/**
  * Refuse the one decidable dead-declaration shape (spec/chain.md, *A dead
  * declaration is refused at load*): a chain field whose only consumer is statically
  * unreachable from the rest of the same declaration. Checkable from the
@@ -299,6 +332,7 @@ export async function loadChainModule(
   }
   validateFrictionDeclaration(chain);
   validatePendingPathDeclaration(chain);
+  validateSupervisorPolicyDeclaration(chain);
   validateNoDeadDeclarations(chain);
   const result: ChainModule = { chain };
   if (module.agent) result.agent = module.agent;

@@ -14960,6 +14960,72 @@ describe("Dispatcher — Chain.pendingPath load-time validation (spec/pending.md
   });
 });
 
+/**
+ * `supervisorPolicy.maxTicks` is how many `flume tick` children the loop
+ * supervisor holds at once (`src/Phase.ts`), and the one value in that block
+ * whose out-of-range setting is a run that cannot happen: a supervisor that
+ * may hold no child starts none, and the flags left standing would come back
+ * as an orphaned baton rather than as the declaration that caused it. Refused
+ * at the load, where the declaration is (`.claude/rules/engineering.md`,
+ * *Loud or nothing*).
+ */
+describe("Dispatcher — Chain.supervisorPolicy.maxTicks load-time validation (spec/chain.md 'Supervisor policy is a chain-overridable default')", () => {
+  const chainDeclaring = (maxTicks: string): string =>
+    `export default () => ({ chain: { phases: [{ name: "build", ` +
+    `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+    `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+    `humanOnly: [], supervisorPolicy: { maxTicks: ${maxTicks} } } });\n`;
+
+  async function chainDir(slug: string, maxTicks: string): Promise<string> {
+    const cfg = await mkTempDir(`flume-cfg-maxticks-${slug}-`);
+    await mkdir(cfg, { recursive: true });
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(join(cfg, "chain.ts"), chainDeclaring(maxTicks), "utf8");
+    return cfg;
+  }
+
+  for (const [slug, declared] of [
+    ["zero", "0"],
+    ["negative", "-1"],
+    ["fractional", "1.5"],
+  ] as const) {
+    it(`the chain load refuses supervisorPolicy.maxTicks declared as ${declared}`, async () => {
+      const cfg = await chainDir(slug, declared);
+      try {
+        await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
+          /supervisorPolicy\.maxTicks.*must be a positive integer/s,
+        );
+      } finally {
+        await rm(cfg, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("the chain load accepts a positive integer, and an undeclared maxTicks, alike", async () => {
+    const declared = await chainDir("two", "2");
+    const undeclaredCfg = await mkTempDir("flume-cfg-maxticks-undeclared-");
+    try {
+      await writeMinimalChain(undeclaredCfg);
+
+      expect(
+        (await loadChainModule(chainPaths(declared))).chain.supervisorPolicy
+          ?.maxTicks,
+      ).toBe(2);
+      // Undeclared stays undeclared: the engine reads an omitted field as
+      // "use my default", and a value substituted here would be a second
+      // home for it (`.claude/rules/engineering.md`, *Derived state is
+      // computed, never restated beside its source*).
+      expect(
+        (await loadChainModule(chainPaths(undeclaredCfg))).chain
+          .supervisorPolicy?.maxTicks,
+      ).toBeUndefined();
+    } finally {
+      await rm(declared, { recursive: true, force: true });
+      await rm(undeclaredCfg, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL)", () => {
   it("refuses entryChannelPaths declared without scopeWritesToEntry: true, naming the field", async () => {
     const cfg = await mkTempDir("flume-cfg-deaddecl-channel-");
@@ -17096,7 +17162,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     baton.wake("build");
     const res = await superviseLoop({
       repoRoot: fx.repo,
-      maxTicks: 3,
+      tickBudget: 3,
       runTick: async () => {
         await writeTickVerdict(flumeDir, verdict!);
         baton.sleep("build");

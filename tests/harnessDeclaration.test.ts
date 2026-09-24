@@ -103,6 +103,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
     maxParallel: 4,
     tickTimeoutMs: 1_800_000,
     abortThreshold: 3,
+    maxTicks: 2,
     killGraceMs: 15_000,
     quarantineScope: "none",
     partitionIgnore: ["pnpm-lock.yaml"],

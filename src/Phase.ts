@@ -841,6 +841,23 @@ export interface Chain {
      */
     abortThreshold?: number;
     /**
+     * How many `flume tick` children the `flume loop` supervisor holds at
+     * once — it starts one per awake phase that has no child of its own in
+     * flight, in declared order, until this many are running (spec/loop.md,
+     * *Baton — presence wakes, absence hibernates*). Defaults to
+     * `DEFAULT_MAX_TICKS` (`src/loopSupervisor.ts`), which is one: a single
+     * phase tick at a time, the serial loop. A value below one, or a
+     * non-integer, is refused at chain load — a supervisor that may hold no
+     * child can never run one.
+     *
+     * Distinct from `maxParallel` below, which is how wide one *fanout wave
+     * inside a single tick* runs: this bounds the tick processes the
+     * supervisor owns, that bounds the entry worktrees one of them provisions.
+     * Distinct again from `flume loop --max N`, which caps how many children
+     * a run starts in total rather than at once.
+     */
+    maxTicks?: number;
+    /**
      * Milliseconds between the SIGTERM a signalled `flume tick` sends the
      * agent tree it started and the SIGKILL that follows — the window an
      * agent mid-invocation gets to finish writing before the tick stops

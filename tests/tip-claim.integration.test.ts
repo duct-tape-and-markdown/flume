@@ -148,6 +148,11 @@ describe("flume loop/tick — tip claim wiring", () => {
         await exec("git", ["worktree", "add", "-b", "other", wtDir], {
           cwd: repo.dir,
         });
+        // A chain in each checkout: the subject here is which of two runs
+        // the tip claim lets through, and a run whose chain does not resolve
+        // ends mount-dead before it can answer that.
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        await writeRepoConfig(wtDir, minimalChainSrc());
 
         const [main, other] = await Promise.all([
           runCli(repo.dir, ["loop", "--max", "0"]),
@@ -155,9 +160,9 @@ describe("flume loop/tick — tip claim wiring", () => {
         ]);
 
         expect(main.code).toBe(0);
-        expect(main.out).toContain("reached --max 0");
+        expect(main.out).toContain("hibernating after 0 tick(s)");
         expect(other.code).toBe(0);
-        expect(other.out).toContain("reached --max 0");
+        expect(other.out).toContain("hibernating after 0 tick(s)");
       } finally {
         await rm(wtParent, { recursive: true, force: true });
         await exec("git", ["worktree", "prune"], { cwd: repo.dir }).catch(
