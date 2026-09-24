@@ -157,11 +157,12 @@ export interface HandoffSlice {
  * resolve against the environment, a `not-shipped` park and a `tip-moved` span
  * are both the wave's to carry from its next base.
  *
- * Exhaustive over `PriorAttempt["mode"]` by type, for the reason the two
- * tables above are exhaustive over theirs: a mode the engine adds is a type
- * error here and must be classified, rather than defaulting to "hand it to
- * build again" — the direction that costs an invocation per tick for the rest
- * of the run.
+ * Exhaustive over `PriorAttempt["mode"]` by type, for the reason
+ * `PLAN_RESOLVES_STANDING` (`harness/standingRefusal.ts`) and `PUT_DOWN`
+ * (`harness/judgeGate.ts`) are exhaustive over theirs: a mode the engine adds
+ * is a type error here and must be classified, rather than defaulting to "hand
+ * it to build again" — the direction that costs an invocation per tick for
+ * the rest of the run.
  */
 const RESOLVED_BY_A_PRODUCER: Record<PriorAttempt["mode"], boolean> = {
   "clean-exit": true,
