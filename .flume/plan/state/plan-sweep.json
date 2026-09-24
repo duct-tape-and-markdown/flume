@@ -151,7 +151,9 @@
       "tests/processTree.test.ts",
       "src/processTree.ts",
       "tests/helpers/fixtureRoot.ts",
-      "src/chainLoad.ts"
+      "src/chainLoad.ts",
+      "src/budgetLine.ts",
+      "tests/budgetLine.test.ts"
     ]
   }
 }
