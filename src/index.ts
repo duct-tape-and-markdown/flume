@@ -14,7 +14,11 @@ export {
   type TerminalRendererOpts,
 } from "./Agent.js";
 
-export { Baton } from "./Baton.js";
+// `BatonToken` is what `Baton.token` answers and `Baton.sleepIfUnchanged`
+// takes, so a chain holding a phase's token across its own work needs to name
+// it from the entry point (`.claude/rules/engineering.md`, *An export earns
+// its consumer*).
+export { Baton, type BatonToken } from "./Baton.js";
 
 export type {
   Chain,

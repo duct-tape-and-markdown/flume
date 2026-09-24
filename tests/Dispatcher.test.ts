@@ -1513,6 +1513,105 @@ describe("ReportedGateResult.failingFiles — what the gate blamed, reported not
   });
 });
 
+/**
+ * spec/loop.md "Baton — presence wakes, absence hibernates": the flag is a
+ * queue of depth one. A tick reads its phase's token at the start and sleeps
+ * only while that token still stands, so a sibling's wake landing while the
+ * agent runs is a run this phase still owes rather than a level this tick
+ * clears on its way to handoff.
+ */
+describe("Dispatcher singleton — the post-work sleep is scoped to the token the tick read", () => {
+  it("a wake landing mid-tick survives that tick's own sleep", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    const startToken = baton.token("plan");
+
+    // An empty handoff: nothing this tick decides wakes anything, so the only
+    // flag standing afterwards is the one the mid-tick wake left.
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: () => [],
+    });
+
+    let tokenDuringTick: string | undefined;
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/derived.ts", "y\n", "plan: derive");
+      // A sibling waking this phase while it runs — its own Baton over the
+      // same disk, which is the only channel two ticks share.
+      new Baton(join(fx.repo, ".flume")).wake("plan");
+      tokenDuringTick = baton.token("plan");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity pins: the tick really read a token, and the mid-tick wake
+    // really left a different one. Without both, "still awake" below could
+    // pass over a tick that never slept anything.
+    expect(startToken).toBeTypeOf("string");
+    expect(tokenDuringTick).toBeTypeOf("string");
+    expect(tokenDuringTick).not.toBe(startToken);
+
+    // The work still landed — the kept wake is a queued re-run, not a
+    // refusal of this tick.
+    expect(outcome.result?.committed).toBe(true);
+    expect(baton.isAwake("plan")).toBe(true);
+    expect(outcome.awakeAfter).toEqual(["plan"]);
+    // And what stands is the sibling's own token, untouched: the sleep
+    // declined rather than clearing and re-waking.
+    expect(baton.token("plan")).toBe(tokenDuringTick);
+  });
+
+  it("a tick sleeps its phase when the flag still carries the token it read at start", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    const startToken = baton.token("plan");
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: () => [],
+    });
+
+    // Nothing wakes this phase mid-tick, so the token standing at the sleep
+    // is the one the tick read. Captured rather than asserted in the agent:
+    // a throw inside the invocation is a failed tick, not a failed assertion.
+    let tokenDuringTick: string | undefined;
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/derived.ts", "y\n", "plan: derive");
+      tokenDuringTick = baton.token("plan");
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity pin: a flag really stood, really carried a token, and it was
+    // still that token when the tick's work finished.
+    expect(startToken).toBeTypeOf("string");
+    expect(tokenDuringTick).toBe(startToken);
+
+    expect(outcome.result?.committed).toBe(true);
+    expect(baton.isAwake("plan")).toBe(false);
+    expect(baton.token("plan")).toBeUndefined();
+    expect(outcome.awakeAfter).toEqual([]);
+  });
+});
+
 describe("Dispatcher singleton — handoff wakes the successor", () => {
   it("sleeps the running phase and wakes only the named successor", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));

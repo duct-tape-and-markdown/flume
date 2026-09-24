@@ -757,6 +757,17 @@ export class Dispatcher {
    */
   async tick(request: TickRequest = {}): Promise<TickOutcome> {
     const awake = this.baton.awake();
+    // What each standing flag carries at this tick's start, read here rather
+    // than after the chain resolves: a wake landing while `chainLoader()`
+    // imports chain.ts is as much a mid-tick wake as one landing during the
+    // agent invocation, and a token read after the load would already have
+    // swallowed it. The sleep below hands the phase's own value back
+    // (`Baton.sleepIfUnchanged`), so a sibling's wake anywhere after this line
+    // survives this tick (spec/loop.md, *Baton — presence wakes, absence
+    // hibernates*).
+    const startTokens = new Map(
+      awake.map((name) => [name, this.baton.token(name)] as const),
+    );
 
     // Disk is truth: this process resolves chain.ts exactly once, here. A
     // prior tick that rewrote chain.ts is governed by the new chain because
@@ -977,8 +988,15 @@ export class Dispatcher {
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
     };
 
-    // Sleep this phase by default; handoff re-wakes if needed.
-    this.baton.sleep(phase.name);
+    // Sleep this phase by default; handoff re-wakes if needed. Scoped to the
+    // token this tick read at its start: a sibling that woke this phase while
+    // the work above ran left a newer one, and that wake is a run this phase
+    // owes, not a level this tick may clear. The sleep declines, the flag
+    // stands, and the next tick carries it.
+    if (!this.baton.sleepIfUnchanged(phase.name, startTokens.get(phase.name)))
+      this.log.info(
+        `[flume] ${phase.name}: a wake landed during this tick; phase stays awake`,
+      );
     // spec/chain.md "What a hook receives": a throwing `handoff` is logged
     // and the tick's facts stand — every one of them is already computed
     // above, and the phase is already asleep, so the throw costs exactly the
