@@ -117,7 +117,78 @@
     ],
     "pins": [],
     "notes": "Tag uniqueness becomes the filesystem's, so the composed list schema's duplicate issue goes; the `pendingGate` drift blockquote is already retired. This repo's own live queue is an operator cutover — `.flume/` is outside every phase's fence — and the legacy file rides planArtifacts so a plan tick can `git rm` it, the allowance LEGACY_QUESTIONS_REL already takes.",
-    "contractTouching": true
+    "contractTouching": true,
+    "observedFiles": [
+      ".flume/plan/notes/THE-LEDGER-IS-A-DIRECTORY-ONE-ENTRY-PER-FILE.md",
+      "README.md",
+      "docs/CHAIN-AUTHORING.md",
+      "docs/CLI.md",
+      "docs/INTENT.md",
+      "docs/MIGRATING-0.19.md",
+      "examples/backlog-groomer-chain.ts",
+      "examples/cascade-chain.ts",
+      "examples/prompts/build.md",
+      "examples/prompts/plan.md",
+      "harness/chain.ts",
+      "harness/entryExtension.ts",
+      "harness/gates.ts",
+      "harness/init.ts",
+      "harness/layout.ts",
+      "harness/planState.ts",
+      "harness/prompts.ts",
+      "harness/prompts/plan-derive.md",
+      "harness/prompts/plan-discipline.md",
+      "harness/prompts/plan-inbox.md",
+      "harness/prompts/plan-sweep.md",
+      "harness/templates/PROTOCOL.md",
+      "src/Dispatcher.ts",
+      "src/Gate.ts",
+      "src/PendingSchema.ts",
+      "src/Phase.ts",
+      "src/Prompt.ts",
+      "src/builtinGates.ts",
+      "src/chainLoad.ts",
+      "src/cli.ts",
+      "src/cliChainLoad.ts",
+      "src/cliHelp.ts",
+      "src/entryKey.ts",
+      "src/flumeApi.ts",
+      "src/friction.ts",
+      "src/git.ts",
+      "src/index.ts",
+      "src/paths.ts",
+      "src/pendingLedger.ts",
+      "src/selection.ts",
+      "src/singletonTick.ts",
+      "src/tickAttempt.ts",
+      "src/tickVerdict.ts",
+      "src/waveTick.ts",
+      "tests/Dispatcher.test.ts",
+      "tests/Gate.test.ts",
+      "tests/PendingSchema.test.ts",
+      "tests/Prompt.test.ts",
+      "tests/builtinGates.test.ts",
+      "tests/cli.test.ts",
+      "tests/cliHelp.test.ts",
+      "tests/cliRender.test.ts",
+      "tests/examples.integration.test.ts",
+      "tests/examples.test.ts",
+      "tests/friction.test.ts",
+      "tests/harnessChain.test.ts",
+      "tests/harnessEntryExtension.test.ts",
+      "tests/harnessGates.test.ts",
+      "tests/harnessInit.test.ts",
+      "tests/harnessJudge.test.ts",
+      "tests/harnessLayout.test.ts",
+      "tests/harnessPrompts.test.ts",
+      "tests/harnessWindows.test.ts",
+      "tests/helpers/external-vocabulary.json",
+      "tests/helpers/host-declarations.json",
+      "tests/helpers/repoChain.ts",
+      "tests/paths.test.ts",
+      "tests/pendingLedger.test.ts",
+      "tests/spawnShim.test.ts"
+    ]
   },
   {
     "tag": "A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT",
@@ -164,21 +235,6 @@
       ],
       "retire": []
     },
-    "summary": "A build tick stakes `<git-common-dir>/flume/claims/<slug>` before provisioning and drops it when the attempt ends; selection skips a claimed entry",
-    "per": {
-      "path": "spec/pending.md",
-      "section": "Claims — an entry in flight is left alone"
-    },
-    "acceptance": "A claim exists from before its entry's worktree is provisioned until the attempt ends, with the ship or the teardown; `TickContext.claimed` and `TickResult.claimedTags` report the set the tick read; selection skips a claimed entry and a claim held by a dead pid is reclaimed.",
-    "tests": [
-      "a build tick stakes its entry's claim before provisioning the worktree",
-      "the claim is removed when an attempt ends without shipping",
-      "selection skips an entry another tick holds a claim on",
-      "TickResult.claimedTags reports the claims the tick read",
-      "a claim held by a dead pid is reclaimed by the next selection"
-    ],
-    "pins": [],
-    "notes": "Reported, never inferred: nothing outside the engine re-reads the claims directory. What a producer does about a claimed entry it would have changed stays the chain's.",
     "observedFiles": [
       ".flume/plan/notes/A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT.md",
       "harness/chain.ts",
@@ -198,7 +254,22 @@
       "src/waveTick.ts",
       "tests/Dispatcher.test.ts",
       "tests/harnessPrompts.test.ts"
-    ]
+    ],
+    "summary": "A build tick stakes `<git-common-dir>/flume/claims/<slug>` before provisioning and drops it when the attempt ends; selection skips a claimed entry",
+    "per": {
+      "path": "spec/pending.md",
+      "section": "Claims — an entry in flight is left alone"
+    },
+    "acceptance": "A claim exists from before its entry's worktree is provisioned until the attempt ends, with the ship or the teardown; `TickContext.claimed` and `TickResult.claimedTags` report the set the tick read; selection skips a claimed entry and a claim held by a dead pid is reclaimed.",
+    "tests": [
+      "a build tick stakes its entry's claim before provisioning the worktree",
+      "the claim is removed when an attempt ends without shipping",
+      "selection skips an entry another tick holds a claim on",
+      "TickResult.claimedTags reports the claims the tick read",
+      "a claim held by a dead pid is reclaimed by the next selection"
+    ],
+    "pins": [],
+    "notes": "Reported, never inferred: nothing outside the engine re-reads the claims directory. What a producer does about a claimed entry it would have changed stays the chain's."
   },
   {
     "tag": "THE-PENDING-GATE-CARRIES-THE-CLAIM-CHECK",
@@ -251,43 +322,5 @@
     ],
     "pins": [],
     "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. It is the section's only merged-tree gate: there is no duplicate refusal beside it — the drain folds a duplicate instead (THE-DRAIN-FOLDS-A-DUPLICATE-FINDING)."
-  },
-  {
-    "tag": "EVERY-WINDOW-IS-LIVE-ON-ITS-OWN-WORK",
-    "gate": {
-      "kind": "open"
-    },
-    "dependsOnForks": [],
-    "priority": 0,
-    "files": {
-      "new": [],
-      "edit": [
-        {
-          "path": "harness/sweepWindow.ts",
-          "description": "the yield goes; the window is live on an armed or open rotation alone"
-        },
-        {
-          "path": "harness/inboxWindow.ts",
-          "description": "the record and friction legs stop reading `pickable`"
-        },
-        {
-          "path": "tests/harnessChain.test.ts",
-          "description": "both windows live over a pickable queue"
-        }
-      ],
-      "retire": []
-    },
-    "summary": "Drop the pickable-work yield from the sweep window and the inbox's record and friction legs: a window is live on its own unrouted work",
-    "per": {
-      "path": ".claude/rules/posture-sweep.md",
-      "section": "The sweep runs beside build, never ahead of it"
-    },
-    "acceptance": "A neighborhood is swept and a record drained on a tick where the queue carries pickable entries; only the inbox's liveness leg reads `pickable` at all.",
-    "tests": [
-      "the sweep window is live while the queue carries a pickable entry",
-      "the inbox record leg is live while the queue carries a pickable entry"
-    ],
-    "pins": [],
-    "notes": "`harness/sweepWindow.ts` already says the yield leaves with the entry deriving the new rule. Dropping the yield starves build while the declared order puts the slices ahead of it, so the reorder ships first; raising this repo's own `supervisor.maxTicks` stays an operator edit to `.flume/declaration.ts`, outside every fence."
   }
 ]
