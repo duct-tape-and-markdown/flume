@@ -596,8 +596,8 @@ should exist instead.
   no-commit tick, so the chain can still pass the baton on.
 - **What a decline saves depends on the concurrency — and so does `ctx.cwd`.**
   A **singleton** phase is consulted once per tick, ahead of all provisioning
-  (the worktree prune, `createWorktree`, `setupWorktree`), so `ctx.cwd` is the
-  repo root — no worktree exists yet, and declining costs a `rev-parse` and
+  (the worktree prune, the checkout itself, `setupWorktree`), so `ctx.cwd` is
+  the repo root — no worktree exists yet, and declining costs a `rev-parse` and
   the pending read, nothing more. A **fanout** phase is consulted once per
   assigned entry, *inside* that entry's worktree, after the whole wave has
   been provisioned and every `setupWorktree` has finished its dependency
@@ -1081,16 +1081,15 @@ boundary is what matters, not the vitest knob.)
 A gate must assert the property you actually care about — not byte-identity
 of a derived artifact against a checked-in copy.
 
-Worked example: `bundleFreshnessGate`. The intent was reasonable — "the
-committed bundle is in sync with source." The implementation was not: it
-rebuilt the bundle and asserted byte-equality against the checked-in
-`dist/`. It reverted a string of clean commits. The cause: pnpm's
-virtual-store hashes leaked into esbuild's output, producing ~257
-pure-reorder / hash-churn lines that changed the bytes without changing a
-single runtime behavior. The property that actually mattered — _the bundle
-is self-contained; no import escapes it_ — lived in a different gate,
-`bundleSelfContainmentGate`, which inspected that invariant directly and
-did not churn.
+Worked example: a bundle-freshness gate, since retired. The intent was
+reasonable — "the committed bundle is in sync with source." The
+implementation was not: it rebuilt the bundle and asserted byte-equality
+against the checked-in `dist/`. It reverted a string of clean commits. The
+cause: pnpm's virtual-store hashes leaked into esbuild's output, producing
+~257 pure-reorder / hash-churn lines that changed the bytes without changing
+a single runtime behavior. The property that actually mattered — _the bundle
+is self-contained; no import escapes it_ — lived in a different gate beside
+it, which inspected that invariant directly and did not churn.
 
 The lesson generalizes. Generated artifacts carry non-semantic entropy:
 content hashes, declaration order, timestamps, embedded toolchain-version
@@ -1167,7 +1166,7 @@ singleton).
 
 A fresh worktree holds only tracked files; provision the gitignored deps
 the gates need first. **Default:** the `setupWorktree` helper — sibling to
-the `builtinGates` precedent (`shellGate`, `tscGate`, …), carried on the
+the built-in gates precedent (`shellGate`, `tscGate`, …), carried on the
 factory's `api` parameter — inspects the worktree for a lockfile and runs
 the install it implies: `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`
 (pnpm hardlinks from its global store, so it costs seconds, not a
@@ -1563,12 +1562,12 @@ relocated dock's `rm` leaves them stranded under the config dir whenever
 
 The runtime hands you that root rather than making you find it. `api.paths`
 carries `{ repoRoot, configDir, flumeDir }` — absolute, already canonicalized,
-the identity-same values the dispatcher was constructed with. `buildFlumeApi`
-takes them as a **required** argument, so there is no way to be handed an API
-whose roots are unresolved, and therefore nothing for a fallback leg to cover:
-a `?? CHAIN_DIR` beside `flume.paths.flumeDir` would be re-deriving a fact the
-engine has already resolved, and would answer with the config dir if it ever
-fired. The runtime supplies the root; **placement is the chain's job.**
+the identity-same values the dispatcher was constructed with. The runtime
+builds that API from them as a **required** argument, so there is no way to be
+handed an API whose roots are unresolved, and therefore nothing for a fallback
+leg to cover: a `?? CHAIN_DIR` beside `flume.paths.flumeDir` would be
+re-deriving a fact the engine has already resolved, and would answer with the
+config dir if it ever fired. The runtime supplies the root; **placement is the chain's job.**
 
 **The rule:** if your chain writes any per-run artifact (session captures,
 scratch logs, anything mutable that a run produces), root its path at

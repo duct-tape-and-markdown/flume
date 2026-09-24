@@ -308,21 +308,44 @@ export const formatUnnamableType = (found: UnnamableType): string =>
   `${formatSite(found.position)} names ${formatSite(found.type)}`;
 
 /**
- * Scan a package's shipped modules for exports nothing earns.
+ * The shipped surface itself: the declaration emit, the entry declarations the
+ * `exports` map names, and every symbol reachable from them.
  *
- * Reachability starts at the `exports` map's entry declarations and expands
- * through **type positions only** — a type reference, a `typeof` query, an
- * `import()` type, a heritage clause — descending into namespace and interface
- * members. Over the emit that restriction costs nothing: a `.d.ts` holds no
- * function bodies to skip, so what the walk sees is what a consumer sees.
- *
- * The same walk carries a second, stricter verdict alongside it. Reachability
- * asks whether a consumer can *read* a type; `unnamable` asks whether one can
- * *write* it — a type named by a signature or a property position is nameable
- * only when some entry module exports it under a name an import specifier can
- * carry.
+ * One walk, two readers. The export verdict below asks which exports it did
+ * *not* reach; `packageSurface` asks what it did — and a second traversal
+ * spelled beside this one would be the same steps returning differently
+ * (`.claude/rules/engineering.md`, *A module is one job*).
  */
-export const scanExports = (request: ExportScanRequest): ExportScan => {
+interface ShippedSurface {
+  /** The request's root, resolved absolute. */
+  readonly root: string;
+  /** The build config, parsed — its file list is the shipped tree. */
+  readonly build: ts.ParsedCommandLine;
+  /** Every emitted declaration, by absolute path. */
+  readonly emitted: ReadonlyMap<string, string>;
+  /** The program over that emit, and the checker resolving it. */
+  readonly emit: ts.Program;
+  readonly emitChecker: ts.TypeChecker;
+  /** The `exports` map's declaration targets — the roots of the walk. */
+  readonly entryFiles: ReadonlySet<string>;
+  /** What those roots export under a name an import specifier can carry. */
+  readonly entryExported: ReadonlySet<ts.Symbol>;
+  /** Every symbol the walk reached, through type positions alone. */
+  readonly reachable: ReadonlySet<ts.Symbol>;
+  /** One emitted declaration folded back to the source it is built from. */
+  sourceOf(emittedPath: string): string;
+}
+
+/**
+ * Run the declaration emit and reach every symbol the `exports` map exposes.
+ *
+ * Reachability starts at the map's entry declarations and expands through
+ * **type positions only** — a type reference, a `typeof` query, an `import()`
+ * type, a heritage clause — descending into namespace and interface members.
+ * Over the emit that restriction costs nothing: a `.d.ts` holds no function
+ * bodies to skip, so what the walk sees is what a consumer sees.
+ */
+const shippedSurface = (request: ExportScanRequest): ShippedSurface => {
   const root = resolve(request.root);
   const build = parseConfig(join(root, request.buildConfig));
 
@@ -337,20 +360,9 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   const emit = declarationProgram(emitted, build.options);
   const emitChecker = emit.getTypeChecker();
 
-  const domain = repoProgram(request);
-  const { program, checker } = domain;
-
   const manifest = JSON.parse(
     readFileSync(join(root, request.manifest ?? "package.json"), "utf8"),
   ) as { readonly exports?: unknown };
-
-  /**
-   * An emitted declaration folded back to the source it is built from —
-   * `outDir` and `rootDir` are already absolute here (the config parser
-   * resolves them), so the fold is the one `tsc` performed in reverse.
-   */
-  const sourceOf = (emittedPath: string): string =>
-    resolve(rootDir, relative(outDir, emittedPath)).replace(/\.d\.ts$/, ".ts");
 
   /**
    * The map's declaration targets, which are the roots. A `default` condition
@@ -368,34 +380,18 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     );
   }
 
-  const emittedFileAt = (path: string): ts.SourceFile => {
+  /** The exports of one emitted declaration. */
+  const emitExports = (path: string): readonly ts.Symbol[] => {
     const sf = emit.getSourceFile(path);
     if (!sf) {
       throw new Error(`${relPath(root, path)} is not in the declaration emit`);
     }
-    return sf;
-  };
-
-  /** The exports of one emitted declaration. */
-  const emitExports = (path: string): readonly ts.Symbol[] => {
-    const modSym = emitChecker.getSymbolAtLocation(emittedFileAt(path));
+    const modSym = emitChecker.getSymbolAtLocation(sf);
     return modSym ? emitChecker.getExportsOfModule(modSym) : [];
   };
 
-  /** The exports of one source module, in the consumer-wide program. */
-  const sourceExports = (path: string): readonly ts.Symbol[] => {
-    const sf = program.getSourceFile(path);
-    if (!sf) {
-      throw new Error(
-        `${relPath(root, path)} is not in the program ${request.programConfig} describes`,
-      );
-    }
-    const modSym = checker.getSymbolAtLocation(sf);
-    return modSym ? checker.getExportsOfModule(modSym) : [];
-  };
-
-  // --- reachable from the exports map ------------------------------------
   const reachable = new Set<ts.Symbol>();
+  const entryExported = new Set<ts.Symbol>();
   const frontier: ts.Symbol[] = [];
   const reach = (sym: ts.Symbol | undefined): void => {
     if (!sym) return;
@@ -406,7 +402,10 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   };
 
   for (const entry of entryFiles) {
-    for (const sym of emitExports(entry)) reach(sym);
+    for (const sym of emitExports(entry)) {
+      entryExported.add(unalias(emitChecker, sym));
+      reach(sym);
+    }
   }
 
   for (let sym = frontier.pop(); sym !== undefined; sym = frontier.pop()) {
@@ -436,6 +435,146 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     }
   }
 
+  return {
+    root,
+    build,
+    emitted,
+    emit,
+    emitChecker,
+    entryFiles,
+    entryExported,
+    reachable,
+    /**
+     * `outDir` and `rootDir` are already absolute here (the config parser
+     * resolves them), so the fold is the one `tsc` performed in reverse.
+     */
+    sourceOf: (emittedPath) =>
+      resolve(rootDir, relative(outDir, emittedPath)).replace(/\.d\.ts$/, ".ts"),
+  };
+};
+
+/**
+ * Every name a consumer can write against the shipped surface — what the
+ * `exports` map reaches, rather than the map's own entry list.
+ *
+ * The map names two modules; everything a chain author actually writes is a
+ * member or a literal arm of what those two hand out (`Chain.writablePaths`,
+ * a gate's `afterCommit`), and a set built from the entry list alone would
+ * hold almost none of it.
+ */
+export interface PackageSurface {
+  /**
+   * The shipped modules the manifest's `exports` map names, relative to the
+   * request's root and folded back to the sources they are built from.
+   */
+  readonly entryModules: readonly string[];
+  /**
+   * Every name the walk reached: an exported symbol, a member of one, an enum
+   * member, and the string arms a reached type spells its own vocabulary in.
+   */
+  readonly names: ReadonlySet<string>;
+}
+
+/**
+ * A declared name as a consumer writes it. A computed or private member is
+ * reached by no import specifier and named by nothing a page can write, so it
+ * contributes nothing.
+ */
+const declaredName = (name: ts.PropertyName | undefined): string | undefined => {
+  if (name === undefined) return undefined;
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name)) return name.text;
+  return undefined;
+};
+
+/**
+ * The names the shipped surface holds.
+ *
+ * Three kinds, each a spelling a page reaches for. A **reached symbol's own
+ * name** is the export and the type. A **member name** is how a chain author
+ * addresses one — `writablePaths`, `flumeDir` — read off every declaration
+ * the walk reached, nested type literals included, since an inline object
+ * type is addressed exactly like a named one. And a **string literal type**
+ * is a vocabulary the surface declares rather than a value it happens to
+ * carry: `afterCommit` and `"fanout"` are names the interface holds, and a
+ * page naming one is naming the surface.
+ */
+export const packageSurface = (request: ExportScanRequest): PackageSurface => {
+  const surface = shippedSurface(request);
+  const names = new Set<string>();
+
+  const walk = (node: ts.Node): void => {
+    if (isPrivateMember(node)) return;
+    if (
+      ts.isPropertySignature(node) ||
+      ts.isPropertyDeclaration(node) ||
+      ts.isMethodSignature(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isGetAccessorDeclaration(node) ||
+      ts.isSetAccessorDeclaration(node)
+    ) {
+      const name = declaredName(node.name);
+      if (name !== undefined) names.add(name);
+    } else if (ts.isEnumMember(node)) {
+      const name = declaredName(node.name);
+      if (name !== undefined) names.add(name);
+    } else if (ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)) {
+      names.add(node.literal.text);
+    }
+    ts.forEachChild(node, walk);
+  };
+
+  for (const sym of surface.reachable) {
+    names.add(sym.getName());
+    for (const decl of sym.declarations ?? []) {
+      if (ts.isSourceFile(decl)) continue;
+      if (!surface.emitted.has(resolve(decl.getSourceFile().fileName))) continue;
+      ts.forEachChild(decl, walk);
+    }
+  }
+
+  return {
+    entryModules: [...surface.entryFiles].map((f) =>
+      relPath(surface.root, surface.sourceOf(f)),
+    ),
+    names,
+  };
+};
+
+/**
+ * Scan a package's shipped modules for exports nothing earns.
+ *
+ * Reachability starts at the `exports` map's entry declarations and expands
+ * through **type positions only** — a type reference, a `typeof` query, an
+ * `import()` type, a heritage clause — descending into namespace and interface
+ * members. Over the emit that restriction costs nothing: a `.d.ts` holds no
+ * function bodies to skip, so what the walk sees is what a consumer sees.
+ *
+ * The same walk carries a second, stricter verdict alongside it. Reachability
+ * asks whether a consumer can *read* a type; `unnamable` asks whether one can
+ * *write* it — a type named by a signature or a property position is nameable
+ * only when some entry module exports it under a name an import specifier can
+ * carry.
+ */
+export const scanExports = (request: ExportScanRequest): ExportScan => {
+  const surface = shippedSurface(request);
+  const { root, build, emitted, emitChecker, entryExported, reachable, sourceOf } =
+    surface;
+
+  const domain = repoProgram(request);
+  const { program, checker } = domain;
+
+  /** The exports of one source module, in the consumer-wide program. */
+  const sourceExports = (path: string): readonly ts.Symbol[] => {
+    const sf = program.getSourceFile(path);
+    if (!sf) {
+      throw new Error(
+        `${relPath(root, path)} is not in the program ${request.programConfig} describes`,
+      );
+    }
+    const modSym = checker.getSymbolAtLocation(sf);
+    return modSym ? checker.getExportsOfModule(modSym) : [];
+  };
+
   // --- types the exports map reaches but cannot hand out ------------------
   // Reachability above proves a type is *readable*: it sits in the emitted
   // `.d.ts` and hover text shows it. It does not prove the type is
@@ -463,13 +602,6 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   // a type alias's own type node is a *second name* for what it points at
   // rather than a position naming it — importing the alias imports the type —
   // so the walk descends through one without reporting it.
-  const entryExported = new Set<ts.Symbol>();
-  for (const entry of entryFiles) {
-    for (const sym of emitExports(entry)) {
-      entryExported.add(unalias(emitChecker, sym));
-    }
-  }
-
   /**
    * One position the walk found, under the name a consumer reads it by —
    * dotted from the reached symbol: `renderPrompt`, `Chain.worktreesBase`. A
@@ -721,7 +853,7 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   }
 
   return {
-    entryModules: [...entryFiles].map((f) => relPath(root, sourceOf(f))),
+    entryModules: [...surface.entryFiles].map((f) => relPath(root, sourceOf(f))),
     scanned,
     findings: unearned,
     reachable: reachedSites,

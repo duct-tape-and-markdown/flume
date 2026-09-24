@@ -37,7 +37,8 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { headingLines } from "./docSections.ts";
+import { fencedSpans, isDeclarationSubject } from "./commentCitations.ts";
+import { headingLines, proseLines } from "./docSections.ts";
 import { filesUnder, relPath } from "./repoProgram.ts";
 
 /** One markdown link, split at the `#` the destination may carry. */
@@ -380,4 +381,206 @@ export function scanSectionRefs(request: AnchorScanRequest): SectionScan {
   }
 
   return { pages, numbered, prose, scanned, resolved, findings };
+}
+
+/**
+ * One backticked span a page states, at the line its opening fence sits on.
+ *
+ * `.claude/rules/engineering.md` *Narration is the ladder's bottom rung*
+ * reaches a page the way it reaches a comment: a page that states what a
+ * shipped interface does may be pinned against that interface, and a
+ * backticked identifier on one is a token the program can answer rather than
+ * a sentence. The token, never its meaning — what the page *claims* about a
+ * name stays with its authors, while that the name still exists is
+ * mechanical.
+ */
+export interface PageSpan {
+  /** The page stating it, repo-relative and posix-separated. */
+  readonly page: string;
+  /** The 1-based line the opening fence sits on. */
+  readonly line: number;
+  /** The span without its fences, a line break folded to the one space markdown renders. */
+  readonly text: string;
+}
+
+/**
+ * A span a line break split, read both ways that break can be read: `text` as
+ * markdown joins it, `closed` as the author spelled it before the wrap.
+ */
+export interface WrappedSpan extends PageSpan {
+  /** The span with the break itself removed — the spelling the wrap broke. */
+  readonly closed: string;
+}
+
+/** What one read of a domain's pages found, before anything resolves it. */
+export interface IdentifierRead {
+  /** Every page read, repo-relative and posix-separated. */
+  readonly pages: readonly string[];
+  /** Every span one paragraph opened and closed, subject or not. */
+  readonly backticked: readonly PageSpan[];
+  /**
+   * The spans a line break split, and among them the ones whose closed
+   * spelling is a subject. The space markdown puts at the break is not a
+   * character any subject spelling admits, so the citation the wrap meant to
+   * carry falls out of the judged set whatever it named — reported so it
+   * cannot do that quietly (`.claude/rules/engineering.md`, *Loud or
+   * nothing*).
+   */
+  readonly wraps: {
+    readonly scanned: readonly WrappedSpan[];
+    readonly findings: readonly WrappedSpan[];
+  };
+  /** The judged set: the spans whose spelling names a declaration. */
+  readonly scanned: readonly PageSpan[];
+}
+
+/**
+ * The pages whose backticked identifiers are judged: the three
+ * `.claude/rules/engineering.md` *Narration is the ladder's bottom rung*
+ * names by role — the authoring page, the CLI page, the README. Each states
+ * what a shipped interface does, which is what earns them the arm; a
+ * migration guide or a survey names retired surface on purpose and is out by
+ * construction.
+ *
+ * Here rather than in the pin that reads it, because the list is the rule's
+ * own scope and two readers resolve against it: the verdict, and the
+ * exclusion list's non-vaciousness over every judged set.
+ */
+export const INTERFACE_PAGES: PageDomain = {
+  trees: [],
+  files: ["docs/CHAIN-AUTHORING.md", "docs/CLI.md", "README.md"],
+};
+
+/** Where a page's identifiers are judged, and what answers them. */
+export interface IdentifierScanRequest extends AnchorScanRequest {
+  /**
+   * Every name the package's shipped surface holds — `packageSurface`
+   * (`tests/helpers/exportGraph.ts`). A page states what a shipped interface
+   * does, so what that interface hands out is what its names resolve
+   * against.
+   */
+  readonly surface: ReadonlySet<string>;
+}
+
+/** What one scan of a domain's backticked identifiers found. */
+export interface IdentifierScan extends IdentifierRead {
+  /** The judged spans whose every dotted segment the surface holds. */
+  readonly resolved: readonly PageSpan[];
+  /** Those naming a segment it does not — the arm's verdict. */
+  readonly findings: readonly PageSpan[];
+}
+
+/** `page:line text`, the form a failure message cites a span in. */
+export const formatSpan = (site: PageSpan): string =>
+  `${site.page}:${site.line} ${site.text}`;
+
+/**
+ * A wrapped span read across its break. A space is what markdown renders and
+ * what breaks whatever the span was spelling; nothing at all is the spelling
+ * the author had before the wrap. No furniture comes off — a page line
+ * carries none, which is the whole difference from the same fold over a
+ * comment.
+ */
+const joinWrapped = (raw: string, at: string): string =>
+  raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .join(at);
+
+/**
+ * Every backticked span the domain's pages state, judged set and wraps apart.
+ *
+ * The paragraph is the pairing unit: spans are paired over a run of
+ * consecutive prose lines (`fencedSpans`, `tests/helpers/commentCitations.ts`)
+ * and a blank line ends the run, because markdown pairs no span across one.
+ * Fenced blocks are out on the shared read of what a fence covers
+ * (`proseLines`, `tests/helpers/docSections.ts`): a sample's identifiers are
+ * code the page is showing, not a name its prose cites.
+ *
+ * Which spans are judged is `isDeclarationSubject`'s — the one subject rule
+ * the comment scan is held to, narrowed to the alphabet a surface can answer.
+ *
+ * Read without a surface, so a caller that wants the judged set alone — the
+ * exclusion list's own non-vacuity, say — pays for no declaration emit.
+ */
+export function pageIdentifiers(request: AnchorScanRequest): IdentifierRead {
+  const root = resolve(request.root);
+  const pages: string[] = [];
+  const backticked: PageSpan[] = [];
+  const wrapped: WrappedSpan[] = [];
+
+  for (const path of pagesUnder(root, request.domain)) {
+    const page = relPath(root, path);
+    pages.push(page);
+
+    /** One paragraph: a run of consecutive, non-blank, unfenced lines. */
+    let run: { readonly line: number; readonly text: string }[] = [];
+    const read = (): void => {
+      if (run.length === 0) return;
+      const joined = run.map((entry) => entry.text).join("\n");
+      const first = run[0]?.line ?? 0;
+      const lineAt = (offset: number): number =>
+        first + (joined.slice(0, offset).match(/\n/g)?.length ?? 0);
+
+      for (const span of fencedSpans(joined)) {
+        const site = { page, line: lineAt(span.start), text: span.raw };
+        if (span.raw.includes("\n")) {
+          wrapped.push({
+            ...site,
+            text: joinWrapped(span.raw, " "),
+            closed: joinWrapped(span.raw, ""),
+          });
+        } else {
+          backticked.push(site);
+        }
+      }
+      run = [];
+    };
+
+    for (const line of proseLines(readFileSync(path, "utf8"))) {
+      const previous = run[run.length - 1];
+      if (line.text.trim() === "" || (previous && line.line !== previous.line + 1)) {
+        read();
+        if (line.text.trim() === "") continue;
+      }
+      run.push(line);
+    }
+    read();
+  }
+
+  return {
+    pages,
+    backticked,
+    wraps: {
+      scanned: wrapped,
+      // The wrap is read by the same rule as the judged set, with the break
+      // closed: what the author spelled before markdown put a space in it.
+      findings: wrapped.filter((site) => isDeclarationSubject(site.closed)),
+    },
+    scanned: backticked.filter((site) => isDeclarationSubject(site.text)),
+  };
+}
+
+/**
+ * Every backticked identifier the domain's pages state, resolved against the
+ * package's shipped surface.
+ *
+ * A citation resolves when **every** one of its dotted segments is a name the
+ * surface holds — `Chain.worktreesBase` needs both halves, because a page
+ * naming a member of a type the package retired is as dead as one naming the
+ * type. What a segment *means* is never read: the scan proves the name exists
+ * and stops there.
+ */
+export function scanPageIdentifiers(
+  request: IdentifierScanRequest,
+): IdentifierScan {
+  const read = pageIdentifiers(request);
+  const answered = (site: PageSpan): boolean =>
+    site.text.split(".").every((segment) => request.surface.has(segment));
+
+  return {
+    ...read,
+    resolved: read.scanned.filter(answered),
+    findings: read.scanned.filter((site) => !answered(site)),
+  };
 }

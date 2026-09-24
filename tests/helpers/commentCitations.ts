@@ -413,6 +413,35 @@ const isSubject = (text: string): boolean => {
 };
 
 /**
+ * Whether a backticked span names **one declaration**: the subject rule
+ * above, narrowed to a span carrying neither a slash nor a dot.
+ *
+ * Narrowed here rather than re-spelled at the reader that wants it: the
+ * spellings that say *name* are one rule, and a second copy would drift the
+ * moment either moved. What the narrowing is for is a reader whose
+ * resolution is a package's shipped surface rather than a tree of modules —
+ * a surface holds names, not files, and it is handed no citing module whose
+ * own imports would say which of the two a span is.
+ *
+ * The dot is what that reader cannot read. In a comment the two spellings
+ * need no telling apart, because one tree answers both: `chain.ts` resolves
+ * as a module of the judged trees and `Chain.pendingDir` as a member of
+ * them, and `isSubject` admits either by the same arm. Against a surface
+ * they are one spelling with two meanings and no evidence to pick by — the
+ * file arm would drop every member citation, and the member arm would red
+ * every filename on its extension. So a dotted span is left unjudged, which
+ * is the class this predicate does not yet resolve rather than one it
+ * decides wrongly.
+ *
+ * Not `isIdentifierSubject`, which widens the same rule the other way: a
+ * span the author paired with a home may be spelled in capitals throughout,
+ * because the pair has already claimed a declaration. A span standing alone
+ * on a page has claimed nothing, so the capitals fence stands.
+ */
+export const isDeclarationSubject = (text: string): boolean =>
+  !text.includes("/") && !text.includes(".") && isSubject(text);
+
+/**
  * One segment of a citation spelled in capitals: `JSON`, `EX_OK`,
  * `SPAWN_OUTPUT_CAP_BYTES`. The underscore `SEGMENT` refuses is the
  * separator this spelling joins its words with, so the two charsets are
@@ -714,18 +743,70 @@ const joinWrapped = (raw: string, at: string): string =>
     .map((line) => line.trim())
     .join(at);
 
+/** One backticked span a run of lines spells, at its extent in that run. */
+export interface FencedSpan {
+  /** Where the opening fence sits in the joined run. */
+  readonly start: number;
+  /** Where the closing fence ends in it. */
+  readonly end: number;
+  /** The text between the fences, verbatim — a line break still a break. */
+  readonly raw: string;
+}
+
+/**
+ * Every backticked span one run of lines closes, in run order.
+ *
+ * Pairing runs over a *run* of lines rather than over one line at a time,
+ * because markdown does. A line that ends mid-span is closed by the next
+ * line's backtick, and every span behind it takes its parity from that
+ * pairing — read line by line, the wrapped span is lost *and* the rest of
+ * the run pairs one backtick out of step, so the spans after it go unjudged
+ * too. Equal-length runs delimit a span, so a fenced block is one span
+ * rather than three stray backticks, and a run nothing of its own length
+ * closes opens no span at all.
+ *
+ * The text is handed back verbatim, break included: what the furniture
+ * around a break is — a comment's margin, a page's nothing — belongs to the
+ * caller that knows which it is reading.
+ */
+export const fencedSpans = (joined: string): FencedSpan[] => {
+  const marks = [...joined.matchAll(/`+/g)].map((m) => ({
+    start: m.index,
+    length: m[0].length,
+  }));
+  const found: FencedSpan[] = [];
+
+  let index = 0;
+  while (index < marks.length) {
+    const open = marks[index];
+    if (!open) break;
+    const closeAt = marks.findIndex(
+      (mark, at) => at > index && mark.length === open.length,
+    );
+    if (closeAt < 0) {
+      index += 1;
+      continue;
+    }
+    const close = marks[closeAt];
+    if (!close) break;
+    found.push({
+      start: open.start,
+      end: close.start + close.length,
+      raw: joined.slice(open.start + open.length, close.start),
+    });
+    index = closeAt + 1;
+  }
+
+  return found;
+};
+
 /**
  * Every citation in a file's comments: the backticked spans, split by whether
  * the line that opened one also closed it, and the unbackticked `*.md` page
  * names the text between them carries.
  *
- * Pairing runs over a *run* of consecutive comment lines rather than over one
- * line at a time, because markdown does. A line that ends mid-span is closed
- * by the next line's backtick, and every span behind it takes its parity from
- * that pairing — read line by line, the wrapped span is lost *and* the rest
- * of the comment pairs one backtick out of step, so the citations after it go
- * unjudged too. Equal-length runs delimit a span, so a fenced block inside a
- * doc comment is one span rather than three stray backticks.
+ * The run of consecutive comment lines is the unit the spans are paired over,
+ * on the rule `fencedSpans` above carries.
  *
  * The page names are read off the same pairing, from the text no span covers,
  * so a fenced citation is collected once and by the arm its author chose. One
@@ -772,54 +853,26 @@ const commentSpans = (
     });
     /** The run's wraps, both fencings, ordered by where the break sits. */
     const runWrapped: Array<{ at: number; site: WrappedCitation }> = [];
-    const marks = [...joined.matchAll(/`+/g)].map((m) => ({
-      start: m.index,
-      length: m[0].length,
-    }));
-    /** Every span the pairing below closed, fences included. */
-    const fenced: Array<{ start: number; end: number }> = [];
+    /** Every span the shared pairing closed, fences included. */
+    const fenced = fencedSpans(joined);
     /** The unwrapped ones with their extents — what the pair arm reads. */
     const onOneLine: Array<{ start: number; end: number; site: CitationSite }> =
       [];
-    let index = 0;
-    while (index < marks.length) {
-      const open = marks[index];
-      if (!open) break;
-      const closeAt = marks.findIndex(
-        (mark, at) => at > index && mark.length === open.length,
-      );
-      // A run nothing of its own length closes opens no span at all.
-      if (closeAt < 0) {
-        index += 1;
-        continue;
-      }
-      const close = marks[closeAt];
-      if (!close) break;
-      fenced.push({ start: open.start, end: close.start + close.length });
-      const raw = joined.slice(open.start + open.length, close.start);
-      const site = {
-        module,
-        line: lineAt(open.start),
-        text: raw,
-      };
-      if (raw.includes("\n")) {
+    for (const span of fenced) {
+      const site = { module, line: lineAt(span.start), text: span.raw };
+      if (span.raw.includes("\n")) {
         runWrapped.push({
-          at: open.start,
+          at: span.start,
           site: {
             ...site,
-            text: joinWrapped(raw, " "),
-            closed: joinWrapped(raw, ""),
+            text: joinWrapped(span.raw, " "),
+            closed: joinWrapped(span.raw, ""),
           },
         });
       } else {
         closed.push(site);
-        onOneLine.push({
-          start: open.start,
-          end: close.start + close.length,
-          site,
-        });
+        onOneLine.push({ start: span.start, end: span.end, site });
       }
-      index = closeAt + 1;
     }
 
     // The pair: an identifier span the author parenthesised a path behind.

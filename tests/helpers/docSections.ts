@@ -15,6 +15,40 @@ const HEADING = /^(#{1,6}) /;
 /** A line that opens or closes a fenced block. */
 const FENCE = /^\s*(?:```|~~~)/;
 
+/** One line the renderer shows as prose, and the 1-based line it sits on. */
+export interface ProseLine {
+  /** The 1-based line of the page. */
+  readonly line: number;
+  /** The line verbatim, whatever markup it carries. */
+  readonly text: string;
+}
+
+/**
+ * Every line of a page outside a fenced block, in page order — the one read
+ * of what a fence covers, which every reader below and the page-citation
+ * scans share (`.claude/rules/engineering.md`, *A module is one job*). A
+ * fenced block is a sample: its `# ` lines are not headings, its bullets are
+ * not leads, and its backticked spans are code rather than a citation the
+ * prose makes.
+ *
+ * A blank line is prose and is kept: it is what ends a list, so a reader that
+ * dropped it would run a paragraph on as the last bullet's tail.
+ */
+export function proseLines(page: string): ProseLine[] {
+  const found: ProseLine[] = [];
+  let fenced = false;
+
+  for (const [index, text] of page.split(/\r?\n/).entries()) {
+    if (FENCE.test(text)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (!fenced) found.push({ line: index + 1, text });
+  }
+
+  return found;
+}
+
 /**
  * One section of a markdown page: the heading line `heading` names through
  * the line before the next heading at the same or a higher level — its own
@@ -61,17 +95,11 @@ interface HeadingLine {
  */
 function headingsOf(lines: readonly string[]): HeadingLine[] {
   const found: HeadingLine[] = [];
-  let fenced = false;
 
-  for (const [index, line] of lines.entries()) {
-    if (FENCE.test(line)) {
-      fenced = !fenced;
-      continue;
-    }
-    if (fenced) continue;
-    const level = HEADING.exec(line)?.[1]?.length;
+  for (const { line: at, text } of proseLines(lines.join("\n"))) {
+    const level = HEADING.exec(text)?.[1]?.length;
     if (level === undefined) continue;
-    found.push({ index, level, line });
+    found.push({ index: at - 1, level, line: text });
   }
 
   return found;
@@ -165,16 +193,10 @@ export function sectionTitles(page: string): string[] {
     found.line.replace(HEADING_OPENING, "").trim(),
   );
 
-  let fenced = false;
-  for (const [index, line] of lines.entries()) {
-    if (FENCE.test(line)) {
-      fenced = !fenced;
-      continue;
-    }
-    if (fenced) continue;
-    const opening = BOLD_LEAD.exec(line);
+  for (const { line: at, text } of proseLines(lines.join("\n"))) {
+    const opening = BOLD_LEAD.exec(text);
     if (!opening) continue;
-    const lead = boldLeadAt(lines, index, opening[0].length);
+    const lead = boldLeadAt(lines, at - 1, opening[0].length);
     if (lead !== undefined) titles.push(lead.trim().replace(LEAD_TERMINATOR, ""));
   }
 
@@ -292,14 +314,8 @@ const LEAD_END = " \u2014 ";
 function bulletsOf(section: string): string[] {
   const bullets: string[] = [];
   let listed = false;
-  let fenced = false;
 
-  for (const line of section.split(/\r?\n/)) {
-    if (FENCE.test(line)) {
-      fenced = !fenced;
-      continue;
-    }
-    if (fenced) continue;
+  for (const { text: line } of proseLines(section)) {
     if (BULLET_MARKER.test(line)) {
       bullets.push(line.replace(BULLET_MARKER, "").trim());
       listed = true;

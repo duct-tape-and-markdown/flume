@@ -19,18 +19,24 @@ import { dirname, join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { externalVocabulary } from "./helpers/externalVocabulary.ts";
+import { packageSurface } from "./helpers/exportGraph.ts";
 import {
   anchorSlug,
   type AnchorScan,
   formatAnchor,
   formatSectionRef,
+  formatSpan,
   headingSlugs,
+  INTERFACE_PAGES,
   markdownLinks,
   pagesUnder,
   scanPageAnchors,
+  scanPageIdentifiers,
   scanSectionRefs,
   sectionNumbers,
   sectionRefs,
+  type IdentifierScan,
   type PageDomain,
   type SectionScan,
 } from "./helpers/pageAnchors.ts";
@@ -149,8 +155,47 @@ const SECTION_FIXTURE: Record<string, string> = {
   ].join("\n"),
 };
 
+/**
+ * A third fixture tree, read by the identifier arm: one page carrying live
+ * names, a retired one, spellings the subject rule refuses, a fenced sample,
+ * a wrap, and an unclosed fence ahead of a live citation.
+ */
+const IDENTIFIER_FIXTURE: Record<string, string> = {
+  "pages/authoring.md": [
+    "# The authoring page",
+    "",
+    "`renderPrompt` reads a `writablePaths`, while `bundleFreshnessGate` is",
+    "named by nothing the package ships. A flag (`--max`), an ordinary word",
+    "(`the`), an acronym (`JSON`), a member (`Chain.writablePaths`) and a page",
+    "(`spec/loop.md`) are each no citation this arm resolves.",
+    "",
+    "```ts",
+    "// `alsoGone` is a sample, and a sample's names are code.",
+    "```",
+    "",
+    "A paragraph may open a fence it never closes (`), and the stray one",
+    "pairs with nothing.",
+    "",
+    "The `liveName` a paragraph behind it states is judged all the same.",
+    "",
+    "A wrapped `worktrees",
+    "Base` is the wrap it is.",
+    "",
+  ].join("\n"),
+};
+
+/** What that fixture's package hands out. */
+const FIXTURE_SURFACE: ReadonlySet<string> = new Set([
+  "renderPrompt",
+  "Chain",
+  "writablePaths",
+  "worktreesBase",
+  "liveName",
+]);
+
 let fixtureRoot = "";
 let fixtureSections: SectionScan;
+let fixtureIdentifiers: IdentifierScan;
 let repoScan: AnchorScan;
 let repoSections: SectionScan;
 
@@ -158,12 +203,21 @@ beforeAll(async () => {
   repoScan = scanPageAnchors({ root: REPO_ROOT, domain: ANCHOR_DOMAIN });
   repoSections = scanSectionRefs({ root: REPO_ROOT, domain: SECTION_DOMAIN });
   fixtureRoot = await mkTempDir("flume-anchors-");
-  for (const [rel, body] of Object.entries({ ...FIXTURE, ...SECTION_FIXTURE })) {
+  for (const [rel, body] of Object.entries({
+    ...FIXTURE,
+    ...SECTION_FIXTURE,
+    ...IDENTIFIER_FIXTURE,
+  })) {
     const path = join(fixtureRoot, ...rel.split("/"));
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, body);
   }
   fixtureSections = scanSectionRefs({ root: fixtureRoot, domain: { trees: ["notes"] } });
+  fixtureIdentifiers = scanPageIdentifiers({
+    root: fixtureRoot,
+    domain: { trees: ["pages"] },
+    surface: FIXTURE_SURFACE,
+  });
 });
 
 afterAll(async () => {
@@ -331,5 +385,103 @@ it("a docs page with no numbered headings leaves its `§ N` as prose", () => {
   const numbered = new Set(repoSections.numbered);
   expectNoFindings(
     repoSections.prose.filter((site) => numbered.has(site.page)).map(formatSectionRef),
+  );
+});
+
+/**
+ * The exclusions, and what carries them: `externalVocabulary`
+ * (`tests/helpers/externalVocabulary.ts`) holds the list's own terms. An
+ * interface page reaches two owners the package's surface cannot answer — a
+ * name the toolchain or the host owns, and a declaration of `examples/`,
+ * which is a chain this repo ships as source and not as surface.
+ */
+const EXTERNAL_VOCABULARY = externalVocabulary();
+
+it("an interface page naming a backticked identifier the package's surface does not hold reds the page scan", () => {
+  const scan = fixtureIdentifiers;
+
+  // Non-vacuity: the page was read, and the spans the subject rule refuses
+  // were seen and dropped rather than never collected. A reader that stopped
+  // pairing would report the same clean verdict over zero citations.
+  expect(scan.pages).toEqual(["pages/authoring.md"]);
+  expect(scan.backticked.map((site) => site.text)).toContain("--max");
+  expect(scan.backticked.map((site) => site.text)).toContain("JSON");
+
+  // The judged set: what names one declaration, and nothing else. A fenced
+  // sample's span is code the page is showing, so the name inside the sample
+  // is not in it; and the paragraph is the pairing unit, so the stray
+  // backtick two paragraphs down pairs with nothing rather than swallowing
+  // every span behind it — which is what a page-wide pairing would do.
+  expect(scan.scanned.map((site) => site.text)).toEqual([
+    "renderPrompt",
+    "writablePaths",
+    "bundleFreshnessGate",
+    "liveName",
+  ]);
+  expect(scan.resolved.map((site) => site.text)).toEqual([
+    "renderPrompt",
+    "writablePaths",
+    "liveName",
+  ]);
+
+  // The retired name is the finding, at the line a reader has to edit.
+  expect(scan.findings.map(formatSpan)).toEqual([
+    "pages/authoring.md:3 bundleFreshnessGate",
+  ]);
+
+  // And the wrap is reported rather than judged: markdown puts a space in the
+  // token, so the citation falls out of the judged set whatever it named.
+  expect(scan.scanned.map((site) => site.text)).not.toContain("worktreesBase");
+  expect(scan.wraps.findings.map(formatSpan)).toEqual([
+    "pages/authoring.md:17 worktrees Base",
+  ]);
+});
+
+it("every backticked identifier docs/CHAIN-AUTHORING.md, docs/CLI.md and README.md carry names a symbol the package's surface holds", () => {
+  const surface = packageSurface({
+    root: REPO_ROOT,
+    buildConfig: "tsconfig.build.json",
+    programConfig: "tsconfig.json",
+  });
+
+  // Non-vacuity on the resolving side: a surface built from the `exports`
+  // map's entry list alone would hold two module symbols and red almost every
+  // correct span, and an emit that resolved nothing would hold none at all.
+  expect(surface.entryModules).toEqual(["src/index.ts", "harness/index.ts"]);
+  expect(surface.names.size).toBeGreaterThan(500);
+
+  const scan = scanPageIdentifiers({
+    root: REPO_ROOT,
+    domain: INTERFACE_PAGES,
+    surface: surface.names,
+  });
+
+  // Non-vacuity on the judged side: all three pages were read and the judged
+  // set is populated before the emptiness assertion.
+  expect(scan.pages).toEqual([
+    "docs/CHAIN-AUTHORING.md",
+    "docs/CLI.md",
+    "README.md",
+  ]);
+  expect(scan.scanned.length).toBeGreaterThan(300);
+  expect(scan.resolved.length).toBeGreaterThan(0);
+
+  // Each exclusion is non-vacuous in the other direction: a name the pages
+  // stopped citing is a hole widened for nothing. Read over the union of
+  // every judged set, since one list serves every reader of it.
+  const excluded = [...EXTERNAL_VOCABULARY.keys()];
+  const unresolved = new Set(scan.findings.map((site) => site.text));
+  expect(excluded.filter((name) => unresolved.has(name)).length).toBeGreaterThan(
+    0,
+  );
+
+  // A wrap names nothing the scan can resolve, so one carrying a citation is
+  // a defect at the page rather than a resolution arm the scan is missing.
+  expectNoFindings(scan.wraps.findings.map(formatSpan));
+
+  expectNoFindings(
+    scan.findings
+      .filter((site) => !excluded.includes(site.text))
+      .map(formatSpan),
   );
 });

@@ -21,7 +21,7 @@
  * that never imported it.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +36,9 @@ import {
   scanCommentCitations,
   scanPageCitations,
 } from "./helpers/commentCitations.ts";
+import { externalVocabulary } from "./helpers/externalVocabulary.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { INTERFACE_PAGES, pageIdentifiers } from "./helpers/pageAnchors.ts";
 import {
   NO_FINDINGS,
   expectNoFindings,
@@ -1378,49 +1380,17 @@ it("a findings rendering refuses a finding carrying a line break rather than eli
 // --- the pin -------------------------------------------------------------
 
 /**
- * Vocabulary the trees cite by name and legitimately do not declare, because
- * something outside the scan's reach owns it and no rung of the ladder here
- * can hold it. The scan says so by name rather than widening its resolution
- * until the residue disappears.
+ * The exclusions, and what carries them: `externalVocabulary`
+ * (`tests/helpers/externalVocabulary.ts`) holds the list's own terms, which
+ * every reader of it shares.
  *
- * A path citation sits here on the same terms: the file is real but the
- * working tree is not what holds it — a build output, a running loop, a
- * consumer's state root, a prompt resolved against a chain's config dir.
- * Resolving those would mean teaching the scan a second root it cannot
- * check, which is how an exclusion becomes a hole.
- *
- * `tests/` reaches two more owners that sit inside this repo and still
- * outside the scan's reach. A declaration of `examples/` is real code the
+ * `tests/` reaches two owners that sit inside this repo and still outside
+ * this scan's reach. A declaration of `examples/` is real code the
  * carve-out's three trees do not include. A member of a fixture this suite
  * authors as source *text* is spelled in no declaration the program holds.
  * Both are cited on purpose and neither is a token the checker can answer.
- *
- * One list for both scans below, because an exclusion is a claim about the
- * name rather than about the reader that met it: a page an example chain
- * writes only into a consumer's repo is external whether a `tests/` comment
- * or the example itself is the one citing it. So each entry's non-vacuity is
- * read over the union of the two judged sets.
- *
- * The reason rides the entry rather than the list, because an exclusion is
- * the one place the verdict is overridden by hand: a name added without one
- * is indistinguishable from residue nobody wanted to look at.
- *
- * **It is data, not a module, and that is load-bearing.** A string literal
- * resolves a citation, and `tests/` is now a judged tree, so a list spelling
- * the names it excuses would resolve every one of them from inside the
- * program and leave this pin green over an empty override. A `.json` no
- * module imports is in no program, so the list cannot answer for itself.
  */
-const EXTERNAL_VOCABULARY: ReadonlyMap<string, string> = new Map(
-  Object.entries(
-    JSON.parse(
-      readFileSync(
-        new URL("./helpers/external-vocabulary.json", import.meta.url),
-        "utf8",
-      ),
-    ) as Record<string, string>,
-  ),
-);
+const EXTERNAL_VOCABULARY = externalVocabulary();
 
 it("every backticked identifier in a src/, harness/ or tests/ comment names a declaration those trees hold", () => {
   const scan = repoScan;
@@ -1447,6 +1417,9 @@ it("every backticked identifier in a src/, harness/ or tests/ comment names a de
   const judged = [
     ...scan.scanned.map((s) => s.text),
     ...repoPageScan.scanned.map((s) => s.text),
+    ...pageIdentifiers({ root: REPO_ROOT, domain: INTERFACE_PAGES }).scanned.map(
+      (s) => s.text,
+    ),
   ];
   const excluded = [...EXTERNAL_VOCABULARY.keys()];
   expect(excluded.length).toBeGreaterThan(0);
