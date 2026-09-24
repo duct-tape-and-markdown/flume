@@ -146,7 +146,10 @@ function lane(budget?: number, lanes: readonly DeclaredLane[] = [LANE]): LaneLeg
 }
 
 /** The state root the leg reads the lane stamp from. */
-const stateRoot = (): string => join(repo, ".flume");
+/** The state root as the repository addresses it — git's alphabet, as `api.paths.stateRootRel` reports it. */
+const STATE_ROOT_REL = ".flume";
+
+const stateRoot = (): string => join(repo, STATE_ROOT_REL);
 
 /** The lane block this tick renders. */
 const laneBlock = (budget?: number): string => lane(budget).render(stateRoot());
@@ -1092,6 +1095,7 @@ it("the inbox window's CI lane block is the lane leg's own render", () => {
   const built = planSliceWindows({
     declaration: declarationFor(),
     repoRoot: repo,
+    stateRootRel: STATE_ROOT_REL,
   }).find((candidate) => candidate.name === INBOX_PHASE);
   if (built === undefined) throw new Error("the inbox slice built no window");
   const args = built.args({ cwd: repo, flumeDir: stateRoot() });

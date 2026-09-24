@@ -13,15 +13,21 @@
  * fix lands at the mechanism*).
  *
  * Nothing here re-derives an engine fact. The record's `mode` is the one the
- * engine stamped, and the key each record is looked up under is the engine's
- * own `entryAttemptKey` (`src/priorAttempts.ts`) — never the two halves of
+ * engine stamped, its `touchedPaths` are the list the `shipped` predicate was
+ * handed, and the key each record is looked up under is the engine's own
+ * `entryAttemptKey` (`src/priorAttempts.ts`) — never the two halves of
  * that key respelled here (`.claude/rules/engineering.md`, *A fact the
- * engine holds is reported, never rediscovered*).
+ * engine holds is reported, never rediscovered*). What the package's own
+ * vocabulary adds is where its build tick was told to say which put-down it
+ * meant, and that spelling comes from `putDown.ts` rather than from a second
+ * `includes` here.
  */
 
 import type { PendingEntry } from "../src/PendingSchema.js";
 import { entryAttemptKey } from "../src/priorAttempts.js";
 import type { PriorAttempt } from "../src/Prompt.js";
+
+import { declaredPutDown } from "./putDown.js";
 
 /**
  * Which prior-attempt modes are refusals only a plan slice can resolve.
@@ -31,10 +37,15 @@ import type { PriorAttempt } from "../src/Prompt.js";
  * entry exactly as pickable as it was, and neither is a state the next wave
  * can move — for a walled render, forever, since nothing about the tree
  * changes between attempts. `not-shipped` is a commit that landed and passed
- * every gate which the consumer's own `shipped` predicate declined: the park,
- * whose reason is in the note the tick wrote. Waking the slice that drains
- * records is what puts each of them in front of the only phase that can drop,
- * re-scope, or answer the entry.
+ * every gate which the consumer's own `shipped` predicate declined, which is
+ * plan's for the park among them — the entry the tick could not do, whose
+ * reason is in the note it wrote. Waking the slice that drains records is
+ * what puts each of them in front of the only phase that can drop, re-scope,
+ * or answer the entry.
+ *
+ * The mode alone does not settle `not-shipped`, which is why this table is
+ * not the whole answer: the package's own predicate declines a continuation
+ * on the same mode, and that one is build's ({@link continuation}).
  *
  * The other three are not plan's. A `gate-revert` and a `platform-preempt`
  * are a reverted commit and a killed process, both worth retrying from the
@@ -81,8 +92,14 @@ const PLAN_RESOLVES_STANDING: Record<PriorAttempt["mode"], boolean> = {
  * looking each queued entry up finds exactly the entry-keyspace records a
  * scan of the map's values would have kept.
  *
- * Both inputs are optional because both are optional wherever a reader is
- * handed them — `SliceWindow` at the liveness leg (`handoff.ts`),
+ * `stateRoot` is the state root as the repository addresses it, which is the
+ * alphabet a commit's touched paths arrive in and the one the notes are
+ * composed in — required, because a window reading a footprint against a note
+ * path has no safe default for where that note lives and a guess would
+ * misclassify every consumer whose state root is not the guessed one.
+ *
+ * Both queue inputs are optional because both are optional wherever a reader
+ * is handed them — `SliceWindow` at the liveness leg (`handoff.ts`),
  * `WindowContext` at the render (`sliceWindow.ts`). Absent, the answer is the
  * empty set — "no standing refusal" — which is what a reader
  * that was handed no store can truthfully say. Every dispatcher-built surface
@@ -93,14 +110,63 @@ const PLAN_RESOLVES_STANDING: Record<PriorAttempt["mode"], boolean> = {
  * leg and the marked block cannot come apart.
  */
 export function standingRefusals(
+  stateRoot: string,
   pending: readonly PendingEntry[] | undefined,
   priorAttempts: ReadonlyMap<string, PriorAttempt> | undefined,
 ): PriorAttempt[] {
   if (pending === undefined || priorAttempts === undefined) return [];
-  return pending
-    .map((entry) => priorAttempts.get(entryAttemptKey(entry)))
-    .filter(
-      (record): record is PriorAttempt =>
-        record !== undefined && PLAN_RESOLVES_STANDING[record.mode],
-    );
+  return pending.flatMap((entry) => {
+    const record = priorAttempts.get(entryAttemptKey(entry));
+    if (record === undefined) return [];
+    return PLAN_RESOLVES_STANDING[record.mode] &&
+      !continuation(stateRoot, entry, record)
+      ? [record]
+      : [];
+  });
+}
+
+/**
+ * Whether a standing record is a **continuation** — the one `not-shipped`
+ * that is nothing for a plan slice to reconcile (`spec/harness.md`, *A tick
+ * puts work down*).
+ *
+ * The package's `shipped` predicate declines a landed commit on two different
+ * statements, and they route opposite ways: a park is the entry the tick
+ * could not do, which only plan can drop, re-scope or answer; a continuation
+ * is a green segment of an entry whose rest is another *build* tick's, with
+ * nothing in it plan has to read. Classifying both by the mode they share
+ * wakes the drain on the second with nothing to reconcile, every tick, for as
+ * long as the entry takes.
+ *
+ * Which one it was is **on the record**, never re-derived: `touchedPaths` is
+ * the same list the predicate itself was handed (`buildNotShipped`,
+ * `src/priorAttempts.ts`), and where a tick wrote is the whole declaration,
+ * read through the one spelling of those paths (`putDown.ts`). The span's
+ * tree is not asked, because the record answers what it would: a commit that
+ * *removed* a continuation is the tick that finished its entry, and that
+ * commit shipped, so no `not-shipped` record was ever written for it.
+ *
+ * **A predicate that threw declared nothing.** `threw` is the engine's own
+ * account of a hook that never reached a verdict, so whatever that commit
+ * touched is not a reading this may take past it — a broken `shipped` is
+ * exactly what the drain exists to be shown (`.claude/rules/engineering.md`,
+ * *Loud or nothing*).
+ *
+ * **A footprint the writer elided reads as the park.** `touchedPaths` is
+ * bounded, so a commit wide enough to push its note past that bound is
+ * classified as the kind that wakes the drain — the safe direction of a fact
+ * the record no longer carries, and one the drain can see for itself, since
+ * the record states its own `omittedPaths` and renders whole into the prompt
+ * (`inboxWindow.ts`).
+ */
+function continuation(
+  stateRoot: string,
+  entry: PendingEntry,
+  record: PriorAttempt,
+): boolean {
+  return (
+    record.mode === "not-shipped" &&
+    record.threw === undefined &&
+    declaredPutDown(stateRoot, entry, record.touchedPaths) === "continuing"
+  );
 }

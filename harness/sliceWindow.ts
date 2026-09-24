@@ -119,6 +119,18 @@ export interface PlanSliceWindowsOptions {
    */
   readonly repoRoot: string;
   /**
+   * The state root as the repository addresses it — `api.paths.stateRootRel`,
+   * forward-slashed, which is the alphabet a commit's touched paths arrive in
+   * and the one `layout.ts` composes a build tick's notes in.
+   *
+   * A window that reads a landed commit's footprint needs it: what a build
+   * tick declared by writing under one note directory rather than another is
+   * a path comparison, and the two sides have to be in one dialect
+   * (`.claude/rules/posture-sweep.md`, *A repo-relative path composed with
+   * `node:path`*).
+   */
+  readonly stateRootRel: string;
+  /**
    * Lines of diff one window renders before deferring the rest, defaulting
    * to {@link WINDOW_LINE_BUDGET}. A seam for a caller that must observe the
    * deferral without minting a budget-sized diff to provoke it.

@@ -103,8 +103,15 @@ function commit(files: Record<string, string>, subject: string): string {
 const body = (marker: string, n: number): string =>
   Array.from({ length: n }, (_, i) => `${marker} line ${i}`).join("\n") + "\n";
 
+/**
+ * The state root as the repository addresses it — the offset
+ * `api.paths.stateRootRel` reports, and the alphabet a commit's touched paths
+ * and `layout.ts`'s note paths share.
+ */
+const STATE_ROOT_REL = ".flume";
+
 /** The state root is the repo's own `.flume`, as a real consumer's is. */
-const stateRoot = (): string => join(repo, ".flume");
+const stateRoot = (): string => join(repo, STATE_ROOT_REL);
 
 /** The three cursor facts a case varies, off a closed rotation at HEAD. */
 interface StateOverrides {
@@ -162,6 +169,7 @@ function windows(
   const built = planSliceWindows({
     declaration: declaration(overrides),
     repoRoot: repo,
+    stateRootRel: STATE_ROOT_REL,
     ...(budget === undefined ? {} : { budget }),
   });
   return Object.fromEntries(built.map((w) => [w.name, w])) as Record<
@@ -697,7 +705,11 @@ it("the inbox window and the build handoff agree on every prior-attempt mode", (
   // window the `shouldRun` side asks — the only thing left between them is
   // whether the handoff hands it the pair it reads.
   const handoff = defaultHandoff(
-    planSliceWindows({ declaration: declaration(), repoRoot: repo }),
+    planSliceWindows({
+      declaration: declaration(),
+      repoRoot: repo,
+      stateRootRel: STATE_ROOT_REL,
+    }),
   );
 
   /** One build tick reporting that same store, with the same queue behind it. */
@@ -1307,11 +1319,13 @@ it("the windows a declaration builds are the slices it enabled, in the ladder's 
   const all = planSliceWindows({
     declaration: declaration(),
     repoRoot: repo,
+    stateRootRel: STATE_ROOT_REL,
   }).map((w) => w.name);
 
   const inboxOnly = planSliceWindows({
     declaration: declaration({ slices: { enabled: [INBOX_PHASE] } }),
     repoRoot: repo,
+    stateRootRel: STATE_ROOT_REL,
   }).map((w) => w.name);
 
   expect({ all, inboxOnly }).toEqual({
@@ -1467,7 +1481,11 @@ it("the default handoff names the inbox slice over a queue that did not parse", 
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
   writeState();
   const handoff = defaultHandoff(
-    planSliceWindows({ declaration: declaration(), repoRoot: repo }),
+    planSliceWindows({
+      declaration: declaration(),
+      repoRoot: repo,
+      stateRootRel: STATE_ROOT_REL,
+    }),
   );
 
   const base: TickResult = {

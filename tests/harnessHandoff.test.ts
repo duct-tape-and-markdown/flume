@@ -46,9 +46,10 @@ import {
   INBOX_PHASE,
   type PlanSlice,
 } from "../harness/declaration.ts";
+import { continuingNotePath, parkedNotePath } from "../harness/layout.ts";
 import { standingRefusals } from "../harness/standingRefusal.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
-import { recordAttemptKey } from "../src/priorAttempts.ts";
+import { entryAttemptKey, recordAttemptKey } from "../src/priorAttempts.ts";
 import type {
   EntryRefusalContext,
   FanoutEntryOutcome,
@@ -65,6 +66,13 @@ const SWEEP = "plan-sweep" as const satisfies PlanSlice;
 
 /** The state root every fixture reports, distinct enough to be recognized. */
 const FLUME_DIR = "/tmp/flume-handoff-fixture/.flume";
+
+/**
+ * The same state root as the repository addresses it — the offset
+ * `api.paths.stateRootRel` reports, which is the alphabet a commit's touched
+ * paths arrive in and the one a build tick's notes are composed in.
+ */
+const STATE_ROOT_REL = ".flume";
 
 /** One queue entry — the handoff reads only whether the set is non-empty. */
 const entry = (tag: string): PendingEntry => ({
@@ -101,8 +109,19 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
  * Every mode, because the classifier the slices read discriminates on this
  * field and a fixture that can only build one of them judges the wake set
  * over one arm.
+ *
+ * `touched` is the footprint the engine records beside a declined ship — the
+ * same list the `shipped` predicate was handed (`buildNotShipped`,
+ * `src/priorAttempts.ts`) — and the `not-shipped` arm is the only one that
+ * carries it, because it is the only mode whose two kinds differ in nothing
+ * else. Empty by default, which is the footprint of a case that is about the
+ * mode alone.
  */
-function record(tag: string, mode: PriorAttempt["mode"]): PriorAttempt {
+function record(
+  tag: string,
+  mode: PriorAttempt["mode"],
+  touched: readonly string[] = [],
+): PriorAttempt {
   const anchor = {
     key: "entry",
     keyedAs: slugify(tag),
@@ -111,7 +130,12 @@ function record(tag: string, mode: PriorAttempt["mode"]): PriorAttempt {
   } as const;
   switch (mode) {
     case "not-shipped":
-      return { mode, mergedSha: "a".repeat(40), touchedPaths: [], ...anchor };
+      return {
+        mode,
+        mergedSha: "a".repeat(40),
+        touchedPaths: [...touched],
+        ...anchor,
+      };
     case "clean-exit":
       return { mode, finalMessage: "nothing to do here", ...anchor };
     case "gate-revert":
@@ -192,7 +216,8 @@ const refusalReader = (): HandoffSlice & { asked: SliceWindow[] } =>
   slice(
     INBOX_PHASE,
     (window) =>
-      standingRefusals(window.pending, window.priorAttempts).length > 0,
+      standingRefusals(STATE_ROOT_REL, window.pending, window.priorAttempts)
+        .length > 0,
   );
 
 /** The package's three slices in order, each dead unless a case revives it. */
@@ -816,4 +841,97 @@ describe("the default handoff's per-entry refusal", () => {
     expect(first).not.toHaveProperty("priorAttempt");
     expect(defaultRefusesEntry(first)).toBe(false);
   });
+});
+
+/**
+ * The two statements a declined ship can be, and the opposite ways they route
+ * (`spec/harness.md`, *A tick puts work down*).
+ *
+ * Both cases drive the real `defaultHandoff` over the real classifier, and
+ * differ in exactly one path in the record's footprint — which is the whole
+ * of what a build tick said. The note paths are composed by `layout.ts`, the
+ * same spelling the `shipped` predicate reads and the classifier reads back,
+ * so no case here agrees with the reader on a path the package does not
+ * write (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
+ *
+ * Top-level rather than inside this file's describes: the wake set is not
+ * the only subject — the classifier's own verdict is asserted beside it, so
+ * a handoff that happened to answer right over a misclassified record cannot
+ * carry either case.
+ */
+it("a not-shipped record whose commit wrote a continuing note is not a standing refusal", () => {
+  const handoff = defaultHandoff(sliceSet(refusalReader()));
+  const tag = "CONTINUED";
+  const queued = { pendingAfter: [entry(tag)], pickableAfter: [entry(tag)] };
+
+  // A green segment landed, the rest declared another build tick's: the
+  // commit carries its work and the continuation it wrote beside it.
+  const continued = tickResult({
+    ...queued,
+    priorAttempts: store(
+      record(tag, "not-shipped", [
+        "src/a.ts",
+        continuingNotePath(STATE_ROOT_REL, tag),
+      ]),
+    ),
+    entries: [outcome({ tag, shipped: false, mergeOutcome: "not-shipped" })],
+  });
+
+  // Vacuity: the record is standing and entry-keyed to a tag the queue still
+  // carries, so it reaches the classifier — "not a refusal" below is the
+  // note's doing and not a store the walk never looked in.
+  expect(continued.priorAttempts.size).toBe(1);
+  expect(
+    continued.priorAttempts.get(entryAttemptKey(continued.pendingAfter[0]!)),
+  ).toBeDefined();
+
+  expect({
+    standing: standingRefusals(
+      STATE_ROOT_REL,
+      continued.pendingAfter,
+      continued.priorAttempts,
+    ),
+    // Build carries the entry on from here — its span is on the trunk and the
+    // queue still holds it — and the drain is woken by nothing, because a
+    // continuation states nothing plan can reconcile.
+    woke: handoff(continued),
+  }).toEqual({ standing: [], woke: [BUILD_PHASE] });
+});
+
+it("a not-shipped record whose commit wrote a park note is a standing refusal", () => {
+  const handoff = defaultHandoff(sliceSet(refusalReader()));
+  const tag = "PARKED-WITH-A-NOTE";
+  const queued = { pendingAfter: [entry(tag)], pickableAfter: [entry(tag)] };
+
+  // The same mode, the same shape of footprint, the one path changed: a park
+  // is the entry the tick could not do, and its reason is only plan's to act
+  // on.
+  const park = record(tag, "not-shipped", [
+    "src/a.ts",
+    parkedNotePath(STATE_ROOT_REL, tag),
+  ]);
+  const parked = tickResult({
+    ...queued,
+    priorAttempts: store(park),
+    entries: [outcome({ tag, shipped: false, mergeOutcome: "not-shipped" })],
+  });
+
+  // Vacuity: the two note paths really are distinct, so the case is about
+  // which one the commit touched rather than about one path under two names.
+  expect(parkedNotePath(STATE_ROOT_REL, tag)).not.toBe(
+    continuingNotePath(STATE_ROOT_REL, tag),
+  );
+  expect(parked.priorAttempts.size).toBe(1);
+
+  expect({
+    standing: standingRefusals(
+      STATE_ROOT_REL,
+      parked.pendingAfter,
+      parked.priorAttempts,
+    ),
+    // The drain joins the set, and build stays in it: the walled entry is
+    // held back per entry and the queue's other work is still the wave's.
+    woke: handoff(parked),
+  }).toEqual({ standing: [park], woke: [INBOX_PHASE, BUILD_PHASE] });
 });

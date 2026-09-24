@@ -175,6 +175,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   const windows = planSliceWindows({
     declaration,
     repoRoot: api.paths.repoRoot,
+    stateRootRel: stateRoot,
   });
 
   /** The notes a build tick may write, as fence globs — one per kind. */

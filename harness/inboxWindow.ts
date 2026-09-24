@@ -103,12 +103,13 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       !queueResolved(inputs) ||
       recordsPending(inputs.flumeDir) ||
       frictionPending(inputs.flumeDir, friction) ||
-      standingRefusals(inputs.pending, inputs.priorAttempts).length > 0 ||
+      standingRefusals(options.stateRootRel, inputs.pending, inputs.priorAttempts)
+        .length > 0 ||
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
       RECORDS: renderRecords(ctx.flumeDir, friction),
-      BUILD_RECORDS: renderBuildRecords(ctx),
+      BUILD_RECORDS: renderBuildRecords(options.stateRootRel, ctx),
       CI_LANES: lanes.render(ctx.flumeDir),
     }),
     dataKeys: SLICE_DATA_KEYS[INBOX_PHASE],
@@ -235,7 +236,7 @@ function renderFiles(
  * or to an entry that has left the queue is context for what the loop has
  * been doing, and the mark is what says which ones this tick must resolve.
  */
-function renderBuildRecords(ctx: WindowContext): string {
+function renderBuildRecords(stateRoot: string, ctx: WindowContext): string {
   // Ordered by each record's own key, asked of the engine rather than joined
   // from the record's two halves here: how the engine composes that key is
   // the engine's, and a slice spelling the join itself would order by a
@@ -257,7 +258,7 @@ function renderBuildRecords(ctx: WindowContext): string {
   // list holds, so identity is the marking test and no second key spelling
   // can drift from it.
   const standing = new Set<PriorAttempt>(
-    standingRefusals(ctx.pending, ctx.priorAttempts),
+    standingRefusals(stateRoot, ctx.pending, ctx.priorAttempts),
   );
   const lines = [`=== ${records.length} standing prior-attempt record(s) ===`];
   for (const record of records) {

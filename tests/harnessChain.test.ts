@@ -1009,6 +1009,7 @@ it("each returned phase runs the handoff the declaration names for it, else the 
       // factory's read one schema rather than two.
       declaration: parseDeclaration(DECLARATION),
       repoRoot: repo,
+      stateRootRel: STATE_ROOT,
     }),
   );
   expect(phaseNamed(chainFor(), BUILD_PHASE).handoff(result)).toEqual(
@@ -1038,6 +1039,7 @@ it("the chain's default handoff wakes every live slice and build together", () =
   const windows = planSliceWindows({
     declaration: parseDeclaration(DECLARATION),
     repoRoot: repo,
+    stateRootRel: STATE_ROOT,
   });
   const window = { flumeDir, pickable: true };
 
