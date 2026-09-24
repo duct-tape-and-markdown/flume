@@ -439,7 +439,12 @@ export async function checkoutAt(opts: {
   // still leaves a directory, and a ledger written only on success would
   // leave it standing.
   scope.planted.push({ repoRoot: opts.repoRoot, path });
-  await git.addWorktree({ repoRoot: opts.repoRoot, path, fromRef: opts.sha });
+  await git.addWorktree({
+    repoRoot: opts.repoRoot,
+    path,
+    fromRef: opts.sha,
+    log: scope.log,
+  });
   // Stamped like any other tree planted under the base: the gate boundary
   // reclaims this one, but a run killed mid-gate leaves it for the next
   // start's sweep, which removes only what its own state root stamped.
@@ -474,7 +479,7 @@ export async function withGateCheckouts<T>(
   } finally {
     for (const c of planted.reverse()) {
       try {
-        await git.removeWorktree(c.repoRoot, c.path);
+        await git.removeWorktree(c.repoRoot, c.path, ctx.log);
       } catch (err) {
         ctx.log.warn(
           `[flume] could not reclaim the gate checkout at ${c.path}: ${(err as Error).message}`,
@@ -560,7 +565,7 @@ export async function createWorktree(
           `a second checkout sharing this worktree base is the likely occupant: ${path}`,
       );
     }
-    await git.removeWorktree(ctx.repoRoot, path);
+    await git.removeWorktree(ctx.repoRoot, path, ctx.log);
   }
   await mkdir(toNamespacedPath(dirname(path)), { recursive: true });
   // Fanout worktrees nest at least as deep as the state root they're cloned
@@ -572,6 +577,7 @@ export async function createWorktree(
     path,
     branch,
     fromRef,
+    log: ctx.log,
   });
   // The evidence the next start's sweep — and the occupied-path judgment
   // above, on the next tick that computes this same path — removes on.
@@ -617,7 +623,7 @@ export async function teardownWorktreeInstance(
   await harvestFriction(chain, wt.path, tag, ctx);
   let removed = false;
   try {
-    await git.removeWorktree(ctx.repoRoot, wt.path);
+    await git.removeWorktree(ctx.repoRoot, wt.path, ctx.log);
     removed = true;
   } catch {
     // Caller records the surviving path.
@@ -777,7 +783,7 @@ export async function sweepStaleWorktrees(
       }
       const branch = registry.worktrees.get(resolved);
       try {
-        await git.removeWorktree(repoRoot, path);
+        await git.removeWorktree(repoRoot, path, ctx.log);
         if (branch !== undefined) reapable.push(branch);
       } catch {
         // The directory stands, and the branch is still checked out in it:
@@ -787,7 +793,7 @@ export async function sweepStaleWorktrees(
     }
   }
   try {
-    await git.pruneWorktrees(repoRoot);
+    await git.pruneWorktrees(repoRoot, ctx.log);
   } catch (err) {
     ctx.log.warn(
       `[flume] startup sweep: worktree prune failed: ${(err as Error).message}`,

@@ -99,6 +99,8 @@ import {
 } from "../src/Prompt.ts";
 import { loopExitCode } from "../src/cliVerdict.ts";
 import * as git from "../src/git.ts";
+import { parsePidClaim, renderPidClaim } from "../src/pidClaim.ts";
+import { waitFor } from "./helpers/waitFor.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): both types are field types on the already-public
 // TickVerdict/TickOutcome, so a chain author needs to be able to name them from
@@ -5025,6 +5027,181 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
 // before it picks an entry's span onto trunk and retires it once the queue
 // rewrite lands, so a death anywhere in between leaves the fact on disk for
 // the next start to refuse over (`src/cli.ts`; pinned in tests/cli.test.ts).
+/**
+ * SIBLING-TICKS-TAKE-TURNS-AT-GIT — the two guards a tick takes around a git
+ * mutation, seen from the tick that takes them (spec/loop.md, "The ship lock
+ * and the worktree lock — sibling ticks take turns at git").
+ *
+ * Both cases read the guard file's *holder*, never its mere presence: a file
+ * left by an earlier run names a pid, and only "this process" distinguishes a
+ * lock this tick is holding from residue it never touched.
+ *
+ * The fixture repo is a plain checkout, so its git-common-dir is `.git` and
+ * both locks sit at a path the case can name without asking git again.
+ */
+describe("Dispatcher — the ship lock and the worktree lock (SIBLING-TICKS-TAKE-TURNS-AT-GIT)", () => {
+  /** Who the guard file at `path` names, or `null` when there is no file. */
+  async function holderAt(path: string): Promise<number | null> {
+    if (!existsSync(path)) return null;
+    return parsePidClaim(await readFile(path, "utf8"))?.pid ?? null;
+  }
+
+  it("the ship lock is held across the cherry-pick, the afterMerge gates and the ledger commit", async () => {
+    await writePending(fx.repo, [makeEntry("SHIP-SPAN", ["src/ship-span.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const lockPath = join(fx.repo, ".git", "flume", "ship.lock");
+
+    // One observation per stop the spec names. Each records who held the
+    // lock at that moment and then calls the real thing through, so the
+    // wave runs its ordinary course around the probes.
+    const heldBy: Record<string, number | null> = {};
+    const realPick = git.cherryPickRange;
+    vi.spyOn(git, "cherryPickRange").mockImplementation(async (...args) => {
+      heldBy["cherry-pick"] = await holderAt(lockPath);
+      return realPick(...args);
+    });
+    const realCommitPaths = git.commitPaths;
+    vi.spyOn(git, "commitPaths").mockImplementation(async (opts) => {
+      heldBy["ledger commit"] = await holderAt(lockPath);
+      return realCommitPaths(opts);
+    });
+    const probe: Gate = {
+      name: "ship-lock-probe",
+      when: "afterMerge",
+      async run() {
+        heldBy["afterMerge gate"] = await holderAt(lockPath);
+        return { ok: true, message: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({ name: "build", concurrency: "fanout", gates: [probe] }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ship-span": (cwd) =>
+          writeAndCommit(cwd, "src/ship-span.ts", "s\n", "build: SHIP-SPAN"),
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: the entry really shipped, so all three stops were reached —
+    // a wave that conflicted would record a subset and "held at every stop"
+    // would be a claim over one.
+    expect(outcome.result?.shippedTags).toEqual(["SHIP-SPAN"]);
+    expect(Object.keys(heldBy).sort()).toEqual([
+      "afterMerge gate",
+      "cherry-pick",
+      "ledger commit",
+    ]);
+    expect(heldBy).toEqual({
+      "cherry-pick": process.pid,
+      "afterMerge gate": process.pid,
+      "ledger commit": process.pid,
+    });
+    // Released when the span ended: a lock naming a pid that is still alive
+    // would stall every sibling tick for the rest of the run.
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("the agent, setupWorktree and the gates run outside the worktree lock", async () => {
+    await writePending(fx.repo, [makeEntry("OUTSIDE", ["src/outside.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const lockPath = join(fx.repo, ".git", "flume", "worktrees.lock");
+
+    // The arm that makes the scope claim mean anything: this tick *does*
+    // take the worktree lock. Planted live before the wave, so the wave's
+    // own pre-provisioning prune blocks on it and announces the wait;
+    // released the moment it has, from the same promise that read the line.
+    await mkdir(dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, renderPidClaim(process.pid, new Date()), "utf8");
+    const lines: string[] = [];
+    const log: Logger = {
+      info: (l) => lines.push(l),
+      warn: () => {},
+      error: () => {},
+    };
+    const waveWaited = waitFor(
+      `the wave's wait on the worktree lock at ${lockPath}`,
+      () => lines.find((l) => l.includes("waiting for the worktree lock")),
+    ).then(async (line) => {
+      await rm(lockPath);
+      return line;
+    });
+
+    const heldDuring: Record<string, number | null> = {};
+    const probe = (name: string, when: GatePhase): Gate => ({
+      name,
+      when,
+      async run() {
+        heldDuring[when] = await holderAt(lockPath);
+        return { ok: true, message: "" };
+      },
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            setupWorktree: async () => {
+              heldDuring["setupWorktree"] = await holderAt(lockPath);
+              return undefined;
+            },
+            gates: [
+              probe("outside-after-commit", "afterCommit"),
+              probe("outside-after-merge", "afterMerge"),
+            ],
+          }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        outside: async (cwd) => {
+          heldDuring["agent"] = await holderAt(lockPath);
+          await writeAndCommit(cwd, "src/outside.ts", "o\n", "build: OUTSIDE");
+        },
+      }),
+      log,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The wave waited on the planted holder and named the file — without
+    // this, "nothing held it at the four stops below" is an absence rather
+    // than a scope.
+    expect(await waveWaited).toContain(lockPath);
+    expect(outcome.result?.shippedTags).toEqual(["OUTSIDE"]);
+    expect(Object.keys(heldDuring).sort()).toEqual([
+      "afterCommit",
+      "afterMerge",
+      "agent",
+      "setupWorktree",
+    ]);
+    // Provisioning holds it for the one command; everything a tick does
+    // *around* a worktree is outside, or one entry's agent would queue
+    // every sibling's provisioning behind it.
+    expect(heldDuring).toEqual({
+      setupWorktree: null,
+      agent: null,
+      afterCommit: null,
+      afterMerge: null,
+    });
+  });
+});
+
 describe("Dispatcher fanout — the merge-stage crash marker", () => {
   it("the merge stage writes a merging marker naming the branch, the base sha and the entry before the pick", async () => {
     // Three entries, picked in batch order. MARK-B's pick *conflicts* and is

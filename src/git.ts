@@ -6,13 +6,15 @@
 
 import { execFile } from "node:child_process";
 import { unlinkSync } from "node:fs";
-import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { existsLoud } from "./fsProbe.js";
+import { consoleLogger, type Logger } from "./log.js";
 import { gitPath } from "./paths.js";
-import { parsePidClaim, renderPidClaim } from "./pidClaim.js";
+import { livePidClaimAt, renderPidClaim } from "./pidClaim.js";
+import { acquireWaitLock, type WaitLock } from "./waitLock.js";
 
 const exec = promisify(execFile);
 
@@ -292,14 +294,22 @@ export async function addWorktree(opts: {
    */
   branch?: string;
   fromRef: string;
+  /**
+   * Where a wait on the worktree lock announces itself. Omitted narrates
+   * through `consoleLogger` (`src/log.ts`) — the engine's own fallback, so a
+   * caller with no logger still sees why it is not proceeding.
+   */
+  log?: Logger;
 }): Promise<void> {
-  await run(opts.repoRoot, [
-    "worktree",
-    "add",
-    ...(opts.branch === undefined ? ["--detach"] : ["-B", opts.branch]),
-    opts.path,
-    opts.fromRef,
-  ]);
+  await withWorktreeLock(opts.repoRoot, opts.log, () =>
+    run(opts.repoRoot, [
+      "worktree",
+      "add",
+      ...(opts.branch === undefined ? ["--detach"] : ["-B", opts.branch]),
+      opts.path,
+      opts.fromRef,
+    ]),
+  );
 }
 
 /**
@@ -320,6 +330,20 @@ export async function addWorktree(opts: {
 export async function removeWorktree(
   repoRoot: string,
   path: string,
+  log?: Logger,
+): Promise<void> {
+  // One lock for the whole removal, fallback included: the `prune` steps
+  // below are this removal's own, and releasing between them would let a
+  // sibling's `add` run against the half-removed metadata this is in the
+  // middle of repairing.
+  await withWorktreeLock(repoRoot, log, () =>
+    removeWorktreeLocked(repoRoot, path),
+  );
+}
+
+async function removeWorktreeLocked(
+  repoRoot: string,
+  path: string,
 ): Promise<void> {
   try {
     await run(repoRoot, ["worktree", "remove", "--force", path]);
@@ -328,7 +352,7 @@ export async function removeWorktree(
     // Bare removal failed (e.g. win32 `Directory not empty`) — fall
     // through to the recursive-removal fallback below.
   }
-  await pruneWorktrees(repoRoot);
+  await pruneWorktreesLocked(repoRoot);
   await rm(toNamespacedPath(path), {
     recursive: true,
     force: true,
@@ -346,7 +370,7 @@ export async function removeWorktree(
   }
   // The directory is gone now — prune the now-stale `.git/worktrees/` entry
   // `--force` alone left behind.
-  await pruneWorktrees(repoRoot);
+  await pruneWorktreesLocked(repoRoot);
 }
 
 /**
@@ -359,7 +383,20 @@ export async function removeWorktree(
  * subsequent `git worktree add` fail — even for a totally different slug —
  * because git scans all worktree metadata during validation.
  */
-export async function pruneWorktrees(repoRoot: string): Promise<void> {
+export async function pruneWorktrees(
+  repoRoot: string,
+  log?: Logger,
+): Promise<void> {
+  await withWorktreeLock(repoRoot, log, () => pruneWorktreesLocked(repoRoot));
+}
+
+/**
+ * The prune itself, for the one caller already inside the worktree lock —
+ * {@link removeWorktree}'s fallback, whose two prune steps are part of the
+ * removal it is holding the lock for. Re-entering {@link pruneWorktrees}
+ * there would be a call waiting on a lock this process already holds.
+ */
+async function pruneWorktreesLocked(repoRoot: string): Promise<void> {
   await run(repoRoot, ["worktree", "prune"]);
 }
 
@@ -665,36 +702,113 @@ export function tipClaimPath(commonDir: string, refPath: string): string {
 }
 
 /**
+ * The two wait-and-reclaim locks flume keeps beside the tip claims, under
+ * the same `<git-common-dir>/flume/` directory and for the same reason: the
+ * common dir is one path from every linked worktree, so sibling ticks in
+ * sibling worktrees contend for one file rather than one file each
+ * (spec/loop.md, *The ship lock and the worktree lock — sibling ticks take
+ * turns at git*).
+ *
+ * Neither substitutes for the tip claim beside them. The claim says which
+ * engine *run* owns the tip; these say which of that run's ticks is touching
+ * git right now — which is why a live holder is waited on here and refused
+ * there.
+ */
+const COMMON_DIR_LOCKS = {
+  /** One merge span at a time: the picks, the afterMerge gates, the ledger commit. */
+  ship: { file: "ship.lock", label: "the ship lock" },
+  /** One `.git/worktrees` mutation at a time — see {@link withWorktreeLock}. */
+  worktree: { file: "worktrees.lock", label: "the worktree lock" },
+} as const;
+
+/**
+ * Take one of {@link COMMON_DIR_LOCKS} for `cwd`'s repository, resolving the
+ * common dir the same way {@link acquireTipClaim} does.
+ */
+async function acquireCommonDirLock(
+  cwd: string,
+  which: keyof typeof COMMON_DIR_LOCKS,
+  log: Logger,
+): Promise<WaitLock> {
+  const { file, label } = COMMON_DIR_LOCKS[which];
+  return acquireWaitLock({
+    path: join(await gitCommonDir(cwd), "flume", file),
+    label,
+    log,
+  });
+}
+
+/**
+ * Take the ship lock — the guard a tick holds across its whole merge span:
+ * every cherry-pick onto the trunk, the `afterMerge` gates over each merged
+ * tree, and the ledger commit that ships the span (spec/loop.md, *The ship
+ * lock and the worktree lock — sibling ticks take turns at git*). The two
+ * legs that have a merge span take it (`src/waveTick.ts`,
+ * `src/singletonTick.ts`); nothing else does.
+ *
+ * Held by a live sibling means waiting, never refusing: a sibling tick
+ * merging is this run's own writer, and tip verify absorbs the tip it moved
+ * (spec/loop.md, *Tip verify — one writer per branch, absorption at the
+ * merge*). Refusal stays the tip claim's leg.
+ *
+ * The caller releases in a `finally`: the span ends whether it shipped, was
+ * reverted, or threw past its own bookkeeping.
+ */
+export async function acquireShipLock(
+  cwd: string,
+  log: Logger,
+): Promise<WaitLock> {
+  return acquireCommonDirLock(cwd, "ship", log);
+}
+
+/**
+ * Run one `.git/worktrees`-mutating command under the worktree lock.
+ *
+ * git does not guard that metadata directory across processes, so a
+ * sibling's `--force` remove can fail another's add mid-validation
+ * (spec/worktrees.md, *Every `.git/worktrees` mutation is serialized; the
+ * agent fanout is not*). Within one wave the mutations are already
+ * sequential; this is the guard that makes them sequential across the
+ * sibling ticks of one run too.
+ *
+ * Scoped to the one command, which is why it wraps here rather than at a
+ * caller: what a tick does *around* a worktree — the agent, the chain's
+ * `setupWorktree` hook, the gates that run in the tree — must not hold a
+ * lock every other tick's provisioning is waiting on. A caller that wrapped
+ * its own span would be choosing that scope by hand, once per call site.
+ */
+async function withWorktreeLock<T>(
+  repoRoot: string,
+  log: Logger | undefined,
+  body: () => Promise<T>,
+): Promise<T> {
+  const lock = await acquireCommonDirLock(
+    repoRoot,
+    "worktree",
+    log ?? consoleLogger,
+  );
+  try {
+    return await body();
+  } finally {
+    lock.release();
+  }
+}
+
+/**
  * The pid recorded at a tip-claim path, when it names a live process —
  * `null` for no claim file, an unparsable one, or a dead/not-ours pid
- * (stale; callers reclaim silently). Same liveness probe as the loop lock
- * (`liveLoopPid`, src/pidClaim.ts) — a sibling primitive rather than a shared call
- * site, since the two guard different resources (a ref vs. a state root)
- * under different keying. What the two *do* share is the statement they read:
- * `parsePidClaim` (`src/pidClaim.ts`), which takes the pid off the first
- * line, so a claim carrying its instant on the second reads here exactly as
- * a bare pid did.
- *
- * Absent is the only silent reading (`existsLoud`, src/fsProbe.ts). A claim
- * file that is present but unstattable is not an unclaimed tip: read as one,
- * `acquireTipClaim`'s EEXIST branch would take the dead-pid path and reclaim
- * a tip another live writer holds — the refusal that branch exists to make
- * (`.claude/rules/engineering.md`, "Loud or nothing").
+ * (stale; callers reclaim silently). The read itself is every guard's
+ * (`livePidClaimAt`, `src/pidClaim.ts`), including what it refuses to read
+ * as absent: a claim file that is present but unreadable is not an unclaimed
+ * tip, because read as one, `acquireTipClaim`'s EEXIST branch would reclaim
+ * a tip another live writer holds. The pid alone here, because the claim
+ * instant is `flume status`'s question about the loop lock and no caller
+ * asks it of a tip.
  */
 export async function liveTipClaimPid(
   claimPath: string,
 ): Promise<number | null> {
-  if (!existsLoud(toNamespacedPath(claimPath))) return null;
-  const claim = parsePidClaim(
-    await readFile(toNamespacedPath(claimPath), "utf8"),
-  );
-  if (claim === null) return null;
-  try {
-    process.kill(claim.pid, 0);
-    return claim.pid;
-  } catch {
-    return null;
-  }
+  return (await livePidClaimAt(claimPath))?.pid ?? null;
 }
 
 /**

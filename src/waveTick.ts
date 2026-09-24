@@ -292,7 +292,7 @@ export async function runFanout(
     // Without this, half-broken metadata from one slug blocks `git worktree
     // add` for ALL subsequent slugs — git scans every worktree's metadata
     // during validation.
-    await git.pruneWorktrees(repoRoot);
+    await git.pruneWorktrees(repoRoot, leg.log);
   } catch (err) {
     const message = (err as Error).message;
     const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
@@ -458,504 +458,524 @@ export async function runFanout(
   // render-refused entry carries no `termination` and gets no row.
   const invocations: TickVerdictInvocation[] = [];
 
-  for (const r of perEntry) {
-    if (r.termination) {
-      invocations.push({
-        entryTag: r.entry.tag,
-        promptPath: r.termination.promptPath,
-        ...(r.termination.usage ?? {}),
-        // spec/loop.md "Tip verify": this entry's worktree is done being
-        // written — its agent, its tip-verify soft reset and its
-        // afterCommit revert all ran inside `runAttempt`, and the
-        // pick below touches trunk alone — but teardown is still a whole
-        // wave away, so the set is readable here.
-        uncommittedTracked: await git.trackedModifications(r.worktreePath),
-      });
-    }
-    if (r.tipMoved) {
-      waveTipMoved = true;
-      // Per-entry tip-verify leg: this entry's own ancestry check
-      // refused before ever reaching cherry-pick — a real, dropped-work
-      // fact, not silence a partial ship summary would otherwise paper
-      // over (spec/loop.md "Tip verify"). Distinct from the wave-level
-      // `tip-moved` outcome pushed below, which is the shared trunk racing
-      // during this wave's own merge step.
-      mergeOutcomes.push({
-        entryTag: r.entry.tag,
-        outcome: "dropped-work",
-        ...(r.spanBase ? { baseSha: r.spanBase } : {}),
-        ...(r.headSha ? { headSha: r.headSha } : {}),
-      });
-    }
-    if (r.declined) waveDeclined = true;
-    if (!r.committed) {
-      // An in-worktree afterCommit gate revert never reaches
-      // cherry-pick, so it never touches trunk on its own — record its
-      // captured footprint here so the ledger rewrite lands it on
-      // trunk instead of it living only in the gitignored prior-attempt
-      // record.
-      if (r.footprint && r.footprint.length > 0) {
+  // spec/loop.md "The ship lock and the worktree lock — sibling ticks take
+  // turns at git": one merge span at a time across this run's sibling ticks.
+  // Everything from the first cherry-pick to the ledger rewrite's own commit
+  // touches trunk, and the `afterMerge` judges in between read it — so the
+  // whole stage is the span, not each git call inside it. A sibling holding
+  // it is waited on, never refused: it is this run's own writer, and tip
+  // verify absorbs the tip it moved.
+  const shipLock = await git.acquireShipLock(repoRoot, leg.log);
+  // Declared out here, assigned inside: the verdict assembled below the span
+  // reads all three, and the ledger refusal's own partial verdict reads the
+  // first two from inside it.
+  let allGateResults: ReportedGateResult[] = [];
+  let committedWave = false;
+  let chorSha: string | undefined;
+  try {
+    for (const r of perEntry) {
+      if (r.termination) {
+        invocations.push({
+          entryTag: r.entry.tag,
+          promptPath: r.termination.promptPath,
+          ...(r.termination.usage ?? {}),
+          // spec/loop.md "Tip verify": this entry's worktree is done being
+          // written — its agent, its tip-verify soft reset and its
+          // afterCommit revert all ran inside `runAttempt`, and the
+          // pick below touches trunk alone — but teardown is still a whole
+          // wave away, so the set is readable here.
+          uncommittedTracked: await git.trackedModifications(r.worktreePath),
+        });
+      }
+      if (r.tipMoved) {
+        waveTipMoved = true;
+        // Per-entry tip-verify leg: this entry's own ancestry check
+        // refused before ever reaching cherry-pick — a real, dropped-work
+        // fact, not silence a partial ship summary would otherwise paper
+        // over (spec/loop.md "Tip verify"). Distinct from the wave-level
+        // `tip-moved` outcome pushed below, which is the shared trunk racing
+        // during this wave's own merge step.
         mergeOutcomes.push({
           entryTag: r.entry.tag,
-          outcome: "afterCommit-reverted",
-          footprint: r.footprint,
+          outcome: "dropped-work",
           ...(r.spanBase ? { baseSha: r.spanBase } : {}),
           ...(r.headSha ? { headSha: r.headSha } : {}),
         });
       }
-      if (r.gateFailure) gateFailures.push(r.gateFailure);
-      continue;
-    }
-
-    // spec/loop.md "Tip verify", "Harness-driven commits carry no
-    // expected-tip bookkeeping — the claim refuses, git arbitrates": no
-    // sha comparison against a recorded expectation. A live claim on the
-    // ref is a concurrent engine instance and refuses exactly as a moved
-    // tip used to; absent one, whatever moved trunk was not an engine, and
-    // the cherry-pick below lands onto whatever tip is current — git's own
-    // conflict detection is the only content arbiter left.
-    const foreignClaim = await liveForeignClaimPid(
-      repoRoot,
-      leg.ownTipClaimPid,
-    );
-    if (foreignClaim !== null) {
-      leg.log.warn(
-        `[flume] ${phase.name}: tip claimed by pid ${foreignClaim}; refusing to cherry-pick ${r.entry.tag}, entry stays pending`,
-      );
-      waveTipMoved = true;
-      mergeOutcomes.push({
-        entryTag: r.entry.tag,
-        outcome: "tip-moved",
-        baseSha: r.spanBase,
-        headSha: r.headSha,
-      });
-      continue;
-    }
-    if (!checkpointAttempted) {
-      // spec/loop.md "Crash equals stop": checkpoint whatever the
-      // operator has staged/unstaged on the primary checkout before this
-      // wave's first pick range begins — once per wave, not once per
-      // entry, since a clean checkout stays clean across a wave's own
-      // cherry-picks (only a conflict's `--abort`, now guarded, or a
-      // gate revert resets anything).
-      checkpointAttempted = true;
-      bystanderCheckpointSha = await git.checkpointBystanderState(repoRoot);
-    }
-    const preCherry = await git.revParse(repoRoot);
-    // spec/loop.md "Crash equals stop": stake the merge before the pick —
-    // a death anywhere past this line leaves the marker standing, and the
-    // next `loop` start refuses over it rather than picking
-    // the same span onto trunk a second time.
-    mergingSlugs.add(slugify(r.entry.tag));
-    await writeMergingMarker(leg, r.entry, r.branch, r.spanBase);
-    try {
-      // The per-entry leg's ancestry check already cleared the whole
-      // `spanBase..headSha` span as one completed entry — cherry-pick
-      // the whole range, in order, not just the newest commit
-      // (spec/loop.md "N commits are completion"). Equivalent to a
-      // single-sha pick when the span holds exactly one commit.
-      await git.cherryPickRange(repoRoot, r.spanBase, r.headSha);
-    } catch (err) {
-      const message = (err as Error).message;
-      leg.log.warn(
-        `[flume] cherry-pick failed for ${r.entry.tag}: ${message}; entry stays in pending`,
-      );
-      let footprint: string[] | undefined;
-      try {
-        footprint = await git.diffNameOnly(repoRoot, r.spanBase, r.headSha);
-      } catch {
-        // Footprint capture is best-effort; the retry just partitions on
-        // declared files as before.
+      if (r.declined) waveDeclined = true;
+      if (!r.committed) {
+        // An in-worktree afterCommit gate revert never reaches
+        // cherry-pick, so it never touches trunk on its own — record its
+        // captured footprint here so the ledger rewrite lands it on
+        // trunk instead of it living only in the gitignored prior-attempt
+        // record.
+        if (r.footprint && r.footprint.length > 0) {
+          mergeOutcomes.push({
+            entryTag: r.entry.tag,
+            outcome: "afterCommit-reverted",
+            footprint: r.footprint,
+            ...(r.spanBase ? { baseSha: r.spanBase } : {}),
+            ...(r.headSha ? { headSha: r.headSha } : {}),
+          });
+        }
+        if (r.gateFailure) gateFailures.push(r.gateFailure);
+        continue;
       }
-      // Abort the in-progress cherry-pick so the working tree is clean for
-      // subsequent ticks. Without this, partially-applied changes block
-      // the next plan tick (which can't run `pnpm install` etc. against a
-      // dirty trunk) and require manual `git restore` intervention.
-      await git.cherryPickAbort(repoRoot);
-      mergeOutcomes.push({
-        entryTag: r.entry.tag,
-        outcome: "cherry-pick-conflict",
-        ...(footprint ? { footprint } : {}),
-        baseSha: r.spanBase,
-        headSha: r.headSha,
-      });
-      // A merge-stage failure — always entry-scoped, so
-      // superviseLoop's quarantine leg can isolate it exactly like a
-      // tagged provisioning failure.
-      mergeFailures.push({
-        ...blamedOn(r.entry),
-        signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
-        message,
-      });
-      continue;
-    }
-    const mergedSha = await git.revParse(repoRoot);
 
-    // Gate this entry's merged commit. The first failing afterMerge gate
-    // attributes the failure to *this* entry — it is the only delta
-    // between `preCherry` and `mergedSha`, which now may span more than
-    // one cherry-picked commit (spec/loop.md "N commits are completion") —
-    // diffed as a range rather than `mergedSha`'s own single-commit show,
-    // so an earlier commit in the span isn't missed.
-    // Computed once per commit and shared across every gate this loop
-    // runs, and reused below as the `afterMerge-reverted` footprint — same
-    // dedup as runAfterCommitGates above.
-    const commitTouchedPaths = await git.diffNameOnly(
-      repoRoot,
-      preCherry,
-      mergedSha,
-    );
-    let entryFailure: ReportedGateResult | undefined;
-    // `mergeGateResults` is a wave-cumulative accumulator (never reset
-    // per entry — `allGateResults` below needs the whole wave's worth).
-    // Capture this entry's own starting offset so `ShipContext.gateResults`
-    // below can slice out just the results this entry's own afterMerge
-    // loop appends, never an earlier sibling's (spec/pending.md "Ship
-    // detection trusts the agent's own account").
-    const entryMergeGateResultsStart = mergeGateResults.length;
-    for (const gate of afterMergeGates) {
-      const gr = await runGate(
-        gate,
-        {
-          cwd: repoRoot,
-          repoRoot,
-          flumeDir: leg.flumeDir,
-          stateRootRel: leg.stateRootRel,
-          pendingPath: leg.pendingPath,
-          configDir: leg.configDir,
-          phaseName: phase.name,
-          commitSha: mergedSha,
-          touchedPaths: commitTouchedPaths,
-          entry: r.entry,
-          // This entry's own span base, not `preCherry`: the tip its agent
-          // branched from, so an afterMerge gate reading trunk can tell an
-          // input the entry ignored from one that landed after it started
-          // (spec/chain.md "What a gate receives"). Sibling entries in the
-          // same wave were provisioned from the same tip, and each carries
-          // its own value regardless.
-          baseSha: r.spanBase,
-          // And `preCherry` beside it: the trunk tip this entry's span
-          // landed onto, which is where the sibling that picked ahead of it
-          // left trunk — the lower end of the range `commitTouchedPaths`
-          // above is diffed over. A cumulative gate measuring trunk before
-          // and after this entry reads its *before* here, never off the
-          // wave-shared `baseSha` (spec/chain.md "What a gate receives").
-          landedOnSha: preCherry,
-          log: (l) => leg.log.info(l),
-        },
-        leg.gateScope,
-      );
-      const row = reportedGateRow(gate.name, gr);
-      mergeGateResults.push(row);
-      if (!gr.ok) {
-        entryFailure = row;
-        break;
-      }
-    }
-
-    if (entryFailure) {
-      leg.log.warn(
-        `[flume] afterMerge gate '${entryFailure.gate}' failed for ${r.entry.tag}; reverting only that entry (clean siblings stay shipped)`,
-      );
-      // An afterMerge failure must surface to the agent, never vanish.
-      // Capture the digest while the
-      // cherry-picked SHA is still reachable, then drop ONLY this entry's
-      // commit (reset to the pre-cherry-pick trunk), not the wave. The
-      // entry stays pending; its retry carries this prior-attempt block.
-      const record = await buildGateRevert(
-        "afterMerge",
-        entryFailure,
+      // spec/loop.md "Tip verify", "Harness-driven commits carry no
+      // expected-tip bookkeeping — the claim refuses, git arbitrates": no
+      // sha comparison against a recorded expectation. A live claim on the
+      // ref is a concurrent engine instance and refuses exactly as a moved
+      // tip used to; absent one, whatever moved trunk was not an engine, and
+      // the cherry-pick below lands onto whatever tip is current — git's own
+      // conflict detection is the only content arbiter left.
+      const foreignClaim = await liveForeignClaimPid(
         repoRoot,
-        mergedSha,
+        leg.ownTipClaimPid,
       );
-      await leg.attempts.write(priorAttemptRef(phase, r.entry), record);
-      gateFailures.push({
-        // The gate's own attribution decides the entry-scoped half: a gate
-        // declaring `blamesSpan: false` leaves the failure unblamed, so the
-        // run-scoped quarantine never holds this entry for a wall it was
-        // told the entry did not build (spec/chain.md "What a gate
-        // returns"). The revert below still happens either way.
-        ...(entryFailure.blamesSpan === false ? {} : blamedOn(r.entry)),
-        signature: gateFailureSignature(entryFailure),
-        message: entryFailure.message,
-      });
-      // spec/loop.md "Tip verify", "dropping it must not take
-      // bystanders": the primary checkout may hold an operator's
-      // uncommitted work, so this reset carries keep-semantics — never
-      // --hard — and a textual collision refuses loudly rather than
-      // silently discarding either writer's content. Caught here, not
-      // propagated: an uncaught throw would abort the whole wave loop
-      // before `commitPendingUpdate` ever ran, dropping the ledger
-      // rewrite for every sibling entry already cherry-picked and shipped
-      // ahead of this one.
-      const foreignTip = await checkMergedTipUnmoved(
-        repoRoot,
-        preCherry,
-        mergedSha,
-      );
-      if (foreignTip) {
+      if (foreignClaim !== null) {
         leg.log.warn(
-          `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} refused (${foreignTip}); commit stays on trunk, left for the operator; other entries continue`,
+          `[flume] ${phase.name}: tip claimed by pid ${foreignClaim}; refusing to cherry-pick ${r.entry.tag}, entry stays pending`,
         );
-        revertRefused.push(r.entry);
+        waveTipMoved = true;
         mergeOutcomes.push({
           entryTag: r.entry.tag,
-          outcome: "afterMerge-revert-refused",
-          footprint: commitTouchedPaths,
-          baseSha: preCherry,
-          headSha: mergedSha,
-        });
-        gateFailures.push({
-          ...blamedOn(r.entry),
-          signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
-          message: foreignTip,
+          outcome: "tip-moved",
+          baseSha: r.spanBase,
+          headSha: r.headSha,
         });
         continue;
       }
+      if (!checkpointAttempted) {
+        // spec/loop.md "Crash equals stop": checkpoint whatever the
+        // operator has staged/unstaged on the primary checkout before this
+        // wave's first pick range begins — once per wave, not once per
+        // entry, since a clean checkout stays clean across a wave's own
+        // cherry-picks (only a conflict's `--abort`, now guarded, or a
+        // gate revert resets anything).
+        checkpointAttempted = true;
+        bystanderCheckpointSha = await git.checkpointBystanderState(repoRoot);
+      }
+      const preCherry = await git.revParse(repoRoot);
+      // spec/loop.md "Crash equals stop": stake the merge before the pick —
+      // a death anywhere past this line leaves the marker standing, and the
+      // next `loop` start refuses over it rather than picking
+      // the same span onto trunk a second time.
+      mergingSlugs.add(slugify(r.entry.tag));
+      await writeMergingMarker(leg, r.entry, r.branch, r.spanBase);
       try {
-        await git.resetKeepTo(repoRoot, preCherry);
+        // The per-entry leg's ancestry check already cleared the whole
+        // `spanBase..headSha` span as one completed entry — cherry-pick
+        // the whole range, in order, not just the newest commit
+        // (spec/loop.md "N commits are completion"). Equivalent to a
+        // single-sha pick when the span holds exactly one commit.
+        await git.cherryPickRange(repoRoot, r.spanBase, r.headSha);
       } catch (err) {
-        if (!(err instanceof git.ResetKeepRefusedError)) throw err;
-        const message = `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`;
+        const message = (err as Error).message;
         leg.log.warn(
-          `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator; other entries continue`,
+          `[flume] cherry-pick failed for ${r.entry.tag}: ${message}; entry stays in pending`,
         );
-        revertRefused.push(r.entry);
+        let footprint: string[] | undefined;
+        try {
+          footprint = await git.diffNameOnly(repoRoot, r.spanBase, r.headSha);
+        } catch {
+          // Footprint capture is best-effort; the retry just partitions on
+          // declared files as before.
+        }
+        // Abort the in-progress cherry-pick so the working tree is clean for
+        // subsequent ticks. Without this, partially-applied changes block
+        // the next plan tick (which can't run `pnpm install` etc. against a
+        // dirty trunk) and require manual `git restore` intervention.
+        await git.cherryPickAbort(repoRoot);
         mergeOutcomes.push({
           entryTag: r.entry.tag,
-          outcome: "afterMerge-revert-refused",
-          footprint: commitTouchedPaths,
-          baseSha: preCherry,
-          headSha: mergedSha,
+          outcome: "cherry-pick-conflict",
+          ...(footprint ? { footprint } : {}),
+          baseSha: r.spanBase,
+          headSha: r.headSha,
         });
-        gateFailures.push({
+        // A merge-stage failure — always entry-scoped, so
+        // superviseLoop's quarantine leg can isolate it exactly like a
+        // tagged provisioning failure.
+        mergeFailures.push({
           ...blamedOn(r.entry),
           signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
           message,
         });
         continue;
       }
-      mergeReverted.push(r.entry);
-      mergeOutcomes.push({
-        entryTag: r.entry.tag,
-        outcome: "afterMerge-reverted",
-        footprint: commitTouchedPaths,
-        baseSha: preCherry,
-        headSha: mergedSha,
-      });
-      continue;
-    }
+      const mergedSha = await git.revParse(repoRoot);
 
-    leg.log.info(
-      `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
-    );
+      // Gate this entry's merged commit. The first failing afterMerge gate
+      // attributes the failure to *this* entry — it is the only delta
+      // between `preCherry` and `mergedSha`, which now may span more than
+      // one cherry-picked commit (spec/loop.md "N commits are completion") —
+      // diffed as a range rather than `mergedSha`'s own single-commit show,
+      // so an earlier commit in the span isn't missed.
+      // Computed once per commit and shared across every gate this loop
+      // runs, and reused below as the `afterMerge-reverted` footprint — same
+      // dedup as runAfterCommitGates above.
+      const commitTouchedPaths = await git.diffNameOnly(
+        repoRoot,
+        preCherry,
+        mergedSha,
+      );
+      let entryFailure: ReportedGateResult | undefined;
+      // `mergeGateResults` is a wave-cumulative accumulator (never reset
+      // per entry — `allGateResults` below needs the whole wave's worth).
+      // Capture this entry's own starting offset so `ShipContext.gateResults`
+      // below can slice out just the results this entry's own afterMerge
+      // loop appends, never an earlier sibling's (spec/pending.md "Ship
+      // detection trusts the agent's own account").
+      const entryMergeGateResultsStart = mergeGateResults.length;
+      for (const gate of afterMergeGates) {
+        const gr = await runGate(
+          gate,
+          {
+            cwd: repoRoot,
+            repoRoot,
+            flumeDir: leg.flumeDir,
+            stateRootRel: leg.stateRootRel,
+            pendingPath: leg.pendingPath,
+            configDir: leg.configDir,
+            phaseName: phase.name,
+            commitSha: mergedSha,
+            touchedPaths: commitTouchedPaths,
+            entry: r.entry,
+            // This entry's own span base, not `preCherry`: the tip its agent
+            // branched from, so an afterMerge gate reading trunk can tell an
+            // input the entry ignored from one that landed after it started
+            // (spec/chain.md "What a gate receives"). Sibling entries in the
+            // same wave were provisioned from the same tip, and each carries
+            // its own value regardless.
+            baseSha: r.spanBase,
+            // And `preCherry` beside it: the trunk tip this entry's span
+            // landed onto, which is where the sibling that picked ahead of it
+            // left trunk — the lower end of the range `commitTouchedPaths`
+            // above is diffed over. A cumulative gate measuring trunk before
+            // and after this entry reads its *before* here, never off the
+            // wave-shared `baseSha` (spec/chain.md "What a gate receives").
+            landedOnSha: preCherry,
+            log: (l) => leg.log.info(l),
+          },
+          leg.gateScope,
+        );
+        const row = reportedGateRow(gate.name, gr);
+        mergeGateResults.push(row);
+        if (!gr.ok) {
+          entryFailure = row;
+          break;
+        }
+      }
 
-    // Landing on trunk isn't shipping, and the engine does not decide
-    // which of the two this is. It reports facts; the chain interprets
-    // (spec/pending.md "Ship detection trusts the agent's own account";
-    // .claude/rules/engine-boundary.md "Told, not inferred"). Undeclared
-    // means shipped.
-    let shipVerdict: boolean;
-    // spec/chain.md "What a hook receives": a throwing `shipped` is not
-    // `false`. The outcome is the one the seam already has for a predicate
-    // that declines — entry stays pending, commit stays on trunk, merge
-    // bookkeeping below completes — but the verdict names the throw, so a
-    // broken predicate never reads back as a deliberate park.
-    let shipThrew: string | undefined;
-    try {
-      shipVerdict =
-        phase.shipped?.({
-          entry: r.entry,
-          mergedSha,
-          baseSha: r.spanBase,
-          touchedPaths: commitTouchedPaths,
-          gateResults: [
-            ...r.gateResults,
-            ...mergeGateResults.slice(entryMergeGateResultsStart),
-          ],
-          worktreePath: r.worktreePath,
+      if (entryFailure) {
+        leg.log.warn(
+          `[flume] afterMerge gate '${entryFailure.gate}' failed for ${r.entry.tag}; reverting only that entry (clean siblings stay shipped)`,
+        );
+        // An afterMerge failure must surface to the agent, never vanish.
+        // Capture the digest while the
+        // cherry-picked SHA is still reachable, then drop ONLY this entry's
+        // commit (reset to the pre-cherry-pick trunk), not the wave. The
+        // entry stays pending; its retry carries this prior-attempt block.
+        const record = await buildGateRevert(
+          "afterMerge",
+          entryFailure,
           repoRoot,
-        }) ?? true;
-    } catch (err) {
-      shipThrew = throwFacts(err).message;
-      shipVerdict = false;
-    }
-    if (!shipVerdict) {
-      leg.log.warn(
-        `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} but ${phase.name}.shipped ${shipThrew === undefined ? "returned false" : `threw: ${shipThrew}`} — commit stays on trunk, entry stays pending`,
+          mergedSha,
+        );
+        await leg.attempts.write(priorAttemptRef(phase, r.entry), record);
+        gateFailures.push({
+          // The gate's own attribution decides the entry-scoped half: a gate
+          // declaring `blamesSpan: false` leaves the failure unblamed, so the
+          // run-scoped quarantine never holds this entry for a wall it was
+          // told the entry did not build (spec/chain.md "What a gate
+          // returns"). The revert below still happens either way.
+          ...(entryFailure.blamesSpan === false ? {} : blamedOn(r.entry)),
+          signature: gateFailureSignature(entryFailure),
+          message: entryFailure.message,
+        });
+        // spec/loop.md "Tip verify", "dropping it must not take
+        // bystanders": the primary checkout may hold an operator's
+        // uncommitted work, so this reset carries keep-semantics — never
+        // --hard — and a textual collision refuses loudly rather than
+        // silently discarding either writer's content. Caught here, not
+        // propagated: an uncaught throw would abort the whole wave loop
+        // before `commitPendingUpdate` ever ran, dropping the ledger
+        // rewrite for every sibling entry already cherry-picked and shipped
+        // ahead of this one.
+        const foreignTip = await checkMergedTipUnmoved(
+          repoRoot,
+          preCherry,
+          mergedSha,
+        );
+        if (foreignTip) {
+          leg.log.warn(
+            `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} refused (${foreignTip}); commit stays on trunk, left for the operator; other entries continue`,
+          );
+          revertRefused.push(r.entry);
+          mergeOutcomes.push({
+            entryTag: r.entry.tag,
+            outcome: "afterMerge-revert-refused",
+            footprint: commitTouchedPaths,
+            baseSha: preCherry,
+            headSha: mergedSha,
+          });
+          gateFailures.push({
+            ...blamedOn(r.entry),
+            signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
+            message: foreignTip,
+          });
+          continue;
+        }
+        try {
+          await git.resetKeepTo(repoRoot, preCherry);
+        } catch (err) {
+          if (!(err instanceof git.ResetKeepRefusedError)) throw err;
+          const message = `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`;
+          leg.log.warn(
+            `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator; other entries continue`,
+          );
+          revertRefused.push(r.entry);
+          mergeOutcomes.push({
+            entryTag: r.entry.tag,
+            outcome: "afterMerge-revert-refused",
+            footprint: commitTouchedPaths,
+            baseSha: preCherry,
+            headSha: mergedSha,
+          });
+          gateFailures.push({
+            ...blamedOn(r.entry),
+            signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
+            message,
+          });
+          continue;
+        }
+        mergeReverted.push(r.entry);
+        mergeOutcomes.push({
+          entryTag: r.entry.tag,
+          outcome: "afterMerge-reverted",
+          footprint: commitTouchedPaths,
+          baseSha: preCherry,
+          headSha: mergedSha,
+        });
+        continue;
+      }
+
+      leg.log.info(
+        `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
       );
-      // spec/loop.md "Prior-outcome feedback to the retrying tick": the
-      // entry stays queued, so its next tick is a retry and gets the same
-      // channel every other queue-unchanged outcome gets. Without it the
-      // fact lives only in the verdict log, which a chain can only reach
-      // by re-deriving "was the last attempt declined" from history —
-      // exactly the rebuild `TickContext.priorAttempts` exists to spare
-      // it. Cleared by the existing shipped-entry sweep below the moment
-      // a later attempt ships clean. `shipThrew` rides it for the same
-      // reason it rides the merge outcome below: the disk record is what
-      // the *next* process reads, and a broken predicate collapsing into
-      // "the chain parked this" is a wall the retry would invent.
-      await leg.attempts.write(
-        priorAttemptRef(phase, r.entry),
-        buildNotShipped(mergedSha, commitTouchedPaths, shipThrew),
-      );
+
+      // Landing on trunk isn't shipping, and the engine does not decide
+      // which of the two this is. It reports facts; the chain interprets
+      // (spec/pending.md "Ship detection trusts the agent's own account";
+      // .claude/rules/engine-boundary.md "Told, not inferred"). Undeclared
+      // means shipped.
+      let shipVerdict: boolean;
+      // spec/chain.md "What a hook receives": a throwing `shipped` is not
+      // `false`. The outcome is the one the seam already has for a predicate
+      // that declines — entry stays pending, commit stays on trunk, merge
+      // bookkeeping below completes — but the verdict names the throw, so a
+      // broken predicate never reads back as a deliberate park.
+      let shipThrew: string | undefined;
+      try {
+        shipVerdict =
+          phase.shipped?.({
+            entry: r.entry,
+            mergedSha,
+            baseSha: r.spanBase,
+            touchedPaths: commitTouchedPaths,
+            gateResults: [
+              ...r.gateResults,
+              ...mergeGateResults.slice(entryMergeGateResultsStart),
+            ],
+            worktreePath: r.worktreePath,
+            repoRoot,
+          }) ?? true;
+      } catch (err) {
+        shipThrew = throwFacts(err).message;
+        shipVerdict = false;
+      }
+      if (!shipVerdict) {
+        leg.log.warn(
+          `[flume] ${r.entry.tag}: cherry-picked ${mergedSha.slice(0, 8)} but ${phase.name}.shipped ${shipThrew === undefined ? "returned false" : `threw: ${shipThrew}`} — commit stays on trunk, entry stays pending`,
+        );
+        // spec/loop.md "Prior-outcome feedback to the retrying tick": the
+        // entry stays queued, so its next tick is a retry and gets the same
+        // channel every other queue-unchanged outcome gets. Without it the
+        // fact lives only in the verdict log, which a chain can only reach
+        // by re-deriving "was the last attempt declined" from history —
+        // exactly the rebuild `TickContext.priorAttempts` exists to spare
+        // it. Cleared by the existing shipped-entry sweep below the moment
+        // a later attempt ships clean. `shipThrew` rides it for the same
+        // reason it rides the merge outcome below: the disk record is what
+        // the *next* process reads, and a broken predicate collapsing into
+        // "the chain parked this" is a wall the retry would invent.
+        await leg.attempts.write(
+          priorAttemptRef(phase, r.entry),
+          buildNotShipped(mergedSha, commitTouchedPaths, shipThrew),
+        );
+        mergeOutcomes.push({
+          entryTag: r.entry.tag,
+          outcome: "not-shipped",
+          baseSha: preCherry,
+          headSha: mergedSha,
+          ...(shipThrew === undefined ? {} : { threw: shipThrew }),
+        });
+        continue;
+      }
+
+      shipped.push(r.entry);
       mergeOutcomes.push({
         entryTag: r.entry.tag,
-        outcome: "not-shipped",
+        outcome: "merged",
         baseSha: preCherry,
         headSha: mergedSha,
-        ...(shipThrew === undefined ? {} : { threw: shipThrew }),
       });
-      continue;
     }
 
-    shipped.push(r.entry);
-    mergeOutcomes.push({
-      entryTag: r.entry.tag,
-      outcome: "merged",
-      baseSha: preCherry,
-      headSha: mergedSha,
-    });
-  }
+    // Computed here — ahead of the `commitPendingUpdate` call below — rather than
+    // after cleanup where the original single use lived, so a
+    // `WaveLedgerRefusal` thrown out of that call can report the same
+    // gate results and committed-shape a clean completion would (read from
+    // two sites, never restated).
+    allGateResults = perEntry
+      .flatMap((r) => r.gateResults)
+      .concat(mergeGateResults);
+    committedWave = shipped.length > 0;
 
-  // Computed here — ahead of the `commitPendingUpdate` call below — rather than
-  // after cleanup where the original single use lived, so a
-  // `WaveLedgerRefusal` thrown out of that call can report the same
-  // gate results and committed-shape a clean completion would (read from
-  // two sites, never restated).
-  const allGateResults = perEntry
-    .flatMap((r) => r.gateResults)
-    .concat(mergeGateResults);
-  const committedWave = shipped.length > 0;
-
-  // Update pending.json — remove shipped entries, record merge-failure
-  // footprints — as one harness commit. `commitPendingUpdate` derives the
-  // footprints straight off `mergeOutcomes`, the same records this wave's
-  // TickVerdict carries — no separate observed-files bookkeeping here.
-  const footprintTags = mergeOutcomes.flatMap((m) =>
-    m.entryTag && m.footprint && m.footprint.length > 0 ? [m.entryTag] : [],
-  );
-  let chorSha: string | undefined;
-  if (shipped.length > 0 || footprintTags.length > 0) {
-    // Each shipped entry committed clean *and* passed its afterMerge gate
-    // — clear any stale prior-attempt slot so its next plan/build cycle
-    // starts with no false signal.
-    for (const s of shipped) {
-      await leg.attempts.clear(priorAttemptRef(phase, s));
-    }
-    const shippedTags = shipped.map((s) => s.tag);
-    // The update can no-op (footprint already recorded, nothing shipped):
-    // commitPendingUpdate then returns the pre-existing HEAD, which must
-    // not be reported as this wave's commit.
-    const preUpdate = await git.revParse(repoRoot);
-    // The rewrite can refuse, and every way it does propagates past worktree
-    // cleanup below, straight to `tick()`'s catch. Its read is the strict
-    // `readPending()` (.claude/rules/engineering.md "Loud or nothing"), so a
-    // pending.json corrupted by something outside this tick in the window
-    // since the wave's decide-read refuses rather than overwriting the file
-    // with a rewrite derived from `[]`; and its commit is a `git commit
-    // --only` over the one named path, which fatals under a paused merge or
-    // cherry-pick in the primary checkout and on a path it finds unchanged.
-    // Already-shipped commits stay on trunk (cherry-picked above) in every
-    // case. Surviving worktrees are the accepted cost of refusing rather
-    // than proceeding; the next `pruneWorktrees` call reclaims their
-    // metadata once a human has cleared the refusal.
-    let update: PendingRewriteResult;
-    try {
-      update = await commitPendingUpdate(
-        leg,
-        shippedTags,
-        mergeOutcomes,
-        partitionIgnore,
-      );
-    } catch (err) {
-      // spec/loop.md "The tick verdict — one facts artifact": this wave's
-      // shipped tags are already real (cherry-picked and afterMerge-gated
-      // onto trunk above) — only the ledger rewrite refused. A thrown error
-      // is the only channel left once `commitPendingUpdate` never returns,
-      // so build the verdict this wave already has the facts for and carry
-      // it on the error for `tick()`'s catch to fold in, instead of
-      // discarding it the way a plain re-throw would.
-      //
-      // Every throw out of that call, never the parse failure alone: the
-      // tags on trunk are the same facts whichever refusal happened, and
-      // keying the carry on a cause is how a `git commit --only` fatal — or
-      // a disk error, or an `index.lock` — came to lose a verdict the parse
-      // failure's sibling arm kept. `WaveLedgerRefusal` carries the cause
-      // for `tick()` to classify.
-      const why = refusalMessage(err);
-      const noCommit = waveNoCommitCause(
-        committedWave,
-        perEntry,
-        [...mergeReverted, ...revertRefused],
-      );
-      const verdict: TickVerdict = {
-        phaseName: phase.name,
-        tags: provisioned.map((e) => e.tag),
-        committed: committedWave,
-        ...(noCommit ? { noCommit } : {}),
-        ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
-        ...(waveDeclined ? { declined: waveDeclined } : {}),
-        ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
-        gateResults: [...allGateResults],
-        shippedTags,
-        mergeOutcomes,
-        invocations,
-        ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
-        ...(mergeFailures.length > 0 ? { mergeFailures } : {}),
-        ...(gateFailures.length > 0 ? { gateFailures } : {}),
-        ...(clearedPriorAttempts.length > 0
-          ? { clearedPriorAttempts }
-          : {}),
-        summary:
+    // Update pending.json — remove shipped entries, record merge-failure
+    // footprints — as one harness commit. `commitPendingUpdate` derives the
+    // footprints straight off `mergeOutcomes`, the same records this wave's
+    // TickVerdict carries — no separate observed-files bookkeeping here.
+    const footprintTags = mergeOutcomes.flatMap((m) =>
+      m.entryTag && m.footprint && m.footprint.length > 0 ? [m.entryTag] : [],
+    );
+    if (shipped.length > 0 || footprintTags.length > 0) {
+      // Each shipped entry committed clean *and* passed its afterMerge gate
+      // — clear any stale prior-attempt slot so its next plan/build cycle
+      // starts with no false signal.
+      for (const s of shipped) {
+        await leg.attempts.clear(priorAttemptRef(phase, s));
+      }
+      const shippedTags = shipped.map((s) => s.tag);
+      // The update can no-op (footprint already recorded, nothing shipped):
+      // commitPendingUpdate then returns the pre-existing HEAD, which must
+      // not be reported as this wave's commit.
+      const preUpdate = await git.revParse(repoRoot);
+      // The rewrite can refuse, and every way it does propagates past worktree
+      // cleanup below, straight to `tick()`'s catch. Its read is the strict
+      // `readPending()` (.claude/rules/engineering.md "Loud or nothing"), so a
+      // pending.json corrupted by something outside this tick in the window
+      // since the wave's decide-read refuses rather than overwriting the file
+      // with a rewrite derived from `[]`; and its commit is a `git commit
+      // --only` over the one named path, which fatals under a paused merge or
+      // cherry-pick in the primary checkout and on a path it finds unchanged.
+      // Already-shipped commits stay on trunk (cherry-picked above) in every
+      // case. Surviving worktrees are the accepted cost of refusing rather
+      // than proceeding; the next `pruneWorktrees` call reclaims their
+      // metadata once a human has cleared the refusal.
+      let update: PendingRewriteResult;
+      try {
+        update = await commitPendingUpdate(
+          leg,
+          shippedTags,
+          mergeOutcomes,
+          partitionIgnore,
+        );
+      } catch (err) {
+        // spec/loop.md "The tick verdict — one facts artifact": this wave's
+        // shipped tags are already real (cherry-picked and afterMerge-gated
+        // onto trunk above) — only the ledger rewrite refused. A thrown error
+        // is the only channel left once `commitPendingUpdate` never returns,
+        // so build the verdict this wave already has the facts for and carry
+        // it on the error for `tick()`'s catch to fold in, instead of
+        // discarding it the way a plain re-throw would.
+        //
+        // Every throw out of that call, never the parse failure alone: the
+        // tags on trunk are the same facts whichever refusal happened, and
+        // keying the carry on a cause is how a `git commit --only` fatal — or
+        // a disk error, or an `index.lock` — came to lose a verdict the parse
+        // failure's sibling arm kept. `WaveLedgerRefusal` carries the cause
+        // for `tick()` to classify.
+        const why = refusalMessage(err);
+        const noCommit = waveNoCommitCause(
+          committedWave,
+          perEntry,
+          [...mergeReverted, ...revertRefused],
+        );
+        const verdict: TickVerdict = {
+          phaseName: phase.name,
+          tags: provisioned.map((e) => e.tag),
+          committed: committedWave,
+          ...(noCommit ? { noCommit } : {}),
+          ...(waveTipMoved ? { tipMoved: waveTipMoved } : {}),
+          ...(waveDeclined ? { declined: waveDeclined } : {}),
+          ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
+          gateResults: [...allGateResults],
+          shippedTags,
+          mergeOutcomes,
+          invocations,
+          ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
+          ...(mergeFailures.length > 0 ? { mergeFailures } : {}),
+          ...(gateFailures.length > 0 ? { gateFailures } : {}),
+          ...(clearedPriorAttempts.length > 0
+            ? { clearedPriorAttempts }
+            : {}),
+          summary:
+            shippedTags.length > 0
+              ? `${phase.name} shipped ${shippedTags.join(", ")} — pending-ledger rewrite refused (${why})`
+              : `${phase.name}: pending-ledger rewrite refused (${why})`,
+          // headSha: the ledger rewrite never reached its own commit, so the
+          // tip has not moved past what this wave's cherry-picks already
+          // landed — a fresh read rather than reusing `preUpdate` so this
+          // stays correct if a future revision moves the read point.
+          headSha: await git.revParse(repoRoot),
+          at: new Date().toISOString(),
+        };
+        throw new WaveLedgerRefusal(err, verdict);
+      }
+      const updSha = update.sha;
+      if (updSha !== preUpdate) chorSha = updSha;
+      if (update.tipMoved) {
+        waveTipMoved = true;
+        // The refusal's own disk state, from the call that took it rather than
+        // from this site's memory of where its tip check sits: the claim is
+        // read before the rewrite is written, so the queue at `update.path` is
+        // still the one the call read — the operator has nothing to attribute
+        // here, which is the half of this pair the commit refusal below cannot
+        // say (`.claude/rules/engineering.md`, *A fact the engine holds is
+        // reported, never rediscovered*). The path is the ledger's own
+        // spelling, never `pending.json` restated here over a location the
+        // chain chose.
+        leg.log.warn(
+          `[flume] ${phase.name}: tip claimed before the pending-ledger commit; ` +
+            `${update.path} is unchanged on disk, no rewrite written — ` +
+            `shipped entries already on trunk stay shipped`,
+        );
+      } else {
+        leg.log.info(
           shippedTags.length > 0
-            ? `${phase.name} shipped ${shippedTags.join(", ")} — pending-ledger rewrite refused (${why})`
-            : `${phase.name}: pending-ledger rewrite refused (${why})`,
-        // headSha: the ledger rewrite never reached its own commit, so the
-        // tip has not moved past what this wave's cherry-picks already
-        // landed — a fresh read rather than reusing `preUpdate` so this
-        // stays correct if a future revision moves the read point.
-        headSha: await git.revParse(repoRoot),
-        at: new Date().toISOString(),
-      };
-      throw new WaveLedgerRefusal(err, verdict);
+            ? updSha === preUpdate
+              ? `[flume] shipped ${shippedTags.join(", ")}; pending updated on disk, no chore commit (dock outside repo)`
+              : `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
+            : updSha === preUpdate
+              ? `[flume] footprint already recorded, no commit: ${footprintTags.join(", ")}`
+              : `[flume] footprint commit ${updSha.slice(0, 8)}: ${footprintTags.join(", ")}`,
+        );
+      }
     }
-    const updSha = update.sha;
-    if (updSha !== preUpdate) chorSha = updSha;
-    if (update.tipMoved) {
-      waveTipMoved = true;
-      // The refusal's own disk state, from the call that took it rather than
-      // from this site's memory of where its tip check sits: the claim is
-      // read before the rewrite is written, so the queue at `update.path` is
-      // still the one the call read — the operator has nothing to attribute
-      // here, which is the half of this pair the commit refusal below cannot
-      // say (`.claude/rules/engineering.md`, *A fact the engine holds is
-      // reported, never rediscovered*). The path is the ledger's own
-      // spelling, never `pending.json` restated here over a location the
-      // chain chose.
-      leg.log.warn(
-        `[flume] ${phase.name}: tip claimed before the pending-ledger commit; ` +
-          `${update.path} is unchanged on disk, no rewrite written — ` +
-          `shipped entries already on trunk stay shipped`,
-      );
-    } else {
-      leg.log.info(
-        shippedTags.length > 0
-          ? updSha === preUpdate
-            ? `[flume] shipped ${shippedTags.join(", ")}; pending updated on disk, no chore commit (dock outside repo)`
-            : `[flume] ship commit ${updSha.slice(0, 8)}: ${shippedTags.join(", ")}`
-          : updSha === preUpdate
-            ? `[flume] footprint already recorded, no commit: ${footprintTags.join(", ")}`
-            : `[flume] footprint commit ${updSha.slice(0, 8)}: ${footprintTags.join(", ")}`,
-      );
-    }
-  }
 
-  // spec/loop.md "Crash equals stop": every span this wave picked is now
-  // accounted for in the queue on disk, so the markers staked above have
-  // nothing left to warn the next start about — see `clearMergingMarkers`
-  // for why the ledger rewrite, not the verdict write, is the wait point.
-  await clearMergingMarkers(leg, mergingSlugs);
+    // spec/loop.md "Crash equals stop": every span this wave picked is now
+    // accounted for in the queue on disk, so the markers staked above have
+    // nothing left to warn the next start about — see `clearMergingMarkers`
+    // for why the ledger rewrite, not the verdict write, is the wait point.
+    await clearMergingMarkers(leg, mergingSlugs);
+  } finally {
+    // Every way out of the span: shipped, reverted, or thrown past its own
+    // bookkeeping by `WaveLedgerRefusal`. A leaked lock names a pid that is
+    // still alive, so a sibling would wait on it for the rest of the run.
+    shipLock.release();
+  }
 
   // Cleanup worktrees. Best-effort teardown fires before git.removeWorktree
   // so chain-provisioned ephemera (per-worktree DB, scratch lease, etc.)
