@@ -1,7 +1,14 @@
 /**
- * The sweep slice's window (`spec/harness.md`, *The phases*): the commits past
- * `sweptThrough` that touched the declared sweep domain or a posture page,
- * plus the lines the spec locus no longer states — the retired-claim delta.
+ * The sweep slice's window (`spec/harness.md`, *The phases*): the declared
+ * sweep-domain paths the commits past `sweptThrough` touched, the posture
+ * pages among them, and the lines the spec locus no longer states — the
+ * retired-claim delta.
+ *
+ * **The frontier is a set of paths, not a walk of commits.** A path is in it
+ * or it is not, so it is named once however many commits of the range touched
+ * it; the commits are a count. A rotation that stays open across hundreds of
+ * commits otherwise pays for each of them again every tick, for a listing
+ * whose subjects and shas nothing downstream reads.
  *
  * **What this window looks at is declared, never assumed.** The frontier is
  * `slices.sweep`'s own domain and posture pages, judged by the engine's own
@@ -129,15 +136,7 @@ function renderSweepWindow(
   return cursorWindow("sweptThrough", frontier, ctx, (cursor, all) => {
     const touching = all.filter((commit) => touches(commit, frontier));
 
-    const lines = [
-      `=== ${touching.length} commit(s) since ${cursor} touching the sweep ` +
-        `domain or a posture page ===`,
-    ];
-    if (touching.length === 0) lines.push("(none)");
-    for (const commit of touching) {
-      lines.push(`${commit.sha} ${commit.subject}`);
-      for (const path of pathsIn(commit, frontier)) lines.push(`  ${path}`);
-    }
+    const lines = frontierListing(cursor, touching, domain, posturePages);
 
     lines.push(
       "",
@@ -172,6 +171,53 @@ const pathsIn = (commit: RangeCommit, globs: string[]): readonly string[] =>
   commit.paths.filter((path) => matchesAny(path, globs));
 
 /**
+ * The paths a range touched that a glob list names — each once, in one order.
+ *
+ * The union, not the walk: a path is in the frontier or it is not, and how
+ * many commits of the range happened to touch it changes nothing a sweep tick
+ * decides (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*). Sorted rather than left in git's commit order, so
+ * a reader scanning the listing gets a module beside its siblings and the same
+ * range renders the same listing whatever order the commits landed in.
+ */
+const unionOf = (
+  commits: readonly RangeCommit[],
+  globs: string[],
+): string[] =>
+  [...new Set(commits.flatMap((commit) => pathsIn(commit, globs)))].sort();
+
+/**
+ * The frontier, as the two things a sweep tick decides from it: which domain
+ * paths the range touched, and whether the range touched a posture page at
+ * all.
+ *
+ * The second is called out on its own because it is not one more frontier
+ * path — a touched posture page is a phrase delta, and a phrase delta puts
+ * *every* domain module in the frontier however few paths the listing above
+ * it carries. Folding the pages into the path union would render that as a
+ * one-line addition to a list, which is the opposite of what it means.
+ */
+function frontierListing(
+  cursor: string,
+  touching: readonly RangeCommit[],
+  domain: string[],
+  posturePages: string[],
+): string[] {
+  const paths = unionOf(touching, domain);
+  const pages = unionOf(touching, posturePages);
+  return [
+    `=== ${paths.length} sweep-domain path(s) touched since ${cursor}, by ` +
+      `${touching.length} commit(s) ===`,
+    ...(paths.length === 0 ? ["(none)"] : paths),
+    "",
+    `=== ${pages.length} posture page(s) touched in the same range; a ` +
+      `touched page is a phrase delta, which puts every sweep-domain module ` +
+      `in the frontier ===`,
+    ...(pages.length === 0 ? ["(none)"] : pages),
+  ];
+}
+
+/**
  * The spec-locus lines deleted across the window — the sentences a doc
  * comment, a docs page or a README section may still assert
  * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
@@ -186,6 +232,5 @@ function retiredLines(
   all: readonly RangeCommit[],
   locus: string[],
 ): string[] {
-  const paths = [...new Set(all.flatMap((commit) => pathsIn(commit, locus)))];
-  return deletedLines(cwd, cursor, paths);
+  return deletedLines(cwd, cursor, unionOf(all, locus));
 }

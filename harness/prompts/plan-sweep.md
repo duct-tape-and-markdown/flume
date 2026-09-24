@@ -32,7 +32,7 @@ discipline: {{DISCIPLINE}}
 
 Apply the declared posture pages to code that already exists. Those pages bind this slice — the frontier, the neighborhood bound, the cursor, the routing bar, the stamp; `<sweep-window>` names them, and you read them now, in full, as they read this tick. One neighborhood per tick.
 
-`<sweep-window>` lists the commits past `sweptThrough` that touched the sweep domain or a posture page, and the spec lines those commits deleted — the retired-claim delta. `<plan-state>` carries the open rotation's covered set, if one is open; covered is settled and is never re-swept, even where fresh judgment would cut the boundary differently.
+`<sweep-window>` lists the sweep-domain paths the commits past `sweptThrough` touched — each named once, whatever number of those commits touched it — then the posture pages that range touched, each of which is a phrase delta putting every sweep-domain module in the frontier, then the spec lines the range deleted — the retired-claim delta. `<plan-state>` carries the open rotation's covered set, if one is open; covered is settled and is never re-swept, even where fresh judgment would cut the boundary differently.
 
 Findings route per the pages' own bar: correctness-adjacent → a pending entry citing the owning section; pure shape → an accepted-debt line in the commit body; a design fork → an open question naming the section and the fork. A violation counts only when verified on disk this tick, cited by symbol and line — a finding read off a remembered impression, a commit message, or a prior tick's note does not count.
 

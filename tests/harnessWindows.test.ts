@@ -922,7 +922,7 @@ it("a window render refuses by name when git fails for a reason other than an un
   }
 });
 
-it("the sweep window carries the frontier commits and the spec lines the window retired", () => {
+it("the sweep window carries the frontier paths, the posture pages the range touched, and the spec lines the window retired", () => {
   const base = commit(
     { "src/a.ts": "export const a = 1;\n", "spec/loop.md": "# Loop\n\nA ratified claim.\n" },
     "build: a",
@@ -930,6 +930,7 @@ it("the sweep window carries the frontier commits and the spec lines the window 
   writeState();
 
   commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
+  commit({ "rules/posture.md": "# Posture\n\nA phrase.\n" }, "rules: a posture page");
   commit({ "spec/loop.md": "# Loop\n" }, "spec: retire the claim");
   commit({ "elsewhere/x.md": "untouched by the sweep\n" }, "chore: elsewhere");
 
@@ -938,37 +939,89 @@ it("the sweep window carries the frontier commits and the spec lines the window 
     flumeDir: stateRoot(),
   }).SWEEP_WINDOW;
 
+  // Two commits touched the frontier, and between them one domain path: the
+  // header counts the commits, the listing names the paths.
   expect(rendered).toContain(
-    `=== 1 commit(s) since ${base} touching the sweep domain or a posture page ===`,
+    `=== 1 sweep-domain path(s) touched since ${base}, by 2 commit(s) ===`,
   );
-  expect(rendered).toContain("build: bump a");
-  expect(rendered).toContain("  src/a.ts");
-  expect(rendered).not.toContain("chore: elsewhere");
+  // Exactly the domain path: nothing of the fixture's out-of-domain file,
+  // nothing of the spec file, and no commit subject — the block is the
+  // union, whole.
+  expect(frontierPaths(rendered)).toEqual(["src/a.ts"]);
+  // The posture page is its own fact rather than one more frontier path: it
+  // is the phrase delta, which arms every domain module at once.
+  expect(posturePageHits(rendered)).toEqual(["rules/posture.md"]);
   expect(rendered).toContain("(retired-claim delta)");
-  expect(rendered).toContain("-A ratified claim.");
+  expect(retiredDelta(rendered)).toContain("-A ratified claim.");
 });
 
 /**
- * The retired-claim delta's own lines, cut out of a rendered sweep window.
- *
- * The block runs from the delta's header to the blank line before the tip
- * line; a deleted blank line arrives as a bare `-`, never as `""`, so the
- * first empty line is the block's end. Cases assert against these lines
- * rather than against the whole render, which quotes commit subjects and
- * paths the delta has no say over (`.claude/rules/posture-sweep.md`, *A
- * violation counts only when verified on disk this tick*).
+ * The frontier is a set, and a long rotation is where that matters: six
+ * hundred commits over two hundred paths, rendered once per commit, is the
+ * same listing paid for many times over on every tick of the rotation — for
+ * subjects and shas no sweep tick reads (`.claude/rules/posture-sweep.md`,
+ * *The frontier is decidable; the neighborhood is judged*).
  */
-function retiredDelta(rendered: string | undefined): string[] {
+it("the sweep window names each frontier path once across the range, never once per commit that touched it", () => {
+  const base = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+
+  // One path touched by four commits past the cursor, beside a second path
+  // touched once — so the listing is a union and not a deduplicated singleton.
+  for (const n of [2, 3, 4, 5]) {
+    commit({ "src/a.ts": `export const a = ${n};\n` }, `build: bump a to ${n}`);
+  }
+  commit({ "src/b.ts": "export const b = 1;\n" }, "build: b");
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  // Five commits, two paths: the count of commits is a fact the header
+  // carries, never the height of the listing under it.
+  expect(rendered).toContain(
+    `=== 2 sweep-domain path(s) touched since ${base}, by 5 commit(s) ===`,
+  );
+  expect(frontierPaths(rendered)).toEqual(["src/a.ts", "src/b.ts"]);
+});
+
+/**
+ * The lines of one block of a rendered sweep window — the block whose `===`
+ * header `marker` names, up to the blank line that ends it.
+ *
+ * Every block the window renders has that shape, so one cut serves the
+ * frontier listing, the posture-page callout and the retired-claim delta
+ * rather than three that must agree (`.claude/rules/engineering.md`, *A
+ * module is one job*). A deleted blank line arrives as a bare `-`, never as
+ * `""`, so the first empty line really is the block's end.
+ *
+ * Cases assert against a block rather than against the whole render, which
+ * carries two other blocks and a tip line this one has no say over
+ * (`.claude/rules/posture-sweep.md`, *A violation counts only when verified
+ * on disk this tick*).
+ */
+function blockUnder(rendered: string | undefined, marker: string): string[] {
   if (rendered === undefined) throw new Error("the sweep window is unrendered");
   const lines = rendered.split("\n");
-  const start = lines.findIndex((line) =>
-    line.includes("(retired-claim delta)"),
-  );
-  expect(start).not.toBe(-1);
+  const start = lines.findIndex((line) => line.includes(marker));
+  expect(start, `the window renders no block under \`${marker}\``).not.toBe(-1);
   const rest = lines.slice(start + 1);
   const end = rest.indexOf("");
   return end === -1 ? rest : rest.slice(0, end);
 }
+
+/** The frontier's own paths, cut out of a rendered sweep window. */
+const frontierPaths = (rendered: string | undefined): string[] =>
+  blockUnder(rendered, "sweep-domain path(s) touched since");
+
+/** The posture pages the range touched, cut out of a rendered sweep window. */
+const posturePageHits = (rendered: string | undefined): string[] =>
+  blockUnder(rendered, "posture page(s) touched in the same range");
+
+/** The retired-claim delta's own lines, cut out of a rendered sweep window. */
+const retiredDelta = (rendered: string | undefined): string[] =>
+  blockUnder(rendered, "(retired-claim delta)");
 
 it("the retired-claim delta carries a deleted line that begins with two dashes", () => {
   commit(
@@ -1039,7 +1092,7 @@ it("a rendered sweep window names the tip its frontier was drawn from", () => {
 
   // Vacuity guard: the frontier this tip closes is populated.
   expect(rendered).toContain(
-    `=== 1 commit(s) since ${base} touching the sweep domain or a posture page ===`,
+    `=== 1 sweep-domain path(s) touched since ${base}, by 1 commit(s) ===`,
   );
   expect(tip).not.toBe(base);
   expect(rendered).toContain(
@@ -1060,7 +1113,7 @@ it("a sweep window with no commits past its cursor names the cursor as its tip",
   // The empty case, spelled: a quiet tree still names one tip, so the tick
   // that closes on it stamps the cursor forward rather than nothing.
   expect(rendered).toContain(
-    `=== 0 commit(s) since ${base} touching the sweep domain or a posture page ===`,
+    `=== 0 sweep-domain path(s) touched since ${base}, by 0 commit(s) ===`,
   );
   expect(rendered).toContain(
     `=== this window was drawn from tip ${base}; the tick that closes the ` +
@@ -1179,7 +1232,7 @@ it("a missing slice state file renders as no state yet", () => {
 
   const sweep = half["plan-sweep"].args(ctx).SWEEP_WINDOW;
   expect(sweep).not.toContain("bootstrap");
-  expect(sweep).toContain(`commit(s) since ${cursor}`);
+  expect(sweep).toContain(`touched since ${cursor}`);
 
   // And the liveness leg reads the same absence: a slice with no state file
   // of its own is live, because no state yet is every window's "run".
