@@ -803,6 +803,45 @@ describe("entryExtension validators are adapted, not merged (ENTRYEXTENSION-STAN
   });
 });
 
+/**
+ * The camelCase spans a string carries — how an engine symbol reads when prose
+ * names one. A flat lowercase word is English before it is a symbol, so only
+ * the humped spelling is read as a name.
+ */
+const camelSpans = (text: string): string[] => [
+  ...new Set(text.match(/\b[a-z][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*\b/g) ?? []),
+];
+
+/** Those spans `src/` declares, whatever kind of declaration holds the name. */
+const declaredInSrc = (spans: readonly string[]): string[] => {
+  const sources = filesUnder(SRC_FILES).map((file) => readFileSync(file, "utf8"));
+  return spans.filter((span) =>
+    sources.some((src) =>
+      new RegExp(`\\b(?:function|const|let|class|interface|type|enum)\\s+${span}\\b`).test(src),
+    ),
+  );
+};
+
+/**
+ * A refusal string is not an interface surface, so no resolution arm reaches
+ * an engine symbol spelled inside one: the name goes stale silently at the
+ * next rename. The doc comment above the class keeps the parser's name, where
+ * the citation pin does resolve it.
+ */
+it("the async-validator refusal names the field and the fix, naming no engine function", () => {
+  const { message } = new AsyncEntryExtensionValidatorError("reviewers");
+
+  expect(message).toContain(`"reviewers"`);
+  expect(message).toContain("Declare a synchronous Standard Schema validator");
+
+  // The detector bites: run it over the spelling this refusal used to carry.
+  const stale = `${message} parsePendingQueue is synchronous.`;
+  expect(declaredInSrc(camelSpans(stale))).toEqual(["parsePendingQueue"]);
+
+  expect(camelSpans(message).length).toBeGreaterThan(0);
+  expect(declaredInSrc(camelSpans(message))).toEqual([]);
+});
+
 /** The module declaring `parsePendingQueueLoose` — the call-site scan drops it. */
 const LOOSE_DECLARATION = "PendingSchema.ts";
 
