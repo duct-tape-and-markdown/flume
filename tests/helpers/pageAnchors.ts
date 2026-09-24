@@ -1,18 +1,25 @@
 /**
- * The two citations `.claude/rules/engineering.md` *Narration is the ladder's
+ * The citations `.claude/rules/engineering.md` *Narration is the ladder's
  * bottom rung* resolves one step past a page name — the `#fragment` a
- * markdown link carries into a page, and the `§ N` a `docs/` page states —
- * each answered by the structure of the page it lands in, the way a `per`
- * cite already is. A page name is answered by the working tree; these are
- * answered by what that page opens a section on, so neither reading asks what
- * the citation *says*. The token, never its meaning.
+ * markdown link carries into a page, the `§ N` a `docs/` page states, and the
+ * section half of a `` (`<page>.md`, *Section*) `` pair a page writes — each
+ * answered by the structure of the page it lands in, the way a `per` cite
+ * already is. A page name is answered by the working tree; these are answered
+ * by what that page opens a section on, so no reading asks what the citation
+ * *says*. The token, never its meaning.
  *
- * One job, two spellings of it: what a page's own headings answer. Without
- * the arms a citation past the page name resolves against nothing — the
- * page-name half reds when a page is renamed away, and stays green while
+ * One job, three spellings of it: what a page's own structure answers.
+ * Without the arms a citation past the page name resolves against nothing —
+ * the page-name half reds when a page is renamed away, and stays green while
  * every section the citations into it named is rewritten out. A reader
  * following one lands at the top of the page, or at a number that has since
  * moved, with no signal that the section they were sent to is gone.
+ *
+ * The section-cite grammar is not this module's: one reader draws a cite
+ * wherever a shipped text states it (`sectionCitesIn`,
+ * `tests/helpers/commentCitations.ts`), and what lives here is the walk that
+ * feeds it a page's paragraphs — beside the backticked identifiers the same
+ * walk already hands out.
  *
  * The slug is GitHub's, because GitHub is where these links are followed: the
  * heading's rendered text, lowercased, stripped of everything that is not a
@@ -37,9 +44,15 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { fencedSpans, isDeclarationSubject } from "./commentCitations.ts";
-import { headingLines, proseLines } from "./docSections.ts";
-import { filesUnder, relPath } from "./repoProgram.ts";
+import {
+  fencedSpans,
+  isDeclarationSubject,
+  resolveSectionCites,
+  sectionCitesIn,
+  type SectionCitation,
+} from "./commentCitations.ts";
+import { headingLines, proseLines, type ProseLine } from "./docSections.ts";
+import { filesUnder, relPath, type Scan } from "./repoProgram.ts";
 
 /** One markdown link, split at the `#` the destination may carry. */
 export interface MarkdownLink {
@@ -488,14 +501,47 @@ const joinWrapped = (raw: string, at: string): string =>
     .join(at);
 
 /**
- * Every backticked span the domain's pages state, judged set and wraps apart.
+ * Every paragraph a page renders: runs of consecutive, non-blank, unfenced
+ * lines, in page order, each line keeping the line of the page it sits on.
  *
- * The paragraph is the pairing unit: spans are paired over a run of
- * consecutive prose lines (`fencedSpans`, `tests/helpers/commentCitations.ts`)
- * and a blank line ends the run, because markdown pairs no span across one.
+ * The paragraph is markdown's own pairing unit, which is why both readers
+ * below take it rather than the page whole: a blank line closes a backtick
+ * run and closes a parenthetical alike, so page-wide pairing would let one
+ * stray fence swallow every span behind it and one unclosed paren pair a page
+ * name with an emphasis eight paragraphs down.
+ *
  * Fenced blocks are out on the shared read of what a fence covers
  * (`proseLines`, `tests/helpers/docSections.ts`): a sample's identifiers are
- * code the page is showing, not a name its prose cites.
+ * code the page is showing rather than a name its prose cites, and a cite
+ * inside one is a page quoting text rather than making a claim of its own.
+ */
+function pageParagraphs(body: string): ProseLine[][] {
+  const paragraphs: ProseLine[][] = [];
+  let run: ProseLine[] = [];
+  const close = (): void => {
+    if (run.length > 0) paragraphs.push(run);
+    run = [];
+  };
+
+  for (const line of proseLines(body)) {
+    const previous = run[run.length - 1];
+    if (line.text.trim() === "" || (previous && line.line !== previous.line + 1)) {
+      close();
+      if (line.text.trim() === "") continue;
+    }
+    run.push(line);
+  }
+  close();
+
+  return paragraphs;
+}
+
+/**
+ * Every backticked span the domain's pages state, judged set and wraps apart.
+ *
+ * Spans are paired over one paragraph at a time (`pageParagraphs` above, whose
+ * header states why) by the shared pairing reader (`fencedSpans`,
+ * `tests/helpers/commentCitations.ts`).
  *
  * Which spans are judged is `isDeclarationSubject`'s — the one subject rule
  * the comment scan is held to, narrowed to the alphabet a surface can answer.
@@ -513,12 +559,9 @@ export function pageIdentifiers(request: AnchorScanRequest): IdentifierRead {
     const page = relPath(root, path);
     pages.push(page);
 
-    /** One paragraph: a run of consecutive, non-blank, unfenced lines. */
-    let run: { readonly line: number; readonly text: string }[] = [];
-    const read = (): void => {
-      if (run.length === 0) return;
-      const joined = run.map((entry) => entry.text).join("\n");
-      const first = run[0]?.line ?? 0;
+    for (const paragraph of pageParagraphs(readFileSync(path, "utf8"))) {
+      const joined = paragraph.map((entry) => entry.text).join("\n");
+      const first = paragraph[0]?.line ?? 0;
       const lineAt = (offset: number): number =>
         first + (joined.slice(0, offset).match(/\n/g)?.length ?? 0);
 
@@ -534,18 +577,7 @@ export function pageIdentifiers(request: AnchorScanRequest): IdentifierRead {
           backticked.push(site);
         }
       }
-      run = [];
-    };
-
-    for (const line of proseLines(readFileSync(path, "utf8"))) {
-      const previous = run[run.length - 1];
-      if (line.text.trim() === "" || (previous && line.line !== previous.line + 1)) {
-        read();
-        if (line.text.trim() === "") continue;
-      }
-      run.push(line);
     }
-    read();
   }
 
   return {
@@ -582,5 +614,59 @@ export function scanPageIdentifiers(
     ...read,
     resolved: read.scanned.filter(answered),
     findings: read.scanned.filter((site) => !answered(site)),
+  };
+}
+
+/**
+ * What one scan of a domain's section cites found.
+ *
+ * `pages` is what a vacuity pin reads beside the judged total: a walk that
+ * reached no page reports the same clean verdict as a tree whose cites all
+ * resolve (`.claude/rules/engineering.md`, *A green verdict is proven
+ * non-vacuous*).
+ */
+export interface PageSectionScan extends Scan<SectionCitation> {
+  /** Every page read, repo-relative and posix-separated. */
+  readonly pages: readonly string[];
+  /** The cites whose named page still titles the section they name. */
+  readonly resolved: readonly SectionCitation[];
+}
+
+/**
+ * Every `` (`<page>.md`, *Section*) `` cite the domain's pages state, resolved
+ * against the titles of the page each names.
+ *
+ * The fourth place the one section-cite arm reaches, after a doc comment, a
+ * comment in the widened page domain, and a shipped help literal
+ * (`scanRenderedSections`, `tests/helpers/commentCitations.ts`). A page that
+ * states what a shipped interface does is the surface a consumer reads before
+ * the hover text, so a cite it makes into a section that has been rewritten
+ * out sends that reader nowhere, exactly as a comment's would
+ * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+ *
+ * The cited page is repo-relative, as it is in every other reader of this
+ * grammar — the page half is a path the working tree answers, never one the
+ * citing page's own directory does. The target is read wherever it lives: the
+ * domain bounds which pages are *judged*, never which pages answer.
+ */
+export function scanPageSections(request: AnchorScanRequest): PageSectionScan {
+  const root = resolve(request.root);
+  const pages: string[] = [];
+  const cites: SectionCitation[] = [];
+
+  for (const path of pagesUnder(root, request.domain)) {
+    const page = relPath(root, path);
+    pages.push(page);
+    for (const paragraph of pageParagraphs(readFileSync(path, "utf8")))
+      cites.push(...sectionCitesIn(page, paragraph));
+  }
+
+  const scan = resolveSectionCites(root, cites);
+  const dangling = new Set<SectionCitation>(scan.findings);
+
+  return {
+    ...scan,
+    pages,
+    resolved: scan.scanned.filter((site) => !dangling.has(site)),
   };
 }

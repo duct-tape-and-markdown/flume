@@ -15,9 +15,16 @@ const HEADING = /^(#{1,6}) /;
 /** A line that opens or closes a fenced block. */
 const FENCE = /^\s*(?:```|~~~)/;
 
-/** One line the renderer shows as prose, and the 1-based line it sits on. */
+/**
+ * One line the renderer shows as prose, and the 1-based line it sits on.
+ *
+ * The one spelling of that pair: a page's prose line, a shipped help page's
+ * line and a doc comment's line are the same shape, and the readers that
+ * render a run of them take it whichever text the run came out of
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ */
 export interface ProseLine {
-  /** The 1-based line of the page. */
+  /** The 1-based line of the text holding it. */
   readonly line: number;
   /** The line verbatim, whatever markup it carries. */
   readonly text: string;

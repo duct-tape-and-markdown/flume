@@ -121,6 +121,12 @@
  * alone; a page's own headings are answered by the working tree, which no
  * literal can write into.
  *
+ * An interface page's own prose is the fourth, and takes the same arm: the
+ * walk lives with the page readers (`scanPageSections`,
+ * `tests/helpers/pageAnchors.ts`) because a page's pairing unit is its
+ * paragraph, and it feeds `sectionCitesIn` below — one grammar, one
+ * rendering, one resolution, wherever a cite was written.
+ *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
@@ -129,7 +135,7 @@ import { resolve } from "node:path";
 
 import ts from "typescript";
 
-import { sectionTitles } from "./docSections.ts";
+import { sectionTitles, type ProseLine } from "./docSections.ts";
 import {
   eachToken,
   modulesUnder,
@@ -609,18 +615,18 @@ const commentRanges = (sf: ts.SourceFile): readonly ts.CommentRange[] => {
   return found;
 };
 
-/** The comment text carried by one line, and the 1-based line carrying it. */
-interface CommentLine {
-  readonly line: number;
-  readonly text: string;
-}
-
 /**
  * A file's comment text, one entry per line that carries any, in line order.
  * A line holding two comments carries both, concatenated in the order the
  * file spells them.
+ *
+ * `ProseLine` (`tests/helpers/docSections.ts`) is the shape: a comment line, a
+ * shipped help page's line and a page's own prose line are the same pair —
+ * text and the 1-based line it sits on — and the rendering below reads all
+ * three, so they are spelled once (`.claude/rules/engineering.md`, *A module
+ * is one job*).
  */
-const commentLines = (sf: ts.SourceFile): readonly CommentLine[] => {
+const commentLines = (sf: ts.SourceFile): readonly ProseLine[] => {
   const full = sf.getFullText();
   const byLine = new Map<number, string>();
   for (const range of [...commentRanges(sf)].sort((a, b) => a.pos - b.pos)) {
@@ -669,10 +675,11 @@ const WRAP_HEAD = /\S+\/$/;
 const WRAP_TAIL = /^\S*\.md(?![A-Za-z0-9_-])/;
 
 /**
- * One run of lines as a reader sees it: every line's comment furniture off,
- * every break folded to the one space the wrapping stands for. A run of
- * shipped help lines carries no furniture, so there the strip is a no-op and
- * the fold is the whole rendering.
+ * One run of lines as a reader sees it: every break folded to the one space
+ * the wrapping stands for, each line first put through the `render` its own
+ * medium asks for. The fold is this reader's; what furniture a line carries
+ * is the caller's, because only the caller knows whether a leading `*` is a
+ * block comment's margin or the emphasis a wrap broke onto the line.
  *
  * The backticked arms read `joined` instead, where a break is still a break,
  * because a wrap splits a *token* into something no subject spelling admits.
@@ -687,11 +694,25 @@ interface RenderedRun {
   lineAt(offset: number): number;
 }
 
-/** Render one run of comment lines, keeping each piece's source line. */
-const renderRun = (run: readonly CommentLine[]): RenderedRun => {
-  const pieces = run.map((entry) =>
-    entry.text.replace(CONTINUATION_MARGIN, "").replace(BLOCK_TERMINATOR, "").trim(),
-  );
+/** One line of a comment as markdown renders it: both furnitures off. */
+const renderComment = (text: string): string =>
+  text.replace(CONTINUATION_MARGIN, "").replace(BLOCK_TERMINATOR, "").trim();
+
+/**
+ * One line of a text that carries no furniture — a shipped help page, a
+ * markdown page's own prose. Not the same as the strip being a no-op there: a
+ * page line may *open* with the `*` of an emphasis the wrapping broke onto
+ * it, and the margin pattern would eat that `*`, losing a cite the page
+ * plainly states.
+ */
+const renderPlain = (text: string): string => text.trim();
+
+/** Render one run of lines, keeping each piece's source line. */
+const renderRun = (
+  run: readonly ProseLine[],
+  render: (text: string) => string,
+): RenderedRun => {
+  const pieces = run.map((entry) => render(entry.text));
   /** Where each piece ends in the joined text, the joining space included. */
   const ends: number[] = [];
   let at = 0;
@@ -882,7 +903,7 @@ const commentSpans = (
   const sections: SectionCitation[] = [];
   const links: CitationSite[] = [];
 
-  const read = (run: readonly CommentLine[]): void => {
+  const read = (run: readonly ProseLine[]): void => {
     if (run.length === 0) return;
     const joined = run.map((entry) => entry.text).join("\n");
     const first = run[0]?.line ?? 0;
@@ -995,7 +1016,7 @@ const commentSpans = (
     // The section cites, read off the run as markdown renders it rather than
     // off the span extents above, through the one reader every surface's
     // cites go through.
-    const rendered = renderRun(run);
+    const rendered = renderRun(run, renderComment);
     sections.push(...sectionCites(module, rendered));
 
     // The link tags, off that same rendering: the tag is one reference
@@ -1010,7 +1031,7 @@ const commentSpans = (
     }
   };
 
-  let run: CommentLine[] = [];
+  let run: ProseLine[] = [];
   for (const entry of commentLines(sf)) {
     const previous = run[run.length - 1];
     if (previous && entry.line !== previous.line + 1) {
@@ -1465,18 +1486,55 @@ export interface RenderedSectionScanRequest {
  */
 export const scanRenderedSections = (
   request: RenderedSectionScanRequest,
-): Scan<SectionCitation> => {
-  const root = resolve(request.root);
-  const scanned = request.surfaces.flatMap((surface) =>
-    sectionCites(
-      surface.name,
-      renderRun(
-        surface.text
-          .split(/\r?\n/)
-          .map((text, index) => ({ line: index + 1, text })),
+): Scan<SectionCitation> =>
+  resolveSectionCites(
+    request.root,
+    request.surfaces.flatMap((surface) =>
+      sectionCitesIn(
+        surface.name,
+        surface.text.split(/\r?\n/).map((text, index) => ({ line: index + 1, text })),
       ),
     ),
   );
-  const titles = sectionReader(root);
+
+/**
+ * The section cites one run of text states, at the line each sits on.
+ *
+ * The reader the two comment scans and the rendered surfaces above already
+ * run, handed to a caller whose run is neither: a page's own paragraph, read
+ * by the page walk (`scanPageSections`, `tests/helpers/pageAnchors.ts`). A
+ * cite is the same claim wherever a shipped text states it, so the grammar,
+ * the rendering and the resolution are one mechanism and the caller supplies
+ * only the lines (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
+ *
+ * The run is rendered before it is read, which is why a paragraph rather than
+ * a line is what a caller hands over: a cite's emphasized half is a phrase,
+ * and the wrapping breaks it wherever the column falls. Rendered as a text
+ * carrying no comment furniture, which is what both callers here are — a
+ * leading `*` on one of their lines opens an emphasis rather than continuing
+ * a block comment.
+ *
+ * `name` is how a finding cites the run's home — the command that prints a
+ * help page, the repo-relative path of a markdown one.
+ */
+export const sectionCitesIn = (
+  name: string,
+  lines: readonly ProseLine[],
+): SectionCitation[] => sectionCites(name, renderRun(lines, renderPlain));
+
+/**
+ * A set of section cites, resolved against the pages they name.
+ *
+ * One resolution for every cite the suite draws, whichever reader drew it: a
+ * page's own headings and bolded leads answer it, exact once backticks and
+ * the wrapping fold out, and a page the working tree does not hold answers
+ * nothing at all.
+ */
+export const resolveSectionCites = (
+  root: string,
+  scanned: readonly SectionCitation[],
+): Scan<SectionCitation> => {
+  const titles = sectionReader(resolve(root));
   return { scanned, findings: scanned.filter((site) => !titles(site)) };
 };

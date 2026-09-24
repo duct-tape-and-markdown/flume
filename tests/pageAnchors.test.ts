@@ -1,10 +1,11 @@
 /**
- * The two citations the pin resolves against a page's own structure
+ * The citations the pin resolves against a page's own structure
  * (`tests/helpers/pageAnchors.ts`): a markdown link's `#fragment` against the
- * headings of the page it names, and a `§ N` on a `docs/` page against that
- * page's own numbering. Either way a section rewritten out from under a
- * citation reds, rather than silently landing a reader somewhere the claim no
- * longer is.
+ * headings of the page it names, a `§ N` on a `docs/` page against that
+ * page's own numbering, and the section half of a `` (`<page>.md`, *Section*) ``
+ * pair an interface page writes against the titles that page still opens. Each
+ * way, a section rewritten out from under a citation reds rather than silently
+ * landing a reader somewhere the claim no longer is.
  *
  * Each repo verdict is the arm; the cases above it are that arm's own
  * detection, proven on a fixture written to be caught. A scan whose matcher
@@ -21,6 +22,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { externalVocabulary } from "./helpers/externalVocabulary.ts";
 import { packageSurface } from "./helpers/exportGraph.ts";
+import { formatCitation } from "./helpers/commentCitations.ts";
 import {
   anchorSlug,
   type AnchorScan,
@@ -33,11 +35,13 @@ import {
   pagesUnder,
   scanPageAnchors,
   scanPageIdentifiers,
+  scanPageSections,
   scanSectionRefs,
   sectionNumbers,
   sectionRefs,
   type IdentifierScan,
   type PageDomain,
+  type PageSectionScan,
   type SectionScan,
 } from "./helpers/pageAnchors.ts";
 import {
@@ -193,9 +197,54 @@ const FIXTURE_SURFACE: ReadonlySet<string> = new Set([
   "liveName",
 ]);
 
+/**
+ * A fourth fixture tree, read by the section-cite arm: a page citing another
+ * page's sections every way the grammar spells one, and the page that answers
+ * them.
+ */
+const CITE_FIXTURE: Record<string, string> = {
+  "cites/interface.md": [
+    "# The interface page",
+    "",
+    "A heading cite (`cites/target.md`, *Runtime ignores*) and a quoted one",
+    "(`cites/target.md`, \"The checkout is the unit\") are the one grammar.",
+    "",
+    "A bolded lead (`cites/target.md`, *Verbatim copying is the detector*), and",
+    "a cite the wrapping broke (`cites/target.md`, *The checkout is",
+    "the unit*).",
+    "",
+    "A cite the wrapping broke at the comma, so the emphasis opens its own",
+    "line (`cites/target.md`,",
+    "*Runtime ignores*) — a `*` no comment margin is behind.",
+    "",
+    "An abbreviation (`cites/target.md`, *Runtime*), and a page the tree does",
+    "not hold (`cites/gone.md`, *Runtime ignores*).",
+    "",
+    "```ts",
+    "// (`cites/target.md`, *A sample names no section*) is code.",
+    "```",
+    "",
+    "A parenthetical this paragraph never closed (`cites/target.md`,",
+    "",
+    "*Runtime ignores*) pairs with nothing.",
+    "",
+  ].join("\n"),
+  "cites/target.md": [
+    "# The runtime ignore set",
+    "",
+    "## Runtime ignores",
+    "",
+    "- **Verbatim copying is the detector.** A block appearing unchanged.",
+    "",
+    "## The checkout is the unit",
+    "",
+  ].join("\n"),
+};
+
 let fixtureRoot = "";
 let fixtureSections: SectionScan;
 let fixtureIdentifiers: IdentifierScan;
+let fixtureCites: PageSectionScan;
 let repoScan: AnchorScan;
 let repoSections: SectionScan;
 
@@ -207,6 +256,7 @@ beforeAll(async () => {
     ...FIXTURE,
     ...SECTION_FIXTURE,
     ...IDENTIFIER_FIXTURE,
+    ...CITE_FIXTURE,
   })) {
     const path = join(fixtureRoot, ...rel.split("/"));
     await mkdir(dirname(path), { recursive: true });
@@ -218,6 +268,7 @@ beforeAll(async () => {
     domain: { trees: ["pages"] },
     surface: FIXTURE_SURFACE,
   });
+  fixtureCites = scanPageSections({ root: fixtureRoot, domain: { trees: ["cites"] } });
 });
 
 afterAll(async () => {
@@ -483,5 +534,82 @@ it("every backticked identifier docs/CHAIN-AUTHORING.md, docs/CLI.md and README.
     scan.findings
       .filter((site) => !excluded.includes(site.text))
       .map(formatSpan),
+  );
+});
+
+// --- an interface page's own prose, the fourth place a cite sits ----------
+
+it("a section cite on an interface page naming a heading its cited page does not hold is a page finding", () => {
+  const scan = fixtureCites;
+
+  // Non-vacuity: both pages were read and every cite the fixture states was
+  // drawn, before a verdict is read off any of them. The paragraph is the
+  // pairing unit, so the fenced sample's cite is code the page is showing and
+  // the parenthetical a blank line broke pairs with nothing — a page-wide read
+  // would draw both and this roll is what says it did not.
+  expect(scan.pages).toEqual(["cites/interface.md", "cites/target.md"]);
+  expect(
+    scan.scanned.map((site) => `${formatCitation(site)} -> ${site.page}`),
+  ).toEqual([
+    "cites/interface.md:3 Runtime ignores -> cites/target.md",
+    "cites/interface.md:4 The checkout is the unit -> cites/target.md",
+    "cites/interface.md:6 Verbatim copying is the detector -> cites/target.md",
+    "cites/interface.md:7 The checkout is the unit -> cites/target.md",
+    "cites/interface.md:11 Runtime ignores -> cites/target.md",
+    "cites/interface.md:14 Runtime -> cites/target.md",
+    "cites/interface.md:15 Runtime ignores -> cites/gone.md",
+  ]);
+
+  // A heading answers a cite, a bolded bullet lead answers one, and a phrase
+  // the page's own wrapping broke closes to the heading it names.
+  expect(scan.resolved.map(formatCitation)).toEqual([
+    "cites/interface.md:3 Runtime ignores",
+    "cites/interface.md:4 The checkout is the unit",
+    "cites/interface.md:6 Verbatim copying is the detector",
+    "cites/interface.md:7 The checkout is the unit",
+    "cites/interface.md:11 Runtime ignores",
+  ]);
+
+  // The verdict, on the terms a comment's cite is held to: no prefix arm, so
+  // an abbreviation is a rewrite; and a page the tree does not hold titles
+  // nothing. Each cited at the line a reader has to edit.
+  expect(scan.findings.map(formatCitation)).toEqual([
+    "cites/interface.md:14 Runtime",
+    "cites/interface.md:15 Runtime ignores",
+  ]);
+});
+
+it("every section docs/CHAIN-AUTHORING.md, docs/CLI.md and README.md cite is a section its page still carries", () => {
+  const scan = scanPageSections({ root: REPO_ROOT, domain: INTERFACE_PAGES });
+
+  // Non-vacuity: all three pages were read and their cites drawn, before the
+  // emptiness below is read off them. A walk that reached one page, or a
+  // reader that stopped drawing the shape, would report the same clean tree.
+  expect(scan.pages).toEqual([
+    "docs/CHAIN-AUTHORING.md",
+    "docs/CLI.md",
+    "README.md",
+  ]);
+  expect(new Set(scan.scanned.map((site) => site.module)).size).toBe(3);
+  expect(scan.scanned.length).toBeGreaterThan(20);
+
+  // Judged in the direction that matters: a cite resolves against the headings
+  // and bolded leads its page still opens, the page's own backticks folded out
+  // and a cite the page's wrapping broke closed first.
+  const resolved = new Set(
+    scan.resolved.map((site) => `${site.page} :: ${site.text}`),
+  );
+  for (const cite of [
+    "spec/loop.md :: Graceful stop — the stop flag",
+    "spec/worktrees.md :: Singleton runs in a worktree",
+    ".claude/rules/engine-boundary.md :: Surface, not prescription",
+    // Broken at the comma, so the emphasis opens a line of its own.
+    "spec/jobs.md :: The checkout is the unit of isolation",
+  ]) {
+    expect(`${cite} -> ${resolved.has(cite)}`).toBe(`${cite} -> true`);
+  }
+
+  expectNoFindings(
+    scan.findings.map((site) => `${formatCitation(site)} -> ${site.page}`),
   );
 });
