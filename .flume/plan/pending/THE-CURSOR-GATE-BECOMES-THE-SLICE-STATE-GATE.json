@@ -1,0 +1,44 @@
+{
+  "tag": "THE-CURSOR-GATE-BECOMES-THE-SLICE-STATE-GATE",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/planState.ts",
+        "description": "the may-move table widens to slice-state invariants — a rule over the file at base and at commit — with the covered-set rule as its second instance"
+      },
+      {
+        "path": "harness/gates.ts",
+        "description": "the gate reads the widened table, and takes the name the section now gives it"
+      },
+      {
+        "path": "tests/harnessPlanState.test.ts",
+        "description": "the table's rules over base/commit pairs"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the refusal, and the gate's name in the ordered set"
+      },
+      {
+        "path": "tests/harnessChain.test.ts",
+        "description": "the gate name in the chain's declared gate order"
+      }
+    ]
+  },
+  "summary": "A plan commit that shrinks or empties an open rotation's covered set moves no cursor, so every half of the cursor gate passes over coverage already paid for",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The gates the discipline needs"
+  },
+  "acceptance": "each slice's state file is judged by that slice's own invariants, read as a rule over the file at base and at commit — the covered set among them — through one table a fourth slice's rule joins without the gate naming a field",
+  "tests": [
+    "a plan commit that drops a module from an open rotation's covered set is refused",
+    "a plan commit that empties an open rotation's covered set is refused"
+  ],
+  "pins": [
+    "a plan commit that arms a rotation over an unchanged stamp is not refused"
+  ],
+  "notes": "Ruled off the covered-set-gate record, fork (a). Today's rule fires only where a cursor's value changed (`harness/gates.ts:529`-`:537`), which is why the covered set is held by nothing: 160 covered modules stand behind today's rotation. `\"plan cursors\"` is spelled at `harness/gates.ts:593`, `tests/harnessGates.test.ts:945`, `:1253`, `tests/harnessChain.test.ts:1160`."
+}

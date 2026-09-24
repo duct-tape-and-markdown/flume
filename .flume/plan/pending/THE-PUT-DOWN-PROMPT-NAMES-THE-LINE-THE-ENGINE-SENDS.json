@@ -6,16 +6,24 @@
   "files": {
     "edit": [
       {
+        "path": "harness/prompts.ts",
+        "description": "the put-down statement takes one home beside `TURN_BOUNDARY` — a threshold per fact the line can carry, and the act each phase puts down"
+      },
+      {
         "path": "harness/prompts/build.md",
-        "description": "the put-down bullet's absence clause states the shape the engine composes when no window is declared, and its thresholds name a fact that line carries"
+        "description": "the put-down bullet renders that statement; its absence clause states the shape the engine composes when no window is declared"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "the placeholder's substitution, beside the others"
       }
     ]
   },
-  "summary": "The put-down bullet tells build no budget line means no declared window; the engine sends a line carrying elapsed and tool calls and no percentage, so that clause never fires",
+  "summary": "The put-down bullet names percentages alone and tells build a missing line means no declared window; the engine never sends that, and the clock is this repo's live dial",
   "per": {
     "path": "spec/harness.md",
     "section": "A tick puts work down"
   },
-  "acceptance": "the put-down bullet names a threshold against a fact the composed line actually carries, and its absence clause states the real no-window shape — a line with no percentage — instead of a missing line, whose three causes are transcript failures",
-  "notes": "Verified at `src/budgetLine.ts:186`-`:200`: with no window declared the line still renders, elapsed and tool calls alone. A missing line is one of three transcript failures (`:146`-`:171`), none a chain's declaration. The declaration now forwards a window (a35cbeb1) and this repo declares none, so every build tick still reads 70%/80% of a window its line never states. Which dial the second arm names is parked. Prompt prose, so no property."
+  "acceptance": "the put-down statement names a threshold for each fact the budget line can carry — the declared window's fraction and the elapsed clock — from one home every phase's prompt renders, and its absence clause states a line with no percentage rather than a missing line",
+  "notes": "Ruled off the put-down-dial record, fork (3): 70% and 80% stand, and on the clock land what is green at 45 minutes and stop at 60 — the median build tick is under 20, the one lost span 76. This repo now declares `contextWindow: 1_000_000` on every phase, so the percentage arm is live and inert by measurement. A missing line is one of three transcript failures (`src/budgetLine.ts:146`-`:171`), never a declaration. Prompt prose, so no property."
 }
