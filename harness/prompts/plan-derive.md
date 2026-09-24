@@ -14,6 +14,11 @@
 !`p="{{PLAN_STATE_PATH}}"; test -e "$p" || { echo "(no plan state yet)"; exit 0; }; cat "$p"`
 </plan-state>
 
+<plan-state-shape>
+Your plan state file takes one of these JSON shapes; each `<...>` is a value you fill, and a field not shown is refused:
+{{PLAN_STATE_SHAPE}}
+</plan-state-shape>
+
 <open-questions-index>
 {{QUESTIONS_INDEX}}
 </open-questions-index>

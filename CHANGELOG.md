@@ -11,6 +11,15 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+### Fixed
+
+- **Each plan slice's prompt shows its state file's exact JSON shape.** A
+  `<plan-state-shape>` block renders every arm of the slice's state schema
+  (`{ "kind": "closed" }` and `{ "kind": "open", "covered": [...] }` for the
+  sweep's rotation), so a slice with no file of its own yet no longer guesses
+  the shape from prose — a first tick wrote `"rotation": "closed"`, which the
+  cursor gate refused and reverted.
+
 ## [0.18.0] - 2026-09-23
 
 The attribution release: **a gate says whose failure it is, and the engine

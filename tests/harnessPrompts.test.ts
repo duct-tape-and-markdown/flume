@@ -37,6 +37,7 @@ import {
   legacyQuestionsPath,
   planStatePath,
 } from "../harness/layout.ts";
+import { PLAN_STATE_SCHEMAS } from "../harness/planState.ts";
 import { NONE_OPEN, renderQuestions } from "../harness/questions.ts";
 import {
   PROMPT_NAMES,
@@ -1085,4 +1086,76 @@ it("a plan slice tick with nothing in flight renders no claimed block at all", a
       block: false,
     });
   }
+}, SPAWN_BUDGET_MS);
+
+/**
+ * Every value a rendered shape leaves for the agent to fill, filled with one
+ * that every field the shapes carry accepts — a full object name is a
+ * cursor, a run identity, a covered path and a title alike — so the schema
+ * judges the shape's keys and kinds rather than the placeholders' spelling.
+ */
+function filled(value: unknown): unknown {
+  const FILL = "0123456789abcdef0123456789abcdef01234567";
+  const isHole = (text: string) => /^<[^<>]+>$/.test(text);
+  if (typeof value === "string") return isHole(value) ? FILL : value;
+  if (Array.isArray(value)) return value.map(filled);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, inner]) => [
+        isHole(key) ? "lane" : key,
+        filled(inner),
+      ]),
+    );
+  }
+  return value;
+}
+
+/**
+ * The shape each plan slice's prompt shows for its own state file is one the
+ * cursor gate's schema accepts (`spec/harness.md`, *Plan state as declared
+ * state*).
+ *
+ * An agreement gate: the real `planSlicePromptArgs` through the engine's real
+ * renderer over the shipped markdown, and every arm the block carries read
+ * back through the real `PLAN_STATE_SCHEMAS`. A slice with no file of its own
+ * yet has nothing on disk to copy the shape from, so the prompt is the whole
+ * statement of it — and a rotation the prose called "closed" was written as
+ * the bare string, which the schema refuses and the tick reverted over.
+ */
+it("every plan slice prompt renders its state file's shape as JSON its schema accepts", async () => {
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  for (const name of PLAN_SLICES) {
+    const rendered = await render(name);
+    const block = /<plan-state-shape>\n([\s\S]*?)\n<\/plan-state-shape>/.exec(
+      rendered,
+    )?.[1];
+    const arms = (block ?? "")
+      .split("\n")
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line) as unknown);
+
+    // Non-vacuity: a block that rendered no arm would pass the parse below
+    // over nothing (`.claude/rules/engineering.md`, *A green verdict is
+    // proven non-vacuous*).
+    expect({ name, arms: arms.length > 0 }).toEqual({ name, arms: true });
+    for (const arm of arms) {
+      const parsed = PLAN_STATE_SCHEMAS[name].safeParse(filled(arm));
+      expect({ name, arm, ok: parsed.success }).toEqual({ name, arm, ok: true });
+    }
+  }
+}, SPAWN_BUDGET_MS);
+
+it("the sweep slice's prompt shows a closed rotation as an object, never a bare word", async () => {
+  const rendered = await render("plan-sweep");
+  expect(rendered).toContain('"rotation":{"kind":"closed"}');
+  expect(rendered).toContain('"rotation":{"kind":"open","covered":[');
+  // The bare word is what the schema refuses: the shape the block shows is
+  // the one that survives the gate, and this one does not.
+  expect(
+    PLAN_STATE_SCHEMAS["plan-sweep"].safeParse({
+      sweptThrough: "0123456789abcdef0123456789abcdef01234567",
+      rotation: "closed",
+    }).success,
+  ).toBe(false);
 }, SPAWN_BUDGET_MS);

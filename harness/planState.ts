@@ -214,6 +214,40 @@ export type PlanStateWriteOf<S extends PlanSlice> = z.input<
 >;
 
 /**
+ * Every shape `slice`'s state file may take, as the literal JSON the slice's
+ * prompt shows the agent — one per arm, with each value the agent fills
+ * spelled as a `<placeholder>`.
+ *
+ * **The prose cannot be the only statement of the shape.** A slice with no
+ * file of its own yet has nothing on disk to copy the shape from, so it
+ * writes whatever the prompt's description suggests — and a rotation
+ * described as "closed" was written as the string `"closed"`, which the
+ * schema refuses and the tick reverts over. Typed as each schema's input
+ * side, so a field or kind the schemas rename is a typecheck failure here
+ * rather than a prompt teaching a shape the reader refuses; the prompt
+ * suite drives each rendered arm through {@link PLAN_STATE_SCHEMAS}.
+ */
+export const PLAN_STATE_SHAPES: {
+  readonly [S in PlanSlice]: readonly PlanStateWriteOf<S>[];
+} = {
+  "plan-derive": [{ derivedThrough: "<sha>" }],
+  "plan-sweep": [
+    { sweptThrough: "<sha>", rotation: { kind: "closed" } },
+    {
+      sweptThrough: "<sha>",
+      rotation: { kind: "open", covered: ["<covered module path>"] },
+    },
+  ],
+  [INBOX_PHASE]: [
+    {
+      drainedRuns: {
+        "<lane name>": { run: "<run id>", titles: ["<failing title>"] },
+      },
+    },
+  ],
+};
+
+/**
  * One slice's schema at the type that slice's own accessors answer in.
  *
  * The one place the table above is resolved against the slice a caller named.

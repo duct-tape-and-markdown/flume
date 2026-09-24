@@ -8,6 +8,11 @@
 !`p="{{PLAN_STATE_PATH}}"; test -e "$p" || { echo "(no plan state yet)"; exit 0; }; cat "$p"`
 </plan-state>
 
+<plan-state-shape>
+Your plan state file takes one of these JSON shapes; each `<...>` is a value you fill, and a field not shown is refused:
+{{PLAN_STATE_SHAPE}}
+</plan-state-shape>
+
 <pending-now>
 !`d="{{PENDING_DIR}}"; test -d "$d" || { echo "queue directory absent: $d" >&2; exit 1; }; n=0; for f in "$d"/*.json; do test -e "$f" || break; n=$((n+1)); printf '=== %s\n' "${f##*/}"; cat "$f"; done; test "$n" -gt 0 || echo "(queue empty)"`
 </pending-now>
