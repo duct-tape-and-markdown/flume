@@ -17,9 +17,9 @@
 import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
-import type { z } from "zod";
+import { z } from "zod";
 
-import { DEFAULT_SHELL } from "../harness/declaration.ts";
+import { DEFAULT_SHELL, PHASES } from "../harness/declaration.ts";
 import {
   DeclarationSchema,
   parseDeclaration,
@@ -590,6 +590,74 @@ describe("the harness declaration schema", () => {
     return fields;
   };
 
+  /**
+   * A node zod hands back from a wrapper, read as the schema type this walk
+   * descends. The accessors below are typed at zod's structural supertype,
+   * which carries none of the arms the walk branches on, so the read is
+   * spelled once here rather than at each of them.
+   */
+  const asSchema = (node: unknown): z.ZodType => node as z.ZodType;
+
+  /**
+   * Whatever a declared field holds once the schema's wrappers are off: an
+   * optional or defaulted field is the thing it wraps, and a list is its
+   * element. What a consumer types under `ci` is a lane, not an array.
+   */
+  const held = (schema: z.ZodType): z.ZodType => {
+    if (schema instanceof z.ZodOptional || schema instanceof z.ZodDefault) {
+      return held(asSchema(schema.unwrap()));
+    }
+    if (schema instanceof z.ZodArray) return held(asSchema(schema.element));
+    return schema;
+  };
+
+  /**
+   * The level beneath one declared field — the keys the package ships under
+   * it, read off the schema rather than listed here for the reason the field
+   * walk above is: a subfield added to the schema and named in no list here
+   * would be exercised by nothing (`.claude/rules/engineering.md`, *A green
+   * verdict is proven non-vacuous*).
+   *
+   * A union contributes every arm's keys: a declared gate is one of three
+   * shapes and all three are surface a consumer types.
+   *
+   * A **phase-keyed** level is descended past rather than reported. `fence`,
+   * `gates`, `agents` and `handoff` key their values by the phases the
+   * package ships, so the keys at that level are which phases this consumer
+   * runs — the declaration's own structure, and the one level here that is
+   * the consumer's to name rather than the package's. What the page is held
+   * to is the level below it: a gate's components, an agent's knobs.
+   */
+  const subfieldsOf = (schema: z.ZodType): string[] => {
+    const node = held(schema);
+    if (node instanceof z.ZodObject) {
+      const shape = node.shape;
+      const keys = Object.keys(shape);
+      const phased =
+        keys.length > 0 && keys.every((key) => PHASES.includes(key as never));
+      return phased
+        ? [...new Set(keys.flatMap((key) => subfieldsOf(asSchema(shape[key]))))]
+        : keys;
+    }
+    if (node instanceof z.ZodUnion) {
+      return [
+        ...new Set(node.options.flatMap((arm) => subfieldsOf(asSchema(arm)))),
+      ];
+    }
+    return [];
+  };
+
+  /** Every subfield the package ships, across every field it declares. */
+  const declaredSubfields = (): string[] => {
+    const named = Object.values(DeclarationSchema.shape).flatMap((field) =>
+      subfieldsOf(field as z.ZodType),
+    );
+    // Vacuity guard for every reader below: the descent reached the levels
+    // that have one rather than answering the empty set over eighteen fields.
+    expect(named.length).toBeGreaterThan(20);
+    return [...new Set(named)];
+  };
+
   const fieldsMissingFrom = async (
     page: string,
     heading: string,
@@ -625,6 +693,60 @@ describe("the harness declaration schema", () => {
       page: "docs/LAYERS.md",
       missing: [],
     });
+  });
+
+  /**
+   * The same demand one level down, and against the page whole rather than
+   * the declaration list the walk above cuts.
+   *
+   * The list is the top level's one home, so a whole-page read there would
+   * report a list naming none of the declaration's fields as complete — the
+   * page documents the engine-level `Chain` fields under the same names for
+   * two thousand lines. A subfield has no such home and wants none: the page
+   * states a gate's components where it documents gates, the supervisor's
+   * knobs where it walks the engine policy the declaration passes through
+   * whole, and a second copy of either inside the declaration list is the
+   * restatement this page's other walks already refuse
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*). What the page owes a reader is that the
+   * name appears somewhere they can find it.
+   */
+  it("docs/CHAIN-AUTHORING.md names the level beneath each field DeclarationSchema declares", async () => {
+    const page = await readFile(
+      new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
+      "utf8",
+    );
+    const subfields = declaredSubfields();
+
+    // The page was read, and the descent reached past the phase-keyed level
+    // to the keys the package ships under it — without which the emptiness
+    // below is green over a set the page could never have missed.
+    expect(page.length).toBeGreaterThan(0);
+    expect(subfields).toEqual(
+      expect.arrayContaining(["kind", "contextWindow", "quarantineScope"]),
+    );
+
+    expect({
+      page: "docs/CHAIN-AUTHORING.md",
+      missing: subfields.filter((name) => !page.includes(`\`${name}\``)),
+    }).toEqual({ page: "docs/CHAIN-AUTHORING.md", missing: [] });
+  });
+
+  it("the authoring page's declaration walk demands no phase name a consumer declares", () => {
+    const demanded = [...declaredFields(), ...declaredSubfields()];
+
+    // Non-vacuity: the phase-keyed fields were descended rather than dropped,
+    // so the absence below is the skip doing its job and not the walk missing
+    // those fields entirely.
+    expect(demanded).toEqual(
+      expect.arrayContaining(["gates", "kind", "when", "agents", "model"]),
+    );
+
+    // Which phases a consumer runs is theirs to name, so no page owes a
+    // reader the key: `build` is a fence key, a gate key and an agent key,
+    // and a walk reporting it would hold the page to a consumer's structure
+    // rather than the package's surface.
+    expect(demanded.filter((name) => PHASES.includes(name as never))).toEqual([]);
   });
 
   /**

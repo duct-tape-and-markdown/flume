@@ -130,10 +130,14 @@ artifacts), `runner` (a factory for the test runner the judge drives —
 `vitestRunner()` and `scriptRunner()` both ship in the package; cargo, dotnet
 or a tool neither one reaches is your own `RunnerFactory` over `Runner`'s
 operations, which is adoption's largest single piece and is priced under
-*What adoption costs* below), and `slices` (which plan slices run,
-and the sweep's domain). Optional: `channelPaths`, `scopeWritesToEntry` (off
-by default, and the package takes no side), `resolver`, `handoff` per phase,
-`gates` per phase and `when`, `shell` (the shell every command line the
+*What adoption costs* below), and `slices` (`enabled`, which plan slices
+run, and `sweep`, the domain and posture pages that slice reads).
+Optional: `channelPaths`, `scopeWritesToEntry` (off by default, and the
+package takes no side), `resolver`, `handoff` per phase,
+`gates` per phase (each gate a `kind`, a `when`, and what that kind reads —
+a `registry` gate the `name` of one the package's own registry ships, a
+`shell` gate its `command`, a `script` gate the `path` of a script you
+commit), `shell` (the shell every command line the
 declaration carries runs under — a `shell` or `script` gate's, `setup`'s
 restore — `sh` where the declaration is silent), `agents` (per phase, and
 each of its four subfields optional: `model`, the model that phase's tick
@@ -147,17 +151,17 @@ hands it, off where the declaration is silent. Each is the `claudeCode`
 option of the same name, which §4 below spells in full; a phase naming none
 takes the package's default agent),
 `supervisor` (the engine's policy passed through whole), `setup` (the
-directories to install and the restore command that installs them, run in
-every provisioned worktree; `serialize: true` where that restore's shared
+`directories` to install and the `restore` command that installs them, run in
+every provisioned worktree; `serialize`, set where that restore's shared
 cache is not safe to warm from several worktrees at once, which runs it one
 worktree at a time across a fanout wave while the wave's other provisioning
 stays parallel), `slots`
-(prompt text — an autonomy dial, domain context; never a directive),
+(prompt text — `autonomy`, a dial; `domain`, context; never a directive),
 `capabilities` (the environment facts this repository asserts, passed through
 whole to `Chain.capabilities`, so a `requiresCapability` entry naming one the
 declaration does not assert stays unpickable; absent asserts none), and `ci`
 (the CI lanes the inbox slice reads as findings sources beside the records —
-each a workflow file, a job name, the lane name its findings carry, and
+each a `workflow` file, a `job` name, the lane `name` its findings carry, and
 optionally `titles`: a pattern or a function over the failing job's log
 answering the titles that log states, which the slice stamps beside the run
 so a red that persists unchanged stops re-waking it; a lane declaring none
