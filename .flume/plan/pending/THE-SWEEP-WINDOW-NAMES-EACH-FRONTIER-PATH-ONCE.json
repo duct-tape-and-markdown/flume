@@ -1,0 +1,30 @@
+{
+  "tag": "THE-SWEEP-WINDOW-NAMES-EACH-FRONTIER-PATH-ONCE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/sweepWindow.ts",
+        "description": "the frontier renders as the union of domain paths the range touched, each named once, posture-page hits marked"
+      },
+      {
+        "path": "harness/prompts/plan-sweep.md",
+        "description": "the sentence describing what `<sweep-window>` lists"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the frontier listing over a range that touched one path from several commits"
+      }
+    ]
+  },
+  "summary": "The sweep window renders one block per commit, so the frontier's 218 paths arrive as 3,203 lines and grow with every commit of the rotation",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "The frontier is decidable; the neighborhood is judged"
+  },
+  "acceptance": "the sweep window's frontier is the set of domain paths the range touched, each named once, with the posture-page hits called out; the retired-claim delta and the tip line are unchanged",
+  "tests": [
+    "the sweep window names each frontier path once across the range, never once per commit that touched it"
+  ],
+  "notes": "Measured this tick: 620 commits, 2,582 path lines, 3,203 listing lines against the package's 1,200-line budget (`WINDOW_LINE_BUDGET`, `harness/sliceWindow.ts`), which bounds only the retired-claim section beside it (`harness/sweepWindow.ts:151`). The union is 218 paths, bounded by the domain's own size, so it needs no budget of its own. Nothing reads the subjects: the frontier is touched modules, and the phrase delta fires on a posture page being in the union."
+}

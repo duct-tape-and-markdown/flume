@@ -142,7 +142,9 @@
       "harness/questions.ts",
       "harness/layout.ts",
       "src/entryClaims.ts",
-      "src/pidClaim.ts"
+      "src/pidClaim.ts",
+      "harness/sweepWindow.ts",
+      "harness/deriveWindow.ts"
     ]
   }
 }
