@@ -29,6 +29,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
 import {
+  INBOX_PHASE,
   PHASES,
   PLAN_SLICES,
   type HarnessPhase,
@@ -42,7 +43,7 @@ import {
   legacyQuestionsPath,
   planStatePath,
 } from "../harness/layout.ts";
-import { PLAN_STATE_SCHEMAS } from "../harness/planState.ts";
+import { PLAN_STATE_SCHEMAS, writePlanState } from "../harness/planState.ts";
 import { NONE_OPEN, renderQuestions } from "../harness/questions.ts";
 import {
   PROMPT_NAMES,
@@ -708,6 +709,63 @@ async function everySliceOverWrongKindAt(key: PromptArg): Promise<void> {
 
 it("each plan slice prompt's verdict on a plan state directory in place follows whether its spans read that artifact", async () => {
   await everySliceOverWrongKindAt("PLAN_STATE_PATH");
+}, SPAWN_BUDGET_MS);
+
+/**
+ * Every plan slice is shown the file it stamps. Plan state is one file per
+ * writer (`spec/harness.md`, *Plan state as declared state*), and a slice
+ * writes that file whole — so a slice whose prompt names the path without
+ * opening it is asked to carry forward a value it was never handed, and the
+ * fields it does not re-stamp this tick leave the artifact silently.
+ *
+ * Read off the same detector the odd-root and guarded-span loops skip by,
+ * over the whole roster rather than the slices that happen to read: the
+ * table's own coverage pin is satisfied by *one* reader, which cannot tell a
+ * slice that never opened its state from one that stopped.
+ */
+it("every plan slice prompt opens a span on the plan state file it owns", async () => {
+  // Non-vacuity: an empty roster would pass the filter below over nothing
+  // (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  const blind: string[] = [];
+  for (const name of PLAN_SLICES) {
+    const raw = await readFile(promptPath(name), "utf8");
+    if (!spanSubstitutes(raw, "PLAN_STATE_PATH")) blind.push(name);
+  }
+  expect(
+    blind,
+    `plan slices whose prompt reads no plan state: ${blind.join(", ")}`,
+  ).toEqual([]);
+});
+
+/**
+ * The inbox slice's half of that, driven rather than detected: its state is
+ * the one that is a per-lane map rather than a cursor, so what it must carry
+ * forward is every lane it is *not* stamping this tick.
+ */
+it("the inbox slice's prompt renders the plan state its own file holds", async () => {
+  const root = await seed(await scratchRoot("flume-prompts-inbox-state-"));
+  // The package's own writer over the slice's own path, never bytes by hand:
+  // the claim is that what a slice stamped is what its next tick is shown, so
+  // both ends of the seam are the real ones
+  // (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+  // wrote*). Every sibling's state file is seeded too, so a render that
+  // reached one of those reads back as a different string rather than as a
+  // missing substring.
+  writePlanState(root, INBOX_PHASE, {
+    drainedRuns: {
+      "inbox-own-lane": { run: "INBOX-OWN-STAMP", titles: ["a red title"] },
+    },
+  });
+  const mine = await readFile(planStatePath(root, INBOX_PHASE), "utf8");
+  // Non-vacuity: an empty stamp would be matched by an empty block
+  // (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+  expect(mine).toContain("INBOX-OWN-STAMP");
+
+  const rendered = await render(INBOX_PHASE, root);
+  const block = /<plan-state>\n([\s\S]*?)\n<\/plan-state>/.exec(rendered)?.[1];
+  expect(block?.trimEnd()).toBe(mine.trimEnd());
 }, SPAWN_BUDGET_MS);
 
 // --------------------------------------------- unguarded spans: no fork
