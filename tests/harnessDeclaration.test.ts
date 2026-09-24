@@ -612,11 +612,18 @@ describe("the harness declaration schema", () => {
   };
 
   /**
-   * The level beneath one declared field — the keys the package ships under
-   * it, read off the schema rather than listed here for the reason the field
-   * walk above is: a subfield added to the schema and named in no list here
-   * would be exercised by nothing (`.claude/rules/engineering.md`, *A green
-   * verdict is proven non-vacuous*).
+   * Everything beneath one declared field — every key the package ships
+   * under it at any depth, read off the schema rather than listed here for
+   * the reason the field walk above is: a subfield added to the schema and
+   * named in no list here would be exercised by nothing
+   * (`.claude/rules/engineering.md`, *A green verdict is proven
+   * non-vacuous*).
+   *
+   * The descent is a recursion, not a peek one level down. What an author
+   * types by hand is every key the schema nests, however deep it nests it:
+   * `slices.sweep.posturePages` is typed by hand by every adopter enabling
+   * the sweep, and a walk that stopped at `sweep` would hold the page to the
+   * container while the two keys a consumer actually fills in went unnamed.
    *
    * A union contributes every arm's keys: a declared gate is one of three
    * shapes and all three are surface a consumer types.
@@ -626,18 +633,17 @@ describe("the harness declaration schema", () => {
    * package ships, so the keys at that level are which phases this consumer
    * runs — the declaration's own structure, and the one level here that is
    * the consumer's to name rather than the package's. What the page is held
-   * to is the level below it: a gate's components, an agent's knobs.
+   * to is what lies below it: a gate's components, an agent's knobs.
    */
   const subfieldsOf = (schema: z.ZodType): string[] => {
     const node = held(schema);
     if (node instanceof z.ZodObject) {
       const shape = node.shape;
       const keys = Object.keys(shape);
+      const beneath = keys.flatMap((key) => subfieldsOf(asSchema(shape[key])));
       const phased =
         keys.length > 0 && keys.every((key) => PHASES.includes(key as never));
-      return phased
-        ? [...new Set(keys.flatMap((key) => subfieldsOf(asSchema(shape[key]))))]
-        : keys;
+      return [...new Set(phased ? beneath : [...keys, ...beneath])];
     }
     if (node instanceof z.ZodUnion) {
       return [
@@ -696,8 +702,8 @@ describe("the harness declaration schema", () => {
   });
 
   /**
-   * The same demand one level down, and against the page whole rather than
-   * the declaration list the walk above cuts.
+   * The same demand beneath each field, and against the page whole rather
+   * than the declaration list the walk above cuts.
    *
    * The list is the top level's one home, so a whole-page read there would
    * report a list naming none of the declaration's fields as complete — the
@@ -711,7 +717,7 @@ describe("the harness declaration schema", () => {
    * restated beside its source*). What the page owes a reader is that the
    * name appears somewhere they can find it.
    */
-  it("docs/CHAIN-AUTHORING.md names the level beneath each field DeclarationSchema declares", async () => {
+  it("docs/CHAIN-AUTHORING.md names every key an author types by hand under a declared field", async () => {
     const page = await readFile(
       new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
       "utf8",
@@ -721,9 +727,17 @@ describe("the harness declaration schema", () => {
     // The page was read, and the descent reached past the phase-keyed level
     // to the keys the package ships under it — without which the emptiness
     // below is green over a set the page could never have missed.
+    // `posturePages` is the guard on the depth: it sits two levels down,
+    // under `slices.sweep`, so a walk that reported one level and stopped
+    // reds here rather than passing over a key it never collected.
     expect(page.length).toBeGreaterThan(0);
     expect(subfields).toEqual(
-      expect.arrayContaining(["kind", "contextWindow", "quarantineScope"]),
+      expect.arrayContaining([
+        "kind",
+        "contextWindow",
+        "quarantineScope",
+        "posturePages",
+      ]),
     );
 
     expect({

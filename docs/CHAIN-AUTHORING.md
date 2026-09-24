@@ -131,7 +131,10 @@ artifacts), `runner` (a factory for the test runner the judge drives —
 or a tool neither one reaches is your own `RunnerFactory` over `Runner`'s
 operations, which is adoption's largest single piece and is priced under
 *What adoption costs* below), and `slices` (`enabled`, which plan slices
-run, and `sweep`, the domain and posture pages that slice reads).
+run, and `sweep`, the two inputs that slice reads — `domain`, the path globs
+it draws a frontier over, and `posturePages`, the pages whose sections it
+applies; required exactly while `plan-sweep` is enabled, and refused where
+it is not, since nothing would read it).
 Optional: `channelPaths`, `scopeWritesToEntry` (off by default, and the
 package takes no side), `resolver`, `handoff` per phase,
 `gates` per phase (each gate a `kind`, a `when`, and what that kind reads —
