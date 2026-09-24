@@ -325,9 +325,11 @@ export interface TickOutcome {
    * Set when the tick was asked for a phase by name ({@link TickRequest})
    * and the chain that loaded declares no such phase: the request named a
    * world this chain is not. Rides `failed` and narrows it the way
-   * {@link ledgerRefusal} does — `tickExitCode` (`src/cliVerdict.ts`) exits 1
+   * {@link ledgerRefusal} does — `tickExitCode` (`src/cliVerdict.ts`) exits 2
    * rather than `EX_MOUNT_DEAD`, because the chain mounted fine and the only
-   * thing wrong is the name it was handed.
+   * thing wrong is the name it was handed: argv the surface cannot honor as
+   * typed, which is the code `wake`, `sleep` and `render` already answer an
+   * undeclared phase name with.
    *
    * Both halves are facts, never a verdict: what was asked for, and what the
    * chain declares instead — so a caller names the alternatives without

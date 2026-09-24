@@ -170,16 +170,16 @@ Exit codes:
       then refused — a paused merge or cherry-pick in the checkout, a lost
       index.lock: the shipped entries are on trunk, the chain is fine, and
       a fresh process has every reason to get further. Clear the refusal and
-      re-run; the queue still names what has not shipped. Also
-      \`--phase <name>\` naming a phase the chain does not declare: the
-      refusal names the phases it does, no agent runs, and the chain
-      mounted fine — what failed is the name it was handed.
+      re-run; the queue still names what has not shipped.
   2   Usage: a stray trailing positional (\`tick\` consumes none — running
       something other than whichever phase is awake is refused, not
-      honored), or \`--phase\` with no name after it; or the chain load
-      failed with the CJS-context refusal — the host repo's package.json
-      (or the one beside .flume/chain.ts) lacks "type": "module". Add it
-      and re-run.
+      honored), or \`--phase\` with no name after it, or \`--phase <name>\`
+      naming a phase the chain does not declare — the refusal names the
+      phases it does, no agent runs, and no baton flag moves, the same code
+      \`wake\`, \`sleep\` and \`render\` answer an undeclared phase name with.
+      Also the chain load failing with the CJS-context refusal — the host
+      repo's package.json (or the one beside .flume/chain.ts) lacks
+      "type": "module". Add it and re-run.
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
       state root is missing, or its declaration is invalid. No agent ran —
       fix the chain (or its state root) and re-run. Also the queue

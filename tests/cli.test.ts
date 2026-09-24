@@ -4288,7 +4288,7 @@ describe("flume tick --phase <name> (spec/loop.md §Baton — presence wakes, ab
   );
 
   it(
-    "flume tick --phase refuses a name the chain does not declare, naming the phases it does",
+    "flume tick --phase naming a phase the chain does not declare exits 2, naming the phases it does",
     async () => {
       const repo = await makeScratchRepo("flume-tick-phase-", "main");
       try {
@@ -4300,7 +4300,11 @@ describe("flume tick --phase <name> (spec/loop.md §Baton — presence wakes, ab
 
         const r = await runCli(repo.dir, ["tick", "--phase", "ghost"]);
 
-        expect(r.code).toBe(1);
+        // Usage-shaped: argv the surface cannot honor as typed, which is the
+        // code `wake`, `sleep` and `render` already answer an undeclared
+        // phase name with (spec/cli.md, *Subcommand surface*). Not a harness
+        // error — nothing about the mount or the tick failed.
+        expect(r.code).toBe(2);
         expect(r.out).toContain("no phase named 'ghost'");
         // Naming what the chain does declare is the refusal's own job — an
         // operator reading it never re-opens chain.ts to find the spelling.

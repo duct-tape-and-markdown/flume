@@ -15,30 +15,34 @@ import type { CurrentRef } from "./git.js";
  * terminal misconfiguration (a chain that resolved but declares an
  * inconsistent world), 2 (usage) the CJS-context refusal (a nameable fix,
  * checked before `failed` since a chain-load failure sets at most one of the
- * two), 1 a ledger commit that refused for anything but an unparseable queue
- * (`TickOutcome.ledgerRefusal`) or a `--phase <name>` the chain does not
- * declare (`TickOutcome.undeclaredPhase`), 69 (`EX_UNAVAILABLE`, {@link
- * EX_MOUNT_DEAD}) every other failed tick, 0 otherwise (work done or clean
- * hibernation). Exported for the exit-code seam tests.
+ * two) and a `--phase <name>` the chain does not declare
+ * (`TickOutcome.undeclaredPhase`), 1 a ledger commit that refused for
+ * anything but an unparseable queue (`TickOutcome.ledgerRefusal`), 69
+ * (`EX_UNAVAILABLE`, {@link EX_MOUNT_DEAD}) every other failed tick, 0
+ * otherwise (work done or clean hibernation). Exported for the exit-code
+ * seam tests.
  *
- * The 1 arms are the failures here that say nothing about the mount: the
+ * The 1 arm is the failure here that says nothing about the mount: the
  * chain loaded, the wave ran, its entries are on trunk, and only the queue
  * rewrite's own `git commit` refused — a paused cherry-pick, a lost
  * `index.lock`. Exiting 69 over that fail-fasts `flume loop` as mount-dead
  * (spec/loop.md, *Exit codes — the run never lies to CI*) over a wall the
  * next process has every reason to get past, so it exits 1 and the run
  * proceeds. An unparseable queue keeps 69: a fresh process reads the same
- * bytes until the queue's declared writer runs over them. An undeclared
- * `--phase` name is the same reading from the other side: the chain mounted
- * and stated what it declares, so what failed is the request, and the next
- * process gets as far as this one did (spec/loop.md, *Baton — presence
- * wakes, absence hibernates*).
+ * bytes until the queue's declared writer runs over them.
+ *
+ * An undeclared `--phase` name is neither: it is argv the surface cannot
+ * honor as typed, which is the usage class every other verb already answers
+ * with — `wake`, `sleep` and `render` all exit 2 on a phase name their
+ * chain does not declare (spec/cli.md, *Subcommand surface*). One refusal
+ * carries one code whichever verb is handed it. Reached before `failed`
+ * because the code is the request's, not the tick's: no agent ran, no baton
+ * flag moved, and the chain mounted fine.
  */
 export function tickExitCode(outcome: TickOutcome): number {
   if (outcome.terminal) return EX_TERMINAL_MISCONFIG;
-  if (outcome.usageError) return 2;
+  if (outcome.usageError || outcome.undeclaredPhase) return 2;
   if (!outcome.failed) return 0;
-  if (outcome.undeclaredPhase) return 1;
   return outcome.ledgerRefusal === "commit-refusal" ? 1 : EX_MOUNT_DEAD;
 }
 
