@@ -1,0 +1,19 @@
+{
+  "tag": "THE-TWO-REVERT-REFUSED-LEGS-ARE-ONE-FUNCTION",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the revert-refused bookkeeping is one function the two refusal legs call with their own reason"
+      }
+    ]
+  },
+  "summary": "The merge stage spells the revert-refused bookkeeping twice — two legs, same four steps, differing only in the refusal reason",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A module is one job"
+  },
+  "acceptance": "both afterMerge revert-refusal legs reach one function that records the entry, its merge outcome and its gate failure; each supplies only the reason it refused for",
+  "notes": "Verified this tick. `src/waveMerge.ts:586` (foreign tip) and `:609` (`ResetKeepRefusedError`) each warn, push `revertRefused`, push an `afterMerge-revert-refused` outcome with identical fields, and push a `gateFailures` row of identical shape; only the reason string differs. Claims no property: behavior-free, held by tsc and the two existing cases at `tests/Dispatcher.test.ts:6559`, `:6702`."
+}
