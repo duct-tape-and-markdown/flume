@@ -576,6 +576,53 @@ it("the build emits the PROTOCOL template flume-harness init writes from", async
 }, SPAWN_BUDGET_MS);
 
 /**
+ * The classification the two cases above rest on, driven as the refusal it
+ * is: the copy step treats every directory beside the package's modules as
+ * content tsc does not emit, and it replaces each destination outright. A
+ * directory that carries a module is both — tsc emits into that same address
+ * — so copying it would delete the emit and publish the sources in its
+ * place, and the package would resolve a module address to a TypeScript file
+ * no compiler ever read.
+ *
+ * The writer is the real one and the emit is the build's; only the source
+ * tree is authored here, which is what a refusal takes — a real writer
+ * cannot produce the input a refusal is tested on
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). That tree is the checkout's own harness directory plus one
+ * offending subdirectory, so the run differs from the build's in exactly the
+ * subject, and the assertions below read the emit back to prove the step
+ * refused before writing rather than partway through.
+ */
+it("the asset copy refuses a harness subdirectory carrying a TypeScript module", async () => {
+  const authored = join(scratch, "harness-carrying-a-module");
+  await cp(join(REPO_ROOT, "harness"), authored, { recursive: true });
+  await mkdir(join(authored, "nested", "deeper"), { recursive: true });
+  await writeFile(join(authored, "nested", "deeper", "mod.ts"), "export const emitted = 1;\n");
+
+  const emitRoot = join(pkgDir, "dist");
+  // Non-vacuity: the emit the refusal must leave alone has content to be
+  // judged against, so the untouched read below is a real comparison rather
+  // than two empty listings.
+  const before = (await readdir(join(emitRoot, "harness", "prompts"))).sort();
+  expect(before.length).toBeGreaterThan(0);
+
+  const refused = await runNodeStreams(REPO_ROOT, [PACK_ASSETS, emitRoot, authored]);
+  expect({
+    code: refused.code,
+    namesTheDirectory: refused.stderr.includes(join(authored, "nested")),
+    // Relative to the directory the message names, which is where a reader
+    // fixing it has to go looking.
+    namesTheModule: refused.stderr.includes("deeper/mod.ts"),
+  }).toEqual({ code: 1, namesTheDirectory: true, namesTheModule: true });
+
+  // Nothing written: the prompts the build's own copy put there are still
+  // the ones on disk, and the offending directory reached the emit at all
+  // only if the step started copying before it classified.
+  expect((await readdir(join(emitRoot, "harness", "prompts"))).sort()).toEqual(before);
+  expect(existsSync(join(emitRoot, "harness", "nested"))).toBe(false);
+}, SPAWN_BUDGET_MS);
+
+/**
  * `bin.flume-harness` end to end over the published layout: the shim spawns
  * `dist/harness/cli.js`, the verb resolves its template beside the emitted
  * module, and a repository that had nothing comes out adopted
