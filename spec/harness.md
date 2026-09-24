@@ -43,6 +43,15 @@ product outranks insurance for every consumer that declares nothing.
 A slice is made live by unrouted work, never by a signal alone: a record in a
 queue, a spec commit past the derive cursor, a commit past the sweep stamp. A
 tick that runs and files nothing is the shape this sentence exists to refuse.
+The drain files by the sweep's bar (`.claude/rules/posture-sweep.md`,
+*Routing*). An observation a build note carries becomes an entry when the
+defect can change behavior, hide a failure, or leave a vacuous verdict over
+load-bearing machinery; anything else is an accepted-debt line in the plan
+commit body, and a family noted three times files once. A blocker or a park
+is not an observation and routes as it always has. Without the bar every
+shipped entry spawned the next through its own note, and the queue filled
+with work nothing asked for.
+
 Two orderings the serial baton used to carry are mechanism now. A refused
 entry is not re-picked before the drain reconciles it: the refusal keys on the
 entry as declared, and stands until a producer rewrites or drops it (*The

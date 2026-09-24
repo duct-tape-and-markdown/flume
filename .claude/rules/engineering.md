@@ -77,9 +77,11 @@ Every check lives at the most deterministic layer that can express it — a
   a `docs/` page, resolved against that page's own numbered headings where
   it has any and left as prose where it has none. A pin may resolve each against the declarations those trees
   hold and the working tree, so a deleted symbol, a renamed page, or a
-  renumbered section cannot leave its citations standing. A class this
-  predicate admits and the suite does not yet resolve is a plan entry, not a
-  question.
+  renumbered section cannot leave its citations standing. A class this predicate admits and the suite does not yet resolve becomes a
+  plan entry when a drift in that class has been measured on the tree, and
+  the arm ships with the respelling it found; a class with no measured drift
+  stays unresolved, because precision is not itself a finding and every arm
+  is a generator of the next.
   An identifier the citation pairs with a path, `` `name` (`src/file.ts`) ``,
   resolves in that file — an all-caps name included; the capitals fence is
   for a span standing alone in prose, and a pair has already claimed a
