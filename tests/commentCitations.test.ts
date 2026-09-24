@@ -32,18 +32,23 @@ import {
   type CitationScan,
   type CitationSite,
   type PageCitationScan,
+  type RenderedSurface,
+  type SectionCitation,
   formatCitation,
   scanCommentCitations,
   scanPageCitations,
+  scanRenderedSections,
 } from "./helpers/commentCitations.ts";
 import { externalVocabulary } from "./helpers/externalVocabulary.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { INTERFACE_PAGES, pageIdentifiers } from "./helpers/pageAnchors.ts";
+import { shippedHelpPages } from "./helpers/shippedHelp.ts";
 import {
   NO_FINDINGS,
   expectNoFindings,
   modulesUnder,
   renderFindings,
+  type Scan,
   type ScanDomain,
 } from "./helpers/repoProgram.ts";
 
@@ -425,6 +430,54 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Two help-shaped surfaces over the sections page the fixture tree above
+ * holds — the arm a `--help` page's reader is shown working against.
+ *
+ * Hand-authored, because the arm shown here is the refusal: a real writer
+ * renders no cite into a section its page dropped
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). The repo claim below drives the real one.
+ *
+ * Between them they carry each spelling the arm has to read: a cite the page
+ * titles, a phrase the help text's own wrapping broke, an abbreviation of a
+ * heading the page really opens, a cite into a page the tree does not hold,
+ * and — on a second surface, which a scan stopping at the first would never
+ * reach — the italicized emphasis beside the quoted one.
+ *
+ * Written one line per rendered line, so the line numbers the assertions cite
+ * are counted rather than guessed.
+ */
+const FIXTURE_HELP_SURFACES: readonly RenderedSurface[] = [
+  {
+    name: "probe --help",
+    text: [
+      `Usage: probe [--max N]`,
+      ``,
+      `Exit codes:`,
+      `  1   The flag is already present — removing it is the acknowledgement`,
+      `      (docs/sections.md, "Loud or nothing"); also, a phrase the help`,
+      `      text's own wrapping broke (docs/sections.md, "Derived state is`,
+      `      computed, never restated beside its source").`,
+      `  2   An abbreviated half is a rewrite rather than a prefix match`,
+      `      (docs/sections.md, "Derived state is computed"), and a page the`,
+      `      tree does not hold titles nothing (docs/absent.md, "Loud or`,
+      `      nothing").`,
+      ``,
+    ].join("\n"),
+  },
+  {
+    name: "probe list --help",
+    text: [
+      `Usage: probe list`,
+      ``,
+      `A bolded bullet lead is a title here too (docs/sections.md, *Verbatim`,
+      `copying is the detector*).`,
+      ``,
+    ].join("\n"),
+  },
+];
+
+/**
  * What the page-name arm adds to the three trees the program reaches: the
  * rest of the sweep domain (`.claude/rules/posture-sweep.md`, *The pages are
  * the authority as they read this tick*), plus the chain this repo runs every
@@ -467,6 +520,12 @@ let repoScan: CitationScan;
 let fixturePageScan: PageCitationScan;
 /** The one page-arm scan of this repo's widened domain. */
 let repoPageScan: PageCitationScan;
+/** The one rendered-surface scan of the two fixture help pages. */
+let fixtureHelpScan: Scan<SectionCitation>;
+/** Every help page this repo's CLI really prints, one surface each. */
+let shippedHelp: readonly RenderedSurface[];
+/** The one rendered-surface scan of those pages. */
+let repoHelpScan: Scan<SectionCitation>;
 
 beforeAll(async () => {
   fixtureRoot = await mkTempDir("flume-citation-scan-");
@@ -492,6 +551,15 @@ beforeAll(async () => {
   repoPageScan = scanPageCitations({
     root: REPO_ROOT,
     domain: PAGE_ARM_DOMAIN,
+  });
+  fixtureHelpScan = scanRenderedSections({
+    root: fixtureRoot,
+    surfaces: FIXTURE_HELP_SURFACES,
+  });
+  shippedHelp = shippedHelpPages();
+  repoHelpScan = scanRenderedSections({
+    root: REPO_ROOT,
+    surfaces: shippedHelp,
   });
 });
 
@@ -1243,6 +1311,38 @@ it("an abbreviated section half is reported unresolved rather than matched as a 
   expect(findings).toContain("lib/surface.ts:123 Derived state is computed");
 });
 
+// --- the shipped help literal, the third place a cite sits ---------------
+
+it("a section cite in a shipped help literal naming a section its page does not carry is a finding", () => {
+  // Vacuity guard: every cite the two surfaces author was drawn, and no
+  // other, before a verdict is read off any of them — both emphases, the
+  // phrase the help text's own wrapping broke, and the second surface, which
+  // a scan that stopped at the first would leave unread. A finding is cited
+  // by the command that prints the page rather than by a path, because that
+  // is where its reader finds it.
+  expect(
+    fixtureHelpScan.scanned.map(
+      (site) => `${formatCitation(site)} -> ${site.page}`,
+    ),
+  ).toEqual([
+    "probe --help:5 Loud or nothing -> docs/sections.md",
+    "probe --help:6 Derived state is computed, never restated beside its source -> docs/sections.md",
+    "probe --help:9 Derived state is computed -> docs/sections.md",
+    "probe --help:10 Loud or nothing -> docs/absent.md",
+    "probe list --help:3 Verbatim copying is the detector -> docs/sections.md",
+  ]);
+
+  // The verdict, and it is the comment arm's verdict: a heading answers a
+  // cite, a bolded bullet lead answers one, and a phrase the rendering broke
+  // closes to the heading it names rather than being lost the way a broken
+  // token is. What reds is the abbreviation and the page the tree does not
+  // hold — the same two refusals, read off a literal the package ships.
+  expect(fixtureHelpScan.findings.map(formatCitation)).toEqual([
+    "probe --help:9 Derived state is computed",
+    "probe --help:10 Loud or nothing",
+  ]);
+});
+
 // --- the title, which carries the page-name arm alone --------------------
 
 it("the citation scan judges an unbackticked *.md page name a describe or it title carries", () => {
@@ -1762,6 +1862,45 @@ it("every section a comment in bin/, examples/, scripts/ or .flume/chain.ts cite
   // The verdict, on the terms the program-backed scan is held to.
   expectNoFindings(
     repoPageScan.sections.findings.map(
+      (site) => `${formatCitation(site)} -> ${site.page}`,
+    ),
+  );
+});
+
+it("every section a shipped help literal cites is a section its page still carries", () => {
+  // Vacuity guard: every verb the top-level listing advertises was rendered
+  // to a surface of its own, and those surfaces state cites, before the
+  // emptiness below is read off them. A page table that answered none of
+  // them, or a reader that stopped drawing the shape, would report a clean
+  // surface over zero cites.
+  expect(shippedHelp.length).toBeGreaterThan(5);
+  expect(shippedHelp.map((surface) => surface.name)).toContain(
+    "flume loop --help",
+  );
+  expect(repoHelpScan.scanned.length).toBeGreaterThan(2);
+
+  // Judged in the direction that matters: the cites these pages state resolve
+  // against the headings their pages still open, so a heading rewritten reds
+  // here as it already reds a comment citing it. Spelled as the help text
+  // spells them — the match folds the page's own backticks out.
+  const dangling = new Set(repoHelpScan.findings);
+  const resolved = new Set(
+    repoHelpScan.scanned
+      .filter((site) => !dangling.has(site))
+      .map((site) => `${site.page} :: ${site.text}`),
+  );
+  for (const cite of [
+    "spec/loop.md :: Graceful stop — the stop flag",
+    "spec/chain.md :: Chain.friction — the declared friction channel",
+  ]) {
+    expect(`${cite} -> ${resolved.has(cite)}`).toBe(`${cite} -> true`);
+  }
+
+  // The verdict, on the terms a comment's cite is held to: the match is exact
+  // once backticks and the wrapping are folded out, and there is no prefix arm
+  // for an abbreviation to land on. Spell the section as its page titles it.
+  expectNoFindings(
+    repoHelpScan.findings.map(
       (site) => `${formatCitation(site)} -> ${site.page}`,
     ),
   );

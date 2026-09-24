@@ -217,14 +217,14 @@ Exit codes:
       success (some ticks errored but at least one entry shipped; the
       completion summary names the errors).
   1   Harness error, another live loop holds the lock; also, the stop flag
-      (\`.flume/stop\`) is already present (refusal names the path — remove
-      it to acknowledge the stop, spec/loop.md "Graceful stop"); also, HEAD
-      is detached (checkout a branch first — the tip claim below keys on the
-      ref); also, another process holds the tip claim (the refusal names the
-      holder pid and claim path); also, at least one tick errored and the
-      run shipped nothing; also, an identical failure signature repeated on
-      as many consecutive ticks as the chain's
-      supervisorPolicy.abortThreshold declares (default
+      (\`.flume/stop\`) is already present — the refusal names the path, and
+      removing it is how the stop is acknowledged (spec/loop.md, "Graceful
+      stop — the stop flag"); also, HEAD is detached (checkout a branch
+      first — the tip claim below keys on the ref); also, another process
+      holds the tip claim (the refusal names the holder pid and claim path);
+      also, at least one tick errored and the run shipped nothing; also, an
+      identical failure signature repeated on as many consecutive ticks as
+      the chain's supervisorPolicy.abortThreshold declares (default
       ${DEFAULT_ABORT_THRESHOLD}), with no successful tick between them — a
       provision-stage, merge-stage or gate-stage wall alike, with the
       completion summary naming the aborting stage, the streak it reached
@@ -259,7 +259,7 @@ Exit codes:
       a merge interrupted before its ship bookkeeping is unreconciled — a
       \`.flume/merging/<slug>.json\` marker survived a crash between the
       cherry-pick and the queue rewrite, so the picked commit may sit on
-      trunk ungated with its entry still open (spec/loop.md "Crash equals
+      trunk ungated with its entry still open (spec/loop.md, "Crash equals
       stop"). The refusal names the file, the branch and the entry; nothing
       is touched and the startup sweep does not run, so the branch survives
       — reconcile, then remove the file to acknowledge.

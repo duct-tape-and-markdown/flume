@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
-import { HELP_TOP, helpPageFor } from "../src/cliHelp.ts";
+import { helpPageFor } from "../src/cliHelp.ts";
 import {
   STATE_ROOT_DIRNAME,
   STATE_ROOT_NAMES,
@@ -53,6 +53,7 @@ import {
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";
 import { sectionOf } from "./helpers/docSections.ts";
+import { topLevelCommandNames } from "./helpers/shippedHelp.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
 import { makeScratchRepo } from "./helpers/scratchRepo.ts";
 import {
@@ -83,25 +84,6 @@ function logVerdict(): TickVerdict {
     headSha: "0".repeat(40),
     at: "2024-01-01T00:00:00.000Z",
   };
-}
-
-/**
- * The command names the top-level listing's own `Commands:` block
- * advertises — read off `HELP_TOP` rather than restated, so the two cases
- * below judge the block the CLI really prints.
- */
-function topLevelCommandNames(): string[] {
-  const start = HELP_TOP.indexOf("Commands:\n");
-  expect(start).toBeGreaterThan(-1);
-  const block = HELP_TOP.slice(start, HELP_TOP.indexOf("\n\nOptions:"));
-  return [
-    ...new Set(
-      block
-        .split("\n")
-        .map((line) => /^ {2}(\S+)/.exec(line)?.[1])
-        .filter((name): name is string => name !== undefined),
-    ),
-  ];
 }
 
 /**

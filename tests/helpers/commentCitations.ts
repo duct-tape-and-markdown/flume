@@ -113,6 +113,14 @@
  * route them through, so a backtick around a page name there is decoration
  * the way a paren is.
  *
+ * A shipped help literal is the third place, and the section arm is all that
+ * reaches it: `scanRenderedSections` below reads the cites a `--help` page
+ * states, rendered by the program that prints it rather than copied, and
+ * resolves each against the page it names. A literal is a resolution arm, so
+ * the identifier alphabet is left alone there for the reason a title leaves it
+ * alone; a page's own headings are answered by the working tree, which no
+ * literal can write into.
+ *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
@@ -661,8 +669,10 @@ const WRAP_HEAD = /\S+\/$/;
 const WRAP_TAIL = /^\S*\.md(?![A-Za-z0-9_-])/;
 
 /**
- * One run of comment lines as markdown renders it: every line's furniture
- * off, every break folded to the one space the renderer puts there.
+ * One run of lines as a reader sees it: every line's comment furniture off,
+ * every break folded to the one space the wrapping stands for. A run of
+ * shipped help lines carries no furniture, so there the strip is a no-op and
+ * the fold is the whole rendering.
  *
  * The backticked arms read `joined` instead, where a break is still a break,
  * because a wrap splits a *token* into something no subject spelling admits.
@@ -711,6 +721,40 @@ const renderRun = (run: readonly CommentLine[]): RenderedRun => {
  * section is never held to one.
  */
 const SECTION_CITE = /\(`?([^\s`(),]+\.md)`?,\s+(?:\*([^*]+)\*|"([^"]+)")\)/g;
+
+/**
+ * The section cites one rendered run states, at the line each sits on.
+ *
+ * Read off the rendering rather than off the backtick pairing, because the
+ * emphasized half is a phrase and not a token: a line breaks it wherever the
+ * wrapping falls and the renderer puts back the one space its own words
+ * already sit behind. Read in the unrendered alphabet it would be a different
+ * string on every rewrap.
+ *
+ * One reader, two callers — the comment runs below and the rendered surfaces
+ * `scanRenderedSections` reads — because a cite is the same claim wherever a
+ * shipped text states it (`.claude/rules/engineering.md`, *A module is one
+ * job*).
+ */
+const sectionCites = (
+  module: string,
+  rendered: RenderedRun,
+): SectionCitation[] => {
+  const found: SectionCitation[] = [];
+  for (const match of rendered.text.matchAll(SECTION_CITE)) {
+    const page = match[1] ?? "";
+    if (!isPageName(page)) continue;
+    // Whichever emphasis closed the parenthetical carries the section on
+    // to the same reader: one cite, spelled two ways.
+    found.push({
+      module,
+      line: rendered.lineAt(match.index),
+      text: match[2] ?? match[3] ?? "",
+      page,
+    });
+  }
+  return found;
+};
 
 /**
  * A TSDoc link tag and the declaration it references: the three spellings the
@@ -948,24 +992,11 @@ const commentSpans = (
       bare.push({ module, line: lineAt(start), text });
     }
 
-    // The section cite, read off the run as markdown renders it rather than
-    // off the span extents above: the emphasized half is a phrase, so a
-    // comment line breaks it wherever the wrapping falls and the renderer
-    // puts back the one space its own words already sit behind. Read in
-    // `joined`'s alphabet it would be a different string on every rewrap.
+    // The section cites, read off the run as markdown renders it rather than
+    // off the span extents above, through the one reader every surface's
+    // cites go through.
     const rendered = renderRun(run);
-    for (const match of rendered.text.matchAll(SECTION_CITE)) {
-      const page = match[1] ?? "";
-      if (!isPageName(page)) continue;
-      // Whichever emphasis closed the parenthetical carries the section on
-      // to the same reader: one cite, spelled two ways.
-      sections.push({
-        module,
-        line: rendered.lineAt(match.index),
-        text: match[2] ?? match[3] ?? "",
-        page,
-      });
-    }
+    sections.push(...sectionCites(module, rendered));
 
     // The link tags, off that same rendering: the tag is one reference
     // whichever line the wrapping broke it on, and the compiler that
@@ -1388,4 +1419,64 @@ export const scanPageCitations = (
     resolved: scanned.filter(answered),
     findings: scanned.filter((site) => !answered(site)),
   };
+};
+
+/**
+ * One rendered surface a citation sits in, and the name a finding cites it by.
+ *
+ * A surface rather than a module: the text is what the program hands a
+ * reader — a `--help` page, not a file — so the name is the command that
+ * prints it and the line is the line of the printed page.
+ */
+export interface RenderedSurface {
+  /** How a finding names the surface, e.g. `flume loop --help`. */
+  readonly name: string;
+  /** The text the program renders, verbatim and whole. */
+  readonly text: string;
+}
+
+/** The surfaces a rendered-section scan reads, and the root it resolves against. */
+export interface RenderedSectionScanRequest {
+  /** Absolute path to the scanned root. */
+  readonly root: string;
+  /** The rendered texts whose section cites are judged. */
+  readonly surfaces: readonly RenderedSurface[];
+}
+
+/**
+ * The section cites a set of rendered surfaces state, and the ones their page
+ * no longer titles.
+ *
+ * The same arm the two comment scans run, reaching the third place a citation
+ * sits: a literal the package ships to a reader. A doc comment is the hover
+ * text a chain author reads and a `--help` page is what the operator reads
+ * first, so a cite in one is as load-bearing as a cite in the other
+ * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+ *
+ * The section arm alone reaches here, for the reason a test title carries the
+ * page-name arm alone: a literal is itself a resolution arm, so an identifier
+ * written in one would resolve against itself. A section is answered by the
+ * named page's own headings, which no literal can write into.
+ *
+ * The surfaces are the caller's to render, from the program that prints them
+ * rather than from a copy of their text — a cite read off a hand copy pins the
+ * copy (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
+ */
+export const scanRenderedSections = (
+  request: RenderedSectionScanRequest,
+): Scan<SectionCitation> => {
+  const root = resolve(request.root);
+  const scanned = request.surfaces.flatMap((surface) =>
+    sectionCites(
+      surface.name,
+      renderRun(
+        surface.text
+          .split(/\r?\n/)
+          .map((text, index) => ({ line: index + 1, text })),
+      ),
+    ),
+  );
+  const titles = sectionReader(root);
+  return { scanned, findings: scanned.filter((site) => !titles(site)) };
 };
