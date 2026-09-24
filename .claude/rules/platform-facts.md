@@ -436,3 +436,19 @@ hook's loader lookup does. Measured on a one-case suite against a scratch
 root, 2026-09-24; the fact expires when a vitest transform ships
 `import.meta.resolve`, at which point the workaround's cite here goes stale
 and the sweep's expired-narration lens retires it.
+
+## tsx decides a module's interop shape from its whole import graph
+
+Whether `tsImport` hands back a chain module as CJS interop — `__esModule`
+set, the default under `.default` — or as plain ESM is not a property of
+that module's own export shape. A default-only `.ts` module comes back as
+CJS interop on its own and as plain ESM the moment anything in its import
+graph carries a top-level await, with `__esModule` absent and `default` the
+value directly. Measured three times on tsx 4.21 under node 22, last with
+a top-level await in the budget hook's entrypoint guard; `tsc` is clean
+either way because `module` is `ESNext` and the emit carries the await
+verbatim. A loader that keys on export shape alone reads the wrong shape
+for a graph it never inspected, which is why `loadChainModule` normalizes
+both and why that normalization is load-bearing. The fact expires when tsx
+picks one shape for every graph, at which point the normalization's second
+arm stops being reachable and the seam case that drives it reds.
