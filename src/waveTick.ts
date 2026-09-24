@@ -302,6 +302,7 @@ export async function runFanout(
     provisioned,
     partitionIgnore,
     provisionFailures,
+    stakeLosses,
     clearedPriorAttempts,
   });
 

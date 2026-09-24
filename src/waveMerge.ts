@@ -55,6 +55,7 @@ import {
   type MergeFailure,
   type ProvisionFailure,
   type ReportedGateResult,
+  type StakeLoss,
   type TickVerdict,
   type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
@@ -199,9 +200,10 @@ function waveNoCommitCause(
  * What the wave's fanout hands its merge stage. Beyond the per-entry results
  * the picks are drawn from, the wave facts a {@link WaveLedgerRefusal}'s
  * partial verdict has to name — the batch that was provisioned, the
- * provisioning walls already recorded, and the records the wave's opening
- * queue read retired — since that verdict is assembled inside the span and
- * never reaches the leg's own return.
+ * provisioning walls already recorded, the entries a sibling took before the
+ * stake reached them, and the records the wave's opening queue read retired —
+ * since that verdict is assembled inside the span and never reaches the leg's
+ * own return.
  */
 interface WaveMergeRequest {
   readonly leg: TickLegContext;
@@ -217,6 +219,11 @@ interface WaveMergeRequest {
   readonly partitionIgnore: string[];
   /** Provisioning walls the wave recorded before the fanout. */
   readonly provisionFailures: ProvisionFailure[];
+  /**
+   * Entries the wave selected and then lost the stake race for, each naming
+   * the holder that took it.
+   */
+  readonly stakeLosses: StakeLoss[];
   /** Prior-attempt records the wave's opening queue read retired. */
   readonly clearedPriorAttempts: string[];
 }
@@ -269,6 +276,7 @@ export async function runWaveMerge(
     provisioned,
     partitionIgnore,
     provisionFailures,
+    stakeLosses,
     clearedPriorAttempts,
   } = req;
   const repoRoot = leg.repoRoot;
@@ -786,6 +794,7 @@ export async function runWaveMerge(
           mergeOutcomes,
           invocations,
           provisionFailures,
+          stakeLosses,
           mergeFailures,
           gateFailures,
           clearedPriorAttempts,

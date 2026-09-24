@@ -19499,7 +19499,7 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     expect(outcome.result?.claimedTags).toEqual(["HELD"]);
   });
 
-  it("a wave that loses the stake race reports the dropped entry and its holder on the tick verdict", async () => {
+  it("a wave that completes after losing a stake race reports the losses on its verdict", async () => {
     // The race through the engine's own seams: `TAKEN`'s claim is planted
     // from inside the chain's `refusesEntry`, which selection consults *after*
     // it has read the claims directory — so the entry is pickable, enters the
@@ -19569,6 +19569,78 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     // dropped only what it staked.
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["TAKEN"]);
     expect(existsSync(takenClaim)).toBe(true);
+  });
+
+  it("a wave that lost a stake race and then refused the ledger rewrite reports the losses on the thrown verdict", async () => {
+    // The sibling above's race, run into the refusal leg instead of the
+    // completing one: the loss is computed before the fanout and the refusal
+    // verdict is assembled inside the merge span, so the two only agree if
+    // the fact is carried across that seam rather than re-found there.
+    const takenClaim = await claimPathFor("TAKEN");
+    await mkdir(dirname(takenClaim), { recursive: true });
+
+    await writePending(fx.repo, [
+      { ...makeEntry("MINE", ["src/mine.ts"]), priority: 1 },
+      makeEntry("TAKEN", ["src/taken.ts"]),
+    ]);
+    const offered: string[] = [];
+    const chain: Chain = {
+      phases: [wakeBuild()],
+      humanOnly: [],
+      refusesEntry: (ctx: EntryRefusalContext) => {
+        offered.push(ctx.entry.tag);
+        if (ctx.entry.tag === "TAKEN") {
+          writeFileSync(
+            takenClaim,
+            renderPidClaim(process.pid, new Date()),
+            "utf8",
+          );
+        }
+        return false;
+      },
+    };
+
+    // The mid-wave corruption the refusal siblings use: unparseable bytes land
+    // on trunk after this wave's decide-read and before the ledger rewrite's
+    // own read, so the pick and its gates are clean and only the rewrite
+    // refuses.
+    const corrupt = "{ corrupted mid-wave, not json";
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        mine: async (cwd) => {
+          await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
+          await writeAndCommit(cwd, "src/mine.ts", "ok\n", "build: MINE");
+        },
+      }),
+      log: silent,
+    }).tick();
+
+    // Non-vacuity, in three parts: TAKEN was pickable and lost at the stake
+    // rather than at selection, MINE's span really landed on trunk, and the
+    // verdict under assertion is the refusal site's — the completing leg never
+    // summarizes a wave this way.
+    expect(offered).toEqual(["MINE", "TAKEN"]);
+    expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBe("parse-failure");
+    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
+    expect(outcome.verdict?.shippedTags).toEqual(["MINE"]);
+    expect(outcome.verdict?.summary).toContain(
+      "pending-ledger rewrite refused",
+    );
+
+    // The claim: the thrown verdict names the loss and its holder, exactly as
+    // the completing sibling's does.
+    const losses: readonly StakeLoss[] | undefined =
+      outcome.verdict?.stakeLosses;
+    expect(losses?.map((l) => l.tag)).toEqual(["TAKEN"]);
+    const holder: PidClaim | undefined = losses?.[0]?.by;
+    expect(holder?.pid).toBe(process.pid);
+    // And never folded in with the provisioning failures, on this leg either.
+    expect(outcome.verdict?.provisionFailures).toBeUndefined();
   });
 
   it("a claim held by a dead pid is reclaimed by the next selection", async () => {
