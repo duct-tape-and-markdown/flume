@@ -94,13 +94,17 @@ The `per` gate (the cited file is in the
 gated commit and the section is a heading in it), the records gate (one file
 per record, titled, under the tick's own tag), the
 clean-tree gate, the pending gate wired to the consumer's fence, and the
-cursor gate: each cursor a plan commit moves — derive's and sweep's alike,
-every one the package declares — is an ancestor of the tip and a descendant
-of its pre-commit value, and moves only when its slice's own state at that
-commit allows it — the sweep's on the tick that closes the rotation, never
-while one stands open; derive's whenever — refused otherwise, because a
-cursor stepped past commits nobody derived or swept, or stamped under a
-frontier still being worked, fails silently on every tick after. One
+slice-state gate: each slice's state file moves only as that slice's own
+invariants allow, read as a rule over the file at the base and at the commit
+— a cursor an ancestor of the tip and a descendant of its pre-commit value,
+the sweep's stamp moving only on the tick that closes its rotation, the
+covered set only growing while a rotation stands open, the retired-claim
+cursor advancing only over lines the commit could have searched — refused
+otherwise, because every one of these fails the same silent way: the next
+tick reads a file that looks like work done and re-draws what was paid for,
+or never opens on what was skipped. The rules ride the table beside each
+slice's accessors, so a fourth slice's invariant arrives at a table that
+exists. One
 more over the merged tree, because it judges what two concurrent producers did
 to one queue: the **claim check** the engine's pending gate carries, refusing
 a commit that edits or removes an entry a build tick holds
@@ -168,8 +172,10 @@ Continuing is the agent's declaration, never an inference. A tick that runs
 out of context, turns, or wall clock without writing one is a preempt, and
 its uncommitted work dies with the worktree as it always has. What makes the
 declaration reachable is the budget line the adapter hands the agent
-mid-session (`spec/chain.md`, *The agent seam*): the build prompt names the
-thresholds at which an agent lands what is green and writes the note.
+mid-session (`spec/chain.md`, *The agent seam*): the build prompt names a threshold for each fact the line can carry — a
+fraction of a declared window, an elapsed clock — and an agent reads the
+ones its line printed; a chain declares the window when it wants the
+percentage arm live, and leaves it undeclared when the clock is the dial.
 
 **Why:** a bound the planner chose is right by accident. Measured over the
 scheduler's derivation, entries plan sized in ten minutes ran sixty to
@@ -242,9 +248,8 @@ The derive and sweep cursors, the continuation signal, and the per-lane
 drained-run stamp — the run and the failing titles it reported — are fields
 the package reads through its own accessor,
 never a line regexed out of prose. **One file per writer**: each slice's state
-lives in its own file under the plan's `state/` directory — the derive cursor
-in derive's, the sweep cursor and rotation in sweep's, the drained runs in
-inbox's — so two slices stamping in one wave merge as disjoint files, and no
+lives in its own file under the plan's `state/` directory — the derive cursor in derive's, the sweep cursor, its rotation, and the
+retired-claim cursor in sweep's, the drained runs in inbox's — so two slices stamping in one wave merge as disjoint files, and no
 slice writes a cursor it does not own. The inbox drain therefore never
 advances the derive cursor: a spec commit whose derivation a drained record
 routed is still derive's to walk, and the tick that finds its sections already

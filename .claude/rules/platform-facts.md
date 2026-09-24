@@ -423,3 +423,16 @@ builds a budget on the result and learns nothing until the run is over.
 Measured on a captured session, 2026-09-24; the fact expires when an
 `assistant` event arrives without `message.usage`, at which point the
 budget hook's transcript read returns nothing and the hook says so.
+
+## vitest's transform leaves `import.meta.resolve` undefined
+
+Under vitest 2.1.9's SSR transform `typeof import.meta.resolve` is
+`"undefined"`, while plain node 22 ESM answers `"function"` and has since
+node 20.6. A `src/` module that resolves a dependency's path through it
+typechecks, runs under `flume`, and throws under the suite — the one lane
+that would catch the mistake is the lane it breaks. Resolve through
+`createRequire(import.meta.url).resolve(...)` instead, which the budget
+hook's loader lookup does. Measured on a one-case suite against a scratch
+root, 2026-09-24; the fact expires when a vitest transform ships
+`import.meta.resolve`, at which point the workaround's cite here goes stale
+and the sweep's expired-narration lens retires it.

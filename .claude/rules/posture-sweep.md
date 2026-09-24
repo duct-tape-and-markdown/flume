@@ -31,11 +31,14 @@ Three delta kinds arm the sweep. The first two are read off `git log
   assert. For this delta alone the domain widens to `docs/` and `README.md`,
   and the frontier is every site a search for the deleted claim's key
   phrases turns up — a text search is the right tool here, because the
-  finding is prose, not a symbol. No hits closes the delta in one tick.
+  finding is prose, not a symbol. A tick that searched the deleted lines advances the **retired-claim cursor** through the commits that deleted them, so the delta shrinks as the frontier does and a claim is searched once per rotation; no hits closes it in one tick.
 
-Each tick sweeps at most **one neighborhood**: one frontier module read
-together with its immediate imports. That is the context bound. Every
-frontier module the neighborhood read is recorded **covered** in the plan state.
+A tick sweeps **neighborhoods** — one frontier module read together with
+its immediate imports, then the next — until its budget line says to put the
+rotation down (`spec/harness.md`, *A tick puts work down*), and records every
+frontier module it read as **covered** in the plan state before it does. The
+budget is the bound, not a count: a rotation armed by a phrase delta is the
+whole domain, and one module per tick prices it at a hundred ticks.
 
 Covered is settled for the window. A later tick never re-sweeps or re-draws
 it, even where fresh judgment would cut the boundary differently — the cursor
@@ -142,8 +145,7 @@ Never file against a divergence the site declares and cites as deliberate.
 
 ## The stamp
 
-The plan state carries the sweep cursor. While a rotation is open the
-frontier is re-derived each tick from that cursor against the live tip, so
+The plan state carries two sweep cursors: the stamp, and the retired-claim cursor a tick advances on its own as it searches. While a rotation is open the frontier is re-derived each tick from the stamp against the live tip, so
 a commit landing mid-rotation joins the frontier at the next tick rather than
 waiting for the next rotation; a module already covered stays covered for the
 rotation, whatever lands on it after. The rendered window names the tip it
