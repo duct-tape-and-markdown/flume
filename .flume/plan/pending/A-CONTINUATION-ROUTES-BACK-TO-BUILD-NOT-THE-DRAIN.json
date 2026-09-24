@@ -1,7 +1,12 @@
 {
   "tag": "A-CONTINUATION-ROUTES-BACK-TO-BUILD-NOT-THE-DRAIN",
-  "gate": { "kind": "blockedBy", "tags": ["A-CONTINUATION-KEEPS-ITS-ENTRY-IN-THE-QUEUE"] },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "harness/standingRefusal.ts",
@@ -11,10 +16,14 @@
         "path": "tests/harnessHandoff.test.ts",
         "description": "the classification over both kinds of not-shipped record"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "`not-shipped` is classified as plan's by mode alone, so a continuation wakes the drain on nothing plan can reconcile",
-  "per": { "path": "spec/harness.md", "section": "A tick puts work down" },
+  "per": {
+    "path": "spec/harness.md",
+    "section": "A tick puts work down"
+  },
   "acceptance": "a continuation leaves build in the wake set and the drain's window closed, while a park still opens it",
   "tests": [
     "a not-shipped record whose commit wrote a continuing note is not a standing refusal"

@@ -1,12 +1,12 @@
 {
   "tag": "A-COMPLETED-ENTRY-TAKES-ITS-CONTINUING-NOTE-WITH-IT",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "A-CONTINUATION-KEEPS-ITS-ENTRY-IN-THE-QUEUE"
-    ]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "harness/gates.ts",
@@ -20,7 +20,8 @@
         "path": "tests/harnessGates.test.ts",
         "description": "a shipping span over a standing note, and one that removed it"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "Nothing refuses a completing commit that leaves its continuing note standing, so an orphan outlives the entry it described",
   "per": {
@@ -31,8 +32,8 @@
   "tests": [
     "a build commit shipping its entry over a standing continuing note is refused"
   ],
-  "notes": "The note leaves with the ship (per the section). Build's own commit removes it — same channel, same fence, same tick that was handed it — and the gate is what keeps that from being prose alone (`.claude/rules/engineering.md`, *Loud or nothing*). A tick that wrote a continuing note this span touched the path, so it is not the case this refuses.",
   "pins": [
     "a build commit that removed its entry's continuing note passes the records gate"
-  ]
+  ],
+  "notes": "The note leaves with the ship (per the section). Build's own commit removes it — same channel, same fence, same tick that was handed it — and the gate is what keeps that from being prose alone (`.claude/rules/engineering.md`, *Loud or nothing*). A tick that wrote a continuing note this span touched the path, so it is not the case this refuses."
 }
