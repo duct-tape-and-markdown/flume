@@ -1,6 +1,7 @@
 /**
- * Dispatcher — the runtime. Reads baton, picks the awake phase, builds the
- * TickContext, invokes the agent, runs gates, decides handoff.
+ * Dispatcher — the runtime. Reads baton, picks the awake phase, dispatches
+ * the work to that phase's concurrency leg, and reports the verdict the leg
+ * hands back.
  *
  * One Dispatcher instance per repo. Stateless across ticks (everything it
  * needs comes from disk). `tick()` runs exactly one phase × one (or N for

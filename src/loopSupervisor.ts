@@ -454,10 +454,11 @@ export async function superviseLoop(
   // which counts the ones that have already come back: under a `maxTicks`
   // above one the two differ for as long as the table is non-empty.
   let started = 0;
-  // Every exit below carries the same run-level totals and differs only in
-  // why the run stopped, so the totals are spelled once here rather than
-  // re-listed at each `return` — a total added to the result reaches all
-  // seven exits, never the six a hand-copied literal remembered
+  // Every exit carries the same run-level totals and differs only in why the
+  // run stopped, so the totals are spelled once here and each exit states its
+  // `StopFacts` alone. The loop below has one `return`, which applies this to
+  // whichever `RunEnd` won, so a total added here reaches every exit by
+  // construction rather than by a hand-copy at each one
   // (`.claude/rules/engineering.md`, *A module is one job*).
   const settled = (stop: StopFacts): SuperviseResult => ({
     ticks,

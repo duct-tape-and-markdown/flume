@@ -1,7 +1,11 @@
 /**
  * git — narrow shell wrapper around the subset of git operations the
  * dispatcher needs. We avoid simple-git or isomorphic-git to keep the
- * dependency surface minimal; eight commands is all we use.
+ * dependency surface at `git` itself.
+ *
+ * Every invocation goes through `run` below, so the subcommands this module
+ * reaches for are exactly what its call sites spell — read them there rather
+ * than from a count here, which a new operation would leave stale.
  */
 
 import { execFile } from "node:child_process";

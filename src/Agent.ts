@@ -40,8 +40,8 @@ export interface AgentInvocation {
   prompt: string;
   /**
    * Tag of the provisioned entry this invocation is running — the same fact
-   * the tick verdict's `TickVerdictInvocation.tag` row carries, on the one
-   * surface a decorator can read. A decorator is composed from a `Phase.agent`
+   * the tick verdict's `TickVerdictInvocation.entryTag` row carries, on the
+   * one surface a decorator can read. A decorator is composed from a `Phase.agent`
    * getter that holds no `TickContext`, so this is the only place the tag is
    * reachable without re-parsing the rendered prompt.
    *

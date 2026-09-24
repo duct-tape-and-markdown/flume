@@ -4,7 +4,9 @@
  * `flume` — single tick, or loop until hibernation.
  *
  * The runtime usage text printed by `flume --help` / `flume <cmd> --help`
- * is the authoritative reference; see HELP_TEXT below.
+ * is the authoritative reference; the pages it prints are `HELP_TOP`
+ * (`src/cliHelp.ts`) and whatever `helpPageFor` (`src/cliHelp.ts`) resolves
+ * for a subcommand.
  *
  * The chain config is loaded from `./.flume/chain.ts` (resolved with tsx).
  * That file must default-export a factory — `(api) => ({ chain })` — whose

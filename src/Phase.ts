@@ -1,9 +1,9 @@
 /**
  * Phase — the declared shape of one step in a derivation chain.
  *
- * A Phase is data, not code. The Dispatcher (added later) consumes Phases to
- * decide what prompt to send, what to enforce post-commit, how to fan out,
- * and which sibling phases to wake.
+ * A Phase is data, not code. The Dispatcher (`src/Dispatcher.ts`) consumes
+ * Phases to decide what prompt to send, what to enforce post-commit, how to
+ * fan out, and which sibling phases to wake.
  */
 
 import type { Agent } from "./Agent.js";
@@ -822,11 +822,11 @@ export interface WorktreeSetupResult {
 export interface Chain {
   phases: Phase[];
   /**
-   * Chain-declared pending-entry extension: fields beyond the engine core
-   * (tag/gate/dependsOnForks/files), each declared once with its zod schema
-   * and prompt hint. The dispatcher composes the merged validator from it;
-   * `renderSchemaForPrompt(extension)` composes the rendered schema from the
-   * same declaration. Absent means bare core.
+   * Chain-declared pending-entry extension: every field
+   * `CORE_ENTRY_FIELDS` (`src/PendingSchema.ts`) does not name, each declared
+   * once with its zod schema and prompt hint. The dispatcher composes the
+   * merged validator from it; `renderSchemaForPrompt(extension)` composes
+   * the rendered schema from the same declaration. Absent means bare core.
    */
   entryExtension?: EntryExtension;
   /**
