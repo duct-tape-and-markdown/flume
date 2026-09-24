@@ -1,0 +1,19 @@
+{
+  "tag": "THE-HOOK-ENTRYPOINT-NAMES-A-REASON-THE-LOADER-HOLDS",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/budgetHook.ts",
+        "description": "the entrypoint's stated reason for chaining rather than awaiting"
+      }
+    ]
+  },
+  "summary": "The budget hook's entrypoint justifies chaining on a loader claim measured false — a module the chain graph reaches may carry a top-level await",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "no site states that a module the chain loader reaches cannot carry a top-level await; the entrypoint either names a reason that reads true against the loader or names none",
+  "notes": "Measured at this drain, twice: a `.flume/chain.ts` importing a module whose top level awaits loads clean through `loadChainModule` (the throw that follows is a hand-built paths object), and `tsImport` compiles a named-export and a default-only module carrying one as ESM and evaluates it. So the CJS-interop reason the comment states does not hold. The chained shape is not at issue — only its stated reason. Per note THE-ADAPTER-REGISTERS-THE-BUDGET-HOOK, whose platform-fact candidate this is."
+}

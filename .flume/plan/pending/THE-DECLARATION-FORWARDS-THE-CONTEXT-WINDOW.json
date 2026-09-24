@@ -32,12 +32,12 @@
     "path": "spec/harness.md",
     "section": "What a consumer declares"
   },
-  "acceptance": "`agents.<phase>.contextWindow` parses and reaches the adapter's budget; absent, the phase's agent is built with no budget at all",
+  "acceptance": "`agents.<phase>.contextWindow` parses and reaches the adapter's budget, and the package declares no cadence and no thresholds of its own; absent, the phase's agent is built with no budget at all",
   "tests": [
     "a declared agents.contextWindow reaches the adapter as its budget window"
   ],
   "pins": [
     "a declaration naming no contextWindow builds its phase agent with no budget"
   ],
-  "notes": "Forwarding only — the adapter owns cadence, thresholds and the line itself. The declaration is where the provider fact lives because one file holds the environment."
+  "notes": "Forwarding only. Ruled at this drain (note THE-ADAPTER-REGISTERS-THE-BUDGET-HOOK asked): the package recommends no window and declares neither cadence nor thresholds — the engine holds no opinion (`BudgetDeclaration`, `src/budgetHook.ts`) and the line reports every call, which is what `harness/prompts/build.md`'s 70%/80% reads. The declaration is where the provider fact lives because one file holds the environment. This repo's own window is a `.flume/declaration.ts` edit, outside build's fence."
 }
