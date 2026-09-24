@@ -1438,6 +1438,30 @@ Spawns `claude -p` with the rendered prompt on stdin. Options:
   configuration the chain hands it. Set `true` to omit the flag and inherit.
 - `model` — passes `--model <value>`. No default: undeclared, the flag is
   omitted and the binary's own default applies.
+- `budget` — report the room the agent has left, mid-session. Declared, the
+  adapter registers a hook of its own on this invocation's settings alone
+  (inline JSON on `--settings`, never the settings file you maintain) that
+  hands the agent a budget line after a tool call: context used against the
+  window, elapsed wall clock, and tool calls so far. Undeclared, no hook is
+  registered and the argv is unchanged. Its fields, each optional and each
+  narrowing:
+  - `contextWindow` — the model's context window in tokens. Declared rather
+    than looked up: a model's context size is a provider fact the engine does
+    not hold. Undeclared, the line states elapsed and calls alone.
+  - `everyCalls` — report on every Nth tool call. Undeclared, every call
+    reports.
+  - `thresholds` — fractions of the window (`0.7` for seventy percent), each
+    reported once, on the turn that crosses it. Needs a window.
+
+  ```ts
+  claudeCode({
+    outputFormat: "stream-json",
+    budget: { contextWindow: 200_000, everyCalls: 10, thresholds: [0.7, 0.8] },
+  });
+  ```
+
+  Facts, never a verdict: the line says where the agent stands, and what to
+  do at eighty percent is your prompt's to say.
 - `extraArgs` — appended after the format flags.
 
 ### Decorators

@@ -5,6 +5,11 @@
  */
 
 export type { Agent, AgentInvocation, AgentResult, AgentUsage } from "./Agent.js";
+// `BudgetDeclaration` is what `ClaudeCodeOptions.budget` takes, so a chain
+// declaring its window and thresholds as a named constant needs the name
+// from the entry point (`.claude/rules/engineering.md`, *An export earns its
+// consumer*).
+export type { BudgetDeclaration } from "./budgetHook.js";
 export {
   claudeCode,
   withSessionCapture,

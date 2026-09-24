@@ -14,17 +14,19 @@ import {
   claudeCode,
   withSessionCapture,
   withTerminalRenderer,
+  extractResultUsage,
+  extractFinalMessage,
+  type Agent,
+  type ClaudeCodeOptions,
+} from "../src/Agent.ts";
+import {
   parseNdjsonLine,
   contentBlocksOfType,
   isAssistantEvent,
   isResultEvent,
   isErrorResult,
-  extractResultUsage,
-  extractFinalMessage,
   assistantTurnText,
-  type Agent,
-  type ClaudeCodeOptions,
-} from "../src/Agent.ts";
+} from "../src/streamJson.ts";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 

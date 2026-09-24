@@ -11,8 +11,8 @@
  *
  * The transcript speaks the event vocabulary the adapter's stdout reader
  * already knows, so the line parse, the assistant discriminant and the
- * content-block walk are imported from `src/Agent.ts` rather than spelled a
- * second time here. What this module adds is the transcript's own shape: an
+ * content-block walk are imported from `src/streamJson.ts` rather than
+ * spelled a second time here. What this module adds is the transcript's own shape: an
  * assistant event's usage, whose input, cache-read and cache-creation tokens
  * together are the context that turn occupied
  * (`.claude/rules/platform-facts.md`, *stream-json assistant events carry
@@ -33,7 +33,7 @@ import {
   contentBlocksOfType,
   isAssistantEvent,
   parseNdjsonLine,
-} from "./Agent.js";
+} from "./streamJson.js";
 
 /** What the chain declared, plus the clock the elapsed reading is taken on. */
 export interface BudgetLineOptions {
@@ -62,6 +62,16 @@ export interface BudgetReading {
    * threshold is crossed against.
    */
   contextFraction?: number;
+  /**
+   * The same fraction one assistant turn earlier — the other side a
+   * crossing is decided on, since a threshold is crossed by a turn that
+   * passed it and not by every turn after. Absent where no window was
+   * declared, where the latest turn is the transcript's first, or where the
+   * turn before it reported no usage; a caller deciding a crossing reads
+   * absence as "below every threshold", which re-reports a crossing rather
+   * than swallowing one.
+   */
+  priorContextFraction?: number;
 }
 
 /**
@@ -113,6 +123,7 @@ function budgetLineFrom(
   let toolCalls = 0;
   let sawAssistant = false;
   let latestUsage: Record<string, unknown> | undefined;
+  let priorUsage: Record<string, unknown> | undefined;
 
   for (const raw of transcript.split("\n")) {
     const parsed = parseNdjsonLine(raw);
@@ -124,7 +135,9 @@ function budgetLineFrom(
     toolCalls += contentBlocksOfType(event, "tool_use").length;
     // Assigned every time, absence included: the reading is what the *latest*
     // assistant event carries, so an earlier turn's usage never stands in for
-    // a later turn that reported none.
+    // a later turn that reported none. The displaced value is the turn
+    // before's, which is the only other turn a crossing needs.
+    priorUsage = latestUsage;
     latestUsage = eventUsage(event);
   }
 
@@ -160,11 +173,17 @@ function budgetLineFrom(
   const elapsedMs = (opts.now ?? Date.now()) - firstEventMs;
   const contextFraction =
     contextWindow === undefined ? undefined : contextTokens / contextWindow;
+  const priorTokens = priorUsage === undefined ? undefined : contextTokensOf(priorUsage);
+  const priorContextFraction =
+    contextWindow === undefined || priorTokens === undefined
+      ? undefined
+      : priorTokens / contextWindow;
   const reading: BudgetReading = {
     contextTokens,
     toolCalls,
     elapsedMs,
     ...(contextFraction !== undefined ? { contextFraction } : {}),
+    ...(priorContextFraction !== undefined ? { priorContextFraction } : {}),
   };
 
   const parts: string[] = [];

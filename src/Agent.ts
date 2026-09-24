@@ -11,6 +11,19 @@ import { mkdir } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { basename, toNamespacedPath } from "node:path";
 import { fsStamp, namespacedJoin } from "./paths.js";
+import {
+  assistantTurnText,
+  contentBlocksOfType,
+  isAssistantEvent,
+  isErrorResult,
+  isResultEvent,
+  parseNdjsonLine,
+  type NdjsonEvent,
+} from "./streamJson.js";
+import {
+  budgetHookCommand,
+  type BudgetDeclaration,
+} from "./budgetHook.js";
 import { spawnProcessTree, terminateProcessTree } from "./processTree.js";
 import { isWin32ShimSpawnFailure } from "./spawnShim.js";
 
@@ -202,6 +215,16 @@ export interface ClaudeCodeOptions {
    * the binary's own default applies.
    */
   model?: string;
+  /**
+   * Report the room this invocation has left, mid-session. Declared, the
+   * adapter registers a hook of its own on this invocation's settings alone
+   * — never on the user's — that hands the agent a budget line after a tool
+   * call: context used against the declared window, elapsed wall clock, and
+   * tool calls so far, at the declared cadence and on each declared
+   * threshold crossed. Undeclared, no hook is registered and the argv is
+   * unchanged.
+   */
+  budget?: BudgetDeclaration;
   /** Extra flags appended to the `claude` argv (after the format flags). */
   extraArgs?: string[];
 }
@@ -231,6 +254,13 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
       ? ["--output-format", "stream-json", "--verbose"]
       : [];
   const extra = opts.extraArgs ?? [];
+  // Rendered once, as the agent is built: a declaration the hook cannot be
+  // run on throws here, where a chain author is standing, rather than once
+  // per tool call into a hook's stderr.
+  const budgetArgs =
+    opts.budget === undefined
+      ? []
+      : ["--settings", budgetSettings(opts.budget)];
 
   return {
     name: "claude-code",
@@ -251,6 +281,7 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
           ...(skipPerms ? ["--dangerously-skip-permissions"] : []),
           ...(inheritUserMcp ? [] : ["--strict-mcp-config"]),
           ...(opts.model !== undefined ? ["--model", opts.model] : []),
+          ...budgetArgs,
           ...extra,
         ];
 
@@ -353,6 +384,30 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
       });
     },
   };
+}
+
+/**
+ * The chain's budget declaration as one invocation's own settings, for the
+ * provider's `--settings` flag.
+ *
+ * Inline JSON rather than a settings file: the flag takes either, and a
+ * value that never lands on disk cannot be read by a second invocation, left
+ * behind by a tick that was killed, or confused with the settings the user
+ * maintains. The hook runs after every tool call — `"*"` is the matcher that
+ * says so — and what it does with each one is the hook's own
+ * (`budgetLineDue`, `src/budgetHook.ts`).
+ */
+function budgetSettings(budget: BudgetDeclaration): string {
+  return JSON.stringify({
+    hooks: {
+      PostToolUse: [
+        {
+          matcher: "*",
+          hooks: [{ type: "command", command: budgetHookCommand(budget) }],
+        },
+      ],
+    },
+  });
 }
 
 /**
@@ -527,89 +582,6 @@ export function withTerminalRenderer(
       return usage ? { ...result, usage } : result;
     },
   };
-}
-
-/** One parsed `claude -p --output-format stream-json` NDJSON event. */
-type NdjsonEvent = Record<string, unknown>;
-
-/**
- * Result of {@link parseNdjsonLine}: `"blank"` for a whitespace-only line,
- * `"parse-error"` for text that doesn't parse as JSON (carries the trimmed
- * raw text so a caller can pass it through), `"non-object"` for JSON that
- * parses but isn't an event object (e.g. a bare number or array), and
- * `"event"` for a genuine stream-json event.
- */
-type NdjsonLineResult =
-  | { kind: "blank" }
-  | { kind: "parse-error"; raw: string }
-  | { kind: "non-object" }
-  | { kind: "event"; event: NdjsonEvent };
-
-/**
- * Parse one line of a `claude -p --output-format stream-json` NDJSON
- * transcript. Shared by {@link renderStreamJsonLine} (terminal rendering)
- * and the dispatcher's clean-exit final-message extraction — both walk the
- * same line-parse before diverging on which event/block types they keep.
- */
-export function parseNdjsonLine(line: string): NdjsonLineResult {
-  const trimmed = line.trim();
-  if (!trimmed) return { kind: "blank" };
-  let evt: unknown;
-  try {
-    evt = JSON.parse(trimmed);
-  } catch {
-    return { kind: "parse-error", raw: trimmed };
-  }
-  if (!evt || typeof evt !== "object") return { kind: "non-object" };
-  return { kind: "event", event: evt as NdjsonEvent };
-}
-
-/**
- * Blocks of `blockType` in a stream-json `assistant`/`user` event's
- * `message.content[]` (e.g. `"tool_use"`, `"text"`). Non-array/missing
- * `content` yields no blocks.
- */
-export function contentBlocksOfType(
-  event: NdjsonEvent,
-  blockType: string,
-): Record<string, unknown>[] {
-  const msg = event.message as { content?: unknown } | undefined;
-  const content = Array.isArray(msg?.content) ? msg!.content : [];
-  return content.filter(
-    (c): c is Record<string, unknown> =>
-      !!c && typeof c === "object" && (c as Record<string, unknown>).type === blockType,
-  );
-}
-
-/**
- * Stream-json event-type vocabulary, shared by every reader that classifies
- * an NDJSON event: `renderStreamJsonLine` below and `extractFinalMessage`.
- * The `"assistant"`/`"result"` literals and the `is_error`/`subtype` error
- * rule live here once so two readers can't drift on what counts as which
- * event.
- */
-export function isAssistantEvent(event: NdjsonEvent): boolean {
-  return event.type === "assistant";
-}
-
-export function isResultEvent(event: NdjsonEvent): boolean {
-  return event.type === "result";
-}
-
-/** A `result` event's `is_error`/non-`"success"` `subtype` marks failure. */
-export function isErrorResult(event: NdjsonEvent): boolean {
-  return Boolean(event.is_error) || Boolean(event.subtype && event.subtype !== "success");
-}
-
-/**
- * Concatenated `text` blocks of one stream-json `assistant` event;
- * `tool_use`/`thinking` blocks are dropped (they are not the agent's prose).
- */
-export function assistantTurnText(e: NdjsonEvent): string {
-  const parts = contentBlocksOfType(e, "text")
-    .filter((c) => typeof c.text === "string")
-    .map((c) => (c.text as string).trim());
-  return parts.join("\n\n").trim();
 }
 
 /**
