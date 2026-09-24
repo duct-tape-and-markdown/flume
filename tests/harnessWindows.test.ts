@@ -345,16 +345,33 @@ it("the sweep window is live while the plan state's rotation is open", () => {
   expect({ closed, open }).toEqual({ closed: false, open: true });
 });
 
-it("the sweep window is not live while the queue carries a pickable entry", () => {
+/**
+ * The sweep is its own worker, so the queue decides nothing about its window:
+ * what keeps insurance behind product is the declared phase order under the
+ * supervisor's budget, not a window standing aside
+ * (`.claude/rules/posture-sweep.md`, *The sweep runs beside build, never
+ * ahead of it*).
+ */
+it("the sweep window is live while the queue carries a pickable entry", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writeState({ rotation: { kind: "open", covered: [] } });
   const sweep = windows()["plan-sweep"];
 
-  // Control: the same open rotation, which is live on its own.
-  const idle = sweep.live({ flumeDir: stateRoot(), pickable: false });
-  const yielding = sweep.live({ flumeDir: stateRoot(), pickable: true });
+  // Vacuity: a closed rotation at HEAD is shut over the very queue the arms
+  // below are live over, so it is the rotation they read and not the fixture.
+  writeState({ rotation: { kind: "closed" } });
+  const closed = sweep.live({ flumeDir: stateRoot(), pickable: true });
 
-  expect({ idle, yielding }).toEqual({ idle: true, yielding: false });
+  // The one fact flipped across an open rotation: it answers the same either
+  // way, which is what "live on its own work" claims.
+  writeState({ rotation: { kind: "open", covered: [] } });
+  const idle = sweep.live({ flumeDir: stateRoot(), pickable: false });
+  const beside = sweep.live({ flumeDir: stateRoot(), pickable: true });
+
+  expect({ closed, idle, beside }).toEqual({
+    closed: false,
+    idle: true,
+    beside: true,
+  });
 });
 
 it("the inbox window is live while a standing build refusal is keyed to an entry the queue still carries", () => {
@@ -394,33 +411,46 @@ it("the inbox window is live while a standing build refusal is keyed to an entry
 });
 
 /**
- * The record leg's half of the yield, over the spec's own case: a build
- * tick's observation note, waiting while the queue still has work in it.
+ * The record leg, over the spec's own case: a build tick's observation note,
+ * waiting while the queue still has work in it. A record is material only
+ * this slice routes, so no entry build could ship answers it — the leg reads
+ * its own queue and nothing about the engine's pickable set
+ * (`spec/harness.md`, *The phases*).
  */
-it("the inbox slice is not live for a waiting record while the engine reports anything pickable", () => {
+it("the inbox record leg is live while the queue carries a pickable entry", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
   writeState();
-  writeRecord(
+  const inbox = windows()[INBOX_PHASE];
+
+  // Vacuity: nothing waits yet, so the window is shut over the same pickable
+  // queue — the note written below is the only thing that opens it.
+  const noRecord = inbox.live({ flumeDir: stateRoot(), pickable: true });
+  const path = writeRecord(
     "plan/notes/AN-OBSERVATION.md",
     "# An observation\n\nThe gate names its own command twice.\n",
   );
-  const inbox = windows()[INBOX_PHASE];
 
   expect({
-    // Vacuity: the note really is in the queue the leg reads, so the
-    // verdicts below are the yield's doing and not an empty directory's.
+    noRecord,
+    // The note really is in the queue the leg reads ...
     waiting: recordsPending(stateRoot()),
-    yielding: inbox.live({ flumeDir: stateRoot(), pickable: true }),
-    // Control: the same note with the one fact flipped.
+    // ... and the leg answers the same with the queue's one fact flipped.
+    beside: inbox.live({ flumeDir: stateRoot(), pickable: true }),
     idle: inbox.live({ flumeDir: stateRoot(), pickable: false }),
-  }).toEqual({ waiting: true, yielding: false, idle: true });
+  }).toEqual({ noRecord: false, waiting: true, beside: true, idle: true });
+
+  // The render leg reads no such fact either — a `WindowContext` carries
+  // none — so whichever tick runs is handed the record itself.
+  const rendered = inbox.args({ cwd: repo, flumeDir: stateRoot() }).RECORDS;
+  expect(rendered).toContain(path);
+  expect(rendered).toContain("The gate names its own command twice.");
 });
 
 /**
- * The refusal leg's half: it is keyed to an entry the queue still carries, so
- * a pickable queue is the state it exists to interrupt rather than one to
- * stand aside for. Asserted beside the leg that does yield, because "even
- * while entries are pickable" is a claim about the difference between them.
+ * The refusal leg: it is keyed to an entry the queue still carries, so a
+ * pickable queue is the state it exists to interrupt. Asserted beside the
+ * record leg, since both open the window over the same pickable queue and a
+ * case that ran only one of them would not say which leg answered.
  *
  * Ordered: the park arm is taken before any record is on disk, so it is the
  * park holding the window open and not the queue the later arm writes into.
@@ -448,44 +478,8 @@ it("the inbox slice is live for a standing park even while entries are pickable"
   expect({ bare, park, waitingRecord }).toEqual({
     bare: false,
     park: true,
-    waitingRecord: false,
+    waitingRecord: true,
   });
-});
-
-/**
- * The deferred record, on the tick that runs: the yield puts the drain on the
- * next plan tick, and that tick is handed the same record — deferring is not
- * dropping.
- */
-it("the inbox slice is live for a waiting record when nothing is pickable", () => {
-  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
-  writeState();
-  const inbox = windows()[INBOX_PHASE];
-
-  // Vacuity: nothing waits and nothing is pickable, so the record written
-  // below is the only thing that can open the window.
-  const noRecord = inbox.live({ flumeDir: stateRoot(), pickable: false });
-  const path = writeRecord(
-    "inbox/2026-09-16-a-finding.md",
-    "# A finding\n\nObserved.\n",
-  );
-
-  expect({
-    noRecord,
-    // The tick that deferred it ...
-    deferred: inbox.live({ flumeDir: stateRoot(), pickable: true }),
-    // ... and the tick that runs once the queue is drained.
-    live: inbox.live({ flumeDir: stateRoot(), pickable: false }),
-  }).toEqual({ noRecord: false, deferred: false, live: true });
-
-  // The render leg never read `pickable`, so the record the yield passed over
-  // is in the block whichever tick runs is handed.
-  const rendered = windows()[INBOX_PHASE].args({
-    cwd: repo,
-    flumeDir: stateRoot(),
-  }).RECORDS;
-  expect(rendered).toContain(path);
-  expect(rendered).toContain("Observed.");
 });
 
 /**
@@ -565,19 +559,19 @@ it("the inbox slice is live for a waiting friction file", () => {
       flumeDir: stateRoot(),
       pickable: false,
     }),
-    // The friction leg rides behind the record leg's yield ...
-    deferred: declared().live({ flumeDir: stateRoot(), pickable: true }),
-    // ... and opens on the tick that runs once the queue is drained.
+    // The friction leg reads its own channel and nothing about the queue,
+    // so it answers the same with that one fact flipped.
+    beside: declared().live({ flumeDir: stateRoot(), pickable: true }),
     live: declared().live({ flumeDir: stateRoot(), pickable: false }),
   }).toEqual({
     placeholderOnly: false,
     undeclared: false,
-    deferred: false,
+    beside: true,
     live: true,
   });
 
-  // The render leg never read `pickable`, so the note the yield passed over
-  // is in the block whichever tick runs is handed.
+  // The render leg reads no such fact either, so the note is in the block
+  // whichever tick runs is handed.
   expect(
     declared().args({ cwd: repo, flumeDir: stateRoot() }).RECORDS,
   ).toContain(note);

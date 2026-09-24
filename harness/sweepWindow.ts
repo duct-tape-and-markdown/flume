@@ -41,22 +41,22 @@ import {
 /**
  * The sweep slice's window.
  *
- * Yields first. While the queue carries a pickable entry the window is
- * closed whatever is in it, because the sweep is insurance and shipped
- * entries are the product; the frontier is deferred, never lost. The rule
- * now schedules the sweep beside build under the supervisor's budget
- * (`.claude/rules/posture-sweep.md`, *The sweep runs beside build, never
- * ahead of it*), and this yield leaves with the entry that derives it.
- * An open rotation then holds it live on its own: a rotation is open exactly
- * while a frontier it already drew has neighborhoods left in it, and closing
- * one is the slice's own job.
+ * **Live on its own work, and on nothing about the queue.** An armed
+ * frontier or an open rotation opens it; what the queue carries never
+ * closes it. The sweep is its own worker and runs beside build whenever the
+ * supervisor's budget has room, so scheduling it is the budget's decision
+ * and the declared order's — the package declares the sweep last of the
+ * slices for exactly that, which is what keeps insurance behind product
+ * without any window standing aside (`.claude/rules/posture-sweep.md`, *The
+ * sweep runs beside build, never ahead of it*; `chain.ts`). An open rotation
+ * is open exactly while a frontier it already drew has neighborhoods left in
+ * it, and closing one is the slice's own job.
  *
- * Ahead of even the yield: a queue that did not parse shuts this window, so
- * the tick goes to the slice whose rewrite is the repair rather than to a
- * sweep that would file its findings into a queue derived from nothing
- * (`queueResolved`, `sliceWindow.ts`). Nothing is lost by it — the cursor and
- * the rotation are this slice's own state file, untouched by a tick the sweep
- * did not take.
+ * One leg does shut it: a queue that did not parse, so the tick goes to the
+ * slice whose rewrite is the repair rather than to a sweep that would file
+ * its findings into a queue derived from nothing (`queueResolved`,
+ * `sliceWindow.ts`). Nothing is lost by it — the cursor and the rotation are
+ * this slice's own state file, untouched by a tick the sweep did not take.
  */
 export function sweepWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
   const { domain, posturePages } = sweepInputs(options.declaration);
@@ -65,9 +65,7 @@ export function sweepWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
     name: "plan-sweep",
     live: (inputs) => {
       if (!queueResolved(inputs)) return false;
-      const { flumeDir, pickable } = inputs;
-      if (pickable) return false;
-      const state = readPlanState(flumeDir, "plan-sweep");
+      const state = readPlanState(inputs.flumeDir, "plan-sweep");
       if (state === undefined) return true;
       if (state.rotation.kind === "open") return true;
       return touchedPast(options.repoRoot, state.sweptThrough, frontier);

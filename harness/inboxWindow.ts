@@ -18,11 +18,11 @@
  * slice from inside the loop — someone left a file, or a build wave walled —
  * and either alone leaves a loop: without the record leg an operator's
  * finding is never read; without the refusal leg a parked entry stays
- * pickable, plan yields to build, and build re-parks into the same wall. The
- * declared friction channel is a third way in — the engine's own
- * loop-to-owner channel, read here as the record queues are
- * (`friction.ts`) — and the lanes are the fourth source, the only one whose
- * evidence sits off this disk (`ciLane.ts`).
+ * pickable and build re-parks into the same wall. The declared friction
+ * channel is a third way in — the engine's own loop-to-owner channel, read
+ * here as the record queues are (`friction.ts`) — and the lanes are the
+ * fourth source, the only one whose evidence sits off this disk
+ * (`ciLane.ts`).
  *
  * **The derive cursor is not among them, and not this slice's to move.** One
  * file per writer means no cursor has two hands on it, so a spec commit whose
@@ -32,11 +32,6 @@
  * (`spec/harness.md`, *Plan state as declared state*). This slice writes its
  * own state file and nothing else, which its fence holds
  * (`layout.ts`, `planArtifacts`).
- *
- * **A signal is not unrouted work.** Those disk legs read the same tree and
- * answer differently to a queue that still has work in it: the record and
- * friction legs yield to it, the refusal leg does not. Which is which is at
- * the predicate below.
  *
  * **One derivation per leg, two readers.** The wake set asks "is this slice
  * live"; the prompt asks "what is in it". Both answers come from the same
@@ -70,35 +65,24 @@ import {
 /**
  * The inbox slice's window.
  *
- * **The parse-failure leg yields to nothing.** It is asked first because it is
- * the cheapest — a field on the tick's own facts, no disk and no forge — and
- * because there is nothing for it to yield to: over a queue that did not
- * resolve the engine reports an empty `pending`, so nothing is pickable, and
- * every sibling slice is shut behind the same fact (`queueResolved`,
- * `sliceWindow.ts`). This slice is the only one left that can run, which is
- * the point of it.
+ * **The parse-failure leg is asked first**, because it is the cheapest — a
+ * field on the tick's own facts, no disk and no forge — and because over a
+ * queue that did not resolve every sibling slice is shut behind the same
+ * fact (`queueResolved`, `sliceWindow.ts`). This slice is the only one left
+ * that can run, which is the point of it.
  *
- * **The record leg yields to pickable work; the refusal leg does not**
- * (`spec/harness.md`, *The phases*). A waiting record is a signal, and while
- * the engine reports anything pickable the material it points at is behind
- * entries the queue can ship now — so the drain rides the next plan tick that
- * runs for its own reasons, which is the sweep's rule read at the other
- * queue (`.claude/rules/posture-sweep.md`, *The sweep yields to pickable
- * work*; `sweepWindow.ts`). A standing refusal is the opposite case by
- * construction: it is keyed to an entry that is *still pickable*, so yielding
- * to the queue hands the baton straight back to the build wave that already
- * walled on it.
- *
- * **The friction leg rides behind the record leg's yield**, because it is
- * the same kind of signal: a note the loop left for its owner points at
- * material the queue's own entries may already be shipping, and reading the
- * channel as the inbox is read means deferring it as the inbox's is
- * deferred (`spec/harness.md`, *Declared findings sources*).
- *
- * Deferring is not dropping. Only the liveness leg reads `pickable` — the
- * render below takes a `WindowContext`, which carries no such fact — so a
- * record the yield passed over is in the block the tick that does run is
- * handed, whichever slice woke it.
+ * **Every other leg is live on its own unrouted work** (`spec/harness.md`,
+ * *The phases*). A waiting record, a note in the friction channel and a
+ * standing refusal are each material only this slice routes, and none of
+ * them is answered by shipping an entry — so what the queue happens to
+ * carry decides none of them. The slice is a worker like every other: it
+ * runs when the supervisor's budget has room, behind build in the declared
+ * order, which is the same economics read at the sweep's queue
+ * (`.claude/rules/posture-sweep.md`, *The sweep runs beside build, never
+ * ahead of it*; `sweepWindow.ts`). A standing refusal makes that plainest —
+ * it is keyed to an entry that is *still pickable*, so standing aside for
+ * the queue would hand the baton straight back to the build wave that
+ * already walled on it.
  *
  * **The lane leg is asked last, and that ordering is load-bearing.** The
  * record, friction and refusal legs are three directory listings and a map
@@ -118,9 +102,8 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
     name: INBOX_PHASE,
     live: (inputs) =>
       !queueResolved(inputs) ||
-      (!inputs.pickable &&
-        (recordsPending(inputs.flumeDir) ||
-          frictionPending(inputs.flumeDir, friction))) ||
+      recordsPending(inputs.flumeDir) ||
+      frictionPending(inputs.flumeDir, friction) ||
       standingRefusals(inputs).length > 0 ||
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
