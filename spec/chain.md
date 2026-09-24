@@ -75,7 +75,10 @@ a usage-shaped error naming the field and the declaration that disarms it
 engine will never consult is stale narration wearing declaration syntax: it
 reads as live policy while governing nothing, and nobody is told.
 
-The decidable instances, each checkable from the declaration alone, no tick
+The loader is the rule's usual door, not its boundary: a value a chain
+composes per tick — an agent option assembled inside the factory the engine
+calls — is refused where it is first assembled, by the same bar. The
+decidable instances, each checkable from the declaration alone, no tick
 required:
 
 - **`phase.entryChannelPaths` without `phase.scopeWritesToEntry: true`.** The
@@ -83,8 +86,11 @@ required:
   *The entry-scoped write guard is opt-in, and off by default*), so without
   the flag the globs govern nothing. The field-traced shape is a chain
   migrated across the narrowing-becomes-opt-in flip that kept its channel
-  paths and missed the new flag — quietly running under the wider fence the
-  old default would have narrowed.
+  paths and missed the new flag — quietly running under the wider fence the  old default would have narrowed.
+- **`budget.thresholds` without `budget.contextWindow`.** A threshold is a
+  fraction of a window (*The agent seam*); with no window declared there is
+  nothing to cross, and the arm can never fire. Refused where the adapter's
+  budget is assembled, and again where the hook parses its own argv.
 The bar is static deadness, never disuse: an empty `entryChannelPaths: []` on
 a scoped phase and an `afterMerge` gate on any phase both load — singleton
 ticks merge through the same loop a wave does (`spec/worktrees.md`, *Singleton

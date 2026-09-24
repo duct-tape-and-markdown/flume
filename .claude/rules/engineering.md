@@ -48,8 +48,10 @@ Every check lives at the most deterministic layer that can express it — a
   may be pinned for what it says. A page under `docs/` or the README that
   states what a shipped interface does — a verb's exit codes, a runner's
   operations, the files a verb writes — is the surface a consumer reads
-  before the hover text, so it may be pinned for what it says against the
-  interface it describes, and never against another page: a passage that
+  before the hover text, so it may be pinned for what it says against the interface it describes,
+  and never against another page — for a declaration, down to what an
+  author types by hand: each field the package ships and the level beneath
+  it, never a consumer's own keys: a passage that
   restates a rule page is prose against prose and stays with its authors. A
   page name such a passage cites resolves on disk, as a page name does
   anywhere, so a note that names its neighbour in a series names one that
@@ -67,8 +69,9 @@ Every check lives at the most deterministic layer that can express it — a
   since a filename resolves on disk and is never a sentence; the `#fragment`
   a markdown link carries into such a page, which resolves against that
   page's own headings the way a `per` cite already does; the section half of a `` (`page.md`, *Section*) `` or
-  `` (`page.md`, "Section") `` pair, italicized or quoted, resolved against
-  that page's headings, bolded bullet leads, and a bolded lead opening a
+  `` (`page.md`, "Section") `` pair, italicized or quoted, with or without
+  the parenthetical and the comma so long as the emphasized half sits
+  adjacent to the page name, resolved against that page's headings, bolded bullet leads, and a bolded lead opening a
   blockquote line, exact after backtick normalization — no prefix arm, so
   an abbreviation is a rewrite, not a match; and a `§ N` cross-reference on
   a `docs/` page, resolved against that page's own numbered headings where

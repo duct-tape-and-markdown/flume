@@ -56,8 +56,9 @@ No schema holds these; they are the plan tick's actual work.
 4. **Acceptance is decidable.** Someone who did not write it runs it and gets yes
    or no. "Improve error handling" is not acceptance.
 5. **Footprint honest.** `files` names what the work will touch — not everything it
-   might, not everything nearby. Over-declaring costs wave width; under-declaring
-   costs at most a cherry-pick conflict, which the dispatcher aborts and retries.
+   might, not everything nearby. What each direction of a mis-prediction costs is
+   `spec/pending.md`, *`files` is a prediction the scheduler consumes*; this page does
+   not restate it.
 6. **Contract couplings are ordered, not assumed.** An entry that changes a
    supervisor↔child contract (claim inheritance, verdict paths, exit codes) is
    `blockedBy` the entry that completes the contract's other half, because a live
