@@ -105,7 +105,7 @@ each field carrying **both** its validator and its prompt hint:
 interface EntryExtensionField { schema: StandardSchemaV1; hint: string }
 ```
 
-One declaration drives two surfaces: `composePendingList` builds the validator,
+One declaration drives two surfaces: `composePendingEntry` builds the validator,
 `renderSchemaForPrompt` builds the prompt's schema block. The prompt and the parser cannot
 disagree, because there is only one declaration to disagree with. A chain declaring no extension
 gets the bare core, and validates and renders as such.
@@ -127,7 +127,7 @@ gets the bare core, and validates and renders as such.
   constraint is actually in force. Shadowing any other core field throws — a
   chain-config defect, not a `pending.json` defect, so it never becomes a `ParseResult` issue.
 - **An async validator is refused, loudly, naming the field** (`AsyncEntryExtensionValidatorError`).
-  `parsePending` is synchronous and feeds decision and rewrite paths; a `Promise` read as a result
+  `parsePendingQueue` is synchronous and feeds decision and rewrite paths; a `Promise` read as a result
   object has no `issues` and would accept everything. It surfaces at first parse, not at compose,
   because asynchrony is only observable by calling `validate`.
 - **`StandardSchemaV1` is vendored type-only**, not depended on. The
@@ -523,7 +523,7 @@ already landed. A failure there means something outside the tick corrupted a fil
 degrading to `[]` is bounded because that value feeds only a chain's advisory handoff check,
 never a rewrite or a work decision.
 
-`parsePendingLoose` is a separate core-only reader for chain-less informational commands that
+`parsePendingQueueLoose` is a separate core-only reader for chain-less informational commands that
 count or inspect entries without loading the chain: it validates the core and passes unknown
 fields through unvalidated. It is never used on a write path — rewriting the queue from a parse
 that did not know the extension is how declared fields get destroyed.

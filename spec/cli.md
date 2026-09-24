@@ -56,7 +56,7 @@ chain declarations the CLI reads in `spec/chain.md`.
   tick would have bought with an invocation. No `--out`: stdout is the surface,
   and a tick's own record of what it sent stays `rendered-prompts/`.
 - `check` — validates the working tree's ledger without spending an
-  agent: the real parse (`parsePending`, the same decode a tick's resolution
+  agent: the real parse (`parsePendingQueue`, the same decode a tick's resolution
   takes) plus fence arithmetic for every entry — declared paths against the
   consumer phase's declared fence, under the same `matchesAny` matching the
   write guard enforces. For any entry both judge, `check` and the pending gate name the same
