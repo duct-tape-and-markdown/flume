@@ -3,10 +3,11 @@
  * `bin/flume-harness.js` runs (`spec/cli.md`, *Distribution*).
  *
  * **Its own entry point, deliberately.** The verb it runs lives in
- * `init.ts`, which the package also exports; this module is the argv half
- * and nothing else, so importing the verb from a chain never runs a command.
- * Nothing imports this module, which is why it needs no invoked-directly
- * guard: it runs when it is executed and at no other time.
+ * `init.ts`, which the package also exports, and the page it prints in
+ * `cliHelp.ts`; this module is the argv half and nothing else, so importing
+ * either from a chain — or from a suite reading the shipped page — never
+ * runs a command. Nothing imports this module, which is why it needs no
+ * invoked-directly guard: it runs when it is executed and at no other time.
  *
  * **The engine's verb set stays closed.** `flume` gains no adoption verb and
  * `src/` imports nothing from this directory — the reason this bin exists at
@@ -17,25 +18,9 @@ import { relative } from "node:path";
 
 import { wantsHelp } from "../src/cliHelp.js";
 
+import { HARNESS_HELP } from "./cliHelp.js";
 import { detailOf } from "./exec.js";
-import { DEFAULT_STATE_ROOT, harnessInit } from "./init.js";
-
-const HELP = `flume-harness — adopt flume's harness package in this repository.
-
-Usage: flume-harness <command>
-
-Commands:
-  init                Write the declaration skeleton, the chain.ts that
-                      applies the package's factory to it, the package.json
-                      scoping both as ESM, the state root, the runtime
-                      ignore lines and PROTOCOL.md into the current
-                      directory, and declare the package in its
-                      package.json.
-                      Refuses if ${DEFAULT_STATE_ROOT}/ is already there.
-
-Options:
-  -h, --help          Print this message.
-`;
+import { harnessInit } from "./init.js";
 
 /**
  * sysexits.h `EX_USAGE` — the caller's command line, not the repository's
@@ -56,7 +41,7 @@ async function main(argv: readonly string[]): Promise<number> {
   // than a second spelling of the flag set beside it
   // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
   if (verb === undefined || wantsHelp(argv)) {
-    process.stdout.write(HELP);
+    process.stdout.write(HARNESS_HELP);
     return 0;
   }
 
@@ -64,12 +49,12 @@ async function main(argv: readonly string[]): Promise<number> {
   // verb that does not exist, and the one that does carrying arguments it
   // has none of.
   if (verb !== "init") {
-    process.stderr.write(`flume-harness: unknown command \`${verb}\`\n\n${HELP}`);
+    process.stderr.write(`flume-harness: unknown command \`${verb}\`\n\n${HARNESS_HELP}`);
     return EX_USAGE;
   }
   if (rest.length > 0) {
     process.stderr.write(
-      `flume-harness: \`init\` takes no arguments, got \`${rest.join(" ")}\`\n\n${HELP}`,
+      `flume-harness: \`init\` takes no arguments, got \`${rest.join(" ")}\`\n\n${HARNESS_HELP}`,
     );
     return EX_USAGE;
   }

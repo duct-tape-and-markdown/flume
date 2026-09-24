@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { declaration } from "../.flume/declaration.ts";
+import { HARNESS_HELP } from "../harness/cliHelp.ts";
 import {
   type CitationScan,
   type CitationSite,
@@ -1893,6 +1894,24 @@ it("every section a comment in bin/, examples/, scripts/ or .flume/chain.ts cite
       (site) => `${formatCitation(site)} -> ${site.page}`,
     ),
   );
+});
+
+it("the shipped help surfaces include the page flume-harness --help prints", () => {
+  // Vacuity guard: the engine's own pages are still rendered beside it, so a
+  // helper that had stopped drawing everything but the harness page could not
+  // pass here for a widened set.
+  const names = shippedHelp.map((surface) => surface.name);
+  expect(names).toContain("flume --help");
+  expect(names.length).toBeGreaterThan(5);
+
+  expect(names).toContain("flume-harness --help");
+
+  // And it is the page itself rather than a stand-in for a module the scan
+  // still cannot import: the text the harness bin's argv half writes to
+  // stdout, read off the module that holds it.
+  const page = shippedHelp.find((surface) => surface.name === "flume-harness --help");
+  expect(page?.text).toBe(HARNESS_HELP);
+  expect(HARNESS_HELP).toContain("Usage: flume-harness <command>");
 });
 
 it("every section a shipped help literal cites is a section its page still carries", () => {

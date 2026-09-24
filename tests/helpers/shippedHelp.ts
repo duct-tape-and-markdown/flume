@@ -1,18 +1,21 @@
 /**
- * The one reader of the CLI's shipped help surface: the verbs its top-level
- * listing advertises, and the page each of them prints.
+ * The one reader of the package's shipped help surface: the verbs the
+ * engine CLI's top-level listing advertises, the page each of them prints,
+ * and the page the harness package's own bin prints.
  *
- * Read off `HELP_TOP` and `helpPageFor` rather than restated, so every suite
- * that judges the help text judges what the CLI really prints, and a verb
- * added later is read the tick it is added rather than the tick someone
- * remembers to extend a list (`.claude/rules/engineering.md`, *A seam gate
- * reads what the real writer wrote*).
+ * Read off `HELP_TOP`, `helpPageFor` and `HARNESS_HELP` rather than
+ * restated, so every suite that judges the help text judges what a bin
+ * really prints, and a verb added later is read the tick it is added rather
+ * than the tick someone remembers to extend a list
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
  *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
 import { expect } from "vitest";
 
+import { HARNESS_HELP } from "../../harness/cliHelp.ts";
 import { HELP_TOP, helpPageFor } from "../../src/cliHelp.ts";
 import type { RenderedSurface } from "./commentCitations.ts";
 
@@ -38,16 +41,16 @@ export function topLevelCommandNames(): string[] {
 }
 
 /**
- * Every help page the engine's CLI prints, one surface each, named by the
- * command line that prints it: the top-level listing, then one page per verb
- * that listing advertises.
+ * Every help page this package's two bins print, one surface each, named by
+ * the command line that prints it: the engine's top-level listing, then one
+ * page per verb that listing advertises, then the harness bin's own page.
  *
  * A verb the listing names and the page table does not answer fails here
  * rather than being passed over — a silence is the loudest way a page can
  * drift out of a scan (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
- * `flume-harness`'s own help literal is not among them: that module runs its
- * `main` at import, so nothing may import it to read the text.
+ * `flume-harness`'s page is among them because it has a module of its own:
+ * `harness/cli.ts` runs its `main` at import and holds no text to read.
  */
 export function shippedHelpPages(): RenderedSurface[] {
   const pages: RenderedSurface[] = [
@@ -58,5 +61,6 @@ export function shippedHelpPages(): RenderedSurface[] {
     expect(text, `the help table answers no page for \`${verb}\``).toBeDefined();
     pages.push({ name: `flume ${verb} --help`, text: text! });
   }
+  pages.push({ name: "flume-harness --help", text: HARNESS_HELP });
   return pages;
 }
