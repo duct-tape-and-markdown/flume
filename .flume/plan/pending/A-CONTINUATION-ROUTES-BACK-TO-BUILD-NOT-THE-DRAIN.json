@@ -31,5 +31,18 @@
   "pins": [
     "a not-shipped record whose commit wrote a park note is a standing refusal"
   ],
-  "notes": "Which of the two a not-shipped record is is the chain's vocabulary, read from where it told its agent to say so (`spec/pending.md`, the not-shipped predicate). The record already carries the evidence: `NotShippedAttempt.touchedPaths` is the same list the `shipped` predicate was handed. The per-entry refusal already declines to hold a not-shipped entry, so nothing there changes."
+  "notes": "Which of the two a not-shipped record is is the chain's vocabulary, read from where it told its agent to say so (`spec/pending.md`, the not-shipped predicate). The record already carries the evidence: `NotShippedAttempt.touchedPaths` is the same list the `shipped` predicate was handed. The per-entry refusal already declines to hold a not-shipped entry, so nothing there changes.",
+  "observedFiles": [
+    ".flume/plan/notes/A-CONTINUATION-ROUTES-BACK-TO-BUILD-NOT-THE-DRAIN.md",
+    "harness/chain.ts",
+    "harness/inboxWindow.ts",
+    "harness/judgeGate.ts",
+    "harness/putDown.ts",
+    "harness/sliceWindow.ts",
+    "harness/standingRefusal.ts",
+    "tests/harnessChain.test.ts",
+    "tests/harnessCi.test.ts",
+    "tests/harnessHandoff.test.ts",
+    "tests/harnessWindows.test.ts"
+  ]
 }
