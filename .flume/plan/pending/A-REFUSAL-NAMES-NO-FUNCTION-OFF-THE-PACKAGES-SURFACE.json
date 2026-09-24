@@ -1,0 +1,49 @@
+{
+  "tag": "A-REFUSAL-NAMES-NO-FUNCTION-OFF-THE-PACKAGES-SURFACE",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": [
+      "THE-INTERFACE-PAGES-NAME-SURFACE-THE-PACKAGE-HOLDS"
+    ]
+  },
+  "files": {
+    "new": [
+      {
+        "path": "tests/helpers/literalSymbols.ts",
+        "description": "the camelCase-span extractor over `src/` string literals, beside the comment scan"
+      },
+      {
+        "path": "tests/engineMessages.test.ts",
+        "description": "each extracted span resolved against the surface the blocker hands out"
+      }
+    ],
+    "edit": [
+      {
+        "path": "src/git.ts",
+        "description": "the two refusals naming `dropLastCommit` and `commitPaths`"
+      },
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": "the no-child refusal naming `superviseLoop`"
+      },
+      {
+        "path": "src/worktrees.ts",
+        "description": "the two sweep warnings naming `deleteBranch`"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "description": "the local extractor shrinks to the shared one"
+      }
+    ]
+  },
+  "summary": "Five `src/` messages name four engine functions the package's surface does not hold, and nothing resolves the symbols a string literal states",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "no `src/` string literal names a function the package's surface cannot reach, and a scan over those literals resolves each span against that surface rather than against `src/index.ts` alone",
+  "tests": [
+    "no src/ string literal names a function the package's surface does not hold"
+  ],
+  "notes": "Per note THE-ASYNC-VALIDATOR-REFUSAL-NAMES-NO-ENGINE-FUNCTION, whose 331-hit read was over every camelCase span; narrowed to top-level fn/class declarations it is 4 names at 5 sites — `dropLastCommit`, `commitPaths` (`src/git.ts:247`, `:682`), `superviseLoop` (`src/loopSupervisor.ts:890`), `deleteBranch` (`src/worktrees.ts:635`, `:811`). `worktreesBase` and `checkoutAt` hit too and are legitimate members of handed-out surface, so the resolver is the blocker's reachable one, not `src/index.ts`."
+}
