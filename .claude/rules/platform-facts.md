@@ -437,18 +437,22 @@ root, 2026-09-24; the fact expires when a vitest transform ships
 `import.meta.resolve`, at which point the workaround's cite here goes stale
 and the sweep's expired-narration lens retires it.
 
-## tsx decides a module's interop shape from its whole import graph
+## tsx decides a module's interop shape from the nearest `package.json` `type`
 
-Whether `tsImport` hands back a chain module as CJS interop — `__esModule`
-set, the default under `.default` — or as plain ESM is not a property of
-that module's own export shape. A default-only `.ts` module comes back as
-CJS interop on its own and as plain ESM the moment anything in its import
-graph carries a top-level await, with `__esModule` absent and `default` the
-value directly. Measured three times on tsx 4.21 under node 22, last with
-a top-level await in the budget hook's entrypoint guard; `tsc` is clean
-either way because `module` is `ESNext` and the emit carries the await
-verbatim. A loader that keys on export shape alone reads the wrong shape
-for a graph it never inspected, which is why `loadChainModule` normalizes
-both and why that normalization is load-bearing. The fact expires when tsx
-picks one shape for every graph, at which point the normalization's second
-arm stops being reachable and the seam case that drives it reds.
+Whether `tsImport` hands back a module as CJS interop — `__esModule` set,
+the default under `.default` — or as plain ESM follows the `type` field of
+the nearest `package.json` above the module, never the module's own export
+shape and not its import graph: a default-only `.ts` module with no imports
+at all comes back plain ESM under `"type": "module"` and CJS interop under
+no `type` or no package above it, and a top-level await in a CJS context
+does not change the shape — it refuses to load, esbuild's `TransformError`
+in the entry module, `ERR_REQUIRE_ASYNC_MODULE` in a dependency. Measured
+through the real loader path, tsx 4.21 under node 22, six fixtures,
+2026-09-24; an earlier reading credited a coincident top-level await. So
+the loader's normalization of both shapes is load-bearing per consumer: a
+chain under a `"type": "module"` root always arrives plain, one under a
+CJS root always arrives interop, and a loader keying on export shape reads
+the wrong one for half its consumers. The fact expires when tsx returns one
+shape regardless of `type`; nothing pins it, since a test asserting the raw
+namespace would pin the external tool, and the sweep's expired-narration
+lens is what retires this section.
