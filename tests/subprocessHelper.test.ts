@@ -44,6 +44,7 @@ import {
   declaredLaneGlobs,
   harnessBudgets,
   harnessSpawnExports,
+  helperSpawnExports,
   laneMode,
   budgetDefect,
   reduceLaneGlobs,
@@ -779,11 +780,11 @@ it("the spawn scan reads a git spawn as a process startup", async () => {
  *
  * `renderPrompt` runs each of a template's inline-exec spans through a fresh
  * `sh`, so a case whose subject is a shipped template's spans pays a process
- * per span. `sh` is no node launcher, and the propagation never follows an
- * import, so neither half of the node vocabulary could reach it: a
- * span-rendering case read as spawning nothing and kept vitest's 5s default,
- * which is what timed one out under the afterMerge gate's full-suite
- * contention and reverted an innocent entry.
+ * per span. `sh` is no node launcher, and the propagation follows a helper
+ * import and no import into `src/`, so neither half of the node vocabulary
+ * could reach it: a span-rendering case read as spawning nothing and kept
+ * vitest's 5s default, which is what timed one out under the afterMerge gate's
+ * full-suite contention and reverted an innocent entry.
  *
  * The negative half is a case that names the engine's render error without
  * rendering: a file that merely *imports* from the same module pays no
@@ -823,6 +824,70 @@ it("the spawn scan reports a case that renders inline-exec spans without a decla
     expect(sites.scanned.map((s) => s.title)).toEqual([
       "renders a template's spans",
       "renders through a file-local wrapper",
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The startup a lane file never spells: one reached through a helper of its
+ * own.
+ *
+ * The seed used to be the wrapper module's exports alone, and the propagation
+ * is per source file, so a suite whose every process start sits inside
+ * `makeFixture` (`tests/helpers/dispatcherFixture.ts`, which seeds a temp
+ * repository through real `git` plumbing) read as spawning nothing and kept
+ * vitest's 5s defaults. `tests/loopSupervisor.test.ts` is that file: it timed
+ * out there beside a wave and reverted an innocent entry.
+ *
+ * Driven over the real helper rather than a fixture one, because that is the
+ * claim — the helper's own reach, decided by what it actually calls, seeds the
+ * suite that imports it (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*). The negative half is the same helper's
+ * non-spawning export: the report is the imported name reaching a startup, not
+ * the module being imported.
+ */
+it("the spawn scan names a lane file whose only process start is reached through a test-helper import", async () => {
+  const FIXTURE = [
+    `import { makeFixture, verdictFixture } from "../helpers/dispatcherFixture.ts";`,
+    ``,
+    `it("seeds a repository through the helper", async () => {`,
+    `  const fixture = await makeFixture();`,
+    `  await fixture.cleanup();`,
+    `});`,
+    ``,
+    `it("builds a verdict through the same helper", () => {`,
+    `  expect(verdictFixture().committed).toBe(true);`,
+    `});`,
+    ``,
+  ].join("\n");
+
+  // Vacuity, and the helper's own half of the seam: the module the fixture
+  // imports reaches a startup through a helper of *its* own, so the verdict
+  // below is that reach propagating rather than a name matched by accident.
+  const viaHelper = helperSpawnExports("dispatcherFixture.ts");
+  expect(viaHelper).toContain("makeFixture");
+  expect(viaHelper).not.toContain("verdictFixture");
+
+  const dir = await mkTempDir("flume-budget-helper-");
+  try {
+    await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+    const { sites, files } = await scanSpawns({ lane: "default", dir });
+
+    // The whole list: the case reaching the helper's spawning export is
+    // reported and the one taking its non-spawning export is absent, so the
+    // widening is the helper's reach rather than every case in an importing
+    // file.
+    expect(sites.scanned.map((s) => s.title)).toEqual([
+      "seeds a repository through the helper",
+    ]);
+
+    // And the file it puts in the budget verdict's judged set, which is the
+    // whole consequence: a file spelling no startup of its own still declares
+    // the lane's budget.
+    expect(files.scanned.map((f) => budgetDefect(f))).toEqual([
+      "declares no file-scope `vi.setConfig` budget",
     ]);
   } finally {
     await rm(dir, { recursive: true, force: true });

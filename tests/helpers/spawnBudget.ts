@@ -17,10 +17,11 @@
  * likelier home for. Which mode selects which lane is read off the scripts
  * that run them.
  *
- * Nothing here holds a second copy of a lane's vocabulary — the spawn
- * wrappers are read out of the module that holds them, the budget names out of
- * its exported numbers, each lane's vitest mode out of `package.json`, and which
- * files a lane contains out of `vitest.config.ts`, so a wrapper, a rename, or
+ * Nothing here holds a second copy of a lane's vocabulary — the spawn wrappers
+ * are read out of the helper modules that hold them, the budget names out of
+ * the exported numbers of the one module that holds those, each lane's vitest
+ * mode out of `package.json`, and which files a lane contains out of
+ * `vitest.config.ts`, so a wrapper, a rename, or
  * a widened include arms the scan without a second edit
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
  * beside its source*). The three lists held here are `SPAWN_COMMANDS`,
@@ -29,7 +30,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import ts from "typescript";
 import { configDefaults } from "vitest/config";
@@ -47,16 +48,17 @@ import {
 const TESTS_DIR = join(REPO_ROOT, "tests");
 
 /**
- * The module the spawn wrappers and the lane's budget live in — keyed by the
- * job, not by whatever else a helper file has accumulated. The scan reads its
- * exports for the names that reach a process startup and for the numbers a
- * site is allowed to name, so a helper holding no wrapper and no budget is
- * none of this scan's business however adjacent it sits.
+ * The module the lane's budget lives in — keyed by the job, not by whatever
+ * else a helper file has accumulated. The scan reads its exported numbers for
+ * the ones a site is allowed to name, so a budget named from anywhere else is
+ * not the lane's. Its spawning exports are read the way every helper's are
+ * ({@link helperSpawnExports}); what is particular to this module is the
+ * number.
  */
 const SPAWN_WRAPPERS = join(TESTS_DIR, "helpers", "subprocess.ts");
 
-/** The specifier a suite imports those wrappers and that budget through. */
-const SPAWN_WRAPPERS_MODULE = /(^|\/)helpers\/subprocess\.ts$/;
+/** The file name a suite spells that import as. */
+const SPAWN_WRAPPERS_NAME = basename(SPAWN_WRAPPERS);
 
 /** Vitest's registrars — the calls that can carry a per-site timeout. */
 const CASE = /^(it|test)$/;
@@ -120,10 +122,13 @@ const SPAWN_COMMANDS: ReadonlySet<string> = new Set([
  * them per file.
  *
  * `sh` is no command name a case spells, so `SPAWN_COMMANDS` cannot reach
- * this; and the propagation never follows an import, so the spawn inside the
- * engine module is invisible from a lane file. The entry the spans go through
- * is the name the scan can see, declared here for the same reason
- * `SPAWN_COMMANDS` is: no surface enumerates it.
+ * this; and the propagation follows a helper import under `tests/` and no
+ * other, so the spawn inside the engine module is invisible from a lane file.
+ * The entry the spans go through is the name the scan can see, declared here
+ * for the same reason `SPAWN_COMMANDS` is: no surface enumerates it. Reading
+ * `src/` the way a helper is read is a wider scan than this one — it would
+ * have to know node's own spawn surface, which is the vocabulary these lists
+ * stand in for.
  *
  * Over-approximating on the propagation's standing trade — a render over a
  * template with no spans starts nothing and still costs its case one declared
@@ -153,8 +158,9 @@ const PROCESS_STARTS: readonly string[] = [
  * - **Fake-timer advancement** (`vi.advanceTimersByTimeAsync`). Virtual time
  *   costs no wall clock and is load-insensitive by construction — it is what
  *   a timing claim is rewritten into, not the defect.
- * - **A helper module's internals.** The propagation below is seeded per lane
- *   file and never follows an import, so `waitFor` (tests/helpers/waitFor.ts)
+ * - **A helper module's internals.** The timer propagation is seeded per lane
+ *   file from this list alone and follows no import — unlike the spawn seed,
+ *   which reads a helper's reach — so `waitFor` (tests/helpers/waitFor.ts)
  *   reads as what it is — an event-based wait that happens to be built on
  *   `setTimeout` — rather than as the sleep it replaced. The bound that buys
  *   that: a sleep hidden behind a new helper module is invisible here, and
@@ -498,14 +504,137 @@ function exportedNames(src: ts.SourceFile): Set<string> {
   return names;
 }
 
+/** One walk of `tests/`: the modules a scan reads do not move under it. */
+let helperIndex: Map<string, string> | null = null;
+
+/**
+ * Every helper module the suites import, keyed by the file name they spell it
+ * as. Off disk rather than from a list, so a helper written tomorrow is in
+ * scope without a second edit here.
+ *
+ * Keyed by name rather than by resolved path because the importer's own
+ * directory does not always resolve the specifier: a fixture written under
+ * `SpawnScanRequest.dir` spells `../helpers/subprocess.ts` the way a lane file
+ * does while sitting nowhere near the tree that specifier points into. The
+ * name is what both spellings agree on.
+ *
+ * Two helpers sharing a name would make that key ambiguous, so the scan
+ * refuses instead of picking one: the quiet outcome is a lane file seeded from
+ * the wrong module's exports, which under-approximates
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function helperModules(): Map<string, string> {
+  if (helperIndex) return helperIndex;
+  const index = new Map<string, string>();
+  for (const path of filesUnder({ root: TESTS_DIR, suffix: ".ts" })) {
+    const name = basename(path);
+    const held = index.get(name);
+    if (held)
+      throw new Error(
+        `two modules under tests/ are named '${name}' (${relPath(REPO_ROOT, held)}, ` +
+          `${relPath(REPO_ROOT, path)}); the spawn scan keys a helper import by ` +
+          `its file name and would seed a suite from the wrong module's exports`,
+      );
+    index.set(name, path);
+  }
+  helperIndex = index;
+  return index;
+}
+
+/**
+ * The names `src` imports from each helper module, keyed by that module's file
+ * name. A relative specifier only — a package import names no file of this
+ * tree — and only the named bindings, which is every spelling a suite reaches
+ * a helper's export through.
+ */
+function helperImports(src: ts.SourceFile): Map<string, Set<string>> {
+  const helpers = helperModules();
+  const out = new Map<string, Set<string>>();
+  for (const st of src.statements) {
+    if (!ts.isImportDeclaration(st)) continue;
+    if (!ts.isStringLiteralLike(st.moduleSpecifier)) continue;
+    const specifier = st.moduleSpecifier.text;
+    if (!specifier.startsWith(".")) continue;
+    const name = specifier.slice(specifier.lastIndexOf("/") + 1);
+    if (!helpers.has(name)) continue;
+    const bindings = st.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    const names = out.get(name) ?? new Set<string>();
+    for (const el of bindings.elements) names.add(el.name.text);
+    out.set(name, names);
+  }
+  return out;
+}
+
+/** One answer per helper, for the same reason {@link helperIndex} is kept. */
+const spawnExportCache = new Map<string, readonly string[]>();
+
+/**
+ * The exports of one helper module that reach a process startup — its own
+ * spellings of a startup, plus every spawning export it imports from a helper
+ * of its own, to whatever depth the helpers are layered.
+ *
+ * The depth is the point. A lane file that starts no process of its own and
+ * calls `makeFixture` (`tests/helpers/dispatcherFixture.ts`, which seeds a temp
+ * repository through `exec("git", …)`) pays every one of those startups, and
+ * while the seed stopped at the one wrapper module, that file read as spawning
+ * nothing and kept vitest's 5s default.
+ *
+ * A cycle between helpers is a refusal rather than a truncated answer, on the
+ * scan's standing direction: the truncation would be an under-approximation,
+ * which is the one this scan must not take (`.claude/rules/engineering.md`,
+ * *Loud or nothing*). `visiting` is the chain a refusal names, and a caller
+ * starting a fresh read omits it.
+ */
+export function helperSpawnExports(
+  name: string,
+  visiting: readonly string[] = [],
+): readonly string[] {
+  const memo = spawnExportCache.get(name);
+  if (memo) return memo;
+  if (visiting.includes(name))
+    throw new Error(
+      `helper import cycle ${[...visiting, name].join(" -> ")}; the spawn ` +
+        `scan reads a helper's reach once and would under-approximate it`,
+    );
+  const path = helperModules().get(name);
+  if (!path)
+    throw new Error(
+      `tests/ holds no module named '${name}'; the spawn scan reads its ` +
+        `spawning exports`,
+    );
+  const src = parseScopeless(path);
+  const exported = exportedNames(src);
+  const reaching = reachingNames(src, [
+    ...PROCESS_STARTS,
+    ...importedSpawnNames(src, [...visiting, name]),
+  ]);
+  const names = [...reaching].filter((n) => exported.has(n));
+  spawnExportCache.set(name, names);
+  return names;
+}
+
+/**
+ * The names `src` imports that start a process — every helper export it takes
+ * that reaches a startup, which is the seed its own propagation runs from.
+ */
+function importedSpawnNames(
+  src: ts.SourceFile,
+  visiting: readonly string[],
+): string[] {
+  const out: string[] = [];
+  for (const [name, imported] of helperImports(src))
+    for (const exp of helperSpawnExports(name, visiting))
+      if (imported.has(exp)) out.push(exp);
+  return out;
+}
+
 /**
  * The spawn wrappers: every export of the module holding them that reaches a
  * process startup, by the same propagation the suites are scanned with.
  */
 export function harnessSpawnExports(): string[] {
-  const src = parseScopeless(SPAWN_WRAPPERS);
-  const exported = exportedNames(src);
-  return [...reachingNames(src, PROCESS_STARTS)].filter((n) => exported.has(n));
+  return [...helperSpawnExports(SPAWN_WRAPPERS_NAME)];
 }
 
 /**
@@ -529,20 +658,6 @@ export function harnessBudgets(): Map<string, number> {
   };
   walk(src);
   return out;
-}
-
-/** The names `src` imports from the spawn-wrapper module. */
-function harnessImports(src: ts.SourceFile): Set<string> {
-  const names = new Set<string>();
-  for (const st of src.statements) {
-    if (!ts.isImportDeclaration(st)) continue;
-    if (!ts.isStringLiteralLike(st.moduleSpecifier)) continue;
-    if (!SPAWN_WRAPPERS_MODULE.test(st.moduleSpecifier.text)) continue;
-    const bindings = st.importClause?.namedBindings;
-    if (bindings && ts.isNamedImports(bindings))
-      for (const el of bindings.elements) names.add(el.name.text);
-  }
-  return names;
 }
 
 /** The options-object key a registrar spells its own timeout under. */
@@ -769,7 +884,6 @@ interface Registrar {
  */
 export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> {
   const rule = await laneRule(request.lane);
-  const wrappers = harnessSpawnExports();
   const budgets = new Set(harnessBudgets().keys());
   const sites: SpawnSite[] = [];
   const files: SpawnFile[] = [];
@@ -778,13 +892,18 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
   for (const path of filesUnder(rule, request.dir)) {
     const src = parseScopeless(path);
     const module = relPath(REPO_ROOT, path);
-    const imported = harnessImports(src);
+    const imports = helperImports(src);
     const spawns = reachingNames(src, [
       ...PROCESS_STARTS,
-      ...wrappers.filter((n) => imported.has(n)),
+      ...importedSpawnNames(src, []),
     ]);
     const timers = reachingNames(src, TIMERS);
-    const named = new Set([...budgets].filter((n) => imported.has(n)));
+    // The budget's names are the wrapper module's alone: it is where the
+    // lane's one number lives, so a same-named constant taken from elsewhere
+    // is not the budget a file may name.
+    const named = new Set(
+      [...budgets].filter((n) => imports.get(SPAWN_WRAPPERS_NAME)?.has(n)),
+    );
 
     const own: Registrar[] = [];
     const visit = (node: ts.Node): void => {

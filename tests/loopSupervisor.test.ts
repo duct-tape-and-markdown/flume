@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FAILURE_STAGES, superviseLoop } from "../src/loopSupervisor.ts";
 import type { FailureStage } from "../src/loopSupervisor.ts";
@@ -34,6 +34,13 @@ import {
   writeMinimalChain,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
+import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+
+// `makeFixture` seeds a temp repository through real `git` plumbing, so every
+// case and hook here starts processes: the lane's one budget is declared once
+// at file scope rather than inherited from the runner's 5s defaults
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 /**
  * The `tag`/`quarantineKey` pair a real tick's stage-failure record carries
