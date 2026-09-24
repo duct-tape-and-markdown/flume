@@ -18,7 +18,7 @@ import { join } from "node:path";
 
 import { expect, it, vi } from "vitest";
 
-import { EX_DATAERR } from "../src/cli.ts";
+import { EX_DATAERR } from "../src/exitCodes.ts";
 import { Baton } from "../src/Baton.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
 import { Dispatcher } from "../src/Dispatcher.ts";

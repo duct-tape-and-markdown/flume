@@ -22,7 +22,7 @@ import {
   resolveStateDirs,
 } from "../src/cliStateDirs.ts";
 import { Baton } from "../src/Baton.ts";
-import { EX_IOERR } from "../src/cli.ts";
+import { EX_IOERR } from "../src/exitCodes.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";

@@ -54,7 +54,12 @@ import {
   type RenderResolution,
   type TickOutcome,
 } from "./Dispatcher.js";
-import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
+import {
+  EX_DATAERR,
+  EX_IOERR,
+  EX_MOUNT_DEAD,
+  EX_TERMINAL_MISCONFIG,
+} from "./exitCodes.js";
 import { readMergingMarkers } from "./mergingMarkers.js";
 import {
   clearTickVerdict,
@@ -106,23 +111,6 @@ import {
 import type { FlumePaths } from "./flumeApi.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-/**
- * sysexits.h `EX_DATAERR` — a declared-world inconsistency the caller can
- * classify from the exit status alone (`.claude/rules/platform-facts.md`,
- * "Exit codes come from sysexits.h"). `flume check`'s only non-zero exit:
- * a queue that fails to parse or that declares a path outside the
- * consumer phase's fence.
- */
-export const EX_DATAERR = 65;
-
-/**
- * sysexits.h `EX_IOERR` — I/O failed on a file known to exist (permission
- * denied, a path too long for the platform, …), distinct from `ENOENT`
- * (`.claude/rules/engineering.md`, "Loud or nothing": a stat failure other
- * than absence must never read as "nothing to check").
- */
-export const EX_IOERR = 74;
 
 /**
  * `loop`'s `--max` numeric parse: a value that is missing, non-numeric or

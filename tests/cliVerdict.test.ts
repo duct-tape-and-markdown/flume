@@ -14,8 +14,11 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { TickOutcome } from "../src/Dispatcher.ts";
-import { EX_IOERR } from "../src/cli.ts";
-import { EX_TERMINAL_MISCONFIG, EX_MOUNT_DEAD } from "../src/exitCodes.ts";
+import {
+  EX_IOERR,
+  EX_TERMINAL_MISCONFIG,
+  EX_MOUNT_DEAD,
+} from "../src/exitCodes.ts";
 import {
   tickVerdictsLogPath,
   type TickVerdict,

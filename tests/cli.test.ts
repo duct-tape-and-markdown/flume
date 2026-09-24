@@ -32,8 +32,6 @@ import {
   CLI_MODULE_IDENTITY,
   isInvokedDirectly,
   onDiskIdentity,
-  EX_DATAERR,
-  EX_IOERR,
 } from "../src/cli.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
@@ -43,7 +41,12 @@ import { buildFlumeApi } from "../src/flumeApi.ts";
 import { stopFlagPath as indexStopFlagPath } from "../src/index.ts";
 import { Baton } from "../src/Baton.ts";
 import { loadChainModule } from "../src/chainLoad.ts";
-import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
+import {
+  EX_DATAERR,
+  EX_IOERR,
+  EX_MOUNT_DEAD,
+  EX_TERMINAL_MISCONFIG,
+} from "../src/exitCodes.ts";
 import { pendingGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 import { RUNTIME_IGNORES } from "../src/runtimeIgnores.ts";

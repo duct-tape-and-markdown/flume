@@ -18,8 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { EX_IOERR } from "../src/cli.ts";
-import { EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
+import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import { HELP_TOP, helpPageFor } from "../src/cliHelp.ts";
 import {
   STATE_ROOT_DIRNAME,

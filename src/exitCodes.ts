@@ -1,11 +1,12 @@
 /**
- * The `flume tick` process-boundary exit codes.
+ * The `flume` process-boundary exit codes — every verb's, not `flume tick`'s
+ * alone.
  *
  * Their own file because they are the one vocabulary two sides of a process
  * boundary share: `src/cli.ts` and `src/cliVerdict.ts` exit with them and
- * `src/loopSupervisor.ts` fail-fasts on them, so neither the writer's module
- * nor the reader's owns them (`.claude/rules/engineering.md`, *A module is
- * one job*).
+ * `src/loopSupervisor.ts` fail-fasts on the two that say the chain is dead,
+ * so neither the writer's module nor the reader's owns them
+ * (`.claude/rules/engineering.md`, *A module is one job*).
  */
 
 /**
@@ -30,3 +31,20 @@ export const EX_TERMINAL_MISCONFIG = 78;
  * would only burn the remaining `--max` ticks re-hitting the same wall.
  */
 export const EX_MOUNT_DEAD = 69;
+
+/**
+ * sysexits.h `EX_DATAERR` — a declared-world inconsistency the caller can
+ * classify from the exit status alone (`.claude/rules/platform-facts.md`,
+ * "Exit codes come from sysexits.h"). `flume check`'s only non-zero exit:
+ * a queue that fails to parse or that declares a path outside the
+ * consumer phase's fence.
+ */
+export const EX_DATAERR = 65;
+
+/**
+ * sysexits.h `EX_IOERR` — I/O failed on a file known to exist (permission
+ * denied, a path too long for the platform, …), distinct from `ENOENT`
+ * (`.claude/rules/engineering.md`, "Loud or nothing": a stat failure other
+ * than absence must never read as "nothing to check").
+ */
+export const EX_IOERR = 74;
