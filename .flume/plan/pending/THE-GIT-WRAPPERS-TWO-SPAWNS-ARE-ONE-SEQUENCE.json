@@ -1,0 +1,26 @@
+{
+  "tag": "THE-GIT-WRAPPERS-TWO-SPAWNS-ARE-ONE-SEQUENCE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/git.ts",
+        "description": "both spawn legs compose their options once; the module doc's universal states what then holds"
+      },
+      {
+        "path": "tests/git.test.ts",
+        "description": "the wrapper's own suite reads the dialect off every invocation the module makes"
+      }
+    ]
+  },
+  "summary": "`src/git.ts` spawns git at two call sites that differ only in trimming, and its module doc says every invocation goes through the one that does",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "every git invocation this module makes is composed from one options value, so the doc's \"every pathspec of every invocation, including ones not written yet\" holds by construction rather than by a hand-copy at each leg; the content read still returns exactly the committed bytes",
+  "pins": [
+    "every git invocation src/git.ts makes carries the literal-pathspec environment"
+  ],
+  "notes": "Verified this tick: `run` (`src/git.ts:69`) and `readFileAtRef`'s own `exec` (`:516`) each hand-spell `env: literalPathspecEnv()` and `maxBuffer: 16MB`; the second declares its divergence (`:495`, the trim), so the copy is the options, not the leg. The module doc (`:1`-`:10`, rewritten 504e0e34) claims one door, and `:58` rests the dialect's \"ones not written yet\" on that. Nothing pins the env anywhere. Seams `src/git.ts` with THE-SECTION-CITE-READER-TAKES-THE-PAREN-LESS-SPELLING."
+}

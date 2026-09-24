@@ -1,0 +1,28 @@
+{
+  "tag": "THE-CONCURRENCY-DOC-NAMES-NO-CHAINS-PHASES",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/Phase.ts",
+        "description": "`Concurrency`'s shipped doc states what each mode is mechanically, naming no phase roster and no plan-lane artifact"
+      },
+      {
+        "path": "tests/docComments.test.ts",
+        "description": "the vocabulary scan takes `Concurrency` beside the two chain-facing options it already reads"
+      }
+    ]
+  },
+  "summary": "`Concurrency`'s hover text tells every consumer that plan and spec phases must be singleton and build is the canonical fanout — this repo's roster, with the engine's authority",
+  "per": {
+    "path": ".claude/rules/engine-boundary.md",
+    "section": "Capability vs convention"
+  },
+  "acceptance": "the shipped `Concurrency` doc describes only what the engine's mechanics consume — one tick at a time against N parallel worktrees picked disjoint by declared files, each span cherry-picked and gated on its own — and names no phase of any chain; the vocabulary judge reads it beside its siblings",
+  "tests": [
+    "the shipped `Concurrency` doc comment names no term in the shared chain-vocabulary list"
+  ],
+  "notes": "Verified this tick: `src/Phase.ts:30` reads \"Plan and spec phases must be singleton because they derive shared artifacts (the plan file, the spec corpus)\", `:35` \"Build is the canonical fanout phase\". `Concurrency` is exported (`src/index.ts:30`), so declarations ship it as hover text — the surface `expectNoChainVocabulary` (`tests/helpers/chainVocabulary.ts`) exists for, whose scope note admits it. Both spans match its phase pattern, so the named test reds on the base."
+}
