@@ -51,5 +51,334 @@
       "the spawn scan names a lane file whose only process start is reached through a test-helper import"
     ],
     "notes": "`reachingNames` is per-SourceFile, so `makeFixture` (tests/helpers/dispatcherFixture.ts, which calls `exec`) is invisible and tests/loopSupervisor.test.ts inherits vitest's 5s default — it timed out there beside a wave, reverting CITATION-VERDICTS-NAME-THEIR-SITES-IN-THE-FIRST-LINE. The carve-out the file declares is for TIMERS (`waitFor`), not for process starts. Measured: that is the only default-lane file the widening newly names."
+  },
+  {
+    "tag": "TICK-NAMES-THE-PHASE-IT-RUNS",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/cli.ts", "description": "`tick` takes `--phase <name>`; an undeclared name refused before any work" },
+        { "path": "src/cliHelp.ts", "description": "the flag on `tick`'s usage line" },
+        { "path": "tests/cli.test.ts", "description": "the two arms" },
+        { "path": "tests/cliHelp.test.ts", "description": "the usage line" },
+        { "path": "docs/CLI.md", "description": "the verb's surface" }
+      ],
+      "retire": []
+    },
+    "summary": "`flume tick --phase <name>` runs the named phase, awake or not; an undeclared name is refused exit 1 naming the phases the chain does declare",
+    "per": { "path": "spec/cli.md", "section": "Subcommand surface" },
+    "acceptance": "`flume tick --phase <name>` runs that phase with no flag awake; an undeclared name exits 1 naming the declared phases and loads no agent; bare `flume tick` is unchanged.",
+    "tests": [
+      "flume tick --phase runs the named phase when no flag is awake",
+      "flume tick --phase refuses a name the chain does not declare, naming the phases it does"
+    ],
+    "notes": "The flag is how the supervisor tells a child what it is for, so this lands ahead of THE-SUPERVISOR-HOLDS-ONE-CHILD-PER-AWAKE-PHASE. bin.test.ts already passes `--phase` through the exec-local argv path, so the parse is the only new half."
+  },
+  {
+    "tag": "A-WAKE-MID-TICK-CARRIES-A-TOKEN",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Baton.ts", "description": "a flag carries a token; wake writes a fresh one; sleep is token-scoped" },
+        { "path": "src/Dispatcher.ts", "description": "read the token at tick start, pass it to the post-work sleep" },
+        { "path": "tests/Baton.test.ts", "description": "the token-scoped sleep" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the mid-tick wake surviving handoff" }
+      ],
+      "retire": []
+    },
+    "summary": "A wake writes a fresh token into the flag; a tick sleeps its phase only while the flag still carries the token it read at start",
+    "per": { "path": "spec/loop.md", "section": "Baton — presence wakes, absence hibernates" },
+    "acceptance": "A wake landing between a tick's start and its handoff leaves the phase awake; the flag is a queue of depth one, and `wake`/`sleep` stay idempotent with a missing flag tolerated.",
+    "tests": [
+      "a wake landing mid-tick survives that tick's own sleep",
+      "a tick sleeps its phase when the flag still carries the token it read at start",
+      "wake and sleep stay idempotent over a flag carrying a token"
+    ],
+    "notes": "Flag contents become a contract between the wake verb and a concurrent tick; presence still decides `hibernating()`, so an empty legacy flag must not read as absent."
+  },
+  {
+    "tag": "THE-SUPERVISOR-HOLDS-ONE-CHILD-PER-AWAKE-PHASE",
+    "gate": { "kind": "blockedBy", "tags": ["TICK-NAMES-THE-PHASE-IT-RUNS"] },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/Phase.ts", "description": "`maxTicks` on the supervisor policy" },
+        { "path": "src/chainLoad.ts", "description": "its declaration validation" },
+        { "path": "src/loopSupervisor.ts", "description": "the child table, one child per awake phase in declared order, baton and stop re-read at every child boundary; the `--max N` iteration cap keeps its meaning under a name of its own" },
+        { "path": "src/cli.ts", "description": "forward the policy value; the two caps stay distinct on the loop's summary" },
+        { "path": "src/cliHelp.ts", "description": "the policy default on the loop's help" },
+        { "path": "tests/loopSupervisor.test.ts", "description": "the concurrency, hibernation and stop arms" },
+        { "path": "tests/chain.test.ts", "description": "the declaration arm" },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "the knob" }
+      ],
+      "retire": []
+    },
+    "summary": "The supervisor starts one child per awake phase with no child in flight, declared order, up to supervisorPolicy.maxTicks — default 1, the serial loop",
+    "per": { "path": "spec/loop.md", "section": "One tick is one fresh process" },
+    "acceptance": "With `maxTicks` undeclared the run is the serial loop it is today; declared 2, two children run at once, one per awake phase; the run ends only once no flag stands and no child is in flight, and the stop flag starts no new child while every in-flight tick finishes.",
+    "tests": [
+      "the supervisor starts one child per awake phase up to supervisorPolicy.maxTicks",
+      "a phase whose child is in flight gets no second child while its flag stands",
+      "the run ends only once no flag stands and no child is in flight",
+      "the stop flag starts no new child and lets every in-flight tick finish",
+      "each child is told its phase"
+    ],
+    "pins": ["an undeclared supervisorPolicy.maxTicks runs one child at a time"],
+    "contractTouching": true,
+    "notes": "`superviseLoop` already takes `opts.maxTicks` for the `--max N` iteration cap (default 50) — the ratified name collides with it, and one of the two is renamed here; the spec names only the policy field, so the other name is build's. Raising this repo's own budget is an operator edit to `.flume/declaration.ts`, outside every phase's fence."
+  },
+  {
+    "tag": "SIBLING-TICKS-TAKE-TURNS-AT-GIT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/pidClaim.ts", "description": "the wait-and-reclaim lock: exclusive create, pid-and-instant contents, liveness probe" },
+        { "path": "src/waveTick.ts", "description": "hold ship.lock across the picks, the afterMerge gates and the ledger commit" },
+        { "path": "src/singletonTick.ts", "description": "the same span on the singleton leg" },
+        { "path": "src/worktrees.ts", "description": "worktrees.lock for each add/remove/prune command alone" },
+        { "path": "tests/pidClaim.test.ts", "description": "wait, reclaim, release" },
+        { "path": "tests/worktrees.test.ts", "description": "the mutation-scoped lock" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the merge span's lock" }
+      ],
+      "retire": []
+    },
+    "summary": "Two wait-and-reclaim locks in the git common dir: ship.lock over the merge span, worktrees.lock over each `.git/worktrees` mutation",
+    "per": { "path": "spec/loop.md", "section": "The ship lock and the worktree lock — sibling ticks take turns at git" },
+    "acceptance": "A tick holds `ship.lock` across every cherry-pick, the afterMerge gates and the ledger commit, and `worktrees.lock` for each `git worktree add`/`remove`/`prune`; a live holder is waited on with a log line, a dead one reclaimed; no verb takes or drops either and `flume status` prints nothing about them.",
+    "tests": [
+      "the ship lock is held across the cherry-pick, the afterMerge gates and the ledger commit",
+      "a tick waits on a ship lock held by a live pid and says so on its log",
+      "a lock held by a dead pid is reclaimed by the next acquirer",
+      "each git worktree add, remove and prune runs under the worktree lock",
+      "the agent, setupWorktree and the gates run outside the worktree lock"
+    ],
+    "notes": "Refusal stays the tip claim's leg: a sibling merging is the run's own writer and tip verify absorbs the tip it moved. Both files sit in the common dir so every linked worktree sees one. Uncontended at the default budget, so the cost is a file create."
+  },
+  {
+    "tag": "ENTRY-PRIORITY-ORDERS-THE-QUEUE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/PendingSchema.ts", "description": "`priority` on the core, and the rendered schema's line for it" },
+        { "path": "src/selection.ts", "description": "the one ordering every selection surface takes" },
+        { "path": "tests/PendingSchema.test.ts", "description": "the field and the render" },
+        { "path": "tests/Dispatcher.test.ts", "description": "the ordering across the selection surfaces" }
+      ],
+      "retire": []
+    },
+    "summary": "`priority` — optional integer, default 0 — is the queue's one ordering: descending, then tag ascending, at every surface that selects",
+    "per": { "path": "spec/pending.md", "section": "The entry core" },
+    "acceptance": "A queue read in any order yields the same selection order — priority descending, then tag ascending — at the singleton read, the fanout wave, `render`'s preview and `pickableAfter`; an entry declaring no priority sorts as 0.",
+    "tests": [
+      "selection orders entries by priority descending, then tag ascending",
+      "an entry declaring no priority sorts as zero",
+      "a non-integer priority fails validation"
+    ],
+    "notes": "Lands ahead of the directory so the ledger never spends a tick with no ordering at all: array position is what priority replaces, and the position goes with THE-LEDGER-IS-A-DIRECTORY-ONE-ENTRY-PER-FILE."
+  },
+  {
+    "tag": "THE-LEDGER-IS-A-DIRECTORY-ONE-ENTRY-PER-FILE",
+    "gate": { "kind": "blockedBy", "tags": ["ENTRY-PRIORITY-ORDERS-THE-QUEUE"] },
+    "files": {
+      "new": [{ "path": "docs/MIGRATING-0.19.md", "description": "the ledger cutover a consumer takes" }],
+      "edit": [
+        { "path": "src/paths.ts", "description": "`Chain.pendingDir` resolution and the default `plan/pending`" },
+        { "path": "src/chainLoad.ts", "description": "the declaration's validation" },
+        { "path": "src/Phase.ts", "description": "the chain field" },
+        { "path": "src/PendingSchema.ts", "description": "one entry per parse; filename/tag agreement; the list schema's uniqueness check goes" },
+        { "path": "src/pendingLedger.ts", "description": "the listing, the per-file reads, the tip read file by file, the ship's `git rm`" },
+        { "path": "src/Dispatcher.ts", "description": "the resolved directory through the legs" },
+        { "path": "src/cli.ts", "description": "`status` and `check` over the directory" },
+        { "path": "src/builtinGates.ts", "description": "the gate's missing-directory message" },
+        { "path": "harness/layout.ts", "description": "the queue's fence glob, and the legacy file riding planArtifacts so a plan tick can `git rm` it" },
+        { "path": "harness/gates.ts", "description": "the package's read of the queue" },
+        { "path": "harness/planState.ts", "description": "the queue's name where it is spelled" },
+        { "path": "tests/PendingSchema.test.ts", "description": "the parse arms" },
+        { "path": "tests/pendingLedger.test.ts", "description": "the listing, the reads and the ship" },
+        { "path": "tests/builtinGates.test.ts", "description": "the gate over a directory" },
+        { "path": "tests/chain.test.ts", "description": "the declaration arm" },
+        { "path": "tests/cli.test.ts", "description": "status and check" },
+        { "path": "tests/harnessLayout.test.ts", "description": "the fence glob and the legacy allowance" },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "the declared field" },
+        { "path": "docs/CLI.md", "description": "what the verbs read" },
+        { "path": "examples/cascade-chain.ts", "description": "the declared field" },
+        { "path": "examples/backlog-groomer-chain.ts", "description": "the declared field" }
+      ],
+      "retire": []
+    },
+    "summary": "`Chain.pendingDir` replaces `Chain.pendingPath`: the ledger is a directory of `<tag>.json`, its own `*.json` is the listing, and a ship `git rm`s exactly what shipped",
+    "per": { "path": "spec/pending.md", "section": "The ledger is a directory — one entry per file" },
+    "acceptance": "Every queue read and the ship resolve `Chain.pendingDir`; a `*.json` directly under it is an entry and a subdirectory is not walked; a file whose `tag` disagrees with its filename is refused naming both; an absent or empty directory reads as nothing pending; `flume status` and `flume check` read the directory.",
+    "tests": [
+      "a *.json directly under the pending directory is an entry and a subdirectory is not walked",
+      "an entry file whose tag disagrees with its filename is refused naming both",
+      "a parse failure names the entry file it read",
+      "an absent pending directory reads as nothing pending",
+      "a ship removes exactly the shipped entries' files and edits no other entry",
+      "flume status reports pending: unparsable when one entry file is malformed"
+    ],
+    "contractTouching": true,
+    "notes": "Tag uniqueness becomes the filesystem's, so the composed list schema's duplicate issue goes; the `pendingGate` drift blockquote is already retired. This repo's own live queue is an operator cutover — `.flume/` is outside every phase's fence — and the legacy file rides planArtifacts so a plan tick can `git rm` it, the allowance LEGACY_QUESTIONS_REL already takes."
+  },
+  {
+    "tag": "A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/pidClaim.ts", "description": "the per-entry claim under `<git-common-dir>/flume/claims/<slug>`" },
+        { "path": "src/waveTick.ts", "description": "stake before provisioning, drop at ship or teardown" },
+        { "path": "src/selection.ts", "description": "skip a claimed entry as a quarantined one is skipped" },
+        { "path": "src/Phase.ts", "description": "`TickContext.claimed` and `TickResult.claimedTags`" },
+        { "path": "harness/prompts.ts", "description": "the claimed set on a producer's rendered block" },
+        { "path": "tests/pidClaim.test.ts", "description": "stake, drop, dead-pid reclaim" },
+        { "path": "tests/Dispatcher.test.ts", "description": "selection and the reported set" },
+        { "path": "tests/harnessPrompts.test.ts", "description": "the rendered block" }
+      ],
+      "retire": []
+    },
+    "summary": "A build tick stakes `<git-common-dir>/flume/claims/<slug>` before provisioning and drops it when the attempt ends; selection skips a claimed entry",
+    "per": { "path": "spec/pending.md", "section": "Claims — an entry in flight is left alone" },
+    "acceptance": "A claim exists from before its entry's worktree is provisioned until the attempt ends, with the ship or the teardown; `TickContext.claimed` and `TickResult.claimedTags` report the set the tick read; selection skips a claimed entry and a claim held by a dead pid is reclaimed.",
+    "tests": [
+      "a build tick stakes its entry's claim before provisioning the worktree",
+      "the claim is removed when an attempt ends without shipping",
+      "selection skips an entry another tick holds a claim on",
+      "TickResult.claimedTags reports the claims the tick read",
+      "a claim held by a dead pid is reclaimed by the next selection"
+    ],
+    "notes": "Reported, never inferred: nothing outside the engine re-reads the claims directory. What a producer does about a claimed entry it would have changed stays the chain's."
+  },
+  {
+    "tag": "THE-PENDING-GATE-CARRIES-THE-CLAIM-CHECK",
+    "gate": {
+      "kind": "blockedBy",
+      "tags": ["THE-LEDGER-IS-A-DIRECTORY-ONE-ENTRY-PER-FILE", "A-CLAIM-HOLDS-AN-ENTRY-IN-FLIGHT"]
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/builtinGates.ts", "description": "the third check, and `opts.hint` over all three" },
+        { "path": "harness/gates.ts", "description": "wire it afterMerge on the producer phases" },
+        { "path": "tests/builtinGates.test.ts", "description": "the four arms" },
+        { "path": "tests/harnessGates.test.ts", "description": "the wiring" },
+        { "path": "docs/CHAIN-AUTHORING.md", "description": "what the gate now checks" }
+      ],
+      "retire": []
+    },
+    "summary": "pendingGate's third check: a gated commit leaves a claimed entry's file byte-identical, or is refused naming the entry and its holder",
+    "per": { "path": "spec/pending.md", "section": "`pendingGate` — validation and fence pre-check as an opt-in builtin" },
+    "acceptance": "A commit that edits or removes a claimed entry's file fails pendingGate naming the entry and the holding pid; an edit to an unclaimed entry passes; the check runs afterMerge over the merged tree and `opts.hint` appends to its message as to the other two.",
+    "tests": [
+      "pendingGate refuses a commit that edits a claimed entry's file, naming the entry and the holder",
+      "pendingGate refuses a commit that removes a claimed entry's file",
+      "pendingGate passes a commit that edits an unclaimed entry",
+      "opts.hint appends to the claim-check violation message"
+    ],
+    "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. The section's other afterMerge half — the package's duplicate refusal — is parked as questions/duplicate-refusal-cannot-see-a-decomposition.md."
+  },
+  {
+    "tag": "PLAN-STATE-IS-ONE-FILE-PER-SLICE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/layout.ts", "description": "the `plan/state/` directory, one file per slice, and the legacy file riding planArtifacts for its `git rm`" },
+        { "path": "harness/planState.ts", "description": "one accessor per slice; no slice writes a field it does not own" },
+        { "path": "harness/inboxWindow.ts", "description": "the drain stamps its own lane runs and no cursor" },
+        { "path": "harness/cursorWindow.ts", "description": "read derive's cursor from derive's file" },
+        { "path": "harness/sweepWindow.ts", "description": "read the sweep cursor and rotation from sweep's file" },
+        { "path": "harness/chain.ts", "description": "the plan fence over the directory" },
+        { "path": "harness/prompts.ts", "description": "the rendered plan-state block" },
+        { "path": "harness/prompts/plan-discipline.md", "description": "the artifact's shape, one file per writer" },
+        { "path": "tests/harnessPlanState.test.ts", "description": "the per-slice accessors" },
+        { "path": "tests/harnessLayout.test.ts", "description": "the paths and the fence" },
+        { "path": "tests/harnessChain.test.ts", "description": "the windows over the split state" }
+      ],
+      "retire": []
+    },
+    "summary": "Each slice's state is its own file under the plan's `state/` directory, and the inbox drain no longer advances the derive cursor",
+    "per": { "path": "spec/harness.md", "section": "Plan state as declared state" },
+    "acceptance": "Derive's cursor, the sweep cursor and rotation, and the drained runs each live in their own file under `plan/state/`; the inbox drain writes no cursor; a missing slice file renders as no state yet, and two slices stamping in one wave merge as disjoint files.",
+    "tests": [
+      "each plan slice reads and writes only its own state file",
+      "the inbox drain leaves the derive cursor untouched",
+      "a missing slice state file renders as no state yet"
+    ],
+    "notes": "The cursor gate keys on derive's file after this. Like the ledger, this repo's live `.flume/plan/state.json` is an operator cutover — outside every phase's fence — and the legacy path rides planArtifacts so a plan tick can `git rm` it."
+  },
+  {
+    "tag": "THE-DEFAULT-HANDOFF-WAKES-EVERY-LIVE-SLICE",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/handoff.ts", "description": "the wake set replaces the ladder: every live slice plus build while anything is pickable" },
+        { "path": "tests/harnessHandoff.test.ts", "description": "the set, the exception, and the consumer override" },
+        { "path": "tests/harnessChain.test.ts", "description": "the wired default" }
+      ],
+      "retire": []
+    },
+    "summary": "The default handoff answers with a wake set, not a ladder: every slice whose window is live, plus build whenever anything is pickable",
+    "per": { "path": "spec/harness.md", "section": "The default `handoff`" },
+    "acceptance": "One handoff answer names every live slice and build together; the slice that just ran and committed nothing is absent from it; a consumer's declared handoff replaces the set and still runs beneath the per-entry refusal and the contract-touching stop write.",
+    "tests": [
+      "the default handoff names every live slice and build in one answer",
+      "the slice that just ran and committed nothing is not re-woken",
+      "a consumer's declared handoff replaces the wake set and still runs beneath the per-entry refusal"
+    ],
+    "notes": "Which of the woken phases run at once is the budget's, not the handoff's. With build declared last and the budget at 1 the order still matters — questions/build-is-declared-last-under-a-short-budget.md."
+  },
+  {
+    "tag": "A-BUILD-REFUSAL-KEYS-ON-THE-ENTRY-AS-DECLARED",
+    "gate": { "kind": "open" },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "src/priorAttempts.ts", "description": "stamp and report the entry-as-declared key on the record" },
+        { "path": "src/Prompt.ts", "description": "the key on the PriorAttempt shape" },
+        { "path": "harness/handoff.ts", "description": "the refusal reads the key, not the tip sha" },
+        { "path": "tests/priorAttempts.test.ts", "description": "the stamped key" },
+        { "path": "tests/harnessHandoff.test.ts", "description": "survives a moved tip, lifts on a rewrite" }
+      ],
+      "retire": []
+    },
+    "summary": "The per-entry build refusal keys on the record's slug and declared hash, not the tip sha: it lifts on a producer's rewrite or drop, never on a tip that moved",
+    "per": { "path": "spec/harness.md", "section": "The phases" },
+    "acceptance": "A standing refusal survives an unrelated commit that moves the tip, lifts the moment the producer rewrites the entry, and ends when the producer drops it; the key is read off the engine's reported record, never composed by the package.",
+    "tests": [
+      "a standing build refusal survives an operator commit that moves the tip",
+      "a producer's rewrite of the refused entry lifts the refusal",
+      "the engine reports the entry-as-declared key on the prior-attempt record"
+    ],
+    "notes": "`REPEATS_AT_ONE_HEAD` currently anchors on `prior.headSha === ctx.headSha`, which the spec says already lapses under an operator commit. The declared hash is the shape `quarantineKey` already computes, `observedFiles` excluded — one derivation, not a second."
+  },
+  {
+    "tag": "EVERY-WINDOW-IS-LIVE-ON-ITS-OWN-WORK",
+    "gate": {
+      "kind": "parked",
+      "reason": "decision on phase order against the budget — questions/build-is-declared-last-under-a-short-budget.md; build is declared last, so dropping the yield at maxTicks 1 starves it"
+    },
+    "files": {
+      "new": [],
+      "edit": [
+        { "path": "harness/sweepWindow.ts", "description": "the yield goes; the window is live on an armed or open rotation alone" },
+        { "path": "harness/inboxWindow.ts", "description": "the record and friction legs stop reading `pickable`" },
+        { "path": "tests/harnessChain.test.ts", "description": "both windows live over a pickable queue" }
+      ],
+      "retire": []
+    },
+    "summary": "Drop the pickable-work yield from the sweep window and the inbox's record and friction legs: a window is live on its own unrouted work",
+    "per": { "path": ".claude/rules/posture-sweep.md", "section": "The sweep runs beside build, never ahead of it" },
+    "acceptance": "A neighborhood is swept and a record drained on a tick where the queue carries pickable entries; only the inbox's liveness leg reads `pickable` at all.",
+    "tests": [
+      "the sweep window is live while the queue carries a pickable entry",
+      "the inbox record leg is live while the queue carries a pickable entry"
+    ],
+    "notes": "`harness/sweepWindow.ts` already says the yield leaves with the entry deriving the new rule. Unparks once the phase-order question rules — either build declared first or this repo's `supervisor.maxTicks` raised; the second is an operator edit to `.flume/declaration.ts`."
   }
 ]
