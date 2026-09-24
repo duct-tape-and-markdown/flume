@@ -64,12 +64,14 @@ import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js
 import { BUILD_PHASE, PLAN_SLICES, type Declaration } from "./declaration.js";
 import { entryExtension, PerSchema } from "./entryExtension.js";
 import {
+  continuingNotePath,
   notePaths,
   planStatePath,
   recordOrNoteGlobs,
   underStateRoot,
 } from "./layout.js";
 import { PLAN_STATE_SCHEMAS } from "./planState.js";
+import type { PutDownPredicate } from "./putDown.js";
 import { parseOrThrow } from "./refusal.js";
 
 /**
@@ -148,6 +150,17 @@ export interface HarnessGatesOptions {
    * validated against it rather than refused as unknown.
    */
   readonly entryFields?: EntryExtension;
+  /**
+   * How a build commit put its work down, if it did — the chain factory's
+   * own predicate ({@link PutDownPredicate}), which the records gate reads to
+   * tell a commit that finished its entry from one that parked or continued.
+   * Handed in rather than rebuilt here for the reason the judge's gate is
+   * handed it: which note means what is the package's vocabulary over paths
+   * the factory composed, and a second spelling beside a gate is the copy
+   * that goes stale (`.claude/rules/engineering.md`, *Derived state is
+   * computed, never restated beside its source*).
+   */
+  readonly putDown: PutDownPredicate;
   /**
    * The gates that follow the package's own, already constructed, in the
    * order they run — the consumer's declared gates for this phase, and
@@ -324,8 +337,19 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
  * Written and drained are told apart by asking for the record's bytes at the
  * commit — absent is deleted — so the gate reads the same span every sibling
  * gate does, and the text it judges is the text that landed.
+ *
+ * **A commit that finishes its entry takes the entry's continuation with
+ * it.** A continuing note is addressed to the next tick on that one entry,
+ * and no drain lists it, so a completing commit that leaves it standing
+ * leaves a file behind that outlives the entry it described and that nothing
+ * downstream will ever read (`spec/harness.md`, *A tick puts work down*).
+ * That is refused here, naming the path, rather than proceeding over it
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). Which commits the
+ * refusal reaches is the chain's put-down predicate's to say and not a rule
+ * re-spelled here: a tick that wrote a continuation, or parked, said so, and
+ * the note it left is addressed to the tick that comes after it.
  */
-function recordsGate(engine: GateEngine): Gate {
+function recordsGate(engine: GateEngine, putDown: PutDownPredicate): Gate {
   return {
     name: "records",
     when: "afterCommit",
@@ -353,7 +377,26 @@ function recordsGate(engine: GateEngine): Gate {
       // write another tick's tag into unjudged.
       const globs = recordOrNoteGlobs(stateRoot);
       const touched = ctx.touchedPaths.filter((path) => matchesAny(path, globs));
-      if (touched.length === 0) {
+
+      const isBuild = ctx.phaseName === BUILD_PHASE;
+      // The tick's own notes, one per kind: which of them it wrote is the
+      // tick's own verdict and the chain's to read (`chain.ts`), so what this
+      // holds is only that whichever it wrote carries *its* tag.
+      const entry = ctx.entry;
+      // The entry's continuation, on the one commit that has to take it: a
+      // build commit this span's own predicate reads as finishing the entry.
+      // `repoRoot` is the tick's worktree under `afterCommit`, which is the
+      // tree that commit left behind.
+      const finishing =
+        isBuild &&
+        entry !== undefined &&
+        putDown(entry, {
+          touched: ctx.touchedPaths,
+          tree: ctx.repoRoot,
+        }) === undefined
+          ? continuingNotePath(stateRoot, entry.tag)
+          : undefined;
+      if (touched.length === 0 && finishing === undefined) {
         return {
           ok: true,
           message: "the commit touches no record",
@@ -361,11 +404,6 @@ function recordsGate(engine: GateEngine): Gate {
         };
       }
 
-      const isBuild = ctx.phaseName === BUILD_PHASE;
-      // The tick's own notes, one per kind: which of them it wrote is the
-      // tick's own verdict and the chain's to read (`chain.ts`), so what this
-      // holds is only that whichever it wrote carries *its* tag.
-      const entry = ctx.entry;
       const own =
         isBuild && entry ? notePaths(stateRoot, entry.tag) : undefined;
       const problems: string[] = [];
@@ -394,12 +432,31 @@ function recordsGate(engine: GateEngine): Gate {
           problems.push(`${path}: first line is not a "# title"`);
         }
       }
+      // Read at the commit like every other record here: standing means the
+      // commit carries the note, never that the worktree happens to.
+      const standing =
+        finishing !== undefined &&
+        (await engine.git.readFileAtRef(
+          ctx.repoRoot,
+          ctx.commitSha,
+          finishing,
+        )) !== null;
+      if (standing) {
+        problems.push(
+          `${finishing}: the entry's continuing note still stands at a commit that finishes the entry — the note leaves with the tick that completes it`,
+        );
+      }
+
       if (problems.length > 0) {
         return refuse(`${problems.length} record problem(s)`, problems);
       }
+      const carried =
+        finishing === undefined
+          ? ""
+          : `, no continuing note standing at ${short(ctx.commitSha)}`;
       return {
         ok: true,
-        message: `${touched.length} record(s) touched, ${written} written`,
+        message: `${touched.length} record(s) touched, ${written} written${carried}`,
       };
     },
   };
@@ -630,13 +687,14 @@ function producesQueue(name: string): boolean {
  * build it would re-parse the whole queue to say nothing.
  */
 export function harnessGates(options: HarnessGatesOptions): Gate[] {
-  const { phase, declaration, engine, entryFields, declared = [] } = options;
+  const { phase, declaration, engine, putDown, entryFields, declared = [] } =
+    options;
   const queue = {
     extension: entryExtension(entryFields),
     targetFence: buildFence(declaration),
   };
   return [
-    recordsGate(engine),
+    recordsGate(engine, putDown),
     cleanTreeGate(phase.writablePaths, engine),
     engine.pendingGate(queue),
     perGate(declaration, engine),

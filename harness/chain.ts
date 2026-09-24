@@ -9,11 +9,11 @@
  * declared gates in `declaredGates.ts`, the judge's gate in `judgeGate.ts`,
  * the wake set in `handoff.ts`, the windows in `windows.ts`, the args in
  * `prompts.ts`, the fields in `entryExtension.ts`, the ruling in `judge.ts`,
- * the plan artifacts' paths and the fence that is their list in `layout.ts`.
- * What is decided here is only what a `Phase` object needs that none of them
- * can answer alone: which of those fences each phase carries, which prompt
- * it addresses, which commit put its work down, and the order the gates sit
- * in.
+ * the reading of a commit that put its work down in `putDown.ts`, the plan
+ * artifacts' paths and the fence that is their list in `layout.ts`. What is
+ * decided here is only what a `Phase` object needs that none of them can
+ * answer alone: which of those fences each phase carries, which prompt it
+ * addresses, and the order the gates sit in.
  *
  * **The declaration is parsed here, not by the consumer.** The whole of
  * adoption is one declaration module and the hop that applies this factory
@@ -62,13 +62,8 @@ import { MAX_OUTPUT_BYTES } from "./exec.js";
 import { harnessGates, type GateEngine } from "./gates.js";
 import { defaultRefusesEntry, resolveHandoff } from "./handoff.js";
 import { SESSIONS_REL } from "./ignores.js";
-import { namedLinesGate, type PutDownPredicate } from "./judgeGate.js";
-import {
-  continuingNotePath,
-  noteGlobs,
-  parkedNotePath,
-  planArtifacts,
-} from "./layout.js";
+import { namedLinesGate } from "./judgeGate.js";
+import { noteGlobs, planArtifacts } from "./layout.js";
 import {
   BUILD_PROMPT_DATA_KEYS,
   PLAN_SLICE_PROMPT_DATA_KEYS,
@@ -78,6 +73,7 @@ import {
   promptPath,
   sharedPromptArgs,
 } from "./prompts.js";
+import { putDownPredicate, type PutDownPredicate } from "./putDown.js";
 import type { PlanSliceWindow } from "./sliceWindow.js";
 import { planSliceWindows } from "./windows.js";
 
@@ -214,6 +210,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       phase: { name, writablePaths: phase.writablePaths },
       declaration,
       engine,
+      putDown,
       ...(options.entryFields ? { entryFields: options.entryFields } : {}),
       declared: [
         ...(declaration.gates?.[name] ?? []).map((gate) =>
@@ -300,33 +297,12 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   };
 
   /**
-   * How this commit put its work down, if it did: the entry's own note,
-   * written under the parked directory or under the continuing one
-   * (`spec/harness.md`, *Records as one file each* — location is kind). A
-   * commit that wrote neither finished the entry.
-   *
-   * The package's vocabulary, not the engine's — the engine reports that a
-   * commit landed and which paths it touched, and what that *means* is the
-   * chain's (`.claude/rules/engine-boundary.md`, *Told, not inferred*). What
-   * it reads is **where** the tick wrote, and nothing about the shape of the
-   * path list around it: a refusal that could not help leaving a half-edited
-   * file behind is still a refusal, a segment that landed green is still a
-   * continuation however much of the entry it covered, and a commit carrying
-   * an observation note beside its work is a tick that shipped and had
-   * something to say. Told, every way, rather than inferred from how much the
-   * commit touched.
-   *
-   * The park is read first, so a tick that wrote both notes is the refusal it
-   * declared rather than the continuation: only one of them can be true of an
-   * entry, and the one that keeps the work in front of plan is the safer
-   * reading of a tick that said two things.
+   * How a build commit put its work down, if it did — the package's own
+   * reading, over this consumer's state root (`putDown.ts`). The factory
+   * holds one, and hands the same value to the gates that ask the question
+   * and to `shipped` below.
    */
-  const putDown: PutDownPredicate = (entry, touched) => {
-    if (touched.includes(parkedNotePath(stateRoot, entry.tag))) return "parked";
-    if (touched.includes(continuingNotePath(stateRoot, entry.tag)))
-      return "continuing";
-    return undefined;
-  };
+  const putDown: PutDownPredicate = putDownPredicate(stateRoot);
 
   const buildWritablePaths = unique([...declaration.fence.build, ...notes]);
 
@@ -372,8 +348,14 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // A commit that put its work down — a park or a continuation — leaves its
     // entry in the queue with its span on the trunk; everything else finished
     // the entry it was handed.
-    shipped: ({ entry, touchedPaths }) =>
-      putDown(entry, touchedPaths) === undefined,
+    shipped: ({ entry, touchedPaths, worktreePath }) =>
+      // The tick's own worktree, still on disk while the merge loop
+      // classifies the entry and standing at the commit that was
+      // cherry-picked (`ShipContext`, `src/Phase.ts`) — so what the span's
+      // tree holds is read there rather than out of trunk, which by then
+      // carries every sibling in the wave as well.
+      putDown(entry, { touched: touchedPaths, tree: worktreePath }) ===
+      undefined,
     handoff: handoffFor(BUILD_PHASE),
     ...(setup ? { setupWorktree: setup } : {}),
   };

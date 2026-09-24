@@ -121,6 +121,13 @@ export {
 } from "./gates.js";
 
 export {
+  putDownPredicate,
+  type PutDownKind,
+  type PutDownPredicate,
+  type PutDownSpan,
+} from "./putDown.js";
+
+export {
   BUILD_PROMPT_DATA_KEYS,
   PLAN_SLICE_PROMPT_DATA_KEYS,
   PROMPT_NAMES,

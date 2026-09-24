@@ -728,7 +728,7 @@ it("a note beside the parked directory ships its entry", () => {
   ).toBe(true);
 });
 
-it("a commit carrying a continuing note keeps its entry in the queue", () => {
+it("a commit carrying a continuing note keeps its entry in the queue", async () => {
   const build = phaseNamed(chainFor(), BUILD_PHASE);
   const assigned = entry("SOME-ENTRY");
   const continuing = continuingNotePath(STATE_ROOT, assigned.tag);
@@ -746,6 +746,12 @@ it("a commit carrying a continuing note keeps its entry in the queue", () => {
   // note's presence and not a predicate stuck on one answer.
   expect(build.shipped?.(shipContext(assigned, ["src/index.ts"]))).toBe(true);
 
+  // The note as the tick left it: the worktree is still on disk while the
+  // merge loop classifies the entry, and that tree is the commit's.
+  const onDisk = join(shipContext(assigned, []).worktreePath, continuing);
+  await mkdir(join(onDisk, ".."), { recursive: true });
+  await writeFile(onDisk, "# what landed\n\nWhat is next.\n");
+
   // A green segment of the entry, landed with the rest put down: the span
   // stays on the trunk and the entry stays in the queue for the next tick on
   // it, exactly as a park's does.
@@ -753,6 +759,14 @@ it("a commit carrying a continuing note keeps its entry in the queue", () => {
   expect(
     build.shipped?.(shipContext(assigned, ["src/index.ts", continuing])),
   ).toBe(false);
+
+  // And the tick that completes the entry takes the note with it: the same
+  // touched path, the file gone from the tree, so the removal is read as the
+  // ship it is rather than as the declaration it retires.
+  await rm(onDisk);
+  expect(
+    build.shipped?.(shipContext(assigned, ["src/index.ts", continuing])),
+  ).toBe(true);
 });
 
 it("a commit writing a parked note and the entry's work is still a park", () => {

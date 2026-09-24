@@ -11,31 +11,11 @@
  */
 
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
-import type { PendingEntry } from "../src/PendingSchema.js";
 
 import { NamedLinesSchema } from "./entryExtension.js";
 import { judgeNamedLines, type JudgeVerdict } from "./judge.js";
+import type { PutDownKind, PutDownPredicate } from "./putDown.js";
 import type { Runner, TestFailure } from "./runner.js";
-
-/**
- * Which note a build tick put its work down with — the two kinds whose
- * location says the entry is not finished (`spec/harness.md`, *A tick puts
- * work down*): a park, and a continuation.
- */
-type PutDownKind = "parked" | "continuing";
-
-/**
- * How a build commit put its work down, or `undefined` for one that finished
- * the entry — the chain factory's predicate, handed in rather than rebuilt
- * here. What each kind *is* is the package's vocabulary over paths the
- * factory composed (`chain.ts`), and a second spelling of it beside the gate
- * would be the copy that goes stale (`.claude/rules/engineering.md`, *Derived
- * state is computed, never restated beside its source*).
- */
-export type PutDownPredicate = (
-  entry: PendingEntry,
-  touched: readonly string[],
-) => PutDownKind | undefined;
 
 /**
  * How each put-down reads on the verdict: what the commit said, and why the
@@ -102,7 +82,12 @@ export function namedLinesGate(
           skipped: "the judge rules on one entry's named lines",
         };
       }
-      const kind = putDown(entry, ctx.touchedPaths);
+      // `afterMerge`, so the tree that holds the span's commit is the trunk
+      // it landed on — the same root the judge runs the suite in below.
+      const kind = putDown(entry, {
+        touched: ctx.touchedPaths,
+        tree: ctx.repoRoot,
+      });
       if (kind !== undefined) {
         return {
           ok: true,

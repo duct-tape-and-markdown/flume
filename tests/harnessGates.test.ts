@@ -46,6 +46,7 @@ import { entryFileName } from "../src/PendingSchema.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { BUILD_PHASE, PLAN_SLICES } from "../harness/declaration.ts";
+import { putDownPredicate } from "../harness/putDown.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -237,9 +238,18 @@ function ctxFor(
 /** An entry as the wave selected it — only its tag is read by these gates. */
 const assigned = (tag: string): PendingEntry => queueEntry(tag);
 
+/**
+ * The package's own put-down predicate over this repo's state root — the real
+ * one the chain factory hands its gates, never a stand-in. What counts as a
+ * park, a continuation or a finished entry is exactly the seam the records
+ * gate is wired to here (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*).
+ */
+const putDown = putDownPredicate(STATE_ROOT);
+
 /** The package's set for this phase, plus whatever the case declares. */
 const gates = (declared: readonly Gate[] = []): Gate[] =>
-  harnessGates({ phase, declaration, engine, declared });
+  harnessGates({ phase, declaration, engine, putDown, declared });
 
 /** The gate this set names `name` — by name, never by index. */
 function named(name: string, declared: readonly Gate[] = []): Gate {
@@ -562,16 +572,103 @@ it("the records gate reports a commit that touches no record as skipped", async 
     span.touchedPaths.filter((path) => dirs.some((dir) => path.startsWith(dir))),
   ).toEqual([]);
 
-  const skipped = await records(span, {
-    phaseName: "build",
-    entry: assigned("MINE"),
-  });
+  // A plan slice, so the span carries no entry and the gate has no
+  // continuation to hold the commit to beside its filter — which is the one
+  // claim a span with nothing in a record directory leaves it.
+  const skipped = await records(span, { phaseName: "plan-derive" });
 
   // Vacuous by design, and spelled: a tick that wrote no record has nothing
   // to be held to, and the verdict says so rather than reading as judged.
   expect(skipped.ok).toBe(true);
   expect(skipped.skipped).toBe("no record in the gated span");
   expect(skipped.message).toBe("the commit touches no record");
+});
+
+/**
+ * The continuation leaves with the tick that completes the entry
+ * (`spec/harness.md`, *A tick puts work down*): no drain lists that note, so
+ * a commit that finishes its entry over a standing one leaves a file behind
+ * that outlives the entry it described.
+ *
+ * Every arm drives the package's own put-down predicate over a real commit,
+ * so what counts as "finishes its entry" here is exactly what the chain's
+ * `shipped` reads.
+ */
+it("a build commit shipping its entry over a standing continuing note is refused", async () => {
+  const entry = assigned("MINE");
+  const continuing = continuingNotePath(STATE_ROOT, entry.tag);
+
+  // A prior tick's continuation, landed on the base this span branches from:
+  // the note stands at the commit below without that commit touching it.
+  await write(continuing, "# the first segment\n\nWhat is next.\n");
+  const put = commitAll("build: land a segment and put the rest down");
+  expect(put.touchedPaths).toContain(continuing);
+  // Non-vacuity on the arm that is not this case: the tick that *wrote* the
+  // note is a continuation, not a ship, and is not held to removing it.
+  const continued = await records(put, { phaseName: "build", entry });
+  expect(continued).toMatchObject({ ok: true });
+
+  await write("src/widget.ts", `export const widget = "finished";\n`);
+  const ships = commitAll("build: finish the entry, and leave the note");
+  expect(ships.touchedPaths).not.toContain(continuing);
+
+  const refused = await records(ships, { phaseName: "build", entry });
+
+  expect(refused.ok).toBe(false);
+  // Named: the path left behind is the one an agent has to go remove.
+  expect(refused.details).toContain(continuing);
+});
+
+it("a build commit that removed its entry's continuing note passes the records gate", async () => {
+  const entry = assigned("MINE");
+  const continuing = continuingNotePath(STATE_ROOT, entry.tag);
+
+  await write(continuing, "# the first segment\n\nWhat is next.\n");
+  commitAll("build: land a segment and put the rest down");
+
+  await rm(join(repo, continuing));
+  await write("src/widget.ts", `export const widget = "finished";\n`);
+  const ships = commitAll("build: finish the entry, and take the note with it");
+  // The span really is the removal: git named the path, and the commit does
+  // not carry the file.
+  expect(ships.touchedPaths).toContain(continuing);
+  expect(
+    await readFileAtRef(repo, ships.commitSha, continuing),
+  ).toBeNull();
+
+  const passed = await records(ships, { phaseName: "build", entry });
+
+  expect(passed.ok).toBe(true);
+  // Judged, not skipped: the commit touched a record, and the gate says the
+  // note it was handed is gone.
+  expect(passed.skipped).toBeUndefined();
+  expect(passed.message).toContain("1 record(s) touched, 0 written");
+  expect(passed.message).toContain("no continuing note standing");
+});
+
+it("the records gate leaves a park standing over a continuation alone", async () => {
+  const entry = assigned("MINE");
+  const continuing = continuingNotePath(STATE_ROOT, entry.tag);
+  const park = parkedNotePath(STATE_ROOT, entry.tag);
+
+  await write(continuing, "# the first segment\n\nWhat is next.\n");
+  commitAll("build: land a segment and put the rest down");
+
+  // The next tick on the entry cannot ship it and says so. The entry stays in
+  // the queue either way, so the continuation is still addressed to the tick
+  // that comes after — and a refusal reverted for leaving it standing would
+  // throw away the one channel that tick had.
+  await write(park, "# why this cannot ship\n\nThe premise.\n");
+  const parked = commitAll("build: park the entry over its own continuation");
+  expect(parked.touchedPaths).not.toContain(continuing);
+  expect(
+    await readFileAtRef(repo, parked.commitSha, continuing),
+  ).not.toBeNull();
+
+  const passed = await records(parked, { phaseName: "build", entry });
+
+  expect(passed.ok).toBe(true);
+  expect(passed.message).toContain("1 record(s) touched, 1 written");
 });
 
 it("the records gate skips a state root resolved outside the repository", async () => {
@@ -624,13 +721,13 @@ it("the records gate ignores a sibling directory that only prefixes a record dir
 
   // Build's own tag, so a path read as a record would be refused as another
   // tick's — the guard is what stands between these files and that refusal.
-  const skipped = await records(span, {
+  const passed = await records(span, {
     phaseName: "build",
     entry: assigned("MINE"),
   });
 
-  expect(skipped.ok).toBe(true);
-  expect(skipped.skipped).toBe("no record in the gated span");
+  expect(passed.ok).toBe(true);
+  expect(passed.message).toContain("0 record(s) touched");
 
   // And the directories themselves still match: the guard narrows the globs
   // to the separator, it does not stop them matching.
@@ -754,7 +851,13 @@ it("the clean-tree gate takes its status records from the engine rather than spa
       },
     },
   };
-  const gate = harnessGates({ phase, declaration, engine: wired, declared: [] }).find(
+  const gate = harnessGates({
+    phase,
+    declaration,
+    engine: wired,
+    putDown,
+    declared: [],
+  }).find(
     (g) => g.name === "clean-tree",
   );
   if (!gate) throw new Error(`the package's set has no gate named "clean-tree"`);
@@ -1001,6 +1104,7 @@ it("the merged-tree pending gate is wired to every plan slice, and to build neve
       phase: { name, writablePaths: [...BUILD_FENCE] },
       declaration,
       engine,
+      putDown,
     })
       .filter((g) => g.name === "pending-gate")
       .map((g) => g.when);
