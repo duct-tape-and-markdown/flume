@@ -90,9 +90,12 @@ export const declaration: DeclarationInput = {
   },
 
   // Wave width bounded to two: each entry's gates run the suite, and two
-  // four-wide waves on this host have reached the OOM edge. Every other
-  // supervisor knob is the engine's default.
-  supervisor: { maxParallel: 2 },
+  // four-wide waves on this host have reached the OOM edge. Two phase ticks
+  // at once — a build wave beside one plan slice, three agents at most —
+  // now that the ship lock serializes the judge suites (spec/loop.md, *The
+  // ship lock and the worktree lock — sibling ticks take turns at git*).
+  // Every other supervisor knob is the engine's default.
+  supervisor: { maxParallel: 2, maxTicks: 2 },
 
   // Every provisioned worktree gets the engine's own lockfile-aware install
   // at its root, singleton and fanout alike.
