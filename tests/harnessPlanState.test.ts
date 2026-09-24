@@ -27,7 +27,11 @@ import { dirname, normalize } from "node:path";
 
 import { afterEach, beforeEach, expect, it } from "vitest";
 
-import { PLAN_SLICES, type PlanSlice } from "../harness/declaration.ts";
+import {
+  INBOX_PHASE,
+  PLAN_SLICES,
+  type PlanSlice,
+} from "../harness/declaration.ts";
 import {
   PLAN_STATE_SCHEMAS,
   planStatePath,
@@ -35,6 +39,11 @@ import {
   writePlanState,
   type PlanStateWriteOf,
 } from "../harness/index.ts";
+import {
+  JUDGED_SLICES,
+  judgeSliceState,
+  type SliceStateAt,
+} from "../harness/planState.ts";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
@@ -94,6 +103,103 @@ async function refusalFor(slice: PlanSlice, bytes: string): Promise<string> {
   }
   throw new Error(`expected a refusal, got a parse: ${bytes}`);
 }
+
+/**
+ * One slice's state as a judge of two refs holds it: written by the package's
+ * own writer, read back as the bytes that landed.
+ *
+ * The real writer, for the same reason every round-trip case here uses it —
+ * a hand-authored pair would re-author, by the tester's hand, exactly the
+ * artifact the rules read (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*).
+ */
+async function artifactOf<S extends PlanSlice>(
+  slice: S,
+  state: PlanStateWriteOf<S>,
+): Promise<SliceStateAt> {
+  writePlanState(stateRoot, slice, state);
+  return {
+    parsed: JSON.parse(await readFile(onDisk(slice), "utf8")),
+    locus: `plan state for ${slice}`,
+  };
+}
+
+/** The sweep's state with a rotation open over `covered`, stamped at `sha`. */
+const openAt = (
+  sha: string,
+  covered: readonly string[],
+): PlanStateWriteOf<"plan-sweep"> => ({
+  sweptThrough: sha,
+  rotation: { kind: "open", covered: [...covered] },
+});
+
+it("a slice's state at a commit is judged against its state at the base through one table", async () => {
+  const covered = ["src/paths.ts", "src/Gate.ts"];
+  const base = await artifactOf("plan-sweep", openAt(SWEPT, covered));
+  // Vacuity pin: the base really carries the coverage every arm below is
+  // about, so none of them rules over an empty set.
+  expect(
+    (base.parsed as { rotation: { covered: string[] } }).rotation.covered,
+  ).toEqual(covered);
+
+  // Coverage growing under the same stamp is the sweep's ordinary tick.
+  const grown = await artifactOf("plan-sweep", openAt(SWEPT, [...covered, "src/git.ts"]));
+  expect(judgeSliceState("plan-sweep", grown, base)).toEqual({
+    problems: [],
+    cursors: [{ field: "sweptThrough", value: SWEPT, before: SWEPT }],
+  });
+
+  // Shrinking it is the loss no cursor can show: the stamp never moved.
+  const shrunk = await artifactOf("plan-sweep", openAt(SWEPT, covered.slice(1)));
+  const dropped = judgeSliceState("plan-sweep", shrunk, base).problems;
+  expect(dropped).toHaveLength(1);
+  expect(dropped[0]).toContain("src/paths.ts");
+
+  // The stamp's own rule is the table's other instance over the same pair.
+  expect(
+    judgeSliceState("plan-sweep", await artifactOf("plan-sweep", openAt(DERIVED, covered)), base)
+      .problems,
+  ).toEqual([
+    "sweptThrough moved while the rotation it stamps under is still open, so the frontier that rotation has covered is lost to the next tick",
+  ]);
+
+  // Closing the rotation drops the covered set by construction, and that is
+  // the rotation's verdict rather than a loss — both rules read the pair and
+  // leave the closing tick alone.
+  const closing = await artifactOf("plan-sweep", {
+    sweptThrough: DERIVED,
+    rotation: { kind: "closed" },
+  });
+  expect(judgeSliceState("plan-sweep", closing, base).problems).toEqual([]);
+
+  // No artifact at the base is no pair: a state root with no file yet has no
+  // prior state a rule could judge a move against, and the cursor says so.
+  expect(judgeSliceState("plan-sweep", shrunk, undefined)).toEqual({
+    problems: [],
+    cursors: [{ field: "sweptThrough", value: SWEPT, before: undefined }],
+  });
+});
+
+it("a slice stating no rule over its own state is spelled at the table, not left out", async () => {
+  // Derive's cursor is bounded by its step through history and by nothing its
+  // own file says, so even a value stepped backwards is no problem of this
+  // table's — the bound that catches it is the judge's, not the artifact's.
+  const before = await artifactOf("plan-derive", { derivedThrough: SWEPT });
+  const after = await artifactOf("plan-derive", { derivedThrough: DERIVED });
+  expect(judgeSliceState("plan-derive", after, before)).toEqual({
+    problems: [],
+    cursors: [{ field: "derivedThrough", value: DERIVED, before: SWEPT }],
+  });
+
+  // And a slice holding neither a cursor nor a rule is not judged at all: the
+  // inbox's lane stamps are bounded by nothing its own file states, so a
+  // commit carrying that file alone has nothing for the pair to rule on.
+  expect(PLAN_SLICES.length).toBeGreaterThan(JUDGED_SLICES.length);
+  expect(JUDGED_SLICES).not.toContain(INBOX_PHASE);
+  expect([...JUDGED_SLICES]).toEqual(
+    PLAN_SLICES.filter((slice) => slice !== INBOX_PHASE),
+  );
+});
 
 it("each plan slice reads and writes only its own state file", async () => {
   // Vacuity pin: one slice would make every disjointness arm below trivial,

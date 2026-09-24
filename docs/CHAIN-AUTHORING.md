@@ -63,7 +63,7 @@ the first of them is what this page documents:
   `tests[]` line green on the merged tree and red on the base, the
   discipline gates that run ahead of whatever a consumer declared
   (`records`, `clean-tree`, `pending-gate`, `per cites resolve`,
-  `plan cursors`), the records conventions, and the plan state as
+  `slice-state`), the records conventions, and the plan state as
   typed state rather than prose a cursor is regexed out of.
 
 One package, one version: an engine minor that breaks the chain surface ships

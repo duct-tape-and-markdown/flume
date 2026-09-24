@@ -1112,7 +1112,7 @@ function filled(value: unknown): unknown {
 
 /**
  * The shape each plan slice's prompt shows for its own state file is one the
- * cursor gate's schema accepts (`spec/harness.md`, *Plan state as declared
+ * slice-state gate's schema accepts (`spec/harness.md`, *Plan state as declared
  * state*).
  *
  * An agreement gate: the real `planSlicePromptArgs` through the engine's real

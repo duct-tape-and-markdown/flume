@@ -261,7 +261,7 @@ export function planSlicePromptArgs(
 /**
  * The literal JSON `slice`'s state file takes, one arm per line — read off
  * {@link PLAN_STATE_SHAPES}, which the typecheck holds to the schema the
- * cursor gate enforces.
+ * slice-state gate enforces.
  *
  * Rendered on every tick, not only a slice's first: the tick with no file of
  * its own is the one that most needs the shape, and it is the one whose

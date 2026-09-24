@@ -35,8 +35,10 @@
  * — relative to a state root the caller supplies, since the package
  * hardcodes no consumer's state root.
  *
- * This module is the artifacts alone: which cursor arms which slice, and what
- * a slice may advance one to, belong to the slices that read this.
+ * This module is the artifacts and the rules each slice states about its own
+ * — what a state file at a commit forbids, given the one at the base. Which
+ * cursor arms which slice, and which span a tick actually derived or swept,
+ * belong to the slices that read this.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -184,7 +186,7 @@ const InboxStateSchema = strict({
  * silently sharing a sibling's (`.claude/rules/engineering.md`, *Derived
  * state is computed, never restated beside its source*). The three shapes
  * have no export of their own: this table is the one door to them, so the
- * cursor gate reading derive's shape at a commit (`gates.ts`) and a case
+ * slice-state gate reading a slice's shape at a commit (`gates.ts`) and a case
  * walking every slice's required fields both index the same key rather than
  * reaching a schema a fourth slice could be added without.
  */
@@ -357,32 +359,108 @@ export function writePlanState<S extends PlanSlice>(
 }
 
 /**
- * One cursor read off one artifact: what it says there, and what that same
- * artifact says about moving it.
+ * One invariant a slice states about its own state file, read as a **rule
+ * over that file at the base and at the commit** (`spec/harness.md`, *The
+ * gates the discipline needs*): what the state the tick wrote forbids, given
+ * the state it read before writing it, as a clause naming what forbids it —
+ * or `undefined` where nothing in the slice's own state holds the move.
  *
- * The two travel together because they come out of one parse of one slice's
- * state, and because a caller judging a move needs both: the value is what
- * the move stepped to, and the hold is whether the slice was in a state to
- * take that step at all.
+ * **Whole states, never one field.** The sweep's stamp is held by the
+ * rotation beside it, and that rotation's covered set is held by the covered
+ * set the base carried: neither is expressible by a rule handed one field,
+ * which is why the rule that used to ride each cursor now rides its slice.
+ *
+ * A rule names its own slice's fields; what it never names is a sha, because
+ * the artifact it is about is named by the caller that read it at a ref.
  */
-interface CursorRead {
-  /** The cursor's value in that artifact. */
-  readonly value: string;
-  /**
-   * Why the slice's own state there forbids moving this cursor, as a clause
-   * naming the state that forbids it — or `undefined` where that state allows
-   * the move, which includes every cursor whose slice states no such rule.
-   */
-  readonly heldBy: string | undefined;
-}
+type SliceStateRule<S extends PlanSlice> = (
+  at: PlanStateOf<S>,
+  base: PlanStateOf<S> | undefined,
+) => string | undefined;
+
+/**
+ * The sweep stamps on the tick that closes its rotation and on no other: a
+ * rotation stands open *over* the frontier the old stamp drew, so a stamp
+ * moved while it is open leaves a covered set describing a frontier nobody
+ * will draw again (`.claude/rules/posture-sweep.md`, *The stamp*).
+ */
+const stampsOnlyOnTheTickThatCloses: SliceStateRule<"plan-sweep"> = (
+  at,
+  base,
+) =>
+  base !== undefined &&
+  base.sweptThrough !== at.sweptThrough &&
+  at.rotation.kind === "open"
+    ? "sweptThrough moved while the rotation it stamps under is still open, so the frontier that rotation has covered is lost to the next tick"
+    : undefined;
+
+/**
+ * Coverage is settled for the window: while one rotation stands open across a
+ * commit, every module it had already swept is still swept
+ * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*).
+ *
+ * Read only where the rotation is open at **both** ends. A tick that closes
+ * the rotation drops the covered set by construction — `covered` rides the
+ * open arm alone — and that drop is the rotation's verdict, not a loss.
+ */
+const coveredOnlyGrowsWhileOpen: SliceStateRule<"plan-sweep"> = (at, base) => {
+  if (base === undefined) return undefined;
+  if (base.rotation.kind !== "open" || at.rotation.kind !== "open") {
+    return undefined;
+  }
+  const kept = new Set(at.rotation.covered);
+  const dropped = base.rotation.covered.filter((module) => !kept.has(module));
+  if (dropped.length === 0) return undefined;
+  return `the open rotation's covered set dropped ${dropped.length} module(s) it had already swept (${dropped.join(", ")}), and the next tick re-derives a frontier that reads as a smaller neighborhood rather than as a failure`;
+};
+
+/**
+ * Every slice's invariants over its own state file, under the slice that
+ * writes it — **the one table a judge of plan state reads**, and the one a
+ * fourth slice's rule joins.
+ *
+ * Keyed exhaustively by `PlanSlice`, so a slice added without an answer here
+ * is a typecheck failure rather than a state file nothing judges. A slice
+ * whose state holds no invariant says so with an empty list, spelled at the
+ * table: derive's cursor is bounded by its step through history and by
+ * nothing its own file says, and the inbox's lane stamps are bounded by
+ * neither.
+ *
+ * **The rules ride the table beside the accessors, not the caller.** A gate
+ * holding a state file at two refs asks this table what that slice forbids,
+ * where branching on one named field inside machinery already generic over
+ * every declared slice would be the special case this table exists to absorb
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+const SLICE_STATE_RULES = {
+  "plan-derive": [],
+  "plan-sweep": [stampsOnlyOnTheTickThatCloses, coveredOnlyGrowsWhileOpen],
+  [INBOX_PHASE]: [],
+} as const satisfies { [S in PlanSlice]: readonly SliceStateRule<S>[] };
+
+/** Any slice's state, as the one table above holds them all. */
+type SliceState = PlanStateOf<PlanSlice>;
+
+/**
+ * One slice's rules at the type that slice's own state answers to — the one
+ * place the table above is resolved against a slice a caller named, for the
+ * same reason {@link schemaFor} exists: an index off a still-generic slice
+ * gives TypeScript the union of the three lists rather than the member.
+ */
+const rulesFor = <S extends PlanSlice>(
+  slice: S,
+): readonly SliceStateRule<S>[] =>
+  SLICE_STATE_RULES[slice] as unknown as readonly SliceStateRule<S>[];
 
 /**
  * One cursor a plan slice window may be drawn past: the slice whose file
- * holds it, the read of it off that file, and the read of it off bytes.
+ * holds it, the read of it off that file, and the read of it off a state
+ * already parsed.
  *
  * The bundle rather than the field name alone, because a window owes two
  * answers about a cursor — its value, and where a tick repairs it when it
- * names no commit — and the second one is now a different file per cursor.
+ * names no commit — and the second one is a different file per cursor.
  */
 interface Cursor {
   /** The slice whose state file holds it — where a repair to it is made. */
@@ -390,42 +468,28 @@ interface Cursor {
   /** Its value, or `undefined` where that slice has written no file yet. */
   readonly at: (stateRoot: string) => string | undefined;
   /**
-   * Its read off an already-parsed artifact, refused by the owning slice's
-   * own schema when that artifact is not one.
+   * Its value inside a state **already parsed through its own slice's
+   * schema** — the read a caller that decoded the artifact once takes, so a
+   * judge holding one state file never decodes the same bytes again to
+   * answer about a second cursor in it.
    *
-   * The read a caller holding the bytes rather than the disk needs — a gate
-   * reading a state file at a commit, where the artifact never existed in a
-   * working tree it could name a path in. Without it such a caller indexes
-   * the schema table by a slice it spelled itself and reaches past the field
-   * extractor, which is the branch on one cursor this table exists to
-   * replace.
+   * The table pairs this reader with `slice` above, and that pairing is what
+   * the narrowing here stands on: a caller reaches it only through the
+   * slice's own list ({@link cursorsOf}).
    */
-  readonly of: (parsed: unknown, locus: string) => CursorRead;
+  readonly in: (state: SliceState) => string;
 }
 
 /**
- * The may-move rule of a cursor whose slice states none: nothing in that
- * slice's state holds the cursor still, so a move of it is judged on its
- * step through history alone.
+ * One cursor, bound to the slice state that holds it.
  *
- * Spelled at the table rather than left out, so a fourth slice's cursor
- * arrives with the question answered either way instead of inheriting
- * "whenever" from an argument its author did not write.
- */
-const movesWhenever = (): undefined => undefined;
-
-/**
- * One cursor, bound to the slice state that holds it and to the rule that
- * state states about moving it.
- *
- * The slice is named once and both reads taken off that slice's own type, so
- * a field this schema renames is a typecheck failure here rather than a
- * cursor silently read as absent — which every window reads as "run".
+ * The slice is named once and the read taken off that slice's own type, so a
+ * field this schema renames is a typecheck failure here rather than a cursor
+ * silently read as absent — which every window reads as "run".
  */
 function cursorOf<S extends PlanSlice>(
   slice: S,
   field: (state: PlanStateOf<S>) => string,
-  mayMove: (state: PlanStateOf<S>) => string | undefined,
 ): Cursor {
   return {
     slice,
@@ -433,17 +497,13 @@ function cursorOf<S extends PlanSlice>(
       const state = readPlanState(stateRoot, slice);
       return state === undefined ? undefined : field(state);
     },
-    of: (parsed, locus) => {
-      const state = parseOrThrow(schemaFor(slice), parsed, locus);
-      return { value: field(state), heldBy: mayMove(state) };
-    },
+    in: (state) => field(state as PlanStateOf<S>),
   };
 }
 
 /**
  * Every cursor the package's slices keep, under the field name a window is
- * drawn past it by — each with its value, the slice whose file holds it, and
- * the rule that slice's own state states about moving it.
+ * drawn past it by — each with its value and the slice whose file holds it.
  *
  * Keyed by the string-valued fields the slice states declare
  * ({@link AnyCursorField}), so a cursor the schemas rename, drop or add is a
@@ -451,29 +511,13 @@ function cursorOf<S extends PlanSlice>(
  * nothing holds (`.claude/rules/engineering.md`, *Derived state is computed,
  * never restated beside its source*).
  *
- * **The may-move rule rides the table, not the caller.** Sweep's cursor may
- * step only where its rotation is closed, because a cursor stamped past a
- * frontier still being worked loses that frontier's covered set; derive's
- * states no such rule. A gate judging moves reads the rule off whichever
- * cursor it holds, where branching on one named field inside machinery
- * already generic over every declared cursor would be the special case this
- * table exists to absorb (`.claude/rules/engineering.md`, *The fix lands at
- * the mechanism*).
+ * What a slice's own state says about *moving* one of these is not here: it
+ * is a rule over the whole file at two refs, and it rides
+ * {@link SLICE_STATE_RULES}.
  */
 const CURSORS = {
-  derivedThrough: cursorOf(
-    "plan-derive",
-    (state) => state.derivedThrough,
-    movesWhenever,
-  ),
-  sweptThrough: cursorOf(
-    "plan-sweep",
-    (state) => state.sweptThrough,
-    (state) =>
-      state.rotation.kind === "open"
-        ? "the rotation it stamps under is still open, so the frontier that rotation has covered is lost to the next tick"
-        : undefined,
-  ),
+  derivedThrough: cursorOf("plan-derive", (state) => state.derivedThrough),
+  sweptThrough: cursorOf("plan-sweep", (state) => state.sweptThrough),
 } as const satisfies Record<AnyCursorField, Cursor>;
 
 /**
@@ -500,15 +544,21 @@ export const cursorSlice = (field: CursorField): PlanSlice =>
 
 /**
  * Every cursor the package declares, in the order {@link CURSORS} states
- * them — what a caller that holds all of them at once walks.
+ * them — what the reads below walk.
  *
  * Read off the table rather than listed, so a cursor a fourth slice adds is
- * judged by every such caller without one of them being edited: the table is
- * already exhaustive by the typecheck, and this is that exhaustiveness handed
- * out (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
- * never rediscovered*).
+ * judged without either of them being edited: the table is already exhaustive
+ * by the typecheck, and this is that exhaustiveness handed on
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). It is not handed out: a caller outside this module
+ * holds a slice's state file, never the cursor set, and asks
+ * {@link judgeSliceState} what that file's cursors say.
  */
-export const CURSOR_FIELDS = Object.keys(CURSORS) as readonly CursorField[];
+const CURSOR_FIELDS = Object.keys(CURSORS) as readonly CursorField[];
+
+/** The cursors `slice`'s own state file holds, in the table's order. */
+const cursorsOf = (slice: PlanSlice): readonly CursorField[] =>
+  CURSOR_FIELDS.filter((field) => CURSORS[field].slice === slice);
 
 /**
  * The cursor `field` names under `stateRoot`, or `undefined` where the slice
@@ -520,20 +570,88 @@ export const readCursor = (
 ): string | undefined => CURSORS[field].at(stateRoot);
 
 /**
- * The cursor `field` names inside `parsed` — an artifact already decoded from
- * bytes, judged against the schema of the slice that owns `field` and
- * refused by name at `locus` when it is not that slice's shape.
+ * Every slice whose state file this package states something about — the set
+ * a judge of plan state walks, and what it skips a touched file on.
  *
- * For the caller whose artifact is not on a disk it can name: a state file
- * read at a commit, a fixture under test. `readCursor` is the same read with
- * the file access in front of it, and the value alone — a caller drawing a
- * window has a cursor to step past, not a move to judge.
- *
- * Both halves come out of the one parse, so a caller asking whether a move
- * was allowed never decodes the same bytes a second time to find out.
+ * Read off the two tables rather than listed: a slice holds a cursor, or
+ * states a rule, or there is nothing about its file to judge. The inbox's
+ * lane stamps are the third case today, and a slice that gains its first
+ * rule joins this set by gaining it.
  */
-export const parseCursor = (
-  field: CursorField,
-  parsed: unknown,
-  locus: string,
-): CursorRead => CURSORS[field].of(parsed, locus);
+export const JUDGED_SLICES: readonly PlanSlice[] = (
+  Object.keys(SLICE_STATE_RULES) as readonly PlanSlice[]
+).filter(
+  (slice) => rulesFor(slice).length > 0 || cursorsOf(slice).length > 0,
+);
+
+/** One slice's state artifact as a judge holds it: decoded bytes, and where from. */
+export interface SliceStateAt {
+  /** The artifact, already decoded from bytes — JSON, not yet this slice's shape. */
+  readonly parsed: unknown;
+  /** What to name in a refusal when it is not that shape. */
+  readonly locus: string;
+}
+
+/** One cursor across a judged pair: its value, and the value it stepped from. */
+interface CursorStep {
+  readonly field: CursorField;
+  /** Its value at the commit. */
+  readonly value: string;
+  /**
+   * Its value at the base, or `undefined` where the base carried no artifact
+   * — a state root with no cursor yet, which every window reads as "run" and
+   * which is no step at all.
+   */
+  readonly before: string | undefined;
+}
+
+/** What one slice's state file at two refs says, judged against that slice's own rules. */
+interface SliceStateJudgement {
+  /** Every cursor that slice holds, with both ends of its step. */
+  readonly cursors: readonly CursorStep[];
+  /** Every one of the slice's own invariants the pair breaks, in table order. */
+  readonly problems: readonly string[];
+}
+
+/**
+ * `slice`'s state file at a commit, read against the same file at the base:
+ * what its cursors say at both ends, and what the pair breaks of the rules
+ * that slice states about itself.
+ *
+ * For the caller whose artifact is not on a disk it can name — a state file
+ * read at a commit, a fixture under test. `readCursor` is the value alone
+ * with the file access in front of it, for a caller drawing a window rather
+ * than judging a move.
+ *
+ * Each end is decoded once and every answer comes off that one parse, so a
+ * caller asking about two cursors and two rules never re-reads the bytes
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*). Neither end is repaired: an artifact that is not the
+ * slice's shape is refused by name at its own locus.
+ */
+export function judgeSliceState<S extends PlanSlice>(
+  slice: S,
+  at: SliceStateAt,
+  base: SliceStateAt | undefined,
+): SliceStateJudgement {
+  const schema = schemaFor(slice);
+  const after = parseOrThrow(schema, at.parsed, at.locus);
+  const before =
+    base === undefined
+      ? undefined
+      : parseOrThrow(schema, base.parsed, base.locus);
+
+  return {
+    cursors: cursorsOf(slice).map((field) => ({
+      field,
+      value: CURSORS[field].in(after as SliceState),
+      before:
+        before === undefined
+          ? undefined
+          : CURSORS[field].in(before as SliceState),
+    })),
+    problems: rulesFor(slice)
+      .map((rule) => rule(after, before))
+      .filter((clause): clause is string => clause !== undefined),
+  };
+}

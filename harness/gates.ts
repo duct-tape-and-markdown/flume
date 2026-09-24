@@ -27,7 +27,7 @@
  * The order they run in is dependency order, not the spec's listing
  * order: the dispatcher stops at the first refusal, so the pending gate —
  * which is what proves the queue parses at all — runs before the `per` gate
- * that reads cites out of it. The cursor gate trails them, being the one
+ * that reads cites out of it. The slice-state gate trails them, being the one
  * whose probe costs a process rather than a read.
  *
  * **Every fact these gates judge on is one the engine reported.** The touched
@@ -70,7 +70,7 @@ import {
   recordOrNoteGlobs,
   underStateRoot,
 } from "./layout.js";
-import { CURSOR_FIELDS, cursorSlice, parseCursor } from "./planState.js";
+import { JUDGED_SLICES, judgeSliceState } from "./planState.js";
 import type { PutDownPredicate } from "./putDown.js";
 
 /**
@@ -519,67 +519,67 @@ function cleanTreeGate(
 }
 
 /**
- * Every cursor a plan commit moves steps **forward, over history the commit
- * itself carries, and only where its own slice was in a state to step it**
- * (`spec/harness.md`, *The gates the discipline needs*): each cursor's value
- * at the gated commit is an ancestor of that commit, a descendant of the
- * value the tick read before it, and a value that slice's state at the same
- * commit allows it to hold.
+ * Every slice's state file moves **only as that slice's own invariants
+ * allow**, read as a rule over the file at the base and at the commit
+ * (`spec/harness.md`, *The gates the discipline needs*): a cursor an ancestor
+ * of the gated commit and a descendant of the value the tick read before it,
+ * the sweep's stamp moving only on the tick that closes its rotation, that
+ * rotation's covered set only growing while it stands open.
  *
- * **The third half is the slice's rule, read off the cursor.** Each declared
- * cursor carries its own may-move rule beside its value — `CURSORS`
- * (`planState.ts`) — so sweep's — closed rotation only — is judged here without this
- * gate naming the sweep, the rotation, or the field, and derive's states none
- * and is held to the two ancestry halves alone. It fires on a cursor whose
- * value actually **changed**: a slice rewriting its own state to arm or
- * extend a rotation moves no cursor, and a gate keying on the touched file
- * alone would refuse exactly the tick that opens one. A cursor absent at the
- * base is not a move either, for the same reason the descendant half skips
- * it — there is no prior value it stepped from.
- *
- * **Every cursor the package declares, not derive's alone.** The set is
- * `CURSOR_FIELDS` (`planState.ts`), so sweep's `sweptThrough` is held to the
- * same bound as derive's `derivedThrough` and a fourth slice's cursor joins
- * this gate by joining that table — where judging one named field would be a
- * branch on a single instance inside machinery already generic over the type
+ * **The invariants ride the table, never this gate.** Each slice's rules sit
+ * beside its accessors — `SLICE_STATE_RULES` (`planState.ts`) — so the
+ * sweep's two are judged here without this gate naming the sweep, the
+ * rotation, or a field, and derive's none leaves its cursor held to the two
+ * ancestry halves alone. A fourth slice's rule arrives at a table that
+ * exists, where judging one named field would be a branch on a single
+ * instance inside machinery already generic over the type
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * A rule reads the **pair**, not the step: a tick that rewrites its own state
+ * without moving a cursor — arming a rotation, extending a covered set — is
+ * exactly the tick a rule keyed on a changed cursor value passes over, and it
+ * is also the tick that can drop coverage nobody re-derives. What a rule may
+ * not do is refuse the arming itself, which is why each is stated over both
+ * ends rather than over the commit's alone.
  *
  * Both halves fail the same silent way and that is why they are gated. A
  * cursor stepped past commits nobody derived or swept does not red anything —
  * the slice simply never opens on the span that was skipped, every tick
  * after, and the window it renders looks exactly like a quiet tree. A cursor
  * stepped *backwards*, or sideways onto a sha this commit cannot reach,
- * re-derives history or names a window the next tick cannot draw at all.
- * A cursor stamped under an open rotation loses that rotation's covered set
- * on the next tick, which re-derives a frontier from the new stamp and reads
- * as a smaller neighborhood rather than as a failure. None of the three is
- * recoverable by reading the artifact, because the artifact reads as a cursor
- * either way (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * re-derives history or names a window the next tick cannot draw at all. A
+ * cursor stamped under an open rotation, or a covered set shrunk while one
+ * stands open, loses coverage the next tick re-draws as a smaller
+ * neighborhood rather than as a failure. None is recoverable by reading the
+ * artifact, because the artifact reads as plan state either way
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
- * **Both shas the gate judges are ones the commit already carries.** The new
- * value is the plan state at `ctx.commitSha`; the pre-commit value is the
- * plan state at `ctx.baseSha`, the tick's own branch point as the engine
- * reported it — not `HEAD^`, which names a sibling commit of the same span
- * the moment a tick writes two. Absent at the base is a state root with no
- * cursor yet, which every window reads as "run": there is no prior value to
- * step from, so that half is not judged and the ancestor half still is.
+ * **Both refs the gate reads are ones the commit already carries.** The
+ * commit's state is at `ctx.commitSha`; the pre-commit state is at
+ * `ctx.baseSha`, the tick's own branch point as the engine reported it — not
+ * `HEAD^`, which names a sibling commit of the same span the moment a tick
+ * writes two. Absent at the base is a state root with no artifact yet, which
+ * every window reads as "run": there is no prior state to judge a move
+ * against, so the rules and the descendant half are not reached and the
+ * ancestor half still is.
  *
  * **Plan phases are selected by the path, never by their name.** A commit
- * that touched no cursor's state file moved no cursor, and build's fence
- * admits the artifacts at all, so the skip is read off `touchedPaths` rather
- * than off a phase-name branch that would have to stay in step with the
- * fence (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ * that touched no judged slice's state file moved nothing this gate holds,
+ * and build's fence admits the artifacts at all, so the skip is read off
+ * `touchedPaths` rather than off a phase-name branch that would have to stay
+ * in step with the fence (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
  *
- * Each cursor is keyed on **its own slice's file** (`layout.ts`,
- * `planStatePath`, over `cursorSlice`), which is what one file per writer
- * buys this gate: a commit stamping one slice's state is judged on that
- * slice's cursor alone, and the inbox's state — which holds no cursor — is
- * skipped on the path like any other untouched file.
+ * Each slice is keyed on **its own file** (`layout.ts`, `planStatePath`),
+ * which is what one file per writer buys this gate: a commit stamping one
+ * slice's state is judged on that slice's invariants alone, and a slice that
+ * states none and holds no cursor — the inbox's lane stamps — is skipped on
+ * the path like any other untouched file (`JUDGED_SLICES`, `planState.ts`).
  *
  * The **leading-run** half of the bound — whether the span a cursor stepped
  * over was one this tick actually derived or swept — is judgement, and stays
- * prose in the slice's own prompt. What is decidable is direction and
- * reachability, and that is what this holds.
+ * prose in the slice's own prompt. What is decidable is direction,
+ * reachability, and what the file itself says, and that is what this holds.
  *
  * A cursor naming a sha the repository does not hold throws out of the
  * ancestry probe rather than being folded into "not an ancestor": the probe
@@ -588,9 +588,9 @@ function cleanTreeGate(
  * message on the refusal (`.claude/rules/engine-boundary.md`, *Told, not
  * inferred*).
  */
-function cursorGate(engine: GateEngine): Gate {
+function sliceStateGate(engine: GateEngine): Gate {
   return {
-    name: "plan cursors",
+    name: "slice-state",
     when: "afterCommit",
     async run(ctx) {
       const stateRootRel = ctx.stateRootRel;
@@ -601,79 +601,86 @@ function cursorGate(engine: GateEngine): Gate {
           skipped: "no commit can carry the plan state under a relocated state root",
         };
       }
-      const moved = CURSOR_FIELDS.map((field) => ({
-        field,
-        path: planStatePath(stateRootRel, cursorSlice(field)),
+      const touched = JUDGED_SLICES.map((slice) => ({
+        slice,
+        path: planStatePath(stateRootRel, slice),
       })).filter(({ path }) => ctx.touchedPaths.includes(path));
 
-      if (moved.length === 0) {
+      if (touched.length === 0) {
         return {
           ok: true,
           message:
-            "the commit writes no slice's cursor state, so it moves no cursor",
-          skipped: "no declared cursor's state file is in the gated span",
+            "the commit writes no judged slice's state, so it moves nothing this gate holds",
+          skipped: "no judged slice's state file is in the gated span",
         };
       }
 
       const problems: string[] = [];
-      const steps: string[] = [];
-      for (const { field, path } of moved) {
+      const judged: string[] = [
+        `${touched.map(({ slice }) => slice).join(", ")} within its own rules`,
+      ];
+      for (const { slice, path } of touched) {
         const raw = await engine.git.readFileAtRef(ctx.repoRoot, ctx.commitSha, path);
         if (raw === null) {
           problems.push(
-            `${path} touched by ${short(ctx.commitSha)} and absent from it: a plan tick that deletes the ${cursorSlice(field)} slice's state leaves its window without ${field}`,
+            `${path} touched by ${short(ctx.commitSha)} and absent from it: a plan tick that deletes the ${slice} slice's state leaves the next tick's window without it`,
           );
           continue;
         }
-        const at = (sha: string, text: string) =>
-          parseCursor(field, JSON.parse(text), `plan state at ${short(sha)}`);
-
-        const after = at(ctx.commitSha, raw);
-        if (
-          !(await engine.git.isAncestor(ctx.repoRoot, after.value, ctx.commitSha))
-        ) {
-          problems.push(
-            `${field} ${short(after.value)} is not an ancestor of the gated commit ${short(ctx.commitSha)}`,
-          );
-        }
-
         const baseRaw = await engine.git.readFileAtRef(ctx.repoRoot, ctx.baseSha, path);
-        const before = baseRaw === null ? undefined : at(ctx.baseSha, baseRaw).value;
-        if (
-          before !== undefined &&
-          !(await engine.git.isAncestor(ctx.repoRoot, before, after.value))
-        ) {
-          problems.push(
-            `${field} ${short(before)} -> ${short(after.value)} is not a step forward: ${short(after.value)} is not a descendant of the value the tick read at ${short(ctx.baseSha)}`,
-          );
-        }
-
-        if (
-          before !== undefined &&
-          before !== after.value &&
-          after.heldBy !== undefined
-        ) {
-          problems.push(
-            `${field} ${short(before)} -> ${short(after.value)} is not a move its slice's own state at ${short(ctx.commitSha)} allows: ${after.heldBy}`,
-          );
-        }
-
-        steps.push(
-          before === undefined
-            ? `${field} ${short(after.value)}`
-            : `${field} ${short(before)} -> ${short(after.value)}`,
+        const state = judgeSliceState(
+          slice,
+          {
+            parsed: JSON.parse(raw),
+            locus: `plan state at ${short(ctx.commitSha)}`,
+          },
+          baseRaw === null
+            ? undefined
+            : {
+                parsed: JSON.parse(baseRaw),
+                locus: `plan state at ${short(ctx.baseSha)}`,
+              },
         );
+
+        for (const clause of state.problems) {
+          problems.push(
+            `${slice} state at ${short(ctx.commitSha)} is not a move its own invariants allow: ${clause}`,
+          );
+        }
+
+        for (const { field, value, before } of state.cursors) {
+          if (!(await engine.git.isAncestor(ctx.repoRoot, value, ctx.commitSha))) {
+            problems.push(
+              `${field} ${short(value)} is not an ancestor of the gated commit ${short(ctx.commitSha)}`,
+            );
+          }
+
+          if (
+            before !== undefined &&
+            !(await engine.git.isAncestor(ctx.repoRoot, before, value))
+          ) {
+            problems.push(
+              `${field} ${short(before)} -> ${short(value)} is not a step forward: ${short(value)} is not a descendant of the value the tick read at ${short(ctx.baseSha)}`,
+            );
+          }
+
+          judged.push(
+            before === undefined
+              ? `${field} ${short(value)}`
+              : `${field} ${short(before)} -> ${short(value)}`,
+          );
+        }
       }
 
       if (problems.length > 0) {
         return refuse(
-          `${problems.length} plan-cursor problem(s); a cursor stepped past commits nobody derived or swept fails silently on every tick after`,
+          `${problems.length} plan-state problem(s); a cursor stepped past commits nobody derived or swept, or coverage dropped from a rotation still open, fails silently on every tick after`,
           problems,
         );
       }
       return {
         ok: true,
-        message: `${steps.join("; ")}, within ${short(ctx.commitSha)}`,
+        message: `${judged.join("; ")}, within ${short(ctx.commitSha)}`,
       };
     },
   };
@@ -722,8 +729,8 @@ function producesQueue(name: string): boolean {
  * and the clean tree are facts about the commit itself; the pending gate
  * proves the queue parses and every entry's declared files survive build's
  * fence; the `per` gate then reads cites out of a queue already known to
- * parse. The cursor gate trails them because its probe spawns git where the
- * others read. The dispatcher stops at the first refusal, so that order is
+ * parse. The slice-state gate trails them because its probe spawns git where
+ * the others read. The dispatcher stops at the first refusal, so that order is
  * what decides which message a tick is handed back.
  *
  * The merged-tree pending gate behind them is the one member the set does not
@@ -743,7 +750,7 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
     cleanTreeGate(phase.writablePaths, engine),
     engine.pendingGate(queue),
     perGate(declaration, engine),
-    cursorGate(engine),
+    sliceStateGate(engine),
     ...(producesQueue(phase.name)
       ? [engine.pendingGate({ ...queue, when: "afterMerge" as const })]
       : []),

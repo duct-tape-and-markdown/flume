@@ -938,15 +938,15 @@ async function offHistory(): Promise<string> {
 }
 
 /**
- * The cursor gate, and the two state paths it keys the package's two declared
- * cursors on — derive's file for `derivedThrough`, sweep's for `sweptThrough`
- * (`harness/planState.ts`, `CURSOR_FIELDS`).
+ * The slice-state gate, and the two state paths it keys the package's two
+ * cursor-holding slices on — derive's file for `derivedThrough`, sweep's for
+ * `sweptThrough` (`harness/planState.ts`, `JUDGED_SLICES`).
  */
-const cursor = (): Gate => named("plan cursors");
+const sliceState = (): Gate => named("slice-state");
 const STATE_PATH = planStatePath(STATE_ROOT, "plan-derive");
 const SWEEP_STATE_PATH = planStatePath(STATE_ROOT, "plan-sweep");
 
-it("the cursor gate refuses a plan commit whose derive cursor is not an ancestor of the tip", async () => {
+it("the slice-state gate refuses a plan commit whose derive cursor is not an ancestor of the tip", async () => {
   const stray = await offHistory();
   const reachable = git(repo, ["rev-parse", "HEAD"]);
 
@@ -956,13 +956,13 @@ it("the cursor gate refuses a plan commit whose derive cursor is not an ancestor
   writeState(reachable);
   const within = commitAll("plan: a cursor inside the commit's own history");
   expect(within.touchedPaths).toContain(STATE_PATH);
-  const passed = await cursor().run(ctxFor(within, { phaseName: "plan-derive" }));
+  const passed = await sliceState().run(ctxFor(within, { phaseName: "plan-derive" }));
   expect(passed).toMatchObject({ ok: true });
   expect(passed.skipped).toBeUndefined();
 
   writeState(stray);
   const span = commitAll("plan: a cursor stepped onto a sha this history has not got");
-  const refused = await cursor().run(ctxFor(span, { phaseName: "plan-derive" }));
+  const refused = await sliceState().run(ctxFor(span, { phaseName: "plan-derive" }));
 
   expect(refused.ok).toBe(false);
   // Both shas, because the fix is a cursor value and the tip is what bounds it.
@@ -971,14 +971,14 @@ it("the cursor gate refuses a plan commit whose derive cursor is not an ancestor
   );
 });
 
-it("the cursor gate refuses a plan commit whose derive cursor is not a descendant of its pre-commit value", async () => {
+it("the slice-state gate refuses a plan commit whose derive cursor is not a descendant of its pre-commit value", async () => {
   const first = git(repo, ["rev-parse", "HEAD"]);
   await write("src/widget.ts", `export const widget = "second";\n`);
   const second = commitAll("build: a second commit to step the cursor over").commitSha;
 
   writeState(second);
   const ahead = commitAll("plan: derive through the tip");
-  const passed = await cursor().run(ctxFor(ahead, { phaseName: "plan-derive" }));
+  const passed = await sliceState().run(ctxFor(ahead, { phaseName: "plan-derive" }));
   expect(passed).toMatchObject({ ok: true });
   expect(passed.skipped).toBeUndefined();
 
@@ -986,7 +986,7 @@ it("the cursor gate refuses a plan commit whose derive cursor is not a descendan
   // ancestor of the tip, so only the pre-commit half can catch it.
   writeState(first);
   const span = commitAll("plan: step the cursor back over derived history");
-  const refused = await cursor().run(ctxFor(span, { phaseName: "plan-derive" }));
+  const refused = await sliceState().run(ctxFor(span, { phaseName: "plan-derive" }));
 
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain(
@@ -997,11 +997,11 @@ it("the cursor gate refuses a plan commit whose derive cursor is not a descendan
   expect(refused.details).not.toContain("is not an ancestor of the gated commit");
 });
 
-it("the cursor gate passes a plan commit that steps its derive cursor forward within its own history", async () => {
+it("the slice-state gate passes a plan commit that steps its derive cursor forward within its own history", async () => {
   const first = git(repo, ["rev-parse", "HEAD"]);
   writeState(first);
   const stamped = commitAll("plan: stamp the first cursor");
-  expect(await cursor().run(ctxFor(stamped, { phaseName: "plan-derive" }))).toMatchObject({
+  expect(await sliceState().run(ctxFor(stamped, { phaseName: "plan-derive" }))).toMatchObject({
     ok: true,
   });
 
@@ -1012,7 +1012,7 @@ it("the cursor gate passes a plan commit that steps its derive cursor forward wi
   // Vacuity pin: the gate only judges a cursor the span actually carries.
   expect(span.touchedPaths).toContain(STATE_PATH);
 
-  const passed = await cursor().run(ctxFor(span, { phaseName: "plan-derive" }));
+  const passed = await sliceState().run(ctxFor(span, { phaseName: "plan-derive" }));
 
   expect(passed.ok).toBe(true);
   // Judged, not skipped, and naming both ends of the step it read — which is
@@ -1021,11 +1021,11 @@ it("the cursor gate passes a plan commit that steps its derive cursor forward wi
   expect(passed.message).toContain(`${short(first)} -> ${short(second)}`);
 });
 
-it("a plan commit touching no slice's cursor file is skipped by the cursor gate", async () => {
+it("a plan commit touching no judged slice's state file is skipped by the slice-state gate", async () => {
   // A judged run first, so the skip below is the untouched artifact's verdict
   // and not a gate that never rules on anything.
   writeState(git(repo, ["rev-parse", "HEAD"]));
-  const judged = await cursor().run(
+  const judged = await sliceState().run(
     ctxFor(commitAll("plan: stamp the cursor"), { phaseName: "plan-derive" }),
   );
   expect(judged).toMatchObject({ ok: true });
@@ -1036,7 +1036,7 @@ it("a plan commit touching no slice's cursor file is skipped by the cursor gate"
   expect(span.touchedPaths).not.toContain(STATE_PATH);
   expect(span.touchedPaths).not.toContain(SWEEP_STATE_PATH);
 
-  const skipped = await cursor().run(
+  const skipped = await sliceState().run(
     ctxFor(span, { phaseName: "build", entry: assigned("MINE") }),
   );
 
@@ -1044,9 +1044,9 @@ it("a plan commit touching no slice's cursor file is skipped by the cursor gate"
   // still holds whatever the commit that wrote it was held to.
   expect(skipped.ok).toBe(true);
   expect(skipped.skipped).toBe(
-    "no declared cursor's state file is in the gated span",
+    "no judged slice's state file is in the gated span",
   );
-  expect(skipped.message).toContain("moves no cursor");
+  expect(skipped.message).toContain("moves nothing this gate holds");
 
   // And plan state holding no cursor at all is the same skip, on the same
   // path test: the inbox slice's file is one file per writer like any other,
@@ -1058,12 +1058,12 @@ it("a plan commit touching no slice's cursor file is skipped by the cursor gate"
   expect(sibling.touchedPaths).not.toContain(STATE_PATH);
   expect(sibling.touchedPaths).not.toContain(SWEEP_STATE_PATH);
 
-  const elsewhere = await cursor().run(
+  const elsewhere = await sliceState().run(
     ctxFor(sibling, { phaseName: "plan-inbox" }),
   );
   expect(elsewhere.ok).toBe(true);
   expect(elsewhere.skipped).toBe(
-    "no declared cursor's state file is in the gated span",
+    "no judged slice's state file is in the gated span",
   );
 });
 
@@ -1087,13 +1087,13 @@ it("a plan commit whose sweptThrough is not an ancestor of the commit is refused
   writeSweepState(reachable);
   const within = commitAll("plan: a sweep cursor inside the commit's own history");
   expect(within.touchedPaths).toContain(SWEEP_STATE_PATH);
-  const passed = await cursor().run(ctxFor(within, { phaseName: "plan-sweep" }));
+  const passed = await sliceState().run(ctxFor(within, { phaseName: "plan-sweep" }));
   expect(passed).toMatchObject({ ok: true });
   expect(passed.skipped).toBeUndefined();
 
   writeSweepState(stray);
   const span = commitAll("plan: a sweep cursor stepped onto a sha this history has not got");
-  const refused = await cursor().run(ctxFor(span, { phaseName: "plan-sweep" }));
+  const refused = await sliceState().run(ctxFor(span, { phaseName: "plan-sweep" }));
 
   expect(refused.ok).toBe(false);
   // Named by its own field, because the fix is that cursor's value and the
@@ -1110,7 +1110,7 @@ it("a plan commit whose sweptThrough is not a descendant of its pre-commit value
 
   writeSweepState(second);
   const ahead = commitAll("plan: sweep through the tip");
-  const passed = await cursor().run(ctxFor(ahead, { phaseName: "plan-sweep" }));
+  const passed = await sliceState().run(ctxFor(ahead, { phaseName: "plan-sweep" }));
   expect(passed).toMatchObject({ ok: true });
   expect(passed.skipped).toBeUndefined();
 
@@ -1118,7 +1118,7 @@ it("a plan commit whose sweptThrough is not a descendant of its pre-commit value
   // an ancestor of the tip, so only the pre-commit half can catch it.
   writeSweepState(first);
   const span = commitAll("plan: step the sweep cursor back over swept history");
-  const refused = await cursor().run(ctxFor(span, { phaseName: "plan-sweep" }));
+  const refused = await sliceState().run(ctxFor(span, { phaseName: "plan-sweep" }));
 
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain(
@@ -1147,7 +1147,7 @@ it("a plan commit moving sweptThrough while its rotation is open is refused", as
   writeSweepState(first, { kind: "open", covered: ["src/widget.ts"] });
   const armed = commitAll("plan: arm a rotation over the frontier at the stamp");
   expect(armed.touchedPaths).toContain(SWEEP_STATE_PATH);
-  const opened = await cursor().run(ctxFor(armed, { phaseName: "plan-sweep" }));
+  const opened = await sliceState().run(ctxFor(armed, { phaseName: "plan-sweep" }));
   expect(opened).toMatchObject({ ok: true });
   expect(opened.skipped).toBeUndefined();
 
@@ -1156,14 +1156,16 @@ it("a plan commit moving sweptThrough while its rotation is open is refused", as
   // catch it.
   writeSweepState(second, { kind: "open", covered: ["src/widget.ts"] });
   const span = commitAll("plan: stamp the sweep cursor with the rotation still open");
-  const refused = await cursor().run(ctxFor(span, { phaseName: "plan-sweep" }));
+  const refused = await sliceState().run(ctxFor(span, { phaseName: "plan-sweep" }));
 
   expect(refused.ok).toBe(false);
   expect((refused.details ?? "").split("\n")).toHaveLength(1);
   expect(refused.details).toContain(
-    `sweptThrough ${short(first)} -> ${short(second)} is not a move its slice's own state at ${short(span.commitSha)} allows`,
+    `plan-sweep state at ${short(span.commitSha)} is not a move its own invariants allow`,
   );
-  expect(refused.details).toContain("the rotation it stamps under is still open");
+  expect(refused.details).toContain(
+    "sweptThrough moved while the rotation it stamps under is still open",
+  );
   // The two ancestry halves are not what fired: the step itself was sound.
   expect(refused.details).not.toContain("is not an ancestor of the gated commit");
   expect(refused.details).not.toContain("is not a step forward");
@@ -1184,7 +1186,7 @@ it("a plan commit moving sweptThrough on the tick that closes its rotation is al
   // value for the move below to be judged against.
   expect(stamped.touchedPaths).toContain(SWEEP_STATE_PATH);
   expect(stamped.touchedPaths).toContain(STATE_PATH);
-  expect(await cursor().run(ctxFor(stamped, { phaseName: "plan-sweep" }))).toMatchObject({
+  expect(await sliceState().run(ctxFor(stamped, { phaseName: "plan-sweep" }))).toMatchObject({
     ok: true,
   });
 
@@ -1194,7 +1196,7 @@ it("a plan commit moving sweptThrough on the tick that closes its rotation is al
   writeState(second);
   const span = commitAll("plan: close the rotation and stamp both cursors at the tip");
 
-  const passed = await cursor().run(ctxFor(span, { phaseName: "plan-sweep" }));
+  const passed = await sliceState().run(ctxFor(span, { phaseName: "plan-sweep" }));
 
   expect(passed.ok).toBe(true);
   // Judged, not skipped, and naming both steps it read.
@@ -1207,7 +1209,119 @@ it("a plan commit moving sweptThrough on the tick that closes its rotation is al
   );
 });
 
-it("the cursor gate judges both declared cursors in one commit that moves them", async () => {
+/**
+ * The rotation's own arming tick, and the arm a rule keyed on a **changed
+ * cursor value** could never have reached: the stamp stands still while the
+ * slice rewrites its own state to open a rotation over the frontier that
+ * stamp already drew (`.claude/rules/posture-sweep.md`, *The stamp*).
+ *
+ * Read as a rule over the pair rather than over the step, so the tick that
+ * opens a rotation is green and the tick that drops what one covered is not.
+ */
+it("a plan commit that arms a rotation over an unchanged stamp is not refused", async () => {
+  const stamp = git(repo, ["rev-parse", "HEAD"]);
+
+  writeSweepState(stamp, { kind: "closed" });
+  const quiet = commitAll("plan: a closed rotation, stamped at the tip");
+  // Vacuity pin: the span carries sweep's file, so the commit below has a
+  // pre-commit rotation to be judged against.
+  expect(quiet.touchedPaths).toContain(SWEEP_STATE_PATH);
+  expect(
+    await sliceState().run(ctxFor(quiet, { phaseName: "plan-sweep" })),
+  ).toMatchObject({ ok: true });
+
+  writeSweepState(stamp, { kind: "open", covered: [] });
+  const armed = commitAll("plan: arm a rotation over the frontier at the stamp");
+
+  const passed = await sliceState().run(ctxFor(armed, { phaseName: "plan-sweep" }));
+
+  expect(passed.ok).toBe(true);
+  // Judged, not skipped: the file was read at both refs and the rules ruled.
+  expect(passed.skipped).toBeUndefined();
+  expect(passed.message).toContain("plan-sweep within its own rules");
+});
+
+/**
+ * Coverage is settled for the window, and the cursor holds none of it: a tick
+ * that re-draws an open rotation without a neighborhood it already swept
+ * moves nothing either ancestry half can see, and the next tick re-sweeps
+ * what was paid for while reading as a smaller frontier
+ * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*).
+ */
+it("a plan commit that drops a module from an open rotation's covered set is refused", async () => {
+  const stamp = git(repo, ["rev-parse", "HEAD"]);
+
+  writeSweepState(stamp, {
+    kind: "open",
+    covered: ["src/widget.ts", "src/other.ts"],
+  });
+  const opened = commitAll("plan: arm a rotation with two neighborhoods covered");
+  expect(opened.touchedPaths).toContain(SWEEP_STATE_PATH);
+  expect(
+    await sliceState().run(ctxFor(opened, { phaseName: "plan-sweep" })),
+  ).toMatchObject({ ok: true });
+
+  // Coverage growing under the same stamp is the sweep's ordinary tick, and
+  // green — so the refusal below is the shrink, not a gate refusing every
+  // rewritten covered set.
+  writeSweepState(stamp, {
+    kind: "open",
+    covered: ["src/widget.ts", "src/other.ts", "src/third.ts"],
+  });
+  const grew = commitAll("plan: sweep a third neighborhood into the same rotation");
+  const green = await sliceState().run(ctxFor(grew, { phaseName: "plan-sweep" }));
+  expect(green).toMatchObject({ ok: true });
+  expect(green.skipped).toBeUndefined();
+
+  writeSweepState(stamp, { kind: "open", covered: ["src/widget.ts", "src/third.ts"] });
+  const span = commitAll("plan: re-draw the rotation without a module it had swept");
+
+  const refused = await sliceState().run(ctxFor(span, { phaseName: "plan-sweep" }));
+
+  expect(refused.ok).toBe(false);
+  expect((refused.details ?? "").split("\n")).toHaveLength(1);
+  expect(refused.details).toContain(
+    `plan-sweep state at ${short(span.commitSha)} is not a move its own invariants allow`,
+  );
+  // Named, because the repair is putting that module back in the set.
+  expect(refused.details).toContain("dropped 1 module(s) it had already swept");
+  expect(refused.details).toContain("src/other.ts");
+  // The cursor never moved, so neither ancestry half is what fired.
+  expect(refused.details).not.toContain("is not an ancestor of the gated commit");
+  expect(refused.details).not.toContain("is not a step forward");
+});
+
+/**
+ * The same loss at its widest: an open rotation re-armed with nothing covered
+ * reads, on every tick after, exactly like a rotation that has swept nothing
+ * yet — which is the state the schema calls real.
+ */
+it("a plan commit that empties an open rotation's covered set is refused", async () => {
+  const stamp = git(repo, ["rev-parse", "HEAD"]);
+
+  writeSweepState(stamp, {
+    kind: "open",
+    covered: ["src/widget.ts", "src/other.ts"],
+  });
+  const opened = commitAll("plan: arm a rotation with two neighborhoods covered");
+  expect(opened.touchedPaths).toContain(SWEEP_STATE_PATH);
+  expect(
+    await sliceState().run(ctxFor(opened, { phaseName: "plan-sweep" })),
+  ).toMatchObject({ ok: true });
+
+  writeSweepState(stamp, { kind: "open", covered: [] });
+  const span = commitAll("plan: re-draw the open rotation with nothing covered");
+
+  const refused = await sliceState().run(ctxFor(span, { phaseName: "plan-sweep" }));
+
+  expect(refused.ok).toBe(false);
+  expect((refused.details ?? "").split("\n")).toHaveLength(1);
+  expect(refused.details).toContain("dropped 2 module(s) it had already swept");
+  expect(refused.details).toContain("src/widget.ts, src/other.ts");
+});
+
+it("the slice-state gate judges both declared cursors in one commit that moves them", async () => {
   const first = git(repo, ["rev-parse", "HEAD"]);
   writeState(first);
   writeSweepState(first);
@@ -1215,7 +1329,7 @@ it("the cursor gate judges both declared cursors in one commit that moves them",
   // Vacuity pin: the span carries both files, so both arms below are reached.
   expect(stamped.touchedPaths).toContain(STATE_PATH);
   expect(stamped.touchedPaths).toContain(SWEEP_STATE_PATH);
-  expect(await cursor().run(ctxFor(stamped, { phaseName: "plan-derive" }))).toMatchObject({
+  expect(await sliceState().run(ctxFor(stamped, { phaseName: "plan-derive" }))).toMatchObject({
     ok: true,
   });
 
@@ -1228,7 +1342,7 @@ it("the cursor gate judges both declared cursors in one commit that moves them",
   writeSweepState(stray);
   const span = commitAll("plan: step one cursor forward and one sideways");
 
-  const refused = await cursor().run(ctxFor(span, { phaseName: "plan-sweep" }));
+  const refused = await sliceState().run(ctxFor(span, { phaseName: "plan-sweep" }));
 
   expect(refused.ok).toBe(false);
   expect((refused.details ?? "").split("\n")).toHaveLength(1);
@@ -1250,7 +1364,7 @@ it("the package's gates precede a consumer's declared gates for the same phase",
     "clean-tree",
     "pending-gate",
     "per cites resolve",
-    "plan cursors",
+    "slice-state",
   ];
   expect(set.map((g) => g.name)).toEqual([
     ...DISCIPLINE,
