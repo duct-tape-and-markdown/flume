@@ -1,5 +1,37 @@
 [
   {
+    "tag": "BUILD-IS-DECLARED-FIRST",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/chain.ts",
+          "description": "`phases: [build, ...planSlices]` at the factory's return"
+        },
+        {
+          "path": "tests/harnessChain.test.ts",
+          "description": "the declared order, with the sweep enabled and disabled"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The package declares `[build, ...planSlices]`, the sweep last of those: at the default budget of one the schedule is product-first",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The phases"
+    },
+    "acceptance": "`chain.phases` names build first and the enabled plan slices after it in `PLAN_SLICES` order, the sweep last of them, whichever slices a declaration enables.",
+    "tests": [
+      "the package declares build first and the plan slices after it, the sweep last of them"
+    ],
+    "pins": [],
+    "notes": "One line at the `phases:` return; `PHASES` in `declaration.ts` is a roster (prompt names, per-phase fence keys), not the chain's order, and reads unchanged. Unblocks EVERY-WINDOW-IS-LIVE-ON-ITS-OWN-WORK, which starves build at the default budget without it. The budget itself stays the consumer's knob."
+  },
+  {
     "tag": "THE-SUPERVISOR-HOLDS-ONE-CHILD-PER-AWAKE-PHASE",
     "gate": {
       "kind": "open"
@@ -391,7 +423,33 @@
       "opts.hint appends to the claim-check violation message"
     ],
     "pins": [],
-    "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. The section's other afterMerge half — the package's duplicate refusal — is parked as questions/duplicate-refusal-cannot-see-a-decomposition.md."
+    "notes": "afterMerge because a pre-merge read passes over exactly the tree the collision is not in; uncontended under one producer. It is the section's only merged-tree gate: there is no duplicate refusal beside it — the drain folds a duplicate instead (THE-DRAIN-FOLDS-A-DUPLICATE-FINDING)."
+  },
+  {
+    "tag": "THE-DRAIN-FOLDS-A-DUPLICATE-FINDING",
+    "gate": {
+      "kind": "open"
+    },
+    "dependsOnForks": [],
+    "files": {
+      "new": [],
+      "edit": [
+        {
+          "path": "harness/prompts/plan-inbox.md",
+          "description": "the pending-entry route folds a finding a standing entry covers"
+        }
+      ],
+      "retire": []
+    },
+    "summary": "The drain's pending-entry route amends the entry that covers a finding rather than filing a sibling — the fold that replaces the dropped duplicate gate",
+    "per": {
+      "path": "spec/harness.md",
+      "section": "The phases"
+    },
+    "acceptance": "The inbox prompt's pending-entry route says a finding a standing entry covers is amended into that entry, as its question and CI-title routes already say, and names the clean-exit record a duplicate that reached build leaves.",
+    "tests": [],
+    "pins": [],
+    "notes": "Prose is the only rung here: the fold is a judgement over `<pending-now>` the drain makes, and nothing mechanical can hold it. The question and CI-title arms already carry the same sentence; this is the third route saying it."
   },
   {
     "tag": "PLAN-STATE-IS-ONE-FILE-PER-SLICE",
@@ -499,7 +557,7 @@
       "a consumer's declared handoff replaces the wake set and still runs beneath the per-entry refusal"
     ],
     "pins": [],
-    "notes": "Which of the woken phases run at once is the budget's, not the handoff's. With build declared last and the budget at 1 the order still matters — questions/build-is-declared-last-under-a-short-budget.md."
+    "notes": "Which of the woken phases run at once is the budget's, not the handoff's; which runs first is the declared order's, and build is declared first (BUILD-IS-DECLARED-FIRST)."
   },
   {
     "tag": "A-BUILD-REFUSAL-KEYS-ON-THE-ENTRY-AS-DECLARED",
@@ -550,8 +608,10 @@
   {
     "tag": "EVERY-WINDOW-IS-LIVE-ON-ITS-OWN-WORK",
     "gate": {
-      "kind": "parked",
-      "reason": "decision on phase order against the budget — questions/build-is-declared-last-under-a-short-budget.md; build is declared last, so dropping the yield at maxTicks 1 starves it"
+      "kind": "blockedBy",
+      "tags": [
+        "BUILD-IS-DECLARED-FIRST"
+      ]
     },
     "dependsOnForks": [],
     "files": {
@@ -583,6 +643,6 @@
       "the inbox record leg is live while the queue carries a pickable entry"
     ],
     "pins": [],
-    "notes": "`harness/sweepWindow.ts` already says the yield leaves with the entry deriving the new rule. Unparks once the phase-order question rules — either build declared first or this repo's `supervisor.maxTicks` raised; the second is an operator edit to `.flume/declaration.ts`."
+    "notes": "`harness/sweepWindow.ts` already says the yield leaves with the entry deriving the new rule. Dropping the yield starves build while the declared order puts the slices ahead of it, so the reorder ships first; raising this repo's own `supervisor.maxTicks` stays an operator edit to `.flume/declaration.ts`, outside every fence."
   }
 ]
