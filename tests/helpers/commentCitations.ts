@@ -701,15 +701,16 @@ const renderRun = (run: readonly CommentLine[]): RenderedRun => {
 
 /**
  * A section cite: a page and the section of it a comment names, written as
- * `` (`<page>.md`, *Section*) ``. The page half is read backticked or bare,
- * the way every other page name is — the fence is the author's, never the
- * rule's.
+ * `` (`<page>.md`, *Section*) `` or `` (`<page>.md`, "Section") ``. Both
+ * emphases spell the one citation, so the two resolve identically. The page
+ * half is read backticked or bare, the way every other page name is — the
+ * fence is the author's, never the rule's.
  *
- * The parenthetical closes on the italicized half, so a sentence that merely
+ * The parenthetical closes on the emphasized half, so a sentence that merely
  * follows a page with an aside draws no cite and a comment that claimed no
  * section is never held to one.
  */
-const SECTION_CITE = /\(`?([^\s`(),]+\.md)`?,\s+\*([^*]+)\*\)/g;
+const SECTION_CITE = /\(`?([^\s`(),]+\.md)`?,\s+(?:\*([^*]+)\*|"([^"]+)")\)/g;
 
 /**
  * A TSDoc link tag and the declaration it references: the three spellings the
@@ -948,7 +949,7 @@ const commentSpans = (
     }
 
     // The section cite, read off the run as markdown renders it rather than
-    // off the span extents above: the italicized half is a phrase, so a
+    // off the span extents above: the emphasized half is a phrase, so a
     // comment line breaks it wherever the wrapping falls and the renderer
     // puts back the one space its own words already sit behind. Read in
     // `joined`'s alphabet it would be a different string on every rewrap.
@@ -956,10 +957,12 @@ const commentSpans = (
     for (const match of rendered.text.matchAll(SECTION_CITE)) {
       const page = match[1] ?? "";
       if (!isPageName(page)) continue;
+      // Whichever emphasis closed the parenthetical carries the section on
+      // to the same reader: one cite, spelled two ways.
       sections.push({
         module,
         line: rendered.lineAt(match.index),
-        text: match[2] ?? "",
+        text: match[2] ?? match[3] ?? "",
         page,
       });
     }

@@ -771,9 +771,10 @@ async function main(): Promise<number> {
     }
 
     // Output is never interpreted — the engine's lifecycle guarantee over
-    // the channel (spec/chain.md, "Chain.friction") is interpretation-
-    // freedom, not read-freedom (spec/cli.md, "Subcommand surface"); this
-    // verb only moves bytes, it never derives meaning from them.
+    // the channel (spec/chain.md, "Chain.friction — the declared friction
+    // channel") is interpretation-freedom, not read-freedom (spec/cli.md,
+    // "Subcommand surface"); this verb only moves bytes, it never derives
+    // meaning from them.
     if (chain.friction === undefined) {
       console.error(
         "[flume] friction refuses: this chain does not declare Chain.friction",

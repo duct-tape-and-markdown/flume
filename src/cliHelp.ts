@@ -413,8 +413,8 @@ A dot-prefixed name is not a note: the listing omits it, <name> refuses it,
 and the status count skips it.
 With <name>: print that note's bytes verbatim to stdout — the channel's
 content is never interpreted, only moved, counted, listed, or printed
-(spec/chain.md, "Chain.friction"). Read-only: no baton flag is touched, no
-agent runs.
+(spec/chain.md, "Chain.friction — the declared friction channel"). Read-only:
+no baton flag is touched, no agent runs.
 
 Exit codes:
   0   Success — including a declared channel whose directory doesn't exist

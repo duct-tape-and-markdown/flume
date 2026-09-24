@@ -1974,7 +1974,8 @@ describe("Dispatcher fanout — the ship removes the shipped entries' files alon
  * `AgentInvocation` is the only surface it can read the running entry off.
  * Without the field the tag is recoverable only by regexing the rendered
  * prompt the harness authored — a chain restating a fact the engine holds
- * (`.claude/rules/engineering.md`, "A fact the engine holds is reported").
+ * (`.claude/rules/engineering.md`, "A fact the engine holds is reported,
+ * never rediscovered").
  */
 describe("Dispatcher — the agent invocation states which entry it is running", () => {
   it("a fanout agent invocation carries the provisioned entry's tag", async () => {

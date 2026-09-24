@@ -364,6 +364,32 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// a finding here.`,
     `export const CAPS_ALONE = 21;`,
     ``,
+    `// The quoted spelling of a section cite is the same cite: a heading`,
+    `// (\`docs/sections.md\`, "Loud or nothing"), a bolded bullet lead`,
+    `// (docs/sections.md, "Verbatim copying is the detector"), and a bolded`,
+    `// lead opening a blockquote line (\`docs/sections.md\`, "Reading the`,
+    `// fixture's own banner"), the page half backticked or bare here too. A`,
+    `// page this tree does not hold titles nothing either way:`,
+    `// (\`docs/absent.md\`, "Loud or nothing").`,
+    `export const QUOTED_SECTIONS = 22;`,
+    ``,
+    `// The exactness rule reads the quoted half the way it reads the`,
+    `// italicized one, and the renderer closes its breaks the same way:`,
+    `// (\`docs/sections.md\`, "Derived state is computed") abbreviates a`,
+    `// heading this page opens, where (\`docs/sections.md\`, "Derived state`,
+    `// is computed, never restated beside its source") closes to that`,
+    `// heading whole across the break.`,
+    `export const QUOTED_ABBREVIATED = 23;`,
+    ``,
+    `// A fenced sample of that page mints no title for the quoted half`,
+    `// either: (\`docs/sections.md\`, "A fenced lead mints none either").`,
+    `export const QUOTED_FENCED = 24;`,
+    ``,
+    `// Nothing else is a cite: (\`docs/sections.md\`, "Loud or nothing" and`,
+    `// an aside) leaves the parenthetical open past the quotes, the way the`,
+    `// italicized spelling leaves it open past the italics.`,
+    `export const QUOTED_UNCITED = 25;`,
+    ``,
   ].join("\n"),
   "docs/carried.md": "# the page a tree outside the tsconfig cites\n",
   "tools/render.mjs": [
@@ -536,6 +562,7 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:118 docs/absent.md",
     "lib/surface.ts:164 KINDS",
     "lib/surface.ts:166 VANISHED_NAME",
+    "lib/surface.ts:183 docs/absent.md",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
@@ -864,6 +891,7 @@ it("the citation scan judges an unbackticked *.md page name in a comment", () =>
     "lib/surface.ts:58 docs/*.md",
     "lib/surface.ts:85 docs/withdrawn.md",
     "lib/surface.ts:113 docs/sections.md",
+    "lib/surface.ts:179 docs/sections.md",
   ]);
 
   // Judged, and judged in both directions by the arm the fenced paths go
@@ -1085,11 +1113,11 @@ it("a backticked word in capitals alone is judged as prose rather than as a cita
 
 it("a comment's (`<page>.md`, *Section*) pair resolves its section half against the page's headings, bolded bullet leads and a bolded lead opening a blockquote line", () => {
   // Vacuity guard: every cite the fixture authored was drawn, and no other,
-  // before a verdict is read off any of them — both fencings of the page
-  // half, each of the three altitudes the page states a title at, and the
-  // wrap the renderer closes. The two spellings below the last of these are
-  // the refusals: a parenthetical the italics do not close, and one carrying
-  // no section at all, neither of which appears here.
+  // before a verdict is read off any of them — both emphases, both fencings
+  // of the page half, each of the three altitudes the page states a title
+  // at, and the wrap the renderer closes. The spellings each emphasis's last
+  // cite sits above are the refusals: a parenthetical the emphasis does not
+  // close, and one carrying no section at all, neither of which appears here.
   expect(
     fixtureScan.sections.scanned.map(
       (site) => `${formatCitation(site)} -> ${site.page}`,
@@ -1102,6 +1130,13 @@ it("a comment's (`<page>.md`, *Section*) pair resolves its section half against 
     "lib/surface.ts:123 Derived state is computed -> docs/sections.md",
     "lib/surface.ts:128 Derived state is computed, never restated beside its source -> docs/sections.md",
     "lib/surface.ts:134 A fenced lead mints none either -> docs/sections.md",
+    "lib/surface.ts:178 Loud or nothing -> docs/sections.md",
+    "lib/surface.ts:179 Verbatim copying is the detector -> docs/sections.md",
+    "lib/surface.ts:180 Reading the fixture's own banner -> docs/sections.md",
+    "lib/surface.ts:183 Loud or nothing -> docs/absent.md",
+    "lib/surface.ts:188 Derived state is computed -> docs/sections.md",
+    "lib/surface.ts:189 Derived state is computed, never restated beside its source -> docs/sections.md",
+    "lib/surface.ts:195 A fenced lead mints none either -> docs/sections.md",
   ]);
 
   // The verdict: a heading answers a cite, a bolded bullet lead answers one
@@ -1131,6 +1166,64 @@ it("a comment's (`<page>.md`, *Section*) pair resolves its section half against 
   expect(findings).toContain(
     "lib/surface.ts:134 A fenced lead mints none either",
   );
+});
+
+it("a comment's (`<page>.md`, \"Section\") pair resolves its section half against the page's headings, bolded bullet leads and a bolded lead opening a blockquote line", () => {
+  // Vacuity guard: the quoted spelling of every altitude the fixture states
+  // was drawn before a verdict is read off any of them, so a reader that saw
+  // none of them could not pass this as a clean tree. The ledger above holds
+  // the drawn set whole; these are the quoted half of it.
+  const drawn = fixtureScan.sections.scanned.map(
+    (site) => `${formatCitation(site)} -> ${site.page}`,
+  );
+  expect(drawn).toContain(
+    "lib/surface.ts:178 Loud or nothing -> docs/sections.md",
+  );
+  expect(drawn).toContain(
+    "lib/surface.ts:179 Verbatim copying is the detector -> docs/sections.md",
+  );
+  expect(drawn).toContain(
+    "lib/surface.ts:180 Reading the fixture's own banner -> docs/sections.md",
+  );
+  expect(drawn).toContain(
+    "lib/surface.ts:183 Loud or nothing -> docs/absent.md",
+  );
+  expect(drawn).toContain(
+    "lib/surface.ts:189 Derived state is computed, never restated beside its source -> docs/sections.md",
+  );
+
+  // The verdict, and it is the italicized arm's verdict line for line: a
+  // heading answers a quoted cite, a bolded bullet lead answers one with the
+  // page half bare, a bolded lead opening a blockquote line answers one, and
+  // a phrase the comment line broke closes the way markdown closes it.
+  const findings = fixtureScan.sections.findings.map(formatCitation);
+  expect(findings).not.toContain("lib/surface.ts:178 Loud or nothing");
+  expect(findings).not.toContain(
+    "lib/surface.ts:179 Verbatim copying is the detector",
+  );
+  expect(findings).not.toContain(
+    "lib/surface.ts:180 Reading the fixture's own banner",
+  );
+  expect(findings).not.toContain(
+    "lib/surface.ts:189 Derived state is computed, never restated beside its source",
+  );
+
+  // The refusals are the same too: the named page is what answers, an
+  // abbreviation is a rewrite, and a fenced sample mints no title.
+  expect(findings).toContain("lib/surface.ts:183 Loud or nothing");
+  expect(findings).toContain("lib/surface.ts:188 Derived state is computed");
+  expect(findings).toContain(
+    "lib/surface.ts:195 A fenced lead mints none either",
+  );
+
+  // And a parenthetical the quotes leave open past the section draws no cite
+  // at all: the fenced one at 195 is the last the fixture authors, so the
+  // block past it is read for nothing.
+  expect(
+    fixtureScan.sections.scanned
+      .filter((site) => site.module === "lib/surface.ts" && site.line > 195)
+      .map(formatCitation),
+  ).toEqual([]);
 });
 
 it("an abbreviated section half is reported unresolved rather than matched as a prefix", () => {
