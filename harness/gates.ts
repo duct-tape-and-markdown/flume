@@ -8,10 +8,21 @@
  * **Always first is mechanism here, not a promise.** {@link harnessGates}
  * returns the package's own and then the consumer's, so a declaration
  * cannot displace one by ordering, and there is no per-phase table of which
- * gate applies where to fall out of step with the fence. The set is the same
- * for every phase the package ships: each of them is a claim about *any*
- * commit the package's chain produces, and the ones whose subject a given
- * phase never writes cost a handful of at-ref reads to say so.
+ * gate applies where to fall out of step with the fence. The `afterCommit`
+ * set is the same for every phase the package ships: each of them is a claim
+ * about *any* commit the package's chain produces, and the ones whose subject
+ * a given phase never writes cost a handful of at-ref reads to say so.
+ *
+ * The one member that is not uniform is the pending gate's **merged-tree**
+ * placement, which carries the claim check (`spec/pending.md`, *Claims — an
+ * entry in flight is left alone*) and is wired to the plan slices alone. Not
+ * a table of where a gate applies, but the same reasoning read the other way:
+ * that gate's cost is a full queue parse rather than a handful of reads, and
+ * build's fence admits no entry file, so on build it would buy a re-parse and
+ * a verdict that could only ever be green. The claim check has to be there
+ * and not at the producer's own commit, because a build tick can stake a
+ * claim between that commit and its cherry-pick — a pre-merge read answers
+ * about a tree the collision is not in.
  *
  * The order they run in is dependency order, not the spec's listing
  * order: the dispatcher stops at the first refusal, so the pending gate —
@@ -50,7 +61,7 @@ import type { EntryExtension, QueueFile } from "../src/PendingSchema.js";
 import type { Phase } from "../src/Phase.js";
 
 import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js";
-import { BUILD_PHASE, type Declaration } from "./declaration.js";
+import { BUILD_PHASE, PLAN_SLICES, type Declaration } from "./declaration.js";
 import { entryExtension, PerSchema } from "./entryExtension.js";
 import {
   notePaths,
@@ -120,12 +131,13 @@ export interface GateEngine {
 /** What {@link harnessGates} needs to build one phase's set. */
 export interface HarnessGatesOptions {
   /**
-   * The phase the set is for, read for its own fence — the clean-tree gate
-   * judges an untracked leftover against exactly the paths the phase
-   * declares, so the caller hands the phase itself rather than a list that
-   * could drift from it.
+   * The phase the set is for, read for its own fence and its own name — the
+   * clean-tree gate judges an untracked leftover against exactly the paths
+   * the phase declares, and the merged-tree claim check is wired to the
+   * phases that produce the queue, so the caller hands the phase itself
+   * rather than a list and a name that could drift from it.
    */
-  readonly phase: Readonly<Pick<Phase, "writablePaths">>;
+  readonly phase: Readonly<Pick<Phase, "name" | "writablePaths">>;
   /** The consumer's validated declaration. */
   readonly declaration: Declaration;
   /** The engine values the gates run through. */
@@ -580,6 +592,19 @@ function buildFence(
 }
 
 /**
+ * Whether this phase is one of the queue's producers — the plan slices, which
+ * are every phase the package ships but build (`PLAN_SLICES`,
+ * `declaration.ts`).
+ *
+ * Read off the package's own roster rather than off a fence or a commit: which
+ * phases write the queue is a fact the package states when it declares them,
+ * so a sixth slice joins this predicate by joining that list.
+ */
+function producesQueue(name: string): boolean {
+  return (PLAN_SLICES as readonly string[]).includes(name);
+}
+
+/**
  * The package's gate set for one phase, followed by the consumer's own.
  *
  * These are the discipline's, and they run in dependency order: records
@@ -589,18 +614,27 @@ function buildFence(
  * parse. The cursor gate trails them because its probe spawns git where the
  * others read. The dispatcher stops at the first refusal, so that order is
  * what decides which message a tick is handed back.
+ *
+ * The merged-tree pending gate behind them is the one member the set does not
+ * carry for every phase, and the module doc above says why: its subject is
+ * the queue a commit rewrote, and build's fence admits no entry file, so on
+ * build it would re-parse the whole queue to say nothing.
  */
 export function harnessGates(options: HarnessGatesOptions): Gate[] {
   const { phase, declaration, engine, entryFields, declared = [] } = options;
+  const queue = {
+    extension: entryExtension(entryFields),
+    targetFence: buildFence(declaration),
+  };
   return [
     recordsGate(engine),
     cleanTreeGate(phase.writablePaths, engine),
-    engine.pendingGate({
-      extension: entryExtension(entryFields),
-      targetFence: buildFence(declaration),
-    }),
+    engine.pendingGate(queue),
     perGate(declaration, engine),
     cursorGate(engine),
+    ...(producesQueue(phase.name)
+      ? [engine.pendingGate({ ...queue, when: "afterMerge" as const })]
+      : []),
     ...declared,
   ];
 }

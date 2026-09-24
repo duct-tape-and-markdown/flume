@@ -800,16 +800,17 @@ const factory: ChainFactory = (flume) => {
   (`{ ...chainLoadGate, when: "afterMerge" }`).
 - `writablePathsGate` — attached automatically by the dispatcher from each
   phase's `writablePaths`. Don't list manually.
-- `pendingGate` — `pendingGate({ targetFence, extension?, fenceWhen?, hint? })`:
-  composed queue validation plus a plan-time fence pre-check
-  against the target phase. See below.
+- `pendingGate` — `pendingGate({ targetFence, extension?, fenceWhen?, hint?,
+  when? })`: composed queue validation, a plan-time fence pre-check against
+  the target phase, and a claim check over the entries another tick holds.
+  See below.
 - `shellGate` — `shellGate({ name, when, cmd, args, failHint? })`, the escape
   hatch for "run a command, fail on non-zero". `tscGate`, `vitestGate` and
   `eslintGate` are `shellGate` instances, built through one shared
   package-manager factory — which is why each carries a `command` string.
   `chainLoadGate`, `writablePathsGate` and `pendingGate` run their own checks.
 
-### `pendingGate`: composed validation + fence pre-check
+### `pendingGate`: composed validation + fence pre-check + claim check
 
 `pendingGate` replaces a hand-rolled "does the queue parse" gate
 (below) with one that also catches a class of guaranteed-revert bug
@@ -819,6 +820,12 @@ core+extension schema (§2), then pre-checks every entry's declared
 An entry whose declaration can't survive that fence fails **here, at plan
 time, naming the offending paths** — instead of shipping through plan and
 burning a whole build tick on a commit that was always going to revert.
+
+Third, it runs the **claim check**: an entry a concurrent tick holds a claim
+on (§13) must be left byte-identical by the gated commit, or the commit is
+refused naming the entry and the pid holding it. The subject is the gated
+span's own diff, so an edit and a removal are caught the same way and a
+commit that touches no entry file is never judged against the claims at all.
 
 ```ts
 const build: Phase = {
@@ -873,11 +880,33 @@ const plan: Phase = {
 every entry) — supply it to exempt park-exempt `gate.kind` values (e.g.
 `"parked"`, `"deferred"`) the same way the build fence itself does.
 
-`hint` appends chain-authored operator guidance verbatim to both violation
-messages (schema and fence) — the same capability/convention split as
+`hint` appends chain-authored operator guidance verbatim to every violation
+message (schema, fence and claim) — the same capability/convention split as
 `failHint` on `shellGate`: you supply the text, the engine supplies the
 enforcement. Omitted, the messages read exactly as they did before the option
 existed.
+
+`when` places the gate, defaulting to `afterCommit`. That default is what the
+fence pre-check wants: an off-fence declaration is caught in the producer's
+own worktree, where the revert costs a tick and nothing on trunk. The **claim
+check** wants `afterMerge`, because a build tick can stake a claim between the
+producer's commit and its cherry-pick — a read taken in the worktree answers
+about a tree the collision is not in. A chain that wants both attaches two:
+
+```ts
+const plan: Phase = {
+  name: "plan",
+  gates: [
+    pendingGate({ targetFence: build }),
+    pendingGate({ targetFence: build, when: "afterMerge" }),
+  ],
+  // ...
+};
+```
+
+The harness package wires exactly that pair on every plan slice, and the
+`afterCommit` one alone on `build` — whose fence admits no entry file, so the
+merged-tree placement there would re-parse the whole queue to say nothing.
 
 The queue this gate validates is `ctx.pendingDir`, the resolved
 `Chain.pendingDir` — there is no `pendingDir` option, because the path is
@@ -2329,7 +2358,10 @@ Two things follow for a chain, and neither asks it to read the claims itself:
 What to do about a claimed entry is yours. The engine reports the set and
 nothing else — waiting, filing a sibling entry, or saying so in the commit
 body are all chain decisions, and the harness package makes one of them for
-the prompts it ships.
+the prompts it ships. What the engine *will* do is refuse a ledger commit that
+changed one anyway, where the chain attaches `pendingGate` at `afterMerge`
+(above) — a re-scope that lands pulls the rug from under a wave already
+building the entry as it was.
 
 A claim left behind by a tick that died names a pid no longer alive, and the
 next selection reclaims it; nothing has to be swept by hand.

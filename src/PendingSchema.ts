@@ -277,6 +277,26 @@ export function entryFileName(tag: string): string {
 }
 
 /**
+ * The tag a queue file's name claims, or `null` when the name is no entry
+ * file's — {@link entryFileName}'s inverse, spelled beside it rather than at
+ * the caller that needs it.
+ *
+ * A reader walking a commit's touched paths holds names, not entries: a file
+ * the commit *removed* is in no listing it can parse, and its tag is
+ * recoverable from the name alone (`pendingGate`'s claim check,
+ * `src/builtinGates.ts`). The rule is the one {@link entryFileName} states,
+ * read backwards, so a change to the extension moves both halves at once.
+ *
+ * The bare extension is not an entry file: it names the empty tag, which
+ * `TAG_PATTERN` admits none of.
+ */
+export function entryTagFromFileName(file: string): string | null {
+  return file.length > ENTRY_FILE_EXT.length && file.endsWith(ENTRY_FILE_EXT)
+    ? file.slice(0, -ENTRY_FILE_EXT.length)
+    : null;
+}
+
+/**
  * Thrown when a chain-declared `~standard.validate` returns a `Promise`.
  * `parsePendingQueue` is synchronous and feeds decision and rewrite paths — a
  * `Promise` read as a result object has no `issues`, so it would be treated as

@@ -10,6 +10,7 @@ import { join, relative } from "node:path";
 
 import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
 import type { Phase } from "./Phase.js";
+import { EntryClaimStore, entryClaimSlug } from "./entryClaims.js";
 // `chainLoadGate` validates through the exact load path the runtime uses, so
 // the gate's verdict can never disagree with what the next tick's resolution
 // would do.
@@ -23,6 +24,7 @@ import {
 import { readQueueAtRef, readQueueOnDisk } from "./pendingLedger.js";
 import { execFileWithShimRetry } from "./spawnShim.js";
 import {
+  entryTagFromFileName,
   parsePendingQueue,
   type EntryExtension,
   type PendingEntry,
@@ -305,6 +307,23 @@ export interface PendingGateOptions {
    * existed.
    */
   hint?: string;
+  /**
+   * Where in the lifecycle the gate runs. Defaults to `afterCommit`, the
+   * placement `spec/pending.md` describes and the one the fence pre-check
+   * wants: an entry declaring a path outside the consumer's fence is caught
+   * in the producer's own worktree, where the revert costs a tick and
+   * nothing on trunk.
+   *
+   * `afterMerge` is the placement the **claim check** wants, and is why the
+   * knob exists rather than the chain hand-rolling a second gate: a
+   * concurrent build tick can stake a claim between the producer's commit
+   * and its cherry-pick, so a read taken in the worktree answers about a
+   * tree the collision is not in. Placement is the chain's decision, the
+   * same injection point {@link PkgManagerOverride} carries for the
+   * shell-backed builtins (spec/chain.md, *Gate placement is the chain's
+   * decision*); a chain that wants both placements attaches two.
+   */
+  when?: GatePhase;
 }
 
 /**
@@ -317,6 +336,12 @@ export interface PendingGateOptions {
  * guaranteed revert: an entry declaring a file outside the downstream phase's
  * fence is caught at plan's own commit, never handed to build as unshippable
  * work.
+ *
+ * Third, the **claim check**: an entry a concurrent tick holds a claim on
+ * (`spec/pending.md`, *Claims — an entry in flight is left alone*) is left
+ * byte-identical by the gated commit, or the commit is refused naming the
+ * entry and its holder. `opts.when` is what a chain places that check where
+ * it bites — see the option.
  */
 export function pendingGate(opts: PendingGateOptions): Gate {
   const fenceWhen = opts.fenceWhen ?? (() => true);
@@ -324,7 +349,7 @@ export function pendingGate(opts: PendingGateOptions): Gate {
     opts.hint ? `${message} — ${opts.hint}` : message;
   return {
     name: "pending-gate",
-    when: "afterCommit",
+    when: opts.when ?? "afterCommit",
     async run(ctx: GateContext): Promise<GateResult> {
       // spec/pending.md "The pending queue": `ctx.pendingDir` is the one
       // resolved value (`Chain.pendingDir ?? "plan/pending"`, absolute,
@@ -351,19 +376,26 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       // checkout's on-disk (pre-commit) copy. Absent `stateRootRel` (a
       // genuinely relocated state root) has no shared tracked history to read
       // the gated commit's copy from, so it stays the disk read.
+      //
+      // The offset and the queue's own leg are joined and folded once, here,
+      // rather than at each of the two readers below: `relative` answers in
+      // the host's dialect and every consumer of this value hands it to git
+      // — a tree listing at a ref, a touched-path comparison — where a
+      // backslash matches nothing (`.claude/rules/posture-sweep.md`, *A
+      // repo-relative path composed with `node:path`*).
+      const queueDirRel =
+        ctx.stateRootRel === undefined
+          ? undefined
+          : gitPath(join(ctx.stateRootRel, displayPath));
       let files: QueueFile[] | null;
-      if (ctx.stateRootRel === undefined) {
+      if (queueDirRel === undefined) {
         try {
           files = readQueueOnDisk(ctx.pendingDir);
         } catch {
           files = null;
         }
       } else {
-        files = await readQueueAtRef(
-          ctx.repoRoot,
-          ctx.commitSha,
-          join(ctx.stateRootRel, displayPath),
-        );
+        files = await readQueueAtRef(ctx.repoRoot, ctx.commitSha, queueDirRel);
       }
       if (files === null) {
         return { ok: false, message: `${displayPath} missing after commit` };
@@ -410,12 +442,79 @@ export function pendingGate(opts: PendingGateOptions): Gate {
             .join("\n"),
         };
       }
+      // spec/pending.md, *Claims — an entry in flight is left alone*: while a
+      // build tick holds an entry, that entry's file is left byte-identical
+      // or this commit is refused naming both. A re-scope that lands anyway
+      // pulls the rug from under a wave already building the entry as it was.
+      //
+      // The subject is the gated span's diff, so "byte-identical" is git's
+      // verdict and not a comparison composed here: a path absent from
+      // `touchedPaths` is one the span did not change, and an edit and a
+      // removal arrive the same way. A relocated state root puts the queue
+      // where no commit can name it (`queueDirRel` absent), so no touched
+      // path is an entry file and the check has nothing to judge.
+      const touchedEntries = touchedEntryFiles(ctx, queueDirRel);
+      if (touchedEntries.length > 0) {
+        // Read only behind a touched entry file: the claims walk costs a
+        // `rev-parse` and a listing, and a phase whose fence never admits the
+        // queue — build's — pays neither.
+        const holders = await new EntryClaimStore(ctx.repoRoot).readHolders();
+        const held = touchedEntries.flatMap(({ path, tag }) => {
+          const by = holders.get(entryClaimSlug(tag));
+          return by === undefined
+            ? []
+            : [`  [${tag}] ${path} is claimed by pid ${by.pid}`];
+        });
+        if (held.length > 0) {
+          return {
+            ok: false,
+            message: withHint(
+              `this commit changes ${held.length} entr${
+                held.length === 1 ? "y" : "ies"
+              } another tick holds a claim on`,
+            ),
+            details: held.join("\n"),
+          };
+        }
+      }
       return {
         ok: true,
         message: `${displayPath} valid (${parsed.entries.length} entries), fence pre-check passed`,
       };
     },
   };
+}
+
+/**
+ * The entry files the gated span changed, each paired with the tag its name
+ * claims — the claim check's subject.
+ *
+ * The listing rule is the queue's own (`spec/pending.md`, *The ledger is a
+ * directory — one entry per file*): every `<tag>.json` **directly** under the
+ * queue directory is an entry and nothing else is, so a sidecar in a
+ * subdirectory is not read as work here any more than it is by the read that
+ * dispatches. The tag comes back through `entryFileName`'s own inverse
+ * ({@link entryTagFromFileName}) rather than a `.json` strip spelled here,
+ * which is the second copy of the naming rule the parse already enforces
+ * both directions on.
+ *
+ * Off the touched paths rather than the parsed queue, because a **removal**
+ * is the collision that matters most and a removed entry is in no listing
+ * left to parse.
+ */
+function touchedEntryFiles(
+  ctx: GateContext,
+  queueDirRel: string | undefined,
+): { readonly path: string; readonly tag: string }[] {
+  if (queueDirRel === undefined) return [];
+  const prefix = `${queueDirRel}/`;
+  return ctx.touchedPaths.flatMap((path) => {
+    if (!path.startsWith(prefix)) return [];
+    const file = path.slice(prefix.length);
+    if (file.includes("/")) return [];
+    const tag = entryTagFromFileName(file);
+    return tag === null ? [] : [{ path, tag }];
+  });
 }
 
 /**

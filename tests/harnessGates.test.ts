@@ -44,6 +44,7 @@ import { readQueueAtRef } from "../src/pendingLedger.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
+import { BUILD_PHASE, PLAN_SLICES } from "../harness/declaration.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -106,8 +107,8 @@ const declaration: Declaration = parseDeclaration({
   slices: { enabled: ["plan-derive"] },
 });
 
-/** The phase the set is built for — build's fence, as declared. */
-const phase = { writablePaths: [...BUILD_FENCE] };
+/** The phase the set is built for — build's name and fence, as declared. */
+const phase = { name: BUILD_PHASE, writablePaths: [...BUILD_FENCE] };
 
 const git = (repo: string, args: string[]): string =>
   gitOutSync(repo, args).trim();
@@ -944,6 +945,34 @@ it("the package's gates precede a consumer's declared gates for the same phase",
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain("OUT-OF-FENCE");
   expect(refused.details).toContain("docs/design.md");
+});
+
+/**
+ * The merged-tree placement of the pending gate — the one member of the set
+ * that is not uniform across phases (`harness/gates.ts`). It carries the
+ * claim check, whose subject is the queue a commit rewrote, so it is wired to
+ * the phases that produce the queue and to no other.
+ *
+ * Read off the real factory for each declared phase, never a list restated
+ * here: a slice added to `PLAN_SLICES` joins this case with it.
+ */
+it("the merged-tree pending gate is wired to every plan slice, and to build never", () => {
+  const placements = (name: string): string[] =>
+    harnessGates({
+      phase: { name, writablePaths: [...BUILD_FENCE] },
+      declaration,
+      engine,
+    })
+      .filter((g) => g.name === "pending-gate")
+      .map((g) => g.when);
+
+  // Vacuity pin: there are slices to judge, and each carries the gate at
+  // both points — the producer's own commit and the merged tree.
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+  for (const slice of PLAN_SLICES) {
+    expect(placements(slice)).toEqual(["afterCommit", "afterMerge"]);
+  }
+  expect(placements(BUILD_PHASE)).toEqual(["afterCommit"]);
 });
 
 /**

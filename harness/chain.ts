@@ -205,7 +205,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     own: readonly Gate[] = [],
   ): Gate[] =>
     harnessGates({
-      phase,
+      phase: { name, writablePaths: phase.writablePaths },
       declaration,
       engine,
       ...(options.entryFields ? { entryFields: options.entryFields } : {}),

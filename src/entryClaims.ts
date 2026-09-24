@@ -32,6 +32,7 @@ import { namespacedJoin, slugify } from "./paths.js";
 import {
   livePidClaimAt,
   stakePidClaim,
+  type PidClaim,
   type PidClaimStake,
 } from "./pidClaim.js";
 
@@ -83,30 +84,49 @@ export class EntryClaimStore {
   constructor(private readonly repoRoot: string) {}
 
   /**
-   * Every entry slug a live process holds a claim on, right now.
+   * Every entry slug a live process holds a claim on, right now, each paired
+   * with the holder that stated it.
    *
-   * A claim whose file names a dead pid is absent from the set — that is the
+   * A claim whose file names a dead pid is absent from the map — that is the
    * reclaim `spec/loop.md`, *Crash equals stop* promises: the next selection
    * picks the entry up, and the stake below unlinks the stale file on its way
-   * to taking it. An absent directory is the empty set (no tick has ever
+   * to taking it. An absent directory is the empty map (no tick has ever
    * staked one here); every other read failure travels out, because a claims
    * directory that cannot be read is not a repository with nothing in flight
    * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   *
+   * The holder rides along because one reader needs it: selection only asks
+   * *whether* an entry is in flight ({@link readLive}), while the pending
+   * gate's claim check refuses a ledger commit **naming** the holder
+   * (`spec/pending.md`, *Claims — an entry in flight is left alone*). One
+   * walk answers both rather than a liveness probe beside a second read of
+   * the same files.
    */
-  async readLive(): Promise<ReadonlySet<string>> {
+  async readHolders(): Promise<ReadonlyMap<string, PidClaim>> {
     const dir = entryClaimsDir(await gitCommonDir(this.repoRoot));
     let names: string[];
     try {
       names = await readdir(namespacedJoin(dir));
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Set();
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Map();
       throw err;
     }
-    const live = new Set<string>();
+    const live = new Map<string, PidClaim>();
     for (const name of names) {
-      if ((await livePidClaimAt(join(dir, name))) !== null) live.add(name);
+      const held = await livePidClaimAt(join(dir, name));
+      if (held !== null) live.set(name, held);
     }
     return live;
+  }
+
+  /**
+   * The slugs alone — {@link readHolders} for the reader that asks only
+   * whether an entry is in flight. Derived from the one walk rather than a
+   * second listing beside it (`.claude/rules/engineering.md`, *Derived state
+   * is computed, never restated beside its source*).
+   */
+  async readLive(): Promise<ReadonlySet<string>> {
+    return new Set((await this.readHolders()).keys());
   }
 
   /**

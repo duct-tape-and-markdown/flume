@@ -20,6 +20,7 @@
  * chain a hand-rolled shellGate restating the builtin's own command.
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,6 +47,10 @@ import {
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
+import { entryClaimPath, entryClaimSlug } from "../src/entryClaims.ts";
+import { gitCommonDir } from "../src/git.ts";
+import { renderPidClaim } from "../src/pidClaim.ts";
+import { deadPid } from "./helpers/deadPid.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer", CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call
@@ -498,6 +503,201 @@ describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * The claim check — `pendingGate`'s third (`spec/pending.md`, *Claims — an
+ * entry in flight is left alone*): while a build tick holds an entry, a
+ * ledger commit leaves that entry's file byte-identical or is refused naming
+ * the entry and its holder.
+ *
+ * Every case gates a **real commit** and plants its claim through the
+ * engine's own statement at the engine's own address — `renderPidClaim` under
+ * `entryClaimPath(gitCommonDir(repo), entryClaimSlug(tag))`. A fixture
+ * spelling either would re-author, by the tester's hand, the two seams the
+ * check rides: what git calls changed, and where a claim lives
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+describe("pendingGate — claim check over the merged tree (spec/pending.md 'Claims — an entry in flight is left alone')", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await createBootstrappedRepo("flume-pendinggate-claim-");
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  // The bare core alone — this describe declares no extension, so a field
+  // beyond it is a schema violation and not the claim verdict under test.
+  // `description` is what a re-scope actually rewrites.
+  const entry = (tag: string, description = "as queued") => ({
+    ...validEntry,
+    tag,
+    files: {
+      new: [],
+      edit: [{ path: "src/foo.ts", description }],
+      retire: [],
+    },
+  });
+
+  /** The queue path one entry's file sits at, as the commit spells it. */
+  const entryPath = (tag: string): string =>
+    `.flume/plan/pending/${entryFileName(tag)}`;
+
+  /** A live claim on `tag`, staked at the address the engine addresses. */
+  async function claim(tag: string, pid = process.pid): Promise<void> {
+    const path = entryClaimPath(await gitCommonDir(dir), entryClaimSlug(tag));
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, renderPidClaim(pid, new Date()), "utf8");
+  }
+
+  /** A commit and the span git reports for it, as the dispatcher would. */
+  async function commitSpan(
+    files: Record<string, string>,
+    removed: readonly string[] = [],
+  ): Promise<Pick<GateContext, "baseSha" | "commitSha" | "touchedPaths">> {
+    const opts = { cwd: dir };
+    const baseSha = (await exec("git", ["rev-parse", "HEAD"], opts)).stdout.trim();
+    for (const [rel, content] of Object.entries(files)) {
+      const abs = join(dir, rel);
+      await mkdir(dirname(abs), { recursive: true });
+      await writeFile(abs, content);
+    }
+    for (const rel of removed) await rm(join(dir, rel), { force: true });
+    await exec("git", ["add", "-A"], opts);
+    await exec("git", ["commit", "-q", "-m", "ledger"], opts);
+    const commitSha = (await exec("git", ["rev-parse", "HEAD"], opts)).stdout.trim();
+    const touchedPaths = (
+      await exec("git", ["diff", "--name-only", `${baseSha}..${commitSha}`], opts)
+    ).stdout
+      .split("\n")
+      .filter(Boolean);
+    return { baseSha, commitSha, touchedPaths };
+  }
+
+  /** The gate as the harness wires the merged-tree placement. */
+  const merged = (hint?: string): Gate =>
+    pendingGate({
+      targetFence: { writablePaths: ["src/**"] },
+      ...(hint !== undefined ? { hint } : {}),
+      when: "afterMerge",
+    });
+
+  it("pendingGate refuses a commit that edits a claimed entry's file, naming the entry and the holder", async () => {
+    await commitFiles(dir, queueFiles([entry("HELD"), entry("FREE")]));
+    await claim("HELD");
+    const span = await commitSpan({
+      [entryPath("HELD")]: JSON.stringify(entry("HELD", "re-scoped mid-flight")),
+    });
+    // Non-vacuity: the span is the one entry file, so the verdict below is
+    // the claim check's and not a schema or fence refusal riding along.
+    expect(span.touchedPaths).toEqual([entryPath("HELD")]);
+
+    const result = await merged().run(ctx(dir, span));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/1 entry another tick holds a claim on/);
+    expect(result.details).toContain("[HELD]");
+    expect(result.details).toContain(`claimed by pid ${process.pid}`);
+  });
+
+  it("pendingGate refuses a commit that removes a claimed entry's file", async () => {
+    await commitFiles(dir, queueFiles([entry("HELD"), entry("FREE")]));
+    await claim("HELD");
+    const span = await commitSpan({}, [entryPath("HELD")]);
+    // Non-vacuity: the removal is what git reported, and the entry is gone
+    // from the commit's tree — so nothing the gate parses can name it, and
+    // the refusal below can only have come off the touched path.
+    expect(span.touchedPaths).toEqual([entryPath("HELD")]);
+
+    const result = await merged().run(ctx(dir, span));
+    expect(result.ok).toBe(false);
+    expect(result.details).toContain("[HELD]");
+    expect(result.details).toContain(`claimed by pid ${process.pid}`);
+  });
+
+  it("pendingGate passes a commit that edits an unclaimed entry", async () => {
+    await commitFiles(dir, queueFiles([entry("HELD"), entry("FREE")]));
+    await claim("HELD");
+    const gate = merged();
+
+    // The vacuity pin (`.claude/rules/engineering.md`, *A green verdict is
+    // proven non-vacuous*): the same gate over the same shape of span
+    // refuses when the claim names the edited entry, so the green below is a
+    // check that was armed and looked, not one that was never run.
+    const armed = await commitSpan({
+      [entryPath("HELD")]: JSON.stringify(entry("HELD", "re-scoped")),
+    });
+    expect((await gate.run(ctx(dir, armed))).ok).toBe(false);
+
+    const span = await commitSpan({
+      [entryPath("FREE")]: JSON.stringify(entry("FREE", "re-scoped freely")),
+    });
+    expect(span.touchedPaths).toEqual([entryPath("FREE")]);
+    const result = await gate.run(ctx(dir, span));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/fence pre-check passed/);
+  });
+
+  it("opts.hint appends to the claim-check violation message", async () => {
+    await commitFiles(dir, queueFiles([entry("HELD")]));
+    await claim("HELD");
+    const span = await commitSpan({
+      [entryPath("HELD")]: JSON.stringify(entry("HELD", "re-scoped")),
+    });
+
+    const hinted = await merged("wait for the build tick to land").run(
+      ctx(dir, span),
+    );
+    expect(hinted.ok).toBe(false);
+    expect(hinted.message).toMatch(/ — wait for the build tick to land$/);
+
+    // And omitted, the message reads exactly as it does without the option
+    // — the hint is the only difference between the two.
+    const bare = await merged().run(ctx(dir, span));
+    expect(hinted.message).toBe(
+      `${bare.message} — wait for the build tick to land`,
+    );
+  });
+
+  it("a claim held by a dead pid leaves the entry editable", async () => {
+    await commitFiles(dir, queueFiles([entry("STALE")]));
+    await claim("STALE", deadPid());
+    const span = await commitSpan({
+      [entryPath("STALE")]: JSON.stringify(entry("STALE", "re-scoped")),
+    });
+    // Non-vacuity: the claim file is on disk for this read, so the pass is
+    // the liveness verdict and not an empty claims directory.
+    expect(
+      existsSync(
+        entryClaimPath(await gitCommonDir(dir), entryClaimSlug("STALE")),
+      ),
+    ).toBe(true);
+
+    expect((await merged().run(ctx(dir, span))).ok).toBe(true);
+  });
+
+  it("a commit that touches no entry file is not judged against the claims at all", async () => {
+    await commitFiles(dir, queueFiles([entry("HELD")]));
+    await claim("HELD");
+    const span = await commitSpan({ "src/foo.ts": "export const x = 1;\n" });
+    expect(span.touchedPaths).toEqual(["src/foo.ts"]);
+
+    // Vacuous by design and spelled as such: a claim stands, and the commit
+    // changed no entry file, so there is nothing for the check to refuse.
+    const result = await merged().run(ctx(dir, span));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/fence pre-check passed/);
+  });
+
+  it("pendingGate stays at afterCommit unless the chain places it", () => {
+    expect(pendingGate({ targetFence: { writablePaths: [] } }).when).toBe(
+      "afterCommit",
+    );
+    expect(merged().when).toBe("afterMerge");
   });
 });
 
