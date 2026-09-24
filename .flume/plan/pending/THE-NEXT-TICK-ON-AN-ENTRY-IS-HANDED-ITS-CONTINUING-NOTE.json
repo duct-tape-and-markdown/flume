@@ -1,7 +1,12 @@
 {
   "tag": "THE-NEXT-TICK-ON-AN-ENTRY-IS-HANDED-ITS-CONTINUING-NOTE",
-  "gate": { "kind": "blockedBy", "tags": ["A-CONTINUING-NOTE-IS-A-THIRD-NOTE-HOME"] },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "harness/prompts.ts",
@@ -15,10 +20,14 @@
         "path": "tests/harnessBuildArgs.test.ts",
         "description": "a standing note, and none"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "A continuing note is written and never read back: the next tick on the entry sees the prior-attempt record and nothing the last tick said",
-  "per": { "path": "spec/harness.md", "section": "A tick puts work down" },
+  "per": {
+    "path": "spec/harness.md",
+    "section": "A tick puts work down"
+  },
   "acceptance": "a continuing note standing for the assigned entry rides that tick's build prompt beside the prior-attempt record; with none standing, nothing is rendered in its place",
   "tests": [
     "a continuing note standing for the assigned entry rides the build prompt"
