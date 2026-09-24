@@ -43,8 +43,10 @@ import {
  *
  * Yields first. While the queue carries a pickable entry the window is
  * closed whatever is in it, because the sweep is insurance and shipped
- * entries are the product; the frontier is deferred, never lost
- * (`.claude/rules/posture-sweep.md`, *The sweep yields to pickable work*).
+ * entries are the product; the frontier is deferred, never lost. The rule
+ * now schedules the sweep beside build under the supervisor's budget
+ * (`.claude/rules/posture-sweep.md`, *The sweep runs beside build, never
+ * ahead of it*), and this yield leaves with the entry that derives it.
  * An open rotation then holds it live on its own: a rotation is open exactly
  * while a frontier it already drew has neighborhoods left in it, and closing
  * one is the slice's own job.

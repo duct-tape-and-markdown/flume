@@ -121,7 +121,7 @@ be provisioned on Windows. The engine reports that loudly as a provisioning fail
 entry could never ship on that platform.
 
 The bound is an engine constant, not a chain knob: it is a property of git, not of any
-implementation's taste. **The tag itself is untouched** — `pending.json`, commit messages,
+implementation's taste. **The tag itself is untouched** — the ledger, commit messages,
 logs, the prior-attempt key, and every tag-keyed lookup keep the full tag; only this one
 directory component is bounded. Shortening the tag would be a breaking schema change punishing
 POSIX chains for a git-on-Windows limit.
@@ -255,7 +255,7 @@ into the entry's `observedFiles` (`spec/pending.md`), which is what the next par
 
 A gate-reverted tick's `git reset --hard` destroys everything the commit wrote, including
 findings that exist nowhere else — a plan tick's `state.md` / `open-questions.md` prose is lost
-with the schema-failing `pending.json` that tripped the gate. **Recovery must never require
+with the schema-failing entry that tripped the gate. **Recovery must never require
 reading session logs.**
 
 Before the drop, every non-deleted file the reverted commit touched is snapshotted verbatim —

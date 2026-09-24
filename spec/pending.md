@@ -1,12 +1,14 @@
 # The pending queue
 
-The pending queue is the contract between a producer phase and a consumer phase: a JSON array
-at `<flumeDir>/<Chain.pendingPath>`, each element one unit of work. `Chain.pendingPath` is a
-state-root-relative file path, the `friction` idiom, defaulting to `plan/pending.json`
-— a default the engine keeps because its own mechanics read the file and a tick cannot run
-without one (`.claude/rules/engine-boundary.md`, *Surface, not prescription*). Every engine read
-of the queue — fanout selection, the post-tick re-read, `flume status`, `flume check`, and
-`pendingGate` — resolves the one declared value; no site carries its own copy of the default.
+The pending queue — the ledger — is the contract between a producer phase and a consumer
+phase: a directory at `<flumeDir>/<Chain.pendingDir>`, one JSON file per unit of work, named
+`<tag>.json`. `Chain.pendingDir` is a state-root-relative directory path, the `friction` idiom,
+defaulting to `plan/pending` — a default the engine keeps because its own mechanics read the
+directory and a tick cannot run without one (`.claude/rules/engine-boundary.md`, *Surface, not
+prescription*). Every engine read of the queue — fanout selection, the post-tick re-read,
+`flume status`, `flume check`, and `pendingGate` — resolves the one declared value; no site
+carries its own copy of the default. Why a directory and not one array is *The ledger is a
+directory — one entry per file*, below.
 
 This file governs what the
 engine owns in that shape, what a chain declares on top of it, how an
@@ -19,7 +21,7 @@ through untouched.
 
 `PendingEntryCore` is a **strict** object — a field that is neither core
 nor chain-declared fails validation loudly. Silent stripping is not an option: the dispatcher
-rewrites `pending.json` on ship, so a stripped field would be destroyed on disk.
+rewrites an entry's file on ship, so a stripped field would be destroyed on disk.
 
 - **`tag`** — identity. Appears in commit messages, worktree/branch slugs, and revert-note
   filenames. Grammar below.
@@ -31,6 +33,9 @@ rewrites `pending.json` on ship, so a stripped field would be destroyed on disk.
   unblocked entry.
 - **`dependsOnForks`** — array of opaque fork slugs, defaulting to `[]`. A cross-cutting
   pickability predicate, not a gate kind (below).
+- **`priority`** — optional integer, defaulting to `0`. Higher is picked first; ties break on
+  tag, ascending. The one ordering the engine consumes (*The ledger is a directory — one entry
+  per file*, below).
 - **`files`** — `{ new: FileChange[], edit: FileChange[], retire: string[] }`, each `FileChange`
   a `{ path, description }`. The fence declaration and the partition input.
 - **`observedFiles`** — optional `string[]`, dispatcher-maintained. Not authored by the producer
@@ -40,7 +45,8 @@ The parsed type is `PendingEntry = z.infer<typeof PendingEntryCore> & Record<str
 extension fields are typed `unknown`, because the chain that declared them is the side that
 knows their shape and narrows locally.
 
-Entry order is meaningful — top is next. An empty array is valid and means nothing pending.
+The queue's order is `priority` descending, then tag ascending — a listing, never an array
+position. An empty directory, or an absent one, is valid and means nothing pending.
 
 ## Tag grammar is mechanical safety, nothing more
 
@@ -58,13 +64,37 @@ schema-valid tag's raw slug can exceed it — `worktreeDirName` truncates and ha
 (see spec/worktrees.md). The arithmetic lives at the writer, not in a second copy here, and is
 pinned against the real writer by a gate-revert on the longest tag the schema accepts.
 
-Queue-wide **tag uniqueness** is enforced by the composed list schema, and is mechanical too:
-`cli`'s find-by-tag and the dispatcher's `blockedBy`/`shippedTags` lookups key on the tag, so a
-duplicate silently resolves to the wrong entry. Every index sharing a tag gets its own issue
-naming the others, so a three-way collision is fully attributed.
+Queue-wide **tag uniqueness** is the directory's: one entry per `<tag>.json`, so two entries
+cannot share a tag. What the parse refuses is a file whose `tag` disagrees with its filename,
+naming both — `cli`'s find-by-tag and the dispatcher's `blockedBy`/`shippedTags` lookups key on
+the tag, and a file reachable under one name and claiming another resolves to the wrong entry.
 
 Anything beyond this — an ALL-CAPS house style, a slug convention — is a chain's refinement,
 declared in its extension. The engine has no stake in tag grammar it never parses.
+
+## The ledger is a directory — one entry per file
+
+One array was one file with every writer's hand in it. A producer rewrote the whole array to
+add an entry; the ship rewrote it to remove one; a second producer running at the same time
+rewrote it too, and git could merge none of that, since every edit touched the same lines of
+the same file. One file per entry is the shape the package's records already take
+(`spec/harness.md`, *Records as one file each*), applied to the queue: a ship deletes a file,
+a producer adds or edits one, and disjoint files merge without a conflict. Two producers
+editing one entry is the one collision left, and it is a real one — git refuses the pick, the
+tick ends `tip-moved`, and the loser re-runs against the tip that won.
+
+- **The listing is the queue.** Every `*.json` directly under `Chain.pendingDir` is an entry;
+  nothing else is. Subdirectories are not walked, so a chain may keep sidecars beside the
+  entries without the engine reading them as work.
+- **Order is a field, never a position.** `priority` descending, then tag ascending (*The
+  entry core*). A producer that wants an entry next raises its priority; the engine consumes
+  the number and nothing about what it means.
+- **A ship removes exactly the shipped entries' files** — `git rm` in the ledger commit,
+  alongside the records it moves — and edits no other file in the directory.
+- **A parse failure names a file.** An entry that does not parse refuses the reads that act
+  on the queue (*Queue reads are strict*, below) naming that file, and the producer whose
+  fence covers the directory repairs that file; the other entries are the queue they always
+  were.
 
 ## The chain-declared extension
 
@@ -161,7 +191,8 @@ the tags selection skipped for that reason, and a wave that found nothing to run
 `TickResult.nothingPickable`. `pendingAfter` stays the queue as it is on disk — a quarantined entry
 still reads `open` there, and a chain that hands off on "anything open" without consulting
 `quarantinedTags` re-wakes a phase that will pick nothing (spec/loop.md, *The no-commit
-taxonomy*).
+taxonomy*). Selection skips an entry another tick holds a claim on the same way, and
+`TickResult.claimedTags` carries those (*Claims — an entry in flight is left alone*, below).
 
 **Why `dependsOnForks` is a side-array and not a gate kind.** `gate` is a discriminated union —
 one entry has exactly one gate state. An entry can simultaneously be `open`, rest on two open
@@ -221,6 +252,26 @@ three behaviors fall out of the one filter:
 - **Never failed, never reverted.** A blocked entry is not mutated, not marked failed, and burns
   no gate-revert. It is invisible to selection until its blocker settles, then picked up
   automatically on the next tick.
+
+## Claims — an entry in flight is left alone
+
+A build tick that selects an entry stakes `<git-common-dir>/flume/claims/<slug>` — pid and
+instant, by exclusive create — before it provisions the entry's worktree, and removes it when
+the attempt ends: with the ship, or with the teardown of an attempt that did not ship. The
+claim is what a concurrent producer reads. While it stands the entry is someone's, and a
+ledger commit that edits or removes the claimed file is refused by the pending gate's claim
+check over the merged tree (*`pendingGate`*, below) — otherwise a re-scope pulls the rug from
+under a wave already building the entry as it was.
+
+- **Reported, never inferred.** `TickContext.claimed` and `TickResult.claimedTags` carry the
+  set the tick read, so a producer's prompt renders it and a handoff routes on it; nothing
+  re-reads the directory on its own.
+- **Selection skips a claimed entry** as it skips a quarantined one; a claim held by a dead
+  pid is reclaimed by the same liveness probe every engine lock uses (`spec/loop.md`, *Crash
+  equals stop*).
+- **Only the claim is engine.** What a producer does about a claimed entry it would have
+  changed — wait, file a sibling, say so in the commit body — is the chain's
+  (`.claude/rules/engine-boundary.md`).
 
 ## Fanout partition — disjoint touched paths
 
@@ -404,37 +455,35 @@ neither check attaches neither.
 
 1. **Schema validation.** Parses the queue against the composed core + `opts.extension` — the
    same declaration passed to `renderSchemaForPrompt`, so gate and prompt cannot drift. Failure
-   reports one line per issue, entry-indexed.
+   reports one line per issue, naming the entry's file.
 2. **Fence pre-check.** Each entry's declared paths are matched against
    `opts.targetFence.writablePaths ∪ opts.targetFence.entryChannelPaths` — typically the consumer
    phase passed as the value itself. An entry whose declaration cannot survive the consumer's
    fence fails **here, at the producer's own commit, naming the offending paths**, instead of
    being handed downstream as work guaranteed to revert.
+3. **Claim check.** An entry another tick holds a claim on (*Claims — an entry in flight is
+   left alone*) is left byte-identical by the gated commit, or the commit is refused naming
+   the entry and the holder.
 
 The gate runs on **every** commit of the phase it is attached to — it never consults the commit's
-touched paths — and an absent queue file fails it (`<pendingPath> missing after commit`), which
+touched paths — and an absent queue directory fails it (`<pendingDir> missing after commit`), which
 reverts the commit. Attaching it to a phase whose ticks do not always leave a queue on disk
 therefore reverts every such tick. This is the opposite policy from `chainLoadGate`
 (see spec/chain.md), which skips-as-pass when the commit did not touch its artifact.
 
 The fence is read fresh on every run, never hoisted to construction, so a declaration-driven
 phase (writable paths backed by a declaration read after the gate is built) is checked
-against its current value. The queue path is `Chain.pendingPath` (*The pending queue*, above);
-`pendingGate` takes no path of its own, so the gate and the dispatcher cannot check two files.
+against its current value. The queue directory is `Chain.pendingDir` (*The pending queue*, above);
+`pendingGate` takes no path of its own, so the gate and the dispatcher cannot check two directories.
 `opts.fenceWhen?: (entry) => boolean` selects which entries are fence-checked, defaulting to all
 — a chain that exempts, say, parked entries from the consumer fence supplies the predicate; the
 engine ships the injection point and the chain owns which `gate.kind` values count as exempt.
-`opts.hint` appends chain-authored operator guidance verbatim to both violation messages.
-
-> **Drift:** the dispatcher, `flume status`, and `flume check` each hardcode
-> `plan/pending.json` while `pendingGate` alone accepts an
-> `opts.pendingPath`. A chain that sets the option today gets a gate that validates one file and a
-> dispatcher that dispatches from another. The option goes; `Chain.pendingPath` replaces it.
+`opts.hint` appends chain-authored operator guidance verbatim to every violation message.
 
 ## Dispatch reads come from the tip, not the tree
 
 The reads the dispatcher **acts** on — the decide-reads and the wave-end rewrite read —
-resolve the queue from the committed tip (`git show HEAD:<pendingPath>`), never from the
+resolve the queue from the committed tip (the tree at `HEAD:<pendingDir>`, file by file), never from the
 working tree. The tree is a scratch surface two writers share: a mid-wave merge, an engine
 revert, or an operator's staged edit can each leave it ahead of or behind the branch, and a
 dispatch decision read from the tree acts on state no commit owns (field-paid downstream: a
@@ -447,8 +496,8 @@ engine cannot force a chain's reads, only its own.
 
 ## Queue reads are strict
 
-`Dispatcher.readPending` throws `PendingParseFailure` on a parse error rather than degrading to
-`[]`. It backs every read the dispatcher **acts** on: the singleton and fanout decide-reads and
+`Dispatcher.readPending` throws `PendingParseFailure`, naming the file, on a parse error rather
+than degrading to `[]`. It backs every read the dispatcher **acts** on: the singleton and fanout decide-reads and
 the wave-end rewrite read — each resolved from the tip (above). A decision or a rewrite must
 never derive from an input that failed to resolve.
 
@@ -461,7 +510,7 @@ also stops the queue's writer is the defect that section names.
 
 `readPendingTolerant` is the one declared exception, used only for the informational
 `TickResult.pendingAfter` re-read taken after the strict read already ran and after shipped work
-already landed. A failure there means something outside the tick corrupted the file in between;
+already landed. A failure there means something outside the tick corrupted a file in between;
 degrading to `[]` is bounded because that value feeds only a chain's advisory handoff check,
 never a rewrite or a work decision.
 

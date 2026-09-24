@@ -67,7 +67,7 @@ an unsubstituted *placeholder*.
 ## The reserved `{{FLUME_DIR}}` prompt arg
 
 The dispatcher auto-injects the resolved flume state root into every prompt's
-substitution map as `FLUME_DIR`. A prompt writes `{{FLUME_DIR}}/plan/pending.json` with
+substitution map as `FLUME_DIR`. A prompt writes `{{FLUME_DIR}}/plan/pending/<tag>.json` with
 zero chain boilerplate; a prompt that never references it is unaffected.
 
 `FLUME_DIR` is **reserved and dispatcher-authoritative**: `renderPrompt` merges it after

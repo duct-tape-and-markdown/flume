@@ -20,9 +20,12 @@ chain declarations the CLI reads in `spec/chain.md`.
   It mutates no baton flag and loads no agent; the one filesystem effect is
   that constructing the baton creates `<flumeDir>/awake/` when absent
   (`Baton`).
-- `tick` — one phase × one tick of whichever phase is awake.
+- `tick [--phase <name>]` — one phase × one tick: the first awake phase in
+  declared order, or the named one (`spec/loop.md`, *Baton — presence wakes,
+  absence hibernates*).
 - `loop [--max N]` — ticks until hibernation or the cap (default 50), under a
-  supervisor that spawns one fresh `flume tick` process per iteration.
+  supervisor that spawns one fresh `flume tick` process per phase it starts,
+  each told its phase, up to `supervisorPolicy.maxTicks` at once.
 - `wake <phase>` / `sleep <phase>` — add / remove `<flumeDir>/awake/<phase>`.
 - `stop` — write `<flumeDir>/stop` and print what happens next: a live supervisor
   finishes its in-flight tick and ends the run; the next `loop` refuses
@@ -52,7 +55,7 @@ chain declarations the CLI reads in `spec/chain.md`.
   reconstructed. An unresolved span exits `EX_DATAERR` naming it, the refusal a
   tick would have bought with an invocation. No `--out`: stdout is the surface,
   and a tick's own record of what it sent stays `rendered-prompts/`.
-- `check` — validates the working tree's `pending.json` without spending an
+- `check` — validates the working tree's ledger without spending an
   agent: the real parse (`parsePending`, the same decode a tick's resolution
   takes) plus fence arithmetic for every entry — declared paths against the
   consumer phase's declared fence, under the same `matchesAny` matching the
@@ -126,10 +129,10 @@ In printed order:
 4. **Tip claim state** — when HEAD names a ref and a claim file exists for it:
    `tip claimed by pid N`, or `tip claim present, process dead — stale`. A
    detached HEAD or an absent claim both read as silence.
-5. **Pending entry count** from the chain's declared queue path (`Chain.pendingPath`)
-   when the chain loads, and from the default `<flumeDir>/plan/pending.json` when it
+5. **Pending entry count** from the chain's declared queue directory (`Chain.pendingDir`)
+   when the chain loads, and from the default `<flumeDir>/plan/pending/` when it
    does not: `pending: N`,
-   `pending: 0` when absent, `pending: unparsable` when present but malformed —
+   `pending: 0` when absent, `pending: unparsable` when an entry file is malformed —
    the same loose read every observational verb performs, so a corrupt queue
    reads identically on every surface.
 6. **Chain-declared extras**, behind a best-effort chain load that can never
@@ -170,7 +173,7 @@ never reads it; the declaration and its validation are in `spec/chain.md`.
 Two independent roots:
 
 - **`flumeDir`** — the mutable-state root: the baton (`awake/`),
-  `plan/pending.json`, worktrees, prior-attempt records, `loop.pid`.
+  `plan/pending/`, worktrees, prior-attempt records, `loop.pid`.
   `FLUME_DIR` relocates it.
 - **`configDir`** — the chain and prompts dir: `<configDir>/chain.ts`, and
   `phase.promptPath` resolves against it. `FLUME_CONFIG_DIR` relocates it.

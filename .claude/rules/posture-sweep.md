@@ -41,15 +41,19 @@ Covered is settled for the window. A later tick never re-sweeps or re-draws
 it, even where fresh judgment would cut the boundary differently — the cursor
 decides coverage, never re-derivation.
 
-## The sweep yields to pickable work
+## The sweep runs beside build, never ahead of it
 
-An open rotation never holds the baton. While `<pending-now>` carries a
-pickable entry, plan hands off to build and sweeps nothing — the frontier
-and cursor persist untouched in the plan state, and coverage is deferred, never
-lost. A neighborhood is swept only on a tick where nothing is pickable.
+The sweep is its own worker: an armed or open rotation makes the slice live,
+and it runs whenever the supervisor's budget has room, while build ships
+beside it. Nothing about pickable work stops a neighborhood being swept, and
+nothing about a sweep holds build — the entry claim and the ship lock are what
+keep the two off each other (`spec/harness.md`, *The phases*). Declared phase
+order is the tiebreak when the budget is short, and the sweep is declared last
+among the plan slices for exactly this reason.
 
 **Why:** the sweep is insurance; shipped entries are the product. Insurance
-scheduled ahead of the product inverts the loop's economics.
+that costs the product nothing is scheduled; insurance scheduled ahead of the
+product inverts the loop's economics.
 
 ## The rotation closes when the frontier empties
 
@@ -59,8 +63,8 @@ recorded by advancing the stamp alone.
 
 An armed or open rotation is a live plan job: the chain keeps the sweep
 slice live while the plan state's rotation is open or commits
-past the stamp touch the domain, and lets it run only when the queue is
-drained (above). Hibernation is the empty frontier's verdict alone.
+past the stamp touch the domain; when it runs is the budget's (above).
+Hibernation is the empty frontier's verdict alone.
 
 ## A violation counts only when verified on disk this tick
 

@@ -103,7 +103,7 @@ argument it should lose — it reads as authoritative while being stale.
   cost, with one home and one invalidation.
 - **In artifacts, the same bar.** A tick-written file restating what
   another on-disk artifact already holds — a queue listing beside
-  `pending.json`, a question listing beside `questions/`, a HEAD sha
+  the ledger, a question listing beside `questions/`, a HEAD sha
   beside git — is the same defect wearing prose. The artifact that owns the
   fact is the only one that states it; everything else points.
 - The test is ownership, not convenience: if regenerating the copy from its

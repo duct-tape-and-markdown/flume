@@ -19,16 +19,29 @@ database, no in-memory carry. Disk is truth, including the baton. A relocated
 
 - **`wake`/`sleep` are idempotent.** Repeated calls and missing flags are tolerated,
   so concurrent ticks and partial crashes cannot corrupt baton state.
-- **Which phase runs.** A tick takes the first phase in the chain's declared order
-  whose name is awake (`Dispatcher.tick`: `chain.phases.find(p => awake.includes(p.name))`).
-  Declaration order is the tiebreak, not flag order or flag mtime.
+- **Which phases run.** A tick runs one phase. Bare, `flume tick` takes the first
+  phase in the chain's declared order whose name is awake; `flume tick --phase <name>`
+  takes the named one, awake or not, which is how the supervisor tells a child what
+  it is for — a name the chain does not declare is refused before any work, naming
+  the phases it does (exit 1). The supervisor starts one child per awake phase that
+  has no child of its own in flight, in declared order, until
+  `supervisorPolicy.maxTicks` children are running (`spec/chain.md`, *Supervisor
+  policy is a chain-overridable default*); the default is one, which is the serial
+  loop. Declaration order is the priority and the tiebreak, never flag order or
+  flag mtime. A phase never runs twice at once: its flag standing while its tick
+  runs is a re-run queued, not a second worker.
 - **Handoff passes the baton.** After the phase's work, the dispatcher sleeps the
   phase that ran, calls `phase.handoff(result)`, and wakes every name it returns
   that is not listed in `chain.humanOnly`. A handoff returning `[]` is how a chain
   ends the run. Handoff runs on every tick that ran a phase — committed, no-commit,
-  or declined.
+  or declined. **A wake that lands mid-tick is kept.** A wake writes a fresh token
+  into the flag; a tick reads the token at start and sleeps its phase only while the
+  flag still carries that token. A sibling's wake during the tick leaves a newer
+  token, the sleep declines, and the phase runs again — the flag is a queue of depth
+  one, never a level a concurrent writer clears by accident.
 - **Hibernation is the empty baton.** `Baton.hibernating()` is true iff no flags
-  exist; `superviseLoop` reads it off disk between children and stops. Hibernation is
+  exist; `superviseLoop` reads it off disk at every child boundary and stops once no
+  flag stands and no child is in flight. Hibernation is
   a clean stop, not an error class — `flume tick` exits 0 on it. The
   loop's own exit code is decided by the run totals (see *Exit codes*), not by the
   fact of hibernating.
@@ -39,9 +52,11 @@ database, no in-memory carry. Disk is truth, including the baton. A relocated
 ## One tick is one fresh process
 
 Each tick is a fresh OS process, and that is an invariant, not an implementation
-detail. `flume loop` is a supervisor that spawns exactly one `flume tick` child per
-iteration (`superviseLoop`, `defaultTickRunner`), carrying no in-memory chain or
-phase state across them; between children it re-reads the baton from disk. The
+detail. `flume loop` is a supervisor that spawns one `flume tick` child per phase it
+starts, each told its phase, carrying no in-memory chain or phase state across them;
+at every child start and exit it re-reads the baton from disk. What it holds in
+memory is the table of children it owns — pids and phase names — which is the
+process tree's fact, not the run's state: a fresh supervisor rebuilds it from nothing. The
 process boundary is the only mechanism that re-evaluates the whole module graph, so
 it is *the* mechanism — see `spec/chain.md` for per-tick chain re-resolution and why
 in-process reload cannot deliver it.
@@ -169,12 +184,42 @@ other.
 `flume status` reports supervisor liveness, the current tip's claim, and the stop
 flag, observationally — see `spec/cli.md`.
 
+## The ship lock and the worktree lock — sibling ticks take turns at git
+
+Two more guards, over two more resources, both scoped to a git mutation rather than
+a run. Neither substitutes for the tip claim: the claim says which engine run owns
+the tip; these say which of that run's ticks is touching git right now. Under a
+`maxTicks` of one both are uncontended and cost a file create.
+
+- **The ship lock — one merge at a time.** Every cherry-pick onto the trunk, the
+  `afterMerge` gates over the merged tree, and the ledger commit that ships the span
+  run under `<git-common-dir>/flume/ship.lock`, taken by exclusive create with the
+  same pid-and-instant contents as the claim, released when the bookkeeping the
+  merge marker covers has landed. A tick that finds it held by a live pid **waits**,
+  polling, and says so on its log; a dead holder is reclaimed by the same liveness
+  probe as the claim. Refusal is the claim's leg, never this one's: a sibling tick
+  merging is the run's own writer, and tip verify absorbs the tip it moved
+  (*Tip verify*, below). The judge suites a merge runs therefore never overlap
+  each other — a memory bound the lock buys for free.
+- **The worktree lock — one `.git/worktrees` mutation at a time.** `git worktree
+  add`, `remove`, and `prune` mutate shared metadata that git does not guard
+  across processes (`spec/worktrees.md`, *Every `.git/worktrees` mutation is
+  serialized; the agent fanout is not*). Within one wave they are already
+  sequential; across sibling ticks each takes `<git-common-dir>/flume/worktrees.lock`
+  for the one command, same shape, same wait, same reclaim. Provisioning holds it
+  for seconds; the agent, the chain's `setupWorktree`, and the gates run outside it.
+
+Both live in the common dir so every linked worktree sees one file, and both are
+engine-created, engine-consumed, and engine-released: no verb takes or drops one,
+and `flume status` prints nothing about them — a held lock is a tick in flight, which
+the supervisor line already says.
+
 ## Graceful stop — the stop flag
 
 Presence of `<flumeDir>/stop` asks the supervisor to end the run at the next tick
-boundary: the in-flight tick finishes — merge, park, verdict, and handoff run exactly
-as they would have — then the supervisor releases the tip claim and the loop lock and
-ends the run. Same philosophy as the awake baton: disk is truth, no IPC, no signals.
+boundary: every in-flight tick finishes — merge, park, verdict, and handoff run
+exactly as they would have — no new child starts, then the supervisor releases the
+tip claim and the loop lock and ends the run. Same philosophy as the awake baton: disk is truth, no IPC, no signals.
 Kills are not the pause mechanism — and on win32 they cannot be, because `SIGTERM`
 maps to `TerminateProcess`, which runs no handler (*The loop lock and the tip claim*,
 above), so a signal-based graceful stop is structurally unavailable on the one
@@ -210,11 +255,16 @@ construction; it is now the stated guarantee the pieces serve, so a gap in it is
 defect rather than a workaround the operator owes the engine:
 
 - **Locks and claims self-heal.** A stale `loop.pid` (dead pid) is reclaimed
-  silently; a stale tip claim is reclaimed by the next acquirer's liveness probe
-  (above). On win32, where a kill runs no release handler, stale-reclaim is the only
+  silently; a stale tip claim, ship lock, or worktree lock is reclaimed by the next
+  acquirer's liveness probe (above).
+- **An entry claim outlives nothing.** `<git-common-dir>/flume/claims/<slug>` is
+  staked by the build tick that selected the entry and removed by the ship or the
+  teardown that ends its attempt (`spec/pending.md`, *Claims — an entry in flight
+  is left alone*); one surviving a crash names a dead pid, and the next selection
+  reclaims it by the same probe. On win32, where a kill runs no release handler, stale-reclaim is the only
   release path — which is why reclaim is the guarantee and the exit handler is the
   optimization.
-- **State is on disk or in git.** The baton, `pending.json`, prior-attempt records,
+- **State is on disk or in git.** The baton, the ledger, prior-attempt records,
   and tick verdicts survive any death, and a tick that died before writing its
   verdict left nothing a fresh supervisor can misread as current (*The tick
   verdict*).
@@ -233,7 +283,7 @@ defect rather than a workaround the operator owes the engine:
 - **A merge the crash interrupted is refused, never resumed.** Before the merge stage
   picks an entry's span onto trunk the dispatcher writes `<flumeDir>/merging/<slug>.json`
   — the branch, the base sha, the entry tag — and removes it only after the ship
-  bookkeeping the hazard covers has landed: the `pending.json` rewrite and the records.
+  bookkeeping the hazard covers has landed: the ledger rewrite and the records.
   (The verdict is the CLI's, written after `tick()` returns; a marker is not held for
   it.) A file
   surviving at the next `loop` start is a merge that died between the pick
@@ -279,7 +329,7 @@ live foreign claim exists and *refused* when one does (below). Verify's refusal 
 defend what absorption cannot make safe: a concurrent engine interleaving merges,
 and a base rewritten out from under an agent. A refusal means **no commit**; the
 tick ends with a `tip-moved` fact, and the entry — if the tick carries one — stays
-in `pending.json` for a fresh retry. The engine reports the fact; the chain owns
+in the ledger for a fresh retry. The engine reports the fact; the chain owns
 what it means.
 
 No leg refuses operator activity anymore. Every agent commit lands on a private
@@ -371,7 +421,7 @@ stays pending in every case; only the residue differs.
     from any tip, so it recommits on whatever tip is current.
 - **Absorbing the ledger commit is what closes the queue-behind-tree hazard.**
   Under refuse-on-moved semantics, a ref moving between the last cherry-pick and
-  the ledger commit left `pending.json` listing entries whose commits were already
+  the ledger commit left the ledger listing entries whose commits were already
   on the tip — prior-attempt slots already cleared (`PriorAttemptStore.clear`) — and the
   next tick dispatched agents against shipped work with nothing on disk to say so.
   The ledger landing on the moved tip removes the window: a tick can no longer end
@@ -449,7 +499,7 @@ agent invocation, no commit, `handoff` still runs so the chain can pass the bato
 
 **Why the seam exists:** measured on a 50-tick run, 14 plan ticks — 28% — spent a full
 agent invocation to conclude "the queue has pickable work, hand to build," a verdict
-computable from `pending.json` before any agent runs. `handoff` runs after the tick and
+computable from the ledger before any agent runs. `handoff` runs after the tick and
 gates run after the commit; nothing was consulted before the invocation.
 
 ## The no-commit taxonomy
@@ -672,7 +722,7 @@ report — and a present file that will not open is never read as absent.
 | 1 | harness error, HEAD detached, or another live process holds the tip claim |
 | 2 | usage — including the CJS-context host refusal, a nameable fix rather than a dead chain (`spec/chain.md`) |
 | 74 | `EX_IOERR` — a file the tick must read is present and unreadable: the state root at discovery, or the verdict history when the tick records its own verdict. In the second case the tick's work has already landed; the code names the recording failure, and the tick's own outcome is in the log |
-| 69 | `EX_MOUNT_DEAD` — the chain module could not load, its state root is missing, or its declaration is invalid (no agent ran); or `pending.json` failed to parse (see below) |
+| 69 | `EX_MOUNT_DEAD` — the chain module could not load, its state root is missing, or its declaration is invalid (no agent ran); or the ledger failed to parse (see below) |
 | 78 | `EX_TERMINAL_MISCONFIG` — the chain resolved but declares an inconsistent world (below) |
 
 **69 does not promise "no agent ran".** That holds for the chain-resolution legs, and
@@ -763,10 +813,10 @@ inferred*).
 Two legs, not either alone:
 
 - **Per-entry quarantine.** The supervisor quarantines the failing entry **as read** —
-  keyed by its slug and a hash of the entry as declared in `pending.json`, excluding
+  keyed by its slug and a hash of the entry as declared in the ledger, excluding
   `observedFiles` — the engine's own accretion from a blamed attempt, which would otherwise
   re-key the hold in the very wave that placed it — for the remainder of
-  the run: the entry stays in `pending.json` untouched, other entries keep dispatching.
+  the run: the entry stays in the ledger untouched, other entries keep dispatching.
   A re-scoped entry is a new key, so an edit on trunk lifts the hold without a
   relaunch (a slug-only key survived a re-scope and forced stop-and-relaunch, field
   report, 0.12.0). The keys cross to each child via `FLUME_QUARANTINED_SLUGS` (the name

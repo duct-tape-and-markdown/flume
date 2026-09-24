@@ -26,17 +26,26 @@ owns, and a consumer does not write, one subsection each:
 ### The phases
 
 Three plan slices — `plan-inbox`, `plan-derive`, `plan-sweep`,
-one job each, selected by the first live window — and `build`, fanout, one
-entry per worktree. A consumer enables or disables slices; it does not
-re-author them.
+one job each, each running whenever its own window is live — and `build`,
+fanout, one entry per worktree. A consumer enables or disables slices; it does
+not re-author them. Every phase is a worker: none waits on another's turn, and
+what keeps two from treading on each other is mechanism the engine holds — the
+entry claim, the ship lock, one file per entry (`spec/pending.md`, *Claims — an
+entry in flight is left alone*; `spec/loop.md`, *The ship lock and the worktree
+lock — sibling ticks take turns at git*) — never an order the package imposes
+on the baton. How many run at once is the consumer's budget,
+`supervisorPolicy.maxTicks`, which this repo declares and the package leaves at
+the engine's default of one.
 
-A slice is made live by unrouted work, never by a signal alone. While
-`<pending-now>` carries a pickable entry, a build note that is an observation
-waits, and the drain rides the next plan tick that runs for its own reasons —
-the sweep's rule, extended to the inbox; a note that is a **park** makes the
-inbox slice live at once, because build must not re-pick an entry whose park
-stands. A tick that runs and files nothing is the shape this paragraph exists
-to refuse.
+A slice is made live by unrouted work, never by a signal alone: a record in a
+queue, a spec commit past the derive cursor, a commit past the sweep stamp. A
+tick that runs and files nothing is the shape this sentence exists to refuse.
+Two orderings the serial baton used to carry are mechanism now. A refused
+entry is not re-picked before the drain reconciles it: the refusal keys on the
+entry as declared, and stands until a producer rewrites or drops it (*The
+default `handoff`*). And a finding two producers file at once lands once: the
+pending gate over the merged tree refuses the second (*The gates the discipline
+needs*).
 
 
 ### The prompts and their discipline
@@ -83,8 +92,17 @@ per record, titled, under the tick's own tag), the
 clean-tree gate, the pending gate wired to the consumer's fence, and the
 cursor gate: a plan commit's derive cursor is an ancestor of the tip and a
 descendant of its pre-commit value, refused otherwise, because a cursor
-stepped past commits nobody derived fails silently on every tick after. The
-record byte cap is not the gate's: a note over the cap ships with its entry,
+stepped past commits nobody derived fails silently on every tick after. Two
+more over the merged tree, because they judge what two concurrent producers
+did to one queue: the **claim check** the engine's pending gate carries,
+refusing a commit that edits or removes an entry a build tick holds
+(`spec/pending.md`, *Claims — an entry in flight is left alone*); and the
+**duplicate refusal**, the package's own — a commit adding an entry whose `per`
+cite equals a standing entry's and whose declared files overlap it is refused
+naming both, so the producer re-runs against the tip that shows the entry it
+did not see. Both are `afterMerge`: under one producer they are uncontended,
+and a pre-merge read would pass over exactly the tree the collision is not in.
+The record byte cap is not the gate's: a note over the cap ships with its entry,
 and the drain that reads it says so in the plan commit body — a shape rule on
 a prose channel refuses the prose, never the code it rode in with.
 
@@ -114,7 +132,10 @@ open questions are one file each under the plan's `questions/` directory,
 present while open and deleted when answered, so any session may add one and
 the drain closes one the way it drains a record; a build note that parks its
 entry lives under `notes/parked/` and an observation beside it does not, so
-the kind is the path and the records gate holds it. What a slice needs to
+the kind is the path and the records gate holds it. The queue is the same
+shape — one entry per file (`spec/pending.md`, *The ledger is a directory —
+one entry per file*) — and so is the plan state, one file per slice (*Plan
+state as declared state*). What a slice needs to
 know before it reads a file, it knows from where the file is.
 
 
@@ -180,11 +201,16 @@ case for one is the evidence that rules it in.
 The derive and sweep cursors, the continuation signal, and the per-lane
 drained-run stamp — the run and the failing titles it reported — are fields
 the package reads through its own accessor,
-never a line regexed out of prose. The inbox drain advances the derive cursor
-through a spec commit whose derivation it routed from a drained record, so
-derive runs only over spec deltas no record claimed; a derive tick that finds
-every section already queued and moves the cursor alone is the cost that rule
-removes. Absence is read three ways, on purpose: a
+never a line regexed out of prose. **One file per writer**: each slice's state
+lives in its own file under the plan's `state/` directory — the derive cursor
+in derive's, the sweep cursor and rotation in sweep's, the drained runs in
+inbox's — so two slices stamping in one wave merge as disjoint files, and no
+slice writes a cursor it does not own. The inbox drain therefore never
+advances the derive cursor: a spec commit whose derivation a drained record
+routed is still derive's to walk, and the tick that finds its sections already
+queued judges them done in the commit body and moves the cursor — one cheap
+tick, paid so that no cursor has two hands on it. Absence is read three ways,
+on purpose: a
 missing plan state renders as no state yet and a missing questions file as
 none open, because both are the package's to bootstrap; a missing queue refuses
 the render, because a slice re-deriving a queue it could not read would write
@@ -197,16 +223,23 @@ defect.
 Reads the engine's reported pickable set and
 no-commit facts, and writes exactly one thing: the stop flag, after a shipped
 entry marked contract-touching, so the next run starts on the contract it
-changed. It never hands build an entry whose latest prior attempt is a clean
-exit at the current HEAD — the same dispatch against an unchanged world is
-the same outcome — read from the mode and the anchor the engine reports on
-the record, never from a heuristic of the package's own. If the pickable set
-cannot carry a per-entry refusal a chain declares, that is a missing engine
-capability, and the harness is its first declarer. That refusal is the
-package's floor: a consumer's declared `handoff` replaces the ladder above it
-and runs beneath the refusal, because re-dispatching an unchanged world is the
-same outcome whoever orders the phases. A consumer overrides the ladder by
-declaration, not by copying it.
+changed. It wakes every slice whose window is live and build whenever anything
+is pickable — all of them in one answer, since which of them run at once is
+the budget's decision and not the handoff's; the one exception is the slice
+that just ran and committed nothing, which is not re-woken into the same wall.
+It never hands build an entry whose latest prior attempt is a refusal a
+producer resolves — a clean exit, a park, a merge the queue must answer —
+while that record stands against the entry **as declared**: the record keys on
+the entry's slug and declared hash, so a producer's rewrite is a new key and
+its drop ends the record, and the refusal lifts on exactly the reconciliation
+it waited for, never on a tip that happened to move. Read from the mode and
+the key the engine reports on the record, never from a heuristic of the
+package's own. If the pickable set cannot carry a per-entry refusal a chain
+declares, that is a missing engine capability, and the harness is its first
+declarer. That refusal is the package's floor: a consumer's declared `handoff`
+replaces the wake set above it and runs beneath the refusal, because
+re-dispatching an unreconciled entry is the same outcome whoever schedules the
+phases. A consumer overrides the wake set by declaration, not by copying it.
 
 
 ### Committed-path discipline

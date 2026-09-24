@@ -315,26 +315,30 @@ resolved `flumeDir`.
 ## Supervisor policy is a chain-overridable default
 
 `Chain.supervisorPolicy?: { quarantineScope?: "run" | "none"; abortThreshold?:
-number; maxParallel?: number; tickTimeoutMs?: number; partitionIgnore?: string[];
-killGraceMs?: number }`.
+number; maxTicks?: number; maxParallel?: number; tickTimeoutMs?: number;
+partitionIgnore?: string[]; killGraceMs?: number }`.
 The engine's loop policy — run-scoped quarantine of an
 entry slug whose worktree provisioning failed, abort after three consecutive
-identical failure signatures, fanout batch width, the per-invocation wall-clock
-cap, the paths the fanout partition ignores, and the grace a signalled tick
-gives its agent tree before `SIGKILL` (`spec/loop.md`, *The loop lock and the
-tip claim*) — ships as **defaults, not behavior** (`superviseLoop`,
-`quarantineScope ?? "run"`, `abortThreshold ?? 3`; `runFanout`,
-`maxParallel ?? 4`; `tickTimeoutMs` default unset — no cap; `partitionIgnore`
-default `[]`; `killGraceMs ?? 5000`). A chain declaring nothing gets the
-defaults byte-identically.
+identical failure signatures, how many phase ticks the supervisor runs at once
+(`spec/loop.md`, *Baton — presence wakes, absence hibernates*), fanout batch
+width, the per-invocation wall-clock cap, the paths the fanout partition
+ignores, and the grace a signalled tick gives its agent tree before `SIGKILL`
+(`spec/loop.md`, *The loop lock and the tip claim*) — ships as **defaults, not
+behavior** (`superviseLoop`, `quarantineScope ?? "run"`, `abortThreshold ?? 3`,
+`maxTicks ?? 1`; `runFanout`, `maxParallel ?? 4`; `tickTimeoutMs` default unset
+— no cap; `partitionIgnore` default `[]`; `killGraceMs ?? 5000`). A chain
+declaring nothing gets the defaults byte-identically — one phase tick at a
+time, which is the serial loop.
 
 **The block's fields split by read scope, and the split is principled:**
 
-- **`quarantineScope`/`abortThreshold` are read once per run** — the one
-  declaration outside the per-tick guarantee above. The supervisor resolves
-  the chain in its own process before the first child and `superviseLoop`
-  binds both before entering the tick loop; nothing re-reads them between
-  children. A tick that commits a changed value is governed by the old one
+- **`quarantineScope`, `abortThreshold`, and `maxTicks` are read once per
+  run** — the one declaration outside the per-tick guarantee above. The
+  supervisor resolves the chain in its own process before the first child and
+  `superviseLoop` binds all three before entering the tick loop; nothing
+  re-reads them between children. `maxTicks` is the supervisor's own bound on
+  the children it holds, and the supervisor is the one process that never
+  reloads. A tick that commits a changed value is governed by the old one
   until the operator restarts
   `flume loop`, with no indication the new declaration was ignored. Run scope
   is the reason, not an oversight: the quarantine set and the
@@ -451,7 +455,7 @@ confines side effects to disk inside `cwd`.
   set when the state root lives inside the repo and absent when it is
   relocated outside it. It is the one value a gate needs to read a
   **tracked** state-root file as the gated commit holds it —
-  `git show <commitSha>:<stateRootRel>/plan/pending.json` — and the
+  `git show <commitSha>:<stateRootRel>/plan/pending/<tag>.json` — and the
   dispatcher computes it once, the same computation the friction harvest
   already makes, rather than each gate re-deriving it from paths that are
   not nested. A gate that reads a tracked file off `flumeDir` instead reads
