@@ -1,0 +1,26 @@
+{
+  "tag": "THE-README-INIT-PIN-ADOPTS-INTO-A-REPO-WITH-A-COMMIT",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/harnessPackaging.test.ts",
+        "description": "the adoption this pin drives runs over a repository carrying a commit, so the seeded plan state is in the `written` set it judges"
+      },
+      {
+        "path": "README.md",
+        "description": "the adoption list names the plan state the verb seeds"
+      }
+    ]
+  },
+  "summary": "The README's init pin adopts into a bare directory, where no commit exists to seed a cursor at — so the two plan-state files a real adopter gets are judged by nothing, and the page names neither",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A green verdict is proven non-vacuous"
+  },
+  "acceptance": "the README adoption pin's writer runs over a repository with a commit, so every file init writes there — the plan state included — is in the judged set; and the page names each one",
+  "tests": [
+    "the README adoption section names the plan state flume-harness init seeds"
+  ],
+  "notes": "Measured this tick: `harnessInit` over a bare mkdir reports 5 paths; over a repo carrying one commit it reports those plus `.flume/plan/state/plan-derive.json` and `plan-sweep.json` (the `seedPlanState` loop, `harness/init.ts`). The pin (`tests/harnessPackaging.test.ts:788`) adopts into a bare mkdir under the scratch tmpdir, so the seeded half never enters `written` and the `written.length > 0` guard passes on the skeleton alone. README `:52`-`:71` names neither file."
+}

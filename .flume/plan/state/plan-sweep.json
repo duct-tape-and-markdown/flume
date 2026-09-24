@@ -3,10 +3,28 @@
   "rotation": {
     "kind": "open",
     "covered": [
+      "bin/execEntry.js",
+      "bin/flume",
+      "bin/flume-harness.js",
+      "bin/flume.js",
+      "harness/chain.ts",
+      "harness/cli.ts",
+      "harness/cliHelp.ts",
       "harness/cursorWindow.ts",
+      "harness/dirListing.ts",
+      "harness/gates.ts",
       "harness/gitRange.ts",
+      "harness/index.ts",
+      "harness/init.ts",
       "harness/planState.ts",
+      "harness/prompts.ts",
+      "harness/putDown.ts",
+      "harness/records.ts",
+      "harness/sliceWindow.ts",
       "harness/sweepWindow.ts",
+      "harness/windows.ts",
+      "scripts/pack-harness-assets.mjs",
+      "scripts/smoke-install.mjs",
       "src/budgetHook.ts",
       "src/budgetLine.ts"
     ]
