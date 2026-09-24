@@ -1,0 +1,31 @@
+{
+  "tag": "A-WINDOWED-BUDGET-READING-CANNOT-LACK-ITS-FRACTION",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/budgetLine.ts",
+        "description": "`BudgetReading` names the declared window and the prior turn's tokens; each fraction is computed from them rather than stored beside them"
+      },
+      {
+        "path": "src/budgetHook.ts",
+        "description": "the crossing reads the computed fraction, and the arm for a windowed reading carrying none goes"
+      },
+      {
+        "path": "tests/budgetHook.test.ts",
+        "description": "the case driving a windowed budget over a fraction-less reading"
+      },
+      {
+        "path": "tests/budgetLine.test.ts",
+        "description": "the windowed and windowless reads, on the shape they compose"
+      }
+    ]
+  },
+  "summary": "The budget reading stores a fraction beside no window, so `budgetLineDue` holds an arm for a windowed reading carrying none — a state the type permits and no read composes",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Derived state is computed, never restated beside its source"
+  },
+  "acceptance": "the reading names the window and the tokens its fractions are taken over, the fractions are computed where they are compared, and no arm answers for a windowed reading that carries none",
+  "notes": "Per note A-DECLARED-THRESHOLD-NEEDS-THE-WINDOW-IT-CROSSES, item 2, verified this drain: thresholds now need a window (`validateBudget`), so `src/budgetHook.ts:248` answers only for a reading `readBudgetLine` cannot compose and `tests/budgetHook.test.ts:206` drives exactly that. `src/budgetLine.ts:190` re-checks window and fraction where one implies the other. Behavior-free — same line, same crossings. Claims no property; tsc and the two budget suites hold it."
+}

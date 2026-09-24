@@ -1,0 +1,34 @@
+{
+  "tag": "THE-INTERFACE-PAGES-SECTION-CITES-RESOLVE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/helpers/pageAnchors.ts",
+        "description": "the interface-page walk feeds the one section-cite reader, beside the spans it already resolves"
+      },
+      {
+        "path": "tests/helpers/commentCitations.ts",
+        "description": "the section-cite reader as the page scan reaches it"
+      },
+      {
+        "path": "tests/pageAnchors.test.ts",
+        "description": "the arm's cases, and its non-vacuity over the cites the pages state"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the abbreviated section half the arm reds"
+      }
+    ]
+  },
+  "summary": "No arm reads a section cite off an interface page, so the 26 cites the three consumer-facing pages state resolve against nothing — and one of them names a heading its page does not hold",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "every section cite the authoring page, the CLI page and the README state is resolved against the cited page's own headings through the reader the comment runs and the help pages already use, and one naming no heading is reported",
+  "tests": [
+    "a section cite on an interface page naming a heading its cited page does not hold is a page finding"
+  ],
+  "notes": "Per note A-SHIPPED-HELP-LITERALS-SECTION-CITES-RESOLVE, class 2. Measured this drain over `INTERFACE_PAGES` (`tests/helpers/pageAnchors.ts:449`): 26 cites in the drawn spelling, 1 red — `docs/CLI.md:59` states (`spec/loop.md`, \"Graceful stop\") for *Graceful stop — the stop flag*. `scanRenderedSections` is page-agnostic, so the arm is a walk feeding it. Sibling on this section: THE-DOTTED-PAGE-SPAN-IS-JUDGED, which names the same three seam paths."
+}
