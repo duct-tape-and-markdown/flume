@@ -14,8 +14,14 @@
  * `parsePidClaim`'s own decode — what each line may say and what a claim
  * reads as when it says nothing usable — is judged through these readers and
  * through the tip claim's (`tests/git.test.ts`), which read the same parse.
+ *
+ * The stake's half of the same statement — which file a release removes, and
+ * how many times — is the last suite below, held here rather than at either
+ * guard because both build on the one stake (`stakePidClaim`,
+ * `src/pidClaim.ts`).
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -25,7 +31,10 @@ import { loopLockPath } from "../src/paths.ts";
 import {
   liveLoopClaim,
   liveLoopPid,
+  livePidClaimAt,
+  parsePidClaim,
   renderPidClaim,
+  stakePidClaim,
 } from "../src/pidClaim.ts";
 import { denyFile } from "./helpers/denial.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -79,6 +88,78 @@ describe("liveLoopClaim / liveLoopPid — the loop lock's two-line statement", (
 
       expect(await liveLoopPid(root)).toBe(process.pid);
       expect(await liveLoopClaim(root)).toEqual({ pid: process.pid });
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The stake's release — whose file it removes, and how many times.
+ *
+ * A guard file is a shared address, not the holder's private one. The stake
+ * that took it is released twice by design in the callers that install a
+ * signal handler beside a `finally` (`flume tick`'s bare tip claim and
+ * `flume loop`'s, `src/cli.ts`), and between the two calls the path may have
+ * been staked again by a later holder — the next tick, a sibling run. An
+ * unlink on that second call deletes a live claim this process does not hold,
+ * which is why the guard rides the stake rather than a `held` flag each
+ * caller spells for itself (`.claude/rules/engineering.md`, *The fix lands at
+ * the mechanism*).
+ */
+describe("stakePidClaim — the release drops the file its own stake created", () => {
+  it("a staked claim's first release removes the claim file it created", async () => {
+    const base = await mkTempDir("flume-stake-release-");
+    try {
+      const path = join(base, "guards", "tip-claims", "heads", "main");
+      const stake = await stakePidClaim(path);
+      expect(stake.kind).toBe("staked");
+      if (stake.kind !== "staked") return;
+
+      // Non-vacuity: the subject is a file this stake really created, naming
+      // this process. Absent here, the assertion below would be about a path
+      // nothing ever wrote.
+      expect(existsSync(stake.claim.path)).toBe(true);
+      expect(
+        parsePidClaim(await readFile(stake.claim.path, "utf8"))?.pid,
+      ).toBe(process.pid);
+
+      stake.claim.release();
+
+      expect(existsSync(stake.claim.path)).toBe(false);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  it("a second release of a staked claim leaves a later holder's claim file standing", async () => {
+    const base = await mkTempDir("flume-stake-rerelease-");
+    try {
+      const path = join(base, "guards", "tip-claims", "heads", "main");
+      const first = await stakePidClaim(path);
+      expect(first.kind).toBe("staked");
+      if (first.kind !== "staked") return;
+      first.claim.release();
+      expect(existsSync(path)).toBe(false);
+
+      // The later holder: the path is free, so this is a stake of its own and
+      // not a reclaim over the first. The vitest worker plays it, the
+      // convention every liveness case here uses — its pid is alive for the
+      // duration of the call, so the claim below is a live one.
+      const later = await stakePidClaim(path);
+      expect(later.kind).toBe("staked");
+      if (later.kind !== "staked") return;
+      expect(await livePidClaimAt(path)).not.toBeNull();
+
+      // The first holder's exit handler, firing after its `finally` already
+      // dropped: the stake is spent, so this call unlinks nothing.
+      first.claim.release();
+
+      expect(existsSync(path)).toBe(true);
+      expect(await livePidClaimAt(path)).not.toBeNull();
+
+      later.claim.release();
+      expect(existsSync(path)).toBe(false);
     } finally {
       await rm(base, { recursive: true, force: true });
     }

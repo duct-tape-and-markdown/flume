@@ -29,10 +29,11 @@
  *
  * The refuse-and-reclaim *stake* the two exclusive guards take sits here too
  * ({@link stakePidClaim}), for the reason the read does: one `wx` create, one
- * `EEXIST` probe and one dead-holder reclaim, so the tip claim and the entry
- * claim cannot come to disagree about what a stale file is. The wait locks
- * keep their own loop, which parts from it at exactly one decision
- * (`acquireWaitLock`, `src/waitLock.ts`).
+ * `EEXIST` probe, one dead-holder reclaim and one drop, so the tip claim and
+ * the entry claim cannot come to disagree about what a stale file is or about
+ * whose file a release removes. The wait locks keep their own loop, which
+ * parts from it at exactly one decision (`acquireWaitLock`,
+ * `src/waitLock.ts`).
  *
  * Nothing beyond the statement, that read and that stake here: what to do
  * about a live claim — refuse, wait, leave the entry to its holder — belongs
@@ -149,8 +150,11 @@ export interface StakedPidClaim {
   /** The file on disk this holder created. */
   readonly path: string;
   /**
-   * Remove the claim file. Idempotent and synchronous, so an exit handler can
-   * call it.
+   * Remove the claim file **this stake created**, and only that one. Drops at
+   * most once: a second call unlinks nothing, so a holder released twice — an
+   * exit handler after a `finally`, a rollback after a signal — cannot delete
+   * the claim a later holder has since staked at the same path. Synchronous,
+   * so an exit handler can call it.
    */
   release: () => void;
 }
@@ -202,11 +206,22 @@ export async function stakePidClaim(path: string): Promise<PidClaimStake> {
       await writeFile(target, renderPidClaim(process.pid, new Date()), {
         flag: "wx",
       });
+      // The release drops at most once, at the stake that took the file. A
+      // guard file is a shared address, not this process's private one: the
+      // holder that gives it up may be released again — an exit handler after
+      // a `finally`, a rollback after a signal — and by then a later holder
+      // may have staked the same path. An unlink on that second call deletes a
+      // claim this process does not hold. The guard rides the stake rather
+      // than each caller's own `held` flag beside it
+      // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+      let released = false;
       return {
         kind: "staked",
         claim: {
           path,
           release: () => {
+            if (released) return;
+            released = true;
             try {
               unlinkSync(target);
             } catch {

@@ -1043,17 +1043,15 @@ async function main(): Promise<number> {
     // branch drops its locks through: a `finally` alone runs on neither
     // signal, so a signalled bare tick left its claim standing and the next
     // tick refused over it until a liveness probe happened to catch the pid
-    // dead. `claimHeld` gates the drop, so a bare tick refused over another
-    // live holder's claim never unlinks the file it lost to, and the handler
-    // and the `finally` may both run without the second one deleting a claim
-    // a later process has since taken. Handlers precede the acquisition — a
-    // signal landing during it must find a handler, not node's default
-    // disposition.
+    // dead. Nothing gates the drop here: a refused acquisition leaves
+    // `bareTipClaim` undefined, and the stake's own release drops at most
+    // once, at the file it created (`StakedPidClaim`, `src/pidClaim.ts`), so
+    // the handler and the `finally` may both run without the second one
+    // deleting a claim a later process has since taken. Handlers precede the
+    // acquisition — a signal landing during it must find a handler, not
+    // node's default disposition.
     let bareTipClaim: Awaited<ReturnType<typeof acquireTipClaim>> | undefined;
-    let claimHeld = false;
     const dropBareTipClaim = () => {
-      if (!claimHeld) return;
-      claimHeld = false;
       bareTipClaim?.release();
     };
     // The release a signalled tick performs is its agent tree's too, never
@@ -1115,7 +1113,6 @@ async function main(): Promise<number> {
     if (process.env.FLUME_TIP_CLAIM_HELD === undefined) {
       try {
         bareTipClaim = await acquireTipClaim(repoRoot, tickHeadRef.path);
-        claimHeld = true;
       } catch (err) {
         if (err instanceof TipClaimHeldError) {
           console.error(`[flume] tick refuses: ${err.message}`);
@@ -1243,9 +1240,12 @@ async function main(): Promise<number> {
     // node's default disposition — which runs nothing and leaves whatever is
     // already on disk. The handler drops what is held *at the moment it
     // fires*: `lockHeld` gates the unlink, so a run refused over another
-    // supervisor's live `loop.pid` never deletes the file it lost to, and an
-    // unacquired `tipClaim` releases nothing. Both drops are idempotent, so
-    // the rollback below and the exit handler may both run.
+    // supervisor's live `loop.pid` never deletes the file it lost to — the
+    // lock is written and unlinked here rather than staked, so this flag is
+    // the guard the stake carries for the tip claim. An unacquired `tipClaim`
+    // releases nothing, and a staked one drops at most once
+    // (`StakedPidClaim`, `src/pidClaim.ts`), so the rollback below and the
+    // exit handler may both run.
     let lockHeld = false;
     let tipClaim: Awaited<ReturnType<typeof acquireTipClaim>> | undefined;
     const dropLock = () => {
