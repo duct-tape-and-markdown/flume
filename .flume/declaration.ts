@@ -82,11 +82,14 @@ export const declaration: DeclarationInput = {
     ],
   },
 
+  // The window is the provider's fact (platform docs, *Context window sizes
+  // by model*): claude-opus-5 holds 1M by default. The budget line reports
+  // context against it; today's heaviest tick peaked at 225k.
   agents: {
-    "plan-inbox": { model: "claude-opus-5", extraArgs: ["--exclude-dynamic-system-prompt-sections"] },
-    "plan-derive": { model: "claude-opus-5", extraArgs: ["--exclude-dynamic-system-prompt-sections"] },
-    "plan-sweep": { model: "claude-opus-5", extraArgs: ["--exclude-dynamic-system-prompt-sections"] },
-    build: { model: "claude-opus-5", extraArgs: ["--exclude-dynamic-system-prompt-sections"] },
+    "plan-inbox": { model: "claude-opus-5", contextWindow: 1_000_000, extraArgs: ["--exclude-dynamic-system-prompt-sections"] },
+    "plan-derive": { model: "claude-opus-5", contextWindow: 1_000_000, extraArgs: ["--exclude-dynamic-system-prompt-sections"] },
+    "plan-sweep": { model: "claude-opus-5", contextWindow: 1_000_000, extraArgs: ["--exclude-dynamic-system-prompt-sections"] },
+    build: { model: "claude-opus-5", contextWindow: 1_000_000, extraArgs: ["--exclude-dynamic-system-prompt-sections"] },
   },
 
   // Wave width bounded to two: each entry's gates run the suite, and two
