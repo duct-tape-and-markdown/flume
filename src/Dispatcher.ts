@@ -207,7 +207,7 @@ export interface DispatcherOptions {
    */
   stopSignal?: AbortSignal;
   /**
-   * `quarantineKey` (`src/selection.ts`) values (`slug@hash`) excluded from
+   * `entryDeclaredKey` (`src/entryKey.ts`) values (`slug@hash`) excluded from
    * this tick's fanout pick even though `pending.json` still lists them as
    * pickable — `pending.json` itself is untouched. The `flume loop`
    * supervisor populates this (via the `tick` command's

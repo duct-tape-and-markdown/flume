@@ -195,6 +195,22 @@ export interface GateRevertAttempt {
    * directory; only the map key is the written identity.
    */
   keyedAs: string;
+  /**
+   * The entry **as declared** when this record was written — its slug and a
+   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
+   * file's path. Entry-keyed records only: a singleton phase has no
+   * declaration to hash, and a record whose `key` says `entry` and carries
+   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
+   * than as a stale slot standing against the entry a queue holds now.
+   *
+   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
+   * phases*): {@link headSha} says which world the attempt was made in, this
+   * says which declaration it was made against. A producer's rewrite is a new
+   * key and lifts the refusal; a commit that only moves the tip leaves it
+   * standing.
+   */
+  declaredAs?: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -237,6 +253,22 @@ export interface CleanExitAttempt {
    * directory; only the map key is the written identity.
    */
   keyedAs: string;
+  /**
+   * The entry **as declared** when this record was written — its slug and a
+   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
+   * file's path. Entry-keyed records only: a singleton phase has no
+   * declaration to hash, and a record whose `key` says `entry` and carries
+   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
+   * than as a stale slot standing against the entry a queue holds now.
+   *
+   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
+   * phases*): {@link headSha} says which world the attempt was made in, this
+   * says which declaration it was made against. A producer's rewrite is a new
+   * key and lifts the refusal; a commit that only moves the tip leaves it
+   * standing.
+   */
+  declaredAs?: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -270,6 +302,22 @@ export interface PlatformPreemptAttempt {
    * directory; only the map key is the written identity.
    */
   keyedAs: string;
+  /**
+   * The entry **as declared** when this record was written — its slug and a
+   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
+   * file's path. Entry-keyed records only: a singleton phase has no
+   * declaration to hash, and a record whose `key` says `entry` and carries
+   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
+   * than as a stale slot standing against the entry a queue holds now.
+   *
+   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
+   * phases*): {@link headSha} says which world the attempt was made in, this
+   * says which declaration it was made against. A producer's rewrite is a new
+   * key and lifts the refusal; a commit that only moves the tip leaves it
+   * standing.
+   */
+  declaredAs?: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -310,6 +358,22 @@ export interface RenderRefusedAttempt {
    * directory; only the map key is the written identity.
    */
   keyedAs: string;
+  /**
+   * The entry **as declared** when this record was written — its slug and a
+   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
+   * file's path. Entry-keyed records only: a singleton phase has no
+   * declaration to hash, and a record whose `key` says `entry` and carries
+   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
+   * than as a stale slot standing against the entry a queue holds now.
+   *
+   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
+   * phases*): {@link headSha} says which world the attempt was made in, this
+   * says which declaration it was made against. A producer's rewrite is a new
+   * key and lifts the refusal; a commit that only moves the tip leaves it
+   * standing.
+   */
+  declaredAs?: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -358,6 +422,22 @@ export interface TipMovedAttempt {
    * directory; only the map key is the written identity.
    */
   keyedAs: string;
+  /**
+   * The entry **as declared** when this record was written — its slug and a
+   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
+   * file's path. Entry-keyed records only: a singleton phase has no
+   * declaration to hash, and a record whose `key` says `entry` and carries
+   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
+   * than as a stale slot standing against the entry a queue holds now.
+   *
+   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
+   * phases*): {@link headSha} says which world the attempt was made in, this
+   * says which declaration it was made against. A producer's rewrite is a new
+   * key and lifts the refusal; a commit that only moves the tip leaves it
+   * standing.
+   */
+  declaredAs?: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */
@@ -422,6 +502,22 @@ export interface NotShippedAttempt {
    * directory; only the map key is the written identity.
    */
   keyedAs: string;
+  /**
+   * The entry **as declared** when this record was written — its slug and a
+   * hash of the declaration `pending.json` carried for it (`entryDeclaredKey`,
+   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
+   * file's path. Entry-keyed records only: a singleton phase has no
+   * declaration to hash, and a record whose `key` says `entry` and carries
+   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
+   * than as a stale slot standing against the entry a queue holds now.
+   *
+   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
+   * phases*): {@link headSha} says which world the attempt was made in, this
+   * says which declaration it was made against. A producer's rewrite is a new
+   * key and lifts the refusal; a commit that only moves the tip leaves it
+   * standing.
+   */
+  declaredAs?: string;
   /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
   headSha: string;
   /** ISO timestamp alongside {@link headSha}. */

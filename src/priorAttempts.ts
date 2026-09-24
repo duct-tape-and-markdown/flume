@@ -22,6 +22,7 @@ import { dirname, join, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { bound, headTailBound, tailBound } from "./bounds.js";
+import { entryDeclaredKey } from "./entryKey.js";
 import type { Logger } from "./log.js";
 import { existsLoud, isDirectoryOrAbsent } from "./fsProbe.js";
 import * as git from "./git.js";
@@ -45,18 +46,19 @@ const execFileP = promisify(execFile);
 
 /**
  * A `PriorAttempt` variant before {@link PriorAttemptStore.write} stamps
- * the `headSha`/`at` anchor, the `key` keyspace and the `keyedAs` written
- * identity — what each mode-specific builder below actually produces. Kept as an explicit union (rather than a
+ * the `headSha`/`at` anchor, the `key` keyspace, the `keyedAs` written
+ * identity and the `declaredAs` declaration key — what each mode-specific
+ * builder below actually produces. Kept as an explicit union (rather than a
  * distributed `Omit` over `PriorAttempt`) so each arm still carries its own
  * mode-specific fields rather than collapsing to their shared `mode` key.
  */
 export type PriorAttemptDraft =
-  | Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs">
-  | Omit<CleanExitAttempt, "headSha" | "at" | "key" | "keyedAs">
-  | Omit<PlatformPreemptAttempt, "headSha" | "at" | "key" | "keyedAs">
-  | Omit<RenderRefusedAttempt, "headSha" | "at" | "key" | "keyedAs">
-  | Omit<TipMovedAttempt, "headSha" | "at" | "key" | "keyedAs">
-  | Omit<NotShippedAttempt, "headSha" | "at" | "key" | "keyedAs">;
+  | Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
+  | Omit<CleanExitAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
+  | Omit<PlatformPreemptAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
+  | Omit<RenderRefusedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
+  | Omit<TipMovedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
+  | Omit<NotShippedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">;
 
 /**
  * Where one prior-attempt record lives and which keyspace that place belongs
@@ -65,12 +67,15 @@ export type PriorAttemptDraft =
  * {@link priorAttemptStem} slugifies into the filename stem and
  * {@link PriorAttemptStore.write} stamps verbatim onto the record's
  * {@link PriorAttempt.keyedAs}; `keyspace` is the {@link PriorAttempt.key}
- * value stamped alongside it. Produced only by {@link priorAttemptRef}, so
- * the halves cannot disagree.
+ * value stamped alongside it; `declaredAs` is the entry **as declared** that
+ * the record stands against ({@link PriorAttempt.declaredAs}) — present for an
+ * entry ref, absent for a phase's, which has no declaration to hash. Produced
+ * only by {@link priorAttemptRef}, so the three cannot disagree.
  */
 export interface PriorAttemptRef {
   key: string;
   keyspace: PriorAttemptKeyspace;
+  declaredAs?: string;
 }
 
 /**
@@ -168,7 +173,11 @@ export function phaseAttemptKey(phase: Phase): string {
  * keys the map is the identity that keys the removal.
  */
 function refOfRecord(rec: PriorAttempt): PriorAttemptRef {
-  return { key: rec.keyedAs, keyspace: rec.key };
+  return {
+    key: rec.keyedAs,
+    keyspace: rec.key,
+    ...(rec.declaredAs === undefined ? {} : { declaredAs: rec.declaredAs }),
+  };
 }
 
 /**
@@ -286,14 +295,22 @@ const MAX_PRIOR_TOUCHED_PATHS = 200;
  *
  * Key and keyspace are derived here together and travel as one value:
  * which keyspace a stem belongs to is not recoverable from its text, and
- * a pair threaded as two parameters is a pair a callsite can mismatch.
+ * a pair threaded as two parameters is a pair a callsite can mismatch. The
+ * entry arm derives the declaration key with them
+ * ({@link PriorAttempt.declaredAs}) from the same entry, so no write callsite
+ * composes it and none can stamp a record against a declaration other than
+ * the one the ref is keyed by.
  */
 export function priorAttemptRef(
   phase: Phase,
   entry?: PendingEntry,
 ): PriorAttemptRef {
   return entry
-    ? { key: slugify(entry.tag), keyspace: "entry" }
+    ? {
+        key: slugify(entry.tag),
+        keyspace: "entry",
+        declaredAs: entryDeclaredKey(entry),
+      }
     : { key: phase.name, keyspace: "phase" };
 }
 
@@ -322,13 +339,20 @@ export class PriorAttemptStore {
    * `headSha`/`at` anchor
    * every record carries (spec/loop.md "Every record is anchored"), or
    * missing the `key` keyspace / `keyedAs` written identity every record
-   * states (spec/loop.md "No false signal") → treated as absent. `mode` alone does not make a
+   * states (spec/loop.md "No false signal"), or — in the entry keyspace —
+   * missing the `declaredAs` declaration key such a record stands against →
+   * treated as absent. `mode` alone does not make a
    * `PriorAttempt`: the renderer is exhaustive over the known modes and must
    * never be fed an unknown shape, and a chain comparing a record's `headSha` to the tip
    * reads a field the type promises is there. A record predating the anchor
    * is a stale slot, and a stale slot must never become a false signal —
    * and one predating `keyedAs` has no identity to key {@link readAll}'s map
-   * by, which would put it in a chain's hands under `undefined`.
+   * by, which would put it in a chain's hands under `undefined`. One
+   * predating `declaredAs` says nothing about *which* declaration it was
+   * written against, so a refusal keyed on that (`spec/harness.md`, *The
+   * phases*) could neither stand nor lift decidably — the record is absent
+   * rather than a comparison against `undefined`
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
    *
    * A record whose stated keyspace disagrees with the directory it was found
    * in is the same class of undecodable: the two sides of its identity
@@ -352,6 +376,7 @@ export class PriorAttemptStore {
         at?: unknown;
         key?: unknown;
         keyedAs?: unknown;
+        declaredAs?: unknown;
       };
       if (
         rec &&
@@ -361,7 +386,9 @@ export class PriorAttemptStore {
         isKeyspace(rec.key) &&
         rec.key === ref.keyspace &&
         typeof rec.keyedAs === "string" &&
-        rec.keyedAs.length > 0
+        rec.keyedAs.length > 0 &&
+        (rec.key !== "entry" ||
+          (typeof rec.declaredAs === "string" && rec.declaredAs.length > 0))
       ) {
         return rec as PriorAttempt;
       }
@@ -435,8 +462,8 @@ export class PriorAttemptStore {
 
   /**
    * Stamps `headSha`/`at` (spec/loop.md "Every record is anchored") and the
-   * writing ref's keyspace and key onto whatever mode-specific fields the
-   * caller built, so every one of the `build*` functions below stays ignorant of
+   * writing ref's keyspace, key and declaration key onto whatever mode-specific
+   * fields the caller built, so every one of the `build*` functions below stays ignorant of
    * the anchor rather than each re-reading the trunk tip itself. `repoRoot`,
    * never `key`'s worktree — the anchor is the *trunk* tip regardless of
    * which worktree produced the record.
@@ -450,6 +477,10 @@ export class PriorAttemptStore {
       // the identity `readAll` keys a chain's map by, and a phase name
       // `slugify` rewrites must still answer to the name the chain spells.
       keyedAs: ref.key,
+      // From the ref, for an entry ref alone: an entry-keyed record must
+      // carry the declaration it stands against for `read` above to accept
+      // it, and a phase ref has none to carry.
+      ...(ref.declaredAs === undefined ? {} : { declaredAs: ref.declaredAs }),
       headSha: await git.revParse(this.repoRoot),
       at: new Date().toISOString(),
     };
@@ -626,7 +657,7 @@ export async function buildGateRevert(
   },
   diffCwd: string,
   sha: string,
-): Promise<Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs">> {
+): Promise<Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">> {
   const diffStat = await capturedDiffStat(diffCwd, sha);
   return {
     mode: "gate-revert",
@@ -669,7 +700,7 @@ export async function buildGateRevert(
  */
 export function buildCleanExit(
   finalMessage: string,
-): Omit<CleanExitAttempt, "headSha" | "at" | "key" | "keyedAs"> {
+): Omit<CleanExitAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
   const message = tailBound(finalMessage, MAX_PRIOR_NOCOMMIT);
   return {
     mode: "clean-exit",
@@ -683,7 +714,7 @@ export function buildCleanExit(
 /** Build the platform-preempt record from the non-work failure class. */
 export function buildPlatformPreempt(
   failureClass: string,
-): Omit<PlatformPreemptAttempt, "headSha" | "at" | "key" | "keyedAs"> {
+): Omit<PlatformPreemptAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
   return {
     mode: "platform-preempt",
     failureClass: bound(failureClass, MAX_PRIOR_NOCOMMIT),
@@ -701,7 +732,7 @@ export function buildPlatformPreempt(
  */
 export function buildRenderRefused(
   failures: string,
-): Omit<RenderRefusedAttempt, "headSha" | "at" | "key" | "keyedAs"> {
+): Omit<RenderRefusedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
   return {
     mode: "render-refused",
     failures: bound(failures, MAX_PRIOR_NOCOMMIT),
@@ -727,7 +758,7 @@ export function buildRenderRefused(
 export function buildTipMoved(
   expectedTip: string,
   observedTip: string,
-): Omit<TipMovedAttempt, "headSha" | "at" | "key" | "keyedAs"> {
+): Omit<TipMovedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
   return { mode: "tip-moved", expectedTip, observedTip };
 }
 
@@ -755,7 +786,7 @@ export function buildNotShipped(
   mergedSha: string,
   touchedPaths: readonly string[],
   threw?: string,
-): Omit<NotShippedAttempt, "headSha" | "at" | "key" | "keyedAs"> {
+): Omit<NotShippedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
   const omitted = touchedPaths.length - MAX_PRIOR_TOUCHED_PATHS;
   return {
     mode: "not-shipped",

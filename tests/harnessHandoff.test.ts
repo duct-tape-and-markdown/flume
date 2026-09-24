@@ -39,6 +39,7 @@ import {
   INBOX_PHASE,
   type PlanSlice,
 } from "../harness/declaration.ts";
+import { entryDeclaredKey } from "../src/entryKey.ts";
 import type {
   EntryRefusalContext,
   FanoutEntryOutcome,
@@ -318,16 +319,20 @@ describe("the harness package's default handoff", () => {
       finalMessage: "nothing to do here",
       key: "entry",
       keyedAs: "ready",
+      declaredAs: entryDeclaredKey(entry("READY")),
       headSha: head,
       at: "2026-09-16T00:00:00.000Z",
     };
-    expect(
-      defaultRefusesEntry({ entry: entry("READY"), priorAttempt: walled, headSha: head }),
-    ).toBe(true);
+    const ctx = {
+      entry: entry("READY"),
+      headSha: head,
+      declaredAs: entryDeclaredKey(entry("READY")),
+    };
+    expect(defaultRefusesEntry({ ...ctx, priorAttempt: walled })).toBe(true);
 
     // Non-vacuity for that floor: the same predicate hands over an entry
     // nothing has walled on, so the refusal above is the record's doing.
-    expect(defaultRefusesEntry({ entry: entry("READY"), headSha: head })).toBe(false);
+    expect(defaultRefusesEntry(ctx)).toBe(false);
   });
 });
 
@@ -498,35 +503,59 @@ describe("the default handoff's stop after a contract-touching ship", () => {
 /**
  * The per-entry half of the same routing decision (`spec/harness.md`, *The
  * default `handoff`*): which entries the engine may hand a build wave, judged
- * from the record it already read and the tip it read it at.
+ * from the record it already read and the declaration it read that record
+ * against.
  *
  * Every case drives the real `defaultRefusesEntry` over a real
  * `EntryRefusalContext` — the shape the engine composes at selection
  * (`bindEntryRefusal`, `src/selection.ts`) — with records built through the
- * engine's own `PriorAttempt` union, so a field it renames is a typecheck
- * failure here rather than a silently-undefined read.
+ * engine's own `PriorAttempt` union and keyed through the engine's own
+ * `entryDeclaredKey` (`src/entryKey.ts`), so neither a field it renames nor a
+ * key it derives differently can leave a case green on the tester's own
+ * spelling.
  *
  * Each refusal carries its control: the same record with the one fact changed
- * — a different anchor, a different mode — so "refused" is proven to be that
- * fact's doing rather than the predicate's answer for the whole fixture.
+ * — a different declaration, a different mode — so "refused" is proven to be
+ * that fact's doing rather than the predicate's answer for the whole fixture.
  */
 describe("the default handoff's per-entry refusal", () => {
-  /** The tip every selection below is taken at. */
+  /** The tip the first selection below is taken at. */
   const HEAD = "9".repeat(40);
 
-  /** Some earlier tip — a world that has moved since the record was written. */
-  const OLDER = "1".repeat(40);
+  /** A later tip: an operator commit has landed since the record was written. */
+  const MOVED = "1".repeat(40);
+
+  /** The entry every case is about, as a producer first declared it. */
+  const DECLARED = entry("SOME-ENTRY");
 
   /**
-   * One prior-attempt record at the given anchor, minted through the engine's
-   * own union. Exhaustive over `PriorAttempt["mode"]`, so a mode the engine
-   * adds must be given a fixture here before these cases can judge it.
+   * The same entry after a producer rewrote it — the reconciliation the
+   * refusal is waiting for, and the only kind of change that lifts it.
    */
-  function attempt(mode: PriorAttempt["mode"], headSha: string): PriorAttempt {
+  const REWRITTEN: PendingEntry = {
+    ...DECLARED,
+    summary: "re-scoped: the fence the first attempt asked for",
+  };
+
+  /**
+   * One prior-attempt record standing against the given declaration, minted
+   * through the engine's own union. Exhaustive over `PriorAttempt["mode"]`, so
+   * a mode the engine adds must be given a fixture here before these cases can
+   * judge it.
+   *
+   * `headSha` is the tip the record was written at, defaulting to the one the
+   * first selection is taken at: a case about a moved tip moves the *selection*
+   * instead, which is what actually happens when a commit lands.
+   */
+  function attempt(
+    mode: PriorAttempt["mode"],
+    declaration: PendingEntry = DECLARED,
+  ): PriorAttempt {
     const anchor = {
       key: "entry" as const,
       keyedAs: "some-entry",
-      headSha,
+      declaredAs: entryDeclaredKey(declaration),
+      headSha: HEAD,
       at: "2026-09-16T00:00:00.000Z",
     };
     switch (mode) {
@@ -557,45 +586,80 @@ describe("the default handoff's per-entry refusal", () => {
     }
   }
 
-  /** The context the engine composes for one entry, at {@link HEAD}. */
-  const context = (priorAttempt?: PriorAttempt): EntryRefusalContext => ({
-    entry: entry("SOME-ENTRY"),
-    ...(priorAttempt ? { priorAttempt } : {}),
-    headSha: HEAD,
-  });
+  /**
+   * The context the engine composes for one entry at one tip — both keys read
+   * off the engine's own derivation, never spelled here.
+   */
+  const context = (
+    priorAttempt?: PriorAttempt,
+    over: { entry?: PendingEntry; headSha?: string } = {},
+  ): EntryRefusalContext => {
+    const subject = over.entry ?? DECLARED;
+    return {
+      entry: subject,
+      ...(priorAttempt ? { priorAttempt } : {}),
+      headSha: over.headSha ?? HEAD,
+      declaredAs: entryDeclaredKey(subject),
+    };
+  };
 
-  it("an entry whose latest clean exit is at the current HEAD is not handed to build", () => {
-    const record = attempt("clean-exit", HEAD);
+  it("an entry whose latest clean exit stands against its current declaration is not handed to build", () => {
+    const record = attempt("clean-exit");
 
-    // Non-vacuity: the record really is anchored at the tip the selection is
-    // taken at, so the refusal below is the comparison and not a predicate
-    // that refuses every clean exit it sees.
-    expect(record.headSha).toBe(HEAD);
+    // Non-vacuity: the record really does stand against the declaration this
+    // selection is about, so the refusal below is the comparison and not a
+    // predicate that refuses every clean exit it sees.
+    expect(record.declaredAs).toBe(entryDeclaredKey(DECLARED));
 
     expect(defaultRefusesEntry(context(record))).toBe(true);
   });
 
-  it("an entry whose latest clean exit is at an older HEAD is handed to build", () => {
-    // The same mode against a world that has moved: the agent's decision was
-    // about a tree that is no longer there, so the entry is the wave's again
-    // without anyone editing the queue.
-    expect(defaultRefusesEntry(context(attempt("clean-exit", OLDER)))).toBe(false);
+  it("a standing build refusal survives an operator commit that moves the tip", () => {
+    // An operator commit, a docs fix, a sibling entry shipping: the tip the
+    // selection is taken at is no longer the tip the record was written at,
+    // and nothing about the entry was reconciled. The refusal is about the
+    // declaration, so it still stands — a build wave re-offered this entry
+    // would read exactly what the last one declined.
+    const record = attempt("clean-exit");
+    const moved = context(record, { headSha: MOVED });
 
-    // The control: only the anchor differs between this and the refusal above.
-    expect(attempt("clean-exit", OLDER)).toEqual({
-      ...attempt("clean-exit", HEAD),
-      headSha: OLDER,
-    });
+    // Non-vacuity: the tip really did move, and the declaration really did
+    // not — the two halves this case separates.
+    expect(moved.headSha).not.toBe(record.headSha);
+    expect(moved.declaredAs).toBe(record.declaredAs);
+
+    expect(defaultRefusesEntry(moved)).toBe(true);
   });
 
-  it("an entry whose latest attempt is a gate revert at the current HEAD is handed to build", () => {
-    // The anchor matches; the mode does not. A reverted commit left the
+  it("a producer's rewrite of the refused entry lifts the refusal", () => {
+    // The reconciliation the refusal was waiting for: the producer read the
+    // record and re-scoped the entry. The rewrite hashes to a new key, the
+    // record no longer stands against what the queue declares, and the entry
+    // is the wave's again with no tip having moved and nobody hand-editing a
+    // record.
+    const record = attempt("clean-exit");
+    const rewritten = context(record, { entry: REWRITTEN });
+
+    // Non-vacuity: the rewrite really did re-key the entry, and the tip
+    // really did not move.
+    expect(rewritten.declaredAs).not.toBe(record.declaredAs);
+    expect(rewritten.headSha).toBe(record.headSha);
+
+    expect(defaultRefusesEntry(rewritten)).toBe(false);
+
+    // The control: the same record against the declaration it was written
+    // for is still refused, so the lift above is the rewrite's doing.
+    expect(defaultRefusesEntry(context(record))).toBe(true);
+  });
+
+  it("an entry whose latest attempt is a gate revert is handed to build", () => {
+    // The declaration matches; the mode does not. A reverted commit left the
     // gate's own verdict on the record, which is a fact the next attempt
-    // reads and the tree it reads it against never had to move.
-    expect(defaultRefusesEntry(context(attempt("gate-revert", HEAD)))).toBe(false);
+    // reads without any producer touching the entry.
+    expect(defaultRefusesEntry(context(attempt("gate-revert")))).toBe(false);
   });
 
-  it("every mode but a clean exit is handed to build at the current HEAD", () => {
+  it("every mode but a clean exit is handed to build against the same declaration", () => {
     const modes = PRIOR_ATTEMPT_MODES.filter((mode) => mode !== "clean-exit");
 
     // Non-vacuity: the sweep judges the engine's whole roster minus the one
@@ -603,7 +667,7 @@ describe("the default handoff's per-entry refusal", () => {
     expect(modes.length).toBeGreaterThan(0);
 
     expect(
-      modes.filter((mode) => defaultRefusesEntry(context(attempt(mode, HEAD)))),
+      modes.filter((mode) => defaultRefusesEntry(context(attempt(mode)))),
     ).toEqual([]);
   });
 

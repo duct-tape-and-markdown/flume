@@ -2242,12 +2242,19 @@ const chain: Chain = {
   phases: [plan, build],
   humanOnly: [],
   // Never re-dispatch an entry whose last attempt exited cleanly against the
-  // tip we are still on: the same dispatch against an unchanged world is the
-  // same outcome, at full agent price.
-  refusesEntry: ({ priorAttempt, headSha }) =>
-    priorAttempt?.mode === "clean-exit" && priorAttempt.headSha === headSha,
+  // entry as it still reads: the same dispatch against a declaration nobody
+  // has reconciled is the same outcome, at full agent price.
+  refusesEntry: ({ priorAttempt, declaredAs }) =>
+    priorAttempt?.mode === "clean-exit" && priorAttempt.declaredAs === declaredAs,
 };
 ```
+
+That refusal lifts on exactly one thing: a producer rewriting the entry, which
+re-keys it, or dropping it, which takes the record with it. It does *not* lift
+because the tip moved — an operator commit, or a sibling entry shipping, would
+otherwise re-offer the entry to a wave with nothing new to read. Key on
+`headSha` instead when what your predicate is about really is the *tree* the
+attempt read rather than the entry it was handed.
 
 Answered `true`, the entry is held back from every pickable set the tick
 reports — the wave's own batch, `TickContext.pickable`, and
@@ -2263,6 +2270,7 @@ already holds about the entry at that moment, so it reaches for none itself:
 | `entry` | The entry as this tick read it from the queue — tag, gate, files, and whatever your `entryExtension` declared. |
 | `priorAttempt` | The entry's own latest prior-attempt record, or absent on a first attempt. The same record `TickContext.priorAttempts` carries under `entry:<tag slug>`, decoded by the engine's own reader. |
 | `headSha` | The trunk tip this selection was taken at — the number to compare a record's `headSha` anchor against. |
+| `declaredAs` | The entry **as declared** in the queue this tick read: its slug and a hash of its declaration, the same key the engine stamped on the record under `declaredAs` (entry-keyed records only; a singleton phase's record carries none). Compare the two to ask "is that record still about the entry I am holding" — equal means the record stands, different means a producer rewrote it. Both sides are the engine's own derivation, so your predicate never composes one. |
 
 Three properties worth knowing before you declare one:
 

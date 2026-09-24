@@ -10,71 +10,32 @@
  * and the file-overlap partition are spelled here
  * alone, so no two of those surfaces can disagree about what "pickable" means
  * at the moment each is taken (`.claude/rules/engineering.md`, *A module is
- * one job*).
+ * one job*). The identity the hold and the refusal both key on is not this
+ * module's — an entry's declaration key has a second reader in the
+ * prior-attempt record, so it lives at its own door (`entryDeclaredKey`,
+ * `src/entryKey.ts`).
  */
 
-import { createHash } from "node:crypto";
-
+import { entryDeclaredKey } from "./entryKey.js";
 import { partitionByFileOverlap } from "./partition.js";
 import type { PendingEntry } from "./PendingSchema.js";
 import type { Chain, QuarantinedTag } from "./Phase.js";
-import { slugify } from "./paths.js";
 import { entryAttemptKey } from "./priorAttempts.js";
 import type { PriorAttempt } from "./Prompt.js";
-
-/** Hex width of the entry-bytes half of a {@link quarantineKey}. */
-const QUARANTINE_KEY_HASH_LENGTH = 10;
-
-/**
- * spec/loop.md "Repeated identical failures — quarantine, then abort": the
- * run-scoped quarantine key for one entry **as read** — its slug and a hash
- * of its bytes in `pending.json`, joined `slug@hash`.
- *
- * The hash covers the entry's whole parsed shape, so any edit to it — a
- * re-scoped `files`, a widened `summary`, a changed gate — yields a new key
- * and lifts a hold the old key still carries, with no stop-and-relaunch (a
- * slug-only key survived a re-scope and forced exactly that, field report
- * 0.12.0). The parse is `PendingSchema`'s strict object, so every field in
- * the file survives into the hashed JSON and none is invented: two ticks
- * reading identical file content always agree on the key, and a whitespace
- * reformat — which re-scopes nothing — never lifts a hold.
- *
- * **`observedFiles` is excluded, declared divergence from spec/loop.md's
- * "a hash of its bytes".** That field is the engine's own accretion, not a
- * declaration anyone re-scoped: `commitPendingUpdate` merges a failed
- * attempt's footprint onto the entry in the *same* wave that blames it, so
- * hashing it would have every merge- and gate-stage quarantine mint a fresh
- * key on the next read and lift its own hold — the run re-attempts the wall
- * at full agent price, which is the burn the section exists to prevent.
- * A key identifying the work as declared cannot be keyed on the engine's
- * notes about it (`.claude/rules/engine-boundary.md`, *Told, not
- * inferred*). Every other write-back is a real state change and re-keys
- * deliberately.
- *
- * Like a failure signature, the result is an **opaque equality key**:
- * written by the engine, compared by the engine, never parsed apart by
- * either side of the `FLUME_QUARANTINED_SLUGS` channel.
- */
-export function quarantineKey(entry: PendingEntry): string {
-  const { observedFiles: _engineAccretion, ...declared } = entry;
-  const hash = createHash("sha1")
-    .update(JSON.stringify(declared))
-    .digest("hex")
-    .slice(0, QUARANTINE_KEY_HASH_LENGTH);
-  return `${slugify(entry.tag)}@${hash}`;
-}
 
 /**
  * The entry-scoping half of every stage-failure record, filled from the
  * entry the failure is blamed on. One home for the `tag`/`quarantineKey`
  * pairing `StageFailureEntry` (`src/tickVerdict.ts`) types — a call site
- * that has the entry spreads this rather than rebuilding either half.
+ * that has the entry spreads this rather than rebuilding either half. The
+ * key itself is the entry as declared (`entryDeclaredKey`,
+ * `src/entryKey.ts`).
  */
 export function blamedOn(entry: PendingEntry): {
   tag: string;
   quarantineKey: string;
 } {
-  return { tag: entry.tag, quarantineKey: quarantineKey(entry) };
+  return { tag: entry.tag, quarantineKey: entryDeclaredKey(entry) };
 }
 
 /**
@@ -139,12 +100,12 @@ function gateEligible(
   );
 }
 
-/** Whether this run's live quarantine holds the entry **as read** ({@link quarantineKey}). */
+/** Whether this run's live quarantine holds the entry **as read** ({@link entryDeclaredKey}). */
 function heldByQuarantine(
   entry: PendingEntry,
   quarantinedSlugs?: ReadonlySet<string>,
 ): boolean {
-  return quarantinedSlugs?.has(quarantineKey(entry)) ?? false;
+  return quarantinedSlugs?.has(entryDeclaredKey(entry)) ?? false;
 }
 
 /**
@@ -177,6 +138,11 @@ export interface EntryRefusalFacts {
  * The record is passed only when one stands: an absent key is a first
  * attempt, and a `priorAttempt: undefined` on the context would read as a
  * record that failed to decode.
+ *
+ * The entry's own declaration key is composed here too, beside the record the
+ * store stamped with one: a predicate comparing "is that record still about
+ * this entry" gets both keys from the engine rather than deriving either
+ * (`EntryRefusalContext.declaredAs`, `src/Phase.ts`).
  */
 export function bindEntryRefusal(
   chain: Chain,
@@ -190,6 +156,7 @@ export function bindEntryRefusal(
       entry,
       ...(priorAttempt ? { priorAttempt } : {}),
       headSha: facts.headSha,
+      declaredAs: entryDeclaredKey(entry),
     });
   };
 }
@@ -261,7 +228,7 @@ export function pickableSelection(opts: {
     pickable,
     quarantinedTags: eligible
       .filter((e) => heldByQuarantine(e, opts.quarantinedSlugs))
-      .map((e) => ({ tag: e.tag, key: quarantineKey(e) })),
+      .map((e) => ({ tag: e.tag, key: entryDeclaredKey(e) })),
     refusedTags: refused.map((e) => e.tag),
   };
 }

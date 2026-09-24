@@ -49,6 +49,7 @@ import { writePlanState } from "../harness/planState.ts";
 import type { RunnerContext, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
 import type { ClaudeCodeOptions } from "../src/Agent.ts";
+import { entryDeclaredKey } from "../src/entryKey.ts";
 import { computeStateRootRel } from "../src/paths.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
@@ -280,15 +281,31 @@ const REFUSAL_ENTRY: PendingEntry = {
   files: { new: [], edit: [], retire: [] },
 };
 
-/** A prior attempt that ran, read the tree at `headSha`, and committed nothing. */
-const cleanExit = (headSha: string): PriorAttempt => ({
+/**
+ * A prior attempt that ran, read the entry it was handed, and committed
+ * nothing — standing against the declaration `declaredAs` keys.
+ */
+const cleanExit = (declaredAs: string): PriorAttempt => ({
   mode: "clean-exit",
   finalMessage: "nothing to do here",
   key: "entry",
   keyedAs: "some-entry",
-  headSha,
+  declaredAs,
+  headSha: "9".repeat(40),
   at: "2026-09-16T00:00:00.000Z",
 });
+
+/** The refusal context the engine composes for {@link REFUSAL_ENTRY}. */
+function refusalContext(
+  priorAttempt?: PriorAttempt,
+): Parameters<NonNullable<Chain["refusesEntry"]>>[0] {
+  return {
+    entry: REFUSAL_ENTRY,
+    ...(priorAttempt ? { priorAttempt } : {}),
+    headSha: "9".repeat(40),
+    declaredAs: entryDeclaredKey(REFUSAL_ENTRY),
+  };
+}
 
 /**
  * The per-entry refusal a built chain carries, with the absence thrown
@@ -992,32 +1009,29 @@ it("the chain's default handoff wakes every live slice and build together", () =
   expect(build.handoff(tickResult())).toEqual(["plan-derive"]);
 });
 
-it("the chain the factory builds declines a clean exit at the tick's own HEAD", () => {
+it("the chain the factory builds declines a clean exit against the entry as declared", () => {
   // Driven through the chain the factory returns, over the context the
   // engine composes at selection (`bindEntryRefusal`, `src/selection.ts`) —
   // so this is the predicate a real wave consults, not the module-level one
   // asserted against itself.
   const refusesEntry = refusalOf(chainFor());
-  const head = "9".repeat(40);
-  const entry = REFUSAL_ENTRY;
+  const declared = entryDeclaredKey(REFUSAL_ENTRY);
 
-  expect(
-    refusesEntry({ entry, priorAttempt: cleanExit(head), headSha: head }),
-  ).toBe(true);
+  expect(refusesEntry(refusalContext(cleanExit(declared)))).toBe(true);
 
-  // Control: the same record at a tip the world has moved past leaves the
-  // entry the wave's, so the refusal above is the anchor's doing rather than
-  // a factory that declines every walled entry forever.
-  expect(
-    refusesEntry({
-      entry,
-      priorAttempt: cleanExit("1".repeat(40)),
-      headSha: head,
-    }),
-  ).toBe(false);
+  // Control: a record standing against a declaration this entry no longer
+  // carries leaves it the wave's, so the refusal above is the declaration
+  // key's doing rather than a factory that declines every walled entry
+  // forever.
+  const rewritten = entryDeclaredKey({
+    ...REFUSAL_ENTRY,
+    summary: "re-scoped by a later plan tick",
+  });
+  expect(rewritten).not.toBe(declared);
+  expect(refusesEntry(refusalContext(cleanExit(rewritten)))).toBe(false);
 
   // And a first attempt — no record at all — is never held back.
-  expect(refusesEntry({ entry, headSha: head })).toBe(false);
+  expect(refusesEntry(refusalContext())).toBe(false);
 });
 
 it("a chain declaring its own build handoff still carries the package's per-entry refusal", () => {
@@ -1036,19 +1050,14 @@ it("a chain declaring its own build handoff still carries the package's per-entr
   ).toEqual(["a-phase-the-package-never-names"]);
 
   const refusesEntry = refusalOf(chain);
-  const head = "9".repeat(40);
 
   expect(
-    refusesEntry({
-      entry: REFUSAL_ENTRY,
-      priorAttempt: cleanExit(head),
-      headSha: head,
-    }),
+    refusesEntry(refusalContext(cleanExit(entryDeclaredKey(REFUSAL_ENTRY)))),
   ).toBe(true);
 
   // And the declaration did not turn the floor into a wall either: the same
   // entry with nothing walled on it is still the wave's.
-  expect(refusesEntry({ entry: REFUSAL_ENTRY, headSha: head })).toBe(false);
+  expect(refusesEntry(refusalContext())).toBe(false);
 });
 
 it("the package's judge runs after a consumer's declared gates at the same when", () => {

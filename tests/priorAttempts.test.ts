@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { entryDeclaredKey } from "../src/entryKey.ts";
 import { slugify } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { Phase } from "../src/Phase.ts";
@@ -837,7 +838,11 @@ describe("priorAttempts — a record is keyed by the identity it was written und
     };
 
     const ref = priorAttemptRef({ name: "build" } as Phase, entry);
-    expect(ref).toEqual({ key: slugify(tag), keyspace: "entry" });
+    expect(ref).toEqual({
+      key: slugify(tag),
+      keyspace: "entry",
+      declaredAs: entryDeclaredKey(entry),
+    });
     await store.write(ref, buildCleanExit("parked: needs a wider fence"));
 
     const all = await store.readAll();
@@ -870,6 +875,96 @@ describe("priorAttempts — a record is keyed by the identity it was written und
         finalMessage: "parked: the entry needs a wider fence",
         key: "entry",
         keyedAs: "plan",
+        headSha: "0".repeat(40),
+        at: "2024-01-01T00:00:00.000Z",
+      }),
+    );
+    expect(existsSync(p)).toBe(true);
+
+    await expect(store.read(ref)).resolves.toBeUndefined();
+    expect((await store.readAll()).size).toBe(0);
+  });
+
+  it("the engine reports the entry-as-declared key on the prior-attempt record", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    const declared: PendingEntry = {
+      tag: "NEEDS-A-WIDER-FENCE",
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      priority: 0,
+      files: { new: [], edit: [], retire: [] },
+      summary: "as a producer first declared it",
+    };
+
+    // Driven through the real writer and the real reader
+    // (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+    // wrote*): the ref is the one every write callsite takes, and the record
+    // is what `read` hands back off disk.
+    await store.write(
+      priorAttemptRef({ name: "build" } as Phase, declared),
+      buildCleanExit("parked: needs a wider fence"),
+    );
+    const record = await store.read(
+      priorAttemptRef({ name: "build" } as Phase, declared),
+    );
+
+    // The key the engine composes for the entry as read — the other side of
+    // the equality a per-entry refusal is (`EntryRefusalContext.declaredAs`,
+    // `src/Phase.ts`). Not spelled here: a `slug@hash` written by hand would
+    // pin the tester's arithmetic rather than the engine's.
+    expect(record?.declaredAs).toBe(entryDeclaredKey(declared));
+
+    // A producer's rewrite re-keys the entry, so the record on disk no longer
+    // names what the queue declares — and it is the *declaration* doing that,
+    // not the slug: the file the record sits at is unchanged.
+    const rewritten: PendingEntry = {
+      ...declared,
+      summary: "re-scoped: the fence the first attempt asked for",
+    };
+    expect(entryDeclaredKey(rewritten)).not.toBe(entryDeclaredKey(declared));
+    expect(entryAttemptKey(rewritten)).toBe(entryAttemptKey(declared));
+    const afterRewrite = await store.read(
+      priorAttemptRef({ name: "build" } as Phase, rewritten),
+    );
+    expect(afterRewrite?.declaredAs).toBe(entryDeclaredKey(declared));
+
+    // A producer's *drop* ends the record outright — the other reconciliation
+    // a standing refusal waits for (`spec/harness.md`, *The phases*).
+    expect(await store.clearStale([rewritten])).toEqual([]);
+    expect(await store.clearStale([])).toEqual([entryAttemptKey(declared)]);
+    expect(await store.read(priorAttemptRef({ name: "build" } as Phase, declared))).toBeUndefined();
+
+    // And the phase keyspace carries none: a singleton tick has no entry, so
+    // there is no declaration to hash and the field is absent rather than a
+    // stand-in value a refusal could compare against.
+    const phaseRef = priorAttemptRef({ name: "build" } as Phase);
+    await store.write(phaseRef, buildCleanExit("nothing to do"));
+    const phaseRecord = await store.read(phaseRef);
+    expect(phaseRecord?.mode).toBe("clean-exit");
+    expect(phaseRecord?.declaredAs).toBeUndefined();
+  });
+
+  it("an entry-keyed prior-attempt record carrying no declaration key reads as no prior attempt", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const ref: PriorAttemptRef = { key: "some-entry", keyspace: "entry" };
+    const p = priorAttemptPath(flumeDir, ref);
+    await mkdir(dirname(p), { recursive: true });
+
+    // Hand-authored, the sanctioned exception for a refusal case: no writer
+    // mints an entry-keyed record without the key it stands against. Read as
+    // present, it would say nothing about *which* declaration the attempt was
+    // made against, and a refusal keyed on that could neither stand nor lift
+    // decidably (`.claude/rules/engineering.md`, *Loud or nothing*).
+    await writeFile(
+      p,
+      JSON.stringify({
+        mode: "clean-exit",
+        finalMessage: "parked: the entry needs a wider fence",
+        key: "entry",
+        keyedAs: "some-entry",
         headSha: "0".repeat(40),
         at: "2024-01-01T00:00:00.000Z",
       }),

@@ -27,7 +27,7 @@ import { Dispatcher, type DispatcherOptions } from "../src/Dispatcher.ts";
 import { tickExitCode } from "../src/cliVerdict.ts";
 import { EX_MOUNT_DEAD } from "../src/exitCodes.ts";
 import { PendingParseFailure as realPendingParseFailure } from "../src/PendingSchema.ts";
-import { quarantineKey } from "../src/selection.ts";
+import { entryDeclaredKey } from "../src/entryKey.ts";
 import type { Logger } from "../src/log.ts";
 import { readMergingMarkers } from "../src/mergingMarkers.ts";
 import {
@@ -4457,7 +4457,7 @@ describe("Dispatcher fanout — the wave's gate failures reach handoff (TICK-RES
       "GATE-FAIL-B",
     ]);
     expect(reported.map((f) => f.quarantineKey)).toEqual(
-      stillPending.map((e) => quarantineKey(e)),
+      stillPending.map((e) => entryDeclaredKey(e)),
     );
 
     // One set of facts, two surfaces: what `handoff` read is what the
@@ -4575,7 +4575,7 @@ describe("Dispatcher fanout — the wave's merge failures reach handoff (TICK-RE
       "MERGE-FAIL-C",
     ]);
     expect(reported.map((f) => f.quarantineKey)).toEqual(
-      stillPending.map((e) => quarantineKey(e)),
+      stillPending.map((e) => entryDeclaredKey(e)),
     );
 
     // One set of facts, three surfaces: what `handoff` read is what the
@@ -7424,7 +7424,7 @@ describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-
     // the same `parsePending` it uses, so the two sides cannot disagree on
     // what an entry's bytes hash to.
     const onDisk = await readPendingFromDisk(fx.repo);
-    const keys = onDisk.map((e) => quarantineKey(e));
+    const keys = onDisk.map((e) => entryDeclaredKey(e));
 
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
@@ -7663,11 +7663,13 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     await writePending(fx.repo, twoOpen());
     const flumeDir = join(fx.repo, ".flume");
     await mkdir(join(flumeDir, "prior-attempts", "entry"), { recursive: true });
+    const held = twoOpen().find((e) => e.tag === "HELD")!;
     const record: PriorAttempt = {
       mode: "clean-exit",
       finalMessage: "nothing to do here",
       key: "entry",
       keyedAs: slugify("HELD"),
+      declaredAs: entryDeclaredKey(held),
       headSha: "0".repeat(40),
       at: "2024-01-01T00:00:00.000Z",
     };
@@ -7710,6 +7712,14 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     // anchor the record carries.
     expect(opening.map((ctx) => ctx.headSha)).toEqual([preHead, preHead]);
     expect(preHead).not.toBe(record.headSha);
+    // …and each entry's own declaration key beside it, so a predicate asking
+    // "is that record still about this entry" compares two values the engine
+    // derived rather than respelling either (`EntryRefusalContext.declaredAs`,
+    // `src/Phase.ts`). For `HELD` it is the key the standing record carries.
+    expect(opening.map((ctx) => ctx.declaredAs)).toEqual(
+      twoOpen().map((e) => entryDeclaredKey(e)),
+    );
+    expect(opening[1]!.declaredAs).toBe(record.declaredAs);
   });
 
   it("a singleton hook's TickContext.pickable carries the same chain-declared refusal a wave applies", async () => {
@@ -7810,7 +7820,7 @@ describe("Dispatcher — the run-scoped quarantine keys the entry as read (QUARA
     // key the blame was filed under still identifies the entry on disk.
     const afterBlame = await readPendingFromDisk(fx.repo);
     expect(afterBlame[0]?.observedFiles).toEqual(["src/rekey.ts"]);
-    expect(firstFailure?.quarantineKey).toBe(quarantineKey(afterBlame[0]!));
+    expect(firstFailure?.quarantineKey).toBe(entryDeclaredKey(afterBlame[0]!));
 
     // Same tag, different bytes: re-scoped on trunk, gate still vetoes.
     await writePending(fx.repo, [
@@ -10860,9 +10870,12 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
           // The keyspace and the written identity are the fields that
           // legitimately differ between the legs (spec/loop.md "No false
           // signal") — normalized out of the byte pin and asserted on their
-          // own below.
+          // own below. The declaration key is the entry keyspace's alone —
+          // a phase has no declaration to hash — so the whole line goes,
+          // not just its value.
           .replace(/"key": "[^"]*"/, '"key": "<KEYSPACE>"')
-          .replace(/"keyedAs": "[^"]*"/, '"keyedAs": "<KEYED-AS>"');
+          .replace(/"keyedAs": "[^"]*"/, '"keyedAs": "<KEYED-AS>"')
+          .replace(/\n *"declaredAs": "[^"]*",?/, "");
       expect(normalize(fanoutRecord, fanoutPreHead, fanoutObservedHead)).toBe(
         normalize(singletonRecord, singletonPreHead, singletonObservedHead),
       );
@@ -10872,6 +10885,11 @@ describe("Dispatcher tip-moved — singleton/fanout record+log shape agreement, 
       // phase's name as the chain spells it, the entry's tag slug.
       expect(JSON.parse(singletonRecord).keyedAs).toBe("plan");
       expect(JSON.parse(fanoutRecord).keyedAs).toBe(slugify("FANOUT-TWIN"));
+      // …and the declaration key rides the entry keyspace alone.
+      expect(JSON.parse(singletonRecord).declaredAs).toBeUndefined();
+      expect(JSON.parse(fanoutRecord).declaredAs).toBe(
+        entryDeclaredKey((await readPendingFromDisk(fx2.repo))[0]!),
+      );
       expect(JSON.parse(singletonRecord).mode).toBe("tip-moved");
       expect(JSON.parse(fanoutRecord).mode).toBe("tip-moved");
 
@@ -12348,6 +12366,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
       finalMessage: "off-writablePaths edit",
       key: "entry",
       keyedAs: slugify("SHIPS"),
+      declaredAs: entryDeclaredKey(entries[0]!),
       headSha: "0".repeat(40),
       at: "2024-01-01T00:00:00.000Z",
     };
@@ -13095,12 +13114,19 @@ describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-R
         // signal") — as does the identity written under it, so both are
         // normalized out here and asserted directly.
         .replace(/"key": "[^"]*"/, '"key": "<KEYSPACE>"')
-        .replace(/"keyedAs": "[^"]*"/, '"keyedAs": "<KEYED-AS>"');
+        .replace(/"keyedAs": "[^"]*"/, '"keyedAs": "<KEYED-AS>"')
+        // The declaration key is the entry keyspace's alone, so the whole
+        // line is normalized out rather than its value.
+        .replace(/\n *"declaredAs": "[^"]*",?/, "");
     expect(normalizeAnchor(fanoutRecord)).toBe(normalizeAnchor(singletonRecord));
     expect(JSON.parse(singletonRecord).key).toBe("phase");
     expect(JSON.parse(fanoutRecord).key).toBe("entry");
     expect(JSON.parse(singletonRecord).keyedAs).toBe("plan");
     expect(JSON.parse(fanoutRecord).keyedAs).toBe(slugify("FANOUT-TWIN"));
+    expect(JSON.parse(singletonRecord).declaredAs).toBeUndefined();
+    expect(JSON.parse(fanoutRecord).declaredAs).toBe(
+      entryDeclaredKey((await readPendingFromDisk(fx.repo))[0]!),
+    );
 
     // Both callsites log through the same template —
     // "[flume] <label>: render-refused (no commit): <message>" — with only
@@ -17201,6 +17227,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     // failing here.
     expect(Object.keys(record).sort()).toEqual([
       "at",
+      "declaredAs",
       "headSha",
       "key",
       "keyedAs",
@@ -17210,6 +17237,9 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     ]);
     expect(record.key).toBe("entry");
     expect(record.keyedAs).toBe(slugify("DECLINED-ONCE"));
+    expect(record.declaredAs).toBe(
+      entryDeclaredKey((await readPendingFromDisk(fx.repo))[0]!),
+    );
     expect(record.headSha).toBe(trunkTip);
   });
 
@@ -17260,6 +17290,10 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
 
     await dispatcher.tick(); // attempt 1 → landed, declined
     const declinedSha = await head(fx.repo);
+    // The entry the first attempt was declined over is still in the queue,
+    // declared exactly as it was — the key the record below stands against.
+    const stillQueued = await readPendingFromDisk(fx.repo);
+    expect(stillQueued.map((e) => e.tag)).toEqual(["DECLINED-THEN-SHIPS"]);
     baton.wake("build"); // re-wake (handoff () => [] slept it)
     decline = false;
     const second = await dispatcher.tick(); // attempt 2 → ships clean
@@ -17279,6 +17313,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
       touchedPaths: ["src/twice.ts"],
       key: "entry",
       keyedAs: slugify("DECLINED-THEN-SHIPS"),
+      declaredAs: entryDeclaredKey(stillQueued[0]!),
       headSha: declinedSha,
       at: expect.any(String),
     });

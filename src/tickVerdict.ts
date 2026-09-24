@@ -66,8 +66,8 @@ export type ProvisionFailure = StageFailureEntry & {
  *   *blamed* failure; an unblamed one is exactly the "non-entry-scoped"
  *   class the consecutive-failure backstop exists for.
  * - `quarantineKey` is that entry's key **as this tick read it** from
- *   `pending.json` ({@link quarantineKey}), the value the supervisor holds
- *   the quarantine under and crosses to the next child on
+ *   `pending.json` (`entryDeclaredKey`, `src/entryKey.ts`), the value the
+ *   supervisor holds the quarantine under and crosses to the next child on
  *   `FLUME_QUARANTINED_SLUGS`. Reported rather than recomputed: the
  *   supervisor holds only the verdict, and a second read of `pending.json`
  *   there would key the hold on bytes a *later* tick wrote

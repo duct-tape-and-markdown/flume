@@ -426,7 +426,7 @@ export async function superviseLoop(
   // this run and for the live-run line `flume status` prints from the same
   // rows.
   const runVerdicts: TickVerdict[] = [];
-  // Run-scoped quarantine (`quarantineKey` (`src/selection.ts`) values —
+  // Run-scoped quarantine (`entryDeclaredKey` (`src/entryKey.ts`) values —
   // `slug@hash` of the entry as the failing tick read it) plus the
   // consecutive-identical-signature streak for the abort backstop. Both reset
   // to empty on every fresh `superviseLoop` call — quarantine never outlives
@@ -905,8 +905,8 @@ export async function superviseLoop(
  * supervisor tells each child what it is for rather than letting several
  * children race the baton for whichever flag they each read first.
  * `quarantinedSlugs` crosses the process boundary via the
- * `FLUME_QUARANTINED_SLUGS` env var — comma-joined `quarantineKey`
- * (`src/selection.ts`) values, which the CLI's `tick` command reads back into
+ * `FLUME_QUARANTINED_SLUGS` env var — comma-joined `entryDeclaredKey`
+ * (`src/entryKey.ts`) values, which the CLI's `tick` command reads back into
  * `DispatcherOptions.quarantinedSlugs`; omitted entirely when empty. The var
  * name predates the key and stands; a key never contains a comma, so the
  * join round-trips by construction.

@@ -189,17 +189,17 @@ export const PLAN_RESOLVES_MERGE: Record<MergeOutcome, boolean> = {
 };
 
 /**
- * Which prior-attempt modes describe an outcome the same HEAD reproduces.
+ * Which prior-attempt modes describe an outcome only a producer can move.
  *
- * `clean-exit` alone. The agent ran, read the tree, and committed nothing —
- * so what it decided is a function of the tree it read, and re-dispatching it
- * against that same tree buys the same decision at full agent price. Every
- * other mode names something the next tick can change without the tree
- * moving: a `gate-revert` leaves the gate's own verdict on the record for the
- * retry to read, a `platform-preempt` never reached the work at all, a
- * `render-refused` failed on spans and hooks that resolve against the
- * environment rather than against HEAD, a `not-shipped` park and a
- * `tip-moved` span are both the wave's to carry from its next base.
+ * `clean-exit` alone. The agent ran, read the entry, and committed nothing —
+ * so what it decided is a function of the entry it was handed, and
+ * re-dispatching it against that same declaration buys the same decision at
+ * full agent price. Every other mode names something the next wave can change
+ * with nobody rewriting anything: a `gate-revert` leaves the gate's own
+ * verdict on the record for the retry to read, a `platform-preempt` never
+ * reached the work at all, a `render-refused` failed on spans and hooks that
+ * resolve against the environment, a `not-shipped` park and a `tip-moved` span
+ * are both the wave's to carry from its next base.
  *
  * Exhaustive over `PriorAttempt["mode"]` by type, for the reason the two
  * tables above are exhaustive over theirs: a mode the engine adds is a type
@@ -207,7 +207,7 @@ export const PLAN_RESOLVES_MERGE: Record<MergeOutcome, boolean> = {
  * build again" — the direction that costs an invocation per tick for the rest
  * of the run.
  */
-const REPEATS_AT_ONE_HEAD: Record<PriorAttempt["mode"], boolean> = {
+const RESOLVED_BY_A_PRODUCER: Record<PriorAttempt["mode"], boolean> = {
   "clean-exit": true,
   "gate-revert": false,
   "platform-preempt": false,
@@ -223,19 +223,27 @@ const REPEATS_AT_ONE_HEAD: Record<PriorAttempt["mode"], boolean> = {
  * both cleared, and which the harness is the first declarer of.
  *
  * Refuses exactly one case: the entry's latest prior attempt was a clean exit
- * ({@link REPEATS_AT_ONE_HEAD}) written at the very tip this selection is
- * being taken at. Both halves are the engine's own facts on the record it
- * handed over — the `mode` it stamped and the `headSha` it anchored the
- * record with — never a heuristic of the package's own over a commit range,
- * a final message, or a tag it has seen before
- * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ * ({@link RESOLVED_BY_A_PRODUCER}) written against the entry **as the queue now
+ * declares it**. Both halves are the engine's own facts, and neither is
+ * composed here — the `mode` it stamped on the record, and the declaration key
+ * it reports twice, once on the record it wrote and once for the entry this
+ * selection is about (`EntryRefusalContext.declaredAs`, `src/Phase.ts`). Never
+ * a heuristic of the package's own over a commit range, a final message, or a
+ * tag it has seen before (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
  *
- * **The anchor is what keeps this a refusal rather than a drop.** An entry
- * held back here is still in the queue, still `open`, and pickable again the
- * moment anything lands on trunk — which is the next plan commit, since the
- * standing record wakes the inbox slice through the same classification
- * (`inboxWindow.ts`). Without the anchor the refusal would outlive the world
- * it was about and the entry would need a hand edit to come back.
+ * **The declaration key is what keeps this a refusal rather than a drop, and
+ * what scopes it to the reconciliation it is waiting for.** A clean exit is a
+ * producer's to answer — drop the entry, re-scope it, answer its question — so
+ * the refusal lifts on exactly that: a rewrite hashes to a new key, and a drop
+ * takes the record with the entry. It does *not* lift on a tip that happened to
+ * move, which is what keying on the record's `headSha` anchor made it do — an
+ * operator commit, or any sibling entry shipping, re-offered the same
+ * unreconciled entry to a build wave with nothing new to read. The entry is
+ * meanwhile still in the queue and still `open`, and the standing record wakes
+ * the slice that drains records through the same classification
+ * (`inboxWindow.ts`), so the producer this waits on is woken by the refusal
+ * itself.
  *
  * A first attempt carries no record, so an entry nothing has walled on is
  * never refused here.
@@ -243,7 +251,9 @@ const REPEATS_AT_ONE_HEAD: Record<PriorAttempt["mode"], boolean> = {
 export function defaultRefusesEntry(ctx: EntryRefusalContext): boolean {
   const prior = ctx.priorAttempt;
   if (prior === undefined) return false;
-  return REPEATS_AT_ONE_HEAD[prior.mode] && prior.headSha === ctx.headSha;
+  return (
+    RESOLVED_BY_A_PRODUCER[prior.mode] && prior.declaredAs === ctx.declaredAs
+  );
 }
 
 /**

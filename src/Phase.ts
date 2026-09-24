@@ -100,8 +100,9 @@ export interface EntryRefusalContext {
    * tolerance (a corrupt or unrecognized-mode record reads as absent).
    *
    * A predicate asking "did the last attempt at this entry reach anything"
-   * reads the record's own `mode` and its `headSha` anchor rather than
-   * reconstructing either from the queue or from git.
+   * reads the record's own `mode`, its `declaredAs` declaration key and its
+   * `headSha` anchor rather than reconstructing any of them from the queue or
+   * from git.
    */
   priorAttempt?: PriorAttempt;
   /**
@@ -110,6 +111,21 @@ export interface EntryRefusalContext {
    * it now stands" is a comparison and not an inference.
    */
   headSha: string;
+  /**
+   * The entry above **as declared** in the queue this tick read — the same key
+   * the record beside it was stamped with (`PriorAttempt.declaredAs`,
+   * `src/Prompt.ts`), computed here by the engine that computed that one.
+   *
+   * Reported rather than left to the predicate, because a chain comparing the
+   * two would have to respell the engine's own derivation — and a key it spelt
+   * differently would read as a rewrite on every tick
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*). Both sides of "is this record still about the entry
+   * I am holding" are therefore the engine's, and the predicate is an equality
+   * test: same key, the record still stands; different, a producer rewrote the
+   * entry; no record, it dropped and rewrote or nothing has attempted it.
+   */
+  declaredAs: string;
 }
 
 /**
@@ -273,7 +289,7 @@ export interface FanoutEntryOutcome {
  * (spec/loop.md "Repeated identical failures — quarantine, then abort").
  *
  * The `key` is the hold's own identity — the entry's slug plus a hash of its
- * bytes in `pending.json` (`quarantineKey`, `src/selection.ts`) — reported
+ * bytes in `pending.json` (`entryDeclaredKey`, `src/entryKey.ts`) — reported
  * beside the tag so a chain can see *which read* of the entry the hold
  * stands under. Editing the entry on trunk changes its key and lifts the
  * hold, so a chain comparing the key it saw last tick against this one reads
