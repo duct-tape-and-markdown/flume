@@ -528,7 +528,7 @@ classify). A nothing-pickable no-op carries no `noCommit` either — no agent wa
 attempted.
 
 - **The four modes classify how a tick failed to produce a usable commit — nothing
-  else.** How the agent process ended is consulted only when the ref did not move. A commit the
+  else.** How the agent process ended is consulted only when the tick produced no usable commit. A commit the
   agent made *before* a non-zero exit, an abort, or a spawn failure is honored like any
   other — tip verify, the full afterCommit stack, cherry-pick, afterMerge, and it can
   ship. This is deliberate: with a commit in hand, how the process ended is
@@ -829,8 +829,7 @@ Two legs, not either alone:
   the run: the entry stays in the ledger untouched, other entries keep dispatching.
   A re-scoped entry is a new key, so an edit on trunk lifts the hold without a
   relaunch (a slug-only key survived a re-scope and forced stop-and-relaunch, field
-  report, 0.12.0). A **gate-stage** hold lifts once the tip has moved past the tick
-  that placed it, because the world that gate judged is gone — a gate fixed on trunk
+  report, 0.12.0). A **gate-stage** or **merge-stage** hold lifts once the newest tip a verdict has reported differs from the one the placing tick reported — the world that gate or pick judged is gone, and inequality is the only order a supervisor that reads no ref can have; out of order under two children it lifts early, the safe direction, and the backstop below bounds the retry — a gate fixed on trunk
   mid-run otherwise kept quarantining entries the fix would have passed until an
   operator restarted (field report, 0.19.0); a provision-stage hold stays for the
   run, since nothing on trunk changes what a worktree could not provision. The
