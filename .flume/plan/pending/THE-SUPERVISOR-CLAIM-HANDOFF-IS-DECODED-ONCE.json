@@ -1,0 +1,28 @@
+{
+  "tag": "THE-SUPERVISOR-CLAIM-HANDOFF-IS-DECODED-ONCE",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/cli.ts",
+        "description": "the supervisor's tip-claim handoff is decoded once, and a value naming no pid refuses before the tick runs"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the refusal leg, beside the signalled-tick claim cases"
+      }
+    ]
+  },
+  "summary": "The supervisor's tip-claim handoff is decoded twice under two disagreeing predicates, so a present-but-unusable value runs a tick with no claim on the ref it moves",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "one decode answers both the pid a tick treats as its own claim and whether it acquires one, and a handoff value that names no pid refuses at the point of detection rather than proceeding",
+  "tests": [
+    "a tick refuses when the supervisor tip-claim handoff carries a value that names no pid"
+  ],
+  "notes": "Verified this tick: `src/cli.ts:871` reads `FLUME_TIP_CLAIM_HELD` by truthiness, `:1103` by `!== undefined`. An empty value skips `acquireTipClaim` *and* sets `ownTipClaimPid` to this process's own pid \u2014 a bare tick moving the ref with no claim on it. A non-numeric value is `NaN` at `:872`, and `holder === ownTipClaimPid` (`src/tipVerify.ts:44`) never matches it, so a loop child reads its own supervisor's claim as foreign. Re-filed after the 95ed6b52 revert."
+}
