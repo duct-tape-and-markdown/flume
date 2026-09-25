@@ -68,12 +68,29 @@ export function literalPathspecEnv(): NodeJS.ProcessEnv {
 }
 
 /**
+ * What `spawnGit` holds a leg's captured streams to when the leg names no
+ * cap of its own: 16 MiB, which is the committed-content reads' bound (a
+ * blob at a ref, a full `--name-only` listing) and so the ceiling every
+ * other leg sits under. Node's own default is 1 MiB and an overrun arrives
+ * as a spawn failure, not a truncation
+ * (`.claude/rules/platform-facts.md`, *Node caps a captured child stream at
+ * 1 MiB, and reports the overrun as a spawn failure*).
+ */
+const DEFAULT_CAPTURE_CAP = 16 * 1024 * 1024;
+
+/**
  * One git invocation, and the only place this module composes a git child's
  * options: the repo it runs in, the pathspec dialect every leg needs
- * (`literalPathspecEnv` above), and the 16 MiB its captured streams are held
+ * (`literalPathspecEnv` above), and the cap its captured streams are held
  * to. Composed once rather than re-spelled per leg, so a leg written later
  * inherits the dialect instead of having to remember it
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * `maxBuffer` is the one option a leg may narrow, because how much output a
+ * git verb can produce is the *leg's* fact and not the composer's — a leg
+ * reading one absolute path wants a cap that says so. It rides the leg's own
+ * signature rather than the call site's, so every caller of that leg is held
+ * to the same bound; omitted takes {@link DEFAULT_CAPTURE_CAP}.
  *
  * Streams come back exactly as git wrote them. `run` below is the trimming
  * form, which is what every caller reading git's own line-oriented output
@@ -82,11 +99,12 @@ export function literalPathspecEnv(): NodeJS.ProcessEnv {
 async function spawnGit(
   cwd: string,
   args: string[],
+  maxBuffer: number = DEFAULT_CAPTURE_CAP,
 ): Promise<{ stdout: string; stderr: string }> {
   return exec("git", args, {
     cwd,
     env: literalPathspecEnv(),
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer,
   });
 }
 
@@ -94,8 +112,9 @@ async function spawnGit(
 async function run(
   cwd: string,
   args: string[],
+  maxBuffer?: number,
 ): Promise<{ stdout: string; stderr: string }> {
-  const { stdout, stderr } = await spawnGit(cwd, args);
+  const { stdout, stderr } = await spawnGit(cwd, args, maxBuffer);
   return { stdout: stdout.trimEnd(), stderr: stderr.trimEnd() };
 }
 
@@ -455,6 +474,27 @@ async function pruneWorktreesLocked(repoRoot: string): Promise<void> {
 }
 
 /**
+ * Git's own register of the worktrees linked to `repoRoot` (`git worktree
+ * list --porcelain -z`), as git wrote it: NUL-terminated fields, one record
+ * per worktree. The fields are the caller's to read — this leg is the
+ * invocation, not the decode.
+ *
+ * Off `spawnGit` rather than `run`: a `-z` field ends at its NUL and the
+ * bytes before it are a path verbatim, trailing space included, so nothing
+ * here trims. (`-z` for `worktree list` needs git >= {@link
+ * WORKTREE_LIST_Z_FLOOR}.)
+ */
+export async function worktreeListPorcelain(repoRoot: string): Promise<string> {
+  const { stdout } = await spawnGit(repoRoot, [
+    "worktree",
+    "list",
+    "--porcelain",
+    "-z",
+  ]);
+  return stdout;
+}
+
+/**
  * Loud or nothing (.claude/rules/engineering.md): only the expected-benign
  * "branch doesn't exist" case is swallowed. "Told, not inferred"
  * (.claude/rules/engine-boundary.md) rules out matching git's own English
@@ -513,6 +553,59 @@ export async function showNameOnly(
     sha,
   ]);
   return nameOnlyPaths(stdout);
+}
+
+/**
+ * The cap the two commit-text legs below hold their captured streams to. A
+ * message and a diffstat are both written by hand at human scale, so 4 MiB
+ * is already far past either; both legs run on the revert path, where the
+ * point of a narrower cap than {@link DEFAULT_CAPTURE_CAP} is that a
+ * pathological commit fails the read rather than the process.
+ */
+const COMMIT_TEXT_CAP = 4 * 1024 * 1024;
+
+/**
+ * Subject and body of the commit at `sha`, each read through git's own
+ * format placeholders (`%s`, `%b`) rather than split out of one message by
+ * this engine — where a message's subject ends is git's rule, and restating
+ * it here would be the engine reconstructing a statement git makes outright
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * `--no-color`: the output is read by the engine, not an operator's
+ * terminal, and a host whose git is configured to colourize must not put
+ * escape sequences into a recorded verdict.
+ */
+export async function commitMessage(
+  cwd: string,
+  sha: string,
+): Promise<{ subject: string; body: string }> {
+  const { stdout: subject } = await run(
+    cwd,
+    ["show", "-s", "--format=%s", "--no-color", sha],
+    COMMIT_TEXT_CAP,
+  );
+  const { stdout: body } = await run(
+    cwd,
+    ["show", "-s", "--format=%b", "--no-color", sha],
+    COMMIT_TEXT_CAP,
+  );
+  return { subject: subject.trim(), body: body.trim() };
+}
+
+/**
+ * The diffstat of the commit at `sha` (`git show --stat --oneline`) — what a
+ * commit touched and how much, with no hunk content. Bounding the string for
+ * a record is the caller's; this leg is the invocation.
+ *
+ * `--no-color` for the same reason {@link commitMessage} passes it.
+ */
+export async function showDiffStat(cwd: string, sha: string): Promise<string> {
+  const { stdout } = await run(
+    cwd,
+    ["show", "--stat", "--oneline", "--no-color", sha],
+    COMMIT_TEXT_CAP,
+  );
+  return stdout;
 }
 
 /**
@@ -753,6 +846,22 @@ export async function commitPaths(opts: {
 export async function gitCommonDir(cwd: string): Promise<string> {
   const { stdout } = await run(cwd, ["rev-parse", "--git-common-dir"]);
   return resolve(cwd, stdout);
+}
+
+/**
+ * The admin directory git itself names for the worktree checked out at `cwd`
+ * (`git rev-parse --absolute-git-dir`) — this worktree's own
+ * `.git/worktrees/<name>/`, as opposed to {@link gitCommonDir}'s
+ * shared-across-worktrees one. Asked of git rather than composed from the
+ * base name git usually derives it from, which git is free to disambiguate
+ * (`<name>1`) when two worktrees share one basename
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ */
+export async function absoluteGitDir(cwd: string): Promise<string> {
+  // One absolute path and a newline — orders of magnitude under the
+  // composer's default, and the cap is declared rather than inherited.
+  const { stdout } = await run(cwd, ["rev-parse", "--absolute-git-dir"], 64 * 1024);
+  return stdout;
 }
 
 /**

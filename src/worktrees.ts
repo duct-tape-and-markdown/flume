@@ -21,10 +21,8 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, toNamespacedPath } from "node:path";
-import { promisify } from "node:util";
 
 import type { Logger } from "./log.js";
 import { harvestFriction } from "./friction.js";
@@ -37,8 +35,6 @@ import {
   worktreesBase,
 } from "./paths.js";
 import type { Chain, Phase } from "./Phase.js";
-
-const execFileP = promisify(execFile);
 
 /**
  * What the worktree lifecycle needs from the dispatcher that drives it: the
@@ -149,29 +145,6 @@ const BRANCH_FIELD = "branch refs/heads/";
 const STATE_ROOT_STAMP = "flume-state-root";
 
 /**
- * Where git keeps the admin directory for the worktree checked out at
- * `worktreePath` — asked of git rather than composed from the base name it
- * usually derives it from, which git is free to disambiguate (`<name>1`) when
- * two worktrees share one basename
- * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
- */
-async function worktreeAdminDir(worktreePath: string): Promise<string> {
-  const { stdout } = await execFileP(
-    "git",
-    ["rev-parse", "--absolute-git-dir"],
-    {
-      cwd: worktreePath,
-      // One absolute path and a newline — orders of magnitude under this,
-      // and the cap is declared rather than inherited
-      // (`.claude/rules/platform-facts.md`, *Node caps a captured child
-      // stream at 1 MiB, and reports the overrun as a spawn failure*).
-      maxBuffer: 64 * 1024,
-    },
-  );
-  return stdout.trim();
-}
-
-/**
  * Record which state root provisioned the worktree at `worktreePath` — the
  * evidence {@link sweepStaleWorktrees} removes on (`spec/worktrees.md`,
  * *Startup sweep — a dead wave's residue is removed at the next start*),
@@ -207,7 +180,7 @@ export async function stampWorktree(
   worktreePath: string,
   flumeDir: string,
 ): Promise<void> {
-  const adminDir = await worktreeAdminDir(worktreePath);
+  const adminDir = await git.absoluteGitDir(worktreePath);
   await writeFile(
     namespacedJoin(adminDir, STATE_ROOT_STAMP),
     `${resolve(flumeDir)}\n`,
@@ -236,7 +209,7 @@ async function stampedStateRoot(
 ): Promise<string | undefined> {
   let text: string;
   try {
-    const adminDir = await worktreeAdminDir(worktreePath);
+    const adminDir = await git.absoluteGitDir(worktreePath);
     text = await readFile(namespacedJoin(adminDir, STATE_ROOT_STAMP), "utf8");
   } catch {
     return undefined;
@@ -282,22 +255,14 @@ async function stampedStateRoot(
  * occupied path the mangled spelling misses is refused as a directory git
  * does not own, and residue the sweep would have removed is left standing.
  * Under `-z` every field is NUL-terminated instead, so the path is whatever
- * lies between the `worktree ` prefix and the next NUL, verbatim. (`-z` for
- * `worktree list` needs git >= 2.36.)
+ * lies between the `worktree ` prefix and the next NUL, verbatim.
  */
 export async function readWorktreeRegistry(
   repoRoot: string,
 ): Promise<WorktreeRegistry> {
   let stdout: string;
   try {
-    ({ stdout } = await execFileP(
-      "git",
-      ["worktree", "list", "--porcelain", "-z"],
-      {
-        cwd: repoRoot,
-        maxBuffer: 16 * 1024 * 1024,
-      },
-    ));
+    stdout = await git.worktreeListPorcelain(repoRoot);
   } catch (err) {
     return { read: false, reason: (err as Error).message };
   }

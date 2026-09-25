@@ -20,9 +20,7 @@
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { execFile } from "node:child_process";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import type { Agent, AgentUsage } from "./Agent.js";
 import { writablePathsGate } from "./builtinGates.js";
@@ -61,8 +59,6 @@ import {
   type ReportedGateResult,
 } from "./tickVerdict.js";
 import type { WorktreeContext } from "./worktrees.js";
-
-const execFileP = promisify(execFile);
 
 /**
  * The runtime state one attempt reads — the roots it resolves paths against,
@@ -702,17 +698,7 @@ async function capturedCommitMessage(
   sha: string,
 ): Promise<{ subject: string; body: string }> {
   try {
-    const { stdout: subject } = await execFileP(
-      "git",
-      ["show", "-s", "--format=%s", "--no-color", sha],
-      { cwd, maxBuffer: 4 * 1024 * 1024 },
-    );
-    const { stdout: body } = await execFileP(
-      "git",
-      ["show", "-s", "--format=%b", "--no-color", sha],
-      { cwd, maxBuffer: 4 * 1024 * 1024 },
-    );
-    return { subject: subject.trim(), body: body.trim() };
+    return await git.commitMessage(cwd, sha);
   } catch {
     return { subject: "(commit message unavailable)", body: "" };
   }

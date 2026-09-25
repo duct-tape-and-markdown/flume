@@ -16,10 +16,8 @@
  * never a false signal.
  */
 
-import { execFile } from "node:child_process";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, toNamespacedPath } from "node:path";
-import { promisify } from "node:util";
 
 import { bound, headTailBound, tailBound } from "./bounds.js";
 import { entryDeclaredKey } from "./entryKey.js";
@@ -45,8 +43,6 @@ import type {
   TipMovedAttempt,
   NotShippedAttempt,
 } from "./Prompt.js";
-
-const execFileP = promisify(execFile);
 
 /**
  * A `PriorAttempt` variant before {@link PriorAttemptStore.write} stamps
@@ -640,12 +636,7 @@ export class PriorAttemptStore {
  */
 async function capturedDiffStat(cwd: string, sha: string): Promise<string> {
   try {
-    const { stdout } = await execFileP(
-      "git",
-      ["show", "--stat", "--oneline", "--no-color", sha],
-      { cwd, maxBuffer: 4 * 1024 * 1024 },
-    );
-    return bound(stdout.trimEnd(), MAX_PRIOR_DIFFSTAT);
+    return bound(await git.showDiffStat(cwd, sha), MAX_PRIOR_DIFFSTAT);
   } catch {
     return "(diff stat unavailable)";
   }
