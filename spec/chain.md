@@ -652,9 +652,10 @@ the merge bookkeeping completes.
     `setupWorktree` hook — is on **`provisionFailures`** under its tag instead
     (`spec/worktrees.md`, *`setupWorktree` and `teardownWorktree`*), never a
     record here with every flag false.
-  - **`provisionFailures`, `gateFailures`, `mergeFailures`** — the three
-    stage-failure classes the tick verdict carries, folded from the same
-    value and keyed by tag: an entry whose provisioning failed, one an
+  - **`provisionFailures`, `renderFailures`, `gateFailures`,
+    `mergeFailures`** — the four stage-failure classes the tick verdict
+    carries, folded from the same value and keyed by tag: an entry whose
+    provisioning failed, one whose prompt refused to render, one an
     `afterMerge` gate reverted, one whose span could not be cherry-picked.
     Each carries the entry, the message, and the failure's signature, and
     says whether the engine blamed the entry — a gate that disowned the span

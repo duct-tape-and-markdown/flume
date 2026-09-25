@@ -799,7 +799,8 @@ declare. `kind` is a union open to future members; each arrives with its own spe
 ## Repeated identical failures — quarantine, then abort
 
 A deterministic failure repeats identically every tick — the burn shape the mount-dead
-abort exists to prevent, and after the invocation each lap is paid at full agent price.
+abort exists to prevent: each lap is paid again, at full agent price once the agent is
+invoked, and in a slot a pickable sibling could have had before it.
 The accounting therefore covers **every per-entry failure fact the verdict records**,
 keyed by stage-tagged signature:
 
@@ -807,6 +808,11 @@ keyed by stage-tagged signature:
   chain's `setupWorktree` hook throwing), recorded as a `ProvisionFailure` (signature,
   and the entry tag when one can be blamed). Never reaches agent invocation, so it is
   not a no-commit mode.
+- **render** — a prompt that refused to render for an entry (`render-refused`, *The
+  no-commit taxonomy*), recorded under the entry's tag with the failing spans' command
+  text and stderr as its message. No agent read the entry, so a retry at the same
+  declaration renders the same prompt against the same host; nothing about the next
+  wave buys a different answer.
 - **merge** — a cherry-pick failure at the merge stage (a conflict, or a dirty trunk
   refusing the pick), recorded with the entry tag it kept pending.
 - **gate** — a gate revert, signature derived from the gate's name and failure output.
@@ -829,7 +835,7 @@ Two legs, not either alone:
   the run: the entry stays in the ledger untouched, other entries keep dispatching.
   A re-scoped entry is a new key, so an edit on trunk lifts the hold without a
   relaunch (a slug-only key survived a re-scope and forced stop-and-relaunch, field
-  report, 0.12.0). A **gate-stage** or **merge-stage** hold lifts once the newest tip a verdict has reported differs from the one the placing tick reported — the world that gate or pick judged is gone, and inequality is the only order a supervisor that reads no ref can have; out of order under two children it lifts early, the safe direction, and the backstop below bounds the retry — a gate fixed on trunk
+  report, 0.12.0). A **render-stage**, **gate-stage**, or **merge-stage** hold lifts once the newest tip a verdict has reported differs from the one the placing tick reported — the world that render, gate, or pick judged is gone — a chain's own hook fixed on trunk is a new render, and inequality is the only order a supervisor that reads no ref can have; out of order under two children it lifts early, the safe direction, and the backstop below bounds the retry — a gate fixed on trunk
   mid-run otherwise kept quarantining entries the fix would have passed until an
   operator restarted (field report, 0.19.0); a provision-stage hold stays for the
   run, since nothing on trunk changes what a worktree could not provision. The

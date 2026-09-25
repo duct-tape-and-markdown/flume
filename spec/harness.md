@@ -40,8 +40,12 @@ it and the sweep last of those: declared order is the priority when the budget
 is short, and at the default budget that order is the whole schedule, so the
 product outranks insurance for every consumer that declares nothing.
 
-A slice is made live by unrouted work, never by a signal alone: a record in a
-queue, a spec commit past the derive cursor, a commit past the sweep stamp. A
+A slice is made live by unrouted work, never by a signal alone: a record
+committed to a queue, a spec commit past the derive cursor, a commit past the
+sweep stamp. A record is read from the tip, as the drain that routes it is,
+because the tick's worktree is cut from the tip: a file on the shared disk the
+tip does not hold is work the woken tick cannot route, and it would wake the
+slice again after every tick that could not. A
 tick that runs and files nothing is the shape this sentence exists to refuse.
 The drain files by the sweep's bar (`.claude/rules/posture-sweep.md`,
 *Routing*). An observation a build note carries becomes an entry when the
@@ -253,6 +257,9 @@ the inbox — one record per file, routed and then removed the way a record is
 drained — so a consumer never carries a prompt paragraph for routing its own
 notes; a paragraph every consumer would repeat is a surface the package owes
 (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+A record dropped into the inbox counts once it is committed (*The phases*); the
+friction channel, which the declaration keeps out of the tree, is read from
+the shared disk it is written to.
 
 A measurement a consumer takes every tick — a census of what the tree holds
 against what its own records claim — is the consumer's to compute and the
