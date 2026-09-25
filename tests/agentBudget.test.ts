@@ -79,12 +79,26 @@ it("a declared budget puts the adapter's hook on that invocation's own settings 
   // residue for a second invocation to inherit. `JSON.parse` over a path
   // would throw, which is the check — the leading brace only says so first.
   expect(settings!.startsWith("{")).toBe(true);
+  // The event key is spelled by hand here and in the two reads below —
+  // declared divergence from `.claude/rules/engineering.md`, *Derived state is
+  // computed, never restated beside its source*, over `HOOK_EVENT_NAME`
+  // (`src/budgetHook.ts`), which is the key `budgetSettings` (`src/Agent.ts`)
+  // writes. The name is the provider's, not ours, so a hand spelling is the
+  // only thing holding the key this adapter registers under in agreement with
+  // the event the provider fires. Keying this reader off the constant would
+  // read the writer's own value back — the constant compared to itself, a
+  // provider rename green on both sides, the self-agreement
+  // `.claude/rules/engineering.md`, *A seam gate reads what the real writer
+  // wrote* names.
   const parsed = JSON.parse(settings!) as {
     hooks: {
       PostToolUse: { matcher: string; hooks: { type: string; command: string }[] }[];
     };
   };
 
+  // Both reads spell it by hand for the reason above: the literal, not the
+  // constant, is what proves the adapter registered under the provider's
+  // event.
   const registered = parsed.hooks.PostToolUse.flatMap((m) => m.hooks);
   expect(registered.length).toBeGreaterThan(0);
   expect(parsed.hooks.PostToolUse[0]!.matcher).toBe("*");
