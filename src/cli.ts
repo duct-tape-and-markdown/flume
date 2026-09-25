@@ -71,7 +71,7 @@ import {
   type TickVerdict,
 } from "./tickVerdict.js";
 import { frictionCountLine, frictionNotes } from "./friction.js";
-import { existsLoud } from "./fsProbe.js";
+import { existsLoudUnder } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
@@ -328,12 +328,17 @@ async function main(): Promise<number> {
     // incident's "hibernating" reading left the operator to infer
     // relaunch-safety instead of being told it. No pidfile: silent, leaving
     // the output as it read before this line existed.
-    // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) refuses
-    // a `loop.pid` that is present but unstattable (a symlink loop, a
-    // permission-denied parent), and the claim read below refuses one that
-    // stats but will not open (a directory at the path), rather than either
-    // reading as absent and printing no supervisor line over a possibly-live
-    // loop (`.claude/rules/engineering.md`, "Loud or nothing").
+    // Absent is the only silent reading, and it is **proven**: `existsLoudUnder`
+    // (src/fsProbe.ts) descends from the state root this verb resolved before
+    // it stats `loop.pid`, so a `loop.pid` that is present but unstattable (a
+    // symlink loop) and a state root a plain file stands at both refuse — the
+    // second of those answers the leaf's stat `ENOENT` on win32
+    // (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+    // non-directory as not found*), and one stat would read it as no
+    // supervisor. The claim read below refuses a file that stats but will not
+    // open (a directory at the path) for the same reason: none of these may
+    // print as no supervisor line over a possibly-live loop
+    // (`.claude/rules/engineering.md`, "Loud or nothing").
     //
     // The whole claim, not just the holder's pid: a live holder's `loop.pid`
     // also states *when* this run began, on its second line, and that instant
@@ -345,9 +350,9 @@ async function main(): Promise<number> {
     let supervisor: PidClaim | undefined;
     let loopLockPresent: boolean;
     let loopClaim: PidClaim | null = null;
-    const statusLockPath = namespacedJoin(loopLockPath(flumeDir));
+    const statusLockPath = loopLockPath(flumeDir);
     try {
-      loopLockPresent = existsLoud(statusLockPath);
+      loopLockPresent = existsLoudUnder("loop lock", flumeDir, statusLockPath);
       // The claim read sits inside this guard, not after it: `liveLoopClaim`
       // answers `null` for absent and throws for every other read failure, so
       // a `loop.pid` that stats but will not open (a directory at the path, a
@@ -358,7 +363,7 @@ async function main(): Promise<number> {
       if (loopLockPresent) loopClaim = await liveLoopClaim(flumeDir);
     } catch (err) {
       console.error(
-        `[flume] status: loop lock at ${plainPath(statusLockPath)} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] status: loop lock at ${statusLockPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }
@@ -374,16 +379,17 @@ async function main(): Promise<number> {
     // status` owes exactly this" line 3: named right after supervisor
     // liveness, before the tip claim — the ack ritual only works if the
     // operator who forgot the flag finds it where they look first.
-    // Absent is the only silent reading, as with `loop.pid` above: a stop
-    // flag that is present but unstattable must never print as no stop line,
-    // because that is exactly the reading spec/loop.md "Graceful stop — the
-    // stop flag" promises can never happen — the operator would relaunch over
-    // an unacknowledged stop (`.claude/rules/engineering.md`, "Loud or
-    // nothing").
+    // Absent is the only silent reading and is proven the same way `loop.pid`
+    // above proves it, from the same state root: a stop flag that is present
+    // but unstattable, or one under a root a plain file stands at, must never
+    // print as no stop line, because that is exactly the reading spec/loop.md
+    // "Graceful stop — the stop flag" promises can never happen — the operator
+    // would relaunch over an unacknowledged stop
+    // (`.claude/rules/engineering.md`, "Loud or nothing").
     const statusStopPath = stopFlagPath(flumeDir);
     let stopFlagPresent: boolean;
     try {
-      stopFlagPresent = existsLoud(namespacedJoin(statusStopPath));
+      stopFlagPresent = existsLoudUnder("stop flag", flumeDir, statusStopPath);
     } catch (err) {
       console.error(
         `[flume] status: stop flag at ${statusStopPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
@@ -404,19 +410,21 @@ async function main(): Promise<number> {
     // on), a non-repository cwd, or a git invocation failure all read as
     // silence, the same precedent as the no-pidfile case above. That
     // declaration covers the *git* side and stops there: the claim file's own
-    // existence probe splits absent (silent) from unstattable (refuse), so a
-    // claim that is present but unreadable never prints as an unclaimed tip
+    // existence probe splits absent (silent) from unstattable (refuse), and
+    // proves that absence by descending from the common dir git resolved —
+    // the claim nests four segments under it, and a plain file at any of them
+    // answers the leaf `ENOENT` on win32 (`.claude/rules/platform-facts.md`,
+    // *win32 reports a path through a non-directory as not found*). So a claim
+    // that is present but unreachable never prints as an unclaimed tip
     // (`.claude/rules/engineering.md`, "Loud or nothing").
     const headRefForStatus = await currentRefPath(repoRoot);
     if (headRefForStatus.kind === "ref") {
-      const claimPath = tipClaimPath(
-        await gitCommonDir(repoRoot),
-        headRefForStatus.path,
-      );
+      const commonDir = await gitCommonDir(repoRoot);
+      const claimPath = tipClaimPath(commonDir, headRefForStatus.path);
       let claimPresent: boolean;
       let holder: number | null = null;
       try {
-        claimPresent = existsLoud(namespacedJoin(claimPath));
+        claimPresent = existsLoudUnder("tip claim", commonDir, claimPath);
         // Inside the guard for the same reason as the loop lock's claim read
         // above: `liveTipClaimPid` throws on any read failure past absent, and
         // a claim file that will not open is a tip whose holder is unknown,
@@ -510,7 +518,7 @@ async function main(): Promise<number> {
     const startedAtMs = supervisor?.atMs;
     if (supervisor !== undefined && startedAtMs === undefined) {
       console.error(
-        `[flume] status: loop lock at ${plainPath(statusLockPath)} states no ` +
+        `[flume] status: loop lock at ${statusLockPath} states no ` +
           "claim instant (written by flume before 0.17?) — withholding this " +
           "run's agent spend rather than totalling another run's with it",
       );
@@ -821,7 +829,7 @@ async function main(): Promise<number> {
     // refuses on it.
     let files: string[];
     try {
-      files = frictionNotes(frictionDir);
+      files = frictionNotes(flumeDir, frictionDir);
     } catch (err) {
       console.error(
         `[flume] friction: '${chain.friction}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
@@ -1187,15 +1195,21 @@ async function main(): Promise<number> {
     // spec/loop.md "Graceful stop — the stop flag": presence at start
     // refuses the run before any tick — a stale flag must never silently
     // swallow a scheduled run.
-    // Absent is the only silent reading: a flag that is present but
-    // unstattable would otherwise start the run, which is the one outcome
-    // this guard exists to rule out (`.claude/rules/engineering.md`, "Loud or
-    // nothing"). The refusal names the underlying error — the operator must
-    // resolve the flag either way before a run starts.
+    // Absent is the only silent reading, and it is proven from the path:
+    // `existsLoudUnder` (src/fsProbe.ts) descends from the state root this run
+    // is about to take its lock in before it stats the flag, so neither a flag
+    // that is present but unstattable nor one under a root a plain file stands
+    // at can start the run — which is the one outcome this guard exists to
+    // rule out, and the one a single stat takes on win32, where an obstructed
+    // ancestor is spelled `ENOENT` (`.claude/rules/platform-facts.md`, *win32
+    // reports a path through a non-directory as not found*;
+    // `.claude/rules/engineering.md`, "Loud or nothing"). The refusal names
+    // the underlying error — the operator must resolve the flag either way
+    // before a run starts.
     const loopStopPath = stopFlagPath(flumeDir);
     let loopStopPresent: boolean;
     try {
-      loopStopPresent = existsLoud(namespacedJoin(loopStopPath));
+      loopStopPresent = existsLoudUnder("stop flag", flumeDir, loopStopPath);
     } catch (err) {
       console.error(
         `[flume] loop refuses: stop flag at ${loopStopPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,

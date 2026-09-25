@@ -423,7 +423,7 @@ describe("frictionNotes — the channel's one listing", () => {
     try {
       // Absent dir is the empty channel, never a throw: the engine creates
       // it lazily, so "never written to" and "empty" are one fact.
-      expect(frictionNotes(dir)).toEqual([]);
+      expect(frictionNotes(base, dir)).toEqual([]);
 
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, "b.md"), "y\n");
@@ -436,12 +436,55 @@ describe("frictionNotes — the channel's one listing", () => {
 
       // Non-vacuity: the channel lists before it is denied, and the order is
       // the sort's, not the one the writes happened in.
-      expect(frictionNotes(dir)).toEqual(["a.md", "b.md", "c.txt"]);
+      expect(frictionNotes(base, dir)).toEqual(["a.md", "b.md", "c.txt"]);
 
       // Deny structurally (`tests/helpers/denial.ts`): readdir now fails
       // ENOTDIR — the path is there but is not a dir to read — not ENOENT.
       denyDirectory(dir);
-      expect(() => frictionNotes(dir)).toThrow();
+      expect(() => frictionNotes(base, dir)).toThrow();
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The other half of that listing's absence arm: *whose* absence it is. The
+ * channel sits under a state root the caller holds — the primary one, a
+ * worktree's mirror — and a plain file standing at that root answers the
+ * listing `ENOENT` on win32 rather than `ENOTDIR`
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so a listing that read its silent arm off the
+ * errno would report an empty channel there. The descent is what makes the
+ * absence above a proven one, and this is its case: denying the *parent* on
+ * purpose, which the platform page names as the one shape a descending reader
+ * is exercised by (`tests/helpers/denial.ts`).
+ */
+describe("frictionNotes — the absence is proven from the path, not the errno", () => {
+  it("the friction listing refuses a state root that is present and is not a directory rather than listing empty", async () => {
+    const base = await mkTempDir("flume-friction-root-");
+    const stateRoot = join(base, "state");
+    const dir = join(stateRoot, "friction");
+    try {
+      // An absent channel under a real root is still the empty answer: the
+      // engine creates it lazily, and that reading is what the refusal below
+      // must not be confused with.
+      expect(frictionNotes(stateRoot, dir)).toEqual([]);
+
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "a.md"), "x\n");
+      // Non-vacuity: the channel really lists through this root before the
+      // root is denied (`.claude/rules/engineering.md`, *A green verdict is
+      // proven non-vacuous*).
+      expect(frictionNotes(stateRoot, dir)).toEqual(["a.md"]);
+
+      denyDirectory(stateRoot);
+      expect(() => frictionNotes(stateRoot, dir)).toThrow(
+        `friction channel is unreadable: ${stateRoot} is present but is not a directory`,
+      );
+      // And the count gives that refusal its own reading — never a zero the
+      // `friction: N` line would print as an empty channel.
+      expect(countFrictionFiles(stateRoot, dir)).toBeNull();
     } finally {
       await rm(base, { recursive: true, force: true });
     }
@@ -461,7 +504,7 @@ describe("countFrictionFiles — the ENOENT/other split", () => {
     const base = await mkTempDir("flume-friction-count-");
     const dir = join(base, "friction");
     try {
-      expect(countFrictionFiles(dir)).toBe(0);
+      expect(countFrictionFiles(base, dir)).toBe(0);
 
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, "a.md"), "x\n");
@@ -470,12 +513,12 @@ describe("countFrictionFiles — the ENOENT/other split", () => {
       await writeFile(join(dir, ".gitkeep"), "");
       await mkdir(join(dir, "nested"), { recursive: true });
       // Non-vacuity: the dir counts before it is denied.
-      expect(countFrictionFiles(dir)).toBe(2);
+      expect(countFrictionFiles(base, dir)).toBe(2);
 
       // Deny structurally (`tests/helpers/denial.ts`): readdir now fails
       // ENOTDIR — the path is there but is not a dir to read — not ENOENT.
       denyDirectory(dir);
-      expect(countFrictionFiles(dir)).toBeNull();
+      expect(countFrictionFiles(base, dir)).toBeNull();
     } finally {
       await rm(base, { recursive: true, force: true });
     }
@@ -503,7 +546,7 @@ describe.runIf(process.platform === "win32")(
         await writeFile(join(frictionDir, "b.md"), "y\n");
 
         expect(frictionDir.length).toBeGreaterThan(260);
-        expect(countFrictionFiles(frictionDir)).toBe(2);
+        expect(countFrictionFiles(base, frictionDir)).toBe(2);
       } finally {
         await rm(base, { recursive: true, force: true });
       }

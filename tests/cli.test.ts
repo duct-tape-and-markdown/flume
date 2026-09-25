@@ -4592,18 +4592,23 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
   // (`src/pidClaim.ts`) is the reference shape every loop.pid call site here
   // must match. The name
   // itself now comes from `loopLockPath` (src/paths.ts), so the pin is on the
-  // accessor being wrapped, not on a filename spelled here. One call site
-  // hands its path to the stake instead of folding it (`stakePidClaim`,
-  // `src/pidClaim.ts`, which folds the target and its dirname itself); the
-  // second case below is what holds that binding to reaching no fs call
-  // here.
+  // accessor being read, not on a filename spelled here. Neither call site
+  // folds its own path any more: one hands it to the stake (`stakePidClaim`,
+  // `src/pidClaim.ts`, which folds the target and its dirname itself) and one
+  // to the descent probe (`existsLoudUnder`, `src/fsProbe.ts`, which folds the
+  // rungs it walks and the leaf it stats), so what these cases hold is that
+  // each binding reaches a callee that owns the fold and no fs call of this
+  // file's own.
   const src = readFileSync(CLI_SRC_PATH, "utf8");
 
-  it("builds the status-check loop-lock path (statusLockPath) through namespacedJoin, and existsLoud reads it from statusLockPath", () => {
+  it("reads the status-check loop-lock path (statusLockPath) off loopLockPath and probes it under the state root, which folds it", () => {
+    expect(src).toMatch(/const statusLockPath = loopLockPath\(flumeDir\);/);
+    // The probe that proves the absence also owns the fold — a
+    // `namespacedJoin` at this site would hand the descent a path in win32's
+    // namespaced alphabet to take `relative` against.
     expect(src).toMatch(
-      /const statusLockPath = namespacedJoin\(loopLockPath\(flumeDir\)\);/,
+      /existsLoudUnder\("loop lock", flumeDir, statusLockPath\)/,
     );
-    expect(src).toMatch(/existsLoud\(statusLockPath\)/);
   });
 
   it("takes the loop lock through the shared stake, and addresses lockPath with no fs call of its own", () => {
@@ -4624,29 +4629,152 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
     expect(releases!.length).toBe(1);
   });
 
-  it("every loopLockPath call in cli.ts is wrapped in namespacedJoin, bar the one binding the stake folds", () => {
+  it("every loopLockPath call in cli.ts binds a path a callee folds — the stake or the descent probe", () => {
     const uses = [...src.matchAll(/\bloopLockPath\(\w+\)/g)];
     expect(uses.length).toBeGreaterThan(1);
-    let folded = 0;
     let staked = 0;
+    let probed = 0;
     for (const use of uses) {
       const before = src.slice(0, use.index!);
-      if (/namespacedJoin\($/.test(before)) {
-        folded += 1;
-      } else if (/const lockPath = $/.test(before)) {
+      if (/const lockPath = $/.test(before)) {
         staked += 1;
+      } else if (/const statusLockPath = $/.test(before)) {
+        probed += 1;
       } else {
-        // Neither: an unfolded path this file hands to an fs call, which is
-        // the read a too-long win32 path reports as absent.
+        // Neither: a path this file spells and reaches disk with itself, which
+        // is the read a too-long win32 path reports as absent.
         expect(before, `unfolded loopLockPath call: ${use[0]}`).toMatch(
-          /namespacedJoin\($/,
+          /const (?:lockPath|statusLockPath) = $/,
         );
       }
     }
     // Both arms populated, so neither direction is asserted over nothing.
-    expect(folded).toBeGreaterThan(0);
     expect(staked).toBe(1);
+    expect(probed).toBe(1);
   });
+});
+
+/**
+ * The verbs' absent arms, over a state root that is present and unreachable.
+ *
+ * Each of these reads an artifact's absence as silence — no supervisor line,
+ * no stop line, no claimed tip, no note filed — and each now proves that
+ * absence by descending from a root it holds (`existsLoudUnder`,
+ * `src/fsProbe.ts`) rather than off one stat's errno. A plain file above the
+ * artifact answers that stat `ENOENT` on win32
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so the lane that reds without the descent is
+ * the win32 one; what these cases hold on every host is that the verb refuses
+ * rather than printing the reading an operator must never get — no supervisor
+ * over a possibly-live loop, a run started over an unacknowledged stop, an
+ * unclaimed tip.
+ *
+ * Which arm states the refusal is the verb's own ordering, and the two rooted
+ * at the state root are reached only past `new Baton(flumeDir)`, whose
+ * `mkdirSync` refuses this same root on both hosts. So the end-to-end claim
+ * available at those two is the absence of the reading, and the rung each
+ * refusal names is pinned where the descent lives
+ * (`tests/fsProbe.test.ts`). The tip claim's root is git's common dir, which
+ * nothing above that line touches — that one names its rung here.
+ *
+ * Denied structurally, at the *parent* on purpose: a reader that carries the
+ * descent is exercised by nothing else (`tests/helpers/denial.ts`).
+ */
+describe("the absent arms — a state root present and not a directory", () => {
+  it(
+    "flume status refuses a loop lock whose state root is present and is not a directory",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const sealed = join(repo.dir, "state");
+        await writeFile(sealed, "obstruction\n", "utf8");
+
+        const r = await runCli(repo.dir, ["status"], {
+          ...hermeticEnv(),
+          FLUME_DIR: sealed,
+        });
+
+        // The verb refuses, and reports the root it could not descend.
+        expect(r.code).not.toBe(0);
+        expect(r.out).toContain(sealed);
+        // And it reports *nothing* about the lock: neither a live supervisor,
+        // nor a stale one, nor the silence that means no loop is running. The
+        // refusal that lands first on a posix host is the awake-flag read
+        // above this line, which `mkdir`s the same obstructed root — so what
+        // this case pins at the verb is that no arm of it reads the root as
+        // nothing there. The guard's own descent, and the rung its refusal
+        // names, are `existsLoudUnder`'s own cover (`tests/fsProbe.test.ts`).
+        expect(r.out).not.toMatch(/supervisor pid|loop\.pid present/);
+        expect(r.out).not.toContain("hibernating");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume loop refuses to start over a state root that is present and is not a directory, rather than taking a tick past it",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const sealed = join(repo.dir, "state");
+        await writeFile(sealed, "obstruction\n", "utf8");
+
+        const r = await runCli(repo.dir, ["loop", "--max", "1"], {
+          ...hermeticEnv(),
+          FLUME_DIR: sealed,
+        });
+
+        // No run starts, and the refusal names the root. Which arm states it
+        // is the verb's own ordering: the dispatcher's awake-flag `mkdir`
+        // refuses this root on both hosts (measured) before the stop-flag
+        // guard beneath it is reached, so the guard's descent is covered where
+        // it lives (`tests/fsProbe.test.ts`) and what this case holds at the
+        // verb is that no reading of the flag lets a run begin.
+        expect(r.code).not.toBe(0);
+        expect(r.out).toContain(sealed);
+        expect(r.out).not.toContain("reached --max");
+        expect(r.out).not.toMatch(/tick \d+|stop flag present;/);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume status refuses a tip claim whose ancestor under the git common dir is present and is not a directory",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        // The claim nests under `<common dir>/flume`; nothing has staked one
+        // here, so this is the directory a claim would be written into.
+        const sealed = join(repo.dir, ".git", "flume");
+        await writeFile(sealed, "obstruction\n", "utf8");
+
+        const r = await runCli(repo.dir, ["status"]);
+
+        expect(r.code).toBe(EX_IOERR);
+        // Non-vacuity: the verb reached this line, so the refusal is the tip
+        // claim's arm and not something above it.
+        expect(r.out).toContain("hibernating");
+        expect(r.out).toContain("tip claim at");
+        expect(r.out).toContain(
+          `tip claim is unreadable: ${sealed} is present but is not a directory`,
+        );
+        // Never the reading that says the tip is nobody's.
+        expect(r.out).not.toContain("tip claim present");
+        expect(r.out).not.toMatch(/tip claimed by pid/);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
 });
 
 // ---------- the state root's layout, writer against reader ----------

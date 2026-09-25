@@ -22,7 +22,12 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { existsLoud, isDirectoryOrAbsent, statLoud } from "../src/fsProbe.ts";
+import {
+  existsLoud,
+  existsLoudUnder,
+  isDirectoryOrAbsent,
+  statLoud,
+} from "../src/fsProbe.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
 const roots: string[] = [];
@@ -203,5 +208,70 @@ describe("fsProbe — the descent, where absence is proven from the path", () =>
     );
     // And the silent arm is still silent from the same root.
     expect(isDirectoryOrAbsent("store", join(root, "gone"))).toBe(false);
+  });
+});
+
+/**
+ * The same descent with a **file** at the end of it — the probe every gate
+ * whose subject is one artifact takes: a loop lock, a stop flag, a tip claim.
+ * The split is the one every case here names, over the arm those gates read as
+ * silence: absent (the artifact was never written, and neither was a directory
+ * above it) against present-but-unreachable, which a single stat cannot tell
+ * apart on win32. So this cover runs on every host too.
+ */
+describe("fsProbe — the descent to a file, where absence is proven from the path", () => {
+  it("answers the file, folds an absence at the leaf or a rung, and refuses a plain file at a rung", async () => {
+    const root = await scratch();
+    const dir = join(root, "flume");
+    const leaf = join(dir, "tip-claims", "refs", "heads", "main");
+    mkdirSync(join(dir, "tip-claims", "refs", "heads"), { recursive: true });
+    writeFileSync(leaf, "4242\n");
+
+    // Cleared end to end: the walk really reaches the file, so the absences
+    // below are the fixture talking and not a descent that stopped at its
+    // first rung (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(existsLoudUnder("tip claim", root, leaf)).toBe(true);
+
+    // Absent at the leaf, and absent at a directory above it: both are the
+    // silent arm, and neither is a refusal.
+    expect(existsLoudUnder("tip claim", root, join(dir, "gone"))).toBe(false);
+    expect(
+      existsLoudUnder("tip claim", root, join(root, "gone", "claims", "main")),
+    ).toBe(false);
+
+    // Obstruct a rung. The file is still on disk and is now unreachable —
+    // which on win32 its own stat spells exactly like the absences above, so
+    // the refusal has to come from the rung's type and names that rung.
+    await rm(dir, { recursive: true, force: true });
+    writeFileSync(dir, "obstruction\n");
+
+    let message: string | undefined;
+    try {
+      existsLoudUnder("tip claim", root, leaf);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message, "the obstructed rung read as an unclaimed tip").toBeDefined();
+    expect(message).toContain(
+      `tip claim is unreadable: ${dir} is present but is not a directory`,
+    );
+
+    // A file directly under the root it descends from is the shortest walk
+    // there is — one rung, the root itself — and it still splits: the loop
+    // lock's own shape.
+    const lock = join(root, "loop.pid");
+    expect(existsLoudUnder("loop lock", root, lock)).toBe(false);
+    writeFileSync(lock, "4242\n");
+    expect(existsLoudUnder("loop lock", root, lock)).toBe(true);
+    // And the shape `flume status` refuses on: a state root that is present
+    // and is not a directory, with the lock nowhere beneath it to be read.
+    const sealedRoot = join(root, "state");
+    writeFileSync(sealedRoot, "obstruction\n");
+    expect(() =>
+      existsLoudUnder("loop lock", sealedRoot, join(sealedRoot, "loop.pid")),
+    ).toThrow(
+      `loop lock is unreadable: ${sealedRoot} is present but is not a directory`,
+    );
   });
 });

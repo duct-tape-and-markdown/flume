@@ -9,7 +9,7 @@
  */
 
 import { statSync, type Stats } from "node:fs";
-import { join, relative, sep, toNamespacedPath } from "node:path";
+import { dirname, join, relative, sep, toNamespacedPath } from "node:path";
 
 /**
  * `path`'s `Stats` iff it exists, `undefined` only when it is absent
@@ -59,7 +59,8 @@ export function statLoud(path: string): Stats | undefined {
  * is present but unreachable reads as absent and the caller proceeds over an
  * unresolved input (`.claude/rules/engineering.md`, "Loud or nothing"). Same
  * split `readPendingLoose` (`src/pendingLedger.ts`) and
- * `countFrictionFiles` (`src/friction.ts`) give a read, and the same win32 bound {@link statLoud} declares.
+ * `countFrictionFiles` (`src/friction.ts`) give a read, and the same win32 bound {@link statLoud} declares: a caller whose silent
+ * arm needs that absence *proven* takes {@link existsLoudUnder} instead.
  *
  * The fold for win32's total-path limit is the caller's, not this probe's:
  * `namespacedJoin` (`src/paths.ts`) where the caller has segments to join,
@@ -147,4 +148,38 @@ export function isDirectoryOrAbsentUnder(
     descent.push(at);
   }
   return isDirectoryOrAbsent(what, ...descent);
+}
+
+/**
+ * {@link existsLoud} at `path`, over a proven descent from `root` down to the
+ * directory holding it: `true` when something stands at `path`, `false` only
+ * when it — or one of the directories between `root` and it — is absent, and a
+ * throw for everything else, the refusal {@link isDirectoryOrAbsent} names.
+ *
+ * The file-leaf face of that descent, for a reader whose subject is one file
+ * and whose silent arm is "nothing filed yet": a loop lock, a stop flag, a tip
+ * claim. The bare probe cannot prove that absence, and says so — a plain file
+ * at any ancestor answers the leaf's own stat `ENOENT` on win32
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so a guard keyed off one stat reports "no
+ * supervisor", "no stop requested" or "tip unclaimed" over a state root it
+ * never resolved. The descent is what answers alike on both hosts, and it is
+ * composed here rather than at each guard, which is one forgotten rung from
+ * reading an unproven ancestor as silence again
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * `root` is the outermost directory the caller answers for — a state root a
+ * chain declared, the common dir git resolved — and `path` is a file beneath
+ * it; `what` names the subject the refusal reports, as it does for the descent
+ * itself. Every path is namespaced here, the rungs by the walk and the leaf
+ * because it arrived whole, so a caller hands plain paths and the refusal
+ * names the path an operator has to go fix.
+ */
+export function existsLoudUnder(
+  what: string,
+  root: string,
+  path: string,
+): boolean {
+  if (!isDirectoryOrAbsentUnder(what, root, dirname(path))) return false;
+  return statLoud(toNamespacedPath(path)) !== undefined;
 }

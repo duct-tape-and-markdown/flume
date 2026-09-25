@@ -206,12 +206,13 @@ function answeringPair(
  * first, and a second argument that is content (`writeFile`'s body) or
  * options (`mkdir`'s `{ recursive }`) is not a path and is not scanned.
  *
- * The two descent probes (`isDirectoryOrAbsent` and
- * `isDirectoryOrAbsentUnder`, `src/fsProbe.ts`) share the last contract:
+ * The three descent probes (`isDirectoryOrAbsent`, `isDirectoryOrAbsentUnder`
+ * and `existsLoudUnder`, `src/fsProbe.ts`) share the last contract:
  * argument 0 is the noun phrase the refusal names, and every argument after
  * it is a path the probe namespaces itself, because it owns the whole walk
  * rather than a path a caller composed — the rungs of the descent at the
- * variadic spelling, the root and the leaf it composes them from at the other.
+ * variadic spelling, the root and the leaf it composes them from at the other
+ * two, whose leaf is the file the walk clears the way to.
  *
  * The middle family is node's path-answering one: each builds its answer
  * from the path it was given (`mkdir`'s under `{ recursive }`, which is why
@@ -253,7 +254,11 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
   ...answeringPair("mkdtemp", "mkdtempSync", false),
   ...answeringPair("mkdir", "mkdirSync", false),
   ...answeringPair("realpath", "realpathSync", true),
-  ...["isDirectoryOrAbsent", "isDirectoryOrAbsentUnder"].map<
+  ...[
+    "isDirectoryOrAbsent",
+    "isDirectoryOrAbsentUnder",
+    "existsLoudUnder",
+  ].map<
     [string, PathContract]
   >((fn) => [
     fn,

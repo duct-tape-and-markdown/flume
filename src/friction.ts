@@ -21,10 +21,10 @@
 
 import { readdirSync } from "node:fs";
 import { copyFile, mkdir, rename, rm } from "node:fs/promises";
-import type { Dirent } from "node:fs";
 import { join } from "node:path";
 
 import type { Logger } from "./log.js";
+import { isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import * as git from "./git.js";
 import {
   assertStateRootRelative,
@@ -35,6 +35,15 @@ import {
 } from "./paths.js";
 import { NAME_MAX } from "./PendingSchema.js";
 import type { Chain } from "./Phase.js";
+
+/**
+ * What the channel's refusal calls the thing it could not read — the noun
+ * phrase `isDirectoryOrAbsentUnder` (`src/fsProbe.ts`) names an obstructed
+ * ancestor with. One spelling for every caller of the listing, so the primary
+ * dir, a worktree mirror and the count all tell an operator the same thing
+ * about the same rung.
+ */
+const FRICTION_SUBJECT = "friction channel";
 
 /**
  * Validate a declared `Chain.friction`: must be relative and
@@ -72,30 +81,39 @@ export function validateFrictionDeclaration(chain: Chain): void {
  * (spec/chain.md, "`Chain.friction` — the declared friction channel"), and
  * the skip is `isDotName` (`src/paths.ts`).
  *
- * An absent dir holds nothing — `ENOENT` is the empty list, the same reading
- * `readPendingLoose` (`src/pendingLedger.ts`) gives an absent queue directory,
- * because the channel is created lazily by whichever write needs it first.
- * Every other listing failure **throws**: a dir that is there and cannot be
- * listed is a real unresolved input, and must not read as an empty channel
- * (`.claude/rules/engineering.md`, "Loud or nothing"). Each caller states
- * what it does with that throw — a `null` count, an `EX_IOERR`, a swallowed
- * harvest — and none of them can mistake it for zero.
+ * An absent dir holds nothing — the channel is created lazily by whichever
+ * write needs it first, so "never written to" and "empty" are one fact, the
+ * same reading `readPendingLoose` (`src/pendingLedger.ts`) gives an absent
+ * queue directory. Every other listing failure **throws**: a dir that is
+ * there and cannot be listed is a real unresolved input, and must not read as
+ * an empty channel (`.claude/rules/engineering.md`, "Loud or nothing"). Each
+ * caller states what it does with that throw — a `null` count, an `EX_IOERR`,
+ * a swallowed harvest — and none of them can mistake it for zero.
+ *
+ * That absence is **proven from the path**, never read off the errno the
+ * listing raised, which is why `stateRoot` is a parameter and not something
+ * this listing could do without: a plain file anywhere above `dir` answers
+ * the listing `ENOENT` on win32 (`.claude/rules/platform-facts.md`, *win32
+ * reports a path through a non-directory as not found*), so an errno-keyed
+ * silent arm prints `friction: 0`, lists nothing under the `friction` verb
+ * and renders an empty inbox window over an obstructed state root on exactly
+ * one host. `isDirectoryOrAbsentUnder` (`src/fsProbe.ts`) runs the descent —
+ * the root the caller answers for, then each segment down to `dir`, every one
+ * asserted a directory before the next is probed — so both hosts answer
+ * alike. It is the descent `listUnderStateRoot` (`harness/dirListing.ts`)
+ * takes for the record queue and the questions dir, over the one directory
+ * whose names are the engine's rather than the package's.
  *
  * win32 MAX_PATH (`.claude/rules/platform-facts.md`): the fold lives here,
  * at the one `readdir`, so callers hand a plain path and get plain names
  * back — `dir` routinely joins a state root or a worktree mirror onto
  * `chain.friction`, the same construction `writeRevertNote`
- * (`src/tickAttempt.ts`) guards.
+ * (`src/tickAttempt.ts`) guards. Every ancestor is proven by then, so the
+ * listing keeps no absent arm of its own: a failure there is real.
  */
-export function frictionNotes(dir: string): string[] {
-  let entries: Dirent[];
-  try {
-    entries = readdirSync(namespacedJoin(dir), { withFileTypes: true });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
-  return entries
+export function frictionNotes(stateRoot: string, dir: string): string[] {
+  if (!isDirectoryOrAbsentUnder(FRICTION_SUBJECT, stateRoot, dir)) return [];
+  return readdirSync(namespacedJoin(dir), { withFileTypes: true })
     .filter((e) => e.isFile() && !isDotName(e.name))
     .map((e) => e.name)
     .sort();
@@ -103,7 +121,8 @@ export function frictionNotes(dir: string): string[] {
 
 /**
  * How many notes the channel at `dir` holds, over {@link frictionNotes}
- * above. `0` when `dir` is absent — nothing filed is nothing to count;
+ * above — `stateRoot` is that listing's, the root the absence is proven from.
+ * `0` when `dir` is absent — nothing filed is nothing to count;
  * `null` when the listing threw, which is the dir being there and unreadable.
  * That failure is a real unresolved input, not a legitimate zero, so it must
  * not read the same as an empty dir (`.claude/rules/engineering.md`, "Loud or
@@ -113,9 +132,12 @@ export function frictionNotes(dir: string): string[] {
  * split with {@link frictionCountLine} below instead of re-deriving it
  * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
  */
-export function countFrictionFiles(dir: string): number | null {
+export function countFrictionFiles(
+  stateRoot: string,
+  dir: string,
+): number | null {
   try {
-    return frictionNotes(dir).length;
+    return frictionNotes(stateRoot, dir).length;
   } catch {
     return null;
   }
@@ -161,7 +183,9 @@ export async function frictionCountLine(
   chain: Chain,
 ): Promise<string | undefined> {
   if (chain.friction === undefined) return undefined;
-  return renderFrictionCount(countFrictionFiles(join(stateRoot, chain.friction)));
+  return renderFrictionCount(
+    countFrictionFiles(stateRoot, join(stateRoot, chain.friction)),
+  );
 }
 
 /**
@@ -248,7 +272,8 @@ export async function harvestFriction(
   if (chain.friction === undefined) return;
   if (ctx.stateRootRel === undefined) return;
 
-  const mirrorDir = join(worktreePath, ctx.stateRootRel, chain.friction);
+  const mirrorRoot = join(worktreePath, ctx.stateRootRel);
+  const mirrorDir = join(mirrorRoot, chain.friction);
   // What counts as a note in the mirror is what counts in the primary dir:
   // {@link frictionNotes} above, so a placeholder relayed here could never
   // land under a stamped name — the one spelling the count and the read verb
@@ -256,10 +281,11 @@ export async function harvestFriction(
   // written this tick) is that listing's empty answer and silent here.
   let candidates: string[];
   try {
-    candidates = frictionNotes(mirrorDir);
+    candidates = frictionNotes(mirrorRoot, mirrorDir);
   } catch (err) {
-    // An unreadable dir, e.g. permissions — the log-and-continue failure
-    // class, not a silent no-op.
+    // An unreadable dir, e.g. permissions, or a mirror state root a plain
+    // file stands at — the log-and-continue failure class, not a silent
+    // no-op.
     ctx.log.warn(
       `[flume] friction harvest: could not read ${mirrorDir}: ${(err as Error).message}`,
     );

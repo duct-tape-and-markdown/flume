@@ -53,6 +53,14 @@ import { frictionNotes } from "../src/friction.js";
  * readings, and the win32 fold the channel's nesting needs, are
  * `frictionNotes`'s; all this adds is the directory the names sit under.
  *
+ * The state root goes down with it, because that absence is proven from the
+ * path rather than read off an errno — the descent `listUnderStateRoot`
+ * (`harness/dirListing.ts`) runs for the record queue beside it, so an
+ * obstructed state root refuses here instead of rendering an empty inbox
+ * window on win32 (`.claude/rules/platform-facts.md`, *win32 reports a path
+ * through a non-directory as not found*). This caller already holds the root
+ * the descent starts from; nothing about it is re-derived here.
+ *
  * One listing, two readers — {@link frictionPending} below asks whether it
  * is empty, and the inbox window renders these files' bytes. A second walk
  * beside it is a window that shows a note the predicate did not count
@@ -65,7 +73,7 @@ export function frictionFiles(
 ): string[] {
   if (friction === undefined) return [];
   const dir = join(stateRoot, friction);
-  return frictionNotes(dir).map((name) => join(dir, name));
+  return frictionNotes(stateRoot, dir).map((name) => join(dir, name));
 }
 
 /**
