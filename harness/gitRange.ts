@@ -59,6 +59,11 @@ const FIELD_SEP_FMT = "%x1f";
  * The NUL `-z` puts after the `--format` output, and the newline git writes
  * between that and a commit's file listing. A commit that touched nothing
  * has the terminator and no newline after it.
+ *
+ * A merge's combined listing ({@link commitsPast}) arrives behind a second
+ * NUL instead of that newline, so the lead below is the non-merge form alone
+ * and the merge's separator is dropped where every other empty field is, by
+ * {@link nameOnlyPaths}.
  */
 const HEADER_END = "\0";
 const LISTING_LEAD = "\n";
@@ -155,12 +160,26 @@ export const filesMatching = (cwd: string, globs: string[]): string[] =>
  * one leading newline is dropped ahead of the fields — git writes it between
  * the header's terminator and the listing, and a path that itself begins
  * with a newline arrives behind that separator, not in place of it.
+ *
+ * **A merge is listed by what its own tree resolved.** git's default merge
+ * listing is empty, so a path a merge changed in neither parent — a conflict
+ * resolution, or any edit made in the merge itself — would be in no
+ * frontier, arm no rotation and appear in no window
+ * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*). `--cc` is git stating which paths a merge's tree
+ * differs from *every* parent on, so the merge's own contribution is read
+ * rather than reconstructed from a walk of its parents
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*); a merge that
+ * resolved nothing lists nothing and costs the scan nothing. It is also the
+ * listing {@link diffOf}'s `git show` already narrows a merge by, so what a
+ * window names and what it diffs are one reading.
  */
 export function commitsPast(cwd: string, cursor: string): RangeCommit[] {
   const raw = git(cwd, [
     "log",
     "--reverse",
     `--format=${RECORD_SEP_FMT}%H${FIELD_SEP_FMT}%s`,
+    "--cc",
     "--name-only",
     "-z",
     `${cursor}..HEAD`,

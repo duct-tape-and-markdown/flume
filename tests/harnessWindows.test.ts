@@ -1075,6 +1075,123 @@ it("the sweep window names each frontier path once across the range, never once 
 });
 
 /**
+ * A merge commit on the checked-out branch: `files` committed on a branch off
+ * `base`, merged back with `--no-ff`, and `resolved` — when given — written
+ * into the merge's own tree before it commits.
+ *
+ * Writing into the merge itself is the only way a path can differ from
+ * *every* parent, which is the one thing git's default merge listing does not
+ * report and the two cases below are about. Disjoint files across the two
+ * legs, so the merge that resolves nothing really resolves nothing rather
+ * than being a conflict the fixture happened to settle.
+ */
+function mergeBranch(
+  name: string,
+  base: string,
+  files: Record<string, string>,
+  resolved: Record<string, string> = {},
+): string {
+  const trunk = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+  git("checkout", "-q", "-b", name, base);
+  commit(files, `build: ${name}`);
+  git("checkout", "-q", trunk);
+  git("merge", "-q", "--no-ff", "--no-commit", name);
+  return commit(resolved, `Merge ${name} into ${trunk}`);
+}
+
+/** One git listing's own lines, blanks dropped. */
+const gitLines = (...args: string[]): string[] =>
+  git(...args)
+    .split("\n")
+    .filter((line) => line.length > 0);
+
+/**
+ * A merge resolution is a change to the tree like any other, and the only
+ * commit that carries it is the merge. git's default `--name-only` listing
+ * for a merge is empty, so that change is the one edit a scan reading the
+ * default would attribute to no commit at all — in no frontier, arming no
+ * rotation (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*).
+ */
+it("the frontier lists a path a merge commit changed in neither parent", () => {
+  const base = commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "src/resolved.ts": "export const r = 1;\n",
+    },
+    "build: a",
+  );
+  commit({ "src/trunk.ts": "export const t = 1;\n" }, "build: on the trunk");
+  const merge = mergeBranch(
+    "branch",
+    base,
+    { "src/branch.ts": "export const b = 1;\n" },
+    { "src/resolved.ts": "export const r = 2;\n" },
+  );
+  writeState({ sweptThrough: base });
+
+  // The arm this case is about, asserted off git rather than assumed: the
+  // merge's tree differs from both its parents on `src/resolved.ts`, and no
+  // commit in either parent's own history past the cursor named it.
+  for (const parent of [`${merge}^1`, `${merge}^2`]) {
+    expect(gitLines("diff", "--name-only", parent, merge)).toContain(
+      "src/resolved.ts",
+    );
+    expect(
+      gitLines("log", "--format=", "--name-only", `${base}..${parent}`),
+    ).not.toContain("src/resolved.ts");
+  }
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  // Three commits past the cursor, and all three touched the frontier: the
+  // merge counts as a toucher exactly because it resolved a domain path.
+  expect(rendered).toContain(
+    `=== 3 sweep-domain path(s) touched since ${base}, by 3 commit(s) ===`,
+  );
+  expect(frontierPaths(rendered)).toEqual([
+    "src/branch.ts",
+    "src/resolved.ts",
+    "src/trunk.ts",
+  ]);
+});
+
+/**
+ * The converse, and the reason the merge listing can be read at all: what a
+ * merge's own tree resolved is a set that is usually empty, so reading it
+ * costs an ordinary merge nothing and never credits a merge with the paths
+ * its parents already carried.
+ */
+it("a merge commit that resolved nothing adds no path to the frontier", () => {
+  const base = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  commit({ "src/trunk.ts": "export const t = 1;\n" }, "build: on the trunk");
+  const merge = mergeBranch("branch", base, {
+    "src/branch.ts": "export const b = 1;\n",
+  });
+  writeState({ sweptThrough: base });
+
+  // Vacuity guard: the range really does carry a merge, so the claim below is
+  // about a merge and not about a range that never had one.
+  expect(gitLines("rev-list", "--merges", `${base}..HEAD`)).toEqual([merge]);
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  // Three commits past the cursor, two of them touchers: the merge brought
+  // both legs' paths into the tree without changing either, so it contributes
+  // no path and is not counted as having touched the frontier.
+  expect(rendered).toContain(
+    `=== 2 sweep-domain path(s) touched since ${base}, by 2 commit(s) ===`,
+  );
+  expect(frontierPaths(rendered)).toEqual(["src/branch.ts", "src/trunk.ts"]);
+});
+
+/**
  * The lines of one block of a rendered sweep window — the block whose `===`
  * header `marker` names, up to the blank line that ends it.
  *
