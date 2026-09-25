@@ -21,7 +21,10 @@ import {
 } from "../src/exitCodes.ts";
 import {
   tickVerdictsLogPath,
+  totalAgentUsageByPhase,
+  type PhaseAgentUsage,
   type TickVerdict,
+  type TickVerdictInvocation,
 } from "../src/tickVerdict.ts";
 import { FAILURE_STAGES } from "../src/loopSupervisor.ts";
 import type { SuperviseResult } from "../src/loopSupervisor.ts";
@@ -29,6 +32,7 @@ import {
   tickExitCode,
   loopExitCode,
   loopCompletionSummary,
+  agentUsageLine,
 } from "../src/cliVerdict.ts";
 import { awakeDir } from "../src/paths.ts";
 import { denyFile } from "./helpers/denial.ts";
@@ -670,4 +674,73 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
       await repo.cleanup();
     }
   }, SPAWN_BUDGET_MS);
+});
+
+describe("agentUsageLine — the spend line against the fold that feeds it", () => {
+  /**
+   * The real `totalAgentUsageByPhase` fold drives the real spend line, and
+   * the roster of totals is read off what that fold produced rather than
+   * spelled here: for each key it puts on a phase's row, move that one total
+   * and the rendered line must move with it. A total the line never prints
+   * renders identically twice. So a ninth summable field on `AgentUsage`
+   * (`src/Agent.ts`) — which joins the fold by construction,
+   * `SummableUsageKey` (`src/tickVerdict.ts`) — reds here until
+   * `agentUsageLine` (`src/cliVerdict.ts`) names it.
+   *
+   * Which perturbation moves a given total is the fold's own answer, not a
+   * roster either: a value set on one row moves a total the rows carry, a
+   * second row moves the one that counts them, and the case takes whichever
+   * the fold reports as having moved that total *alone*. That last word is
+   * what makes the line-moved assertion mean "this total is printed" rather
+   * than "something changed".
+   *
+   * Perturbing a total rather than hunting a sentinel in the string because
+   * two totals are not printed as summed — `durationMs` renders as seconds
+   * to one decimal, `costUsd` to four — and a sentinel would have to respell
+   * each formatter's arithmetic here.
+   */
+  it("the agent-usage spend line names every total totalAgentUsageByPhase puts on a phase's row", () => {
+    // Bigger than the coarsest formatter's resolution (a tenth of a second,
+    // i.e. 100ms), so every total's move survives its own rendering.
+    const DELTA = 1000;
+    const label = "agent usage";
+    // Carries no usage fact at all: every total starts at zero, so a
+    // perturbation is visible against it whatever the fold sums.
+    const row = (
+      over: Partial<TickVerdictInvocation> = {},
+    ): TickVerdictInvocation => ({
+      promptPath: "prompts/build.md",
+      uncommittedTracked: [],
+      ...over,
+    });
+    const fold = (rows: TickVerdictInvocation[]): PhaseAgentUsage =>
+      totalAgentUsageByPhase([
+        makeVerdict({ phaseName: "build", invocations: rows }),
+      ])[0]!;
+    const render = (rows: TickVerdictInvocation[]): string | undefined =>
+      agentUsageLine(label, [fold(rows)]);
+
+    const baseRows = [row()];
+    const baseTotals = fold(baseRows) as unknown as Record<string, unknown>;
+    const totals = Object.keys(baseTotals).filter((k) => k !== "phase");
+    // Non-vacuity: the loop below judges nothing over an empty roster, and
+    // the fold's row is the producer's own output, so this is the count of
+    // totals `phaseUsageSegment` is on the hook for.
+    expect(totals.length).toBeGreaterThan(0);
+    const base = render(baseRows);
+    expect(typeof base).toBe("string");
+
+    for (const key of totals) {
+      const movedAlone = [[row({ [key]: DELTA })], [row(), row()]].find(
+        (rows) => {
+          const totalsNow = fold(rows) as unknown as Record<string, unknown>;
+          const changed = totals.filter((k) => totalsNow[k] !== baseTotals[k]);
+          return changed.length === 1 && changed[0] === key;
+        },
+      );
+      expect(movedAlone, `no perturbation moved ${key} alone`).toBeDefined();
+      const msg = `${key} is summed but never printed`;
+      expect(render(movedAlone!), msg).not.toBe(base);
+    }
+  });
 });

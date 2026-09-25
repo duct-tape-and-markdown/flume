@@ -152,11 +152,12 @@ export function agentUsageLine(
 }
 
 /**
- * One phase's totals as the spend line spells them. Every total the
- * supervisor carries is named: a count the engine summed and then declined to
- * print is a fact it holds and does not report. Raw counts rather than
- * abbreviated ones — the line is read by CI as often as by a person, and a
- * rounded token count is not a number anything can add up.
+ * One phase's totals as the spend line spells them. That this names every
+ * total the fold hands it is pinned against that fold's own output
+ * (`tests/cliVerdict.test.ts`), so the roster here is checked rather than
+ * promised. Raw counts rather than abbreviated ones — the line is read by CI
+ * as often as by a person, and a rounded token count is not a number
+ * anything can add up.
  */
 function phaseUsageSegment(usage: PhaseAgentUsage): string {
   return (
