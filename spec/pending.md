@@ -270,6 +270,11 @@ under a wave already building the entry as it was.
 - **Selection skips a claimed entry** as it skips a quarantined one; a claim held by a dead
   pid is reclaimed by the same liveness probe every engine lock uses (`spec/loop.md`, *Crash
   equals stop*).
+- **A claim covers the entry's records.** A producer's window withholds a note, park, or
+  record whose entry is claimed — it stays on disk for a later drain — and the claim check
+  reads a claimed entry's note files as it reads its ledger file, so a drain cannot delete
+  the park a build tick is rewriting or fold a note into an entry mid-flight. Prose telling
+  the drain to leave them alone did not bind, here and downstream; the window does.
 - **Only the claim is engine.** What a producer does about a claimed entry it would have
   changed — wait, file a sibling, say so in the commit body — is the chain's
   (`.claude/rules/engine-boundary.md`).

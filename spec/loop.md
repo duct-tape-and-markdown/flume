@@ -825,7 +825,12 @@ Two legs, not either alone:
   the run: the entry stays in the ledger untouched, other entries keep dispatching.
   A re-scoped entry is a new key, so an edit on trunk lifts the hold without a
   relaunch (a slug-only key survived a re-scope and forced stop-and-relaunch, field
-  report, 0.12.0). The keys cross to each child via `FLUME_QUARANTINED_SLUGS` (the name
+  report, 0.12.0). A **gate-stage** hold lifts once the tip has moved past the tick
+  that placed it, because the world that gate judged is gone — a gate fixed on trunk
+  mid-run otherwise kept quarantining entries the fix would have passed until an
+  operator restarted (field report, 0.19.0); a provision-stage hold stays for the
+  run, since nothing on trunk changes what a worktree could not provision. The
+  consecutive-identical-failure abort below is the backstop either way. The keys cross to each child via `FLUME_QUARANTINED_SLUGS` (the name
   stands; each value is `slug@hash`), and the key is reported beside each tag on
   `TickResult.quarantinedTags` so a chain can see why the hold stands. It is
   run-scoped — a fresh run retries the key, so a transient hold costs at most the
