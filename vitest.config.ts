@@ -23,11 +23,18 @@ export default defineConfig(({ mode }) => {
       // that plants it is the one a per-suite guard would be missing
       // (`installStateRootLeakGuard`, tests/helpers/fixtureRoot.ts).
       setupFiles: ["./tests/helpers/vitestSetup.ts"],
-      // Bounded below the core count: a build wave runs one suite per entry
-      // in parallel, and one worker per core across two waves has taken a
-      // shared 11 GB host to the OOM edge twice. Four workers is a measured
-      // ceiling, not a tuning; the floor rides with it, since vitest's default
-      // minimum is derived from the core count and refuses a lower ceiling.
+      // Four, bounded well below the core count, because this is the price
+      // of one suite and one suite is what runs: the ship lock serializes the
+      // judge whatever the wave's width (`spec/loop.md`, *The ship lock and
+      // the worktree lock — sibling ticks take turns at git*). At four the
+      // suite peaks near 3.2 GB across ~40 processes for ~3 min — more than
+      // twice the whole loop tree beside it — on the 11 GB host these
+      // figures were measured on (`docs/CHAIN-AUTHORING.md`, *What a wave
+      // costs in memory*), which also carries another project's loop. That
+      // other load gone, and a merge's suite wall clock hurting more than its
+      // headroom, is the condition for raising it; a measured ceiling, not a
+      // tuning. The floor rides with it, since vitest's default minimum is
+      // derived from the core count and refuses a lower ceiling.
       minWorkers: 1,
       maxWorkers: 4,
     },
