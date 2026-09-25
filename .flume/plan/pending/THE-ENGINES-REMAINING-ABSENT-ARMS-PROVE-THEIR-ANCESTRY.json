@@ -1,0 +1,39 @@
+{
+  "tag": "THE-ENGINES-REMAINING-ABSENT-ARMS-PROVE-THEIR-ANCESTRY",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/friction.ts",
+        "description": "`frictionNotes` and `countFrictionFiles` take the root their dir descends from, the shape `listUnderStateRoot` (`harness/dirListing.ts`) already has"
+      },
+      {
+        "path": "harness/friction.ts",
+        "description": "`frictionFiles` hands down the state root it already holds"
+      },
+      {
+        "path": "src/cli.ts",
+        "description": "`status`'s three presence guards and `loop`'s start refusal prove the descent from the root each holds before reading absence as silence"
+      },
+      {
+        "path": "tests/friction.test.ts",
+        "description": "the listing's absence arm over an obstructed root"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the status lines' and the loop refusal's obstructed-root readings"
+      }
+    ]
+  },
+  "summary": "`flume status`'s three presence lines, `loop`'s start refusal and the friction listing each read absence off one stat, so an obstructed ancestor prints nothing and lists empty",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "every arm that reads an absent artifact as silence proves the descent from a root it holds — `flume status`'s supervisor, stop-flag and tip-claim lines, `flume loop`'s stop-flag refusal, and the friction channel's one listing — so a present-but-unreachable artifact refuses on every host rather than reading as nothing there",
+  "pins": [
+    "flume status refuses a loop lock whose state root is present and is not a directory",
+    "the friction listing refuses a state root that is present and is not a directory rather than listing empty"
+  ],
+  "notes": "Verified this tick: `existsLoud` (`src/fsProbe.ts`) declares the win32 bound and names the descent a cross-host absence needs, so the probe is a declared divergence and this files against its callers — `src/cli.ts:350`, `:386`, `:419`, `:1198` — plus `frictionNotes` (`src/friction.ts:90`). `frictionCountLine` and `frictionFiles` already hold the root; only the inner two lack it. No `tests[]`: posix raises ENOTDIR and every arm throws on it today, so the `windows` lane is what the pins protect."
+}
