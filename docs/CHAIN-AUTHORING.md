@@ -531,6 +531,40 @@ omitted; the rest are required.
 | `setupWorktree` | Optional hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. May return `{ extraEnv }`. Fires under either concurrency. See §3. |
 | `teardownWorktree` | Optional hook, `setupWorktree`'s cleanup mirror — best-effort, runs before the worktree is removed. Fires under either concurrency. See §3. |
 
+**The two write-scoping rows are one decision.** A phase that narrows to its
+assigned entry and still legitimately writes a shared file declares
+`scopeWritesToEntry` *with* `entryChannelPaths` — the flag alone fences a
+fanout tick to `entry.files`, and a path no entry names (a note back to the
+producer, a shared registry the work has to touch) reverts the commit instead
+of the work being refused. The channel is where those paths go, so `files`
+stays the partition's honest prediction rather than becoming a defensive
+permission. Declaring the channel without the flag is refused at chain load.
+The package's own harness declaration wires the pair from one input:
+`channelPaths` reaches `entryChannelPaths` only when `scopeWritesToEntry` is
+set, with the build phase's note globs unioned in.
+
+Both sides of the trade are measured, and the package takes neither:
+
+- **For it.** A downstream 0.19 report counted ten real merge conflicts across
+  its runs; **three were on paths outside the shipping entry's `files`**, and a
+  fourth was declared by one writer and not the other. The fanout partition's
+  disjointness key is the `files` it reads (§3), so an undeclared shared write
+  is invisible to it and surfaces as a conflict at merge. Under the flag those
+  four fail at the fence, on the tick that wrote them.
+- **Against it.** This repo ran with the flag on for a time and turned it off.
+  Once one shared path entered substantially every entry, mean first-batch wave
+  width fell **from 3.17 to 1.99 at `maxParallel: 4`** — the width the partition
+  exists to buy, roughly halved — and every park that fence produced was a
+  mispredicted path rather than a refusal of the work: plan cannot know which
+  files a move breaks without doing the move. Flume's own build phase declares
+  `false` today.
+
+The question the two numbers put to your chain is what your producer can know:
+where entries' `files` are a prediction that widens as build discovers what the
+work touches, the flag buys parks; where the paths entries share are a known,
+enumerable set, they belong on `entryChannelPaths` and the narrowing costs the
+wave nothing the partition was not already losing to that shared path.
+
 The `slicePhase` declaration from `examples/cascade-chain.ts` — that chain's
 plan is a ladder of singleton slices sharing one prompt, and this is the one
 `Phase` all of them are built from, parameterized by the slice it serves:
