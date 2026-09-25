@@ -19,8 +19,16 @@
         "description": "the claim address and the store's walk carry the same segment, so a sibling checkout's claim is neither read nor hidden behind"
       },
       {
+        "path": "src/pidClaim.ts",
+        "description": "the doc spelling the entry-claim address beside the tip claim's"
+      },
+      {
         "path": "docs/CHAIN-AUTHORING.md",
         "description": "the two passages stating the branch a tick's worktree is minted on"
+      },
+      {
+        "path": "README.md",
+        "description": "the branch-naming passage, and the two-efforts rationale it rests the isolation on"
       },
       {
         "path": "tests/git.test.ts",
@@ -37,6 +45,14 @@
       {
         "path": "tests/Dispatcher.test.ts",
         "description": "the two observed-branch assertions that spell the old form"
+      },
+      {
+        "path": "tests/builtinGates.test.ts",
+        "description": "the claim fixtures the pending gate's claim check reads, addressed through `entryClaimPath`"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the held-claim fixture addressed through `entryClaimPath`"
       }
     ]
   },
