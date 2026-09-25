@@ -1,0 +1,9 @@
+# The drain states the bar; it cannot cite the page that holds it
+
+Two things this entry's note asked for that the tree refused, both worth a ruling.
+
+**The cite.** The note said the prompt should cite `.claude/rules/posture-sweep.md`, *Routing* rather than re-spell the bar. It cannot. No prompt under `harness/prompts/` names a rules path, and the posture pages are a consumer-declared value (`Slices.sweep.posturePages`, `harness/declaration.ts:283`) that is *required exactly when `plan-sweep` is enabled* and refused otherwise — so a consumer running the drain without the sweep has no page to cite, and this repo's path is not the package's to spell. The sweep prompt has the same problem and solves it the same way: `harness/prompts/plan-sweep.md:42` states the bar in its own words and defers to "the pages' own bar", which `<sweep-window>` names. The drain now states it too. That is two prompts spelling one bar — a ladder finding (`engineering.md`, *Narration is the ladder's bottom rung*) whose fix is a shared render, not a cite: the bar could be one `{{FILING_BAR}}` shared prompt arg beside `{{PUT_DOWN}}` in `harness/prompts.ts`, rendered once, quoted by both slices. Filing that is plan's call; I did not widen scope to it.
+
+**The three-notes window.** The spec leaves it unstated for a slice with no rotation, and the entry told me to read it off `git log`, never estimated. I wrote it as "three of this slice's own `plan:` commit bodies" — with no cursor, that window is all of history. Self-limiting in practice (the family stops being re-noted once its entry stands), but it is not bounded by anything, and the sweep's equivalent is bounded by the rotation cursor. If the drain wants a bound, the only cursor it has is `drainedRuns`, which is per-lane and wrong for this. A declared drain cursor is a spec question, not a build one.
+
+No test: the change is prompt prose, which nothing in the suite reads for content.
