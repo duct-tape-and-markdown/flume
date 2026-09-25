@@ -104,10 +104,11 @@ export interface AgentInvocation {
 
 /**
  * Cost/telemetry facts read off a `claude -p --output-format stream-json`
- * `result` event — the same event {@link formatResult} renders to the
- * terminal (spec/loop.md "The tick verdict — one facts artifact"). Each
- * field is present only when the event reported it; a field the agent's
- * result didn't carry is absent, never coerced to zero.
+ * `result` event, and the values {@link formatResult} renders that event's
+ * terminal line from (spec/loop.md "The tick verdict — one facts
+ * artifact"). Each field is present only when the event reported it; a
+ * field the agent's result didn't carry is absent, never coerced to zero,
+ * on both surfaces.
  */
 export interface AgentUsage {
   /**
@@ -546,18 +547,15 @@ export function withTerminalRenderer(
     async invoke(inv) {
       const tag = tagFn(inv);
       let buf = "";
-      // Set alongside the render when a `result` event is seen — the same
-      // per-line walk `formatResult` already runs, not a second parser over
-      // the transcript (spec/loop.md "The tick verdict", "Every agent
-      // invocation leaves a usage row").
+      // Set from the same {@link readStreamJsonLine} decode the rendered
+      // line is printed from — one read of the `result` event answers both
+      // (spec/loop.md "The tick verdict", "Every agent invocation leaves a
+      // usage row").
       let usage: AgentUsage | undefined;
       const emitLine = (line: string): void => {
-        const parsed = parseNdjsonLine(line);
-        if (parsed.kind === "event" && isResultEvent(parsed.event)) {
-          usage = extractResultUsage(parsed.event);
-        }
-        const rendered = renderStreamJsonLine(line, tag, inv.cwd);
-        if (rendered !== null) inv.onStdout?.(rendered + "\n");
+        const read = readStreamJsonLine(line, tag, inv.cwd);
+        if (read.usage) usage = read.usage;
+        if (read.rendered !== null) inv.onStdout?.(read.rendered + "\n");
       };
       const wrapped: AgentInvocation = {
         ...inv,
@@ -639,34 +637,51 @@ export function extractFinalMessage(stdout: string): string {
   return stdout.trim();
 }
 
+/** One NDJSON line, read once: what the terminal shows, and — for a
+ * `result` event — the {@link AgentUsage} that same read lifted. */
+interface StreamJsonLineRead {
+  /** The condensed terminal string, or null to drop the line. */
+  rendered: string | null;
+  /** Present only for a `result` event, from the read the render used. */
+  usage?: AgentUsage;
+}
+
 /**
- * Render one NDJSON line to a condensed terminal string, or null to drop it.
+ * Read one NDJSON line to a condensed terminal string, or null to drop it.
  * Non-JSON input is passed through behind the tag prefix so stray warnings
  * and non-stream output still surface — trimmed, as {@link parseNdjsonLine}
  * hands it back, so a win32 child's trailing CR never reaches the terminal.
+ *
+ * A `result` event is decoded exactly once, by {@link extractResultUsage}:
+ * the figures in the rendered line and the usage the invocation reports are
+ * the same reading, so a provider key the event stops carrying cannot leave
+ * one of them absent and the other confident.
  */
-function renderStreamJsonLine(
+function readStreamJsonLine(
   line: string,
   tag: string,
   cwd: string,
-): string | null {
+): StreamJsonLineRead {
   const result = parseNdjsonLine(line);
-  if (result.kind === "blank" || result.kind === "non-object") return null;
-  if (result.kind === "parse-error") return `${tag} ${result.raw}`;
+  if (result.kind === "blank" || result.kind === "non-object") {
+    return { rendered: null };
+  }
+  if (result.kind === "parse-error") return { rendered: `${tag} ${result.raw}` };
   const e = result.event;
 
   if (isAssistantEvent(e)) {
     const lines = contentBlocksOfType(e, "tool_use").map(
       (c) => `${tag} ${formatToolUse(c as unknown as ToolUseBlock, cwd)}`,
     );
-    return lines.length > 0 ? lines.join("\n") : null;
+    return { rendered: lines.length > 0 ? lines.join("\n") : null };
   }
 
   if (isResultEvent(e)) {
-    return `${tag} ${formatResult(e)}`;
+    const usage = extractResultUsage(e);
+    return { rendered: `${tag} ${formatResult(e, usage)}`, usage };
   }
 
-  return null;
+  return { rendered: null };
 }
 
 interface ToolUseBlock {
@@ -723,9 +738,10 @@ function summarizeToolArg(name: string, inp: Record<string, unknown>, cwd: strin
 }
 
 /**
- * Lift {@link AgentUsage} out of a stream-json `result` event — the same
- * event object {@link formatResult} renders to the terminal. A field the
- * event didn't report is left absent, never defaulted to `0`.
+ * Lift {@link AgentUsage} out of a stream-json `result` event — the one
+ * decode of that event, which the terminal's result line is then rendered
+ * from. A field the event didn't report is left absent, never defaulted to
+ * `0`, and the rendered line carries the same absence.
  */
 export function extractResultUsage(e: NdjsonEvent): AgentUsage {
   const usage = (e.usage as Record<string, unknown> | undefined) ?? {};
@@ -750,22 +766,23 @@ export function extractResultUsage(e: NdjsonEvent): AgentUsage {
   return out;
 }
 
-function formatResult(e: Record<string, unknown>): string {
-  const usage = (e.usage as Record<string, unknown> | undefined) ?? {};
-  const turns = e.num_turns ?? "?";
-  const ti = num(usage.input_tokens);
-  const to = num(usage.output_tokens);
-  const cost = typeof e.total_cost_usd === "number" ? `$${e.total_cost_usd.toFixed(3)}` : "";
-  const dur = typeof e.duration_ms === "number" ? `${(e.duration_ms / 1000).toFixed(1)}s` : "";
-  const head = isErrorResult(e) ? "ERROR" : "result";
-  const parts = [head, `${turns} turns`, `${formatTokens(ti)} in`, `${formatTokens(to)} out`, cost, dur].filter(
-    (p) => p && p.length > 0,
-  );
+/**
+ * Render the terminal's result line from the {@link AgentUsage} its caller
+ * already decoded off `e` — never a second reading of the event's own keys.
+ * A figure the event didn't report is dropped from the line rather than
+ * printed as `0`, the absence {@link AgentUsage} keeps; only the turn count
+ * spells its absence, as `?`, since the head of the line reads as a count.
+ */
+function formatResult(e: NdjsonEvent, usage: AgentUsage): string {
+  const parts = [
+    isErrorResult(e) ? "ERROR" : "result",
+    `${usage.turns ?? "?"} turns`,
+    usage.inputTokens === undefined ? "" : `${formatTokens(usage.inputTokens)} in`,
+    usage.outputTokens === undefined ? "" : `${formatTokens(usage.outputTokens)} out`,
+    usage.costUsd === undefined ? "" : `$${usage.costUsd.toFixed(3)}`,
+    usage.durationMs === undefined ? "" : `${(usage.durationMs / 1000).toFixed(1)}s`,
+  ].filter((p) => p.length > 0);
   return parts.join(" · ");
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" ? v : 0;
 }
 
 function formatTokens(n: number): string {

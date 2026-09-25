@@ -1114,6 +1114,65 @@ describe("withTerminalRenderer merges extractResultUsage's reading onto the reso
   });
 });
 
+describe("the terminal result line and the reported usage are one decode", () => {
+  function ndjson(...events: unknown[]): string {
+    return events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+  }
+
+  // Drives the real renderer over a real transcript and hands back both
+  // sides of the seam — the line it printed and the usage it resolved —
+  // so neither is re-derived by the test's own hand.
+  async function renderOne(event: unknown) {
+    const stream = ndjson(event);
+    const fake: Agent = {
+      name: "fake",
+      async invoke(inv) {
+        inv.onStdout?.(stream);
+        return { exitCode: 0, stdout: stream, stderr: "" };
+      },
+    };
+    const captured: string[] = [];
+    const result = await withTerminalRenderer(fake).invoke({
+      cwd: "/work/foo",
+      prompt: "",
+      onStdout: (chunk) => captured.push(chunk),
+    });
+    return { line: captured.join("").trim(), usage: result.usage };
+  }
+
+  it("a rendered result line reports the same turn, token and cost figures the invocation's usage reports", async () => {
+    const { line, usage } = await renderOne({
+      type: "result",
+      num_turns: 3,
+      duration_ms: 2500,
+      total_cost_usd: 0.123,
+      usage: { input_tokens: 1234, output_tokens: 5678 },
+    });
+    // Vacuity: every figure the line prints was carried by the event, so
+    // the comparisons below are over five present fields, not absences.
+    expect(Object.keys(usage ?? {})).toHaveLength(5);
+    expect(line).toContain(`${usage!.turns} turns`);
+    expect(line).toContain(`$${usage!.costUsd!.toFixed(3)}`);
+    expect(line).toContain(`${(usage!.durationMs! / 1000).toFixed(1)}s`);
+    expect(usage!.inputTokens).toBe(1234);
+    expect(usage!.outputTokens).toBe(5678);
+    expect(line).toContain("1.2k in");
+    expect(line).toContain("5.7k out");
+  });
+
+  it("a token count the result event omits is absent from the line, as it is from the usage", async () => {
+    const { line, usage } = await renderOne({
+      type: "result",
+      num_turns: 2,
+      usage: { output_tokens: 9 },
+    });
+    expect(usage).toEqual({ turns: 2, outputTokens: 9 });
+    // The whole line, not a negative over it: an omitted input count is a
+    // segment the renderer never emits, never a confident `0 in`.
+    expect(line).toBe("[foo] result · 2 turns · 9 out");
+  });
+});
+
 describe("extractFinalMessage — the three transcript shapes (spec/chain.md \"The agent seam\")", () => {
   function ndjson(...events: unknown[]): string {
     return events.map((e) => JSON.stringify(e)).join("\n") + "\n";
