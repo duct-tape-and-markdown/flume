@@ -2,11 +2,15 @@
 
 A fanout wave runs each pickable entry in its own ephemeral git worktree and carries each
 entry's commits back onto the trunk **as its agent finishes**, under the ship lock, from the
-tip as it then stands; a slot freed that way pulls the next pickable entry disjoint from
-everything still in flight, and the tick ends when nothing is pickable or its budget says to
-put the wave down (`spec/loop.md`, *The ship lock and the worktree lock — sibling ticks take
-turns at git*; `spec/harness.md`, *A tick puts work down*). A wave never waits on its slowest
-agent to merge its fastest. This file governs that machinery:
+tip as it then stands; a slot freed that way pulls the next entry disjoint from everything
+still in flight (`spec/loop.md`, *The ship lock and the worktree lock — sibling ticks take
+turns at git*). A wave pulls only from the entries pickable when it started, each at most
+once, so it ends when that set is drained or the run is torn down, and never re-picks an
+entry it already attempted. Each entry's ledger commit lands with its own merge, under the
+same hold of the ship lock, never at the wave's end: a wave can now outlast many merges, and
+a queue that went on listing entries already on the trunk would be read as current by every
+producer beside it. An agent's put-down bounds its entry, never the wave (`spec/harness.md`,
+*A tick puts work down*). A wave never waits on its slowest agent to merge its fastest. This file governs that machinery:
 where worktrees are placed and named, how the shared `.git/worktrees` metadata is protected,
 the chain hooks that provision and tear one down, and what survives a revert — the per-entry
 merge isolation, the trunk footprint, the reverted-prose snapshot, the friction harvest, and
