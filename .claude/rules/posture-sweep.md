@@ -19,6 +19,13 @@ Every section of those pages, as written at this tick, is in scope. Nothing
 is swept from a remembered list. A ratified phrase change applies from the
 next rotation forward — it never reopens a stamped window.
 
+This page is procedure, not a posture page, and it is deliberately left off
+the declared list: a lens edited here reaches every neighborhood swept after
+the edit and reopens none already covered. Arming the whole domain for a
+lens would price every wording change at a full rotation, which is the cost
+this page exists to keep off the loop. Root config and the declaration are
+likewise outside the domain; a finding there arrives through the inbox.
+
 ## The frontier is decidable; the neighborhood is judged
 
 Three delta kinds arm the sweep. The first two are read off `git log

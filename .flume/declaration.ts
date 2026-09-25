@@ -95,7 +95,8 @@ export const declaration: DeclarationInput = {
   // Two entries per wave and two phase ticks at once: three agents at most,
   // beside one judge suite, since the ship lock runs suites one at a time
   // (spec/loop.md, *The ship lock and the worktree lock — sibling ticks take
-  // turns at git*). About 4.6 GB at the peak on an 11 GB host that also
+  // turns at git*). What that costs at the peak is the table in
+  // docs/CHAIN-AUTHORING.md, *What a wave costs in memory*; this host also
   // runs another project's loop. Raise either only when that other load is
   // gone and a wave's wall clock is what hurts. Every other supervisor knob
   // is the engine's default.
