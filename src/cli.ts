@@ -239,22 +239,29 @@ function canonicalDir(path: string): string {
  * nothing and the queue read finds nothing, each quietly
  * (`.claude/rules/engineering.md`, *Loud or nothing*). Proven once, at the
  * one place the root is resolved, ahead of every path composed from it.
+ *
+ * The message names the top-level in the spelling the comparison folded it
+ * to, never git's raw answer: git reports `C:/r` where the bay beside it in
+ * the same sentence is `C:\r`, and one message naming two roots in two
+ * alphabets reads as two disagreements. The fold is also what makes the two
+ * remedies paste-able — `cd` and a move both take a host path.
  */
 async function bayRootDisagreement(
   repoRoot: string,
 ): Promise<string | undefined> {
   const toplevel = await gitToplevel(repoRoot);
   if (toplevel === undefined) return undefined;
-  if (canonicalDir(toplevel) === canonicalDir(repoRoot)) return undefined;
+  const gitRoot = canonicalDir(toplevel);
+  if (gitRoot === canonicalDir(repoRoot)) return undefined;
   return (
     `[flume] bay root ${repoRoot} is not the root git names paths from — ` +
-    `git's top-level here is ${toplevel}. Every path this run would hand ` +
+    `git's top-level here is ${gitRoot}. Every path this run would hand ` +
     `git, and every path it would read back from git, is named from the ` +
     `top-level, so a state root composed against a different root loses ` +
     `that root's prefix on all of them: the fence globs, the queue ` +
     `pathspec, and the state root a hook reads. Refusing before any of them ` +
-    `is composed. Run flume from ${toplevel} — with FLUME_DIR naming the ` +
-    `bay if the bay is not there — or move the bay to ${toplevel}.`
+    `is composed. Run flume from ${gitRoot} — with FLUME_DIR naming the ` +
+    `bay if the bay is not there — or move the bay to ${gitRoot}.`
   );
 }
 
