@@ -1,8 +1,11 @@
 /**
  * Vocabulary this repo's prose cites by name and legitimately does not
- * declare, because something outside the citing scan's reach owns it and no
- * rung of the ladder here can hold it. A scan says so by name rather than
- * widening its resolution until the residue disappears.
+ * declare. Two reasons reach that: something outside the citing scan's reach
+ * owns the name, or this repo retired the surface and a comment names what is
+ * gone on purpose — the second has no owner at all, and resolving it would
+ * contradict the sentence citing it. Either way no rung of the ladder here
+ * can hold the name, and a scan says so by name rather than widening its
+ * resolution until the residue disappears.
  *
  * One list for every reader, because an exclusion is a claim about the name
  * rather than about the reader that met it: a page an example chain writes

@@ -1765,11 +1765,15 @@ it("a findings rendering refuses a finding carrying a line break rather than eli
  * (`tests/helpers/externalVocabulary.ts`) holds the list's own terms, which
  * every reader of it shares.
  *
- * `tests/` reaches two owners that sit inside this repo and still outside
- * this scan's reach. A declaration of `examples/` is real code the
- * carve-out's three trees do not include. A member of a fixture this suite
- * authors as source *text* is spelled in no declaration the program holds.
- * Both are cited on purpose and neither is a token the checker can answer.
+ * `tests/` reaches three classes of name this scan cannot answer. A
+ * declaration of `examples/` is real code the carve-out's three trees do not
+ * include. A member of a fixture this suite authors as source *text* is
+ * spelled in no declaration the program holds. And a member of a surface this
+ * repo retired has no owner anywhere — the comment above the suite pinning
+ * that removal names what `Chain` no longer declares, so a checker answering
+ * it would be the defect rather than the fix. All three are cited on purpose,
+ * and each is excused by name so the citation can be spelled as the thing it
+ * names.
  */
 const EXTERNAL_VOCABULARY = externalVocabulary();
 
