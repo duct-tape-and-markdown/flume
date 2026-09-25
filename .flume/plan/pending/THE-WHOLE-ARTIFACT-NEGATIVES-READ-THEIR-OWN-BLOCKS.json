@@ -41,14 +41,18 @@
       {
         "path": "tests/Prompt.test.ts",
         "description": "the six prior-attempt negatives read the `<prior-attempt>` block the case renders, not the whole prompt the `<harness>` block also sits in"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the eight NDJSON/cost-noise negatives read the `<prior-attempt>` block the case renders, not the whole retry prompt"
       }
     ]
   },
-  "summary": "Twenty-four negative assertions take a whole rendered window, prompt, verdict or module text as their subject — the family sixteen plan commit bodies accepted as debt before it filed",
+  "summary": "Thirty-two negative assertions take a whole rendered window, prompt, verdict or module text as their subject — the family sixteen plan commit bodies accepted as debt before it filed",
   "per": {
     "path": ".claude/rules/posture-sweep.md",
     "section": "Routing"
   },
   "acceptance": "every one of those assertions names a subject its own arm produces — a cut block, the producer's own marker phrase, or one line — so none can red for a path, tag, commit subject or error string the artifact merely happens to quote",
-  "notes": "Off the three-notes escalation, long past: 8 plan bodies since last filed (A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK, c0fbb6a9). Verified: harnessWindows 938/1006/1506/1507/1518/1521 (`blockUnder` :1209 is that file's own cut), terminalRender 88-93, harnessGates 810, harnessPrompts 871, harnessBuildArgs 508, cliRender 287, worktrees 304, cliVerdict 319, Prompt 810-812/842/872-873 — added this tick, `/refused/i` over a render whose `<harness>` block quotes phase and gate names."
+  "notes": "Off the three-notes escalation, long past: 8 plan bodies since last filed (A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK, c0fbb6a9). Verified: harnessWindows 938/1006/1506/1507/1518/1521 (`blockUnder` :1209 is that file’s own cut), terminalRender 88-93, harnessGates 810, harnessPrompts 871, harnessBuildArgs 508, cliRender 287, worktrees 304, cliVerdict 319, Prompt 810-812/842/872-873, Dispatcher 10329-10336 — added this tick, NDJSON field names over a whole prompt; `:18886` is that file’s own cut."
 }
