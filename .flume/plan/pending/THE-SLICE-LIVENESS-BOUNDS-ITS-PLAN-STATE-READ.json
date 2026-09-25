@@ -1,0 +1,49 @@
+{
+  "tag": "THE-SLICE-LIVENESS-BOUNDS-ITS-PLAN-STATE-READ",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/planState.ts",
+        "description": "the bounded read a liveness predicate takes, beside the accessor it wraps"
+      },
+      {
+        "path": "harness/cursorWindow.ts",
+        "description": "the unreadable-state arm renders through the refusal `bounded` already spells"
+      },
+      {
+        "path": "harness/deriveWindow.ts",
+        "description": "`live` reads an unreadable state file as live rather than throwing"
+      },
+      {
+        "path": "harness/sweepWindow.ts",
+        "description": "`live` reads an unreadable state file as live rather than throwing"
+      },
+      {
+        "path": "harness/ciLane.ts",
+        "description": "the lane leg's stamp read, on both the liveness and the render leg"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the liveness and render arms over an unreadable state file, per slice"
+      },
+      {
+        "path": "tests/harnessPlanState.test.ts",
+        "description": "the bounded read's own verdict, beside the accessor cases"
+      }
+    ]
+  },
+  "summary": "An unreadable plan state file throws out of every plan slice's `live`, so the handoff wakes no phase at all and the one tick that could repair it is declined",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "an unreadable slice state file makes that slice's window live and reaches the woken tick as the named refusal every uncomputable window renders, never as a throw out of `live` — which the default handoff catches into waking no phase at all and the engine's consult into declining the tick",
+  "tests": [
+    "a slice whose plan state file will not parse is live so the tick that can repair it runs",
+    "a slice whose plan state file will not parse renders the refusal naming the file rather than throwing"
+  ],
+  "notes": "Measured this tick on a scratch state root holding `not json{`: `readCursor` and `readPlanState` both throw. Three unbounded sites, all in `live` — `harness/deriveWindow.ts:59`, `harness/sweepWindow.ts:76`, `wokenLanes` (`harness/ciLane.ts:158`). `wakeSet` (`harness/handoff.ts:280`) walks every slice, so one throw wakes nothing, build included; `consultShouldRun` (`src/tickAttempt.ts:903`) refuses the tick. `bounded` (`harness/cursorWindow.ts:160`) covers the render alone."
+}
