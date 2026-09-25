@@ -1,10 +1,9 @@
 /**
  * Agent — the seam between the dispatcher and an LLM CLI.
  *
- * v0 ships one implementation: `claudeCode()`. The interface exists so a
- * future provider (codex, gemini, etc.) can slot in without touching the
- * dispatcher. We deliberately do not abstract over streaming, structured
- * outputs, or session continuity; those are non-goals.
+ * How many providers the tree ships, and what it takes to add one, is stated
+ * at the {@link Agent} interface. We deliberately do not abstract over
+ * streaming, structured outputs, or session continuity; those are non-goals.
  */
 
 import { mkdir } from "node:fs/promises";
@@ -163,9 +162,12 @@ export interface AgentResult {
 }
 
 /**
- * Provider seam. One implementation per LLM CLI; v0 ships `claudeCode()`
- * only. Decorators (`withSessionCapture`, `withTerminalRenderer`) wrap an
- * Agent and return another Agent, so they compose without dispatcher help.
+ * Provider seam. One implementation per LLM CLI, and `claudeCode()` is the
+ * only one this tree carries; a second exists once some other CLI is adapted
+ * to this interface, which is an addition here and no change to the
+ * dispatcher — that is what the interface buys. Decorators
+ * (`withSessionCapture`, `withTerminalRenderer`) wrap an Agent and return
+ * another Agent, so they compose without dispatcher help.
  */
 export interface Agent {
   /** Stable identifier; appears in logs. */
