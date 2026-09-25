@@ -1,0 +1,33 @@
+{
+  "tag": "THE-CHECKOUT-RECORD-RENDER-REFUSES-WHAT-IT-CANNOT-READ",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/inboxWindow.ts",
+        "description": "the checkout's record and friction render is bounded and refuses in the shared `REFUSE:` shape, as the tip-listing arm beside it already does"
+      },
+      {
+        "path": "harness/sliceWindow.ts",
+        "description": "the refusal's warrant names what the engine actually does with a thrown `promptArgs`, and why that still is not a channel the drain reads"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the two refusal arms, beside the tip-listing one"
+      }
+    ]
+  },
+  "summary": "The record leg's checkout side throws out of `promptArgs` into a record whose only reader is the window that threw, so the drain is never told and no queue drains",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "an unreadable checkout record queue — a listing that refuses, a listed record that will not read — reaches the woken drain as the shared `REFUSE:` block rather than as a throw, so the bound the fail-open wake arms declare holds; the warrant states the engine's real handling of a thrown `promptArgs`",
+  "tests": [
+    "the inbox window refuses when the checkout's record queue cannot be listed",
+    "the inbox window refuses when a listed record cannot be read"
+  ],
+  "notes": "Off note THE-RECORD-WAKE-REFUSAL-REACHES-THE-SLICE-IT-WOKE, re-verified: its \"no verdict, nothing said\" does not hold — `resolvePromptArgs` (`src/tickAttempt.ts:928`) catches, warns, persists `render-refused`. The bite is circular instead: that record's only reader is `renderBuildRecords` (`harness/inboxWindow.ts:385`), inside the window that threw. `harness/sliceWindow.ts:175` states the engine catches nothing, and `inboxWindow.ts:241` cites it. Throw sites `:270`, `:362`. Lane leg unread."
+}
