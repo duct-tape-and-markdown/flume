@@ -34,11 +34,17 @@
  * answering with some other version fails the run instead of passing under
  * the tag's name.
  *
- * Usage: `node scripts/smoke-install.mjs [--scratch <dir>] [--from-registry <spec>]`.
+ * Usage: `node --import tsx scripts/smoke-install.mjs [--scratch <dir>] [--from-registry <spec>]`.
  * Both CI lanes run this one script rather than a second spelling of it; the
  * POSIX lane passes `--scratch` because its consumer type-resolution gate
  * typechecks against the tarball and installed consumer this run leaves
  * behind.
+ *
+ * The `--import tsx` is not decoration. `run` below reads the engine's own
+ * re-parse predicate out of `src/spawnShim.ts` rather than spelling it a
+ * second time, and bare `node` cannot load a `.ts` file — so every site that
+ * invokes this script carries the loader, the package's `smoke:install`
+ * script included.
  */
 
 import { spawnSync } from "node:child_process";
@@ -46,6 +52,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { wordShimRetryWouldRewrite } from "../src/spawnShim.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..");
@@ -80,12 +88,40 @@ const STEP_OUTPUT_CAP_BYTES = 64 << 20;
 /**
  * Windows requires shell:true to invoke .cmd/.bat targets (npm itself, and
  * the generated flume.cmd shim under test) — Node no longer auto-invokes
- * cmd.exe for them. Node quotes the argv array for us when shell:true is
- * combined with an args array, so this stays injection-safe for the
- * fixed, non-user-controlled args this script passes.
+ * cmd.exe for them.
+ *
+ * `shell: true` is not a quoting request. Node joins the command and its
+ * arguments with single spaces into one `cmd /d /s /c` line and quotes none
+ * of it, so a word carrying a space arrives as two, a word carrying a quote
+ * arrives without it, and a word carrying `&` is not argv at all by the time
+ * the binary runs. Nor is this argv fixed: every step below is handed a path
+ * this run composed — the scratch dir, the tarball `npm pack` named under it,
+ * the generated shims under the consumer — or a `--from-registry` spec its
+ * caller did.
+ *
+ * So a step whose argv that line would rewrite **refuses**, naming the word
+ * and the step, rather than installing whatever the re-parse produced
+ * (`.claude/rules/engineering.md`, "Loud or nothing"). The decision is the
+ * engine's own — `wordShimRetryWouldRewrite` (`src/spawnShim.ts`), read here
+ * exactly as the shim retry reads it, never a second spelling of the
+ * character set. The message is this script's, because what a smoke failure
+ * is read by is the step that stopped.
  */
 function run(step, cmd, args, opts = {}) {
   console.log(`[smoke-install] ${step}: ${cmd} ${args.join(" ")}`);
+  if (IS_WIN) {
+    const rewritten = wordShimRetryWouldRewrite([cmd, ...args]);
+    if (rewritten !== undefined) {
+      throw new SmokeStepError(
+        `${step}: this step takes a shell on win32, and cmd.exe would re-parse ` +
+          `${rewritten === "" ? "an empty word" : `the word \`${rewritten}\``} ` +
+          `rather than hand it to \`${cmd}\` intact — the step would run some ` +
+          `other command and report its status as this one's. Point --scratch ` +
+          `at a path whose every word is free of whitespace, quotes and cmd ` +
+          `metacharacters, or run the smoke from one.`,
+      );
+    }
+  }
   const result = spawnSync(cmd, args, {
     stdio: opts.capture ? ["ignore", "pipe", "inherit"] : "inherit",
     shell: IS_WIN,

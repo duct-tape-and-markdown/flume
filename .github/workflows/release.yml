@@ -116,4 +116,4 @@ jobs:
       # version the tag named -> both `exports` subpaths -> a chain-load
       # fixture driven through a verb that refuses on a chain it cannot load.
       - name: Registry-install smoke
-        run: node scripts/smoke-install.mjs --from-registry "${{ steps.version.outputs.spec }}"
+        run: node --import tsx scripts/smoke-install.mjs --from-registry "${{ steps.version.outputs.spec }}"

@@ -95,7 +95,7 @@ jobs:
         # type-resolution gate's input below. Without the flag (the Windows
         # lane, `pnpm run smoke:install`) the script picks a temp dir and
         # removes it.
-        run: node scripts/smoke-install.mjs --scratch "$RUNNER_TEMP/flume-smoke"
+        run: node --import tsx scripts/smoke-install.mjs --scratch "$RUNNER_TEMP/flume-smoke"
 
       - name: Consumer type-resolution gate
         # attw's binding value: can a consumer's TS compiler resolve the

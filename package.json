@@ -51,7 +51,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --mode integration",
-    "smoke:install": "node scripts/smoke-install.mjs",
+    "smoke:install": "node --import tsx scripts/smoke-install.mjs",
     "changelog": "node scripts/build-changelog.mjs",
     "build": "tsc -p tsconfig.build.json && node scripts/pack-harness-assets.mjs",
     "prepack": "pnpm build",

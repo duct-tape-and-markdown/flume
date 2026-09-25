@@ -436,23 +436,24 @@ it("the CI consumer-install smoke runs scripts/smoke-install.mjs rather than re-
   // here as many lines; an inlined `npm pack` or chain heredoc as lines that
   // are not this one.
   expect(smoke).toHaveLength(1);
-  const invocation = /^\s*run: node (scripts\/smoke-install\.mjs)(?: (.*))?$/.exec(smoke[0]!);
+  const words = (/^\s*run: (node .*)$/.exec(smoke[0]!)?.[1] ?? "").split(/\s+/);
+  const at = words.indexOf(SMOKE_SCRIPT);
   expect(
-    invocation,
+    at,
     `the "Consumer-install smoke" step must be a single ` +
-      `\`run: node scripts/smoke-install.mjs …\` — found: ${smoke.join(" / ")}`,
-  ).not.toBeNull();
+      `\`run: node … ${SMOKE_SCRIPT} …\` — found: ${smoke.join(" / ")}`,
+  ).toBeGreaterThan(0);
 
   // The script it names is really there, so the step is not green over a
   // path that no longer resolves.
   await expect(
-    readFile(fileURLToPath(new URL(`../${invocation![1]!}`, import.meta.url)), "utf8"),
+    readFile(fileURLToPath(new URL(`../${words[at]!}`, import.meta.url)), "utf8"),
   ).resolves.toContain("CHAIN_LOAD_VERB");
 
   // The scratch root the smoke is handed is the one the next step reads its
   // consumer dir and tarball out of — the handoff collapsing the step
   // created, and the one thing a rename would break silently.
-  const scratch = /--scratch "([^"]+)"/.exec(invocation![2] ?? "");
+  const scratch = /--scratch "([^"]+)"/.exec(words.slice(at + 1).join(" "));
   expect(
     scratch?.[1],
     `the smoke step must name the scratch root it keeps, as ` +
@@ -461,6 +462,68 @@ it("the CI consumer-install smoke runs scripts/smoke-install.mjs rather than re-
 
   const gate = stepBody(lines, "Consumer type-resolution gate");
   expect(gate.some((l) => l.includes(scratch![1]!))).toBe(true);
+});
+
+/**
+ * `scripts/smoke-install.mjs` reads the engine's own cmd.exe re-parse
+ * predicate out of `src/spawnShim.ts` rather than spelling that character set
+ * a second time (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*), and a `.ts` specifier is not something bare `node` loads. So
+ * the loader is part of the invocation wherever the script is invoked, and
+ * this case is the agreement between the two: the script's own imports on one
+ * side, every site that runs it on the other.
+ *
+ * A site that lost the loader does not degrade — it dies on the import,
+ * before the first step — but the site most likely to be left behind is the
+ * release lane's, which runs after the publish, on the one command nobody
+ * re-runs cheaply.
+ */
+it("every site that invokes the install smoke loads it under tsx", async () => {
+  const source = await readFile(
+    fileURLToPath(new URL(`../${SMOKE_SCRIPT}`, import.meta.url)),
+    "utf8",
+  );
+  const tsImports = [...source.matchAll(/^import .* from "(\.\.\/src\/\S+\.ts)";$/gm)].map(
+    (m) => m[1]!,
+  );
+
+  // Non-vacuity on the reason: the loader is load-bearing only because the
+  // script really does import TypeScript. With no such import every site
+  // below would be held to a flag nothing needs.
+  expect(
+    tsImports.length,
+    `${SMOKE_SCRIPT} must import the engine's predicate from src/ — with no ` +
+      `TypeScript import the loader this case demands is ceremony`,
+  ).toBeGreaterThan(0);
+
+  const manifest: { scripts?: Record<string, string> } = JSON.parse(
+    await readFile(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+  );
+  const sites: [string, string[]][] = [
+    ["package.json's `smoke:install` script", [manifest.scripts?.["smoke:install"] ?? ""]],
+    [basename(CI_WORKFLOW), runCommands(await workflowLines(CI_WORKFLOW))],
+    [basename(RELEASE_WORKFLOW), runCommands(await workflowLines(RELEASE_WORKFLOW))],
+  ];
+
+  for (const [where, commands] of sites) {
+    const invocations = commands.filter((c) => c.split(/\s+/).includes(SMOKE_SCRIPT));
+
+    // Non-vacuity per site: each of the three runs the script, so a site that
+    // stopped naming it reds here rather than passing over an empty filter.
+    expect(
+      invocations.length,
+      `${where} must invoke ${SMOKE_SCRIPT} — this case reads how it loads it`,
+    ).toBeGreaterThan(0);
+
+    for (const command of invocations) {
+      const words = command.split(/\s+/);
+      expect(
+        words.slice(0, words.indexOf(SMOKE_SCRIPT)).join(" "),
+        `${where} runs the smoke as \`${command}\`, with no \`--import tsx\` ahead ` +
+          `of the script — it imports ${tsImports[0]!}, which bare node cannot load`,
+      ).toContain("--import tsx");
+    }
+  }
 });
 
 /**
@@ -567,6 +630,9 @@ it("the consumer-smoke workflow step installs a checked chain file rather than a
  */
 
 const CI_WORKFLOW = fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url));
+
+/** The install smoke, by the repo-relative path every site that runs it names. */
+const SMOKE_SCRIPT = "scripts/smoke-install.mjs";
 
 /** A workflow with comments and blank lines dropped — every reader below is indentation-structural. */
 async function workflowLines(path: string): Promise<string[]> {
@@ -783,7 +849,17 @@ it("the release lane's registry smoke runs scripts/smoke-install.mjs through fla
   // Non-vacuity on both sides: the script parses flags at all, and the step
   // passes some — otherwise the agreement below holds over two empty sets.
   expect(parsed.size).toBeGreaterThan(0);
-  const passed = [...smoke[0]!.matchAll(/(--[a-z-]+)/g)].map((m) => m[1]!);
+  // Only what follows the script path: a flag ahead of it is node's own
+  // (`--import tsx`, which is how the script's `src/` import resolves), and
+  // holding node's loader flag to the script's parser would red on plumbing
+  // the script never reads.
+  const words = smoke[0]!.split(/\s+/);
+  const passed = [
+    ...words
+      .slice(words.indexOf(SMOKE_SCRIPT) + 1)
+      .join(" ")
+      .matchAll(/(--[a-z-]+)/g),
+  ].map((m) => m[1]!);
   expect(passed.length).toBeGreaterThan(0);
 
   for (const flag of passed) {
