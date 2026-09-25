@@ -355,7 +355,8 @@ export interface ResolveHandoffOptions {
  * The wake set is the consumer's to replace; the stop write is not. A wave
  * that shipped an entry marked {@link CONTRACT_TOUCHING_FIELD} has to end
  * the run whoever schedules the phases after it — the reason the write
- * exists is a supervisor resident at a contract that commit just changed
+ * exists is a process still running against a contract that commit just
+ * changed, supervisor or sibling child alike
  * ({@link stopAfterContractTouchingShip}), and that stays true when a
  * consumer names build's next phases itself. Nothing about declaring a
  * handoff is a request to opt out of the package's own entry extension.

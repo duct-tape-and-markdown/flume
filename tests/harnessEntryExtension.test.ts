@@ -235,6 +235,33 @@ it("the package entry extension accepts an entry that omits contractTouching", (
   expect(bogus.errors.map((e) => e.path)).toContain(CONTRACT_TOUCHING_FIELD);
 });
 
+it("the rendered contract-touching hint names the contracts two tick children share", () => {
+  const extension = entryExtension();
+  const field = extension[CONTRACT_TOUCHING_FIELD];
+  if (field === undefined) {
+    throw new Error(`the package declares no "${CONTRACT_TOUCHING_FIELD}" field`);
+  }
+
+  // The hint under test is the declared one reaching a prompt through the
+  // engine's own renderer — the agreement this file exists for, so the
+  // phrases below are judged on what a plan tick actually reads.
+  const rendered = renderSchemaForPrompt(extension);
+  expect(rendered).toContain(field.hint);
+
+  // Nothing but a plan tick's judgment sets this field, so the hint is the
+  // whole rule as that tick meets it. Both sides of `spec/loop.md`, *One
+  // tick is one fresh process*: the supervisor-to-child contract, and the
+  // one two children share.
+  expect(field.hint).toContain("supervisor");
+  expect(field.hint).toContain("two tick children");
+
+  // And the paths that spell the second kind, so "children" is not the word
+  // standing alone: an entry moving any of them is one to mark.
+  for (const shared of ["entry claims", "locks", "branch grammar"]) {
+    expect(field.hint).toContain(shared);
+  }
+});
+
 /**
  * A split suite's lanes, as a consumer's runner reports them: the lane that
  * runs excludes two globs, the idle one excludes something else entirely so

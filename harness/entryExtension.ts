@@ -73,8 +73,17 @@ export const NamedLinesSchema = z.array(z.string().min(1)).default([]);
 /**
  * The name of the risk flag `spec/loop.md`, *One tick is one fresh process*,
  * calls "marked contract-touching": an entry whose work changes a contract a
- * resident supervisor and a fresh tick child must agree on, which a run that
- * started before it cannot safely absorb.
+ * run already in flight cannot safely absorb.
+ *
+ * Two kinds of contract, one flag. One is supervisor-to-child — the
+ * claim-inheritance env, the verdict paths, the exit-code map — frozen on a
+ * supervisor resident at its launch version and live on every child it
+ * spawns. The other is child-to-child: a wave that refills outlasts merges,
+ * so it runs the code it started on beside siblings spawned after one
+ * changed it, and every path two children read and write as one — the entry
+ * claims, the locks, the branch grammar — is a contract of the same kind. A
+ * move of one of those leaves an older wave's claims invisible to a newer
+ * drain, which is the second kind's shape of the same livelock.
  *
  * One spelling, two readers: the field declared below, and `handoff.ts`
  * reading it back off a shipped entry's reported extension. A string literal
@@ -165,9 +174,11 @@ function packageFields(lanes: readonly Lane[]) {
     },
     /**
      * The risk flag the package's default handoff acts on: shipping a marked
-     * entry ends the run (`harness/handoff.ts`), because a supervisor resident
-     * at its launch version meeting fresh children on the new contract is the
-     * livelock `spec/loop.md` documents.
+     * entry ends the run (`harness/handoff.ts`), because a run meeting its own
+     * changed contract mid-flight is the livelock `spec/loop.md` documents.
+     * Both kinds of contract {@link CONTRACT_TOUCHING_FIELD} names arm it, and
+     * the hint carries both, because nothing but a plan tick's judgment sets
+     * this field and the hint is where that tick reads the rule.
      *
      * Optional and unset by default, so a consumer whose plan never marks an
      * entry never meets the stop. Nothing reads the value but that handoff, so
@@ -175,7 +186,7 @@ function packageFields(lanes: readonly Lane[]) {
      */
     [CONTRACT_TOUCHING_FIELD]: {
       schema: z.boolean().optional(),
-      hint: `true when the work changes a contract a resident loop supervisor and a fresh tick child must agree on — shipping one ends the run; omit otherwise`,
+      hint: `true when the work changes a contract a run already in flight cannot absorb — one a resident loop supervisor and a fresh tick child must agree on (the claim-inheritance env, the verdict paths, the exit-code map), or one two tick children share, since a wave that refills runs the code it started on beside siblings spawned after a merge changed it: every path two children read and write as one — the entry claims, the locks, the branch grammar — is the second kind. Shipping one ends the run; omit otherwise`,
     },
   } satisfies Record<string, EntryExtensionField>;
 }
