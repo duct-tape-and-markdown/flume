@@ -1,0 +1,31 @@
+{
+  "tag": "THE-CHAIN-SURFACE-HANDS-OUT-THE-ABSENCE-PROOF",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/flumeApi.ts",
+        "description": "the loud directory probe rides the api a chain factory is called with, beside `gitPath` and `matchesAny`"
+      },
+      {
+        "path": "src/index.ts",
+        "description": "the same probe on the package's public surface, as the sibling path helpers already are"
+      },
+      {
+        "path": "examples/cascade-chain.ts",
+        "description": "`inboxPending` takes the probe off `api` and its errno arm goes"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "the example's leg over an obstructed inbox, through the api the engine builds"
+      }
+    ]
+  },
+  "summary": "The load-bearing example proves its inbox directory absent from an errno the engine documents as unportable, because the cross-host proof it holds reaches no chain surface",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "a chain reaches the engine's own proven-absence descent off the api it is called with, and the cascade example's inbox leg reads an obstructed inbox as unreadable on every host rather than as drained on one",
+  "notes": "Verified this tick: `inboxPending` (`examples/cascade-chain.ts:566`) answers `code !== ENOENT` (`:570`), so on win32 a plain file above `inbox/` reads as drained and an operator's finding goes invisible. The descent proof `isDirectoryOrAbsent` (`src/fsProbe.ts`) is on neither `FlumeApi` (`src/flumeApi.ts`) nor `src/index.ts`; the example's only engine import is `import type` (`:29`), so the api is the one route. No `tests[]`: posix answers live here, so the divergence is win32's alone."
+}
