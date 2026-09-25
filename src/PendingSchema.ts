@@ -830,8 +830,16 @@ One entry per file, named "<tag>.json" directly under the queue directory — th
 /**
  * An entry is pickable when every foundational fork it declares is resolved
  * AND its gate is open AND it is not waiting on a capability the chain
- * hasn't asserted. The dispatcher filters this further by checking
- * `blockedBy` tags against shipped entries.
+ * hasn't asserted.
+ *
+ * Pickability's one switch over `gate.kind` lives here, and both of its
+ * readers take it from here. Tooling holding its own shipped-tags set reads
+ * it off the package's exports and the chain API (`FlumeApi`,
+ * `src/flumeApi.ts`); the dispatcher's own selection reaches it through
+ * `isPickable` (`src/selection.ts`), which composes `shippedTags` off the
+ * pending queue, where a blocker has settled exactly when it is no longer
+ * in it. A second spelling of the switch on either side is how the two
+ * could come to disagree about what "pickable" means.
  *
  * `isForkResolved` is the foundations governor's injected predicate: it
  * answers "is this fork slug resolved?" for the consuming project. It

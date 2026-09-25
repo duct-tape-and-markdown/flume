@@ -5,14 +5,18 @@
  * One derivation for every surface that asks: `runSingleton`'s pre-tick read
  * (`src/singletonTick.ts`), `runFanout`'s wave (`src/waveTick.ts`),
  * `render`'s preview and `TickResult.pickableAfter`'s post-tick
- * re-derivation (`src/Dispatcher.ts`). The queue's ordering, the gate switch,
- * the run-scoped quarantine hold, the claim a sibling tick holds on an entry
- * in flight, the chain's own declared per-entry refusal,
- * and the file-overlap partition are spelled here
- * alone, so no two of those surfaces can disagree about what "pickable" means
- * at the moment each is taken (`.claude/rules/engineering.md`, *A module is
- * one job*). The identity the hold and the refusal both key on is not this
- * module's — an entry's declaration key has a second reader in the
+ * re-derivation (`src/Dispatcher.ts`). The queue's ordering, the run-scoped
+ * quarantine hold, the claim a sibling tick holds on an entry in flight, the
+ * chain's own declared per-entry refusal, and the file-overlap partition are
+ * spelled here alone, so no two of those surfaces can disagree about what
+ * "pickable" means at the moment each is taken
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ *
+ * The gate switch is not among them: it lives at the exported read every
+ * consumer already takes it from (`isPickableNow`, `src/PendingSchema.ts`),
+ * and this module composes its `blockedBy` input off the queue and calls it.
+ * The identity the hold and the refusal both key on is not this module's
+ * either — an entry's declaration key has a second reader in the
  * prior-attempt record, so it lives at its own door (`entryDeclaredKey`,
  * `src/entryKey.ts`).
  */
@@ -20,7 +24,7 @@
 import { entryClaimSlug } from "./entryClaims.js";
 import { entryDeclaredKey } from "./entryKey.js";
 import { partitionByFileOverlap } from "./partition.js";
-import type { PendingEntry } from "./PendingSchema.js";
+import { isPickableNow, type PendingEntry } from "./PendingSchema.js";
 import type { Chain, QuarantinedTag } from "./Phase.js";
 import { entryAttemptKey } from "./priorAttempts.js";
 import type { PriorAttempt } from "./Prompt.js";
@@ -41,15 +45,36 @@ export function blamedOn(entry: PendingEntry): {
 }
 
 /**
- * Pickability in the fanout context. The dispatcher's model: a dep is
- * satisfied iff it is no longer in pending (we remove entries on ship).
- * `requiresCapability` is pickable iff the chain's declared `capabilities`
- * asserts the entry's named capability.
+ * The blocker tags this entry names that the queue no longer holds — the
+ * `shippedTags` set {@link isPickableNow} reads, composed for the caller
+ * whose fact is the pending list rather than a set of tags it watched ship.
+ * An entry leaves the queue when it ships, so absence from `pending` *is*
+ * the settled verdict.
  *
- * The foundations governor runs first: an entry whose `dependsOnForks`
- * contains any unresolved slug is not pickable, regardless of gate kind.
- * `isForkResolved` defaults to always-resolved so the check is a no-op when no
- * resolver is wired or no entry declares a fork dependency.
+ * Only this entry's own blockers are answered, because they are every tag
+ * the `blockedBy` arm asks about; an entry naming none contributes none.
+ */
+function settledBlockers(
+  entry: PendingEntry,
+  pending: readonly PendingEntry[],
+): ReadonlySet<string> {
+  if (entry.gate.kind !== "blockedBy") return new Set();
+  const queued = new Set(pending.map((e) => e.tag));
+  return new Set(entry.gate.tags.filter((tag) => !queued.has(tag)));
+}
+
+/**
+ * Pickability in the fanout context — the same rule the exported tooling read
+ * answers, taken against the queue this tick read.
+ *
+ * The switch over `gate.kind` is {@link isPickableNow}'s, and the foundations
+ * governor that precedes it is too; neither is restated here. What the two
+ * callers hold differently is one arm's input, so that is all this one
+ * composes: tooling holds the tags it watched ship, selection holds the
+ * queue, and {@link settledBlockers} turns the second into the first.
+ *
+ * `isForkResolved` and `capabilities` default as they do there, so a caller
+ * that wires neither gets the same no-op checks.
  */
 function isPickable(
   entry: PendingEntry,
@@ -57,21 +82,12 @@ function isPickable(
   isForkResolved: (slug: string) => boolean = () => true,
   capabilities: ReadonlySet<string> = new Set(),
 ): boolean {
-  if (!entry.dependsOnForks.every(isForkResolved)) return false;
-  switch (entry.gate.kind) {
-    case "open":
-      return true;
-    case "blockedBy": {
-      // Narrow into a local so the closure doesn't lose the discriminator.
-      const depTags = entry.gate.tags;
-      return depTags.every((depTag) => !pending.some((e) => e.tag === depTag));
-    }
-    case "parked":
-    case "deferred":
-      return false;
-    case "requiresCapability":
-      return capabilities.has(entry.gate.capability);
-  }
+  return isPickableNow(
+    entry,
+    settledBlockers(entry, pending),
+    isForkResolved,
+    capabilities,
+  );
 }
 
 /**
