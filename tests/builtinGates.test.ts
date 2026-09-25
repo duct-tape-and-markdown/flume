@@ -154,6 +154,19 @@ function queueFiles(
   return files;
 }
 
+/**
+ * The name `pendingGate` calls the queue by in the whole-message assertions
+ * below — `GatedQueue.rel`, which `readGatedQueue` (`src/pendingLedger.ts`)
+ * folds into git's alphabet once, before any message quotes it.
+ *
+ * Spelled with `/` rather than composed through `node:path`: composing it
+ * would demand the host's separator from a value that never carries one, so
+ * the two cases would be green on posix by accident and red on win32 for the
+ * fold working (`.claude/rules/posture-sweep.md`, *A repo-relative path
+ * composed with `node:path`*).
+ */
+const QUEUE_REL = "plan/pending";
+
 const validEntry = {
   tag: "SOME-TAG",
   gate: { kind: "open" },
@@ -352,9 +365,7 @@ describe("pendingGate — hint option (PENDING-GATE-HINT-OPTION, .claude/rules/e
     const gate = pendingGate({ targetFence: { writablePaths: ["src/**"] } });
     const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(false);
-    expect(result.message).toBe(
-      `${join("plan", "pending")} has 1 schema violation(s)`,
-    );
+    expect(result.message).toBe(`${QUEUE_REL} has 1 schema violation(s)`);
   });
 
   it("appends the hint to the fence-violation message when supplied", async () => {
@@ -416,7 +427,7 @@ describe("pendingGate — reads ctx.pendingDir, not an option of its own (CHAIN-
     const result = await gate.run(ctx(dir, { commitSha: sha }));
     expect(result.ok).toBe(true);
     expect(result.message).toBe(
-      `${join("plan", "pending")} valid (1 entries), fence pre-check passed`,
+      `${QUEUE_REL} valid (1 entries), fence pre-check passed`,
     );
   });
 });
