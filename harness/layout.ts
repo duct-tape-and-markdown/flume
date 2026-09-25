@@ -83,10 +83,11 @@ const PLAN_STATE_EXT = ".json";
  * slice reads it and nothing writes it; it rides {@link planArtifacts} so
  * that the tick which splits a consumer's plan state into the per-slice files
  * can `git rm` the page in the same commit — outside the fence, that page is
- * a file no phase can reach and every plan tick reverts on. Retired by the
- * maintainer cutting the release after `docs/MIGRATING-0.19.md`, whose § 6 is
- * what tells consumers to take the split; this constant, its accessor and its
- * fence line go with it in that commit.
+ * a file no phase can reach and every plan tick reverts on. Retired at 0.20.0,
+ * the release after the one that shipped `docs/MIGRATING-0.19.md`, whose § 6 is
+ * what tells consumers to take the split; this constant, its accessor, its
+ * fence line and the case dating it (`tests/harnessLayout.test.ts`) go with it
+ * in that commit.
  */
 const LEGACY_PLAN_STATE_REL = "plan/state.json";
 
@@ -212,10 +213,11 @@ export function queueGlob(stateRoot: string): string {
  * slice reads it and nothing writes it; it rides {@link planArtifacts} so
  * that the tick which moves a consumer's entries into {@link queueDir} can
  * `git rm` the page in the same commit — outside the fence, that page is a
- * file no phase can reach and every plan tick reverts on. Retired by the
- * maintainer cutting the release after `docs/MIGRATING-0.19.md`, whose § 5 is
- * what tells consumers to take the split; this constant, its accessor and its
- * fence line go with it in that commit.
+ * file no phase can reach and every plan tick reverts on. Retired at 0.20.0,
+ * the release after the one that shipped `docs/MIGRATING-0.19.md`, whose § 5 is
+ * what tells consumers to take the split; this constant, its accessor, its
+ * fence line and the case dating it (`tests/harnessLayout.test.ts`) go with it
+ * in that commit.
  */
 const LEGACY_QUEUE_REL = "plan/pending.json";
 
