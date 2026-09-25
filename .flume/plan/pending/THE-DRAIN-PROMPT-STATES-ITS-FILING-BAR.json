@@ -1,0 +1,21 @@
+{
+  "tag": "THE-DRAIN-PROMPT-STATES-ITS-FILING-BAR",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/prompts/plan-inbox.md",
+        "description": "the route list carries the bar an observation clears before it is an entry, the debt line otherwise, and the three-notes fold"
+      }
+    ]
+  },
+  "summary": "The drain's prompt offers an entry, a question or debt with no bar between them, so every shipped entry's own note routes to the next entry",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The phases"
+  },
+  "acceptance": "the inbox prompt's route list states the bar an observation must clear to become an entry, sends the rest to an accepted-debt line, files a family noted three times once, and leaves a blocker, a park and a CI title routing as they do now",
+  "notes": "The bar's home is `.claude/rules/posture-sweep.md`, *Routing*, which the spec paragraph cites and the prompt should too rather than re-spell (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*). Verified: `harness/prompts/plan-inbox.md:54`-`:58` lists three routes with nothing between them. The spec leaves the three-notes window unstated for a slice with no rotation; read it as the drain's own debt lines in `git log`, never estimated."
+}

@@ -1,0 +1,32 @@
+{
+  "tag": "THE-CJS-CONTEXT-REFUSAL-READS-THE-AWAIT-SHAPES",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/chainLoad.ts",
+        "description": "`isCjsContextLoadFailure` reads the await shapes the page now names, and `CjsContextLoadError`'s doc states the set it matches"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the CJS-context describe's case per named shape, driven through the real loader"
+      }
+    ]
+  },
+  "summary": "A CJS-context host whose chain graph carries a top-level await relays esbuild's raw TransformError, past the refusal that exists so no consumer reads a loader stack",
+  "per": {
+    "path": ".claude/rules/platform-facts.md",
+    "section": "tsx decides a module's interop shape from the nearest `package.json` `type`"
+  },
+  "acceptance": "every CJS-context load failure the page names — the import-outside-module parse, the `?namespace=` resolution, and the top-level-await refusal in either position — reaches `CjsContextLoadError` with the `\"type\": \"module\"` fix, while a transform failure that is not about the cjs output format still surfaces as itself",
+  "tests": [
+    "a CJS-context host whose chain carries a top-level await throws CjsContextLoadError naming the fix",
+    "a CJS-context host whose chain imports a module carrying a top-level await throws CjsContextLoadError naming the fix"
+  ],
+  "pins": [
+    "a chain whose transform fails on a syntax error surfaces that error rather than the CJS-context refusal"
+  ],
+  "notes": "Measured this tick through `loadChainModule` on tsx 4.21: a top-level await in the chain or in a module it imports throws esbuild's `TransformError` — `not supported with the \"cjs\" output format` — matched by neither arm of `isCjsContextLoadFailure` (`src/chainLoad.ts:219`); the same graph under `\"type\": \"module\"` loads to shape validation, so the standing fix line is right. `ERR_REQUIRE_ASYNC_MODULE` did not reproduce. The class doc (`:180`) and the describe (`:15615`) each say two shapes."
+}
