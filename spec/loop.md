@@ -517,7 +517,7 @@ engine and never from a copy:
 | mode | meaning |
 | --- | --- |
 | `gate-revert` | a commit was made and a gate reverted it |
-| `clean-exit` | the agent exited cleanly without committing. The engine records that it did, and the tail of its final message; whether that was a refused constraint, a bail, or nothing to do is the chain's reading of the message, never an engine label — an inferred intent is an opinion with no owner (`engine-boundary.md`, *Told, not inferred*) |
+| `clean-exit` | the agent exited cleanly without a usable commit — none at all, or a span whose diff against its base is empty, which dies with the worktree and never reaches the merge stage (an empty pick exits 1 and read as a merge failure, field report, 0.19.0). The engine records that it did, and the tail of its final message; whether that was a refused constraint, a bail, or nothing to do is the chain's reading of the message, never an engine label — an inferred intent is an opinion with no owner (`engine-boundary.md`, *Told, not inferred*) |
 | `platform-preempt` | the agent process failed for non-work reasons (rate-limit, auth, dispatcher-killed, or a per-tick timeout where one is set — below) — explicitly **not** a defect in the work |
 | `render-refused` | the prompt itself never resolved, so the agent was never invoked (`spec/prompt.md`) |
 
@@ -635,8 +635,12 @@ list the violating paths,
 `spec/chain.md`, *What a gate returns*), shipped tags,
 each provisioned span's cherry-pick/merge fate with its footprint, **its base sha,
 and its head sha** — per entry under fanout, the phase's own single span under
-singleton — any
-provisioning failures, and the tick's own one-line summary. The sha is recovery,
+singleton — any provisioning failures, the tick's own one-line summary, and,
+beside the gate list the way `invocations[]` sits beside it, **one timing row
+per gate run and per merge**: the gate's name or the entry's tag and the
+milliseconds the engine's own clock measured, never a field on the
+chain-authored `GateResult`, so non-agent time is read off the verdict rather
+than differenced from timestamps. The sha is recovery,
 not decoration: a span that was parked or refused after its gates passed must be
 re-cherry-pickable from the verdict alone, never re-run at full agent price —
 worktree teardown deletes trees and refs, but the objects survive in the shared
