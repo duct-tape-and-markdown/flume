@@ -86,8 +86,9 @@ export function frictionFiles(
  * Where that listing throws, the leg reports **live**, as the record leg's
  * predicate does: an unreadable channel is a reason to run the tick that
  * drains it, never a reason to skip one. The degradation is bounded — the
- * slice it wakes renders the same listing and fails loudly there rather than
- * proceeding over the unread bytes (`.claude/rules/engineering.md`, *Loud or
+ * slice it wakes renders the same listing and refuses on what it could not
+ * read rather than proceeding over the unread bytes (`renderRecordQueues`,
+ * `harness/inboxWindow.ts`; `.claude/rules/engineering.md`, *Loud or
  * nothing*).
  */
 export function frictionPending(

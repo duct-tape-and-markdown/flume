@@ -78,6 +78,7 @@ import type { PriorAttempt } from "../src/Prompt.js";
 
 import { laneLeg } from "./ciLane.js";
 import { INBOX_PHASE } from "./declaration.js";
+import { detailOf } from "./exec.js";
 import { frictionFiles, frictionPending } from "./friction.js";
 import {
   RECORD_MAX_BYTES,
@@ -215,9 +216,29 @@ const treeStateRoot = (cwd: string, stateRootRel: string): string =>
   join(cwd, ...stateRootRel.split("/"));
 
 /**
+ * What an unreadable record queue reaches the woken tick as, in the shape
+ * every uncomputable window refuses in ({@link windowRefusal},
+ * `sliceWindow.ts`).
+ *
+ * **One spelling for every way this block's reads fail**, because neither the
+ * stand-down nor the repair varies with which of them it was: a queue that
+ * could not be read is a tick that routes nothing and deletes nothing,
+ * whichever tree or file the failure came off. `cause` carries the failing
+ * reader's own words and nothing this module classified from them
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ */
+const recordRefusal = (cause: string): string =>
+  windowRefusal({
+    cause,
+    standDown: "Route nothing and delete no record",
+    repair:
+      `say in the commit body what failed; every record stays where it ` +
+      `sits, so the queue re-opens over the same disk next tick.`,
+  });
+
+/**
  * The record block the woken tick is handed: every waiting record, or the
- * refusal that says the listing the wake fails open over could not be made
- * here either.
+ * refusal that says a queue this block reads could not be read here.
  *
  * **The tip listing is re-made here, and that is the bound on the wake's
  * fail-open arm** (`recordsPending`, `records.ts`). The wake reports live
@@ -231,22 +252,29 @@ const treeStateRoot = (cwd: string, stateRootRel: string): string =>
  * costs one `ls-tree` per queue, and only on a tick whose slice is already
  * running.
  *
- * What that listing *names* is the wake's answer and not this block's
+ * **The checkout side is the other read, and it is bounded at this one
+ * call.** It fails in its own ways — a record directory obstructed in this
+ * tree, a friction channel that will not list, a listed record whose bytes
+ * will not come back — and every one of them is the same thing to the tick:
+ * material it was woken to route and cannot read. So each arrives as
+ * {@link recordRefusal}, never as a throw, for the reason stated at the
+ * refusal's composer (`windowRefusal`, `sliceWindow.ts`). One try, at the
+ * boundary where this window stops deriving and starts opening files, as the
+ * cursor windows bound their whole render (`bounded`,
+ * `harness/cursorWindow.ts`): every read past here is of a file this tick was
+ * told to route, and none of them may fail quietly.
+ *
+ * What the tip listing *names* is the wake's answer and not this block's
  * material: a record is rendered at the path this tick can open and this
  * tick's own commit can `git rm`, which is the checkout's spelling and never
  * the tip's (`spec/pending.md`, *Dispatch reads come from the tip, not the
  * tree*).
  *
- * Refused in the shape every uncomputable window refuses in
- * ({@link windowRefusal}, `sliceWindow.ts`) and never as a throw, for the
- * reason stated there: `promptArgs` is invoked uncaught, so a throw kills the
- * tick before any agent runs.
- *
  * **Nothing else is rendered beside the refusal** — not the checkout's
  * records, not the friction channel. A tick shown files to route under a
- * block saying the queue could not be listed is being asked to act on a
- * listing that failed; every one of those files stays where it sits, and the
- * legs that wake on them wake again.
+ * block saying a queue could not be read is being asked to act on a listing
+ * that failed; every one of those files stays where it sits, and the legs
+ * that wake on them wake again.
  */
 function renderRecordQueues(
   tip: RecordTree,
@@ -257,22 +285,24 @@ function renderRecordQueues(
   const claimed = ctx.claimed ?? [];
   const listing = listRecords(tip, claimed);
   if ("failure" in listing) {
-    return windowRefusal({
-      cause:
-        `the record queue in the tip this tick's tree was cut from could ` +
+    return recordRefusal(
+      `the record queue in the tip this tick's tree was cut from could ` +
         `not be listed: ${listing.failure}`,
-      standDown: "Route nothing and delete no record",
-      repair:
-        `say in the commit body what failed; every record stays where it ` +
-        `sits, so the queue re-opens over the same tip next tick.`,
-    });
+    );
   }
-  return renderRecords(
-    checkoutRecords(treeStateRoot(ctx.cwd, stateRootRel)),
-    ctx.flumeDir,
-    friction,
-    claimed,
-  );
+  try {
+    return renderRecords(
+      checkoutRecords(treeStateRoot(ctx.cwd, stateRootRel)),
+      ctx.flumeDir,
+      friction,
+      claimed,
+    );
+  } catch (err) {
+    return recordRefusal(
+      `the record queue this tick's own checkout carries could not be ` +
+        `read: ${detailOf(err)}`,
+    );
+  }
 }
 
 /**

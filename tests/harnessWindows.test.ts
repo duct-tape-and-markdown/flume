@@ -24,7 +24,13 @@
  * environment no consumer could declare.
  */
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -46,6 +52,7 @@ import {
   INBOX_PHASE,
   type PlanSlice,
 } from "../harness/declaration.ts";
+import { checkoutRecords, listRecords } from "../harness/records.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
 import type { EntryRefusalContext, TickResult } from "../src/Phase.ts";
 import type {
@@ -58,7 +65,7 @@ import {
   type PriorAttemptKeyspace,
   type PriorAttemptMode,
 } from "../src/Prompt.ts";
-import { slugify } from "../src/paths.ts";
+import { namespacedJoin, slugify } from "../src/paths.ts";
 import { entryAttemptKey } from "../src/priorAttempts.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
@@ -940,6 +947,143 @@ it("a tip record listing the wake could not read reaches the inbox slice as a re
   expect(tipHolds(rel)).toBe(true);
   const listed = inbox().args(ctx).RECORDS!;
   expect(listed).toContain(path);
+  expect(listed).toContain("Left for the drain.");
+  expect(listed).not.toContain("REFUSE:");
+});
+
+/**
+ * The record block reads two trees, and the tip listing above is no bound on
+ * the second one: a tip that lists happily says nothing about a record
+ * directory obstructed in the worktree the tick was provisioned in. Unbounded,
+ * that read leaves the window as a throw — which the engine does catch, into a
+ * `render-refused` record whose readers are this slice's own next tick, so the
+ * tick that was woken to route the queue is lost and no drain is ever told
+ * (`windowRefusal`, `harness/sliceWindow.ts`).
+ *
+ * Denied structurally — a plain file where the checkout's inbox queue belongs
+ * — because that denies on every host where a permission bit denies on one of
+ * them (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*).
+ * The tip carries a real record throughout, so the listing the window makes
+ * first is over a populated queue and the refusal is the checkout's doing.
+ */
+it("the inbox window refuses when the checkout's record queue cannot be listed", () => {
+  const rel = "plan/notes/A-NOTE.md";
+  commitRecord(rel, "# A note\n\nLeft for the drain.\n");
+  expect(tipHolds(rel)).toBe(true);
+
+  const tree = join(stateRoot(), "worktrees", "tick");
+  git("worktree", "add", "--detach", "-q", tree, "HEAD");
+  const ctx = { cwd: tree, flumeDir: stateRoot() };
+  const inbox = (): PlanSliceWindow => windows()[INBOX_PHASE];
+  const treeRoot = join(tree, STATE_ROOT_REL);
+  const obstruction = join(treeRoot, "inbox");
+
+  // The window's own reader over the window's own tree, so what the refusal
+  // carries is the text the failing read produced rather than a sentence
+  // written by hand here (`.claude/rules/engineering.md`, *A seam gate reads
+  // what the real writer wrote*).
+  const checkout = (): ReturnType<typeof listRecords> =>
+    listRecords(checkoutRecords(treeRoot));
+
+  // Vacuity: the checkout lists the committed record before the obstruction
+  // stands, so there is a queue for the refusal to be withholding.
+  const before = checkout();
+  expect("files" in before ? [...before.files] : []).toEqual([
+    join(treeRoot, "plan", "notes", "A-NOTE.md"),
+  ]);
+
+  writeFileSync(obstruction, "not a directory\n");
+  const failed = checkout();
+  const said = "failure" in failed ? failed.failure : "";
+  // Vacuity: a checkout that listed happily would leave every assertion below
+  // standing over a read that never failed.
+  expect(said).not.toBe("");
+
+  const window = inbox().args(ctx).RECORDS!;
+  expect({
+    refused: window.includes("REFUSE:"),
+    saidWhatFailed: window.includes(said),
+    stoodDown: window.includes("Route nothing and delete no record this tick"),
+    // Nothing of the queue past the refusal: the note this checkout does hold
+    // is exactly what a block rendered over an unread queue would show, and
+    // showing it is the tick acting on a listing that failed.
+    leaked: window.includes("Left for the drain."),
+  }).toEqual({
+    refused: true,
+    saidWhatFailed: true,
+    stoodDown: true,
+    leaked: false,
+  });
+
+  // The control: the one fact flipped — the obstruction replaced by the
+  // directory it was standing in the way of.
+  rmSync(obstruction);
+  mkdirSync(obstruction);
+  const listed = inbox().args(ctx).RECORDS!;
+  expect(listed).toContain("Left for the drain.");
+  expect(listed).not.toContain("REFUSE:");
+});
+
+/**
+ * The same defect one reader further in: both listings succeed, and the bytes
+ * of a record they named do not come back. A tick handed the queue without it
+ * would route what it could read and delete what it routed, leaving the
+ * unreadable record standing with nothing said about it.
+ *
+ * Denied structurally again — a **directory** carrying the record extension,
+ * which every listing names as a record and no host will hand back as bytes
+ * (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*).
+ */
+it("the inbox window refuses when a listed record cannot be read", () => {
+  commitRecord(
+    "inbox/2026-09-25-a-finding.md",
+    "# A finding\n\nLeft for the drain.\n",
+  );
+  const tree = join(stateRoot(), "worktrees", "tick");
+  git("worktree", "add", "--detach", "-q", tree, "HEAD");
+  const ctx = { cwd: tree, flumeDir: stateRoot() };
+  const inbox = (): PlanSliceWindow => windows()[INBOX_PHASE];
+  const treeRoot = join(tree, STATE_ROOT_REL);
+  const unreadable = join(treeRoot, "plan", "notes", "A-NOTE.md");
+  mkdirSync(unreadable, { recursive: true });
+
+  // Vacuity: the checkout's listing really names it, so what refuses below is
+  // the read and not a listing that skipped its subject.
+  const listing = listRecords(checkoutRecords(treeRoot));
+  expect("files" in listing ? [...listing.files] : []).toContain(unreadable);
+
+  // The read the render makes, at the spelling it makes it at, so the refusal
+  // is asserted to carry the failing reader's own words.
+  let said = "";
+  try {
+    readFileSync(namespacedJoin(unreadable));
+  } catch (err) {
+    said = err instanceof Error ? err.message : String(err);
+  }
+  expect(said).not.toBe("");
+
+  const window = inbox().args(ctx).RECORDS!;
+  expect({
+    refused: window.includes("REFUSE:"),
+    saidWhatFailed: window.includes(said),
+    stoodDown: window.includes("Route nothing and delete no record this tick"),
+    // The record read before the failing one is not rendered either: a block
+    // half-composed over a queue that would not read is the drain routing
+    // what it happened to reach.
+    leaked: window.includes("Left for the drain."),
+  }).toEqual({
+    refused: true,
+    saidWhatFailed: true,
+    stoodDown: true,
+    leaked: false,
+  });
+
+  // The control: the one fact flipped — the same listed path, now a record
+  // with bytes in it.
+  rmSync(unreadable, { recursive: true });
+  writeFileSync(unreadable, "# A note\n\nThe note the drain can read.\n");
+  const listed = inbox().args(ctx).RECORDS!;
+  expect(listed).toContain("The note the drain can read.");
   expect(listed).toContain("Left for the drain.");
   expect(listed).not.toContain("REFUSE:");
 });

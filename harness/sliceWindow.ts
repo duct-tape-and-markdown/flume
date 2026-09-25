@@ -171,12 +171,20 @@ export const queueResolved = (window: SliceWindow): boolean =>
  * handed: what failed, what the tick must not do over it, and the repair.
  *
  * **Rendered into the prompt rather than thrown out of it**, and that is
- * deliberate. A throw kills the tick before any agent runs — the engine
- * invokes `promptArgs` uncaught — so the tick ends with no verdict and the
- * next one is woken over the same unreadable input with nothing said. The
- * refusal instead reaches the woken slice, naming what could not be read and
- * forbidding the work it would otherwise have done
- * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * deliberate. A throw is not silence: the engine catches it, warns, and
+ * persists the `render-refused` prior-attempt record any other unresolved
+ * render leaves, and the tick's verdict is written
+ * (`resolvePromptArgs`, `src/tickAttempt.ts`; `spec/chain.md`, *What a hook
+ * receives*). What it is is a **statement no drain reads**. No agent runs, so
+ * nothing routes the input; and that record's readers are this slice's own
+ * next tick — the standing-records leg of the very window that threw
+ * (`inboxWindow.ts`), and the engine's prior-attempt block, which is rendered
+ * only once `promptArgs` has returned. Over an input still unreadable that
+ * tick throws at the same site and rewrites the same record, so the loop wakes
+ * the slice, loses it, and says so only to itself. The refusal instead reaches
+ * the woken slice, naming what could not be read and forbidding the work it
+ * would otherwise have done (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
  *
  * **One spelling, because two windows refuse.** A cursor range git will not
  * read (`cursorWindow.ts`) and a record listing the wake could not make
