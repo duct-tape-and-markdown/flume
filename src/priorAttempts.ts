@@ -24,7 +24,11 @@ import { promisify } from "node:util";
 import { bound, headTailBound, tailBound } from "./bounds.js";
 import { entryDeclaredKey } from "./entryKey.js";
 import type { Logger } from "./log.js";
-import { existsLoud, isDirectoryOrAbsent } from "./fsProbe.js";
+import {
+  existsLoud,
+  isDirectoryOrAbsent,
+  isDirectoryOrAbsentUnder,
+} from "./fsProbe.js";
 import * as git from "./git.js";
 import { priorAttemptsDir, slugify } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -92,8 +96,10 @@ const KEYSPACES: Record<PriorAttemptKeyspace, true> = {
 
 /**
  * The subject {@link PriorAttemptStore.readAll}'s descent names when it
- * refuses (`isDirectoryOrAbsent`, src/fsProbe.ts) — one spelling for every
- * rung, so the state root and a keyspace dir refuse alike.
+ * refuses — one spelling for every rung, whichever probe walks it
+ * (`isDirectoryOrAbsentUnder` down to `prior-attempts/`,
+ * `isDirectoryOrAbsent` across the keyspace fan; `src/fsProbe.ts`), so the
+ * state root and a keyspace dir refuse alike.
  */
 const STORE_SUBJECT = "prior-attempt store";
 
@@ -430,9 +436,13 @@ export class PriorAttemptStore {
    * found garbled.
    *
    * Hence the descent: the state root, then `prior-attempts/`, then each
-   * keyspace directory, each proven a directory before the next is probed
-   * ({@link isDirectoryOrAbsent}, src/fsProbe.ts, which `readMergingMarkers`
-   * proves its own dir from too). An errno is not that proof
+   * keyspace directory, each proven a directory before the next is probed.
+   * The root and the one directory beneath it are a contiguous walk, so they
+   * go through {@link isDirectoryOrAbsentUnder} (`src/fsProbe.ts`), which
+   * composes those rungs for every reader running this descent —
+   * `readMergingMarkers` included; the keyspaces are a fan of siblings under
+   * a root already proven, which is the shape {@link isDirectoryOrAbsent}'s
+   * own list exists for. An errno is not that proof
    * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
    * non-directory as not found*), so an errno-keyed silent arm reads one
    * host's obstructed store as an empty one. The state root is where the
@@ -442,7 +452,8 @@ export class PriorAttemptStore {
   async readAll(): Promise<ReadonlyMap<string, PriorAttempt>> {
     const out = new Map<string, PriorAttempt>();
     const root = priorAttemptsDir(this.flumeDir);
-    if (!isDirectoryOrAbsent(STORE_SUBJECT, this.flumeDir, root)) return out;
+    if (!isDirectoryOrAbsentUnder(STORE_SUBJECT, this.flumeDir, root))
+      return out;
     for (const keyspace of KEYSPACE_NAMES) {
       const dir = join(root, keyspace);
       if (!isDirectoryOrAbsent(STORE_SUBJECT, dir)) continue;

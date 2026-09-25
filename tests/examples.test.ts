@@ -1058,7 +1058,8 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
  * non-directory as not found*). The slice answered it from `code !== "ENOENT"`,
  * which reads an obstructed inbox as live on posix and as **drained** on
  * win32 — an operator's finding skipped silently on the host no lane here
- * runs. It now reads the engine's own descent off `api.isDirectoryOrAbsent`.
+ * runs. It now reads the engine's own descent off
+ * `api.isDirectoryOrAbsentUnder`.
  *
  * Denied structurally — a plain file where the queue directory belongs —
  * because that is the one denial that bites on every host

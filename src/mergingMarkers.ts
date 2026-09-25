@@ -14,7 +14,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { isDirectoryOrAbsent } from "./fsProbe.js";
+import { isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import { mergingDir, namespacedJoin } from "./paths.js";
 
 /**
@@ -73,15 +73,17 @@ function isMergingMarker(rec: unknown): rec is MergingMarker {
  * errno-keyed silent arm would start a loop over an obstructed state root on
  * exactly one host. So the same descent `PriorAttemptStore.readAll` runs —
  * the state root, then `merging/`, each asserted a directory before the next
- * is probed ({@link isDirectoryOrAbsent}, src/fsProbe.ts) — and the listing
- * below keeps no absent arm of its own, because every ancestor above it is
- * proven by then.
+ * is probed — and the listing below keeps no absent arm of its own, because
+ * every ancestor above it is proven by then. The rungs are not spelled here:
+ * this reader holds a root and one directory beneath it, which is the shape
+ * {@link isDirectoryOrAbsentUnder} (`src/fsProbe.ts`) composes for every
+ * reader running this descent.
  */
 export async function readMergingMarkers(
   flumeDir: string,
 ): Promise<Array<{ path: string; marker: MergingMarker | undefined }>> {
   const dir = mergingDir(flumeDir);
-  if (!isDirectoryOrAbsent("merging-marker dir", flumeDir, dir)) return [];
+  if (!isDirectoryOrAbsentUnder("merging-marker dir", flumeDir, dir)) return [];
   const names = await readdir(namespacedJoin(dir));
   const out: Array<{ path: string; marker: MergingMarker | undefined }> = [];
   for (const name of names.filter((n) => n.endsWith(".json")).sort()) {
