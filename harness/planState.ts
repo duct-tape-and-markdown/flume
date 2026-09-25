@@ -50,6 +50,7 @@ import { isDirectoryOrAbsentUnder } from "../src/fsProbe.js";
 import { namespacedJoin } from "../src/paths.js";
 
 import { INBOX_PHASE, PLAN_SLICES, type PlanSlice } from "./declaration.js";
+import { detailOf } from "./exec.js";
 import { planStatePath } from "./layout.js";
 import { parseOrThrow, strict } from "./refusal.js";
 
@@ -358,6 +359,62 @@ export function readPlanState<S extends PlanSlice>(
 
   return parseOrThrow(schemaFor(slice), parsed, `plan state at ${path}`);
 }
+
+/**
+ * What a bounded read answered: the accessor's own value, or the words the
+ * read failed with.
+ *
+ * Discriminated on `failure`, never on the value. Every accessor here already
+ * answers `undefined` for a slice that has written no file yet, so a union
+ * keyed on the value could not tell "no cursor" from "no read" — which is the
+ * confident wrong answer the reader above refuses to give
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+export type BoundedRead<T> =
+  | { readonly read: T; readonly failure?: undefined }
+  | { readonly read?: undefined; readonly failure: string };
+
+/**
+ * `read` under a bound, for the one caller shape that cannot take a throw: a
+ * plan slice's liveness predicate.
+ *
+ * **Liveness runs inside the handoff's wake set, and that set walks every
+ * slice.** A throw out of one slice's `live` leaves the whole set unbuilt, so
+ * a state file that will not parse wakes no phase at all — build included —
+ * and the engine's consult declines the tick. The slice that owns the
+ * unreadable file is the one tick that could rewrite it, and it is the tick
+ * that was declined.
+ *
+ * **Bounded is not silent.** A predicate reading this answers **live** on a
+ * failure, and the window that tick opens renders the same failure as the
+ * refusal every uncomputable window spells (`windowRefusal`,
+ * `sliceWindow.ts`) — so the degraded leg is bounded by a refusal the agent
+ * reads, never by a marker nobody inspects (`.claude/rules/engineering.md`,
+ * *Loud or nothing*).
+ *
+ * The failure's own words are carried and nothing is classified from them
+ * ({@link detailOf}, `harness/exec.ts`; `.claude/rules/engine-boundary.md`,
+ * *Told, not inferred*). Every other caller takes the accessor itself: a
+ * writer, a judge or a verb that cannot read this artifact has a throw to
+ * raise and no window to render it in.
+ */
+const boundedRead = <T>(read: () => T): BoundedRead<T> => {
+  try {
+    return { read: read() };
+  } catch (error) {
+    return { failure: detailOf(error) };
+  }
+};
+
+/**
+ * {@link readPlanState} under {@link boundedRead}'s bound — the read the
+ * sweep's and the inbox's liveness predicates take.
+ */
+export const readPlanStateBounded = <S extends PlanSlice>(
+  stateRoot: string,
+  slice: S,
+): BoundedRead<PlanStateOf<S> | undefined> =>
+  boundedRead(() => readPlanState(stateRoot, slice));
 
 /**
  * Write `slice`'s state under `stateRoot`, creating the directory that holds
@@ -697,6 +754,16 @@ export const readCursor = (
   stateRoot: string,
   field: CursorField,
 ): string | undefined => CURSORS[field].at(stateRoot);
+
+/**
+ * {@link readCursor} under {@link boundedRead}'s bound — the read the derive
+ * slice's liveness predicate takes.
+ */
+export const readCursorBounded = (
+  stateRoot: string,
+  field: CursorField,
+): BoundedRead<string | undefined> =>
+  boundedRead(() => readCursor(stateRoot, field));
 
 /**
  * Every slice whose state file this package states something about — the set

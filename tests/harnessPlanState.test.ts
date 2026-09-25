@@ -42,6 +42,8 @@ import {
 import {
   JUDGED_SLICES,
   judgeSliceState,
+  readCursorBounded,
+  readPlanStateBounded,
   type SliceStateAt,
 } from "../harness/planState.ts";
 
@@ -467,6 +469,50 @@ it("an absent plan state artifact reads as no cursor rather than throwing", asyn
   expect(
     await refusalFor("plan-derive", "Spec derived through: `4758d60`\n"),
   ).toContain("not JSON");
+});
+
+/**
+ * The bounded read beside the accessor: the one caller shape that cannot take
+ * a throw is a slice's liveness predicate, which runs inside a wake set that
+ * walks every slice (`harness/planState.ts`, `boundedRead`).
+ *
+ * The bound is over the failure alone. Absence still reads as absence, and a
+ * written state still reads back whole — a bound that folded either into
+ * `failure` would have the windows refuse over a first tick
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+it("the bounded plan state read answers a failure where the accessor throws", async () => {
+  // Absent, and then present: the two arms the accessor already answers,
+  // which the bound must hand back unchanged.
+  expect(readPlanStateBounded(stateRoot, "plan-derive")).toEqual({
+    read: undefined,
+  });
+  expect(readCursorBounded(stateRoot, "derivedThrough")).toEqual({
+    read: undefined,
+  });
+
+  writePlanState(stateRoot, "plan-derive", stateOf("plan-derive"));
+  const written = readPlanState(stateRoot, "plan-derive");
+  expect(written).toBeDefined();
+  expect(readPlanStateBounded(stateRoot, "plan-derive")).toEqual({
+    read: written,
+  });
+  expect(readCursorBounded(stateRoot, "derivedThrough")).toEqual({
+    read: written?.derivedThrough,
+  });
+
+  // And the arm the bound exists for: the same bytes the accessor refuses,
+  // carried as the refusal's own words rather than raised — the file named,
+  // so the window that renders this names what to repair.
+  const bytes = "Spec derived through: `4758d60`\n";
+  const thrown = await refusalFor("plan-derive", bytes);
+  const bounded = readPlanStateBounded(stateRoot, "plan-derive");
+  const cursor = readCursorBounded(stateRoot, "derivedThrough");
+  expect({ bounded, cursor }).toEqual({
+    bounded: { failure: thrown },
+    cursor: { failure: thrown },
+  });
+  expect(thrown).toContain(onDisk("plan-derive"));
 });
 
 it("the plan state accessor round-trips a per-lane drained-run stamp", async () => {

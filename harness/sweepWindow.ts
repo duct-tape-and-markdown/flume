@@ -35,7 +35,7 @@ import {
   type DeletedPage,
   type RangeCommit,
 } from "./gitRange.js";
-import { readPlanState } from "./planState.js";
+import { readPlanStateBounded } from "./planState.js";
 import {
   SLICE_DATA_KEYS,
   budgetOf,
@@ -60,6 +60,14 @@ import {
  * is open exactly while a frontier it already drew has neighborhoods left in
  * it, and closing one is the slice's own job.
  *
+ * **A state file this slice cannot read leaves it live.** The rotation read is
+ * bounded ({@link readPlanStateBounded}, `planState.ts`), because a throw here
+ * is a throw out of the wake set that walks every slice: no phase is woken,
+ * build included, and the tick that would have rewritten the file is the one
+ * declined. Live instead, and the render refuses on the same failure by name
+ * (`bounded`, `cursorWindow.ts`), so the degraded leg is bounded by a refusal
+ * the woken agent reads (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
  * One leg does shut it: a queue that did not parse, so the tick goes to the
  * slice whose rewrite is the repair rather than to a sweep that would file
  * its findings into a queue derived from nothing (`queueResolved`,
@@ -73,10 +81,11 @@ export function sweepWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
     name: "plan-sweep",
     live: (inputs) => {
       if (!queueResolved(inputs)) return false;
-      const state = readPlanState(inputs.flumeDir, "plan-sweep");
-      if (state === undefined) return true;
-      if (state.rotation.kind === "open") return true;
-      return touchedPast(options.repoRoot, state.sweptThrough, frontier);
+      const state = readPlanStateBounded(inputs.flumeDir, "plan-sweep");
+      if (state.failure !== undefined) return true;
+      if (state.read === undefined) return true;
+      if (state.read.rotation.kind === "open") return true;
+      return touchedPast(options.repoRoot, state.read.sweptThrough, frontier);
     },
     args: (ctx): SliceArgs<"plan-sweep"> => ({
       SWEEP_WINDOW: renderSweepWindow(ctx, options),

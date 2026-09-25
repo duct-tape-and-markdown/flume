@@ -148,6 +148,15 @@ const unresolvedCursor = (
  * because a refusal that classified what it caught would be guessing at a
  * cause it was never told; the failure's own text is carried instead.
  *
+ * **The state file's own read is one of them, and that is load-bearing.** A
+ * cursor read out of an artifact that will not parse refuses here by the same
+ * spelling, and it is what makes the bounded liveness leg beside it honest:
+ * `live` answers `true` on that failure rather than throwing out of the wake
+ * set (`readCursorBounded`, `planState.ts`), and this refusal is what
+ * the tick it woke is handed in place of a window
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). The cause carries the
+ * reader's own words, which name the file; the repair names it again.
+ *
  * The cursor is untouched by a failure this side of the render, so the
  * window re-opens over the same range next tick; the tick that was woken
  * says what it saw instead of dying silently.

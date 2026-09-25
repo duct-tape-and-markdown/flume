@@ -50,6 +50,7 @@ import {
 import {
   BUILD_PHASE,
   INBOX_PHASE,
+  PLAN_SLICES,
   type PlanSlice,
 } from "../harness/declaration.ts";
 import { checkoutRecords, listRecords } from "../harness/records.ts";
@@ -2418,4 +2419,118 @@ it("the default handoff names the inbox slice over a queue that did not parse", 
     resolved: handoff(base),
     failed: handoff({ ...base, queueParseFailure: parseFailure() }),
   }).toEqual({ resolved: [], failed: [INBOX_PHASE] });
+});
+
+/**
+ * Every plan slice, with the state file an unreadable-artifact case corrupts
+ * and the window argument that slice's own material rides.
+ *
+ * Each slice reads plan state on both legs — the derive its cursor, the sweep
+ * its rotation, the inbox its lanes' drained-run stamps — and the two cases
+ * below assert the same pair of claims over each. A table rather than three
+ * pairs of cases, because the claim is about the shape of the read and not
+ * about any one slice's fields.
+ */
+const STATE_READING_SLICES = [
+  { slice: INBOX_PHASE, key: "CI_LANES" },
+  { slice: "plan-derive", key: "SPEC_WINDOW" },
+  { slice: "plan-sweep", key: "SWEEP_WINDOW" },
+] as const satisfies readonly { slice: PlanSlice; key: string }[];
+
+/**
+ * A declaration with one CI lane, which is what puts the inbox slice's own
+ * state file on its liveness path: a consumer declaring no lanes never reads
+ * the drained-run stamps at all (`harness/ciLane.ts`).
+ *
+ * The lane is never read from a forge in either case below — both stop at the
+ * unreadable stamps, and the control arms have no failing run to compare —
+ * so no case here depends on a forge CLI being present or absent.
+ */
+const LANED = { ci: [{ name: "lint", workflow: "ci.yml", job: "test" }] };
+
+/** Every slice's state written by the package's own writer, all three files. */
+function writeEveryState(): void {
+  writeState();
+  writePlanState(stateRoot(), INBOX_PHASE, { drainedRuns: {} });
+}
+
+/** `slice`'s state file, replaced with bytes no JSON parse accepts. */
+function corruptState(slice: PlanSlice): string {
+  const path = planStatePath(stateRoot(), slice);
+  writeFileSync(namespacedJoin(path), "not json{");
+  return path;
+}
+
+/**
+ * A liveness predicate runs inside the handoff's wake set, and that set walks
+ * every slice: one throw out of one `live` leaves no phase woken at all —
+ * build included — and the engine's consult declines the tick. The slice that
+ * owns the unreadable file is the one tick that could rewrite it, so the
+ * throw declines exactly the repair (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ */
+it("a slice whose plan state file will not parse is live so the tick that can repair it runs", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+
+  // Vacuity: every slice the package declares is armed here, so a fourth
+  // slice cannot join the wake set without a case over its own state file.
+  expect([...STATE_READING_SLICES].map((arm) => arm.slice).sort()).toEqual(
+    [...PLAN_SLICES].sort(),
+  );
+
+  const readable: Record<string, boolean> = {};
+  const unreadable: Record<string, boolean> = {};
+  for (const arm of STATE_READING_SLICES) {
+    // The control, with the one fact flipped: the same fixture under every
+    // slice's own file written by the package's writer is shut, so what the
+    // second arm reads is the corruption and not the tree.
+    writeEveryState();
+    const shut = windows(LANED)[arm.slice];
+    readable[arm.slice] = shut.live({ flumeDir: stateRoot(), pickable: false });
+
+    corruptState(arm.slice);
+    const live = windows(LANED)[arm.slice];
+    unreadable[arm.slice] = live.live({
+      flumeDir: stateRoot(),
+      pickable: false,
+    });
+  }
+
+  expect({ readable, unreadable }).toEqual({
+    readable: { [INBOX_PHASE]: false, "plan-derive": false, "plan-sweep": false },
+    unreadable: { [INBOX_PHASE]: true, "plan-derive": true, "plan-sweep": true },
+  });
+});
+
+/**
+ * The other half of the bound: waking the slice is only honest if the tick it
+ * wakes is told what could not be read. Each window renders the refusal every
+ * uncomputable window spells (`windowRefusal`, `harness/sliceWindow.ts`),
+ * naming the file the woken tick rewrites — never a throw out of
+ * `promptArgs`, which the engine turns into a record only this slice's own
+ * next tick reads.
+ */
+it("a slice whose plan state file will not parse renders the refusal naming the file rather than throwing", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+
+  const rendered: Record<string, string> = {};
+  for (const arm of STATE_READING_SLICES) {
+    writeEveryState();
+    const path = corruptState(arm.slice);
+    const args = windows(LANED)[arm.slice].args({
+      cwd: repo,
+      flumeDir: stateRoot(),
+    });
+    const block = args[arm.key] ?? "";
+    // The block leads with the refusal, and names the file to repair — the
+    // two halves a woken tick acts on. Asserted per arm rather than collected,
+    // so a failure names the slice whose block was wrong.
+    expect(block.startsWith("REFUSE: ")).toBe(true);
+    expect(block).toContain(path);
+    rendered[arm.slice] = block;
+  }
+
+  // Vacuity: every armed slice produced a block, so no arm passed on an
+  // absent key that an empty string would have satisfied.
+  expect(Object.keys(rendered).length).toBe(STATE_READING_SLICES.length);
 });

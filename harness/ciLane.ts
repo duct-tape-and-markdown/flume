@@ -25,7 +25,13 @@ import {
   type CiRunEvidence,
 } from "./ci.js";
 import { INBOX_PHASE, type Declaration } from "./declaration.js";
-import { readPlanState, type PlanStateOf } from "./planState.js";
+import { planStatePath } from "./layout.js";
+import {
+  readPlanStateBounded,
+  type BoundedRead,
+  type PlanStateOf,
+} from "./planState.js";
+import { windowRefusal } from "./sliceWindow.js";
 
 /**
  * A lane's drained-run stamp as the inbox slice's own state file holds it,
@@ -37,6 +43,54 @@ type Stamp = NonNullable<
 
 /** One lane's reading, fetched on first ask and handed out unchanged after. */
 type Readings = (status: CiLaneStatus) => CiLaneReading;
+
+/** Every lane's drained-run stamp, by lane name — the map the leg compares against. */
+type Stamps = Readonly<Record<string, Stamp>>;
+
+/**
+ * The stamps the inbox slice's own state file holds, or the words the read
+ * failed with ({@link readPlanStateBounded}, `planState.ts`).
+ *
+ * **Bounded because both of this leg's readers run where a throw is lost.**
+ * The liveness leg runs inside the handoff's wake set, which walks every
+ * slice, so a state file that will not parse would wake no phase at all —
+ * build included — and the render leg runs inside `promptArgs`, where the
+ * throw becomes a record only this slice's next tick reads. Neither is the
+ * drain being told (`.claude/rules/engineering.md`, *Loud or nothing*). The
+ * leg answers live instead, and {@link laneRefusal} is what the woken tick is
+ * handed in place of the lane blocks.
+ *
+ * A slice that has written no file yet carries no stamp for any lane, which
+ * is the empty map and not a degradation — the absent-stamp arm below is
+ * where that is decided.
+ */
+function stampsOf(flumeDir: string): BoundedRead<Stamps> {
+  const state = readPlanStateBounded(flumeDir, INBOX_PHASE);
+  if (state.failure !== undefined) return { failure: state.failure };
+  return { read: state.read?.drainedRuns ?? {} };
+}
+
+/**
+ * What an unreadable stamp file reaches the woken tick as, in the shape every
+ * uncomputable window refuses in ({@link windowRefusal}, `sliceWindow.ts`).
+ *
+ * **Nothing is rendered beside it** — not the lane blocks the forge could
+ * still answer for. Every block this leg writes says whether its lane woke
+ * the tick, and that verdict is exactly what the unread stamps withhold; a
+ * listing under a refusal would be lanes with no verdict on them.
+ *
+ * The repair names the file rather than the slice, because the tick reading
+ * it is the drain and the file is the drain's own to rewrite
+ * (`planState.ts`, one file per writer).
+ */
+const laneRefusal = (failure: string, flumeDir: string): string =>
+  windowRefusal({
+    cause: `the lanes' drained-run stamps could not be read: ${failure}`,
+    standDown: "Stamp no lane as drained and file no lane's titles",
+    repair:
+      `repair ${planStatePath(flumeDir, INBOX_PHASE)} and say in the commit ` +
+      `body what it held and what you set it to.`,
+  });
 
 /** What a lane leg reads a consumer's lanes through. */
 interface LaneLegOptions {
@@ -60,10 +114,15 @@ interface LaneLegOptions {
 export interface LaneLeg {
   /**
    * Whether any declared lane's latest completed run failed past its stamp —
-   * the lane leg's half of the inbox slice's liveness.
+   * the lane leg's half of the inbox slice's liveness — or the stamps could
+   * not be read, which is the drain's own file to repair ({@link stampsOf}).
    */
   readonly live: (flumeDir: string) => boolean;
-  /** Every declared lane's latest completed run, one block each. */
+  /**
+   * Every declared lane's latest completed run, one block each — or the
+   * refusal that says the stamps those blocks' verdicts rest on could not be
+   * read ({@link laneRefusal}).
+   */
   readonly render: (flumeDir: string) => string;
 }
 
@@ -114,10 +173,17 @@ export function laneLeg(options: LaneLegOptions): LaneLeg {
   };
 
   return {
-    live: (flumeDir) => wokenLanes(statuses(), flumeDir, reading).size > 0,
+    live: (flumeDir) => {
+      if (lanes === undefined) return false;
+      const stamps = stampsOf(flumeDir);
+      if (stamps.failure !== undefined) return true;
+      return wokenLanes(statuses(), stamps.read, reading).size > 0;
+    },
     render: (flumeDir) => {
       if (lanes === undefined) return "(no CI lanes declared)";
-      const woke = wokenLanes(statuses(), flumeDir, reading);
+      const stamps = stampsOf(flumeDir);
+      if (stamps.failure !== undefined) return laneRefusal(stamps.failure, flumeDir);
+      const woke = wokenLanes(statuses(), stamps.read, reading);
       return statuses()
         .map((status) => renderLane(reading(status), woke.has(status.lane.name)))
         .join("\n\n");
@@ -142,7 +208,13 @@ export function laneLeg(options: LaneLegOptions): LaneLeg {
  * A lane read as green, and a lane that could not be read at all, are live
  * for nothing: unread is not a reason to wake, only a thing to say on a tick
  * something else woke. A consumer declaring no lanes never asks the forge,
- * and never reads the inbox slice's state to ask this either.
+ * and never reads the inbox slice's state to ask this either — both legs
+ * above stop at the declaration before either read is made.
+ *
+ * **The stamps are handed in, not read here**, because the read can fail and
+ * the two legs answer that failure differently — the wake with `true`, the
+ * render with {@link laneRefusal} — while the comparison below is the same
+ * either way ({@link stampsOf}).
  *
  * **A set rather than a boolean, because the render owes the same verdict by
  * name.** The leg's two readers are one derivation: the wake set asks whether
@@ -151,11 +223,9 @@ export function laneLeg(options: LaneLegOptions): LaneLeg {
  */
 function wokenLanes(
   statuses: readonly CiLaneStatus[],
-  flumeDir: string,
+  drained: Stamps,
   reading: Readings,
 ): ReadonlySet<string> {
-  if (statuses.length === 0) return new Set();
-  const drained = readPlanState(flumeDir, INBOX_PHASE)?.drainedRuns ?? {};
   return new Set(
     statuses.flatMap((status) =>
       woke(status, drained[status.lane.name], reading)

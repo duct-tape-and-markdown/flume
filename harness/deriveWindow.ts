@@ -21,7 +21,7 @@
 
 import { cursorWindow } from "./cursorWindow.js";
 import { diffPrefix, touchedPast, touches } from "./gitRange.js";
-import { readCursor } from "./planState.js";
+import { readCursorBounded } from "./planState.js";
 import {
   SLICE_DATA_KEYS,
   budgetOf,
@@ -40,6 +40,14 @@ import {
  * is not a spec change, and waking derive on one would spend a tick to
  * re-stamp the cursor.
  *
+ * **A state file this slice cannot read leaves it live.** The cursor read is
+ * bounded ({@link readCursorBounded}, `planState.ts`), because a throw here
+ * is a throw out of the wake set that walks every slice: no phase is woken,
+ * build included, and the tick that would have rewritten the file is the one
+ * declined. Live instead, and the render refuses on the same failure by name
+ * (`bounded`, `cursorWindow.ts`), so the degraded leg is bounded by a refusal
+ * the woken agent reads (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
  * Behind one prior fact: a queue that did not parse shuts this window
  * (`queueResolved`, `sliceWindow.ts`). This slice's whole output is a rewritten
  * queue, and over an unparseable one the engine hands it an empty `pending` —
@@ -56,9 +64,10 @@ export function deriveWindow(
     name: "plan-derive",
     live: (inputs) => {
       if (!queueResolved(inputs)) return false;
-      const cursor = readCursor(inputs.flumeDir, "derivedThrough");
-      if (cursor === undefined) return true;
-      return touchedPast(options.repoRoot, cursor, locus);
+      const cursor = readCursorBounded(inputs.flumeDir, "derivedThrough");
+      if (cursor.failure !== undefined) return true;
+      if (cursor.read === undefined) return true;
+      return touchedPast(options.repoRoot, cursor.read, locus);
     },
     args: (ctx): SliceArgs<"plan-derive"> => ({
       SPEC_WINDOW: renderSpecWindow(ctx, options),
