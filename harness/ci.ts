@@ -25,8 +25,9 @@
  *
  * **A lane is failing, green, or unread — never green by default.** Every way
  * the read can come up short — no forge CLI on the host, no completed run
- * yet, a run the declared job is not in, a conclusion that is neither a pass
- * nor a failure, a CLI that refused, a log the forge would not hand over —
+ * yet, a newest completed run created before the tip's own commit, a run the
+ * declared job is not in, a conclusion that is neither a pass nor a failure, a
+ * CLI that refused, a log the forge would not hand over —
  * resolves to the `unread` arm {@link CiLaneStatus} declares, carrying the
  * reason. The degraded path is declared, and the
  * refusal that bounds it is the render's: unread says so in the prompt and
@@ -40,6 +41,8 @@
  * is also the only tree a liveness predicate can consult — `SliceWindow`
  * carries no working tree — so reading it here is what lets the two readers
  * of one window agree on which runs they are talking about (`ciLane.ts`).
+ * That same tip states *when* it was committed, and a run the forge created
+ * before it is a run that never saw this tree ({@link CiTip}).
  *
  * This module is the reader alone: how a reading is rendered into a prompt,
  * and which slice that prompt belongs to, are `ciLane.ts`'s and the inbox
@@ -355,18 +358,18 @@ interface CiReadOptions extends CiRepoOptions {
  * Every declared lane's latest completed run as the forge states it, in the
  * order the declaration names them — identity and verdict, no material.
  *
- * The branch is resolved once for the whole list — one fact about one tree,
- * and a per-lane read would be the same answer bought several times.
+ * The tip is resolved once for the whole list ({@link tipAt}) — facts about
+ * one tree, and a per-lane read would be the same answer bought several times.
  */
 export function readCiLaneStatuses(
   lanes: readonly CiLane[],
   options: CiRepoOptions,
 ): CiLaneStatus[] {
-  const branch = branchAt(options.repoRoot);
-  if ("reason" in branch) {
-    return lanes.map((lane) => ({ kind: "unread", lane, reason: branch.reason }));
+  const tip = tipAt(options.repoRoot);
+  if ("reason" in tip) {
+    return lanes.map((lane) => ({ kind: "unread", lane, reason: tip.reason }));
   }
-  return lanes.map((lane) => readLaneStatus(lane, branch.branch, options));
+  return lanes.map((lane) => readLaneStatus(lane, tip, options));
 }
 
 /**
@@ -501,6 +504,121 @@ export function sameTitleSet(
 }
 
 /**
+ * The repository's tip, as every lane's read is keyed on it: the branch the
+ * runs are filtered by, and the instant the tip itself was committed.
+ *
+ * **Two facts about one tree, resolved together.** A run is only this tip's
+ * evidence when the forge created it after this tip existed, so the branch
+ * alone names a run without saying whether it is this tree's — which is the
+ * whole distance between a green the tick can act on and an older tip's green
+ * read as current (`spec/harness.md`, *CI lanes as a findings source*).
+ */
+interface CiTip {
+  /** The branch the repository's tip sits on. */
+  readonly branch: string;
+  /**
+   * When git holds the tip as committed, in git's own spelling — reported
+   * verbatim so a refusal names the instant git stated, not a re-rendering of
+   * it.
+   */
+  readonly at: string;
+}
+
+/**
+ * The repository's tip for a lane read, or the reason it cannot be named.
+ *
+ * Either half missing is every lane's unread reason: without the branch there
+ * are no runs to name, and without the instant there is no telling whether the
+ * newest of them is this tree's at all. Neither is a thing to proceed over
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function tipAt(repoRoot: string): CiTip | { reason: string } {
+  const branch = branchAt(repoRoot);
+  if ("reason" in branch) return branch;
+  const committed = commitInstantAt(repoRoot);
+  if ("reason" in committed) return committed;
+  return { branch: branch.branch, at: committed.at };
+}
+
+/**
+ * When git holds the repository's tip as committed, or the reason it cannot be
+ * read.
+ *
+ * The *committer* instant (`%cI`), never the author's: a run can only have seen
+ * a tree that existed, and an author date is a fact about when a patch was
+ * written — a rebase, a cherry-pick or a mailed patch carries one from long
+ * before the commit git holds today, and a stale run compared against it would
+ * read as fresh.
+ *
+ * An unborn HEAD fails here rather than being folded into the branch read:
+ * `symbolic-ref` answers on a branch with no commits, and a tree with no tip
+ * has no instant a run can be ordered against.
+ */
+function commitInstantAt(repoRoot: string): { at: string } | { reason: string } {
+  try {
+    return {
+      at: captureSync("git", ["show", "-s", "--format=%cI", "HEAD"], {
+        cwd: repoRoot,
+      }).trim(),
+    };
+  } catch (err) {
+    return {
+      reason:
+        `the commit instant of the tip at ${repoRoot} could not be read, so ` +
+        `no forge run can be ordered against it: ${detailOf(err)}`,
+    };
+  }
+}
+
+/**
+ * Why `run` cannot be read as `tip`'s verdict, or `undefined` where it can.
+ *
+ * **A forge index can answer behind the tree it is asked about.** The newest
+ * *completed* run for a branch is the newest run the forge has finished, not
+ * the newest push: seconds after a push, and for as long as the new run is
+ * queued or running, that answer belongs to the tip before this one. Read as
+ * current it reports an older tree's verdict as this tree's — a red the tick
+ * would drain findings out of, or a green it would close entries on — so the
+ * refusal is in both directions (`spec/harness.md`, *CI lanes as a findings
+ * source*).
+ *
+ * Ordered as instants rather than as text: two ISO spellings carrying
+ * different offsets sort wrongly compared as strings, and git's `%cI` states
+ * the host's offset while the forge states UTC. A spelling neither `Date` can
+ * parse is a comparison that cannot be made, which is unread and not a quiet
+ * `false` (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function behindTheTip(
+  lane: CiLane,
+  run: CiRun,
+  tip: CiTip,
+): string | undefined {
+  const created = instant(run.at);
+  const committed = instant(tip.at);
+  if (created === undefined || committed === undefined) {
+    return (
+      `run ${run.id} of ${lane.workflow} reports its created instant as ` +
+      `\`${run.at}\` and git reports the tip's own commit as \`${tip.at}\`, ` +
+      `and one of the two is not an instant this reader can order against the ` +
+      `other`
+    );
+  }
+  if (created >= committed) return undefined;
+  return (
+    `the newest completed run of ${lane.workflow} for branch ${tip.branch} — ` +
+    `run ${run.id} — was created ${run.at}, before the tip's own commit at ` +
+    `${tip.at}, so the forge's index is answering behind this tree and ` +
+    `neither a green nor a red off that run is this tip's`
+  );
+}
+
+/** One ISO 8601 instant in epoch milliseconds, or `undefined` where it is not one. */
+function instant(iso: string): number | undefined {
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? undefined : ms;
+}
+
+/**
  * The branch the repository's tip sits on, or the reason it cannot be named.
  *
  * `symbolic-ref --quiet` exits 1 on a detached HEAD and fails otherwise, so
@@ -534,7 +652,7 @@ function branchAt(repoRoot: string): { branch: string } | { reason: string } {
 /** One lane's status, with every failure of the read carried as its reason. */
 function readLaneStatus(
   lane: CiLane,
-  branch: string,
+  tip: CiTip,
   options: CiRepoOptions,
 ): CiLaneStatus {
   const unread = (reason: string): CiLaneStatus => ({
@@ -549,7 +667,7 @@ function readLaneStatus(
       "--workflow",
       lane.workflow,
       "--branch",
-      branch,
+      tip.branch,
       "--status",
       "completed",
       "--limit",
@@ -560,7 +678,7 @@ function readLaneStatus(
     const latest = runs[0];
     if (latest === undefined) {
       return unread(
-        `the forge reports no completed run of ${lane.workflow} for branch ${branch}`,
+        `the forge reports no completed run of ${lane.workflow} for branch ${tip.branch}`,
       );
     }
 
@@ -570,6 +688,13 @@ function readLaneStatus(
       url: latest.url,
       at: latest.createdAt,
     };
+
+    // Before the declared job's conclusion is even asked for: a run that
+    // predates this tip has no verdict to give about it, and the conclusion
+    // would only make an older tree's answer look like this one's.
+    const stale = behindTheTip(lane, run, tip);
+    if (stale !== undefined) return unread(stale);
+
     const jobsAsk = ["run", "view", run.id, "--json", "jobs"];
     const { jobs } = forgeJson(RunJobsSchema, options.repoRoot, jobsAsk);
     const job = jobs.find((candidate) => candidate.name === lane.job);
@@ -585,7 +710,7 @@ function readLaneStatus(
     // that never reached a job has neither, and its reason quotes the call it
     // did make instead.
     const at: CiRunEvidence = {
-      branch,
+      branch: tip.branch,
       run,
       asked: invocation(jobsAsk),
       conclusion: job.conclusion,

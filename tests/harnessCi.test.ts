@@ -78,8 +78,35 @@ beforeEach(() => {
   git("config", "commit.gpgsign", "false");
   writeFileSync(join(repo, "a.txt"), "seed\n");
   git("add", "-A");
-  git("commit", "-q", "-m", "seed");
+  commitAt(TIP_AT, "seed");
 });
+
+/**
+ * The instant the fixture repository's tip is committed at.
+ *
+ * Pinned, and before every run fixture below, because the reader refuses a run
+ * the forge created before the tip's own commit (`harness/ci.ts`). A tip
+ * committed at wall-clock now would put every run fixture here behind it, and
+ * every case in this file would be asserting over an unread lane.
+ */
+const TIP_AT = "2026-09-14T08:00:00Z";
+
+/**
+ * Commit the staged tree at a stated instant.
+ *
+ * Both of git's dates, through the environment: the reader orders a run
+ * against the *committer* instant, and `git commit --date` sets only the
+ * author's.
+ */
+function commitAt(at: string, message: string): void {
+  const dates = { GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at };
+  Object.assign(process.env, dates);
+  try {
+    git("commit", "-q", "-m", message);
+  } finally {
+    for (const key of Object.keys(dates)) delete process.env[key];
+  }
+}
 
 afterEach(() => {
   if (originalPath === undefined) delete process.env["PATH"];
@@ -328,6 +355,19 @@ const RUN = {
   createdAt: "2026-09-14T09:12:33Z",
 };
 
+/**
+ * An instant before {@link TIP_AT} — the created instant of a run the forge
+ * finished before this tree's tip existed.
+ *
+ * What a forge index answering behind the tree hands a tick that has just
+ * pushed: the newest *completed* run is the previous tip's, because this tip's
+ * is still queued.
+ */
+const BEFORE_TIP = "2026-09-13T23:59:00Z";
+
+/** {@link RUN} as the forge lists it while its index is behind the tip. */
+const STALE_RUN = { ...RUN, createdAt: BEFORE_TIP };
+
 /** The declared job within that run, as `run view --json jobs` prints it. */
 const job = (conclusion: string) => ({
   databaseId: 49551122,
@@ -494,6 +534,63 @@ it("the lane block renders a lane as unread when no completed run for the tip's 
   expect(rendered).toContain("main");
   expect(rendered).not.toContain("GREEN");
   expect(rendered).not.toContain("FAILING");
+}, SPAWN_BUDGET_MS);
+
+it("a lane whose newest completed run predates the tip's own commit reads as unread rather than green", () => {
+  plantForge({ runs: [STALE_RUN], jobs: [job("success")] });
+
+  const rendered = laneBlock();
+
+  // Vacuity: the forge was reached for this lane's workflow and did list a
+  // run — this is a run refused for its instant, not an empty listing. And
+  // the listing is the only question asked: a run that predates the tip has
+  // no verdict to give about it, so its job's conclusion is never bought.
+  expect(calls().length).toBe(1);
+  expect(calls()[0]?.join(" ")).toContain(`--workflow ${LANE.workflow}`);
+
+  expect(rendered).toContain(`lane \`${LANE.name}\``);
+  expect(rendered).toContain("UNREAD");
+  expect(rendered).not.toContain("GREEN");
+}, SPAWN_BUDGET_MS);
+
+it("a lane whose newest completed run predates the tip's own commit reads as unread rather than failing", () => {
+  const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
+  plantForge({
+    runs: [STALE_RUN],
+    jobs: [job("failure")],
+    log: `pnpm test\n${failure}\n2 failed | 40 passed\n`,
+  });
+
+  const rendered = laneBlock();
+
+  // Vacuity: as above, and the log the forge holds for that run never reaches
+  // the block — a stale red's findings are the previous tip's.
+  expect(calls().length).toBe(1);
+  expect(rendered).toContain("UNREAD");
+  expect(rendered).not.toContain("FAILING");
+  expect(rendered).not.toContain(failure);
+
+  // The wake is the same refusal: a run that is not this tree's is not a run
+  // to drain, so a stale red makes the slice live for nothing.
+  expect(laneLive()).toBe(false);
+}, SPAWN_BUDGET_MS);
+
+it("the unread reason a stale run resolves to names the run's created instant and the tip's own", () => {
+  plantForge({ runs: [STALE_RUN], jobs: [job("failure")] });
+
+  // The tip's instant as git spells it, not as this file does: the block
+  // quotes what git answered, and git states the host's own offset while the
+  // forge states UTC. Vacuity rides the parse — git really answered an
+  // instant, and it is the one the fixture pinned, so a blank string is not
+  // what the block is being searched for.
+  const tipInstant = git("show", "-s", "--format=%cI", "HEAD");
+  expect(Date.parse(tipInstant)).toBe(Date.parse(TIP_AT));
+
+  const rendered = laneBlock();
+
+  expect(rendered).toContain("UNREAD");
+  expect(rendered).toContain(BEFORE_TIP);
+  expect(rendered).toContain(tipInstant);
 }, SPAWN_BUDGET_MS);
 
 /**
