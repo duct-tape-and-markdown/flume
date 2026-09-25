@@ -105,6 +105,28 @@ export async function revParse(cwd: string, ref = "HEAD"): Promise<string> {
 }
 
 /**
+ * The working-tree root git itself names for `cwd` (`git rev-parse
+ * --show-toplevel`) — the directory every path git prints is named from, and
+ * every pathspec git is handed is read from. `undefined` when git names none:
+ * `cwd` is outside any working tree, or git is not on this host.
+ *
+ * `undefined` is the **absence of a claim**, never a degraded stand-in for
+ * one. Its caller (`src/cli.ts`) compares a root it resolved itself against
+ * git's, and a comparison with nothing on one side is not made; nothing else
+ * is bounded by this value, so a run that goes on to need git where git
+ * disowns the directory fails at that operation, naming it
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+export async function gitToplevel(cwd: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await run(cwd, ["rev-parse", "--show-toplevel"]);
+    return stdout === "" ? undefined : stdout;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Thrown by {@link resetKeepTo} when git refuses the reset — a path the
  * reset would touch also carries an uncommitted change of its own. `git
  * reset --keep` is transactional: on this refusal it has updated nothing,

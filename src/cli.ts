@@ -29,6 +29,7 @@ import {
   acquireTipClaim,
   currentRefPath,
   gitCommonDir,
+  gitToplevel,
   liveTipClaimPid,
   readGitVersion,
   tipClaimPath,
@@ -200,6 +201,64 @@ function gitFloorWarning(version: GitVersion): string | undefined {
 }
 
 /**
+ * A directory in the one spelling both sides of the comparison below can be
+ * held to: the name the OS itself reports for it, absolutized. `realpathSync`
+ * in its native form, for the reason `tests/helpers/fixtureRoot.ts` gives —
+ * only the libuv binding asks the OS for the name it holds, which is the name
+ * git reports; node's JS walk leaves win32's 8.3 alias exactly as it found it.
+ * `resolve` after it folds git's forward slashes onto the host separator, so
+ * `C:/r` and `C:\r` are one directory rather than two. The argument goes in
+ * composed and the answer comes back through `plainPath`, the fold every
+ * spent path in this file takes (`.claude/rules/platform-facts.md`, *Windows
+ * MAX_PATH (~260 chars) breaks fs calls with no long component*).
+ *
+ * A path that will not resolve falls back to its absolutized spelling: the
+ * comparison it feeds refuses on disagreement, and the fallback can only make
+ * two names that are the same directory look different — never the reverse.
+ */
+function canonicalDir(path: string): string {
+  try {
+    return resolve(plainPath(realpathSync.native(toNamespacedPath(path))));
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * The refusal message for a bay root that is not the root git names paths
+ * from, or `undefined` when the two agree — or when git names no root at all,
+ * which is no claim to disagree with ({@link gitToplevel}).
+ *
+ * Bay discovery answers the *nearest* `.flume` (spec/cli.md, "Bay discovery
+ * walks up to the nearest `.flume`"), and nothing in that walk consults git.
+ * A bay below the working-tree root therefore resolves a `repoRoot` git has
+ * never heard of, and every path composed from it — `stateRootRel`, the fence
+ * globs, the queue pathspec, the paths read back off `--name-only` — is
+ * spelled in an alphabet git does not use: `<root>/sub/.flume/f` is
+ * `.flume/f` to the engine and `sub/.flume/f` to git, so the fence matches
+ * nothing and the queue read finds nothing, each quietly
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). Proven once, at the
+ * one place the root is resolved, ahead of every path composed from it.
+ */
+async function bayRootDisagreement(
+  repoRoot: string,
+): Promise<string | undefined> {
+  const toplevel = await gitToplevel(repoRoot);
+  if (toplevel === undefined) return undefined;
+  if (canonicalDir(toplevel) === canonicalDir(repoRoot)) return undefined;
+  return (
+    `[flume] bay root ${repoRoot} is not the root git names paths from — ` +
+    `git's top-level here is ${toplevel}. Every path this run would hand ` +
+    `git, and every path it would read back from git, is named from the ` +
+    `top-level, so a state root composed against a different root loses ` +
+    `that root's prefix on all of them: the fence globs, the queue ` +
+    `pathspec, and the state root a hook reads. Refusing before any of them ` +
+    `is composed. Run flume from ${toplevel} — with FLUME_DIR naming the ` +
+    `bay if the bay is not there — or move the bay to ${toplevel}.`
+  );
+}
+
+/**
  * `wake`/`sleep`'s best-effort chain load: a missing or broken chain must
  * never block the marker mutation — there is nothing to validate the phase
  * name against. Only a chain that loads *successfully* and does not declare
@@ -295,6 +354,18 @@ async function main(): Promise<number> {
   if (cmdHelp !== undefined && wantsHelp(rest)) {
     process.stdout.write(cmdHelp);
     return 0;
+  }
+
+  // The root git names paths from is the root every path below is composed
+  // against, so the two are proven equal here — after the pages that answer in
+  // any cwd and before the first path derived from the root
+  // (`bayRootDisagreement`, above). `EX_IOERR` with the rest of bay
+  // discovery's refusals: this is the same walk answering, and what it
+  // answered is unusable for the same reason an unstattable bay is.
+  const disagreement = await bayRootDisagreement(repoRoot);
+  if (disagreement !== undefined) {
+    console.error(disagreement);
+    return EX_IOERR;
   }
 
   // Resolve both state roots up front and canonicalize them back into the env.

@@ -27,17 +27,21 @@ const SUBCOMMANDS = [
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 /**
- * The `EX_IOERR` cause every verb shares, worded once. Bay discovery stats
- * the nearest state root before any verb reaches work of its own, so every
- * page's `74` row carries this and no page states a narrower range than its
- * own process can return (`spec/loop.md`, *Exit codes — the run never lies
- * to CI*).
+ * The `EX_IOERR` causes every verb shares, worded once. Bay discovery runs
+ * before any verb reaches work of its own, and both ways it can fail to hand
+ * back a usable root land here, so every page's `74` row carries them and no
+ * page states a narrower range than its own process can return
+ * (`spec/loop.md`, *Exit codes — the run never lies to CI*).
  */
 const BAY_DISCOVERY_LINES = [
   `The state root (\`${STATE_ROOT_DIRNAME}\`) is present but will not stat at the bay`,
   "discovery every verb starts with — a symlink loop, a permission-denied",
   "parent. Refused rather than walked past to an unrelated ancestor's",
   "bay, naming the cwd the walk began at and the underlying error.",
+  "Or that walk resolved a bay below the root git names paths from —",
+  "every path composed against it would be spelled in an alphabet git",
+  "does not use. Refused before the first one is composed, naming",
+  "both roots.",
 ];
 
 /**
@@ -63,8 +67,8 @@ function bayDiscoveryRefusal(indent: number): string {
 function bayDiscoveryRow(indent: number): string {
   const pad = " ".repeat(indent);
   return (
-    `  74${" ".repeat(indent - 4)}I/O error (EX_IOERR): the one refusal every verb shares,\n` +
-    `${pad}and this verb's only one.\n` +
+    `  74${" ".repeat(indent - 4)}I/O error (EX_IOERR): the refusals every verb shares,\n` +
+    `${pad}and this verb's only ones.\n` +
     `${pad}${bayDiscoveryRefusal(indent)}`
   );
 }

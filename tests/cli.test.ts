@@ -3329,6 +3329,50 @@ describe("flume tick — EX_IOERR over an unreadable verdict history (spec/loop.
   });
 });
 
+/**
+ * The other half of bay discovery's `EX_IOERR`: the walk answers the nearest
+ * `.flume` without consulting git, so a bay planted below the working-tree
+ * root resolves a `repoRoot` git has never heard of. Every path composed from
+ * it — `stateRootRel`, the fence globs, the queue pathspec — then names files
+ * in an alphabet git does not use, and each read comes back empty rather than
+ * wrong, which is the silence `.claude/rules/engineering.md`, *Loud or
+ * nothing* refuses.
+ *
+ * Driven through a real repository with a real nested bay, and paired with
+ * the same verb at the top level so the refusal is the disagreement's and not
+ * a fixture that could never have answered (`.claude/rules/engineering.md`,
+ * *A green verdict is proven non-vacuous*).
+ */
+it(
+  "flume refuses a bay root that is not the git top-level rather than composing paths against it",
+  async () => {
+    const repo = await makeScratchRepo("flume-nested-bay-", "main");
+    try {
+      const nestedBayRoot = join(repo.dir, "sub");
+      await mkdir(join(nestedBayRoot, STATE_ROOT_DIRNAME), { recursive: true });
+
+      const refused = await runCli(nestedBayRoot, ["status"]);
+      expect(refused.code).toBe(EX_IOERR);
+      // Both roots, and the top-level as a token of its own: the nested bay
+      // carries the top-level as a path prefix, so a bare `toContain` on it
+      // would hold over an output that named only the bay. Every mention of
+      // the bay is struck first, and the top-level must still be there.
+      expect(refused.out).toContain(nestedBayRoot);
+      expect(refused.out.split(nestedBayRoot).join("")).toContain(repo.dir);
+
+      // Non-vacuity: the same verb over the same repository, run where the
+      // bay and git agree, answers rather than refusing — so the code above
+      // is the disagreement's.
+      const answered = await runCli(repo.dir, ["status"]);
+      expect(answered.code).toBe(0);
+      expect(answered.out).toContain("hibernating");
+    } finally {
+      await repo.cleanup();
+    }
+  },
+  SPAWN_BUDGET_MS,
+);
+
 describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful stop — the stop flag\")", () => {
   it(
     "refuses before any tick, exit 1, naming the flag path — no lock taken, no tick runs",
