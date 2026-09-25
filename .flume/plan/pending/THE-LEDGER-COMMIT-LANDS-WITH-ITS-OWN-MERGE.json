@@ -1,0 +1,34 @@
+{
+  "tag": "THE-LEDGER-COMMIT-LANDS-WITH-ITS-OWN-MERGE",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 30,
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the ledger rewrite lands inside `mergeAttempt`'s own ship-lock hold, per entry, and `closeWaveMerge` keeps what is left of the stage"
+      },
+      {
+        "path": "src/pendingLedger.ts",
+        "description": "the rewrite's own docs, which scope it to a whole wave's shipped set"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the interleaved case, beside the wave's merge-ordering ones"
+      }
+    ]
+  },
+  "summary": "The ledger rewrite lands once at the wave's end, so a wave outlasting many merges leaves a queue on disk listing entries already on the trunk",
+  "per": {
+    "path": "spec/worktrees.md",
+    "section": "Fanout and worktrees — provisioning, isolation, teardown"
+  },
+  "acceptance": "each shipped entry's ledger commit lands inside the same ship-lock hold as its own merge, so the queue on disk never lists an entry already on the trunk while a sibling's agent is still running, and a rewrite that refuses mid-wave carries its facts out through the holder the wave already takes a merge throw in",
+  "tests": [
+    "a wave's first shipped entry leaves the queue on disk while a sibling's agent is still running",
+    "each shipped entry's ledger commit lands before the next entry's cherry-pick"
+  ],
+  "notes": "Spec 906a1957, half two. Verified: `closeWaveMerge` (`src/waveMerge.ts:800`) takes a second ship lock (`:820`) holding the wave's only `commitPendingUpdate`; `mergeAttempt`'s own hold is `:418`-`:783`. A refusal thrown there rides `mergeError` (`src/waveTick.ts:361`), held so siblings settle. Bound half needs none: `remaining` (`src/waveTick.ts:239`, spliced `:392`) is the wave-start snapshot, each entry once. Seams `src/waveMerge.ts` with THE-VERDICT-CARRIES-A-TIMING-PER-GATE-RUN-AND-MERGE."
+}
