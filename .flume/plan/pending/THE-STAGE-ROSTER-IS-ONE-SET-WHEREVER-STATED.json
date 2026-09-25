@@ -1,0 +1,60 @@
+{
+  "tag": "THE-STAGE-ROSTER-IS-ONE-SET-WHEREVER-STATED",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/Phase.ts",
+        "description": "the two `supervisorPolicy` hovers' stage rosters — the shipped ones a chain author reads before declaring the knob"
+      },
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": "the two option hovers' rosters and the streak-key comment's, and the lift set's own doc declares why it names three"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the quarantined-slugs hover's roster"
+      },
+      {
+        "path": "src/cliVerdict.ts",
+        "description": "the completion-summary doc's roster and the count beside it"
+      },
+      {
+        "path": "tests/docComments.test.ts",
+        "description": "the scan over every comment that lists two stages, beside the literal scans already there"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the supervisor-policy section's roster stated once, with no count restated beside the list"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the `flume loop` section's abort-stage roster"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "the authoring-page roster arm, off the readers that section's supervisor-policy walk already shares"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the `flume loop` page arm, beside that page's own exit-code pins and the `--help` roster pin it copies"
+      }
+    ]
+  },
+  "summary": "FAILURE_STAGES gained render and eight prose rosters still name three — two of them the shipped Chain.supervisorPolicy hover a chain author reads before turning quarantine off",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Derived state is computed, never restated beside its source"
+  },
+  "acceptance": "every comment that lists the supervisor's failure stages names the set the engine holds, and a comment that deliberately names a subset says so at the site; the two shipped pages that roster the same set gain the read-back the `--help` copy already has, so the next member reds rather than stranding two pages and eight comments",
+  "tests": [
+    "no comment in src/ names two failure stages in a list without naming every FAILURE_STAGES member"
+  ],
+  "pins": [
+    "docs/CHAIN-AUTHORING.md's supervisor-policy section names every FAILURE_STAGES member as a quarantine stage",
+    "docs/CLI.md's flume loop section names every FAILURE_STAGES member as an abort stage"
+  ],
+  "notes": "Measured: cff96f8d added `render` to `FAILURE_STAGES` (`src/loopSupervisor.ts:239`) and re-rostered two sites; stale are `src/Phase.ts:958`, `:967`, `src/Dispatcher.ts:219`, `src/cliVerdict.ts:216` (and its \"one of the three\"), `src/loopSupervisor.ts:172`, `:173`, `:187`, `:488`. Deliberate subset: `LIFTS_ON_A_MOVED_TIP`'s doc (`:362`). Pages already agree (`docs/CHAIN-AUTHORING.md:2350`, `docs/CLI.md:57`) and read back nowhere; `tests/cliHelp.test.ts:1405` is the arm the two pages copy."
+}
