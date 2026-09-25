@@ -168,15 +168,15 @@ interface SuperviseLoopOptions {
   log?: Logger;
   /**
    * Chain-declared override for the run-scoped quarantine (spec/loop.md
-   * "Repeated identical failures", which covers the provision, merge and gate
-   * stages alike). `"none"` disables per-entry quarantine outright — a tagged
-   * provision/merge/gate failure is never withheld from later ticks this run —
-   * while the consecutive-identical-failure backstop (`abortThreshold` below)
-   * still applies. Defaults to {@link DEFAULT_QUARANTINE_SCOPE}, whose hold
-   * is pinned by tests/loopSupervisor.test.ts's "a chain declaring neither
+   * "Repeated identical failures — quarantine, then abort", which covers the
+   * provision, merge and gate stages alike). `"none"` disables per-entry
+   * quarantine outright — a tagged provision/merge/gate failure is never
+   * withheld from later ticks this run — while the
+   * consecutive-identical-failure backstop (`abortThreshold` below) still
+   * applies. Defaults to {@link DEFAULT_QUARANTINE_SCOPE}, whose hold is
+   * pinned by tests/loopSupervisor.test.ts's "a chain declaring neither
    * supervisor knob gets both defaults: a run-scoped quarantine and a
-   * three-tick abort" case.
-   * The CLI forwards this from the resolved chain's
+   * three-tick abort" case. The CLI forwards this from the resolved chain's
    * `supervisorPolicy.quarantineScope` (`src/Phase.ts`); undeclared falls
    * through to the default here.
    */
@@ -301,17 +301,17 @@ export interface SuperviseResult {
    * Set when the run aborted because the same stage-tagged signature
    * repeated on `abortThreshold` ({@link DEFAULT_ABORT_THRESHOLD} by
    * default) consecutive ticks with no
-   * successful tick between them (spec/loop.md "Repeated identical
-   * failures") — the consecutive-failure backstop for non-entry-scoped
-   * walls the run-scoped quarantine can't isolate, and a wider abort than
-   * the mount-dead one, which keeps its own semantics. `stage` names which
-   * of the three walls the aborting streak came from — the supervisor holds
-   * it at the abort site, so it is reported rather than left for a consumer
-   * to infer from the signature's wording. `signature` is the raw comparison
-   * key, never prefixed with the stage it came from — the stage rides the
-   * sibling field, never the signature text. Distinct from `mountDead` — the
-   * chain resolved and ran fine; only a provision, merge, or gate wall kept
-   * hitting the identical failure.
+   * successful tick between them (spec/loop.md "Repeated identical failures
+   * — quarantine, then abort") — the consecutive-failure backstop for
+   * non-entry-scoped walls the run-scoped quarantine can't isolate, and a
+   * wider abort than the mount-dead one, which keeps its own semantics.
+   * `stage` names which of the three walls the aborting streak came from —
+   * the supervisor holds it at the abort site, so it is reported rather than
+   * left for a consumer to infer from the signature's wording. `signature`
+   * is the raw comparison key, never prefixed with the stage it came from —
+   * the stage rides the sibling field, never the signature text. Distinct
+   * from `mountDead` — the chain resolved and ran fine; only a provision,
+   * merge, or gate wall kept hitting the identical failure.
    */
   repeatedFailure?: { stage: FailureStage; signature: string; count: number };
   /**

@@ -431,8 +431,9 @@ export interface TickResult {
    * `pendingAfter`, and shows in no tag list. A `handoff` reconciling one —
    * waking a sibling, holding the phase awake, counting a repeat — reads it
    * here rather than diffing `pendingAfter` against the batch it never saw
-   * (spec/worktrees.md "`setupWorktree` and `teardownWorktree`"). The fact
-   * is the engine's; what to do about it stays the chain's.
+   * (spec/worktrees.md "`setupWorktree` and `teardownWorktree` — the
+   * chain's provisioning hooks"). The fact is the engine's; what to do
+   * about it stays the chain's.
    */
   provisionFailures?: readonly ProvisionFailure[];
   /**

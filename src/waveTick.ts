@@ -78,15 +78,15 @@ export async function runFanout(
   // refusal is judged against each entry's own record and the tip this wave
   // is about to branch from.
   const priorAttempts = await leg.attempts.readAll();
-  // spec/loop.md "Repeated identical failures": `quarantinedTags` is
-  // reported on the result (below) so a chain's handoff can tell
-  // "quarantined open" from "genuinely pickable" without re-deriving it
-  // from pendingAfter. `refusedTags` is the same service for the other
-  // hold — the chain's own refusal — and rides the result beside it.
-  // spec/pending.md "Claims — an entry in flight is left alone": the entries
-  // a sibling tick is carrying, read before the selection that must skip
-  // them and reported on the result below, so a chain never re-reads the
-  // claims directory itself.
+  // spec/loop.md "Repeated identical failures — quarantine, then abort":
+  // `quarantinedTags` is reported on the result (below) so a chain's handoff
+  // can tell "quarantined open" from "genuinely pickable" without
+  // re-deriving it from pendingAfter. `refusedTags` is the same service for
+  // the other hold — the chain's own refusal — and rides the result beside
+  // it. spec/pending.md "Claims — an entry in flight is left alone": the
+  // entries a sibling tick is carrying, read before the selection that must
+  // skip them and reported on the result below, so a chain never re-reads
+  // the claims directory itself.
   const claimedSlugs = await leg.claims.readLive();
   const {
     pickable,

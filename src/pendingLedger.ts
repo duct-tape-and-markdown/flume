@@ -507,16 +507,16 @@ export interface PendingRewriteResult {
  * gates those tags were holding, record the footprints a failed merge
  * observed, and commit the result.
  *
- * spec/loop.md "Tip verify", "Harness-driven commits carry no expected-tip
- * bookkeeping": no sha comparison — `liveForeignClaimPid`, checked fresh
- * immediately before this function's own harness-driven `commitPaths` call,
- * the wave's other tip-verify site beside `cherryPickRange`
- * (`runWaveMerge`, `src/waveMerge.ts`). Checked before the writes: a refusal
- * here leaves every
- * entry file untouched on disk rather than a write with no commit behind
- * it. No live claim means the rewrite recommits on whatever tip is current —
- * its content derives from the wave's own outcomes, never from a recorded
- * tip.
+ * spec/loop.md "Tip verify — one writer per branch, absorption at the
+ * merge", "Harness-driven commits carry no expected-tip bookkeeping": no sha
+ * comparison — `liveForeignClaimPid`, checked fresh immediately before this
+ * function's own harness-driven `commitPaths` call, the wave's other
+ * tip-verify site beside `cherryPickRange` (`runWaveMerge`,
+ * `src/waveMerge.ts`). Checked before the writes: a refusal here leaves
+ * every entry file untouched on disk rather than a write with no commit
+ * behind it. No live claim means the rewrite recommits on whatever tip is
+ * current — its content derives from the wave's own outcomes, never from a
+ * recorded tip.
  *
  * That ordering is what splits the two refusals' reports. The claim refuses
  * before the writes, so {@link PendingRewriteResult} says the queue is the one
@@ -616,12 +616,13 @@ export async function commitPendingUpdate(
   const relocated = isPendingRelocated(ctx);
 
   if (!relocated) {
-    // spec/loop.md "Tip verify", re-checked fresh immediately before this
-    // function's own commit — the wave's other harness-driven commit besides
-    // `cherryPickRange`. Checked before the writes: a refusal here leaves the
-    // queue untouched on disk, never a write with no commit behind it.
-    // Shipped entries this wave already cherry-picked stay shipped
-    // regardless — only the ledger update itself is refused.
+    // spec/loop.md "Tip verify — one writer per branch, absorption at the
+    // merge", re-checked fresh immediately before this function's own commit
+    // — the wave's other harness-driven commit besides `cherryPickRange`.
+    // Checked before the writes: a refusal here leaves the queue untouched on
+    // disk, never a write with no commit behind it. Shipped entries this wave
+    // already cherry-picked stay shipped regardless — only the ledger update
+    // itself is refused.
     const foreignClaim = await liveForeignClaimPid(
       ctx.repoRoot,
       ctx.ownTipClaimPid,

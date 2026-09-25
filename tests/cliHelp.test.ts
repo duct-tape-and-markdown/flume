@@ -1191,13 +1191,14 @@ describe("flume loop --help — the abort backstop's stage vocabulary against lo
  * HELP-ABORT-THRESHOLD-IS-OVERRIDABLE — both exit-1 surfaces stated the
  * consecutive-failure backstop as a fixed three ticks, which is wrong for any
  * chain declaring `supervisorPolicy.abortThreshold`
- * (`.claude/rules/engine-boundary.md`, "Routing rule": a policy constant is an
- * overridable default, never fixed behavior). Help prints before any chain is
- * resolved, so the surface names the knob rather than rendering a run's value;
- * the default it quotes is interpolated from {@link DEFAULT_ABORT_THRESHOLD},
- * the same constant `superviseLoop` falls back to, so the number cannot drift
- * from the engine's (`.claude/rules/engineering.md`, "Derived state is
- * computed, never restated beside its source").
+ * (`.claude/rules/engine-boundary.md`, "Routing rule (plan, build, and
+ * interactive sessions)": a policy constant is an overridable default, never
+ * fixed behavior). Help prints before any chain is resolved, so the surface
+ * names the knob rather than rendering a run's value; the default it quotes is
+ * interpolated from {@link DEFAULT_ABORT_THRESHOLD}, the same constant
+ * `superviseLoop` falls back to, so the number cannot drift from the engine's
+ * (`.claude/rules/engineering.md`, "Derived state is computed, never restated
+ * beside its source").
  */
 describe("flume loop --help — the backstop threshold names its knob (HELP-ABORT-THRESHOLD-IS-OVERRIDABLE)", () => {
   /**

@@ -44,7 +44,8 @@ import { mkTempDir } from "./helpers/fixtureRoot.ts";
 // The win32 MAX_PATH idiom (`toNamespacedPath(join(...))`) is pinned by
 // source scan in tests/Baton.test.ts, not here: `namespacedJoin` *is* that
 // expression, so any test comparing the two asserts the body against itself
-// and cannot go red. See .claude/rules/platform-facts.md, "Windows MAX_PATH".
+// and cannot go red. See .claude/rules/platform-facts.md, "Windows MAX_PATH
+// (~260 chars) breaks fs calls with no long component".
 
 // `plainPath` is the idiom's other direction and does go red here, because
 // the alphabet it undoes is not its own: `win32.toNamespacedPath` is node's

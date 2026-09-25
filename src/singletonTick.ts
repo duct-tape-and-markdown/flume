@@ -163,11 +163,12 @@ export async function runSingleton(
   // would cost a one-entry wave.
   //
   // Every provisioning failure this tick records accumulates here and
-  // rides every exit — spec/loop.md "Repeated identical failures": the
-  // accounting covers *every* per-entry failure fact the verdict records,
-  // so a prune wall whose `createWorktree` then succeeds still reaches the
-  // backstop. Repo-level, hence untagged (there is no entry to blame on a
-  // singleton at all), same shape `runFanout` gives its wave-level prune.
+  // rides every exit — spec/loop.md "Repeated identical failures —
+  // quarantine, then abort": the accounting covers *every* per-entry
+  // failure fact the verdict records, so a prune wall whose
+  // `createWorktree` then succeeds still reaches the backstop. Repo-level,
+  // hence untagged (there is no entry to blame on a singleton at all),
+  // same shape `runFanout` gives its wave-level prune.
   const provisionFailures: ProvisionFailure[] = [];
   try {
     await git.pruneWorktrees(repoRoot, leg.log);
@@ -253,12 +254,13 @@ export async function runSingleton(
   let invocationRow:
     | Omit<TickVerdictInvocation, "uncommittedTracked">
     | undefined;
-  // spec/loop.md "The tick verdict": "the phase's own single span under
-  // singleton". A singleton has no entry to tag, so these rows carry
-  // `outcome`/`baseSha`/`headSha` and no `tag` — one row at most, pushed at
-  // whichever fate the span reaches. Without it a gate-reverted singleton
-  // commit's sha survives nowhere: `commitSha` on the result is set only on
-  // a clean ship, and the worktree branch is gone after teardown.
+  // spec/loop.md "The tick verdict — one facts artifact": "the phase's own
+  // single span under singleton". A singleton has no entry to tag, so these
+  // rows carry `outcome`/`baseSha`/`headSha` and no `tag` — one row at
+  // most, pushed at whichever fate the span reaches. Without it a
+  // gate-reverted singleton commit's sha survives nowhere: `commitSha` on
+  // the result is set only on a clean ship, and the worktree branch is gone
+  // after teardown.
   const mergeOutcomes: TickVerdictMergeOutcome[] = [];
 
   // spec/loop.md "Declining a tick before the invocation": `promptArgs`
@@ -431,7 +433,8 @@ export async function runSingleton(
             signature: gateFailureSignature(entryFailure),
             message: entryFailure.message,
           });
-          // spec/loop.md "Tip verify", "dropping it must not take
+          // spec/loop.md "Tip verify — one writer per branch,
+          // absorption at the merge", "dropping it must not take
           // bystanders": the primary checkout may hold an operator's
           // uncommitted work, so this reset carries keep-semantics —
           // never --hard — and a textual collision refuses loudly
@@ -502,10 +505,11 @@ export async function runSingleton(
     }
   }
 
-  // spec/loop.md "Tip verify": last read of this worktree before it stops
-  // existing. Everything that could still dirty it — the agent, the
-  // tip-verify soft reset, an afterCommit revert — is behind us; the
-  // cherry-pick and afterMerge stages above ran against trunk, not here.
+  // spec/loop.md "Tip verify — one writer per branch, absorption at the
+  // merge": last read of this worktree before it stops existing.
+  // Everything that could still dirty it — the agent, the tip-verify soft
+  // reset, an afterCommit revert — is behind us; the cherry-pick and
+  // afterMerge stages above ran against trunk, not here.
   const invocation: TickVerdictInvocation | undefined = invocationRow
     ? {
         ...invocationRow,

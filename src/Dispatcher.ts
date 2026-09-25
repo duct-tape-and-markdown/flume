@@ -803,12 +803,12 @@ export class Dispatcher {
     let chainModule: ChainModule;
     try {
       chainModule = await this.chainLoader();
-      // spec/worktrees.md "Placement": the declared base is evaluated here,
-      // at the one point per process where a chain is in hand, and every
-      // worktree this tick touches reads it off `worktreeCtx`. A declaration
-      // that cannot be evaluated is a chain that cannot be run, so it lands
-      // in the refusal below rather than surfacing as a worktree at a path
-      // nothing sweeps.
+      // spec/worktrees.md "Placement — the worktree base": the declared base
+      // is evaluated here, at the one point per process where a chain is in
+      // hand, and every worktree this tick touches reads it off
+      // `worktreeCtx`. A declaration that cannot be evaluated is a chain
+      // that cannot be run, so it lands in the refusal below rather than
+      // surfacing as a worktree at a path nothing sweeps.
       this.chainWorktreesBase = resolveWorktreesBaseDeclaration(
         chainModule.chain,
         this.paths,
@@ -1049,12 +1049,12 @@ export class Dispatcher {
     // `Dispatcher.tick()` unit tests), so it costs the existing computed
     // fields (`summary` et al.) nothing extra.
     //
-    // headSha (spec/loop.md "The tick verdict"): the trunk tip read here,
-    // after this phase's own commits (if any) already landed — never
-    // inferred from which paths the last commit touched, and left behind
-    // even on a quiet no-commit tick. The shaping itself, `at` included, is
-    // `buildTickVerdict`'s (`src/tickVerdict.ts`), shared with the partial
-    // verdict a refused ledger rewrite rides out on.
+    // headSha (spec/loop.md "The tick verdict — one facts artifact"): the
+    // trunk tip read here, after this phase's own commits (if any) already
+    // landed — never inferred from which paths the last commit touched, and
+    // left behind even on a quiet no-commit tick. The shaping itself, `at`
+    // included, is `buildTickVerdict`'s (`src/tickVerdict.ts`), shared with
+    // the partial verdict a refused ledger rewrite rides out on.
     const verdict = buildTickVerdict({
       phaseName: phase.name,
       tags: tags ?? [],
@@ -1270,9 +1270,10 @@ export class Dispatcher {
     // ticks create under, or it reads an empty directory and leaves every
     // abandoned worktree, and the branch each was checked out on, standing
     // where creation put them
-    // (spec/worktrees.md, *Placement*: the base is resolved once). Hence the
-    // load here rather than a value the caller passes: the declaration is
-    // the engine's to evaluate, at one spelling shared with `tick`.
+    // (spec/worktrees.md, *Placement — the worktree base*: the base is
+    // resolved once). Hence the load here rather than a value the caller
+    // passes: the declaration is the engine's to evaluate, at one spelling
+    // shared with `tick`.
     //
     // Declared degradation (`.claude/rules/engineering.md`, *Loud or
     // nothing*): a chain that will not load — or whose `worktreesBase`

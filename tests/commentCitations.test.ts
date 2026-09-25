@@ -332,9 +332,9 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// none either*).`,
     `export const FENCED_SECTION = 15;`,
     ``,
-    `// Nothing else is a cite: (\`docs/sections.md\`, *Loud or nothing* and`,
-    `// an aside) leaves the parenthetical open past the italics, and`,
-    `// (\`docs/sections.md\`) claims no section at all.`,
+    `// A parenthetical the italics leave open carries its cite all the`,
+    `// same: (\`docs/sections.md\`, *Loud or nothing* and an aside) names the`,
+    `// section its emphasis sits beside, where (\`docs/sections.md\`) names none.`,
     `export const UNCITED = 16;`,
     ``,
     `// A link tag is judged on its syntax, so no subject rule is read over`,
@@ -392,10 +392,22 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// either: (\`docs/sections.md\`, "A fenced lead mints none either").`,
     `export const QUOTED_FENCED = 24;`,
     ``,
-    `// Nothing else is a cite: (\`docs/sections.md\`, "Loud or nothing" and`,
-    `// an aside) leaves the parenthetical open past the quotes, the way the`,
-    `// italicized spelling leaves it open past the italics.`,
+    `// A parenthetical the quotes leave open carries its cite the same way:`,
+    `// (\`docs/sections.md\`, "Loud or nothing" and an aside) names the section`,
+    `// its quotes sit beside, the way the italicized spelling does above.`,
     `export const QUOTED_UNCITED = 25;`,
+    ``,
+    `// The parenthetical and the comma are furniture a sentence may drop: a`,
+    `// cite spelled \`docs/sections.md\`, *Loud or nothing* carries the comma`,
+    `// alone, one spelled \`docs/sections.md\` *Verbatim copying is the`,
+    `// detector* carries neither, and the quoted half drops them both in`,
+    `// \`docs/sections.md\` "Reading the fixture's own banner".`,
+    `export const BARE_SECTION = 26;`,
+    ``,
+    `// Adjacency is what the arm reads, so an emphasis a sentence reaches`,
+    `// after saying something else claims no section: \`docs/sections.md\` is a`,
+    `// page this tree holds, and *an aside* behind that clause draws nothing.`,
+    `export const DISTANT_ASIDE = 27;`,
     ``,
   ].join("\n"),
   "docs/carried.md": "# the page a tree outside the tsconfig cites\n",
@@ -1203,9 +1215,11 @@ it("a comment's (`<page>.md`, *Section*) pair resolves its section half against 
   // Vacuity guard: every cite the fixture authored was drawn, and no other,
   // before a verdict is read off any of them — both emphases, both fencings
   // of the page half, each of the three altitudes the page states a title
-  // at, and the wrap the renderer closes. The spellings each emphasis's last
-  // cite sits above are the refusals: a parenthetical the emphasis does not
-  // close, and one carrying no section at all, neither of which appears here.
+  // at, the wrap the renderer closes, and the spellings that drop the
+  // parenthetical, the comma, or both. The refusals are what the list ends
+  // short of: a parenthetical carrying no section at all, and an emphasis
+  // the sentence never sets beside a page name, neither of which appears
+  // here.
   expect(
     fixtureScan.sections.scanned.map(
       (site) => `${formatCitation(site)} -> ${site.page}`,
@@ -1218,6 +1232,7 @@ it("a comment's (`<page>.md`, *Section*) pair resolves its section half against 
     "lib/surface.ts:123 Derived state is computed -> docs/sections.md",
     "lib/surface.ts:128 Derived state is computed, never restated beside its source -> docs/sections.md",
     "lib/surface.ts:134 A fenced lead mints none either -> docs/sections.md",
+    "lib/surface.ts:139 Loud or nothing -> docs/sections.md",
     "lib/surface.ts:178 Loud or nothing -> docs/sections.md",
     "lib/surface.ts:179 Verbatim copying is the detector -> docs/sections.md",
     "lib/surface.ts:180 Reading the fixture's own banner -> docs/sections.md",
@@ -1225,6 +1240,10 @@ it("a comment's (`<page>.md`, *Section*) pair resolves its section half against 
     "lib/surface.ts:188 Derived state is computed -> docs/sections.md",
     "lib/surface.ts:189 Derived state is computed, never restated beside its source -> docs/sections.md",
     "lib/surface.ts:195 A fenced lead mints none either -> docs/sections.md",
+    "lib/surface.ts:199 Loud or nothing -> docs/sections.md",
+    "lib/surface.ts:204 Loud or nothing -> docs/sections.md",
+    "lib/surface.ts:205 Verbatim copying is the detector -> docs/sections.md",
+    "lib/surface.ts:207 Reading the fixture's own banner -> docs/sections.md",
   ]);
 
   // The verdict: a heading answers a cite, a bolded bullet lead answers one
@@ -1304,14 +1323,14 @@ it("a comment's (`<page>.md`, \"Section\") pair resolves its section half agains
     "lib/surface.ts:195 A fenced lead mints none either",
   );
 
-  // And a parenthetical the quotes leave open past the section draws no cite
-  // at all: the fenced one at 195 is the last the fixture authors, so the
-  // block past it is read for nothing.
-  expect(
-    fixtureScan.sections.scanned
-      .filter((site) => site.module === "lib/surface.ts" && site.line > 195)
-      .map(formatCitation),
-  ).toEqual([]);
+  // And a parenthetical the quotes leave open past the section carries its
+  // cite all the same, because adjacency is the whole grammar: the half sat
+  // beside the page name, and what the sentence reached for afterwards is
+  // the author's prose rather than the arm's business.
+  expect(drawn).toContain(
+    "lib/surface.ts:199 Loud or nothing -> docs/sections.md",
+  );
+  expect(findings).not.toContain("lib/surface.ts:199 Loud or nothing");
 });
 
 it("an abbreviated section half is reported unresolved rather than matched as a prefix", () => {
@@ -1329,6 +1348,61 @@ it("an abbreviated section half is reported unresolved rather than matched as a 
   // The verdict: a prefix of a title is a title the page does not carry, so
   // the abbreviation is a rewrite the citing comment has to follow.
   expect(findings).toContain("lib/surface.ts:123 Derived state is computed");
+});
+
+it("the citation scan reads a section cite spelled without its parenthetical", () => {
+  // Vacuity guard: the parenthesized spelling of the same three altitudes was
+  // drawn off this very module, so the arm is reading the fixture and the
+  // cites below are the furniture-less spelling rather than a reader that
+  // drew everything it saw.
+  const drawn = fixtureScan.sections.scanned.map(
+    (site) => `${formatCitation(site)} -> ${site.page}`,
+  );
+  expect(drawn).toContain(
+    "lib/surface.ts:112 Loud or nothing -> docs/sections.md",
+  );
+
+  // The verdict: a cite carrying the comma alone, one carrying neither comma
+  // nor parenthetical, and a quoted half spelled bare are the one claim the
+  // parenthesized spelling makes — drawn at the section they name, and
+  // answered by the page that titles it.
+  expect(drawn).toContain(
+    "lib/surface.ts:204 Loud or nothing -> docs/sections.md",
+  );
+  expect(drawn).toContain(
+    "lib/surface.ts:205 Verbatim copying is the detector -> docs/sections.md",
+  );
+  expect(drawn).toContain(
+    "lib/surface.ts:207 Reading the fixture's own banner -> docs/sections.md",
+  );
+  const findings = fixtureScan.sections.findings.map(formatCitation);
+  expect(findings).not.toContain("lib/surface.ts:204 Loud or nothing");
+  expect(findings).not.toContain(
+    "lib/surface.ts:205 Verbatim copying is the detector",
+  );
+  expect(findings).not.toContain(
+    "lib/surface.ts:207 Reading the fixture's own banner",
+  );
+});
+
+it("an emphasized aside that does not sit adjacent to a page name draws no section cite", () => {
+  // Vacuity guard: the comment holding the aside was read — its page name was
+  // judged as a citation, at the line the aside sits on — and the module
+  // states section cites in quantity. So the emptiness below is the adjacency
+  // clause and not a block the scan passed over.
+  expect(fixtureScan.scanned.map(formatCitation)).toContain(
+    "lib/surface.ts:211 docs/sections.md",
+  );
+  expect(fixtureScan.sections.scanned.length).toBeGreaterThan(10);
+
+  // The verdict: a page named in one clause and an emphasis reached in the
+  // next claim no section of each other, so a comment that cited none is
+  // never held to one.
+  expect(
+    fixtureScan.sections.scanned
+      .filter((site) => site.module === "lib/surface.ts" && site.line > 208)
+      .map(formatCitation),
+  ).toEqual([]);
 });
 
 // --- the shipped help literal, the third place a cite sits ---------------

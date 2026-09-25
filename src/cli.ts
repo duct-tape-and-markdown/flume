@@ -706,12 +706,11 @@ async function main(): Promise<number> {
 
     // The consumer of the queue is whichever phase(s) pick from pending —
     // fanout concurrency is the sole site that does (Phase.ts, "Concurrency";
-    // spec/pending.md, "Selection is the sole site; a singleton phase does
-    // not pick from pending"). Mirrors how .flume/chain.ts wires build's own
-    // writablePaths/entryChannelPaths as plan's pendingGate targetFence —
-    // for a chain with one fanout phase this is byte-identical to that
-    // fence, derived from the phase declaration instead of a chain-side
-    // constant.
+    // spec/pending.md, "The fork-resolution seam"). Mirrors how
+    // .flume/chain.ts wires build's own writablePaths/entryChannelPaths as
+    // plan's pendingGate targetFence — for a chain with one fanout phase this
+    // is byte-identical to that fence, derived from the phase declaration
+    // instead of a chain-side constant.
     const consumerPhases = chain.phases.filter((p) => p.concurrency === "fanout");
 
     // No fanout phase means no consumer, and no consumer means no fence to
@@ -1481,8 +1480,9 @@ async function main(): Promise<number> {
       flumeDir,
       friction !== undefined ? [frictionIgnoreEntry(friction)] : [],
     );
-    // Startup sweep (spec/worktrees.md "Startup sweep"): once, right after
-    // the tip claim above and before the first tick, so a dead prior wave's
+    // Startup sweep (spec/worktrees.md "Startup sweep — a dead wave's
+    // residue is removed at the next start"): once, right after the tip
+    // claim above and before the first tick, so a dead prior wave's
     // abandoned worktrees/branches never linger past this start. Safe here
     // and only here — holding the claim just acquired is what rules out a
     // live sibling owning anything under this state root's worktree base. A

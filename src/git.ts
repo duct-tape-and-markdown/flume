@@ -131,15 +131,16 @@ export class ResetKeepRefusedError extends Error {
 
 /**
  * Reset the branch pointer to `sha`, preserving uncommitted state the
- * caller did not author (spec/loop.md "Tip verify", "dropping it must not
- * take bystanders") — `git reset --keep`, never `--hard`, on a checkout
- * that may hold a bystander's staged or unstaged work. `--keep` updates
- * only the paths that differ between the current tip and `sha`; a path
- * among those that also carries an uncommitted change of its own makes git
- * refuse the whole reset atomically rather than silently discard either
- * side, which this surfaces as {@link ResetKeepRefusedError}. The caller's
- * only safe move on that refusal is to propagate it — never fall back to
- * `reset --hard`, which is exactly the wipe this primitive exists to avoid.
+ * caller did not author (spec/loop.md "Tip verify — one writer per branch,
+ * absorption at the merge", "dropping it must not take bystanders") — `git
+ * reset --keep`, never `--hard`, on a checkout that may hold a bystander's
+ * staged or unstaged work. `--keep` updates only the paths that differ
+ * between the current tip and `sha`; a path among those that also carries
+ * an uncommitted change of its own makes git refuse the whole reset
+ * atomically rather than silently discard either side, which this surfaces
+ * as {@link ResetKeepRefusedError}. The caller's only safe move on that
+ * refusal is to propagate it — never fall back to `reset --hard`, which is
+ * exactly the wipe this primitive exists to avoid.
  */
 export async function resetKeepTo(cwd: string, sha: string): Promise<void> {
   try {
@@ -153,12 +154,13 @@ export async function resetKeepTo(cwd: string, sha: string): Promise<void> {
 /**
  * Soft reset directly to a specific sha, rather than a commit count back
  * from HEAD. Used by the per-entry tip-verify leg (spec/loop.md "Tip
- * verify"): the target is the recorded base itself, which on a refusal is
- * not necessarily an ancestor of the current tip (that is exactly what the
- * ancestry check failed on) — so counting commits back from HEAD does not
- * apply. `reset --soft` accepts any commit-ish regardless of ancestry: it
- * moves the branch ref and index, leaving the working tree (and therefore
- * the abandoned commits' content) in place as uncommitted state.
+ * verify — one writer per branch, absorption at the merge"): the target is
+ * the recorded base itself, which on a refusal is not necessarily an
+ * ancestor of the current tip (that is exactly what the ancestry check
+ * failed on) — so counting commits back from HEAD does not apply. `reset
+ * --soft` accepts any commit-ish regardless of ancestry: it moves the
+ * branch ref and index, leaving the working tree (and therefore the
+ * abandoned commits' content) in place as uncommitted state.
  */
 export async function softResetTo(cwd: string, sha: string): Promise<void> {
   await run(cwd, ["reset", "--soft", sha]);
@@ -202,10 +204,11 @@ export function nameOnlyPaths(stdout: string): string[] {
 
 /**
  * Files touched across a commit range (`git diff --name-only from to`) — the
- * cumulative footprint of a per-entry fanout span (spec/loop.md "Tip
- * verify", per-entry leg: "N commits are completion"), as opposed to
- * {@link showNameOnly}'s single-commit diff. `from` need not be an ancestor
- * of `to`; git diffs the two trees directly either way.
+ * cumulative footprint of a per-entry fanout span (spec/loop.md "Tip verify
+ * — one writer per branch, absorption at the merge", per-entry leg: "N
+ * commits are completion"), as opposed to {@link showNameOnly}'s
+ * single-commit diff. `from` need not be an ancestor of `to`; git diffs the
+ * two trees directly either way.
  */
 export async function diffNameOnly(
   cwd: string,
@@ -241,10 +244,11 @@ export async function isAncestor(
 
 /**
  * Cherry-pick every commit in `(base, head]` onto the current tip, in order
- * — a fanout entry's whole span (spec/loop.md "Tip verify", per-entry leg),
- * not just its newest commit. Equivalent to a single-commit cherry-pick when
- * the range holds exactly one commit, so this is the one cherry-pick
- * primitive the dispatcher needs — no separate single-sha form beside it.
+ * — a fanout entry's whole span (spec/loop.md "Tip verify — one writer per
+ * branch, absorption at the merge", per-entry leg), not just its newest
+ * commit. Equivalent to a single-commit cherry-pick when the range holds
+ * exactly one commit, so this is the one cherry-pick primitive the
+ * dispatcher needs — no separate single-sha form beside it.
  */
 export async function cherryPickRange(
   repoRoot: string,
@@ -949,11 +953,12 @@ export interface GitStatusRecord {
  * records; it does not spawn its own `git status` and re-decode the same
  * bytes beside this one.
  *
- * spec/loop.md "Tip verify": an agent's worktree is removed at teardown along
- * with everything uncommitted in it, and a soft-reset span's content lands
- * back here as exactly this kind of residue. The engine reads the set while
- * the worktree still exists so the tick verdict can name what was lost —
- * the fact alone; what it means is the chain's.
+ * spec/loop.md "Tip verify — one writer per branch, absorption at the merge":
+ * an agent's worktree is removed at teardown along with everything
+ * uncommitted in it, and a soft-reset span's content lands back here as
+ * exactly this kind of residue. The engine reads the set while the worktree
+ * still exists so the tick verdict can name what was lost — the fact alone;
+ * what it means is the chain's.
  *
  * `--untracked-files=all` is asked for unconditionally, so an untracked
  * directory arrives as the files inside it rather than as one directory

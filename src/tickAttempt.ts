@@ -297,8 +297,9 @@ export async function runAttempt(
     };
   }
 
-  // Tip verify (spec/loop.md "Tip verify"): the agent commits directly in
-  // this worktree, so verify after the fact — but ancestry, not parent
+  // Tip verify (spec/loop.md "Tip verify — one writer per branch,
+  // absorption at the merge"): the agent commits directly in this
+  // worktree, so verify after the fact — but ancestry, not parent
   // equality. The worktree's own branch is private to this attempt, so an
   // agent that commits, keeps working, and commits again has produced a
   // completed multi-commit span, not interference; only a base that is no
@@ -316,9 +317,10 @@ export async function runAttempt(
   }
 
   // The ancestry check above cleared the whole span as one completed unit
-  // (spec/loop.md "N commits are completion") — gate the span's cumulative
-  // footprint, not just `headSha`'s own single-commit diff, so a gate
-  // can't miss what an earlier commit in the span touched.
+  // (spec/loop.md "The check is ancestry, and N commits are completion") —
+  // gate the span's cumulative footprint, not just `headSha`'s own
+  // single-commit diff, so a gate can't miss what an earlier commit in the
+  // span touched.
   const verdict = await runAfterCommitGates(
     ctx,
     phase,
@@ -407,14 +409,15 @@ async function revertTipMovedCommit(
 }
 
 /**
- * Tip verify (spec/loop.md "Tip verify", "Per-entry leg —
- * private ref, ancestry, N commits are completion"). Every worktree branch
- * — a fanout entry's or a singleton phase's own (spec/worktrees.md
- * "Singleton runs in a worktree") — has exactly one legitimate writer:
- * this tick's agent. The check is ancestry — the recorded base must be an
- * ancestor of the observed HEAD — so a multi-commit span never trips this
- * on its own account; the caller runs the whole span's gates and
- * cherry-picks it like a single-commit entry once this returns `false`.
+ * Tip verify (spec/loop.md "Tip verify — one writer per branch, absorption
+ * at the merge", "Per-entry leg — private ref, ancestry, N commits are
+ * completion"). Every worktree branch — a fanout entry's or a singleton
+ * phase's own (spec/worktrees.md "Singleton runs in a worktree") — has
+ * exactly one legitimate writer: this tick's agent. The check is ancestry
+ * — the recorded base must be an ancestor of the observed HEAD — so a
+ * multi-commit span never trips this on its own account; the caller runs
+ * the whole span's gates and cherry-picks it like a single-commit entry
+ * once this returns `false`.
  *
  * Refusal fires only when the base is *not* an ancestor of `postHead`,
  * which on a private branch means something reset or rewrote it out from
@@ -521,10 +524,11 @@ async function runAfterCommitGates(
   /**
    * Touched paths are the cumulative
    * `spanBase..commitSha` diff rather than `commitSha`'s own single-commit
-   * diff — the whole-span gate (spec/loop.md "N commits are completion").
-   * Both a fanout entry's worktree branch and a singleton phase's own
-   * (spec/worktrees.md "Singleton runs in a worktree") are private refs
-   * whose ancestry check clears a multi-commit span as one completed tick.
+   * diff — the whole-span gate (spec/loop.md "The check is ancestry, and N
+   * commits are completion"). Both a fanout entry's worktree branch and a
+   * singleton phase's own (spec/worktrees.md "Singleton runs in a
+   * worktree") are private refs whose ancestry check clears a multi-commit
+   * span as one completed tick.
    */
   spanBase: string,
 ): Promise<{

@@ -4,11 +4,11 @@
  * refuses on, the CJS-context host refusal, and the default per-tick
  * resolver built over them.
  *
- * spec/chain.md "Chain residency". Running a tick is not the only reason to
- * resolve a chain: a gate validating a just-committed self-edit and a
- * read-only verb reporting on a repo's chain each need the same
- * resolve-and-refuse, and neither runs a phase. So the load is its own job
- * here rather than a second one appended to the module that runs ticks
+ * spec/chain.md "Chain residency — one chain per `.flume`". Running a tick is
+ * not the only reason to resolve a chain: a gate validating a just-committed
+ * self-edit and a read-only verb reporting on a repo's chain each need the
+ * same resolve-and-refuse, and neither runs a phase. So the load is its own
+ * job here rather than a second one appended to the module that runs ticks
  * (`.claude/rules/engineering.md`, *A module is one job*). Which modules hold
  * those loads is the program's answer, never a roll call kept here by hand
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
@@ -282,11 +282,12 @@ export async function loadChainModule(
   paths: FlumePaths,
 ): Promise<ChainModule> {
   // The chain lives at `<configDir>/chain.ts` and nowhere else (spec/chain.md
-  // "Chain residency"), so the file to load is computed from the roots the
-  // factory will receive rather than passed beside them — a second parameter
-  // could only disagree with `paths.configDir`. `chainModulePath`
-  // (src/paths.ts) is that computation, shared with the sibling surface that
-  // names the same file: `chainLoadGate`'s touched-path key.
+  // "Chain residency — one chain per `.flume`"), so the file to load is
+  // computed from the roots the factory will receive rather than passed
+  // beside them — a second parameter could only disagree with
+  // `paths.configDir`. `chainModulePath` (src/paths.ts) is that computation,
+  // shared with the sibling surface that names the same file:
+  // `chainLoadGate`'s touched-path key.
   const path = chainModulePath(paths.configDir);
   // win32 MAX_PATH: the single fix point for this check, because every path
   // into an existing chain.ts runs this probe first. namespacedJoin

@@ -290,45 +290,31 @@ export function reportedGateRow(
  *                            `reset --keep` that would have carried the
  *                            commit back off trunk was itself refused — a
  *                            bystander's uncommitted work collides with the
- *                            paths the revert needs to touch (spec/loop.md
- *                            "Tip verify", "dropping it must not take
- *                            bystanders"). The commit stays on trunk, unlike
- *                            `afterMerge-reverted`; the entry stays pending
- *                            regardless, so it is never counted shipped. The
- *                            bounded exception to absorption the same
- *                            section names for a mid-history refusal —
- *                            evidence left for the operator rather than a
- *                            forced wipe.
- *  - `afterCommit-reverted`  reverted inside the worktree by an afterCommit
- *                            gate; never reached
- *                            cherry-pick, so it never touched trunk on its
- *                            own.
- *  - `not-shipped`           landed and passed every gate, but the phase's own
- *                            `shipped` predicate returned false
- *                            (spec/pending.md "Ship detection trusts the
- *                            agent's own account") — commit stays on trunk,
- *                            entry stays pending. The engine records the
- *                            chain's verdict and holds no vocabulary for its
- *                            reason.
- *  - `tip-moved`             the wave's own commit-onto-trunk step refused
- *                            because a live claim held the ref (a concurrent
- *                            engine instance, spec/loop.md "Tip verify") —
- *                            never reached cherry-pick, entry stays pending
- *                            for a fresh retry once the claim clears. A
- *                            foreign non-engine commit on the ref, with no
- *                            live claim, is absorbed instead: git's own
- *                            conflict detection is the only content arbiter.
- *  - `dropped-work`          the per-entry tip-verify leg's own ancestry
- *                            check refused (spec/loop.md "Tip verify",
- *                            per-entry leg): this entry's worktree commit
- *                            was soft-reset because its recorded base was no
- *                            longer an ancestor of the observed HEAD — never
- *                            reached cherry-pick either, but distinct from
- *                            `tip-moved` above, which is the *shared trunk*
- *                            racing during this wave's own merge step. A
- *                            sibling fact so a dropped per-entry commit
- *                            never lands as silence a partial ship summary
- *                            papers over.
+ * paths the revert needs to touch (spec/loop.md "Tip verify — one writer per
+ * branch, absorption at the merge", "dropping it must not take bystanders").
+ * The commit stays on trunk, unlike `afterMerge-reverted`; the entry stays
+ * pending regardless, so it is never counted shipped. The bounded exception to
+ * absorption the same section names for a mid-history refusal — evidence left
+ * for the operator rather than a forced wipe. - `afterCommit-reverted`
+ * reverted inside the worktree by an afterCommit gate; never reached
+ * cherry-pick, so it never touched trunk on its own. - `not-shipped` landed
+ * and passed every gate, but the phase's own `shipped` predicate returned
+ * false (spec/pending.md "Ship detection trusts the agent's own account") —
+ * commit stays on trunk, entry stays pending. The engine records the chain's
+ * verdict and holds no vocabulary for its reason. - `tip-moved` the wave's own
+ * commit-onto-trunk step refused because a live claim held the ref (a
+ * concurrent engine instance, spec/loop.md "Tip verify — one writer per
+ * branch, absorption at the merge") — never reached cherry-pick, entry stays
+ * pending for a fresh retry once the claim clears. A foreign non-engine commit
+ * on the ref, with no live claim, is absorbed instead: git's own conflict
+ * detection is the only content arbiter. - `dropped-work` the per-entry
+ * tip-verify leg's own ancestry check refused (spec/loop.md "Tip verify — one
+ * writer per branch, absorption at the merge", per-entry leg): this entry's
+ * worktree commit was soft-reset because its recorded base was no longer an
+ * ancestor of the observed HEAD — never reached cherry-pick either, but
+ * distinct from `tip-moved` above, which is the *shared trunk* racing during
+ * this wave's own merge step. A sibling fact so a dropped per-entry commit
+ * never lands as silence a partial ship summary papers over.
  */
 export type MergeOutcome =
   | "merged"
@@ -369,9 +355,9 @@ export interface TickVerdictMergeOutcome {
    * `afterMerge-reverted`, `afterMerge-revert-refused`, `not-shipped`), else
    * the tip the agent's worktree branched from (`tip-moved`, `dropped-work`,
    * `afterCommit-reverted`, `cherry-pick-conflict`). Recovery needs both: a
-   * span may hold several commits (spec/loop.md "N commits are completion"),
-   * and `headSha` alone re-picks only the last of them. Absent only when the
-   * span never reached a commit at all.
+   * span may hold several commits (spec/loop.md "The check is ancestry, and N
+   * commits are completion"), and `headSha` alone re-picks only the last of
+   * them. Absent only when the span never reached a commit at all.
    */
   baseSha?: string;
   /**
@@ -417,12 +403,13 @@ export interface TickVerdictInvocation extends AgentUsage {
    */
   promptPath: string;
   /**
-   * spec/loop.md "Tip verify": the tracked paths this run left dirty in its
-   * worktree — modified and not committed — read while the worktree still
-   * existed, immediately before teardown removes it and them. Covers the
-   * agent's own leftovers and the content a soft-reset span (a tip-verify
-   * refusal, an `afterCommit` gate revert) put back into the tree, whichever
-   * the tick produced.
+   * spec/loop.md "Tip verify — one writer per branch, absorption at the
+   * merge": the tracked paths this run left dirty in its worktree — modified
+   * and not committed — read while the worktree still existed, immediately
+   * before teardown removes it and them. Covers the agent's own leftovers
+   * and the content a soft-reset span (a tip-verify refusal, an
+   * `afterCommit` gate revert) put back into the tree, whichever the tick
+   * produced.
    *
    * Always present on a row, `[]` when the tick left nothing behind: "the
    * loss is seen even though it is not preserved" is only readable if the
@@ -644,11 +631,11 @@ export interface TickVerdict {
    */
   mergeOutcomes: TickVerdictMergeOutcome[];
   /**
-   * spec/loop.md "The tick verdict", "Every agent invocation leaves a usage
-   * row": one entry per agent run this tick — one for a singleton, one per
-   * provisioned entry that actually reached `invokeAgent` under fanout.
-   * Empty when nothing this tick invoked the agent at all (declined,
-   * render-refused, or nothing pickable).
+   * spec/loop.md "The tick verdict — one facts artifact", "Every agent
+   * invocation leaves a usage row": one entry per agent run this tick — one
+   * for a singleton, one per provisioned entry that actually reached
+   * `invokeAgent` under fanout. Empty when nothing this tick invoked the
+   * agent at all (declined, render-refused, or nothing pickable).
    */
   invocations: TickVerdictInvocation[];
   /**
@@ -666,8 +653,8 @@ export interface TickVerdict {
   stakeLosses?: StakeLoss[];
   /**
    * Merge-stage cherry-pick-conflict failures this tick recorded
-   * (spec/loop.md "Repeated identical failures").
-   * Absent/empty when the tick hit none.
+   * (spec/loop.md "Repeated identical failures — quarantine, then
+   * abort"). Absent/empty when the tick hit none.
    */
   mergeFailures?: MergeFailure[];
   /**

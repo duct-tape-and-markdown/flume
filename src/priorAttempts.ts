@@ -364,10 +364,10 @@ export class PriorAttemptStore {
     const p = priorAttemptPath(this.flumeDir, ref);
     // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
     // on a record that is present but unstattable. "No prior attempt" is the
-    // signal spec/loop.md "Repeated identical failures" counts on, so a
-    // record the probe cannot reach must refuse rather than reset that count
-    // — the degradations below are for a record that was *read* and found
-    // garbled, never for one that was never reached.
+    // signal spec/loop.md "Repeated identical failures — quarantine, then
+    // abort" counts on, so a record the probe cannot reach must refuse rather
+    // than reset that count — the degradations below are for a record that
+    // was *read* and found garbled, never for one that was never reached.
     if (!existsLoud(toNamespacedPath(p))) return undefined;
     try {
       const rec = JSON.parse(await readFile(toNamespacedPath(p), "utf8")) as {
@@ -424,9 +424,10 @@ export class PriorAttemptStore {
    * — escapes. This map feeds every `TickContext.priorAttempts` a tick's
    * hooks read, so an unreachable store reported as an empty map tells every
    * `shouldRun` "no prior attempt" and silently resets the repeated-failure
-   * count spec/loop.md "Repeated identical failures" keeps — the same
-   * refusal {@link read} makes per file, where the degrade to "no prior" is
-   * only ever for a record that was *read* and found garbled.
+   * count spec/loop.md "Repeated identical failures — quarantine, then
+   * abort" keeps — the same refusal {@link read} makes per file, where the
+   * degrade to "no prior" is only ever for a record that was *read* and
+   * found garbled.
    *
    * Hence the descent: the state root, then `prior-attempts/`, then each
    * keyspace directory, each proven a directory before the next is probed
@@ -775,12 +776,13 @@ export function buildTipMoved(
  * tick's merge outcome — a record that dropped it would leave the retry and
  * every `shouldRun` reading a broken hook as a deliberate park.
  *
- * Bounded like every other variant (spec/loop.md "Bounded by construction"):
- * a wide commit's footprint is elided to {@link MAX_PRIOR_TOUCHED_PATHS}
- * entries with the omitted count stated, never silently cut — a truncated
- * list passing for a whole footprint is the false signal the bound must not
- * introduce — and a throw's message rides the same
- * {@link MAX_PRIOR_NOCOMMIT} head bound the other captured texts do.
+ * Bounded like every other variant (spec/loop.md "Bounded by construction —
+ * a digest, not a transcript"): a wide commit's footprint is elided to
+ * {@link MAX_PRIOR_TOUCHED_PATHS} entries with the omitted count stated,
+ * never silently cut — a truncated list passing for a whole footprint is the
+ * false signal the bound must not introduce — and a throw's message rides
+ * the same {@link MAX_PRIOR_NOCOMMIT} head bound the other captured texts
+ * do.
  */
 export function buildNotShipped(
   mergedSha: string,

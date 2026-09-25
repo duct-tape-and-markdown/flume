@@ -737,11 +737,21 @@ const renderRun = (
  * half is read backticked or bare, the way every other page name is — the
  * fence is the author's, never the rule's.
  *
- * The parenthetical closes on the emphasized half, so a sentence that merely
- * follows a page with an aside draws no cite and a comment that claimed no
- * section is never held to one.
+ * **Adjacency is the whole grammar**, and the parenthetical and the comma are
+ * furniture a sentence may carry or drop: `` a page (`<page>.md`, *Section*)
+ * `` and `` `<page>.md`, *Section* `` and `` `<page>.md` *Section* `` are the
+ * one claim spelled three ways, so the pattern matches none of that furniture
+ * and requires only that the emphasized half follow the page name directly.
+ * Held to the narrower spelling, the arm read a minority of the cites the tree
+ * actually states and passed over the rest unjudged — a green verdict drawn
+ * from the punctuation an author happened to reach for
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ *
+ * What the adjacency still refuses is an emphasis a sentence reaches after
+ * saying something else: a phrase with prose between it and the page name
+ * draws no cite, so a comment that claimed no section is never held to one.
  */
-const SECTION_CITE = /\(`?([^\s`(),]+\.md)`?,\s+(?:\*([^*]+)\*|"([^"]+)")\)/g;
+const SECTION_CITE = /`?([^\s`(),]+\.md)`?,?\s+(?:\*([^*]+)\*|"([^"]+)")/g;
 
 /**
  * The section cites one rendered run states, at the line each sits on.

@@ -3637,7 +3637,7 @@ describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"C
  * caller-chosen `writablePaths`/`entryChannelPaths` on `build`. `build`
  * is the consumer phase `flume check`'s fence arithmetic reads (the sole
  * fanout-concurrency phase, the sole kind that ever picks from `pending` —
- * `Phase.ts` "Concurrency", `spec/pending.md` "Selection is the sole site").
+ * `Phase.ts` "Concurrency", `spec/pending.md` "The fork-resolution seam").
  */
 function fanoutCheckChainSrc(
   buildWritablePaths: string[],

@@ -24,9 +24,8 @@
  *
  * Entry source: `build:` commits only (`build: <desc> (TAG)`,
  * `build: <desc> [TAG]`, or `build(TAG): <desc>`) — the per-pending-entry
- * shipping unit (CLAUDE.md "Build phase commits per pending entry ... after
- * green validation"). plan:/chore:/spec: commits are process bookkeeping,
- * not user-facing change.
+ * shipping unit (CLAUDE.md "Non-Negotiables"). plan:/chore:/spec: commits
+ * are process bookkeeping, not user-facing change.
  *
  * Breaking marker: a commit body line starting with `BREAKING:` routes the
  * entry under `### Breaking`; everything else lands under `### Uncategorized`

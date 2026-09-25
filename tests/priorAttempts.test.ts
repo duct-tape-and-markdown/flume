@@ -291,7 +291,7 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     expect(rec.threw).toBeDefined();
     expect(rec.threw!.length).toBeLessThan(huge.length);
     // Elided visibly, never passed off as the whole message (spec/loop.md
-    // "Bounded by construction").
+    // "Bounded by construction — a digest, not a transcript").
     expect(rec.threw).toMatch(/truncated \d+ chars/);
   });
 });
@@ -333,12 +333,12 @@ async function renderPriorBlock(
 /**
  * `existsSync` collapsed every stat failure to `false`, so a record that is
  * on disk but unstattable read as "no prior attempt" — the one answer
- * spec/loop.md "Repeated identical failures" counts on to *not* be invented.
- * A false absent there resets the quarantine count on every tick and the
- * loop retries the same failing entry forever. The probe now splits ENOENT
- * from the rest (`existsLoud`, src/fsProbe.ts); the reader's other
- * degradations — garbled JSON, an unknown mode, a missing anchor — still
- * return "no prior", because those records were read.
+ * spec/loop.md "Repeated identical failures — quarantine, then abort" counts
+ * on to *not* be invented. A false absent there resets the quarantine count
+ * on every tick and the loop retries the same failing entry forever. The
+ * probe now splits ENOENT from the rest (`existsLoud`, src/fsProbe.ts); the
+ * reader's other degradations — garbled JSON, an unknown mode, a missing
+ * anchor — still return "no prior", because those records were read.
  */
 describe("priorAttempts — an unreachable record is not an absent one", () => {
   let fx: Fixture;

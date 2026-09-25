@@ -551,8 +551,8 @@ export function withTerminalRenderer(
       let buf = "";
       // Set from the same {@link readStreamJsonLine} decode the rendered
       // line is printed from — one read of the `result` event answers both
-      // (spec/loop.md "The tick verdict", "Every agent invocation leaves a
-      // usage row").
+      // (spec/loop.md "The tick verdict — one facts artifact", "Every
+      // agent invocation leaves a usage row").
       let usage: AgentUsage | undefined;
       const emitLine = (line: string): void => {
         const read = readStreamJsonLine(line, tag, inv.cwd);
@@ -587,11 +587,11 @@ export function withTerminalRenderer(
 
 /**
  * The agent's final message, lifted from the full captured stdout — the
- * spec/chain.md "agent seam" extraction every `Agent.invoke` implementation
- * owns for its own transcript shape. Unbound: a caller that persists this
- * (the dispatcher's clean-exit record — `spec/loop.md`, "The no-commit
- * taxonomy") applies its own size policy — record-size bounding is not
- * provider shape.
+ * spec/chain.md "The agent seam" extraction every `Agent.invoke`
+ * implementation owns for its own transcript shape. Unbound: a caller that
+ * persists this (the dispatcher's clean-exit record — `spec/loop.md`, "The
+ * no-commit taxonomy") applies its own size policy — record-size bounding
+ * is not provider shape.
  *
  * `claudeCode({ outputFormat: "stream-json" })` produces NDJSON on stdout,
  * not prose — tailing it raw forwards escaped-JSON assistant/result events

@@ -12,8 +12,9 @@
  * path and a logger. The dependency runs one way: the dispatcher, the CLI
  * and the harness package call in here, nothing here calls back.
  *
- * spec/chain.md "The friction channel" and spec/worktrees.md "Teardown
- * harvest — the delivery guarantee" are the contracts these serve.
+ * spec/chain.md "`Chain.friction` — the declared friction channel" and
+ * spec/worktrees.md "Teardown harvest — the delivery guarantee" are the
+ * contracts these serve.
  *
  * `writeRevertNote` stays in `src/tickAttempt.ts`: it is the gate-revert
  * path's own note, built from a commit message only that attempt reads.

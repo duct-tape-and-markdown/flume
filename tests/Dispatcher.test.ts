@@ -911,10 +911,11 @@ describe("Dispatcher singleton — afterCommit gate failure reverts the commit",
     ]);
 
     // Generalized past provisioning (spec/loop.md "Repeated identical
-    // failures"): a gate-stage failure is recorded with a signature derived
-    // from the gate's own name plus its failure output. A singleton phase has
-    // no entry to blame, so `tag` is absent — this failure falls to the
-    // consecutive-failure backstop alone, never the quarantine leg.
+    // failures — quarantine, then abort"): a gate-stage failure is recorded
+    // with a signature derived from the gate's own name plus its failure
+    // output. A singleton phase has no entry to blame, so `tag` is absent —
+    // this failure falls to the consecutive-failure backstop alone, never the
+    // quarantine leg.
     expect(outcome.verdict?.gateFailures).toEqual([
       { signature: "intentional-fail: boom", message: "boom" },
     ]);
@@ -3919,14 +3920,14 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
     expect(branches.trim()).toBe("");
   });
 
-  // spec/worktrees.md "Placement": *the base is resolved once* — creation
-  // and the sweep read one resolution, the chain's declaration included.
-  // The failure this pins is the one field-traced four times: a sweep that
-  // bases on the default reads an empty directory and removes nothing,
+  // spec/worktrees.md "Placement — the worktree base": *the base is resolved
+  // once* — creation and the sweep read one resolution, the chain's declaration
+  // included. The failure this pins is the one field-traced four times: a sweep
+  // that bases on the default reads an empty directory and removes nothing,
   // leaving every worktree still standing at the real base — and, since the
   // branch leg reaps only what the directory leg removed, every branch those
-  // worktrees hold. Residue is planted by hand rather than by a prior tick because
-  // what the sweep exists for is a run that died before teardown.
+  // worktrees hold. Residue is planted by hand rather than by a prior tick
+  // because what the sweep exists for is a run that died before teardown.
   it("the startup sweep reads the chain-declared base", async () => {
     const savedOverride = process.env.FLUME_WORKTREES_DIR;
     delete process.env.FLUME_WORKTREES_DIR;
@@ -4844,11 +4845,12 @@ describe("Dispatcher fanout — the wave's merge failures reach handoff (TICK-RE
  * `pruneWorktrees` used to warn and drop the throw on the floor, so a
  * deterministic prune wall on a singleton-only chain repeated every tick
  * with the consecutive-failure backstop blind to it (spec/loop.md "Repeated
- * identical failures": the accounting covers every per-entry failure fact
- * the verdict records, and prune is one of the three provision-stage
- * sources it names). `runFanout` already accumulated its wave-level prune
- * throw; these pin the same shape on the singleton path, including the leg
- * that costs nothing today — creation succeeding afterwards.
+ * identical failures — quarantine, then abort": the accounting covers every
+ * per-entry failure fact the verdict records, and prune is one of the three
+ * provision-stage sources it names). `runFanout` already accumulated its
+ * wave-level prune throw; these pin the same shape on the singleton path,
+ * including the leg that costs nothing today — creation succeeding
+ * afterwards.
  */
 describe("Dispatcher singleton — a worktree-prune throw is recorded, not just logged (SINGLETON-PRUNE-PROVISION-FAILURE)", () => {
   afterEach(() => {
@@ -5229,9 +5231,10 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
     ]);
 
     // Generalized past provisioning (spec/loop.md "Repeated identical
-    // failures"): a merge-stage cherry-pick conflict is recorded on the
-    // verdict with a stage-tagged signature — always entry-scoped, unlike a
-    // provisioning failure, so superviseLoop's quarantine leg can isolate it.
+    // failures — quarantine, then abort"): a merge-stage cherry-pick conflict
+    // is recorded on the verdict with a stage-tagged signature — always
+    // entry-scoped, unlike a provisioning failure, so superviseLoop's
+    // quarantine leg can isolate it.
     expect(outcome.verdict?.mergeFailures).toEqual([
       expect.objectContaining({
         tag: "CONFLICT-B",
@@ -6080,7 +6083,8 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     // The marker window: this gate runs between THROW-M's pick onto trunk
     // and the wave's queue rewrite, so a throw escaping here is exactly the
     // death that would strand `merging/throw-m.json` and refuse the next
-    // `loop` start (spec/loop.md "A merge the crash interrupted is refused").
+    // `loop` start (spec/loop.md "A merge the crash interrupted is refused,
+    // never resumed").
     let staked: string[] = [];
     const probeThenThrow: Gate = {
       name: "merge-explodes",
@@ -6246,7 +6250,8 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
 });
 
 // ---------- shared-checkout keep-semantics revert (spec/loop.md "Tip
-// verify", "dropping it must not take bystanders") ----------
+// verify — one writer per branch, absorption at the merge", "dropping
+// it must not take bystanders") ----------
 
 describe("Dispatcher — an afterMerge revert on the primary checkout preserves bystander state", () => {
   // A brand-new staged file — or a staged modification to any tracked file,
@@ -6496,8 +6501,9 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
         }
         // A bystander editing the exact path the revert needs to touch, in
         // the window between cherry-pick and this gate's revert —
-        // resetKeepTo's own collision refusal (spec/loop.md "Tip verify",
-        // "dropping it must not take bystanders").
+        // resetKeepTo's own collision refusal (spec/loop.md "Tip verify —
+        // one writer per branch, absorption at the merge", "dropping it
+        // must not take bystanders").
         await writeFile(
           join(cwd, "src", "collide.ts"),
           "bystander collision\n",
@@ -6628,8 +6634,8 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
 
 // ---------- AFTERMERGE-REVERT-TIP-CHECK: a foreign commit landing atop the
 // merged span refuses the afterMerge revert instead of resetting over it
-// (spec/loop.md "Tip verify", "one window stays a refusal, deliberately")
-// ----------
+// (spec/loop.md "Tip verify — one writer per branch, absorption at the
+// merge", "one window stays a refusal, deliberately") ----------
 
 describe("Dispatcher — afterMerge revert refuses over a foreign commit landed atop the cherry-pick", () => {
   it("fanout: a foreign commit landing on trunk while the afterMerge gate runs refuses the revert, naming both shas, and leaves the foreign commit on trunk", async () => {
@@ -6646,8 +6652,9 @@ describe("Dispatcher — afterMerge revert refuses over a foreign commit landed 
         // Simulate an operator committing directly to trunk in the window
         // between this entry's cherry-pick and this gate's own revert — a
         // foreign commit is legal history the wave would otherwise absorb
-        // (spec/loop.md "Tip verify"), but not something the afterMerge
-        // revert may reset over.
+        // (spec/loop.md "Tip verify — one writer per branch, absorption
+        // at the merge"), but not something the afterMerge revert may
+        // reset over.
         await writeFile(join(cwd, "src", "foreign.ts"), "foreign\n");
         await exec("git", ["add", "."], { cwd });
         await exec(
@@ -7120,11 +7127,11 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
     // Same FOOT-STRAY shape as the footprint test above, but pinned on the
     // git call count: runAfterCommitGates already shells out to `git diff
     // --name-only` once per entry to build the whole-span touchedPaths every
-    // afterCommit gate reads (spec/loop.md "Tip verify", per-entry leg — the
-    // span's cumulative footprint, not just the newest commit's). The
-    // fanout caller re-deriving the identical span's footprint via a second
-    // diffNameOnly call is the duplicate this test catches if it's ever
-    // reintroduced.
+    // afterCommit gate reads (spec/loop.md "Tip verify — one writer per
+    // branch, absorption at the merge", per-entry leg — the span's
+    // cumulative footprint, not just the newest commit's). The fanout caller
+    // re-deriving the identical span's footprint via a second diffNameOnly
+    // call is the duplicate this test catches if it's ever reintroduced.
     await writePending(fx.repo, [makeEntry("FOOT-STRAY", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -7484,8 +7491,8 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
     const outcome = await dispatcher.tick();
 
     // Lands on trunk regardless — the predicate changes classification, not
-    // landing (spec/worktrees.md "In-worktree gate reverts leave a trunk
-    // footprint" makes the same landed/classified split).
+    // landing (spec/worktrees.md "An in-worktree revert still leaves a
+    // trunk footprint" makes the same landed/classified split).
     expect(await readFile(join(fx.repo, "notes/park.md"), "utf8")).toBe(
       "blocked\n",
     );
@@ -8311,10 +8318,10 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
 
     // Same corruption mechanism as the single-entry sibling above, but the
     // wave now carries a second, declined entry (the shouldRun seam)
-    // alongside the shipping one — the shape spec/loop.md "The tick verdict"
-    // drift (b) actually describes: `waveDeclined`, computed from the
-    // per-entry loop before `commitPendingUpdate` runs, must survive
-    // onto `WaveLedgerRefusal`'s carried verdict exactly like
+    // alongside the shipping one — the shape spec/loop.md "The tick verdict
+    // — one facts artifact" drift (b) actually describes: `waveDeclined`,
+    // computed from the per-entry loop before `commitPendingUpdate` runs,
+    // must survive onto `WaveLedgerRefusal`'s carried verdict exactly like
     // `shippedTags` does, not just the trivial single-entry case.
     const corrupt = "{ corrupted mid-wave, not json";
     const invoked: string[] = [];
@@ -9518,7 +9525,8 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
   });
 
   // ---------- a gate's own attribution (spec/chain.md "What a gate
-  // returns", spec/loop.md "Prior-outcome feedback") ----------
+  // returns", spec/loop.md "Prior-outcome feedback to the retrying
+  // tick") ----------
   //
   // `GateResult.blamesSpan: false` is the gate stating that a failure is not
   // the gated span's — the suite red at the base, a resource the span never
@@ -10598,9 +10606,10 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
     // worktree branch, which misread an agent that commits, keeps working,
     // and commits again as an interloper's own commit — soft-resetting a
     // completed entry and letting teardown destroy all trace. Ancestry
-    // (spec/loop.md "Tip verify", per-entry leg) reads this correctly: the
-    // recorded base is still an ancestor of the observed HEAD, so the whole
-    // two-commit span is a completed entry, not interference.
+    // (spec/loop.md "Tip verify — one writer per branch, absorption at the
+    // merge", per-entry leg) reads this correctly: the recorded base is
+    // still an ancestor of the observed HEAD, so the whole two-commit span
+    // is a completed entry, not interference.
     await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
@@ -10749,10 +10758,11 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
   });
 
   it("fanout: a foreign non-engine commit lands on trunk mid-wave — the cherry-pick absorbs it instead of refusing tipMoved", async () => {
-    // spec/loop.md "Tip verify", "Harness-driven commits carry no
-    // expected-tip bookkeeping": no live claim on the ref means whatever
-    // moved trunk was not an engine, so the wave cherry-picks onto whatever
-    // tip is current instead of refusing on sha mismatch.
+    // spec/loop.md "Tip verify — one writer per branch, absorption at the
+    // merge", "Harness-driven commits carry no expected-tip bookkeeping":
+    // no live claim on the ref means whatever moved trunk was not an
+    // engine, so the wave cherry-picks onto whatever tip is current instead
+    // of refusing on sha mismatch.
     await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
@@ -17835,11 +17845,11 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
  * spec/loop.md "The tick verdict — one facts artifact": a span row is
  * recovery, not decoration — "re-cherry-pickable from the verdict alone,
  * never re-run at full agent price". `headSha` alone cannot do that: a span
- * may hold several commits (spec/loop.md "N commits are completion"), so
- * picking its head re-applies the last commit and loses the rest. Both tests
- * below therefore prove recovery by actually replaying `baseSha..headSha`
- * onto trunk after the tick tore the worktree down, and both drive a
- * two-commit span so the replay is load-bearing.
+ * may hold several commits (spec/loop.md "The check is ancestry, and N
+ * commits are completion"), so picking its head re-applies the last commit
+ * and loses the rest. Both tests below therefore prove recovery by actually
+ * replaying `baseSha..headSha` onto trunk after the tick tore the worktree
+ * down, and both drive a two-commit span so the replay is load-bearing.
  */
 describe("TickVerdict span rows — base beside head", () => {
   /** `git rev-list --count base..head` in `repo`. */

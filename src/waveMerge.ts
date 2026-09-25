@@ -358,11 +358,12 @@ export async function runWaveMerge(
           entryTag: r.entry.tag,
           promptPath: r.termination.promptPath,
           ...(r.termination.usage ?? {}),
-          // spec/loop.md "Tip verify": this entry's worktree is done being
-          // written — its agent, its tip-verify soft reset and its
-          // afterCommit revert all ran inside `runAttempt`, and the
-          // pick below touches trunk alone — but teardown is still a whole
-          // wave away, so the set is readable here.
+          // spec/loop.md "Tip verify — one writer per branch, absorption
+          // at the merge": this entry's worktree is done being written —
+          // its agent, its tip-verify soft reset and its afterCommit
+          // revert all ran inside `runAttempt`, and the pick below touches
+          // trunk alone — but teardown is still a whole wave away, so the
+          // set is readable here.
           uncommittedTracked: await git.trackedModifications(r.worktreePath),
         });
       }
@@ -371,9 +372,10 @@ export async function runWaveMerge(
         // Per-entry tip-verify leg: this entry's own ancestry check
         // refused before ever reaching cherry-pick — a real, dropped-work
         // fact, not silence a partial ship summary would otherwise paper
-        // over (spec/loop.md "Tip verify"). Distinct from the wave-level
-        // `tip-moved` outcome pushed below, which is the shared trunk racing
-        // during this wave's own merge step.
+        // over (spec/loop.md "Tip verify — one writer per branch, absorption
+        // at the merge"). Distinct from the wave-level `tip-moved` outcome
+        // pushed below, which is the shared trunk racing during this wave's
+        // own merge step.
         mergeOutcomes.push({
           entryTag: r.entry.tag,
           outcome: "dropped-work",
@@ -401,13 +403,14 @@ export async function runWaveMerge(
         continue;
       }
 
-      // spec/loop.md "Tip verify", "Harness-driven commits carry no
-      // expected-tip bookkeeping — the claim refuses, git arbitrates": no
-      // sha comparison against a recorded expectation. A live claim on the
-      // ref is a concurrent engine instance and refuses exactly as a moved
-      // tip used to; absent one, whatever moved trunk was not an engine, and
-      // the cherry-pick below lands onto whatever tip is current — git's own
-      // conflict detection is the only content arbiter left.
+      // spec/loop.md "Tip verify — one writer per branch, absorption at the
+      // merge", "Harness-driven commits carry no expected-tip bookkeeping —
+      // the claim refuses, git arbitrates": no sha comparison against a
+      // recorded expectation. A live claim on the ref is a concurrent engine
+      // instance and refuses exactly as a moved tip used to; absent one,
+      // whatever moved trunk was not an engine, and the cherry-pick below
+      // lands onto whatever tip is current — git's own conflict detection is
+      // the only content arbiter left.
       const foreignClaim = await liveForeignClaimPid(
         repoRoot,
         leg.ownTipClaimPid,
@@ -446,8 +449,9 @@ export async function runWaveMerge(
         // The per-entry leg's ancestry check already cleared the whole
         // `spanBase..headSha` span as one completed entry — cherry-pick
         // the whole range, in order, not just the newest commit
-        // (spec/loop.md "N commits are completion"). Equivalent to a
-        // single-sha pick when the span holds exactly one commit.
+        // (spec/loop.md "The check is ancestry, and N commits are
+        // completion"). Equivalent to a single-sha pick when the span
+        // holds exactly one commit.
         await git.cherryPickRange(repoRoot, r.spanBase, r.headSha);
       } catch (err) {
         const message = (err as Error).message;
@@ -488,12 +492,12 @@ export async function runWaveMerge(
       // Gate this entry's merged commit. The first failing afterMerge gate
       // attributes the failure to *this* entry — it is the only delta
       // between `preCherry` and `mergedSha`, which now may span more than
-      // one cherry-picked commit (spec/loop.md "N commits are completion") —
-      // diffed as a range rather than `mergedSha`'s own single-commit show,
-      // so an earlier commit in the span isn't missed.
-      // Computed once per commit and shared across every gate this loop
-      // runs, and reused below as the `afterMerge-reverted` footprint — same
-      // dedup as runAfterCommitGates above.
+      // one cherry-picked commit (spec/loop.md "The check is ancestry, and N
+      // commits are completion") — diffed as a range rather than
+      // `mergedSha`'s own single-commit show, so an earlier commit in the
+      // span isn't missed. Computed once per commit and shared across every
+      // gate this loop runs, and reused below as the `afterMerge-reverted`
+      // footprint — same dedup as runAfterCommitGates above.
       const commitTouchedPaths = await git.diffNameOnly(
         repoRoot,
         preCherry,
@@ -573,15 +577,15 @@ export async function runWaveMerge(
           signature: gateFailureSignature(entryFailure),
           message: entryFailure.message,
         });
-        // spec/loop.md "Tip verify", "dropping it must not take
-        // bystanders": the primary checkout may hold an operator's
-        // uncommitted work, so this reset carries keep-semantics — never
-        // --hard — and a textual collision refuses loudly rather than
-        // silently discarding either writer's content. Caught here, not
-        // propagated: an uncaught throw would abort the whole wave loop
-        // before `commitPendingUpdate` ever ran, dropping the ledger
-        // rewrite for every sibling entry already cherry-picked and shipped
-        // ahead of this one.
+        // spec/loop.md "Tip verify — one writer per branch, absorption at
+        // the merge", "dropping it must not take bystanders": the primary
+        // checkout may hold an operator's uncommitted work, so this reset
+        // carries keep-semantics — never --hard — and a textual collision
+        // refuses loudly rather than silently discarding either writer's
+        // content. Caught here, not propagated: an uncaught throw would
+        // abort the whole wave loop before `commitPendingUpdate` ever ran,
+        // dropping the ledger rewrite for every sibling entry already
+        // cherry-picked and shipped ahead of this one.
         const foreignTip = await checkMergedTipUnmoved(
           repoRoot,
           preCherry,

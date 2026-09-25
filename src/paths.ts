@@ -628,7 +628,7 @@ export const CHAIN_MODULE_NAME = "chain.ts";
 
 /**
  * The chain a config dir carries — `<configDir>/chain.ts`, absolute
- * (spec/chain.md "Chain residency").
+ * (spec/chain.md "Chain residency — one chain per `.flume`").
  *
  * **The one derivation.** `loadChainModule` (`src/chainLoad.ts`) resolves
  * the file it imports from here, and `chainLoadGate` (`src/builtinGates.ts`)
@@ -650,10 +650,10 @@ export function chainModulePath(configDir: string): string {
 
 /**
  * The file a phase's `promptPath` names, absolute (spec/chain.md "Chain
- * residency"). Resolved, never joined: a relative `promptPath` keeps its
- * meaning beneath the config dir, and an absolute one is taken as given —
- * which is how a prompt shipped inside a package gets an address rather than
- * a path the chain is assumed to hold beneath itself.
+ * residency — one chain per `.flume`"). Resolved, never joined: a relative
+ * `promptPath` keeps its meaning beneath the config dir, and an absolute one
+ * is taken as given — which is how a prompt shipped inside a package gets an
+ * address rather than a path the chain is assumed to hold beneath itself.
  *
  * Both dispatcher render sites — singleton and fanout — read the prompt from
  * here, so neither can address a phase's prompt differently from the other.
