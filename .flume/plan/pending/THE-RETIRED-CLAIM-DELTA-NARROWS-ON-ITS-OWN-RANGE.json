@@ -1,0 +1,29 @@
+{
+  "tag": "THE-RETIRED-CLAIM-DELTA-NARROWS-ON-ITS-OWN-RANGE",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "harness/sweepWindow.ts",
+        "description": "the locus paths the retired-claim diff is narrowed to are read off the range that diff is drawn over, never the stamp's"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the delta over a locus page untouched since the stamp, beside the retired-claim cursor's own cases"
+      }
+    ]
+  },
+  "summary": "The retired-claim diff runs from `retiredThrough` but is narrowed to the paths the `sweptThrough` range touched, so a page retired between the cursors renders nothing",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "The frontier is decidable; the neighborhood is judged"
+  },
+  "acceptance": "the retired-claim delta's path set is drawn from the same range its diff is \u2014 every locus path touched past `retiredThrough` \u2014 so a page whose deletions fall between the two cursors and that is untouched since the stamp renders its lines, and the whole-delta flag that advances the cursor is answered over that set",
+  "tests": [
+    "the retired-claim delta renders a locus page retired before the stamp and untouched since"
+  ],
+  "notes": "Measured here: at `retiredThrough` 8a1e52a3 and `sweptThrough` f375b568 the union is empty \u2014 no spec path is touched past f375b568 \u2014 so `retiredLines` (`harness/sweepWindow.ts:286`) answers no page while the real diff retires three, `retiredBlock` reports whole, and the cursor jumps the tip. `all` is `commitsPast(cursor)` (`:158`); `searched` is `retiredCursor` (`:217`). Sibling of THE-SWEEP-WINDOW-LISTS-THE-DOMAIN-A-PHRASE-DELTA-ARMS: same section, same two files."
+}

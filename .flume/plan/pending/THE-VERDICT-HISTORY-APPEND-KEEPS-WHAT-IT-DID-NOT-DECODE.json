@@ -1,0 +1,27 @@
+{
+  "tag": "THE-VERDICT-HISTORY-APPEND-KEEPS-WHAT-IT-DID-NOT-DECODE",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "the history append preserves the lines it read rather than re-serializing the records its own structural check accepted"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the preserved row, beside the tick-verdict artifact block's own history cases"
+      }
+    ]
+  },
+  "summary": "The history append rewrites the log from decoded records, so every row a field added to the structural check declines is deleted on the next tick — the spec states never cleared",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "The tick verdict — one facts artifact"
+  },
+  "acceptance": "a row the structural check declines survives the next tick's append, so a field added to the verdict shape costs the log nothing and `<flumeDir>/tick-verdicts.jsonl` is the history the spec states, with the rolling bound and what `readTickVerdicts` hands a chain unchanged",
+  "tests": [
+    "the verdict history append keeps a record the structural check declines"
+  ],
+  "notes": "Measured this tick over a two-row log: the pre-`timings` row is dropped by the read (`isTickVerdict`, `src/tickVerdict.ts:917`; the new arm `:928`) and the rewrite (`:1003`) puts back only what the read returned. Every field ever added did the same, silently. `MAX_TICK_VERDICTS` then bounds lines as well as records."
+}
