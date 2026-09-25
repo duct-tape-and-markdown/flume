@@ -1,1 +1,15 @@
-{"sweptThrough":"4854eca17d78b7c4a8c14ee1a7b84a3f3cc009f0","rotation":{"kind":"closed"}}
+{
+  "sweptThrough": "4854eca17d78b7c4a8c14ee1a7b84a3f3cc009f0",
+  "rotation": {
+    "kind": "open",
+    "covered": [
+      "harness/dirListing.ts",
+      "harness/exec.ts",
+      "harness/gitRange.ts",
+      "harness/init.ts",
+      "src/friction.ts",
+      "src/fsProbe.ts",
+      "src/mergingMarkers.ts"
+    ]
+  }
+}

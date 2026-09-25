@@ -1,0 +1,45 @@
+{
+  "tag": "THE-WHOLE-ARTIFACT-NEGATIVES-READ-THEIR-OWN-BLOCKS",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the six window negatives read the block `blockUnder` already cuts, or the producer's own marker phrase, rather than a bare English word over the whole render"
+      },
+      {
+        "path": "tests/Agent.test.ts",
+        "description": "the six render negatives read the block each one's arm is about"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the verdict negative reads the one status line its claim is about"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "the sentinel negative reads the block the case's arm renders"
+      },
+      {
+        "path": "tests/harnessBuildArgs.test.ts",
+        "description": "the span negative reads the block the guard it is about governs"
+      },
+      {
+        "path": "tests/cliRender.test.ts",
+        "description": "the refusal-totality negative reads the arm's own line, not the verb's combined output"
+      },
+      {
+        "path": "tests/worktrees.test.ts",
+        "description": "the no-hand-rolled-default claim reads the declaration it is about, not the module's whole text"
+      }
+    ]
+  },
+  "summary": "Seventeen negative assertions take a whole rendered window, prompt, verdict or module text as their subject \u2014 the family sixteen plan commit bodies have now accepted as debt",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "every one of those assertions names a subject its own arm produces \u2014 a cut block, the producer's own marker phrase, or one line \u2014 so none can red for a path, tag, commit subject or error string the artifact merely happens to quote",
+  "notes": "Off the three-notes escalation, long past it: 7 plan bodies since the family was last filed (A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK, c0fbb6a9) \u2014 d0de4ae4 through 4854eca1. Verified on disk this tick: harnessWindows 938/1006/1506/1507/1518/1521 (`\"REFUSE\"`, `\"bootstrap\"`; `blockUnder` at :1209 is the file's own cut, and :1006's render carries a raw fs error path), Agent 715-720, harnessGates 810, harnessPrompts 871, harnessBuildArgs 508, cliRender 287, worktrees 304."
+}
