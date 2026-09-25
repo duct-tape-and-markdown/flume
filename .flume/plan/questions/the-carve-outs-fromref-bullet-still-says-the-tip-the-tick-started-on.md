@@ -14,7 +14,7 @@ Unqualified, that reads as: **every** worktree in a wave is cut from the
 tick's pre-head. It describes the tree today — `createWorktree(entry.tag,
 preHead)` (`src/waveTick.ts:207`) — and it contradicts the tree the queue is
 about to ship. `THE-FREED-SLOT-PULLS-THE-NEXT-DISJOINT-ENTRY`'s acceptance
-says a refilled slot is provisioned "from the tip as it then stands", which
+says a refilled slot is provisioned "cut from the tip it is pulled at", which
 is the point of refilling at all: an entry pulled after three merges that is
 cut from the pre-head re-earns every conflict those merges already resolved.
 
