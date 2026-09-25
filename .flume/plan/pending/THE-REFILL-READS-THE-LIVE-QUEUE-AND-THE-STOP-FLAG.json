@@ -1,16 +1,26 @@
 {
   "tag": "THE-REFILL-READS-THE-LIVE-QUEUE-AND-THE-STOP-FLAG",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
   "priority": 30,
   "files": {
     "edit": [
       {
         "path": "src/waveTick.ts",
-        "description": "a freed slot re-reads the queue and re-selects from it, skipping an attempted set rather than splicing a wave-start snapshot, and reads the stop flag beside the teardown signal"
+        "description": "a freed slot re-reads the queue and re-selects from it, skipping an attempted set rather than splicing a wave-start snapshot, and reads the stop flag beside the teardown signal when the tick is supervised"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the tick is told whether it runs under a supervisor, on the surface already carrying the supervisor's identity across that boundary"
+      },
+      {
+        "path": "src/cli.ts",
+        "description": "the `tick` command states that fact from what the supervisor told it, beside the claim-inheritance decode"
       },
       {
         "path": "tests/Dispatcher.test.ts",
-        "description": "the mid-wave higher-priority pull, the mid-wave stop, and the never-re-picked pin, beside the wave's refill cases"
+        "description": "the mid-wave higher-priority pull, the supervised mid-wave stop, the bare-tick refill across the flag, and the never-re-picked pin, beside the wave's refill cases"
       }
     ]
   },
@@ -19,13 +29,14 @@
     "path": "spec/worktrees.md",
     "section": "Fanout and worktrees — provisioning, isolation, teardown"
   },
-  "acceptance": "a freed slot reads the queue as it stands and re-selects in priority order, skipping every entry this wave has attempted, and reads the stop flag off disk through the reader the supervisor already spends, so an entry filed mid-wave at a higher priority is pulled ahead of lower-ranked work the wave started with, a flag written mid-wave pulls nothing more while every in-flight entry finishes and merges, and the wave ends when nothing it has not attempted is pickable",
+  "acceptance": "a freed slot reads the queue as it stands and re-selects in priority order, skipping every entry this wave has attempted, so an entry filed mid-wave at a higher priority is pulled ahead of lower-ranked work the wave started with and the wave ends when nothing it has not attempted is pickable; and a slot freed under a supervisor reads the stop flag off disk through the reader the supervisor already spends, pulling nothing more once it is present while every in-flight entry finishes and merges, where a bare `flume tick`'s wave refills across it",
   "tests": [
     "a wave pulls an entry filed mid-wave at a higher priority before a lower-ranked one it started with",
-    "a wave pulls nothing more once the stop flag is written while a slot's agent runs"
+    "a supervised wave pulls nothing more once the stop flag is written while a slot's agent runs"
   ],
   "pins": [
-    "a wave never pulls an entry it has already attempted"
+    "a wave never pulls an entry it has already attempted",
+    "a bare tick's wave refills a freed slot with the stop flag present"
   ],
-  "notes": "Rulings 68eba4eb and e74af849, folded as both records asked. `fillSlots` (`src/waveTick.ts:386`) picks from `remaining` (`:249`), the wave-start snapshot, and guards on `leg.attemptCtx.stopSignal` alone (`:390`). `readPendingForDecision` (`:79`) with `leg.selection` (`:116`) is the re-read; `existsLoud(stopFlagPath(flumeDir))` (`src/loopSupervisor.ts:908`) is the flag reader to share, sync and already loud. `fillSlots` must stay sync: await the re-read in the settling slot's continuation."
+  "notes": "Rulings 68eba4eb, e74af849. `fillSlots` (`src/waveTick.ts:386`) picks from `remaining` (`:249`), the wave-start snapshot, guarding on `leg.attemptCtx.stopSignal` alone (`:390`); `readPendingForDecision` (`:79`) with `leg.selection` (`:116`) is the re-read, `existsLoud(stopFlagPath(flumeDir))` (`src/loopSupervisor.ts:908`) the flag reader. `fillSlots` stays sync: await the re-read in the settling slot. Supervised is told, never inferred off `ownTipClaimPid` (`src/cli.ts:1030`)."
 }
