@@ -1,0 +1,29 @@
+{
+  "tag": "THE-SHIPPED-TREES-DECLARE-THEIR-SPAWN-HOMES",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/spawnCaps.test.ts",
+        "description": "the promisified-spawn home verdict over the shipped-tree domain, beside the cap verdict this repo's own arms already run, with its own vacuity pin"
+      },
+      {
+        "path": "tests/helpers/spawnCaps.ts",
+        "description": "the shipped trees' declared homes beside `SHIPPED_TREES`, and the header paragraph that states which domains the home verdicts answer"
+      }
+    ]
+  },
+  "summary": "The spawn-home verdict — the one scan that sees a module-local git spawner — is run over `tests/` alone; five lived in `src/` until 110d81a9 with the suite green",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the promisified-spawn home verdict runs over the same shipped-tree domain the cap verdict already judges, with the two modules that construct a wrapper as its declared homes, so a capturing spawn built outside them reds where it is written; a vacuity pin names a home's own construction site, as the `tests/` arm's does",
+  "pins": [
+    "no module in the shipped trees promisifies a capturing spawn outside a declared home",
+    "the shipped-tree wrapper scan reads src/git.ts's own promisified spawn"
+  ],
+  "notes": "Measured: `scanPromisifiedSpawns` (`tests/helpers/spawnCaps.ts:658`) runs at `tests/subprocessHelper.test.ts:222` over `tests/` alone; the repo arms (`tests/spawnCaps.test.ts:323`, `:336`) call `scanSpawnCaps` only. Until 110d81a9 three `src/` modules each built one, unseen. The dialect scan (`tests/git.test.ts:237`) covers `src/git.ts` alone, so a spawner outside it takes git's default pathspec parse. Homes: `src/git.ts:26`, `src/spawnShim.ts:17`. Sync half out: each script is its own home."
+}
