@@ -636,7 +636,7 @@ should exist instead.
   that decides whether to run it.
 - **A declined tick is a distinguishable fact**, not a silent no-op — it
   reports its own outcome, separate from a `clean-exit` (the agent ran and
-  committed nothing) and from hibernation (nothing was awake).
+  committed nothing usable) and from hibernation (nothing was awake).
 
 ### Waking a phase, and ending the run, from outside a `handoff`
 
@@ -1931,8 +1931,12 @@ per record — and the block renders the variant that fired:
   its one-line `message`, its full `details`, and a `git show --stat` digest of
   the reverted commit. Symmetric across both gate phases: an `afterMerge`
   failure dies with the dispatcher process, and this is what survives it.
-- `clean-exit` — the agent exited cleanly and committed nothing. Carries the
-  tail of the agent's own final message, verbatim. The engine names no intent:
+- `clean-exit` — the agent exited cleanly and left no usable commit: either
+  none at all, or a span whose diff against its base was empty, which dies
+  with the worktree rather than reaching the merge stage. Carries the tail of
+  the agent's own final message, verbatim, and the span's two shas — `spanBase`
+  and `spanHead`, equal when nothing was committed and apart when an empty span
+  was. The engine names no intent:
   a refused constraint, a deliberate park and "nothing to do" all exit clean,
   and the message is yours to read.
 - `platform-preempt` — the agent process failed for non-work reasons

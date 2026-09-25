@@ -99,6 +99,7 @@ import {
 import { readQueueAtRef, readQueueOnDisk } from "../src/pendingLedger.ts";
 import {
   InlineExecRenderError as realInlineExecRenderError,
+  type CleanExitAttempt,
   type PriorAttempt,
 } from "../src/Prompt.ts";
 import { loopExitCode } from "../src/cliVerdict.ts";
@@ -4841,6 +4842,136 @@ describe("Dispatcher fanout — the wave's merge failures reach handoff (TICK-RE
 });
 
 /**
+ * THE-EMPTY-SPAN-IS-A-CLEAN-EXIT — an agent that commits and changes nothing
+ * (an `--allow-empty` commit, or an edit it undoes before committing again)
+ * used to clear the ref-moved check, run the whole afterCommit stack and
+ * reach the merge stage, where `git cherry-pick base..head` over a range that
+ * changes nothing exits 1. The wave read git's refusal as a cherry-pick
+ * conflict, blamed the entry and quarantined it for the rest of the run over
+ * a span that was never shippable. An empty span is a `clean-exit` and dies
+ * with its worktree (spec/loop.md "The no-commit taxonomy", `clean-exit`).
+ */
+describe("Dispatcher fanout — an empty span never reaches the merge stage (THE-EMPTY-SPAN-IS-A-CLEAN-EXIT)", () => {
+  /**
+   * One entry whose agent commits an empty tree change and exits clean. The
+   * committed sha is captured from inside the worktree, so every case below
+   * can prove the ref really moved before judging what the engine did with
+   * it — an empty span that never committed would pass these assertions
+   * vacuously, on the arm that already existed.
+   */
+  async function emptySpanWave(tag: string, gates: Gate[] = []) {
+    await writePending(fx.repo, [makeEntry(tag, [`src/${slugify(tag)}.ts`])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let spanHead: string | undefined;
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates,
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        [slugify(tag)]: async (cwd) => {
+          await exec(
+            "git",
+            ["commit", "-q", "--allow-empty", "-m", `build(${tag}): nothing`],
+            { cwd },
+          );
+          spanHead = await head(cwd);
+        },
+      }),
+      log: silent,
+      maxParallel: 2,
+    });
+    const outcome = await dispatcher.tick();
+    return { outcome, spanHead, handedToHandoff };
+  }
+
+  it("an empty span is classified as a clean exit rather than reaching the merge stage", async () => {
+    const gateRuns: string[] = [];
+    const watchdog: Gate = {
+      name: "watchdog",
+      when: "afterCommit",
+      async run() {
+        gateRuns.push("afterCommit");
+        return { ok: true, message: "green" };
+      },
+    };
+
+    const { outcome, spanHead, handedToHandoff } = await emptySpanWave(
+      "EMPTY-SPAN",
+      [watchdog],
+    );
+
+    // Non-vacuity: the agent really did commit — the arm under test is the
+    // empty *span*, not the unmoved ref the older arm already caught.
+    const record = JSON.parse(
+      await readFile(
+        priorAttemptPath(join(fx.repo, ".flume"), entryRef("EMPTY-SPAN")),
+        "utf8",
+      ),
+    ) as PriorAttempt;
+    expect(record.mode).toBe("clean-exit");
+    expect(spanHead).toBeDefined();
+    expect(record).toMatchObject({ spanHead });
+    // …and the record's two shas are what tell this exit from one that
+    // committed nothing at all.
+    expect((record as CleanExitAttempt).spanBase).not.toBe(spanHead);
+
+    // The classification, on all three surfaces the taxonomy names.
+    expect(outcome.noCommit).toBe("clean-exit");
+    expect(outcome.verdict?.noCommit).toBe("clean-exit");
+    expect(
+      handedToHandoff?.entries?.find((e) => e.tag === "EMPTY-SPAN")?.noCommit,
+    ).toBe("clean-exit");
+
+    // Neither the gate loop nor the merge stage saw it: nothing shipped,
+    // nothing was picked, and the entry is still queued.
+    expect(gateRuns).toEqual([]);
+    expect(outcome.verdict?.gateResults).toEqual([]);
+    expect(outcome.verdict?.mergeOutcomes).toEqual([]);
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "EMPTY-SPAN",
+    ]);
+  });
+
+  it("an empty span leaves no merge-stage quarantine against its entry", async () => {
+    const { outcome, spanHead, handedToHandoff } =
+      await emptySpanWave("EMPTY-QUARANTINE");
+
+    // Non-vacuity: same as above — the ref moved, so the span this case is
+    // about really existed.
+    expect(spanHead).toBeDefined();
+    expect(spanHead).not.toBe(outcome.result?.baseSha);
+
+    // A merge failure is what the run-scoped quarantine holds an entry on
+    // (spec/loop.md "Repeated identical failures — quarantine, then abort"),
+    // and it is reported on every surface that feeds one. An empty span
+    // blames nobody.
+    expect(outcome.mergeFailures).toBeUndefined();
+    expect(outcome.verdict?.mergeFailures).toBeUndefined();
+    expect(handedToHandoff?.mergeFailures).toBeUndefined();
+    expect(outcome.verdict?.mergeOutcomes).toEqual([]);
+    // And the entry stays plainly open — not quarantined, not shipped.
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "EMPTY-QUARANTINE",
+    ]);
+    expect(handedToHandoff?.pickableAfter?.map((e) => e.tag)).toEqual([
+      "EMPTY-QUARANTINE",
+    ]);
+  });
+});
+
+/**
  * SINGLETON-PRUNE-PROVISION-FAILURE — `runSingleton`'s pre-tick
  * `pruneWorktrees` used to warn and drop the throw on the floor, so a
  * deterministic prune wall on a singleton-only chain repeated every tick
@@ -7909,6 +8040,8 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     const held = twoOpen().find((e) => e.tag === "HELD")!;
     const record: PriorAttempt = {
       mode: "clean-exit",
+      spanBase: "1".repeat(40),
+      spanHead: "1".repeat(40),
       finalMessage: "nothing to do here",
       key: "entry",
       keyedAs: slugify("HELD"),
@@ -12675,6 +12808,8 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     await mkdir(join(flumeDir, "prior-attempts", "entry"), { recursive: true });
     const validRecord: PriorAttempt = {
       mode: "clean-exit",
+      spanBase: "1".repeat(40),
+      spanHead: "1".repeat(40),
       finalMessage: "off-writablePaths edit",
       key: "entry",
       keyedAs: slugify("SHIPS"),
@@ -12813,7 +12948,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
     // key a hook looks it up by.
     const anchored: Record<string, PriorAttempt> = {
       "gate-revert": { mode: "gate-revert", when: "afterCommit", gate: "tsc", message: "failed", diffStat: " src/a.ts | 1 +", keyedAs: "gate-revert", ...anchor },
-      "clean-exit": { mode: "clean-exit", finalMessage: "off-writablePaths edit", keyedAs: "clean-exit", ...anchor },
+      "clean-exit": { mode: "clean-exit", spanBase: "1".repeat(40), spanHead: "1".repeat(40), finalMessage: "off-writablePaths edit", keyedAs: "clean-exit", ...anchor },
       "platform-preempt": { mode: "platform-preempt", failureClass: "rate-limit", keyedAs: "platform-preempt", ...anchor },
       "render-refused": { mode: "render-refused", failures: "! `git log`: exit 128", keyedAs: "render-refused", ...anchor },
       "tip-moved": { mode: "tip-moved", expectedTip: "a".repeat(40), observedTip: "b".repeat(40), keyedAs: "tip-moved", ...anchor },

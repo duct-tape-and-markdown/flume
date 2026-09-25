@@ -210,7 +210,12 @@ function record(
     case "not-shipped":
       return { mode, mergedSha: "a".repeat(40), touchedPaths: [], ...anchor };
     case "clean-exit":
-      return { mode, finalMessage: "parked", ...anchor };
+      return {
+        mode,
+        finalMessage: "parked",
+        spanBase: "1".repeat(40), spanHead: "1".repeat(40),
+        ...anchor,
+      };
     case "gate-revert":
       return {
         mode,

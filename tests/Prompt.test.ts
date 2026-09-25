@@ -643,6 +643,8 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
   const AT = "2024-06-01T12:00:00.000Z";
   /** The identity every fixture below was written under; the block renders the anchor, not this. */
   const KEYED_AS = "rendered-entry";
+  /** A clean exit whose ref never moved: one tip for both ends of the span. */
+  const UNMOVED_TIP = "d".repeat(40);
 
   async function renderWithPrior(prior: PriorAttempt): Promise<string> {
     const promptFile = join(dir, "prompt.md");
@@ -671,6 +673,8 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
   };
   const cleanExit: CleanExitAttempt = {
     mode: "clean-exit",
+    spanBase: UNMOVED_TIP,
+    spanHead: UNMOVED_TIP,
     finalMessage:
       "Stopping here: the entry's declared paths sit outside writablePaths.",
     key: "entry",
@@ -783,6 +787,36 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     expect(out).not.toMatch(/refused constraint/i);
     expect(out).not.toMatch(/refused to cross/i);
     expect(out).not.toMatch(/judgment likely still holds/i);
+  }, SPAWN_BUDGET_MS);
+
+  it("clean-exit names the span both ways: unmoved for an attempt that never committed, base..head for one whose span's diff was empty", async () => {
+    // Vacuity: the two fixtures really do differ on the fact under test —
+    // one ref moved, the other did not.
+    expect(cleanExit.spanBase).toBe(cleanExit.spanHead);
+    const emptySpan: CleanExitAttempt = {
+      ...cleanExit,
+      spanHead: "e".repeat(40),
+    };
+    expect(emptySpan.spanBase).not.toBe(emptySpan.spanHead);
+
+    const unmovedOut = await renderWithPrior(cleanExit);
+    expect(unmovedOut).toContain(`Span: ${UNMOVED_TIP}, unmoved`);
+    expect(unmovedOut).toContain("committed nothing");
+    expect(unmovedOut).not.toContain(`${UNMOVED_TIP}..`);
+
+    // The empty span's own commits are named as a range, so the retry can
+    // read what the prior attempt wrote before redoing it — and the block
+    // says plainly that the span never reached the merge stage.
+    const emptyOut = await renderWithPrior(emptySpan);
+    expect(emptyOut).toContain(
+      `Span: ${emptySpan.spanBase}..${emptySpan.spanHead}`,
+    );
+    expect(emptyOut).toContain("diff against its base was empty");
+    expect(emptyOut).toContain("never reached the merge stage");
+    // Neither arm says *why* the agent stopped — that stays the chain's
+    // reading of the quoted message (`.claude/rules/engine-boundary.md`,
+    // *Told, not inferred*).
+    expect(emptyOut).not.toMatch(/refused/i);
   }, SPAWN_BUDGET_MS);
 
   it("not-shipped renders the landed sha and every touched path, and states the elision when the writer bounded the list", async () => {

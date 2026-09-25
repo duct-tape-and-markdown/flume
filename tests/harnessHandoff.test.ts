@@ -152,7 +152,12 @@ function record(
         ...anchored,
       };
     case "clean-exit":
-      return { mode, finalMessage: "nothing to do here", ...anchored };
+      return {
+        mode,
+        finalMessage: "nothing to do here",
+        spanBase: "1".repeat(40), spanHead: "1".repeat(40),
+        ...anchored,
+      };
     case "gate-revert":
       return {
         mode,
@@ -459,6 +464,8 @@ describe("the harness package's default handoff", () => {
     const walled: PriorAttempt = {
       mode: "clean-exit",
       finalMessage: "nothing to do here",
+      spanBase: "1".repeat(40),
+      spanHead: "1".repeat(40),
       key: "entry",
       keyedAs: "ready",
       declaredAs: entryDeclaredKey(entry("READY")),
@@ -738,7 +745,12 @@ describe("the default handoff's per-entry refusal", () => {
     };
     switch (mode) {
       case "clean-exit":
-        return { mode, finalMessage: "nothing to do here", ...anchor };
+        return {
+          mode,
+          finalMessage: "nothing to do here",
+          spanBase: "1".repeat(40), spanHead: "1".repeat(40),
+          ...anchor,
+        };
       case "gate-revert":
         return {
           mode,

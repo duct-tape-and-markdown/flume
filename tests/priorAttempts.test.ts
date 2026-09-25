@@ -72,6 +72,17 @@ import { gitOut, SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 /**
+ * The span a clean exit that never committed reports: base and head are the
+ * same tip. Every `buildCleanExit` call below is about the record's keyspace,
+ * anchor or retirement rather than about the span, so they all take this;
+ * the empty-span case is the Dispatcher suite's, where a real agent commits.
+ */
+const UNMOVED_SPAN = (tip = "7".repeat(40)) => ({
+  spanBase: tip,
+  spanHead: tip,
+});
+
+/**
  * One draft per mode, minted by the real builders in the shape
  * {@link PriorAttemptStore.write} receives them — the input both tests below
  * judge the roster and the reader against.
@@ -87,7 +98,7 @@ async function everyDraft(
       repo,
       head,
     ),
-    buildCleanExit("refused: the fence excludes spec/"),
+    buildCleanExit("refused: the fence excludes spec/", UNMOVED_SPAN(head)),
     buildPlatformPreempt("process-failure"),
     buildRenderRefused(
       new InlineExecRenderError([{ cmd: "git log", stderr: "not a repo" }])
@@ -448,7 +459,7 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     // so only the keyspace dir's own type decides. A record written to the
     // sibling keyspace proves the walk reaches this one at all.
     const ref: PriorAttemptRef = { key: "build", keyspace: "phase" };
-    await store.write(ref, buildCleanExit("no commit"));
+    await store.write(ref, buildCleanExit("no commit", UNMOVED_SPAN()));
     const obstructed = join(priorAttemptsDir(flumeDir), "entry");
     await writeFile(obstructed, "not a directory");
 
@@ -478,7 +489,7 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
     const ref: PriorAttemptRef = { key: "build", keyspace: "phase" };
-    await store.write(ref, buildCleanExit("no commit"));
+    await store.write(ref, buildCleanExit("no commit", UNMOVED_SPAN()));
 
     // Vacuity pins: one keyspace dir exists and holds a record, the other
     // was never created — the mixed case the descent must walk through
@@ -798,7 +809,7 @@ describe("priorAttempts — a record is keyed by the identity it was written und
     for (const name of phaseNames) {
       const ref = priorAttemptRef({ name } as Phase);
       expect(ref).toEqual({ key: name, keyspace: "phase" });
-      await store.write(ref, buildCleanExit(`parked: ${name}`));
+      await store.write(ref, buildCleanExit(`parked: ${name}`, UNMOVED_SPAN()));
     }
 
     const all = await store.readAll();
@@ -843,7 +854,7 @@ describe("priorAttempts — a record is keyed by the identity it was written und
       keyspace: "entry",
       declaredAs: entryDeclaredKey(entry),
     });
-    await store.write(ref, buildCleanExit("parked: needs a wider fence"));
+    await store.write(ref, buildCleanExit("parked: needs a wider fence", UNMOVED_SPAN()));
 
     const all = await store.readAll();
     expect(all.size).toBe(1);
@@ -904,7 +915,7 @@ describe("priorAttempts — a record is keyed by the identity it was written und
     // is what `read` hands back off disk.
     await store.write(
       priorAttemptRef({ name: "build" } as Phase, declared),
-      buildCleanExit("parked: needs a wider fence"),
+      buildCleanExit("parked: needs a wider fence", UNMOVED_SPAN()),
     );
     const record = await store.read(
       priorAttemptRef({ name: "build" } as Phase, declared),
@@ -940,7 +951,7 @@ describe("priorAttempts — a record is keyed by the identity it was written und
     // there is no declaration to hash and the field is absent rather than a
     // stand-in value a refusal could compare against.
     const phaseRef = priorAttemptRef({ name: "build" } as Phase);
-    await store.write(phaseRef, buildCleanExit("nothing to do"));
+    await store.write(phaseRef, buildCleanExit("nothing to do", UNMOVED_SPAN()));
     const phaseRecord = await store.read(phaseRef);
     expect(phaseRecord?.mode).toBe("clean-exit");
     expect(phaseRecord?.declaredAs).toBeUndefined();
@@ -1053,7 +1064,7 @@ it("a singleton phase and a fanout entry whose identities slugify alike write di
 
     // Two modes, so a single shared file shows up as the wrong record rather
     // than as an indistinguishable one.
-    await store.write(phaseRef, buildCleanExit("parked: the phase"));
+    await store.write(phaseRef, buildCleanExit("parked: the phase", UNMOVED_SPAN()));
     await store.write(entryRef, buildTipMoved(head, head));
 
     expect(priorAttemptPath(flumeDir, phaseRef)).not.toBe(
@@ -1100,8 +1111,8 @@ it("readAll keys a fanout record under entry:<slug> and a singleton record under
     // could only carry one of them.
     expect(slugify(phaseRef.key)).toBe(slugify(entryRef.key));
 
-    await store.write(phaseRef, buildCleanExit("parked: the phase"));
-    await store.write(entryRef, buildCleanExit("parked: the entry"));
+    await store.write(phaseRef, buildCleanExit("parked: the phase", UNMOVED_SPAN()));
+    await store.write(entryRef, buildCleanExit("parked: the entry", UNMOVED_SPAN()));
 
     const all = await store.readAll();
     expect([...all.keys()].sort()).toEqual([
@@ -1135,8 +1146,8 @@ it("clearStale keeps a phase record whose name slugifies onto a tag the queue no
       { name: "build" } as Phase,
       collidingEntry,
     );
-    await store.write(phaseRef, buildCleanExit("parked: the phase"));
-    await store.write(entryRef, buildCleanExit("parked: the entry"));
+    await store.write(phaseRef, buildCleanExit("parked: the phase", UNMOVED_SPAN()));
+    await store.write(entryRef, buildCleanExit("parked: the entry", UNMOVED_SPAN()));
 
     // Vacuity pin: the sweep runs over a populated map whose two records the
     // queue's own text cannot tell apart.
@@ -1194,8 +1205,8 @@ it("a prior-attempt record answers the key the store's own walk filed it under",
       collidingEntry,
     );
     expect(slugify(phaseRef.key)).toBe(slugify(entryRef.key));
-    await store.write(phaseRef, buildCleanExit("parked: the phase"));
-    await store.write(entryRef, buildCleanExit("parked: the entry"));
+    await store.write(phaseRef, buildCleanExit("parked: the phase", UNMOVED_SPAN()));
+    await store.write(entryRef, buildCleanExit("parked: the entry", UNMOVED_SPAN()));
 
     const all = await store.readAll();
     // Vacuity pin: the walk really filed two records, one per keyspace, so
@@ -1233,7 +1244,7 @@ it("a fanout entry's record answers the key entryAttemptKey answers for its entr
       { name: "build" } as Phase,
       collidingEntry,
     );
-    await store.write(entryRef, buildCleanExit("parked: the entry"));
+    await store.write(entryRef, buildCleanExit("parked: the entry", UNMOVED_SPAN()));
 
     const record = await store.read(entryRef);
     // Vacuity pin: there is a record to key, so the comparison below is over
@@ -1271,7 +1282,7 @@ it("the package's public surface spells the prior-attempt map key for an entry",
       { name: "build" } as Phase,
       collidingEntry,
     );
-    await store.write(entryRef, buildCleanExit("parked: the entry"));
+    await store.write(entryRef, buildCleanExit("parked: the entry", UNMOVED_SPAN()));
 
     const all = await store.readAll();
     // Vacuity pin: the walk filed a record, so the key below is the one a
@@ -1307,8 +1318,8 @@ it("the package's public surface spells the prior-attempt map key for a record",
     // One stem, two records: a surface keyer reading the identity alone would
     // answer one key for both.
     expect(slugify(phaseRef.key)).toBe(slugify(entryRef.key));
-    await store.write(phaseRef, buildCleanExit("parked: the phase"));
-    await store.write(entryRef, buildCleanExit("parked: the entry"));
+    await store.write(phaseRef, buildCleanExit("parked: the phase", UNMOVED_SPAN()));
+    await store.write(entryRef, buildCleanExit("parked: the entry", UNMOVED_SPAN()));
 
     const all = await store.readAll();
     // Vacuity pin: both keyspaces are populated before the agreement is
@@ -1354,8 +1365,8 @@ it("phaseAttemptKey keys a singleton phase's record in the phase keyspace", asyn
     // the entry beside it slugs onto the same one.
     expect(slugify(phaseRef.key)).not.toBe(phaseRef.key);
     expect(slugify(phaseRef.key)).toBe(slugify(entryRef.key));
-    await store.write(phaseRef, buildCleanExit("parked: the phase"));
-    await store.write(entryRef, buildCleanExit("parked: the entry"));
+    await store.write(phaseRef, buildCleanExit("parked: the phase", UNMOVED_SPAN()));
+    await store.write(entryRef, buildCleanExit("parked: the entry", UNMOVED_SPAN()));
 
     const all = await store.readAll();
     // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven

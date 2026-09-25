@@ -62,9 +62,11 @@ const INLINE_EXEC_MAX_BUFFER = 4 * 1024 * 1024;
  * The four causally-distinct ways a tick produces no usable commit:
  *
  *  - `gate-revert`      a commit was made and a gate reverted it,
- *  - `clean-exit`       the agent exited cleanly without committing — what
- *                       that meant is the chain's reading of the recorded
- *                       final message, never an engine label,
+ *  - `clean-exit`       the agent exited cleanly with no usable commit —
+ *                       none at all, or a span whose diff against its base
+ *                       is empty — and what that meant is the chain's
+ *                       reading of the recorded final message, never an
+ *                       engine label,
  *  - `platform-preempt` the agent process failed for non-work reasons
  *                       (rate-limit, auth, dispatcher-killed, timeout) —
  *                       NOT a defect in the work,
@@ -218,12 +220,13 @@ export interface GateRevertAttempt {
 }
 
 /**
- * The agent exited cleanly without committing. No commit, no gate — and no
- * reason: a refused constraint, a deliberate park, or simply nothing to do
+ * The agent exited cleanly and left no usable commit — none at all, or a
+ * span whose diff against its base is empty. No gate ran, and no reason is
+ * recorded: a refused constraint, a deliberate park, or simply nothing to do
  * are one chain's readings of one chain's prompt, never an engine label
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). The engine
- * records the two facts it holds — that the exit was clean and produced
- * nothing, and the
+ * records the facts it holds — that the exit was clean and produced nothing
+ * usable, the span it produced nothing across, and the
  * tail of what the agent last said — and leaves the reading to whoever
  * reads {@link finalMessage}.
  */
@@ -236,6 +239,21 @@ export interface CleanExitAttempt {
    * engine neither names nor paraphrases it.
    */
   finalMessage: string;
+  /**
+   * The tip the attempt's worktree branch started from — the base its span
+   * would have been picked from had the span carried anything.
+   */
+  spanBase: string;
+  /**
+   * The worktree HEAD the agent left. Equal to {@link spanBase} when the
+   * agent committed nothing at all; ahead of it when the agent committed and
+   * the span's cumulative diff against the base came out empty. The pair is
+   * what tells those two exits apart — the engine states which happened and
+   * never labels why — and, in the second case, what makes the span's
+   * commits reachable in the shared object store until gc, since an empty
+   * span dies with its worktree rather than reaching the merge stage.
+   */
+  spanHead: string;
   /**
    * Which keyspace this record's key lives in (spec/loop.md "No false
    * signal") — stamped by the writer, never derived from the key's text.
@@ -960,10 +978,20 @@ function modeLines(prior: PriorAttempt): string[] {
     case "clean-exit":
       return [
         `A previous attempt at this work exited cleanly and committed`,
-        `nothing. No commit, no gate. The harness records that it exited and`,
+        `nothing usable. No gate ran. The harness records that it exited and`,
         `what it last said, never what the exit meant — read the message`,
         `below and this chain's own rules before redoing anything, rather`,
         `than assuming a wall that may not exist.`,
+        // The two shas say which of the mode's two exits happened, and
+        // nothing about why either did: an unmoved head is an attempt that
+        // never committed, a moved one an attempt whose commits changed
+        // nothing against the base and so were never picked.
+        prior.spanHead === prior.spanBase
+          ? `Span: ${prior.spanBase}, unmoved — the attempt committed nothing.`
+          : `Span: ${prior.spanBase}..${prior.spanHead} — the attempt did ` +
+            `commit, and the span's diff against its base was empty, so it ` +
+            `never reached the merge stage. Those commits are still ` +
+            `reachable; read them before redoing the work.`,
         `Prior attempt's final message (tail, verbatim):`,
         indentBlock(prior.finalMessage),
       ];

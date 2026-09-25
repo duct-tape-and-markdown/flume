@@ -991,6 +991,8 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
 
   const standingBail: PriorAttempt = {
     mode: "clean-exit",
+    spanBase: "1".repeat(40),
+    spanHead: "1".repeat(40),
     finalMessage: "parked: the entry needs a wider fence",
     key: "entry",
     keyedAs: "PARKED-ENTRY",

@@ -294,6 +294,8 @@ const REFUSAL_ENTRY: PendingEntry = {
  */
 const cleanExit = (declaredAs: string): PriorAttempt => ({
   mode: "clean-exit",
+  spanBase: "1".repeat(40),
+  spanHead: "1".repeat(40),
   finalMessage: "nothing to do here",
   key: "entry",
   keyedAs: "some-entry",

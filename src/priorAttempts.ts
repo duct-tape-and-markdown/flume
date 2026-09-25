@@ -689,8 +689,8 @@ export async function buildGateRevert(
 }
 
 /**
- * Build the clean-exit record: the agent exited cleanly without
- * committing. What rides the record is the tail of its final message —
+ * Build the clean-exit record: the agent exited cleanly and left no usable
+ * commit. What rides the record is the tail of its final message —
  * extracted from the full transcript by the adapter's own
  * `extractFinalMessage` (`src/Agent.ts`, spec/chain.md "The agent seam"),
  * unbound at that layer; `tailBound` here is record-size policy, not
@@ -698,17 +698,25 @@ export async function buildGateRevert(
  * quoted, never classified: whether the exit was a refusal, a park, or
  * nothing to do is the chain's reading
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * `span` is the attempt's own base and observed head, taken as a pair in the
+ * record's own field names so the caller cannot transpose them. The two say
+ * which of the mode's two exits happened — nothing committed, or a span
+ * whose diff against its base was empty — which is why the no-message
+ * fallback below states neither.
  */
 export function buildCleanExit(
   finalMessage: string,
+  span: Pick<CleanExitAttempt, "spanBase" | "spanHead">,
 ): Omit<CleanExitAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
   const message = tailBound(finalMessage, MAX_PRIOR_NOCOMMIT);
   return {
     mode: "clean-exit",
+    ...span,
     finalMessage:
       message.length > 0
         ? message
-        : "(agent exited cleanly without committing and produced no final message)",
+        : "(agent exited cleanly and produced no final message)",
   };
 }
 

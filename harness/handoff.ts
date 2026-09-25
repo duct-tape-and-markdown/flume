@@ -160,7 +160,8 @@ export interface HandoffSlice {
 /**
  * Which prior-attempt modes describe an outcome only a producer can move.
  *
- * `clean-exit` alone. The agent ran, read the entry, and committed nothing —
+ * `clean-exit` alone. The agent ran, read the entry, and left no usable
+ * commit —
  * so what it decided is a function of the entry it was handed, and
  * re-dispatching it against that same declaration buys the same decision at
  * full agent price. Every other mode names something the next wave can change

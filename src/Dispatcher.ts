@@ -355,9 +355,11 @@ export interface TickOutcome {
    * For a no-commit tick: which of the
    * four causally-distinct modes produced no usable commit —
    *  - `gate-revert`      a commit was made then a gate reverted it,
-   *  - `clean-exit`       the agent exited cleanly without committing —
-   *                       what that meant is the chain's reading of the
-   *                       recorded final message, never an engine label,
+   *  - `clean-exit`       the agent exited cleanly with no usable commit —
+   *                       none at all, or a span whose diff against its
+   *                       base is empty — and what that meant is the
+   *                       chain's reading of the recorded final message,
+   *                       never an engine label,
    *  - `platform-preempt` the agent process failed for non-work reasons
    *                       (rate-limit, auth, timeout, dispatcher-killed) —
    *                       NOT a defect in the work,

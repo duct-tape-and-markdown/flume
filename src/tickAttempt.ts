@@ -98,7 +98,7 @@ export interface AttemptContext {
   readonly log: Logger;
 }
 /**
- * How an agent invocation ended. A clean exit with no commit is a
+ * How an agent invocation ended. A clean exit with no usable commit is a
  * clean-exit (the agent refused a constraint and said so in its final
  * message, captured here as `finalMessage` — lifted from the transcript by
  * the adapter's own `extractFinalMessage`, spec/chain.md "The agent seam");
@@ -159,7 +159,8 @@ type AttemptFacts = {
  * stage reaches for an assertion to pick it up. An uncommitted one carries
  * `spanBase` once the agent ran at all (the tip it branched from, reported
  * as the tick's `baseSha`), `headSha` when a commit landed and was then lost
- * to the ancestry refusal or the afterCommit revert, and `termination`
+ * — to the ancestry refusal, the afterCommit revert, or an empty span's own
+ * arm — and `termination`
  * whenever `invokeAgent` ran — all three absent when the render refused.
  */
 export type AttemptOutcome =
@@ -280,19 +281,46 @@ export async function runAttempt(
   );
   const headSha = await git.revParse(wt.path);
 
-  if (headSha === spanBase) {
-    // No commit, no gate: classify and persist the matching prior-attempt
-    // record — the durable channel, so an attempt that keeps exiting clean
-    // at the same wall is legible without reading session logs. A clean
-    // exit that produced nothing is a clean-exit; any process failure is a
-    // platform-preempt (not a defect in the work).
-    const mode = await classifyNoCommit(ctx, ref, termination);
-    ctx.log.warn(`[flume] ${label}: ${mode} (no commit)`);
+  // Two shapes of "no usable commit", one arm: the ref never moved, or it
+  // moved across a span whose cumulative diff against its base is empty. An
+  // empty span cannot be absorbed — `git cherry-pick base..head` over a
+  // range that changes nothing exits 1 — so left to reach the merge stage it
+  // read as a cherry-pick conflict and quarantined the entry for the rest of
+  // the run (spec/loop.md "The no-commit taxonomy", `clean-exit`). It dies
+  // with the worktree here instead, before the gate loop and before the pick.
+  //
+  // One `git diff` for the whole span, and the only one: the gate loop below
+  // takes this same footprint rather than re-deriving it, and the revert path
+  // lands it on trunk from here too
+  // (.claude/rules/engineering.md "The fix lands at the mechanism").
+  const spanTouchedPaths =
+    headSha === spanBase
+      ? []
+      : await git.diffNameOnly(wt.path, spanBase, headSha);
+  const emptySpan = headSha !== spanBase && spanTouchedPaths.length === 0;
+  if (headSha === spanBase || emptySpan) {
+    // Classify and persist the matching prior-attempt record — the durable
+    // channel, so an attempt that keeps exiting clean at the same wall is
+    // legible without reading session logs. A clean exit that produced
+    // nothing usable is a clean-exit; any process failure is a
+    // platform-preempt (not a defect in the work) — consulted here for the
+    // empty span too, since a span that cannot ship is no reason to let a
+    // platform failure masquerade as an agent's own exit.
+    const mode = await classifyNoCommit(ctx, ref, termination, {
+      spanBase,
+      spanHead: headSha,
+    });
+    ctx.log.warn(
+      `[flume] ${label}: ${mode} (${emptySpan ? "empty span" : "no commit"})`,
+    );
     return {
       committed: false,
       gateResults: [],
       noCommit: mode,
       spanBase,
+      // Only when a commit was made and then dropped as unusable: an
+      // unmoved ref has no span tip to name.
+      ...(emptySpan ? { headSha } : {}),
       termination,
     };
   }
@@ -328,11 +356,12 @@ export async function runAttempt(
     headSha,
     entry,
     spanBase,
+    spanTouchedPaths,
   );
   if (!verdict.ok) {
     // This revert never reaches the merge stage, so it's the only chance
-    // to capture what the commit actually touched — `runAfterCommitGates`
-    // already computed this for its gate loop
+    // to capture what the commit actually touched — the empty-span read
+    // above already computed it, and the gate loop ran off that same value
     // (.claude/rules/engineering.md "The fix lands at the mechanism"), so
     // reuse it instead of re-deriving via a second `git show --name-only`
     // before dropLastCommit discards the evidence.
@@ -345,7 +374,7 @@ export async function runAttempt(
       label,
       entry,
       verdict.failure!,
-      verdict.touchedPaths,
+      spanTouchedPaths,
     );
     return {
       committed: false,
@@ -522,15 +551,24 @@ async function runAfterCommitGates(
   commitSha: string,
   assignedEntry: PendingEntry | undefined,
   /**
-   * Touched paths are the cumulative
-   * `spanBase..commitSha` diff rather than `commitSha`'s own single-commit
-   * diff — the whole-span gate (spec/loop.md "The check is ancestry, and N
-   * commits are completion"). Both a fanout entry's worktree branch and a
+   * The span's base — `baseSha` on every gate context this loop builds.
+   * Both a fanout entry's worktree branch and a
    * singleton phase's own (spec/worktrees.md "Singleton runs in a
    * worktree") are private refs whose ancestry check clears a multi-commit
    * span as one completed tick.
    */
   spanBase: string,
+  /**
+   * The cumulative `spanBase..commitSha` diff rather than `commitSha`'s own
+   * single-commit diff — the whole-span gate (spec/loop.md "The check is
+   * ancestry, and N commits are completion"). Handed in rather than derived
+   * here: the caller already read this diff to decide whether the span was
+   * empty at all, and one span's footprint is one `git diff`
+   * (.claude/rules/engineering.md "The fix lands at the mechanism"). The one
+   * array reaches every gate in the loop below by identity, so a gate cannot
+   * see a footprint a sibling gate did not.
+   */
+  spanTouchedPaths: string[],
 ): Promise<{
   ok: boolean;
   /** First failing gate — the same row `results` carries, so a prior-attempt
@@ -538,11 +576,6 @@ async function runAfterCommitGates(
    * verdict reports. */
   failure?: ReportedGateResult;
   results: ReportedGateResult[];
-  /** The commit's touched paths, already computed for the gate loop below —
-   * exposed so callers don't re-derive via a second `git show --name-only`
-   * for the same commit (.claude/rules/engineering.md "The fix lands at
-   * the mechanism"). */
-  touchedPaths: string[];
 }> {
   // Entry-scoped write guard (spec/pending.md, "The entry-scoped write
   // guard is opt-in, and off by default"). The whole decision — whether
@@ -558,11 +591,6 @@ async function runAfterCommitGates(
       entryWriteScope(phase, assignedEntry),
     ),
   ];
-  // Computed once per commit and shared across every gate this loop runs —
-  // chainLoadGate and writablePathsGate read it off the context instead of
-  // each shelling out its own `git show --name-only` for the same commit
-  // (.claude/rules/engineering.md "The fix lands at the mechanism").
-  const commitTouchedPaths = await git.diffNameOnly(cwd, spanBase, commitSha);
   // `cwd` here is the fanout worktree (or a singleton's own worktree,
   // spec/worktrees.md "Singleton runs in a worktree") — a fresh checkout
   // that holds only tracked files at the same relative layout as the
@@ -593,7 +621,7 @@ async function runAfterCommitGates(
         configDir,
         phaseName: phase.name,
         commitSha,
-        touchedPaths: commitTouchedPaths,
+        touchedPaths: spanTouchedPaths,
         baseSha: spanBase,
         ...(assignedEntry ? { entry: assignedEntry } : {}),
         log: (l) => ctx.log.info(l),
@@ -604,15 +632,10 @@ async function runAfterCommitGates(
     results.push(row);
     if (!r.ok) {
       if (r.details) ctx.log.warn(r.details);
-      return {
-        ok: false,
-        failure: row,
-        results,
-        touchedPaths: commitTouchedPaths,
-      };
+      return { ok: false, failure: row, results };
     }
   }
-  return { ok: true, results, touchedPaths: commitTouchedPaths };
+  return { ok: true, results };
 }
 
 /**
@@ -756,10 +779,11 @@ async function writeRevertNote(
 }
 
 /**
- * Classify a no-commit-no-gate tick and persist the matching
+ * Classify a no-usable-commit-no-gate tick and persist the matching
  * prior-attempt record so the retry's prompt carries it. A clean agent exit that
- * produced nothing is a **clean-exit** — the record carries the tail of
- * the agent's final message and nothing about what the exit meant; a
+ * produced nothing usable is a **clean-exit** — the record carries the tail of
+ * the agent's final message, the span it produced nothing across, and nothing
+ * about what the exit meant; a
  * **platform-preempt** otherwise — the non-work failure class, explicitly
  * not a defect in the work. Returns the mode for `TickOutcome` / the
  * logger record.
@@ -768,9 +792,13 @@ async function classifyNoCommit(
   ctx: AttemptContext,
   ref: PriorAttemptRef,
   termination: AgentTermination,
+  span: { spanBase: string; spanHead: string },
 ): Promise<NoCommitMode> {
   if (termination.kind === "clean") {
-    await ctx.attempts.write(ref, buildCleanExit(termination.finalMessage));
+    await ctx.attempts.write(
+      ref,
+      buildCleanExit(termination.finalMessage, span),
+    );
     return "clean-exit";
   }
   await ctx.attempts.write(
