@@ -21,8 +21,10 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { expectNoFindings } from "./helpers/repoProgram.ts";
+import { REPO_ROOT, expectNoFindings } from "./helpers/repoProgram.ts";
 import {
+  REPO_DOMAIN,
+  SHIPPED_SPAWN_HOMES,
   formatPromisifiedSpawnSite,
   formatSpawnCapSite,
   formatSyncSpawnSite,
@@ -338,4 +340,44 @@ it("the spawn-cap scan judges this repo's own chain and declaration", () => {
   expect(scan.modules.length).toBeGreaterThan(0);
   expect(scan.modules).toContain(".flume/chain.ts");
   expect(scan.modules).toContain(".flume/declaration.ts");
+});
+
+/**
+ * The wrapper verdict over the same domain, and the reason it is a scan of
+ * its own rather than a reading of the cap verdict above: a wrapper declares
+ * its cap at the module that builds it, so a second `promisify(execFile)`
+ * written beside the homes passes the cap verdict at every call it makes —
+ * each one naming a cap the wrapper's own construction never had. Three
+ * modules under `src/` each carried one until 110d81a9, with this suite
+ * green throughout, and a git spawner among them takes git's default
+ * pathspec parse as well, which the dialect pin (`tests/git.test.ts`) reads
+ * over `src/git.ts` alone.
+ */
+const wrappers = scanPromisifiedSpawns(
+  REPO_ROOT,
+  REPO_DOMAIN,
+  SHIPPED_SPAWN_HOMES,
+);
+
+/** The home whose construction site the vacuity pin below is read off. */
+const GIT_HOME = "src/git.ts";
+
+// Vacuity pin (`.claude/rules/engineering.md`, "A green verdict is proven
+// non-vacuous"): the verdict below is an absence, and a domain that walked no
+// module, or a needle that stopped reading a `promisify` call, would report it
+// exactly as a clean domain does. Pinned on a home's own construction line,
+// the way the `tests/` arm's is (`tests/subprocessHelper.test.ts`).
+it("the shipped-tree wrapper scan reads src/git.ts's own promisified spawn", () => {
+  expect(SHIPPED_SPAWN_HOMES).toContain(GIT_HOME);
+  expect(wrappers.modules.length).toBeGreaterThan(0);
+  expect(wrappers.modules).toContain(GIT_HOME);
+  expect(
+    wrappers.scanned
+      .filter((site) => site.module === GIT_HOME)
+      .map((site) => site.api),
+  ).toEqual(["execFile"]);
+});
+
+it("no module in the shipped trees promisifies a capturing spawn outside a declared home", () => {
+  expectNoFindings(wrappers.findings.map(formatPromisifiedSpawnSite));
 });

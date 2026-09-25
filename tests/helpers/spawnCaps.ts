@@ -16,6 +16,16 @@
  * answerable question is instead how many spawn homes the domain is allowed
  * to have.
  *
+ * Two domains ask that question, and each declares its homes where it asks
+ * it: `tests/`, whose one async wrapper is named at the suite that runs the
+ * verdict (`tests/subprocessHelper.test.ts`), and everything this repo ships
+ * or runs, whose wrappers are {@link SHIPPED_SPAWN_HOMES} below and whose
+ * verdict runs beside the cap verdict (`tests/spawnCaps.test.ts`). The sync
+ * half is asked of `tests/` alone: a blocking capture needs no construction
+ * line, so every script, entry and example that spawns one is already its own
+ * home, and a home list naming all of them would excuse exactly the sites it
+ * names.
+ *
  * `execFile`, `exec`, their sync forms, and a piped `spawnSync` keep at most
  * `maxBuffer` bytes per stream — 1 MiB unless the call says otherwise — and
  * report an overrun where an exit status would sit rather than as a
@@ -92,10 +102,27 @@ const CHAIN_FILES: readonly string[] = [
 ];
 
 /** Everything this repo ships or runs, outside `tests/`. */
-const REPO_DOMAIN: ScanDomain = {
+export const REPO_DOMAIN: ScanDomain = {
   trees: SHIPPED_TREES,
   files: CHAIN_FILES,
 };
+
+/**
+ * The modules {@link REPO_DOMAIN} builds an async spawn wrapper in — the two
+ * that turn a capturing API into a promise by hand. A `promisify(execFile)`
+ * written anywhere else in that domain is a second spawner inheriting node's
+ * 1 MiB default, and a git one is worse than that: the dialect pin reads
+ * `src/git.ts` alone (`tests/git.test.ts`), so a spawner beside it also takes
+ * git's default pathspec parse.
+ *
+ * Declared here beside the trees, not at the suite that asserts them: which
+ * wrappers the shipped trees are allowed is a fact about that domain, and the
+ * domain is this module's.
+ */
+export const SHIPPED_SPAWN_HOMES: readonly string[] = [
+  "src/git.ts",
+  "src/spawnShim.ts",
+];
 
 /** The specifiers a capturing API is imported through. */
 const CHILD_PROCESS = new Set(["node:child_process", "child_process"]);
@@ -223,7 +250,8 @@ function isValueReference(id: ts.Identifier): boolean {
   if (ts.isQualifiedName(parent) && parent.right === id) return false;
   if (ts.isPropertyAssignment(parent) && parent.name === id) return false;
   if (ts.isBindingElement(parent) && parent.propertyName === id) return false;
-  if (ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent)) return false;
+  if (ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent))
+    return false;
   if (ts.isPropertySignature(parent) && parent.name === id) return false;
   if (ts.isMethodDeclaration(parent) && parent.name === id) return false;
   if (ts.isParameter(parent) && parent.name === id) return false;
@@ -258,15 +286,16 @@ function enclosingFunction(node: ts.Node): ts.Node | null {
  * the forwarder itself rather than a propagation that reaches nothing.
  */
 function functionName(fn: ts.Node): string | null {
-  if (
-    (ts.isFunctionDeclaration(fn) || ts.isFunctionExpression(fn)) &&
-    fn.name
-  )
+  if ((ts.isFunctionDeclaration(fn) || ts.isFunctionExpression(fn)) && fn.name)
     return fn.name.text;
   if (ts.isMethodDeclaration(fn) && ts.isIdentifier(fn.name))
     return fn.name.text;
   const parent = fn.parent;
-  if (parent && ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name))
+  if (
+    parent &&
+    ts.isVariableDeclaration(parent) &&
+    ts.isIdentifier(parent.name)
+  )
     return parent.name.text;
   if (parent && ts.isPropertyAssignment(parent) && ts.isIdentifier(parent.name))
     return parent.name.text;
