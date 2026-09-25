@@ -4516,22 +4516,71 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  it("exits EX_IOERR naming the error on a non-ENOENT note read failure, instead of reporting 'no such note'", async () => {
+  it("flume friction refuses a name the channel's listing holds no note for as absent rather than unreadable", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
       await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
       const frictionDir = join(repo.dir, ".flume", "friction");
-      // A directory in place of the note reproduces a non-ENOENT read
-      // failure (EISDIR) without relying on permission bits a root-run test
-      // could bypass (`.claude/rules/engineering.md`, "Loud or nothing"),
-      // matching the `check` pendingDir test's approach above.
-      await mkdir(join(frictionDir, "note.md"), { recursive: true });
+      await mkdir(frictionDir, { recursive: true });
+      await writeFile(join(frictionDir, "a.md"), "note a\n");
+      // A subdirectory of the channel: a direct child the listing's isFile()
+      // filter omits, so the name it spells names no note. Nothing about the
+      // channel is obstructed — the note beside it lists and reads — so the
+      // only disposition left for the name is the absent one the help page
+      // states, and an EX_IOERR here would be a read that never needed to
+      // happen (`.claude/rules/engineering.md`, "The fix lands at the
+      // mechanism").
+      await mkdir(join(frictionDir, "subdir"), { recursive: true });
+
+      // Non-vacuity: the listing is populated and the channel is readable, so
+      // the refusal below is the name's and not the channel's.
+      const bare = await runCli(repo.dir, ["friction"]);
+      expect(bare.code).toBe(0);
+      expect(bare.out).toContain("a.md");
+      expect(bare.out).not.toContain("subdir");
+      const sibling = await runCli(repo.dir, ["friction", "a.md"]);
+      expect(sibling.code).toBe(0);
+      expect(sibling.out).toContain("note a");
+
+      const named = await runCli(repo.dir, ["friction", "subdir"]);
+      expect(named.code).toBe(2);
+      expect(named.out).toContain("no note named 'subdir'");
+      expect(named.out).not.toContain("failed to read");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it.runIf(process.platform !== "win32")("exits EX_IOERR naming the error on a note read failure, instead of reporting 'no such note'", async () => {
+    const repo = await makeScratchRepo("flume-cli-repo-", "main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
+      const frictionDir = join(repo.dir, ".flume", "friction");
+      await mkdir(frictionDir, { recursive: true });
+      await writeFile(join(frictionDir, "note.md"), "note bytes\n");
+
+      // Non-vacuity: the note reads before the channel is denied, so the
+      // refusal below is the denial's and not a name the listing never held.
+      const before = await runCli(repo.dir, ["friction", "note.md"]);
+      expect(before.code).toBe(0);
+      expect(before.out).toContain("note bytes");
+
+      // Read without traverse on the channel dir: the descent stats it, the
+      // listing still enumerates the note, and the open of it fails EACCES.
+      // No permission-independent fixture reaches this arm — the note test is
+      // the listing's own isFile(), so a directory, a symlink, or a device in
+      // a note's place is refused as absent rather than read (the case above)
+      // — so this declares its host, the precedent the stat-failure case
+      // below and the `flume status` friction-line case share
+      // (`.claude/rules/platform-facts.md`, *chmod denies nothing on win32*).
+      await chmod(frictionDir, 0o444);
 
       const r = await runCli(repo.dir, ["friction", "note.md"]);
       expect(r.code).toBe(EX_IOERR);
       expect(r.out).not.toContain("no note named");
       expect(r.out).toContain("failed to read");
     } finally {
+      await chmod(join(repo.dir, ".flume", "friction"), 0o755).catch(() => {});
       await repo.cleanup();
     }
   }, SPAWN_BUDGET_MS);

@@ -39,12 +39,13 @@ import type { Chain } from "./Phase.js";
 /**
  * What the channel's refusal calls the thing it could not read — the noun
  * phrase `isDirectoryOrAbsentUnder` (`src/fsProbe.ts`) names an obstructed
- * ancestor with. One spelling for every read of the channel, so the primary
- * dir, a worktree mirror, the count, and the `friction <name>` read verb
- * (`src/cli.ts`), which proves the same descent for its own absent arm, all
- * tell an operator the same thing about the same rung.
+ * ancestor with. Every read of the channel comes through
+ * {@link frictionNotes} below — the primary dir, a worktree mirror, the
+ * count, and both arms of the `friction` verb (`src/cli.ts`) — so one
+ * spelling here tells every operator the same thing about the same rung, and
+ * the constant needs no home outside this module.
  */
-export const FRICTION_SUBJECT = "friction channel";
+const FRICTION_SUBJECT = "friction channel";
 
 /**
  * Validate a declared `Chain.friction`: must be relative and
@@ -70,13 +71,16 @@ export function validateFrictionDeclaration(chain: Chain): void {
 /**
  * What the friction channel at `dir` holds: its direct-child files,
  * dot-prefixed names skipped, as plain names sorted by name. This is the
- * engine's **one** answer to that question — the bare `friction` verb
- * (`src/cli.ts`), {@link countFrictionFiles} below, {@link harvestFriction}'s
- * mirror read, and the harness package's `frictionFiles`
- * (`harness/friction.ts`) all read it rather than walking the dir again
- * (`.claude/rules/engineering.md`, "A fact the engine holds is reported,
- * never rediscovered"). A second walk is a surface that can disagree with
- * the `friction: N` line about what is waiting.
+ * engine's **one** answer to that question — the `friction` verb
+ * (`src/cli.ts`), bare and named alike, {@link countFrictionFiles} below,
+ * {@link harvestFriction}'s mirror read, and the harness package's
+ * `frictionFiles` (`harness/friction.ts`) all read it rather than walking the
+ * dir again (`.claude/rules/engineering.md`, "A fact the engine holds is
+ * reported, never rediscovered"). A second walk is a surface that can
+ * disagree with the `friction: N` line about what is waiting, and a second
+ * *predicate* — a note test spelled beside this filter rather than taken from
+ * it — is a read verb that refuses what the list offers
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
  *
  * A `.gitkeep` git forced the consumer to create is not a note
  * (spec/chain.md, "`Chain.friction` — the declared friction channel"), and

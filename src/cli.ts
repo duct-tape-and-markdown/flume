@@ -71,11 +71,10 @@ import {
   type TickVerdict,
 } from "./tickVerdict.js";
 import {
-  FRICTION_SUBJECT,
   frictionCountLine,
   frictionNotes,
 } from "./friction.js";
-import { existsLoudUnder, isDirectoryOrAbsentUnder } from "./fsProbe.js";
+import { existsLoudUnder } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
@@ -85,7 +84,6 @@ import { parsePendingQueue, type QueueFile } from "./PendingSchema.js";
 import { InlineExecRenderError } from "./Prompt.js";
 import {
   DEFAULT_PENDING_REL,
-  isDotName,
   loopLockPath,
   mergingDir,
   namespacedJoin,
@@ -793,41 +791,50 @@ async function main(): Promise<number> {
       // a nested path is refused identically, not resolved.
       const candidate = resolve(frictionDir, name);
       const isDirectChild = dirname(candidate) === resolve(frictionDir);
-      // And a dot-prefixed note is no note (spec/chain.md, "`Chain.friction`
-      // — the declared friction channel"), so naming one reads as absent —
-      // the same `isDotName` (`src/paths.ts`) the channel's one listing
-      // `frictionNotes` (`src/friction.ts`) applies, over the resolved
-      // basename so `./.gitkeep` cannot spell its way past it.
-      const isNote = isDirectChild && !isDotName(basename(candidate));
       let bytes: Buffer | undefined;
-      if (isNote) {
+      if (isDirectChild) {
         try {
-          // The `no note named` arm below is a **proven** absence, never one
-          // read off this read's errno: `isDirectoryOrAbsentUnder`
-          // (src/fsProbe.ts) descends from the state root this verb resolved
-          // down to the declared channel — the same descent, under the same
-          // subject wording, that the bare listing takes inside
-          // `frictionNotes` (src/friction.ts) — so a channel a plain file
-          // stands at refuses on every host. One stat of the note cannot say
-          // that: win32 answers a path through a non-directory `ENOENT`
-          // (`.claude/rules/platform-facts.md`, *win32 reports a path through
-          // a non-directory as not found*), so keying the silent arm on the
-          // errno reports the note absent over an unresolved channel there
-          // while posix refuses on the same tree
-          // (`.claude/rules/engineering.md`, "Loud or nothing"). The descent's
-          // own refusal carries no errno and so lands in the catch below; a
-          // channel that is genuinely absent is the listing's empty answer,
-          // and naming a note in it reads as no such note.
-          if (isDirectoryOrAbsentUnder(FRICTION_SUBJECT, flumeDir, frictionDir))
-            bytes = readFileSync(namespacedJoin(frictionDir, name));
+          // What counts as a note is the channel's **one** listing,
+          // `frictionNotes` (`src/friction.ts`) — never a second predicate
+          // spelled beside it (`.claude/rules/engineering.md`, "The fix lands
+          // at the mechanism"). The listing skips a dot-prefixed name and
+          // admits only a file, so a placeholder, a subdirectory, and a name
+          // nothing stands at all reach the one `no note named` arm below —
+          // exactly the disposition the help page states.
+          // A predicate of this verb's own answered the first two differently
+          // from the list it claims to read: a subdirectory it could not
+          // classify fell through to the read and exited `EX_IOERR` over a
+          // channel that was perfectly readable.
+          //
+          // The absence that arm reports is **proven**, never read off an
+          // errno: the listing descends from the state root this verb
+          // resolved down to the declared channel, asserting each rung a
+          // directory, so a channel a plain file stands at refuses on every
+          // host. One stat could not say that — win32 answers a path through
+          // a non-directory `ENOENT` (`.claude/rules/platform-facts.md`,
+          // *win32 reports a path through a non-directory as not found*), so
+          // an errno-keyed silent arm would report the note absent over an
+          // unresolved channel there while posix refused on the same tree
+          // (`.claude/rules/engineering.md`, "Loud or nothing"). That
+          // refusal carries no errno and lands in the catch below; a channel
+          // that is genuinely absent is the listing's empty answer, and
+          // naming a note in it reads as no such note.
+          //
+          // Past the listing, every failure is loud, `ENOENT` included: the
+          // listing has already said this name is a note, so a read that
+          // cannot produce its bytes is a note that vanished or is
+          // unreadable mid-verb — an unresolved input, not a legitimate
+          // absence. The bare list's per-row stat refuses on the same
+          // footing for the same reason.
+          const notes = frictionNotes(flumeDir, frictionDir);
+          const noteName = basename(candidate);
+          if (notes.includes(noteName))
+            bytes = readFileSync(namespacedJoin(frictionDir, noteName));
         } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-            console.error(
-              `[flume] friction: '${name}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
-            );
-            return EX_IOERR;
-          }
-          bytes = undefined;
+          console.error(
+            `[flume] friction: '${name}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return EX_IOERR;
         }
       }
       if (bytes === undefined) {
