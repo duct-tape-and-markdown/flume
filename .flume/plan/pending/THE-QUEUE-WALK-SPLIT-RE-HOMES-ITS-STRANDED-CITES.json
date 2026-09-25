@@ -1,0 +1,29 @@
+{
+  "tag": "THE-QUEUE-WALK-SPLIT-RE-HOMES-ITS-STRANDED-CITES",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/dirListing.ts",
+        "description": "the header names the walk both queues actually share and the callers it actually has; the absence, refusal and descent rules sit on the function that holds them"
+      },
+      {
+        "path": "harness/friction.ts",
+        "description": "the descent cite names the walk the record queue runs"
+      },
+      {
+        "path": "src/friction.ts",
+        "description": "the descent cite names the walk the record queue runs"
+      }
+    ]
+  },
+  "summary": "The record queue's walk moved to `pathsUnderStateRoot`; three cites still name `listUnderStateRoot` as the descent it runs, and one of them calls that function's single caller two",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A module is one job"
+  },
+  "acceptance": "every cite naming the descent the record queue's listing runs names `pathsUnderStateRoot`, the function `recordFiles` reaches, and `harness/dirListing.ts`'s header states the sharing that holds now — so no citation resolves as a token while pointing at a function the job has left",
+  "notes": "Stranded by 6bc45949's own split, which the section requires to move its pointers. Verified on disk this tick: `listUnderStateRoot` (`harness/dirListing.ts:76`) has one caller, `harness/questions.ts:54`, while `recordFiles` (`harness/records.ts:109`) reaches `pathsUnderStateRoot` (`:98`) through `checkoutRecords` (`:160`). The three cites: `harness/dirListing.ts:6`-`:13`, `harness/friction.ts:60`, `src/friction.ts:109`. Claims no property: the pin reads the token, never the door."
+}

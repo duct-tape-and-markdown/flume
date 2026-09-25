@@ -1,0 +1,19 @@
+{
+  "tag": "THE-PLACEHOLDER-REFUSAL-COMPOSES-NOTHING-IT-DISCARDS",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/Prompt.ts",
+        "description": "the missing-arg refusal is decided before a substitution is composed, and the comment calling the discarded `{{KEY}}` a surfacing failure goes with it"
+      }
+    ]
+  },
+  "summary": "`substitutePlaceholders` composes a substituted prompt its own throw then discards, under a comment calling the unresolved `{{KEY}}` the way that failure surfaces",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "no path in `substitutePlaceholders` composes a value the missing-arg throw discards, and no comment describes the returned `{{KEY}}` as how that failure surfaces; the refusal's own message and the output every resolving prompt gets are unchanged",
+  "notes": "Fourth body of this family, one past the bar: 7080d7da, 541b9f8e, ee071778, 3f8dec18. Verified on disk this tick: `src/Prompt.ts:470` returns the unresolved span under \"leave as-is so the failure surfaces\", and `:471`-`:476` throws, discarding `result` (`:467`). Claims no property: behavior-free, held by the typecheck and the standing render cases. Seams `src/Prompt.ts` with THE-AGENT-SEAMS-FOUR-JOBS-TAKE-FOUR-FILES, in flight — left exactly as the queue states it."
+}

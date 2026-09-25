@@ -1,0 +1,34 @@
+{
+  "tag": "THE-RECORD-WAKE-REFUSAL-REACHES-THE-SLICE-IT-WOKE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/inboxWindow.ts",
+        "description": "the record block names a tip listing the wake could not make as the window's own refusal, and the two-tree paragraph states the bound that then holds"
+      },
+      {
+        "path": "harness/records.ts",
+        "description": "the fail-open arm's doc names the refusal that actually bounds it, not the render it no longer shares a tree with"
+      },
+      {
+        "path": "harness/cursorWindow.ts",
+        "description": "the `REFUSE:` shape has one home a second window reaches rather than a second spelling"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the woken slice's refusal over a tip whose record listing cannot be read"
+      }
+    ]
+  },
+  "summary": "The record leg's declared fail-open bound is gone: the wake reads the tip and the render reads the checkout, so a git failure wakes the drain every tick and the tick it wakes says nothing",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a tip record listing the wake could not make reaches the slice it woke as the rendered `REFUSE:` block an unreadable range already renders — one shape, never a second spelling, and never a throw — so the deliberate fail-open arm is bounded by a refusal that exists, and the arm's own doc names that refusal",
+  "tests": [
+    "a tip record listing the wake could not read reaches the inbox slice as a rendered refusal"
+  ],
+  "notes": "Verified this tick: `recordsPending` (`harness/records.ts:220`) swallows every throw, and `:215`-`:218` bounds that on \"the slice it wakes renders the same listing\" — true before 6bc45949, false after: `live` reads `tipRecords` (`harness/inboxWindow.ts:136`), `args` reads `checkoutRecords` (`:144`). Measured here: `ls-tree HEAD` exits 128 on an unborn HEAD. A throw is the wrong repair, and `harness/cursorWindow.ts:115`-`:123` is both the reason and the shape."
+}
