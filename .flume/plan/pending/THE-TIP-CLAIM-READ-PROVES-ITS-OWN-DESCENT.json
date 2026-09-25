@@ -1,0 +1,28 @@
+{
+  "tag": "THE-TIP-CLAIM-READ-PROVES-ITS-OWN-DESCENT",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/tipVerify.ts",
+        "description": "the foreign-claim read proves the descent from the common dir it already holds before reading an absent claim as an unclaimed ref"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the refusal over an obstructed common dir, beside the live-foreign-claim cases"
+      }
+    ]
+  },
+  "summary": "`liveForeignClaimPid` reads an unproven tip-claim path as unclaimed, so an obstructed git common dir lets a wave cherry-pick over a ref another engine instance holds",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "the foreign-claim read proves the descent from the common dir it holds — the one `flume status` already takes over the same path — so an unreachable tip-claim path refuses on every host rather than reporting the ref unclaimed",
+  "pins": [
+    "liveForeignClaimPid refuses a tip claim whose git common dir is present and is not a directory"
+  ],
+  "notes": "Verified this tick: `src/tipVerify.ts:43` calls `liveTipClaimPid` with no descent while holding `commonDir` from `:41`; `src/cli.ts:427` proves that exact descent through `existsLoudUnder` — detection a sibling surface already performs. Last reachable arm of the family two shipped entries closed; `livePidClaimAt`'s signature stays, its other callers each prove their own root or reach it past an EEXIST. No `tests[]`: posix ENOTDIR already refuses, so the `windows` lane is what the pin protects."
+}

@@ -1,0 +1,23 @@
+{
+  "tag": "THE-STATUS-VERB-REFUSES-AN-OBSTRUCTED-STATE-ROOT",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/cli.ts",
+        "description": "`status`'s baton construction sits inside a guard reporting `EX_IOERR`, as its loop-lock and tip-claim reads already do"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the refusal over an obstructed state root, beside the loop-lock and stop-flag arms"
+      }
+    ]
+  },
+  "summary": "`flume status` over a state root present and not a directory exits 1 with a raw stack out of the baton's mkdir — the one exit its own spec says it never takes",
+  "per": { "path": "spec/cli.md", "section": "Subcommand surface" },
+  "acceptance": "the baton construction is inside a guard that reports `EX_IOERR` naming the state root, the disposition `status`'s two later reads already take, so exit 1 stays unreachable and no observation prints as its opposite",
+  "tests": [
+    "flume status refuses an obstructed state root with the io-error exit code rather than a raw stack"
+  ],
+  "notes": "Measured this tick over a scratch repo carrying a plain file at `.flume`: exit 1, `ENOTDIR ... mkdir '<root>/.flume/awake'` out of `src/Baton.ts:63` via `src/cli.ts:324`, ahead of the guards at `:355` and `:427`. `src/cli.ts:360` names exit 1 as the one exit `status` is specced never to take. The mkdir itself stays: the cited section declares it status's one filesystem effect. Drained from note THE-ENGINES-REMAINING-ABSENT-ARMS-PROVE-THEIR-ANCESTRY, item 1."
+}

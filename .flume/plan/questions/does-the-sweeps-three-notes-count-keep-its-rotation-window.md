@@ -48,3 +48,15 @@ THE-SWEEP-PROMPT-POINTS-AT-THE-PAGES-IT-RESTATES shrinks `plan-sweep.md:42`
 to a pointer, so the page's wording is what a sweep tick will read either way.
 
 Drained from build note `THE-DRAIN-PROMPTS-THREE-NOTES-COUNT-IS-UNBOUNDED`.
+
+**The two counts have now produced different answers.** The family *a span
+byte-identical across all three slice prompts* was accepted as debt in three
+plan commit bodies — 0fe5ae63 (naming itself "first of this family in this
+rotation"), 7f0bdf4e (naming 0fe5ae63 as first), and a7c044e8 (naming 7f0bdf4e
+as first, reading its count from the sweep's rotation cursor and so arriving at
+two). Counting off `git log` over every plan commit body, unbounded, this drain
+reads three and files it as
+THE-THREE-PROMPTS-SHARE-ONE-RENDER-OF-EACH-SPAN. Under the windowed reading it
+would still be at two. So the divergence is no longer only stated: the same
+family is filable under one bar and not the other, and whichever answer lands
+should say which of the two those three bodies were counting.
