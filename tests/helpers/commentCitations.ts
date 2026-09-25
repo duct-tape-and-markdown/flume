@@ -12,6 +12,16 @@
  * working tree. One mechanism either way — the citation names something the
  * repo holds, or it names nothing and the tree renamed out from under it.
  *
+ * A dotted citation says more than either half too, and the dot is what says
+ * it: `Chain.pendingDir` has named the declaration the member sits on. So when
+ * the head names a type, interface or class the judged trees declare, that
+ * declaration's own members are what answer the tail, and the repo-wide token
+ * set is not consulted for it — answered by that set, a field renamed out from
+ * under the citation keeps resolving off whichever sibling happens to spell
+ * the same word. The whole-span arms come first, because a module basename and
+ * a repo-relative path carry a dot too and `chain.ts` names a file rather than
+ * a member of anything.
+ *
  * A comment that writes the two together — `` `name` (`src/file.ts`) `` — has
  * said more than either alone: it named the file the declaration sits in, and
  * where a declaration lives is the token's fact rather than its meaning. So
@@ -1124,6 +1134,13 @@ const sectionReader = (root: string): ((site: SectionCitation) => boolean) => {
  * working tree holds at that repo-relative path. What a segment *means* is
  * never read: the scan proves the name exists and stops there.
  *
+ * A two-segment citation whose head names a type, interface or class those
+ * trees declare is narrower, for the reason the header states: the tail is
+ * resolved against that declaration's own members and against nothing else.
+ * Deeper spellings keep the repo-wide reading — `a.b.c` walks a chain of
+ * types, and holding every segment to the head's members would red the second
+ * hop rather than follow it.
+ *
  * A `*.md` page name is the exception, and takes the working tree alone —
  * the arm a title's page name already goes through, for the reason the
  * header states.
@@ -1163,6 +1180,33 @@ export const scanCommentCitations = (
    * source text declares nothing.
    */
   const reach = new Map<string, Set<string>>();
+  /**
+   * The members each type, interface or class the judged trees declare holds,
+   * keyed by the declaration's own name. What the tail of a dotted citation
+   * is resolved against when its head names one of them: `Chain.pendingDir`
+   * has said which declaration carries the member, and the repo-wide token set
+   * cannot read that — it answers the tail from wherever any sibling happens
+   * to spell the same word, so a field renamed out from under the citation
+   * keeps resolving off the namesake next door.
+   *
+   * Read through the checker rather than off the declaration's own member
+   * list, so an inherited member, an intersection's other half and a union's
+   * variant-only field each count. A union's members are the union of its
+   * constituents' rather than the checker's own common-property reading: a
+   * comment naming the field one variant carries has named a member of the
+   * declaration, and holding it to the intersection would red a citation the
+   * type plainly answers.
+   */
+  const members = new Map<string, Set<string>>();
+  const holdsMembers = (name: string, type: ts.Type): void => {
+    const held = members.get(name) ?? new Set<string>();
+    for (const constituent of type.isUnion() ? type.types : [type]) {
+      for (const property of checker.getPropertiesOfType(constituent)) {
+        held.add(property.getName());
+      }
+    }
+    members.set(name, held);
+  };
   const holds = (name: string, module: string): void => {
     const held = homes.get(name) ?? new Set<string>();
     held.add(module);
@@ -1209,6 +1253,38 @@ export const scanCommentCitations = (
         holds(token.text, module);
       }
     });
+    // The declarations a dotted citation's head can name. A nested one counts
+    // the same as a top-level one — where the declaration sits is the module's
+    // business, and a comment cites it by the name it was given.
+    const eachDeclaration = (node: ts.Node): void => {
+      if (
+        ts.isInterfaceDeclaration(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isTypeAliasDeclaration(node)
+      ) {
+        const sym = node.name && checker.getSymbolAtLocation(node.name);
+        if (sym) {
+          holdsMembers(sym.getName(), checker.getDeclaredTypeOfSymbol(sym));
+          // A class's statics sit on its value side, which the declared type
+          // does not reach — and a citation names one the same way it names an
+          // instance member, with the class's own name as its head.
+          if (sym.valueDeclaration) {
+            holdsMembers(
+              sym.getName(),
+              checker.getTypeOfSymbolAtLocation(sym, sym.valueDeclaration),
+            );
+          }
+          // And the names a merged namespace hangs off the same spelling:
+          // `StandardSchemaV1.Result` is a type of the namespace declared
+          // beside the interface, which neither side's properties reach.
+          const held = members.get(sym.getName()) ?? new Set<string>();
+          sym.exports?.forEach((_unused, name) => held.add(String(name)));
+          members.set(sym.getName(), held);
+        }
+      }
+      ts.forEachChild(node, eachDeclaration);
+    };
+    ts.forEachChild(sf, eachDeclaration);
   }
 
   // --- what their comments cite ------------------------------------------
@@ -1249,17 +1325,37 @@ export const scanCommentCitations = (
   // The working tree is the other thing the repo holds a citation's name in.
   const onDisk = (text: string): boolean => holdsFile(root, text);
 
+  /**
+   * The declaration a dotted citation's head names, when the judged trees
+   * declare one by that name and the citation is the two segments a member
+   * access has. Deeper spellings are left to the repo-wide arm: `a.b.c` walks
+   * a chain of types, and resolving every segment against the head's own
+   * members would red the second hop rather than follow it.
+   */
+  const memberHome = (segments: readonly string[]): ReadonlySet<string> | undefined =>
+    segments.length === 2 ? members.get(segments[0] ?? "") : undefined;
+
   // The page-name arm short-circuits the token set rather than sitting behind
   // it, for the reason the header states: a literal answering a page name is
   // how a renamed page leaves its citations standing.
-  const resolves = (text: string): boolean =>
-    isPageName(text)
-      ? onDisk(text)
-      : tokens.has(text) ||
-        onDisk(text) ||
-        text
-          .split(".")
-          .every((segment) => KEYWORDS.has(segment) || tokens.has(segment));
+  const resolves = (text: string): boolean => {
+    if (isPageName(text)) return onDisk(text);
+    // The whole-span arms first: a module basename and a repo-relative path
+    // are spelled with a dot too, and `chain.ts` names a file rather than a
+    // member of a declaration called `chain`.
+    if (tokens.has(text) || onDisk(text)) return true;
+    const segments = text.split(".");
+    // A head the trees declare has said which declaration carries the tail,
+    // so that declaration is what answers it and the repo-wide set is not
+    // consulted — answered by that set, a member renamed out from under the
+    // citation keeps resolving off a namesake somewhere else in the trees.
+    const own = memberHome(segments);
+    const tail = segments[1] ?? "";
+    if (own) return KEYWORDS.has(tail) || own.has(tail);
+    return segments.every(
+      (segment) => KEYWORDS.has(segment) || tokens.has(segment),
+    );
+  };
 
   // A pair names the home, so the home is what answers it: every segment is
   // resolved against the declarations that one file holds, and the repo-wide

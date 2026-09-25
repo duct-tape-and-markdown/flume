@@ -605,7 +605,7 @@ describe("flume log (spec/cli.md §Subcommand surface)", () => {
     }
   }, SPAWN_BUDGET_MS);
 
-  // LOG-TAGLESS-SPAN-ROW — `TickVerdictMergeOutcome.tag` is absent on a
+  // LOG-TAGLESS-SPAN-ROW — `TickVerdictMergeOutcome.entryTag` is absent on a
   // singleton phase's own span, and the human line used to interpolate it
   // unconditionally, printing `undefined:merged`. Both legs run through the
   // real CLI so the rendering is read off the real formatter, not a copy.

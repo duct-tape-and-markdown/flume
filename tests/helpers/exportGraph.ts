@@ -458,7 +458,7 @@ const shippedSurface = (request: ExportScanRequest): ShippedSurface => {
  * `exports` map reaches, rather than the map's own entry list.
  *
  * The map names two modules; everything a chain author actually writes is a
- * member or a literal arm of what those two hand out (`Chain.writablePaths`,
+ * member or a literal arm of what those two hand out (`Phase.writablePaths`,
  * a gate's `afterCommit`), and a set built from the entry list alone would
  * hold almost none of it.
  */

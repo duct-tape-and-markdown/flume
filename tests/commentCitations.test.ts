@@ -193,6 +193,16 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `/** The capitals spelling, declared here so a pair can name this door. */`,
     `export const MAX_DEPTH_LIMIT = 8;`,
     ``,
+    `/** An heir, so a member cite can name a field its head inherits. */`,
+    `export interface Reshipped extends Shipped {`,
+    `  readonly extraDepth: number;`,
+    `}`,
+    ``,
+    `/** Two variants, each carrying a field the other does not. */`,
+    `export type Span =`,
+    `  | { readonly spanTag: string }`,
+    `  | { readonly spanReason: string };`,
+    ``,
   ].join("\n"),
   "lib/surface.ts": [
     `import type { Shipped } from "./dataShapes.js";`,
@@ -409,6 +419,17 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `// page this tree holds, and *an aside* behind that clause draws nothing.`,
     `export const DISTANT_ASIDE = 27;`,
     ``,
+    `// A dotted citation whose head names a declaration these trees hold is`,
+    `// answered by that declaration's own members. Resolve: \`Shipped.maxDepth\``,
+    `// is its field, \`Reshipped.maxDepth\` the same field inherited,`,
+    `// \`Holder.read\` the class's method, and \`Span.spanTag\` and`,
+    `// \`Span.spanReason\` one variant's field each. Dangle: \`Shipped.ratio\``,
+    `// names a declaration of this module that is no member of \`Shipped\`, and`,
+    `// \`Holder.maxDepth\` names a field of the interface the class holds rather`,
+    `// than a member of the class — both tails the repo-wide token set answered`,
+    `// from wherever the tree happened to spell them.`,
+    `export const MEMBERS = 28;`,
+    ``,
   ].join("\n"),
   "docs/carried.md": "# the page a tree outside the tsconfig cites\n",
   "tools/render.mjs": [
@@ -615,10 +636,16 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
   // which sites carry which name is what `findings` below states by line.
   expect([...new Set(scan.scanned.map((s) => s.text))].sort()).toEqual([
     "Holder",
+    "Holder.maxDepth",
+    "Holder.read",
     "KINDS",
     "MAX_DEPTH_LIMIT",
+    "Reshipped.maxDepth",
     "Shipped",
     "Shipped.maxDepth",
+    "Shipped.ratio",
+    "Span.spanReason",
+    "Span.spanTag",
     "VANISHED_NAME",
     "Vanished",
     "WeakMap",
@@ -663,16 +690,22 @@ it("the citation scan flags a backticked identifier no src/ or harness/ declarat
     "lib/surface.ts:164 KINDS",
     "lib/surface.ts:166 VANISHED_NAME",
     "lib/surface.ts:183 docs/absent.md",
+    "lib/surface.ts:219 Shipped.ratio",
+    "lib/surface.ts:221 Holder.maxDepth",
   ]);
 
   // Every resolution arm fired, so the two findings above are a
   // discrimination rather than a scan that flagged what it could not classify.
   expect([...new Set(scan.resolved.map((s) => s.text))].sort()).toEqual([
     "Holder",
+    "Holder.read",
     "KINDS",
     "MAX_DEPTH_LIMIT",
+    "Reshipped.maxDepth",
     "Shipped",
     "Shipped.maxDepth",
+    "Span.spanReason",
+    "Span.spanTag",
     "WeakMap",
     "blockedBy",
     "dataShapes.ts",
@@ -762,6 +795,67 @@ it("the citation scan judges a dotted citation whose segments carry no internal 
   expect(fixtureScan.findings.map(formatCitation)).toContain(
     "lib/surface.ts:31 vanished.helper",
   );
+});
+
+/**
+ * The heads the fixture declares, and so the heads whose own members answer a
+ * two-segment citation written behind them. Spelled here rather than read back
+ * off the scan: the judged set the two arms below guard against emptiness is
+ * *these* heads' citations, and deriving the list from the scan would make
+ * that guard read whatever the scan happened to admit.
+ */
+const MEMBER_CITE_HEADS = ["Shipped", "Reshipped", "Holder", "Span"] as const;
+
+/** Every dotted citation the fixture wrote behind one of those heads. */
+const memberCites = (): readonly CitationSite[] =>
+  fixtureScan.scanned.filter((site) =>
+    MEMBER_CITE_HEADS.some((head) => site.text.startsWith(`${head}.`)),
+  );
+
+it("a backticked Type.member citation naming no member of that declaration is reported", () => {
+  // Vacuity guard: the arm has a judged set before any verdict is read off
+  // it. A head collector that stopped matching would leave both findings below
+  // unreported and this arm green over zero member citations.
+  expect(memberCites().length).toBeGreaterThan(5);
+
+  // Both tails are names this fixture holds — `ratio` is a declaration of the
+  // citing module and `maxDepth` a field of the interface next door — so the
+  // repo-wide token set answers each, and only the head's own members can red
+  // them. The finding is that reading displaced, not a name the tree lacks.
+  const findings = fixtureScan.findings.map(formatCitation);
+  expect(findings).toContain("lib/surface.ts:219 Shipped.ratio");
+  expect(findings).toContain("lib/surface.ts:221 Holder.maxDepth");
+
+  // And the tails really are answered elsewhere: `ratio` resolves as a link
+  // tag's target in this same tree, so its red above is the member arm's
+  // verdict rather than a name nothing here declares.
+  expect(fixtureScan.links.scanned.map((s) => s.text)).toContain("ratio");
+  expect(fixtureScan.links.findings.map((s) => s.text)).not.toContain("ratio");
+  expect(fixtureScan.resolved.map((s) => s.text)).toContain("Shipped.maxDepth");
+});
+
+it("a backticked Type.member citation naming a member that declaration holds is not reported", () => {
+  // Vacuity guard: every spelling the arm has to answer was read as a span
+  // before any resolution is claimed — a field of the head, the same field
+  // reached through an heir, a class's method, and a field each variant of a
+  // union carries.
+  const held = [
+    "Shipped.maxDepth",
+    "Reshipped.maxDepth",
+    "Holder.read",
+    "Span.spanTag",
+    "Span.spanReason",
+  ];
+  const spans = fixtureScan.backticked.map((s) => s.text);
+  for (const cite of held) expect(spans).toContain(cite);
+
+  // Each resolves, so the arm reads the declaration the way the checker does:
+  // an inherited member and a variant-only field are members of the head, and
+  // holding a union to its common properties alone would red the last two.
+  const resolved = new Set(fixtureScan.resolved.map((s) => s.text));
+  for (const cite of held) {
+    expect(`${cite} -> ${resolved.has(cite)}`).toBe(`${cite} -> true`);
+  }
 });
 
 it("the citation scan judges a leading-capital citation whose name carries no internal capital", () => {

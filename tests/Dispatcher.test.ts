@@ -10374,9 +10374,10 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
 
 // ---------- fanout wave-level noCommit precedence (mixed causes) ----------
 
-// `Dispatcher.waveNoCommitCause`: when a fanout wave ships nothing, the single
-// wave-level `noCommit` label is picked from the set of per-entry causes by
-// precedence gate-revert > render-refused > platform-preempt > clean-exit.
+// `waveNoCommitCause` (`src/waveMerge.ts`): when a fanout wave ships nothing,
+// the single wave-level `noCommit` label is picked from the set of per-entry
+// causes by precedence gate-revert > render-refused > platform-preempt >
+// clean-exit.
 // Every other test above drives one mode per wave in isolation, so a swapped or
 // dropped precedence branch is invisible to the suite
 // (.claude/rules/engineering.md "A green verdict is proven non-vacuous"). These

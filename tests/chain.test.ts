@@ -383,11 +383,14 @@ describe("this repo's chain is the harness factory applied to its declaration (s
 });
 
 /**
- * `Chain.seedDir` declared a directory `flume job new` copied into a fresh
- * job dir. The engine seeds no second state root beneath a checkout
- * (spec/jobs.md, *The checkout is the unit of isolation*), so there is no
- * value for a chain to hand it: the field is gone from the declared surface,
- * not merely unread.
+ * `Chain` once declared a `"seedDir"` key naming a directory `flume job new`
+ * copied into a fresh job dir. The engine seeds no second state root beneath a
+ * checkout (spec/jobs.md, *The checkout is the unit of isolation*), so there is
+ * no value for a chain to hand it: the key is gone from the declared surface,
+ * not merely unread. Named as the key the fixture below writes rather than as a
+ * member of `Chain`, because it is no member of one — a citation spelled
+ * `Type.member` is resolved against that declaration's own members, and this
+ * one would name nothing there by design.
  *
  * Judged through the real compiler over the real `src/Phase.ts`, not by a
  * conditional type alone. A conditional type is erased before vitest runs, so

@@ -197,8 +197,9 @@ const DECLARATION = {
 
 /**
  * A base run happens inside a gate invocation — `namedLinesGate`
- * (`harness/chain.ts`) reaches the runner through `Dispatcher.runGate`, which
- * opens the checkout scope `api.git.checkoutAt` plants into and reclaims at.
+ * (`harness/chain.ts`) reaches the runner through `runGate`
+ * (`src/gateRun.ts`), which opens the checkout scope `api.git.checkoutAt`
+ * plants into and reclaims at.
  * Driving the runner from inside the same scope is what the runtime does, not
  * a seam invented here: outside one there is no boundary to reclaim at and
  * the API refuses.

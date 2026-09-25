@@ -419,8 +419,8 @@ export async function checkoutAt(opts: {
 
 /**
  * Run one gate invocation as the reclamation scope for whatever
- * {@link checkoutAt} plants inside it — `Dispatcher.runGate` is the one
- * gate-run site and so the one place this wraps
+ * {@link checkoutAt} plants inside it — `runGate` (`src/gateRun.ts`) is the
+ * one gate-run site and so the one place this wraps
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
  * Reclaims on both legs: the `finally` runs whether the gate returned a

@@ -980,7 +980,7 @@ describe("worktrees — the longpaths pin precedes the add", () => {
 
   it("checkoutAt pins core.longpaths before it adds its detached worktree", async () => {
     // The gate boundary the API is only reachable from, opened here the way
-    // `Dispatcher.runGate` opens it around a real gate.
+    // `runGate` (`src/gateRun.ts`) opens it around a real gate.
     const planted = await withGateCheckouts({ log: silent }, async () => {
       const path = await checkoutAt({
         repoRoot: fx.repo,
