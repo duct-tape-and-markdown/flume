@@ -282,6 +282,13 @@ flume loop                  # baton, pending, worktrees, chain artifacts under F
 rm -rf "$(dirname "$FLUME_DIR")"   # one rm removes the whole dock
 ```
 
+One checkout still resolves one state root: a dock pointed at a tmpdir while
+`<repoRoot>/.flume` already holds runtime state of its own — a baton, a
+worktree base, a verdict log — is refused where the roots resolve, naming
+both. Two efforts at once are two checkouts (`git worktree add`), not two
+roots under one. A bay holding only your chain is a config dir, not a second
+root, so the posture above composes against an adopted repo as written.
+
 A relocated **dock is expected to live outside the repo** (e.g. a tmpdir), so
 `.gitignore` needs no change: the default `<repoRoot>/.flume` stays ignored as
 today, and an out-of-tree dock is invisible to git by construction. The one-`rm`

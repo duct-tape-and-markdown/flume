@@ -505,6 +505,17 @@ loads. `promptPath` always joins `configDir`, which is always the directory
 the chain actually lives in. See the README's "Chain residency" section for
 the full contract.
 
+What moves independently is the *pair of roots*, not the number of state
+roots a checkout carries: one checkout resolves one state root. Relocating
+state while the bay holds only your chain is the ordinary split and composes.
+Pointing `FLUME_DIR` at a second root in a checkout whose bay already carries
+runtime state — a baton, a worktree base, a verdict log — is refused where the
+roots resolve, exit 2, naming both roots and the checkout, before anything is
+provisioned. Two efforts at once are two checkouts (`git worktree add`), not
+two roots under one: both roots would key their work by the same tip, the same
+tip claim and the same branch names, so the second separates nothing and
+collides several steps on inside git.
+
 ## 1. Declaring a Phase
 
 A `Phase` is plain data the dispatcher interprets. No per-phase imperative

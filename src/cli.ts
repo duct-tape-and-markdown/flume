@@ -95,9 +95,9 @@ import {
   stopFlagPath,
 } from "./paths.js";
 import {
-  CrossRepoFlumeDirError,
   resolveRepoRoot,
   resolveStateDirs,
+  StateRootResolutionError,
 } from "./cliStateDirs.js";
 import {
   agentUsageLine,
@@ -388,7 +388,12 @@ async function main(): Promise<number> {
   try {
     ({ flumeDir, configDir } = resolveStateDirs(process.env, repoRoot));
   } catch (err) {
-    if (err instanceof CrossRepoFlumeDirError) {
+    // Both of the resolution's refusals, at one arm: the inherited cross-repo
+    // stamp and the second state root in this checkout. Each is a pair of
+    // roots the caller named and the resolution will not compose, so each is
+    // the operator's sentence and exit 2, never a stack
+    // (`StateRootResolutionError`, `src/cliStateDirs.ts`).
+    if (err instanceof StateRootResolutionError) {
       console.error(`[flume] ${err.message}`);
       return 2;
     }

@@ -20,15 +20,22 @@ import {
   CrossRepoFlumeDirError,
   resolveRepoRoot,
   resolveStateDirs,
+  SecondStateRootError,
 } from "../src/cliStateDirs.ts";
 import { Baton } from "../src/Baton.ts";
 import { EX_IOERR } from "../src/exitCodes.ts";
+import { STATE_ROOT_NAMES } from "../src/paths.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
-import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";
+import {
+  markerAgentChainSrc,
+  minimalChainSrc,
+  writeRepoConfig,
+} from "./helpers/repoChain.ts";
 import { makeScratchRepo } from "./helpers/scratchRepo.ts";
 import {
   SPAWN_BUDGET_MS,
+  gitOut,
   runCli,
   runCliStreams,
 } from "./helpers/subprocess.ts";
@@ -660,6 +667,145 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
       } finally {
         await outer.cleanup();
         await inner.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
+/**
+ * The second state root in one checkout (`spec/jobs.md`, *The checkout is the
+ * unit of isolation*). A downstream 0.19 report ran three efforts in one
+ * clone, each with its own `FLUME_DIR`; the collision arrived several steps
+ * later as git's `'flume/plan-derive' is already used by worktree at …`,
+ * which names neither root. The evidence the refusal keys on is the bay
+ * discovery already probes for, read one level deeper — a bay holding a
+ * chain is this run's config dir, a bay holding the runtime's own names is
+ * another root.
+ */
+describe("resolveStateDirs — the second state root in one checkout", () => {
+  /** A checkout whose bay already carries the runtime's own baton. */
+  async function checkoutHoldingState(): Promise<string> {
+    const checkout = await mkFixtureRoot("flume-second-root-");
+    await mkdir(join(checkout, ".flume", STATE_ROOT_NAMES.awake), {
+      recursive: true,
+    });
+    return checkout;
+  }
+
+  it("a state root resolved in a checkout holding a different flume state root is refused naming both roots", async () => {
+    const checkout = await checkoutHoldingState();
+    try {
+      const own = join(checkout, ".flume");
+      const second = join(checkout, "second-state");
+      await mkdir(second, { recursive: true });
+
+      const env: NodeJS.ProcessEnv = { FLUME_DIR: second };
+      let thrown: unknown;
+      try {
+        resolveStateDirs(env, checkout);
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(SecondStateRootError);
+      const message = (thrown as Error).message;
+      // Both roots and the checkout, so the operator is not left to work out
+      // which two directories disagree.
+      expect(message).toContain(second);
+      expect(message).toContain(own);
+      expect(message).toContain(`checkout ${checkout}`);
+      // And the evidence: the runtime-owned name that made the bay a root.
+      expect(message).toContain(STATE_ROOT_NAMES.awake);
+
+      // Refused before the write-back, so neither root is published to a
+      // child and nothing downstream composes a path from one.
+      expect(env.FLUME_DIR).toBe(second);
+      expect(env.FLUME_CONFIG_DIR).toBeUndefined();
+      expect(env.FLUME_DIR_RESOLVED_FOR).toBeUndefined();
+    } finally {
+      await rm(checkout, { recursive: true, force: true });
+    }
+  });
+
+  it("a FLUME_DIR naming the checkout's own state root resolves unchanged", async () => {
+    const checkout = await checkoutHoldingState();
+    try {
+      const own = join(checkout, ".flume");
+      const env: NodeJS.ProcessEnv = { FLUME_DIR: own };
+      const { flumeDir, configDir } = resolveStateDirs(env, checkout);
+
+      expect(flumeDir).toBe(own);
+      expect(configDir).toBe(own);
+      expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(checkout));
+    } finally {
+      await rm(checkout, { recursive: true, force: true });
+    }
+  });
+
+  it("a bay holding only a chain is this run's config dir, and relocating state alone composes", async () => {
+    const checkout = await mkFixtureRoot("flume-second-root-");
+    try {
+      await writeRepoConfig(checkout, minimalChainSrc());
+      // Non-vacuity: the bay is on disk, so the case really is the shape the
+      // refusal has to let through rather than a missing directory.
+      expect(existsSync(join(checkout, ".flume", "chain.ts"))).toBe(true);
+      expect(
+        readdirSync(join(checkout, ".flume")).filter((name) =>
+          (Object.values(STATE_ROOT_NAMES) as string[]).includes(name),
+        ),
+      ).toEqual([]);
+
+      const relocated = join(checkout, "state");
+      const env: NodeJS.ProcessEnv = { FLUME_DIR: relocated };
+      const { flumeDir, configDir } = resolveStateDirs(env, checkout);
+
+      expect(flumeDir).toBe(relocated);
+      expect(configDir).toBe(join(checkout, ".flume"));
+    } finally {
+      await rm(checkout, { recursive: true, force: true });
+    }
+  });
+
+  it(
+    "a second state root's tick refuses at resolution rather than at worktree provisioning",
+    async () => {
+      const repo = await makeScratchRepo("flume-second-root-", "main");
+      try {
+        const own = join(repo.dir, ".flume");
+        const second = join(repo.dir, "second-state");
+        const marker = join(repo.dir, "agent-invoked");
+        await writeRepoConfig(repo.dir, markerAgentChainSrc(marker));
+
+        // Two roots in one checkout, each with the singleton phase awake:
+        // the first root's tick is what holds `flume/probe`, and the second
+        // is the one this case resolves.
+        new Baton(own).wake("probe");
+        new Baton(second).wake("probe");
+
+        const ran = await runCli(repo.dir, ["tick"], {
+          ...hermeticEnv(),
+          FLUME_DIR: second,
+        });
+
+        expect(ran.code).toBe(2);
+        expect(ran.out).toContain(second);
+        expect(ran.out).toContain(own);
+        expect(ran.out).toContain(`checkout ${repo.dir}`);
+
+        // Ahead of provisioning: the second root has no worktree base, git
+        // was never asked for the branch a tick mints, and the agent the
+        // chain declares was never reached.
+        expect(existsSync(join(second, STATE_ROOT_NAMES.worktrees))).toBe(false);
+        expect(existsSync(marker)).toBe(false);
+        const branches = await gitOut(repo.dir, [
+          "for-each-ref",
+          "--format=%(refname)",
+          "refs/heads/",
+        ]);
+        expect(branches.trim()).toBe("refs/heads/main");
+      } finally {
+        await repo.cleanup();
       }
     },
     SPAWN_BUDGET_MS,
