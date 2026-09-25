@@ -1,0 +1,30 @@
+{
+  "tag": "THE-UNNAMABLE-SCAN-READS-A-HERITAGE-CLAUSE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/helpers/exportGraph.ts",
+        "description": "a reached declaration's heritage clauses join the position set, beside the signature and property ones, and the paragraph that declares what a position is"
+      },
+      {
+        "path": "tests/exportConsumers.test.ts",
+        "description": "the fixture arm over a heritage base no entry module exports, under its own title beside the three `unnamable` splits"
+      },
+      {
+        "path": "src/index.ts",
+        "description": "the measured red — `PriorAttemptEnvelope`, the base all six prior-attempt variants extend"
+      }
+    ]
+  },
+  "summary": "`unnamable` reads signature and property positions only, so a base an exported interface extends is a hover name no import can carry — `PriorAttemptEnvelope` is the measured red",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "An export earns its consumer"
+  },
+  "acceptance": "a type a reached declaration names only in a heritage clause is judged for nameability exactly as a signature or property position's is, so an `extends` base no entry module exports is reported; every base the widened arm reds is exported, and the repo arms stay green over a populated position set",
+  "tests": [
+    "the export scan flags an unnamable type a reached declaration names only in a heritage clause"
+  ],
+  "notes": "Off note THE-PRIOR-ATTEMPT-VARIANTS-SHARE-ONE-ENVELOPE, item 1. Verified: `PriorAttemptEnvelope` (`src/Prompt.ts:150`) is the base of all six variants and sits in no entry module, while `reach` (`tests/helpers/exportGraph.ts:423`) walks heritage and `fromAnnotation`/`fromMembers` do not. The type-alias exclusion the site declares does not cover it: importing a derived interface does not import its base. Other bases may red; all clear in `src/index.ts`."
+}
