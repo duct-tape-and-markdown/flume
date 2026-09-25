@@ -1397,6 +1397,189 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 });
 
 /**
+ * spec/loop.md "Repeated identical failures — quarantine, then abort": a
+ * run-scoped hold is keyed by the entry as the failing tick read it, and a
+ * *gate*-stage hold carries one more expiry — the tip that tick reported.
+ * Once trunk has moved past it the tree that gate judged is gone, so the hold
+ * lifts and the entry is pickable again; a provision-stage hold has no such
+ * expiry, since nothing landing on trunk changes what a worktree could not
+ * provision. The tip each tick reports is `TickVerdict.headSha`, which the
+ * stub writes here exactly as a real child does — the supervisor reads no ref
+ * of its own.
+ */
+describe("superviseLoop — a gate-stage hold expires with the tip it was placed at", () => {
+  const verdictPath = (phase: string): string =>
+    childVerdictPath(join(fx.repo, ".flume"), phase);
+
+  const TIP_A = "a".repeat(40);
+  const TIP_B = "b".repeat(40);
+
+  it("a gate-stage quarantine is lifted once the tip moves past the tick that placed it", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async ({
+      phase,
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      if (calls === 1) {
+        // The gate reverts ISO-FAIL over the tree at TIP_A, and the tick ends
+        // with trunk still there (nothing shipped).
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              committed: false,
+              headSha: TIP_A,
+              gateFailures: [
+                {
+                  ...blamedOnFixture("ISO-FAIL"),
+                  signature: "iso-veto: iso veto",
+                  message: "iso veto",
+                },
+              ],
+            }),
+          ),
+          "utf8",
+        );
+      } else if (calls === 2) {
+        // The hold still stands over the tree it was placed on: this tick is
+        // told the key, and it is this tick that moves trunk (the operator's
+        // gate fix, or any sibling landing).
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              committed: true,
+              headSha: TIP_B,
+              shippedTags: ["OK-B"],
+            }),
+          ),
+          "utf8",
+        );
+      } else {
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(verdictFixture({ committed: false, headSha: TIP_B })),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const infos: string[] = [];
+    const log: Logger = {
+      info: (l) => infos.push(l),
+      warn: () => {},
+      error: () => {},
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      runTick,
+      log,
+    });
+
+    expect(res.ticks).toBe(3);
+    expect(receivedSlugs).toEqual([[], ["iso-fail@00112233aa"], []]);
+    expect(
+      infos.some(
+        (l) =>
+          l.includes("lifting the gate-stage quarantine") &&
+          l.includes("ISO-FAIL"),
+      ),
+    ).toBe(true);
+  });
+
+  it("a provision-stage quarantine survives a tip that moved", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async ({
+      phase,
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      if (calls === 1) {
+        // One wave, two blamed failures at the same tip: a worktree that
+        // could not be provisioned and a gate revert. The gate sibling is
+        // what makes "survives" a claim about the stage rather than about a
+        // run where nothing lifted at all.
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              committed: false,
+              headSha: TIP_A,
+              provisionFailures: [
+                {
+                  ...blamedOnFixture("PROV-A"),
+                  signature: "fatal: could not create work tree dir",
+                  message: "fatal: could not create work tree dir",
+                },
+              ],
+              gateFailures: [
+                {
+                  ...blamedOnFixture("GATE-B"),
+                  signature: "iso-veto: iso veto",
+                  message: "iso veto",
+                },
+              ],
+            }),
+          ),
+          "utf8",
+        );
+      } else if (calls === 2) {
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              committed: true,
+              headSha: TIP_B,
+              shippedTags: ["OK-C"],
+            }),
+          ),
+          "utf8",
+        );
+      } else {
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(verdictFixture({ committed: false, headSha: TIP_B })),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      runTick,
+      log: silent,
+    });
+
+    expect(res.ticks).toBe(3);
+    expect(receivedSlugs[1]).toEqual([
+      "gate-b@00112233aa",
+      "prov-a@00112233aa",
+    ]);
+    // Trunk moved between tick 2 and tick 3: the gate hold goes, the
+    // provisioning hold stays for the rest of the run.
+    expect(receivedSlugs[2]).toEqual(["prov-a@00112233aa"]);
+  });
+});
+
+/**
  * `SuperviseLoopOptions.quarantineScope` /
  * `abortThreshold` open the two constants the suite above exercises at
  * their shipped defaults (run-scoped quarantine; three-failure abort) as

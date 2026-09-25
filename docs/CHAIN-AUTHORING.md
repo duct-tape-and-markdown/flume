@@ -394,6 +394,15 @@ its start. There is no in-process memoization or cache-bust — one
 `tsImport` of `chain.ts` per tick, a cost dominated by orders of magnitude
 by the tick's own agent invocation.
 
+**A gate is a declaration read at that start and a command run inside a
+worktree**, so both halves are fixed the moment a tick begins: the chain the
+child loaded, and the tree its worktrees were branched from. Whatever a gate's
+command reads — a test module, a config, a script — it reads from that base.
+So a gate fixed on trunk mid-run does not reach a tick already provisioned; it
+reaches the next one. The supervisor's own accounting is built around that:
+a quarantine a gate placed expires as soon as trunk moves past the tick that
+placed it (§9), because the tree that gate ruled over no longer exists.
+
 **Default-export a factory** — `(api) => ({ chain })`, where `api` carries
 every engine value your chain composes with (gates, agent constructors,
 schema helpers) plus `api.paths` — the runtime's own resolved
@@ -2262,8 +2271,16 @@ const chain: Chain = {
   three stages quarantines that entry for the rest of the run, under the key
   the failing tick reported — its slug plus a hash of its bytes in
   its queue file, so a re-scope on trunk is a new key and lifts the hold.
-  Later ticks skip it without touching the queue, so a fresh run
-  retries it from scratch. `"none"` disables quarantine outright: every
+  A **gate**-stage hold carries one expiry beyond the key: the trunk tip the
+  placing tick reported. Once a later tick reports a different tip, the tree
+  that gate judged is gone and the hold lifts on its own — which is what makes
+  a gate fixed on trunk mid-run reach the entries it would pass, instead of
+  waiting for a restart
+  ([*Where the chain lives*](#where-the-chain-lives)). A **provision**-stage
+  hold has no such expiry: nothing landing on trunk changes what a worktree
+  could not provision. Either way the lift is logged with the tips it
+  compared. Later ticks skip a held entry without touching the queue, so a
+  fresh run retries it from scratch. `"none"` disables quarantine outright: every
   entry stays pickable every tick regardless of an earlier failure. The
   consecutive-failure backstop below still applies either way — `"none"`
   only removes the per-entry isolation, not the run-level safety net. Bound

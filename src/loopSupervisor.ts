@@ -329,6 +329,26 @@ export interface SuperviseResult {
 }
 
 /**
+ * One run-scoped quarantine hold, beside the key it stands under — the facts
+ * that decide how long it stands, so the lift below reads them instead of
+ * re-deriving them from the key's spelling (spec/loop.md, *Repeated identical
+ * failures — quarantine, then abort*).
+ */
+interface QuarantineHold {
+  /** The entry the placing verdict blamed, for the lines the hold logs. */
+  tag: string;
+  /** The stage whose failure placed it. Only a `gate` hold can be lifted. */
+  stage: FailureStage;
+  /**
+   * The trunk tip the placing tick reported (`TickVerdict.headSha`) — a
+   * statement a child wrote to disk, never a `git` read this supervisor
+   * performs between ticks (`.claude/rules/engine-boundary.md`, *Told, not
+   * inferred*).
+   */
+  tip: string;
+}
+
+/**
  * The stop-shaped half of a {@link SuperviseResult} — why the run ended, with
  * the run's own totals left to the one place that spells them.
  */
@@ -426,12 +446,18 @@ export async function superviseLoop(
   // this run and for the live-run line `flume status` prints from the same
   // rows.
   const runVerdicts: TickVerdict[] = [];
-  // Run-scoped quarantine (`entryDeclaredKey` (`src/entryKey.ts`) values —
-  // `slug@hash` of the entry as the failing tick read it) plus the
-  // consecutive-identical-signature streak for the abort backstop. Both reset
-  // to empty on every fresh `superviseLoop` call — quarantine never outlives
+  // Run-scoped quarantine, keyed by `entryDeclaredKey` (`src/entryKey.ts`)
+  // value — `slug@hash` of the entry as the failing tick read it — and valued
+  // by the hold's own facts, which are what decide whether it still stands
+  // when the next child's set is composed. Reset to empty on every fresh
+  // `superviseLoop` call, with the streak below — quarantine never outlives
   // the run.
-  const quarantinedSlugs = new Set<string>();
+  const quarantine = new Map<string, QuarantineHold>();
+  // The newest trunk tip this run has been told about: every verdict reports
+  // the tip its tick ended at, and that report is the supervisor's only tip
+  // fact — it never reads the ref itself, so a hold's fate is decided from
+  // what is on the disk the next tick reads.
+  let latestTip: string | undefined;
   // spec/loop.md "Repeated identical failures — quarantine, then abort"
   // generalizes both legs past provisioning to the merge and gate stages,
   // keyed by *stage-tagged* signature (`${stage}:${signature}`) so a
@@ -475,6 +501,32 @@ export async function superviseLoop(
   });
 
   /**
+   * Drop every gate-stage hold the trunk has moved past, before the set the
+   * next children carry is composed (spec/loop.md, *Repeated identical
+   * failures — quarantine, then abort*). A gate's failure is a verdict over
+   * one tree; once the tip is not the one the placing tick reported, that
+   * tree is gone and the hold is standing on a judgment nothing re-made — a
+   * gate fixed on trunk mid-run otherwise kept holding entries the fix would
+   * have passed until an operator restarted the loop. A provision-stage hold
+   * is untouched, since nothing landing on trunk changes what a worktree
+   * could not provision. The merge stage is named by neither arm of that
+   * section, so it keeps the run-scoped default rather than an expiry the
+   * spec never granted it. The consecutive-identical-failure backstop below
+   * is what bounds the retry a lift allows.
+   */
+  const liftStaleGateHolds = (): void => {
+    for (const [key, hold] of quarantine) {
+      if (hold.stage !== "gate" || hold.tip === latestTip) continue;
+      quarantine.delete(key);
+      log.info(
+        `[flume] lifting the gate-stage quarantine on ${hold.tag} (${key}): trunk ` +
+          `moved from ${hold.tip} to ${latestTip}, so the tree that gate judged is ` +
+          `gone. The consecutive-identical-failure backstop still bounds the retry.`,
+      );
+    }
+  };
+
+  /**
    * Start one child per awake phase that has none, in the chain's declared
    * order, until the table is full or the budget is spent. Declaration order
    * is the priority and the tiebreak — never flag order, never flag mtime
@@ -485,6 +537,10 @@ export async function superviseLoop(
    */
   const fill = (): void => {
     const awake = baton.awake();
+    liftStaleGateHolds();
+    // One snapshot per fill, so every child this call starts is told the same
+    // set and none of them holds a reference the loop keeps mutating.
+    const quarantinedSlugs = new Set(quarantine.keys());
     for (const phase of phaseOrder ?? awake) {
       if (inFlight.size >= maxTicks || started >= tickBudget) return;
       if (!awake.includes(phase) || inFlight.has(phase)) continue;
@@ -610,6 +666,10 @@ export async function superviseLoop(
     if (verdict) {
       for (const tag of verdict.shippedTags) shippedTags.add(tag);
       runVerdicts.push(verdict);
+      // Read before the quarantine fold below, so a hold this tick places is
+      // placed at the tip this tick reported and outlives the fill that
+      // follows it.
+      latestTip = verdict.headSha;
       const verdictProvisionFailures = verdict.provisionFailures ?? [];
       const verdictMergeFailures = verdict.mergeFailures ?? [];
       const shipHookThrew = verdict.mergeOutcomes.filter(
@@ -678,11 +738,20 @@ export async function superviseLoop(
     // single entry to blame) falls to the backstop below instead. A
     // chain declaring `quarantineScope: "none"` opts out of this leg
     // entirely — the backstop below still fires.
-    if (quarantineScope !== "none") {
+    // Each hold records the stage that placed it and the tip this verdict
+    // reported, which is what `liftStaleGateHolds` above reads — so the
+    // placing verdict is the one narrowed for here, rather than a tip
+    // rediscovered later. A `failures` entry cannot exist without a verdict
+    // to have carried it, so the narrow drops no arm.
+    if (quarantineScope !== "none" && verdict) {
       for (const f of failures) {
         if (!f.tag) continue;
-        if (!quarantinedSlugs.has(f.quarantineKey)) {
-          quarantinedSlugs.add(f.quarantineKey);
+        if (!quarantine.has(f.quarantineKey)) {
+          quarantine.set(f.quarantineKey, {
+            tag: f.tag,
+            stage: f.stage,
+            tip: verdict.headSha,
+          });
           log.warn(
             `[flume] quarantining ${f.tag} (${f.quarantineKey}) for the rest of this run: ` +
               `${f.stage}-stage failure (${f.signature})`,
