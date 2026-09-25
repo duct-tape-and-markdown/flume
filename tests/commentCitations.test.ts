@@ -478,11 +478,22 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
  * titles, a phrase the help text's own wrapping broke, an abbreviation of a
  * heading the page really opens, a cite into a page the tree does not hold,
  * and — on a second surface, which a scan stopping at the first would never
- * reach — the italicized emphasis beside the quoted one.
+ * reach — the italicized emphasis beside the quoted one. A third surface
+ * carries the two halves of the page arm's one exemption: a page this tree
+ * does not hold under the reader's own state root, and a page it does not
+ * hold outside one.
  *
  * Written one line per rendered line, so the line numbers the assertions cite
  * are counted rather than guessed.
  */
+/**
+ * The state root the fixture's own reader owns — the directory `probe adopt`
+ * writes into the repository adopting it, which the fixture tree deliberately
+ * does not hold. Spelled once and interpolated into the surface below, so the
+ * name the page states and the root the scan is handed cannot drift apart.
+ */
+const FIXTURE_CONSUMER_ROOT = ".probe";
+
 const FIXTURE_HELP_SURFACES: readonly RenderedSurface[] = [
   {
     name: "probe --help",
@@ -508,6 +519,20 @@ const FIXTURE_HELP_SURFACES: readonly RenderedSurface[] = [
       ``,
       `A bolded bullet lead is a title here too (docs/sections.md, *Verbatim`,
       `copying is the detector*).`,
+      ``,
+    ].join("\n"),
+  },
+  {
+    name: "probe adopt --help",
+    text: [
+      `Usage: probe adopt`,
+      ``,
+      `Writes ${FIXTURE_CONSUMER_ROOT}/PROTOCOL.md into the current directory —`,
+      `a page the adopting repository holds afterwards and this tree never`,
+      `does.`,
+      ``,
+      `The conventions behind it are in docs/adopt.md, a page of this`,
+      `package's own that the tree does not hold either.`,
       ``,
     ].join("\n"),
   },
@@ -610,12 +635,17 @@ beforeAll(async () => {
   });
   fixtureHelpScan = scanRenderedCitations({
     root: fixtureRoot,
+    consumerRoot: FIXTURE_CONSUMER_ROOT,
     surfaces: FIXTURE_HELP_SURFACES,
   });
   shippedHelp = shippedHelpPages();
   shippedProse = shippedPages();
   repoHelpScan = scanRenderedCitations({
     root: REPO_ROOT,
+    // The root taken off the verb that writes it, not spelled here: a page
+    // this package ships names paths under the consumer's state root, and
+    // those are that tree's to answer.
+    consumerRoot: DEFAULT_STATE_ROOT,
     surfaces: shippedProse,
   });
 });
@@ -1536,8 +1566,8 @@ it("a section cite in a shipped help literal naming a section its page does not 
 });
 
 it("a *.md page name in a shipped literal the working tree cannot answer is a finding", () => {
-  // Vacuity guard: the arm drew every page name the two surfaces state, both
-  // fencings and both surfaces, before a verdict is read off any of them. A
+  // Vacuity guard: the arm drew every page name the surfaces state, both
+  // fencings and every surface, before a verdict is read off any of them. A
   // reader that stopped at the first surface, or that read only a backticked
   // name, would report its finding for the wrong reason.
   expect(fixtureHelpScan.pages.scanned.map(formatCitation)).toEqual([
@@ -1546,6 +1576,7 @@ it("a *.md page name in a shipped literal the working tree cannot answer is a fi
     "probe --help:9 docs/sections.md",
     "probe --help:10 docs/absent.md",
     "probe list --help:3 docs/sections.md",
+    "probe adopt --help:7 docs/adopt.md",
   ]);
 
   // The verdict, and it is the title arm's verdict: the page name is answered
@@ -1553,7 +1584,66 @@ it("a *.md page name in a shipped literal the working tree cannot answer is a fi
   // resolves however the literal spells it and a page it does not hold reds.
   expect(fixtureHelpScan.pages.findings.map(formatCitation)).toEqual([
     "probe --help:10 docs/absent.md",
+    "probe adopt --help:7 docs/adopt.md",
   ]);
+});
+
+/**
+ * The one page name a shipped surface states that this tree is not the
+ * authority for, read from both sides: the name under the reader's own state
+ * root, which the scan leaves alone, and the name beside it outside that
+ * root, which it judges exactly as before. Two cases rather than one, because
+ * an exemption is only as good as what it still refuses.
+ */
+const adoptSurface = (): RenderedSurface => {
+  const surface = FIXTURE_HELP_SURFACES.find(
+    (candidate) => candidate.name === "probe adopt --help",
+  );
+  if (surface === undefined)
+    throw new Error("the fixture's adoption page is the subject of both cases below");
+  return surface;
+};
+
+it("the rendered page scan reports no finding for a page name under a consumer's state root this tree does not hold", () => {
+  const page = `${FIXTURE_CONSUMER_ROOT}/PROTOCOL.md`;
+
+  // Vacuity guard, both halves: the surface really states that name, and the
+  // scanned tree really does not hold it. A page the fixture had stopped
+  // quoting, or one the fixture tree happened to hold, would pass the verdict
+  // below for the reason this case exists to refuse.
+  expect(adoptSurface().text).toContain(page);
+  expect(`${page} on disk -> ${existsSync(join(fixtureRoot, page))}`).toBe(
+    `${page} on disk -> false`,
+  );
+
+  // The verdict: the name reaches no disk read at all. Not judged, so the
+  // vacuity pin over `pages.scanned` counts only names this tree answers, and
+  // not found, because the tree that answers this one is the reader's — the
+  // same coincidence that passes a path the writer stopped composing would
+  // red a rename this repository is free to make.
+  const cited = (sites: readonly CitationSite[]): string[] =>
+    sites.filter((site) => site.text === page).map(formatCitation);
+  expectNoFindings(cited(fixtureHelpScan.pages.scanned));
+  expectNoFindings(cited(fixtureHelpScan.pages.findings));
+});
+
+it("the rendered page scan reports a page name outside a consumer's state root this tree does not hold", () => {
+  const page = "docs/adopt.md";
+
+  // Vacuity guard: the same surface states this one too, one line below the
+  // exempted name, and the tree holds neither. What separates them is the
+  // root, and nothing else about how they were written.
+  expect(adoptSurface().text).toContain(page);
+  expect(`${page} on disk -> ${existsSync(join(fixtureRoot, page))}`).toBe(
+    `${page} on disk -> false`,
+  );
+
+  // The verdict: the exemption is a prefix, not an amnesty. A page name
+  // outside the reader's state root is this tree's to answer, so a shipped
+  // surface naming one it does not hold still reds.
+  expect(fixtureHelpScan.pages.findings.map(formatCitation)).toContain(
+    "probe adopt --help:7 docs/adopt.md",
+  );
 });
 
 // --- the title, which carries the page-name arm alone --------------------
@@ -2127,8 +2217,9 @@ it("the flume-harness help page states the protocol path the layout composes", (
   // `protocolPath` composes over the default root — the same value
   // `flume-harness init` writes it to and the plan prompts send a reader to.
   // A hand-spelled second copy reds here, whatever it happens to spell today,
-  // because the page-name scan below answers `.flume/PROTOCOL.md` from *this*
-  // repository's own page and would pass a path the verb stopped writing.
+  // and this is the only pin that reds on one: the page-name scan below
+  // leaves a name under the consumer's state root to the consumer's tree, so
+  // nothing there reads this path off disk at all.
   expect(named).toEqual([protocolPath(DEFAULT_STATE_ROOT)]);
 });
 
@@ -2199,6 +2290,9 @@ it("every *.md page name a page the package ships states resolves on disk", () =
 
   // The verdict: an operator reading a `--help` page and an agent reading a
   // packed prompt follow the page it names, so a name the tree cannot answer
-  // is a dead pointer in the one surface neither of them can check.
+  // is a dead pointer in the one surface neither of them can check. A name
+  // under the consumer's own state root is out of it — that tree is the
+  // reader's, and what covers the path the page composes under it is the
+  // agreement pin over its writer above.
   expectNoFindings(repoHelpScan.pages.findings.map(formatCitation));
 });

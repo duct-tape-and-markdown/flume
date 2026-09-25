@@ -1573,6 +1573,20 @@ export interface RenderedSurface {
 export interface RenderedCitationScanRequest {
   /** Absolute path to the scanned root. */
   readonly root: string;
+  /**
+   * The state root the surfaces' *reader* owns, relative to its own
+   * repository — the directory a shipped page composes a path under when it
+   * is telling that reader about their tree rather than about this one. A
+   * page name under it is left to that tree, for the reason the scan's header
+   * states.
+   *
+   * Taken off the writer that composes those paths rather than spelled here:
+   * the value is one the caller already holds, and a second copy would answer
+   * a root the writer stopped writing to
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*).
+   */
+  readonly consumerRoot: string;
   /** The rendered texts whose citations are judged. */
   readonly surfaces: readonly RenderedSurface[];
 }
@@ -1606,6 +1620,21 @@ export interface RenderedCitationScan {
  * written by no literal. A page name is answered by the tree, and a section
  * by the named page's own headings.
  *
+ * One page name is answered by neither, and it is the one the surface is not
+ * talking about this tree with: a name under the reader's own state root
+ * (`consumerRoot`) is a file the *reader's* repository holds after adopting
+ * the package, so this tree's copy answers it by coincidence — the same
+ * coincidence passes a path the writer stopped composing and reds a rename
+ * this repository is free to make. Left out of the disk read entirely rather
+ * than resolved and excused, so the vacuity pin over `pages.scanned` counts
+ * the names this tree really is the authority for, and what covers the
+ * composed path instead is the agreement pin over its writer
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). The section arm is not narrowed with it: a shipped page names a
+ * page the consumer owns but never a section in one (`spec/harness.md`,
+ * *Adoption and upgrade*), so there is nothing under that root for it to
+ * leave alone.
+ *
  * The surfaces are the caller's to render, from the program that prints them
  * rather than from a copy of their text — a cite read off a hand copy pins the
  * copy (`.claude/rules/engineering.md`, *A seam gate reads what the real
@@ -1615,13 +1644,20 @@ export const scanRenderedCitations = (
   request: RenderedCitationScanRequest,
 ): RenderedCitationScan => {
   const root = resolve(request.root);
+  // The reader's own tree, as a prefix a repo-relative page name carries: the
+  // citations are written in posix, so the separator is spelled rather than
+  // taken off the host, and a caller handing the root with one already on it
+  // names the same directory.
+  const consumerTree = `${request.consumerRoot.replace(/\/+$/, "")}/`;
   const pages = request.surfaces
     .flatMap((surface) =>
       surfaceLines(surface).flatMap((line) =>
         literalPages({ module: surface.name, line: line.line, text: line.text }),
       ),
     )
-    .filter((site) => isPageName(site.text));
+    .filter(
+      (site) => isPageName(site.text) && !site.text.startsWith(consumerTree),
+    );
 
   return {
     pages: {
