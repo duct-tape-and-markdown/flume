@@ -6039,6 +6039,123 @@ describe("Dispatcher fanout — a wave merges each entry as its agent finishes",
   });
 });
 
+describe("Dispatcher fanout — the ledger commit lands with its own merge", () => {
+  it("a wave's first shipped entry leaves the queue on disk while a sibling's agent is still running", async () => {
+    await writePending(fx.repo, [
+      makeEntry("LEDGER-FAST", ["src/ledger-fast.ts"]),
+      makeEntry("LEDGER-SLOW", ["src/ledger-slow.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // What the slow agent waits on is the *queue on disk*: the fast entry's
+    // file gone from the primary checkout, read from inside a sibling worktree
+    // whose own agent has not returned. A wave that wrote its ledger once at
+    // the end cannot satisfy that — the wait is then a deadlock, and this case
+    // reds as the wait's own refusal rather than as a wrong value.
+    let queueWhileSlowRan: string[] | undefined;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ledger-fast": (cwd) =>
+          writeAndCommit(cwd, "src/ledger-fast.ts", "f\n", "build: LEDGER-FAST"),
+        "ledger-slow": async (cwd) => {
+          await waitFor("LEDGER-FAST out of the queue on disk", () =>
+            readPendingFromDisk(fx.repo).some((e) => e.tag === "LEDGER-FAST")
+              ? undefined
+              : true,
+          );
+          queueWhileSlowRan = readPendingFromDisk(fx.repo).map((e) => e.tag);
+          await writeAndCommit(cwd, "src/ledger-slow.ts", "s\n", "build: LEDGER-SLOW");
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The queue the still-running sibling read: its own entry and nothing
+    // else. Populated, so the read is not a vacuous empty (the wave had two
+    // entries and one of them was still in flight).
+    expect(queueWhileSlowRan).toEqual(["LEDGER-SLOW"]);
+    // And the ledger commit that retired it was on the trunk, not merely on
+    // disk: the rewrite rides the pick's own ship-lock hold.
+    const { stdout: shipLog } = await exec(
+      "git",
+      ["log", "--format=%s", "-n", "20"],
+      { cwd: fx.repo },
+    );
+    expect(shipLog).toContain("chore(flume): ship LEDGER-FAST");
+    // The wave still carried both — the rolling ledger is the whole
+    // difference, not a wave that dropped its slower half.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "LEDGER-FAST",
+      "LEDGER-SLOW",
+    ]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+  });
+
+  it("each shipped entry's ledger commit lands before the next entry's cherry-pick", async () => {
+    await writePending(fx.repo, [
+      makeEntry("LEDGER-A", ["src/ledger-a.ts"]),
+      makeEntry("LEDGER-B", ["src/ledger-b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ledger-a": (cwd) =>
+          writeAndCommit(cwd, "src/ledger-a.ts", "a\n", "build: LEDGER-A"),
+        // B merges second, fixed by the event rather than by a sleep: its
+        // agent does not commit until A's span is already on the trunk.
+        "ledger-b": async (cwd) => {
+          await awaitOnTrunk(fx.repo, "build: LEDGER-A");
+          await writeAndCommit(cwd, "src/ledger-b.ts", "b\n", "build: LEDGER-B");
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "LEDGER-A",
+      "LEDGER-B",
+    ]);
+    const { stdout } = await exec("git", ["log", "--format=%s", "-n", "20"], {
+      cwd: fx.repo,
+    });
+    // Oldest first, narrowed to the four subjects this case is about: each
+    // pick's span, then the ledger commit retiring it, then the next pick's.
+    // A wave that wrote one ledger commit at its end interleaves as
+    // A, B, ship — the four-element shape is the claim.
+    const wanted = [
+      "build: LEDGER-A",
+      "chore(flume): ship LEDGER-A",
+      "build: LEDGER-B",
+      "chore(flume): ship LEDGER-B",
+    ];
+    const order = stdout
+      .trim()
+      .split("\n")
+      .reverse()
+      .filter((s) => wanted.includes(s));
+    expect(order).toEqual(wanted);
+  });
+});
+
 describe("Dispatcher fanout — the merge-stage crash marker", () => {
   it("the merge stage writes a merging marker naming the branch, the base sha and the entry before the pick", async () => {
     // Three entries, carried in A → B → C order. A wave picks each span as
@@ -6049,11 +6166,13 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
     //
     // MARK-B's pick *conflicts* and is aborted — it never reaches an
     // afterMerge gate, never lands on trunk, never ships. So MARK-B's marker
-    // being on disk when MARK-C's gate runs is only explicable by it having
-    // been written ahead of B's own pick: no later point in B's life had the
-    // chance. (The shared file is an entryChannelPaths allowance, the only
-    // way disjoint declared files can still collide — same vector as the
-    // cherry-pick-conflict test above.)
+    // being on disk at all is only explicable by it having been written ahead
+    // of B's own pick: no later point in B's life had the chance. Each pick
+    // retires its own marker with its own ledger commit, inside the same hold
+    // (`src/waveMerge.ts`), so the window it is observable in is B's pick —
+    // which is what MARK-C's agent waits for below. (The shared file is an
+    // entryChannelPaths allowance, the only way disjoint declared files can
+    // still collide — same vector as the cherry-pick-conflict test above.)
     await mkdir(join(fx.repo, "src"), { recursive: true });
     await writeFile(join(fx.repo, "src", "shared.ts"), "baseline\n");
     await exec("git", ["add", "--", "src/shared.ts"], { cwd: fx.repo });
@@ -6069,9 +6188,12 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
 
     const preHead = await head(fx.repo);
 
-    // Runs between each entry's pick and the wave's queue rewrite — the one
-    // window the marker is supposed to be observable in.
+    // Runs between each entry's pick and that entry's own queue rewrite — the
+    // one window its marker is supposed to be observable in.
     const seen: Array<Map<string, unknown>> = [];
+    // The merging dir as MARK-C's agent found it, mid-pick for MARK-B — the
+    // one window B's own marker stands in.
+    let bWindow: Map<string, unknown> | undefined;
     const probe: Gate = {
       name: "marker-probe",
       when: "afterMerge",
@@ -6119,12 +6241,14 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
           ),
         ),
         // And B's merge is under way — its marker is staked before its pick
-        // — before C's agent commits.
-        "mark-c": writeEntry("decoy-c.ts", undefined, () =>
-          waitFor("MARK-B's merge marker", async () =>
-            (await markersNow(fx.repo)).has("mark-b.json") ? true : undefined,
-          ),
-        ),
+        // — before C's agent commits. The snapshot that wait holds on is the
+        // evidence: B reaches no gate of its own to probe from.
+        "mark-c": writeEntry("decoy-c.ts", undefined, async () => {
+          bWindow = await waitFor("MARK-B's merge marker", async () => {
+            const now = await markersNow(fx.repo);
+            return now.has("mark-b.json") ? now : undefined;
+          });
+        }),
       }),
       log: silent,
       maxParallel: 4,
@@ -6167,23 +6291,24 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
     // Each entry stakes its own marker immediately before its own pick, not
     // the wave's worth up front: at A's gate only A's is on disk.
     expect([...seen[0]!.keys()]).toEqual(["mark-a.json"]);
-    // At C's gate, B's marker stands alongside — written before the pick
-    // that then conflicted and was aborted.
-    expect([...seen[1]!.keys()]).toEqual([
-      "mark-a.json",
-      "mark-b.json",
-      "mark-c.json",
-    ]);
-    expect(seen[1]!.get("mark-b.json")).toEqual({
-      tag: "MARK-B",
-      branch: "flume/primary/mark-b",
-      baseSha: preHead,
-    });
-    expect(seen[1]!.get("mark-a.json")).toEqual({
+    expect(seen[0]!.get("mark-a.json")).toEqual({
       tag: "MARK-A",
       branch: "flume/primary/mark-a",
       baseSha: preHead,
     });
+    // B's marker, in B's own pick window — written before the pick that then
+    // conflicted and was aborted. A's is already gone: A's ledger commit
+    // landed inside A's hold, which the serialized stage closes before B's
+    // opens, so the set is exactly one pick wide.
+    expect([...bWindow!.keys()]).toEqual(["mark-b.json"]);
+    expect(bWindow!.get("mark-b.json")).toEqual({
+      tag: "MARK-B",
+      branch: "flume/primary/mark-b",
+      baseSha: preHead,
+    });
+    // And at C's gate, C's alone for the same reason: B retired its marker
+    // with the footprint commit its conflict earned.
+    expect([...seen[1]!.keys()]).toEqual(["mark-c.json"]);
   });
 
   it("the merging marker is gone once the ship bookkeeping has landed", async () => {
@@ -20072,16 +20197,29 @@ describe("Dispatcher — the trunk tip an afterMerge span landed onto", () => {
 
     // Read in pick order, whichever entry each turned out to be: both
     // branched from one tip, and the second landed onto where the first
-    // left trunk.
+    // left trunk. Where the first left trunk is its own span *plus* the
+    // ledger commit that retired it — that rewrite rides inside the first
+    // pick's own ship-lock hold (`spec/worktrees.md`, *Fanout and worktrees —
+    // provisioning, isolation, teardown*), so it is between the two picks,
+    // and the delta across it is exactly the first entry's queue file.
     const [first, second] = seen as [GateContext, GateContext];
     expect(second.baseSha).toBe(first.baseSha);
-    expect(second.landedOnSha).toBe(first.commitSha);
-    expect(second.landedOnSha).not.toBe(second.baseSha);
-    // And the shared base is the wrong lower end: over it the second
-    // entry's range carries its sibling's file as well as its own.
     expect(
-      await git.diffNameOnly(fx.repo, second.baseSha, second.commitSha),
-    ).toEqual(["src/landed-first.ts", "src/landed-second.ts"]);
+      await git.diffNameOnly(fx.repo, first.commitSha, second.landedOnSha!),
+    ).toEqual([`.flume/plan/pending/${entryFileName(first.entry!.tag)}`]);
+    expect(second.landedOnSha).not.toBe(second.baseSha);
+    // And the shared base is the wrong lower end: over it the second entry's
+    // range carries its sibling's file — and the ledger commit that retired
+    // that sibling — as well as its own.
+    expect(
+      (await git.diffNameOnly(fx.repo, second.baseSha, second.commitSha)).sort(),
+    ).toEqual(
+      [
+        `.flume/plan/pending/${entryFileName(first.entry!.tag)}`,
+        "src/landed-first.ts",
+        "src/landed-second.ts",
+      ].sort(),
+    );
   });
 });
 

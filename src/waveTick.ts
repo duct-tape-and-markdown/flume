@@ -16,8 +16,9 @@
  * The stage in the middle that carries each span onto trunk is its own
  * module (`src/waveMerge.ts`), driven from here once per finished attempt —
  * `openWaveMerge`, then a serialized `mergeAttempt` behind each agent as it
- * returns, then `closeWaveMerge` — each of the latter two under the ship
- * lock it owns.
+ * returns, then `closeWaveMerge`. Only the middle one touches trunk, under
+ * the ship lock it owns, and this entry's ledger commit lands inside that
+ * same hold; the close is the fold over what the picks observed.
  *
  * Its sibling is `src/singletonTick.ts` — the same provisioning, attempt and
  * afterMerge machinery over a wave of one — and the orchestration around
@@ -225,9 +226,12 @@ export async function runFanout(
   let mergeTail: Promise<void> = Promise.resolve();
   // The first throw out of a merge, held rather than propagated on the spot.
   // A throw there is the same wall it has always been — it stops the wave
-  // carrying any further span and the ledger rewrite never runs — but the
-  // siblings still running have to settle before this leg can leave, or
-  // their worktrees are torn down under them by nothing.
+  // carrying any further span — but the siblings still running have to settle
+  // before this leg can leave, or their worktrees are torn down under them by
+  // nothing. A `WaveLedgerRefusal` rides this holder like any other: the
+  // rewrite is inside the pick's own hold now, so the refusal happens
+  // mid-wave, and the picks it already landed are named by the verdict it
+  // carries (`src/waveMerge.ts`).
   let mergeError: unknown;
 
   // `git worktree add`/`remove` mutate the shared `.git/worktrees/` metadata
@@ -427,19 +431,19 @@ export async function runFanout(
   // the append happens in the slot promise's own `finally`.
   for (let i = 0; i < slots.length; i++) await slots[i]!;
   if (slotError !== undefined) throw slotError;
+  // A `WaveLedgerRefusal` held here propagates past the worktree cleanup
+  // below, straight to `tick()`'s catch: the spans the wave already landed are
+  // on trunk, and the verdict naming them rides the error. Surviving worktrees
+  // are the accepted cost of refusing rather than proceeding; the next
+  // `pruneWorktrees` call reclaims their metadata once a human has cleared the
+  // refusal, and the claims below stay staked for the same reason — the
+  // reclaim needs no repair.
   if (mergeError !== undefined) throw mergeError;
 
-  // Close the stage: the pending-ledger rewrite over everything that landed,
-  // under the ship lock like each pick was.
-  //
-  // A `WaveLedgerRefusal` thrown out of it propagates past the worktree
-  // cleanup below, straight to `tick()`'s catch: the spans it already landed
-  // are on trunk, and the verdict naming them rides the error. Surviving
-  // worktrees are the accepted cost of refusing rather than proceeding; the
-  // next `pruneWorktrees` call reclaims their metadata once a human has
-  // cleared the refusal, and the claims below stay staked for the same reason
-  // — the reclaim needs no repair.
-  const mergeStage = await closeWaveMerge(merge);
+  // Close the stage: the fold over what the picks observed. Each of them
+  // already landed its own ledger commit inside its own ship-lock hold, so
+  // nothing here touches trunk.
+  const mergeStage = closeWaveMerge(merge);
 
   // Cleanup worktrees. Best-effort teardown fires before git.removeWorktree
   // so chain-provisioned ephemera (per-worktree DB, scratch lease, etc.)

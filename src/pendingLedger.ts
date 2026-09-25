@@ -484,7 +484,8 @@ export async function readPendingTolerant(
  * What {@link commitPendingUpdate} answers with, and the one place a caller
  * learns where the file it was about to move stands.
  *
- * `path` rides every answer because the two the wave reports to an operator —
+ * `path` rides every answer because the two the merge stage reports to an
+ * operator —
  * the tip-claim refusal below and the rewrite that landed — are both about a
  * queue whose location the chain chose, and the caller holds it only as the
  * absolute `pendingDir` it would have to re-fold itself.
@@ -503,9 +504,19 @@ export interface PendingRewriteResult {
 }
 
 /**
- * The wave's ledger rewrite: retire what shipped, drain the `blockedBy`
+ * One merge's ledger rewrite: retire what shipped, drain the `blockedBy`
  * gates those tags were holding, record the footprints a failed merge
  * observed, and commit the result.
+ *
+ * The scope is a **single shipped set** — under fanout, the one entry whose
+ * pick is holding the ship lock right now (`mergeAttempt`, `src/waveMerge.ts`),
+ * not a whole wave's. A wave can outlast many merges, so a rewrite that waited
+ * for its slowest agent would leave a queue on disk listing entries already on
+ * the trunk, read as current by every producer beside it (`spec/worktrees.md`,
+ * *Fanout and worktrees — provisioning, isolation, teardown*). Called once per
+ * pick, each call re-reads the tip the pick before it committed, so a
+ * multi-parent `blockedBy` drains one landed tag at a time and opens on the
+ * last.
  *
  * spec/loop.md "Tip verify — one writer per branch, absorption at the
  * merge", "Harness-driven commits carry no expected-tip bookkeeping": no sha
@@ -557,7 +568,8 @@ export async function commitPendingUpdate(
   // tick-start snapshot the caller read before provisioning worktrees and
   // running agents. A fanout wave's fanned-out agent runs and serial
   // cherry-picks can take long enough for another process (a concurrent tick,
-  // a hand fix) to land its own commit to the queue on trunk in the meantime;
+  // a hand fix), or this wave's own earlier pick, to land its own commit to
+  // the queue on trunk in the meantime;
   // deriving from the stale snapshot would blindly overwrite that concurrent
   // write with whatever this wave saw at tick start. Sourcing the rewrite
   // from the current committed state at write time means this wave only ever
