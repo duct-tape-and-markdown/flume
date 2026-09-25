@@ -20,7 +20,6 @@ import {
   realpathSync,
   statSync,
   writeFileSync,
-  unlinkSync,
 } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Stats } from "node:fs";
@@ -41,9 +40,9 @@ import { diskChainLoader } from "./chainLoad.js";
 import { readPendingLoose, readQueueOnDisk } from "./pendingLedger.js";
 import {
   liveLoopClaim,
-  liveLoopPid,
-  renderPidClaim,
+  stakePidClaim,
   type PidClaim,
+  type StakedPidClaim,
 } from "./pidClaim.js";
 import {
   ensureRuntimeIgnores,
@@ -1222,32 +1221,25 @@ async function main(): Promise<number> {
     // supervisors against one state root race plan/build state. Lives under
     // flumeDir: the state root is what races, and a relocated dock must carry
     // its lock with it.
-    // win32 MAX_PATH: a relocated flumeDir can nest deep;
-    // namespacedJoin (src/paths.ts) is the shared idiom — see
-    // .claude/rules/platform-facts.md.
-    const lockPath = namespacedJoin(loopLockPath(flumeDir));
+    // The path in this verb's own alphabet. The stake below is what addresses
+    // the file, and the win32 MAX_PATH fold a relocated flumeDir needs is
+    // taken there (`namespacedJoin`, `src/paths.ts`) rather than a second
+    // time here — see .claude/rules/platform-facts.md. What this name is for
+    // is the refusal that states it.
+    const lockPath = loopLockPath(flumeDir);
     // Release is installed before either lock is taken, never after both. A
     // signal landing between the two acquisitions must find a handler, not
     // node's default disposition — which runs nothing and leaves whatever is
     // already on disk. The handler drops what is held *at the moment it
-    // fires*: `lockHeld` gates the unlink, so a run refused over another
-    // supervisor's live `loop.pid` never deletes the file it lost to — the
-    // lock is written and unlinked here rather than staked, so this flag is
-    // the guard the stake carries for the tip claim. An unacquired `tipClaim`
-    // releases nothing, and a staked one drops at most once
+    // fires*: an unacquired guard is `undefined` and releases nothing, so a
+    // run refused over another supervisor's live `loop.pid` never deletes the
+    // file it lost to, and a staked one drops at most once
     // (`StakedPidClaim`, `src/pidClaim.ts`), so the rollback below and the
     // exit handler may both run.
-    let lockHeld = false;
+    let loopLock: StakedPidClaim | undefined;
     let tipClaim: Awaited<ReturnType<typeof acquireTipClaim>> | undefined;
     const dropLock = () => {
-      if (lockHeld) {
-        lockHeld = false;
-        try {
-          unlinkSync(lockPath);
-        } catch {
-          // already gone
-        }
-      }
+      loopLock?.release();
       tipClaim?.release();
     };
     // The release the signal handlers perform is the whole tick tree's, never
@@ -1300,37 +1292,39 @@ async function main(): Promise<number> {
     process.on("exit", dropLock);
     process.on("SIGINT", () => void releaseAndExit(130));
     process.on("SIGTERM", () => void releaseAndExit(143));
-    mkdirSync(toNamespacedPath(flumeDir), { recursive: true });
-    // Absent is the only silent reading: `liveLoopPid` (`src/pidClaim.ts`)
-    // answers `null` for no pidfile and throws for every other read failure —
-    // a directory at the path, a permission-denied file — so a lock that is
+    // The exclusive-create stake every guard flume takes (`stakePidClaim`,
+    // `src/pidClaim.ts`), which is the whole arbitration: probing the lock and
+    // then writing it let two starts both read no holder and the second
+    // overwrite the first's claim, where the loser of a `wx` race reads the
+    // winner's statement instead of deciding anything from timing. The stake
+    // creates the state root on the way — its `mkdir` of the lock's dirname —
+    // so the run has one directory-create, not a second beside it.
+    //
+    // Absent is the only silent reading: the stake reclaims a pidfile whose
+    // recorded pid is dead and throws for every other read failure — a
+    // directory at the path, a permission-denied file — so a lock that is
     // present but will not open is this arm's refusal to classify, exactly as
     // the stop-flag guard above classifies its own probe. Outside a guard the
     // throw escaped to `main()`'s catch as a raw stack and exit 1: the same
     // code `another loop ... already runs` takes, naming no pid, over a lock
     // whose holder is unknown rather than absent
     // (`.claude/rules/engineering.md`, "Loud or nothing").
-    let priorPid: number | null;
+    let lockStake: Awaited<ReturnType<typeof stakePidClaim>>;
     try {
-      priorPid = await liveLoopPid(flumeDir);
+      lockStake = await stakePidClaim(lockPath);
     } catch (err) {
       console.error(
-        `[flume] loop refuses: loop lock at ${plainPath(lockPath)} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] loop refuses: loop lock at ${lockPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }
-    if (priorPid !== null) {
+    if (lockStake.kind === "held") {
       console.error(
-        `[flume] another loop (pid ${priorPid}) already runs against ${flumeDir}; refusing`,
+        `[flume] another loop (pid ${lockStake.by.pid}) already runs against ${flumeDir}; refusing`,
       );
       return 1;
     }
-    // Pid first, claim instant second: every liveness reader takes the first
-    // line, and `flume status` bounds this run's spend by the second rather
-    // than by a file mtime nothing contracts (`renderPidClaim`,
-    // `src/pidClaim.ts`).
-    writeFileSync(lockPath, renderPidClaim(process.pid, new Date()));
-    lockHeld = true;
+    loopLock = lockStake.claim;
     // Advisory per-ref tip claim — one flume writer per tip, the resource
     // two flume runs over one checkout actually contend on. Guards a different
     // resource than loop.pid (a ref vs. a state root); both stand. A refusal

@@ -316,10 +316,11 @@ outside `FLUME_DIR`, they leave the one-`rm` footprint — they are ephemeral
 
 ### One loop per state root
 
-`flume loop` writes its pid to `<flumeDir>/loop.pid`. A second loop started
-against the same state root is refused (exit 1, naming the holder's pid) while
-the recorded pid is alive — two supervisors racing one baton would corrupt
-plan/build state. A stale pidfile left by a dead process is reclaimed
+`flume loop` takes `<flumeDir>/loop.pid` by exclusive-create — the same stake
+the tip claim below is taken with, so two starts racing cannot both take it —
+and writes its pid there. A second loop started against the same state root is
+refused (exit 1, naming the holder's pid) while the recorded pid is alive —
+two supervisors racing one baton would corrupt plan/build state. A stale pidfile left by a dead process is reclaimed
 automatically, and the lock is dropped on normal exit, `SIGINT`, and `SIGTERM`,
 so no manual cleanup is ever required.
 
@@ -339,7 +340,7 @@ it claims the tip at start and releases it at exit, exclusive-create at
 identically from every linked worktree, so a claim taken in one is visible
 from all of them. A second `loop` against the same ref refuses (exit 1),
 naming the holder's pid; a stale claim (holder process dead) is reclaimed
-silently, the same liveness probe as the state-root lock above. `flume
+silently, the same stake as the state-root lock above. `flume
 tick` alone takes no claim — only `loop` does. Both refuse outright (exit
 1) on a detached HEAD, since the claim keys on a named ref.
 

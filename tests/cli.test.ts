@@ -461,7 +461,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
   );
 
   it(
-    "refuses a second loop while the recorded pid is alive, leaving the pidfile untouched",
+    "a loop start over a live loop.pid is refused naming the holder's pid, leaving the pidfile untouched",
     async () => {
       // A real git repo on a named branch (loop refuses outright
       // on detached HEAD, before ever reaching the lock check below).
@@ -494,7 +494,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
   );
 
   it(
-    "flume loop refuses an unreadable loop.pid naming the resolved lock path",
+    "a loop start over an unreadable loop.pid refuses with the io-error exit code, naming the resolved lock path",
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
@@ -541,7 +541,7 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
   );
 
   it(
-    "reclaims a stale pidfile (dead pid): the loop runs and drops the lock on exit",
+    "a loop start over a loop.pid whose recorded pid is dead reclaims the lock: the loop runs and drops it on exit",
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
@@ -576,9 +576,11 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
 
   // LOOP-LOCK-SHARES-LIVELOOPPID: the lock's liveness read and `flume
   // status`'s supervisor-liveness read both go through
-  // `liveLoopPid` (src/pidClaim.ts) — one probe, not two hand-rolled ones. This
-  // pins agreement so a future one-sided change to either call site fails
-  // here instead of silently diverging.
+  // `livePidClaimAt` (src/pidClaim.ts) — one probe, not two hand-rolled ones:
+  // the loop reaches it through the stake it takes the lock with
+  // (`stakePidClaim`), status through `liveLoopClaim`. This pins agreement so
+  // a future one-sided change to either call site fails here instead of
+  // silently diverging.
   it(
     "agrees with `flume status` on a live pid: loop refuses, status reports the same pid live",
     async () => {
@@ -4586,11 +4588,15 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
   // toNamespacedPath is a no-op on POSIX, so any roundtrip test of loop.pid
   // behavior passes identically whether cli.ts routes through namespacedJoin
   // or a bare join. Pin the source shape directly, mirroring
-  // Baton.test.ts's "win32 MAX_PATH fix" precedent — `liveLoopPid`
+  // Baton.test.ts's "win32 MAX_PATH fix" precedent — `livePidClaimAt`
   // (`src/pidClaim.ts`) is the reference shape every loop.pid call site here
   // must match. The name
   // itself now comes from `loopLockPath` (src/paths.ts), so the pin is on the
-  // accessor being wrapped, not on a filename spelled here.
+  // accessor being wrapped, not on a filename spelled here. One call site
+  // hands its path to the stake instead of folding it (`stakePidClaim`,
+  // `src/pidClaim.ts`, which folds the target and its dirname itself); the
+  // second case below is what holds that binding to reaching no fs call
+  // here.
   const src = readFileSync(CLI_SRC_PATH, "utf8");
 
   it("builds the status-check loop-lock path (statusLockPath) through namespacedJoin, and existsLoud reads it from statusLockPath", () => {
@@ -4600,28 +4606,46 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
     expect(src).toMatch(/existsLoud\(statusLockPath\)/);
   });
 
-  it("builds the loop-lock path (lockPath) through namespacedJoin, and writeFileSync/unlinkSync both read it from lockPath", () => {
-    const lockPathAssign = src.match(
-      /const lockPath = namespacedJoin\(loopLockPath\(flumeDir\)\);/,
-    );
-    expect(lockPathAssign).not.toBeNull();
-
-    expect(src).toMatch(/writeFileSync\(lockPath,/);
-    const unlinkCalls = src.match(/unlinkSync\(lockPath\)/g);
-    expect(unlinkCalls).not.toBeNull();
+  it("takes the loop lock through the shared stake, and addresses lockPath with no fs call of its own", () => {
+    // Vacuity: the binding this case is about, off the engine's own accessor.
+    expect(src).toMatch(/const lockPath = loopLockPath\(flumeDir\);/);
+    expect(src).toMatch(/stakePidClaim\(lockPath\)/);
+    // A write or an unlink of the lock here is the probe-then-write guard the
+    // stake replaced — and an unfolded path reaching an fs call, since the
+    // win32 fold now lives at the stake (`namespacedJoin`, src/pidClaim.ts).
+    expect(src).not.toMatch(/writeFileSync\(lockPath/);
+    expect(src).not.toMatch(/unlinkSync\(lockPath\)/);
     // Exactly one drop site: `dropLock`. The refused-tip-claim rollback and
-    // the signal handlers all call it rather than unlinking again, so a
+    // the signal handlers all call it rather than releasing again, so a
     // second occurrence here means a second owner has grown back
     // (spec/loop.md "The loop lock and the tip claim").
-    expect(unlinkCalls!.length).toBe(1);
+    const releases = src.match(/loopLock\?\.release\(\)/g);
+    expect(releases).not.toBeNull();
+    expect(releases!.length).toBe(1);
   });
 
-  it("every loopLockPath call in cli.ts is wrapped in namespacedJoin", () => {
+  it("every loopLockPath call in cli.ts is wrapped in namespacedJoin, bar the one binding the stake folds", () => {
     const uses = [...src.matchAll(/\bloopLockPath\(\w+\)/g)];
-    expect(uses.length).toBeGreaterThan(0);
+    expect(uses.length).toBeGreaterThan(1);
+    let folded = 0;
+    let staked = 0;
     for (const use of uses) {
-      expect(src.slice(0, use.index!)).toMatch(/namespacedJoin\($/);
+      const before = src.slice(0, use.index!);
+      if (/namespacedJoin\($/.test(before)) {
+        folded += 1;
+      } else if (/const lockPath = $/.test(before)) {
+        staked += 1;
+      } else {
+        // Neither: an unfolded path this file hands to an fs call, which is
+        // the read a too-long win32 path reports as absent.
+        expect(before, `unfolded loopLockPath call: ${use[0]}`).toMatch(
+          /namespacedJoin\($/,
+        );
+      }
     }
+    // Both arms populated, so neither direction is asserted over nothing.
+    expect(folded).toBeGreaterThan(0);
+    expect(staked).toBe(1);
   });
 });
 

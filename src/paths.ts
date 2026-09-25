@@ -539,8 +539,8 @@ export function mergingMarkerPath(flumeDir: string, slug: string): string {
 
 /**
  * The cross-process loop lock — one supervisor per state root. `flume loop`
- * writes its pid here; `liveLoopPid` (`src/pidClaim.ts`) and `flume status` read
- * it back.
+ * stakes it here (`stakePidClaim`, `src/pidClaim.ts`); `liveLoopClaim` and
+ * `flume status` read it back.
  */
 export function loopLockPath(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.loopLock);
