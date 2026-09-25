@@ -1399,15 +1399,15 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 /**
  * spec/loop.md "Repeated identical failures — quarantine, then abort": a
  * run-scoped hold is keyed by the entry as the failing tick read it, and a
- * *gate*-stage hold carries one more expiry — the tip that tick reported.
- * Once trunk has moved past it the tree that gate judged is gone, so the hold
- * lifts and the entry is pickable again; a provision-stage hold has no such
- * expiry, since nothing landing on trunk changes what a worktree could not
- * provision. The tip each tick reports is `TickVerdict.headSha`, which the
- * stub writes here exactly as a real child does — the supervisor reads no ref
- * of its own.
+ * *gate*-stage or *merge*-stage hold carries one more expiry — the tip that
+ * tick reported. Once trunk has moved past it the tree that gate judged, or
+ * the trunk that pick conflicted against, is gone, so the hold lifts and the
+ * entry is pickable again; a provision-stage hold has no such expiry, since
+ * nothing landing on trunk changes what a worktree could not provision. The
+ * tip each tick reports is `TickVerdict.headSha`, which the stub writes here
+ * exactly as a real child does — the supervisor reads no ref of its own.
  */
-describe("superviseLoop — a gate-stage hold expires with the tip it was placed at", () => {
+describe("superviseLoop — a gate- or merge-stage hold expires with the tip it was placed at", () => {
   const verdictPath = (phase: string): string =>
     childVerdictPath(join(fx.repo, ".flume"), phase);
 
@@ -1493,6 +1493,90 @@ describe("superviseLoop — a gate-stage hold expires with the tip it was placed
         (l) =>
           l.includes("lifting the gate-stage quarantine") &&
           l.includes("ISO-FAIL"),
+      ),
+    ).toBe(true);
+  });
+
+  it("a merge-stage quarantine is lifted once the newest reported tip differs from the tick that placed it", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async ({
+      phase,
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      if (calls === 1) {
+        // CONFLICT-A's cherry-pick conflicts against trunk at TIP_A, and the
+        // tick ends with trunk still there.
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              committed: false,
+              headSha: TIP_A,
+              mergeFailures: [
+                {
+                  ...blamedOnFixture("CONFLICT-A"),
+                  signature: "CONFLICT (content): Merge conflict in src/a.ts",
+                  message: "CONFLICT (content): Merge conflict in src/a.ts",
+                },
+              ],
+            }),
+          ),
+          "utf8",
+        );
+      } else if (calls === 2) {
+        // The hold still stands over the trunk it was placed against: this
+        // tick is told the key, and it is this tick that moves trunk — the
+        // world the conflicting pick was attempted onto is now gone, so a
+        // fresh pick is a different question.
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              committed: true,
+              headSha: TIP_B,
+              shippedTags: ["OK-B"],
+            }),
+          ),
+          "utf8",
+        );
+      } else {
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(verdictFixture({ committed: false, headSha: TIP_B })),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const infos: string[] = [];
+    const log: Logger = {
+      info: (l) => infos.push(l),
+      warn: () => {},
+      error: () => {},
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      runTick,
+      log,
+    });
+
+    expect(res.ticks).toBe(3);
+    expect(receivedSlugs).toEqual([[], ["conflict-a@00112233aa"], []]);
+    expect(
+      infos.some(
+        (l) =>
+          l.includes("lifting the merge-stage quarantine") &&
+          l.includes("CONFLICT-A"),
       ),
     ).toBe(true);
   });

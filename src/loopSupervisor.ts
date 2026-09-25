@@ -337,7 +337,10 @@ export interface SuperviseResult {
 interface QuarantineHold {
   /** The entry the placing verdict blamed, for the lines the hold logs. */
   tag: string;
-  /** The stage whose failure placed it. Only a `gate` hold can be lifted. */
+  /**
+   * The stage whose failure placed it — read by the lift below against
+   * {@link LIFTS_ON_A_MOVED_TIP}, and named in the line it logs.
+   */
   stage: FailureStage;
   /**
    * The trunk tip the placing tick reported (`TickVerdict.headSha`) — a
@@ -347,6 +350,21 @@ interface QuarantineHold {
    */
   tip: string;
 }
+
+/**
+ * The stages whose holds expire with the tip they were placed at (spec/loop.md,
+ * *Repeated identical failures — quarantine, then abort*). Both judge one tree:
+ * a gate's verdict is over the tree it ran on, and a cherry-pick's conflict is
+ * against the trunk it picked onto — once trunk is not that tree, neither
+ * judgment has been re-made. Spelled as a membership set over
+ * {@link FAILURE_STAGES} rather than as an inequality against `provision`, so a
+ * stage added to the roster keeps the run-scoped default until this line says
+ * otherwise.
+ */
+const LIFTS_ON_A_MOVED_TIP: ReadonlySet<FailureStage> = new Set<FailureStage>([
+  "gate",
+  "merge",
+]);
 
 /**
  * The stop-shaped half of a {@link SuperviseResult} — why the run ended, with
@@ -501,27 +519,28 @@ export async function superviseLoop(
   });
 
   /**
-   * Drop every gate-stage hold the trunk has moved past, before the set the
-   * next children carry is composed (spec/loop.md, *Repeated identical
-   * failures — quarantine, then abort*). A gate's failure is a verdict over
-   * one tree; once the tip is not the one the placing tick reported, that
-   * tree is gone and the hold is standing on a judgment nothing re-made — a
-   * gate fixed on trunk mid-run otherwise kept holding entries the fix would
-   * have passed until an operator restarted the loop. A provision-stage hold
-   * is untouched, since nothing landing on trunk changes what a worktree
-   * could not provision. The merge stage is named by neither arm of that
-   * section, so it keeps the run-scoped default rather than an expiry the
-   * spec never granted it. The consecutive-identical-failure backstop below
-   * is what bounds the retry a lift allows.
+   * Drop every hold whose stage judged a tree the trunk has moved past, before
+   * the set the next children carry is composed (spec/loop.md, *Repeated
+   * identical failures — quarantine, then abort*). Which stages those are is
+   * {@link LIFTS_ON_A_MOVED_TIP}'s to say; once the tip is not the one the
+   * placing tick reported, the hold is standing on a judgment nothing re-made —
+   * a gate fixed on trunk mid-run otherwise kept holding entries the fix would
+   * have passed, and a pick that conflicted kept holding one a fresh pick onto
+   * the moved trunk would land, until an operator restarted the loop. A
+   * provision-stage hold is untouched, since nothing landing on trunk changes
+   * what a worktree could not provision. The consecutive-identical-failure
+   * backstop below is what bounds the retry a lift allows.
    */
-  const liftStaleGateHolds = (): void => {
+  const liftStaleHolds = (): void => {
     for (const [key, hold] of quarantine) {
-      if (hold.stage !== "gate" || hold.tip === latestTip) continue;
+      if (!LIFTS_ON_A_MOVED_TIP.has(hold.stage) || hold.tip === latestTip)
+        continue;
       quarantine.delete(key);
       log.info(
-        `[flume] lifting the gate-stage quarantine on ${hold.tag} (${key}): trunk ` +
-          `moved from ${hold.tip} to ${latestTip}, so the tree that gate judged is ` +
-          `gone. The consecutive-identical-failure backstop still bounds the retry.`,
+        `[flume] lifting the ${hold.stage}-stage quarantine on ${hold.tag} (${key}): ` +
+          `trunk moved from ${hold.tip} to ${latestTip}, so the tree that ` +
+          `${hold.stage} stage judged is gone. The consecutive-identical-failure ` +
+          `backstop still bounds the retry.`,
       );
     }
   };
@@ -537,7 +556,7 @@ export async function superviseLoop(
    */
   const fill = (): void => {
     const awake = baton.awake();
-    liftStaleGateHolds();
+    liftStaleHolds();
     // One snapshot per fill, so every child this call starts is told the same
     // set and none of them holds a reference the loop keeps mutating.
     const quarantinedSlugs = new Set(quarantine.keys());
@@ -739,7 +758,7 @@ export async function superviseLoop(
     // chain declaring `quarantineScope: "none"` opts out of this leg
     // entirely — the backstop below still fires.
     // Each hold records the stage that placed it and the tip this verdict
-    // reported, which is what `liftStaleGateHolds` above reads — so the
+    // reported, which is what `liftStaleHolds` above reads — so the
     // placing verdict is the one narrowed for here, rather than a tip
     // rediscovered later. A `failures` entry cannot exist without a verdict
     // to have carried it, so the narrow drops no arm.
