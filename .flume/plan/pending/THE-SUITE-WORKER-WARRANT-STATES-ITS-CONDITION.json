@@ -1,0 +1,20 @@
+{
+  "tag": "THE-SUITE-WORKER-WARRANT-STATES-ITS-CONDITION",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "vitest.config.ts",
+        "description": "the worker ceiling's warrant drops the retired parallel-suites clause and states the live figures and the condition that would move the number"
+      }
+    ]
+  },
+  "summary": "The suite's worker ceiling is warranted by \"one suite per entry in parallel\", a premise the ship lock retired and the authoring page contradicts",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the worker ceiling's warrant states the measurement that holds today — one suite at a time under the ship lock, about 3.2 GB on an 11 GB host — and the condition that would change the number rather than the era that set it, with the ceiling itself unchanged at 4",
+  "notes": "Ruled (a) on `is-four-still-the-suites-worker-ceiling-under-the-ship-lock.md`: keep 4, restate. `vitest.config.ts:26`-`:30` reads \"a build wave runs one suite per entry in parallel\"; `docs/CHAIN-AUTHORING.md`, *What a wave costs in memory* prices it serialized. Condition: the host's other load gone and suite wall clock the bottleneck. The `.flume/declaration.ts` half landed at 8a8869ec, no phase may write it. Prose only; claims no property."
+}
