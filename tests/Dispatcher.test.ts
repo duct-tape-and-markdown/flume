@@ -130,6 +130,13 @@ import type { NoCommitMode } from "../src/index.ts";
 import type { PriorAttemptKeyspace, QuarantinedTag } from "../src/index.ts";
 
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): TickVerdictTiming is the element type of TickVerdict.timings, so
+// a chain reading what a tick spent on gates and merges needs to name it from
+// the package entry point. This import fails tsc if it drops from
+// src/index.ts.
+import type { TickVerdictTiming } from "../src/index.ts";
+
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): StakeLoss is the element type of TickVerdict.stakeLosses /
 // TickResult.stakeLosses and PidClaim is the type of its `by`, so a chain
 // reading which sibling took an entry needs to name both from the package
@@ -11849,6 +11856,7 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
       "shippedTags",
       "mergeOutcomes",
       "invocations",
+      "timings",
       "provisionFailures",
       "mergeFailures",
       "gateFailures",
@@ -12434,6 +12442,157 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
       turns: 3,
       outputTokens: 50,
     });
+  });
+});
+
+// ---------- TickVerdict timings — the tick's own non-agent cost
+// (spec/loop.md "The tick verdict — one facts artifact") ----------
+
+/**
+ * `invocations[]` already says what the agent cost; these cases are the other
+ * half of the same question — what the gates and the merges cost — read off
+ * the verdict rather than differenced out of two timestamps.
+ *
+ * Both arms judge the rows against the **gate list beside them**: the timing
+ * rows' gate names are compared to `gateResults`' own, so a row the engine
+ * forgets to stamp or stamps under a name no gate ran under reds, and neither
+ * arm restates a list of gate names by hand.
+ */
+describe("TickVerdict timings — gate and merge cost, measured not differenced", () => {
+  /** Every gate row's gate name, in the order the verdict recorded them. */
+  const gateTimingNames = (rows: readonly TickVerdictTiming[]): string[] =>
+    rows.flatMap((t) => (t.kind === "gate" ? [t.gate] : []));
+
+  /**
+   * Every merge row's entry tag, in record order — `undefined` for a
+   * singleton's own span, which names no entry.
+   */
+  const mergeTimingTags = (
+    rows: readonly TickVerdictTiming[],
+  ): (string | undefined)[] =>
+    rows.flatMap((t) => (t.kind === "merge" ? [t.entryTag] : []));
+
+  /** A gate that passes and records nothing else, at either stage. */
+  const passing = (name: string, when: GatePhase): Gate => ({
+    name,
+    when,
+    run: async () => ({ ok: true, message: `${name} ok` }),
+  });
+
+  it("the tick verdict carries a timing row per gate run and per merge", async () => {
+    await writePending(fx.repo, [
+      makeEntry("TEST-A", ["src/a.ts"]),
+      makeEntry("TEST-B", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [passing("probe-commit", "afterCommit"), passing("probe-merge", "afterMerge")],
+    });
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "test-a": async (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "A\n", "build(TEST-A): ship"),
+        "test-b": async (cwd) =>
+          writeAndCommit(cwd, "src/b.ts", "B\n", "build(TEST-B): ship"),
+      }),
+      log: silent,
+      maxParallel: 4,
+    }).tick();
+
+    // Non-vacuity: both spans really merged, and every gate the wave declares
+    // really ran — two entries × (probe-commit, the engine-appended
+    // writable-paths, probe-merge).
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "TEST-A",
+      "TEST-B",
+    ]);
+    const verdict = outcome.verdict!;
+    expect(verdict.gateResults).toHaveLength(6);
+
+    // One row per gate run, named the way the gate list beside it names them.
+    // Sorted: a wave carries each span as its own agent finishes, so the
+    // order two clean siblings interleave in is finish order and is no part
+    // of this claim.
+    expect(gateTimingNames(verdict.timings).sort()).toEqual(
+      verdict.gateResults.map((g) => g.gate).sort(),
+    );
+
+    // One row per merge, naming the entry whose span was carried.
+    expect(mergeTimingTags(verdict.timings).sort()).toEqual([
+      "TEST-A",
+      "TEST-B",
+    ]);
+
+    // The milliseconds are the engine's own clock, on every row: a whole
+    // number of them, and never negative.
+    expect(verdict.timings).toHaveLength(8);
+    for (const row of verdict.timings) {
+      expect(Number.isInteger(row.ms)).toBe(true);
+      expect(row.ms).toBeGreaterThanOrEqual(0);
+    }
+
+    // And never a field on the chain-authored gate row: a gate reports its
+    // verdict, the engine reports what taking it cost.
+    expect(verdict.gateResults.flatMap((g) => Object.keys(g))).not.toContain(
+      "ms",
+    );
+  });
+
+  it("a wave's ledger-refusal verdict carries the same timing rows its completing verdict would", async () => {
+    await writePending(fx.repo, [makeEntry("MINE", ["src/mine.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [passing("probe-commit", "afterCommit"), passing("probe-merge", "afterMerge")],
+    });
+
+    // The refusal siblings' own mid-wave corruption: unparseable bytes land on
+    // trunk after this wave's decide-read and before the ledger rewrite's own
+    // read, so the pick and every gate are clean and only the rewrite refuses.
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        mine: async (cwd) => {
+          await commitEntryFile(
+            fx.repo,
+            entryFileName("CORRUPT"),
+            "{ corrupted mid-wave, not json",
+          );
+          await writeAndCommit(cwd, "src/mine.ts", "ok\n", "build(MINE): ship");
+        },
+      }),
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: this is the refusal leg's verdict — the completing leg
+    // never summarizes a wave this way — over a span that really shipped and
+    // really ran its gates.
+    expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBe("parse-failure");
+    const verdict = outcome.verdict!;
+    expect(verdict.shippedTags).toEqual(["MINE"]);
+    expect(verdict.summary).toContain("pending-ledger rewrite refused");
+    expect(verdict.gateResults).toHaveLength(3);
+
+    // The claim: the thrown verdict carries the rows the completing sibling's
+    // would — one per gate run, one for the merge — rather than losing them
+    // with the return that never happened.
+    expect(gateTimingNames(verdict.timings)).toEqual(
+      verdict.gateResults.map((g) => g.gate),
+    );
+    expect(mergeTimingTags(verdict.timings)).toEqual(["MINE"]);
+    expect(verdict.timings).toHaveLength(4);
   });
 });
 
@@ -14197,9 +14356,12 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => 
     // content-addressed commit sha (author/committer timestamps differ
     // between the two independent commits), the verdict's own `at`
     // (wall-clock at the moment each `dispatcher.tick()` call built its
-    // verdict), and TickResult.flumeDir/configDir (each `runOnce` call gets
-    // its own fresh temp fixture) — blank those out before comparing the
-    // rest byte-for-byte.
+    // verdict), each timing row's own `ms` (what that run cost on the
+    // engine's clock, which no two runs of one gate share), and
+    // TickResult.flumeDir/configDir (each `runOnce` call gets its own fresh
+    // temp fixture) — blank those out before comparing the rest
+    // byte-for-byte. The rows themselves still compare: which gates ran and
+    // which spans merged is exactly what this claim is about.
     const normalize = (o: unknown) =>
       JSON.parse(
         JSON.stringify(o)
@@ -14210,7 +14372,8 @@ describe("Dispatcher — Phase.shouldRun: decline before the invocation", () => 
             /\d{4}-\d{2}-\d{2}T\d{2}[:-]\d{2}[:-]\d{2}[.-]\d{3}Z/g,
             "<TIMESTAMP>",
           )
-          .replace(/flume-dispatcher-(repo|cfg)-[A-Za-z0-9]+/g, "flume-dispatcher-$1-<TMP>"),
+          .replace(/flume-dispatcher-(repo|cfg)-[A-Za-z0-9]+/g, "flume-dispatcher-$1-<TMP>")
+          .replace(/"ms":\d+/g, '"ms":"<MS>"'),
       );
 
     expect(normalize(declaredTrue)).toEqual(normalize(undeclared));

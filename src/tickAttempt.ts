@@ -24,7 +24,7 @@ import { join } from "node:path";
 
 import type { Agent, AgentUsage } from "./Agent.js";
 import { writablePathsGate } from "./builtinGates.js";
-import type { Gate, GateResult } from "./Gate.js";
+import type { Gate } from "./Gate.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
 import type { Logger } from "./log.js";
@@ -57,6 +57,7 @@ import {
   throwFacts,
   type GateFailure,
   type ReportedGateResult,
+  type TickVerdictTiming,
 } from "./tickVerdict.js";
 import type { WorktreeContext } from "./worktrees.js";
 
@@ -127,6 +128,12 @@ type AgentTermination =
 type AttemptFacts = {
   /** Every afterCommit gate row this attempt produced, the failing row included. */
   gateResults: ReportedGateResult[];
+  /**
+   * One {@link TickVerdictTiming} row per afterCommit gate this attempt ran,
+   * paired with the rows above — the caller folds them into the wave's own
+   * timings so the verdict's list is one run order across every stage.
+   */
+  timings: TickVerdictTiming[];
   /** No-commit mode when the attempt produced no usable commit; absent when its span survived. */
   noCommit?: NoCommitMode;
   /**
@@ -239,7 +246,12 @@ export async function runAttempt(
     // A thrown `promptArgs` never reaches the render, and lands on the
     // render's own refusal — same no-commit mode, same persisted record
     // (spec/chain.md, "What a hook receives").
-    return { committed: false, gateResults: [], noCommit: "render-refused" };
+    return {
+      committed: false,
+      gateResults: [],
+      timings: [],
+      noCommit: "render-refused",
+    };
   }
 
   let prompt: string;
@@ -259,7 +271,12 @@ export async function runAttempt(
     // never invoked. Distinct from clean-exit/platform-preempt: no agent
     // ran at all.
     await persistRenderRefused(ctx, ref, label, err);
-    return { committed: false, gateResults: [], noCommit: "render-refused" };
+    return {
+      committed: false,
+      gateResults: [],
+      timings: [],
+      noCommit: "render-refused",
+    };
   }
 
   // Fresh read, not the tip the worktree was provisioned from: the two
@@ -312,6 +329,7 @@ export async function runAttempt(
     return {
       committed: false,
       gateResults: [],
+      timings: [],
       noCommit: mode,
       spanBase,
       // Only when a commit was made and then dropped as unusable: an
@@ -333,6 +351,7 @@ export async function runAttempt(
     return {
       committed: false,
       gateResults: [],
+      timings: [],
       tipMoved: true,
       spanBase,
       headSha,
@@ -375,6 +394,7 @@ export async function runAttempt(
     return {
       committed: false,
       gateResults: verdict.results,
+      timings: verdict.timings,
       noCommit: "gate-revert",
       footprint,
       gateFailure,
@@ -387,6 +407,7 @@ export async function runAttempt(
   return {
     committed: true,
     gateResults: verdict.results,
+    timings: verdict.timings,
     spanBase,
     headSha,
     termination,
@@ -574,6 +595,8 @@ async function runAfterCommitGates(
    * verdict reports. */
   failure?: ReportedGateResult;
   results: ReportedGateResult[];
+  /** One row per gate the loop below actually ran, paired with `results`. */
+  timings: TickVerdictTiming[];
 }> {
   // Entry-scoped write guard (spec/pending.md, "The entry-scoped write
   // guard is opt-in, and off by default"). The whole decision — whether
@@ -607,8 +630,9 @@ async function runAfterCommitGates(
       ? ctx.configDir
       : join(cwd, ctx.configDirRel);
   const results: ReportedGateResult[] = [];
+  const timings: TickVerdictTiming[] = [];
   for (const gate of gates) {
-    const r: GateResult = await runGate(
+    const { result: r, ms } = await runGate(
       gate,
       {
         cwd,
@@ -628,12 +652,13 @@ async function runAfterCommitGates(
     );
     const row = reportedGateRow(gate.name, r);
     results.push(row);
+    timings.push({ kind: "gate", gate: gate.name, ms });
     if (!r.ok) {
       if (r.details) ctx.log.warn(r.details);
-      return { ok: false, failure: row, results };
+      return { ok: false, failure: row, results, timings };
     }
   }
-  return { ok: true, results };
+  return { ok: true, results, timings };
 }
 
 /**

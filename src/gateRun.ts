@@ -12,7 +12,7 @@
 
 import type { Gate, GateContext, GateResult } from "./Gate.js";
 import type { Logger } from "./log.js";
-import { throwFacts } from "./tickVerdict.js";
+import { startTiming, throwFacts, type TickVerdictTiming } from "./tickVerdict.js";
 import { withGateCheckouts, type WorktreeContext } from "./worktrees.js";
 
 /**
@@ -22,6 +22,23 @@ import { withGateCheckouts, type WorktreeContext } from "./worktrees.js";
 export interface GateRunScope {
   readonly worktreeCtx: WorktreeContext;
   readonly log: Logger;
+}
+
+/**
+ * What one gate run reports back: the gate's verdict, and how long taking it
+ * cost the tick.
+ */
+interface TimedGateResult {
+  /** The gate's own result — a returned verdict, or the failure a throw became. */
+  readonly result: GateResult;
+  /**
+   * Elapsed milliseconds on the engine's own clock ({@link startTiming}), the
+   * number the caller's {@link TickVerdictTiming} row carries. Measured here
+   * because here is the one place a gate's `run` is called: a throw is timed
+   * exactly as a return is, and no gate loop spells the clock for itself
+   * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+   */
+  readonly ms: number;
 }
 
 /**
@@ -57,14 +74,21 @@ export async function runGate(
   gate: Gate,
   ctx: GateContext,
   scope: GateRunScope,
-): Promise<GateResult> {
+): Promise<TimedGateResult> {
+  const elapsed = startTiming();
   try {
-    return await withGateCheckouts(scope.worktreeCtx, () => gate.run(ctx));
+    const result = await withGateCheckouts(scope.worktreeCtx, () =>
+      gate.run(ctx),
+    );
+    return { result, ms: elapsed() };
   } catch (err) {
     const { message, stack } = throwFacts(err);
     scope.log.warn(
       `[flume] gate '${gate.name}' threw: ${message}; recorded as that gate's failure`,
     );
-    return { ok: false, message, ...(stack ? { details: stack } : {}) };
+    return {
+      result: { ok: false, message, ...(stack ? { details: stack } : {}) },
+      ms: elapsed(),
+    };
   }
 }

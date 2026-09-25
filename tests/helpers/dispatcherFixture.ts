@@ -48,6 +48,7 @@ export function verdictFixture(over: Partial<TickVerdict> = {}): TickVerdict {
     shippedTags: [],
     mergeOutcomes: [],
     invocations: [],
+    timings: [],
     summary: "build shipped nothing → hibernate",
     headSha: "0".repeat(40),
     at: "2024-01-01T00:00:00.000Z",

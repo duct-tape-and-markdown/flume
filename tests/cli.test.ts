@@ -1882,6 +1882,7 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
       shippedTags: [],
       mergeOutcomes: [],
       invocations,
+      timings: [],
       summary: `${phaseName}: one tick`,
       headSha: "0".repeat(40),
       at: new Date(at).toISOString(),

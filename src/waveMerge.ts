@@ -57,6 +57,7 @@ import {
   gateFailureSignature,
   MAX_FAILURE_SIGNATURE,
   reportedGateRow,
+  startTiming,
   throwFacts,
   type GateFailure,
   type MergeFailure,
@@ -66,6 +67,7 @@ import {
   type TickVerdict,
   type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
+  type TickVerdictTiming,
 } from "./tickVerdict.js";
 
 /**
@@ -276,6 +278,16 @@ interface WaveMerge {
   /** Each merged attempt's own gate rows, in the order they were merged. */
   readonly attemptGateResults: ReportedGateResult[];
   /**
+   * spec/loop.md "The tick verdict — one facts artifact": every
+   * {@link TickVerdictTiming} row this wave produced, in the order the engine
+   * ran them — each attempt's afterCommit rows as its span arrives, then that
+   * entry's own afterMerge rows and the merge row itself. One array rather
+   * than the two the gate rows take, because nothing slices it: that split
+   * exists so `ShipContext.gateResults` can name one entry's afterMerge rows
+   * alone, and no hook is handed timings.
+   */
+  readonly timings: TickVerdictTiming[];
+  /**
    * Each provisioned entry's cherry-pick/merge fate, for this wave's
    * TickVerdict — the sole capture of what happened to each entry, footprint
    * included. `commitPendingUpdate` (`src/pendingLedger.ts`) reads a wave's
@@ -334,6 +346,8 @@ interface WaveMergeResult {
   readonly mergeReverted: PendingEntry[];
   /** Every gate row this wave produced — the per-entry rows plus this stage's own. */
   readonly allGateResults: ReportedGateResult[];
+  /** See {@link WaveMerge.timings}. */
+  readonly timings: TickVerdictTiming[];
   /** Whether anything shipped. */
   readonly committedWave: boolean;
   /** The ledger rewrite's own commit, when it made one. */
@@ -362,6 +376,7 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
     revertRefused: [],
     mergeGateResults: [],
     attemptGateResults: [],
+    timings: [],
     mergeOutcomes: [],
     mergeFailures: [],
     gateFailures: [],
@@ -407,6 +422,10 @@ export async function mergeAttempt(
   const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
   w.attempts.push(r);
   w.attemptGateResults.push(...r.gateResults);
+  // This entry's afterCommit rows, in front of the merge rows below: the
+  // wave's timings are one run order across stages, so an entry's attempt
+  // time lands before the merge time it preceded.
+  w.timings.push(...r.timings);
 
   // spec/loop.md "The ship lock and the worktree lock — sibling ticks take
   // turns at git": one merge span at a time across this run's sibling ticks.
@@ -415,6 +434,14 @@ export async function mergeAttempt(
   // the span, not each git call inside it. A sibling holding it is waited on,
   // never refused: it is this run's own writer, and tip verify absorbs the
   // tip it moved.
+  //
+  // spec/loop.md "The tick verdict — one facts artifact": the merge row's
+  // milliseconds are this whole passage — the lock a sibling may still hold,
+  // the pick, the gates, the revert or the ship consult — so what the wave
+  // spent off the agent's clock is one number per entry, with the gate rows
+  // beside it as its breakdown. Stamped in the `finally` below, because every
+  // way out of the span is a merge that happened.
+  const mergeElapsed = startTiming();
   const shipLock = await git.acquireShipLock(repoRoot, leg.log);
   try {
     if (r.termination) {
@@ -573,7 +600,7 @@ export async function mergeAttempt(
     // agent's own account").
     const entryMergeGateResultsStart = w.mergeGateResults.length;
     for (const gate of afterMergeGates) {
-      const gr = await runGate(
+      const { result: gr, ms } = await runGate(
         gate,
         {
           cwd: repoRoot,
@@ -606,6 +633,7 @@ export async function mergeAttempt(
       );
       const row = reportedGateRow(gate.name, gr);
       w.mergeGateResults.push(row);
+      w.timings.push({ kind: "gate", gate: gate.name, ms });
       if (!gr.ok) {
         entryFailure = row;
         break;
@@ -781,6 +809,7 @@ export async function mergeAttempt(
     // wave's own next finished attempt — would wait on it for the rest of
     // the run.
     shipLock.release();
+    w.timings.push({ kind: "merge", entryTag: r.entry.tag, ms: mergeElapsed() });
   }
 }
 
@@ -887,6 +916,7 @@ export async function closeWaveMerge(w: WaveMerge): Promise<WaveMergeResult> {
           declined: w.declined,
           bystanderCheckpointSha: w.bystanderCheckpointSha,
           gateResults: allGateResults,
+          timings: w.timings,
           shippedTags,
           mergeOutcomes: w.mergeOutcomes,
           invocations: w.invocations,
@@ -964,6 +994,7 @@ export async function closeWaveMerge(w: WaveMerge): Promise<WaveMergeResult> {
     shipped: w.shipped,
     mergeReverted: w.mergeReverted,
     allGateResults,
+    timings: w.timings,
     committedWave,
     ...(chorSha ? { chorSha } : {}),
     mergeOutcomes: w.mergeOutcomes,

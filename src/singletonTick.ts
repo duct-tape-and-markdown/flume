@@ -36,6 +36,7 @@ import {
   gateFailureSignature,
   MAX_FAILURE_SIGNATURE,
   reportedGateRow,
+  startTiming,
   type GateFailure,
   type MergeFailure,
   type MergeOutcome,
@@ -43,6 +44,7 @@ import {
   type ReportedGateResult,
   type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
+  type TickVerdictTiming,
 } from "./tickVerdict.js";
 import {
   createWorktree,
@@ -239,6 +241,11 @@ export async function runSingleton(
   // stage actually begins a pick range — see the checkpoint call below.
   let bystanderCheckpointSha: string | undefined;
   const gateResults: ReportedGateResult[] = [];
+  // spec/loop.md "The tick verdict — one facts artifact": one
+  // `TickVerdictTiming` row per gate run and per merge, paired with the rows
+  // above and in the same run order — the attempt's afterCommit rows, then
+  // this leg's own afterMerge rows and its one merge row.
+  const timings: TickVerdictTiming[] = [];
   // A singleton's own afterCommit/afterMerge gate
   // revert carries no entry tag (nothing to quarantine — see
   // GateFailure's doc), so it falls to the consecutive-failure backstop
@@ -293,6 +300,7 @@ export async function runSingleton(
   // never reaches here — it returns above, before the worktree exists.)
   const preWtHead = attempt.spanBase;
   gateResults.push(...attempt.gateResults);
+  timings.push(...attempt.timings);
   if (attempt.termination) {
     invocationRow = {
       promptPath: attempt.termination.promptPath,
@@ -332,6 +340,13 @@ export async function runSingleton(
     // afterMerge stage does. A sibling tick holding the lock is waited on,
     // never refused (`spec/loop.md`, *Tip verify — one writer per branch,
     // absorption at the merge*).
+    //
+    // spec/loop.md "The tick verdict — one facts artifact": the merge row's
+    // milliseconds are this whole span — the lock a sibling may still hold,
+    // the pick, the afterMerge gates, and the revert that may follow — with
+    // the gate rows beside it as its breakdown. No `entryTag`: a singleton
+    // phase carries no entry, exactly as its merge-outcome row carries none.
+    const mergeElapsed = startTiming();
     const shipLock = await git.acquireShipLock(repoRoot, leg.log);
     try {
       // Narrowed off `attempt.committed`: a committed attempt always names
@@ -383,7 +398,7 @@ export async function runSingleton(
         );
         let entryFailure: ReportedGateResult | undefined;
         for (const gate of afterMergeGates) {
-          const gr = await runGate(
+          const { result: gr, ms } = await runGate(
             gate,
             {
               cwd: repoRoot,
@@ -411,6 +426,7 @@ export async function runSingleton(
           );
           const row = reportedGateRow(gate.name, gr);
           gateResults.push(row);
+          timings.push({ kind: "gate", gate: gate.name, ms });
           if (!gr.ok) {
             entryFailure = row;
             break;
@@ -502,6 +518,9 @@ export async function runSingleton(
       }
     } finally {
       shipLock.release();
+      // Every way out of the span — shipped, reverted, refused, or thrown —
+      // is a merge that happened and cost what it cost.
+      timings.push({ kind: "merge", ms: mergeElapsed() });
     }
   }
 
@@ -577,5 +596,6 @@ export async function runSingleton(
     ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
     mergeOutcomes,
     ...(invocation ? { invocations: [invocation] } : {}),
+    timings,
   };
 }

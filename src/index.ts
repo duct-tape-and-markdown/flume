@@ -206,6 +206,9 @@ export {
   type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
   type MergeOutcome,
+  // `TickVerdict.timings`' own row type: a chain reading what a tick spent on
+  // gates and merges needs the name to hold what it read.
+  type TickVerdictTiming,
 } from "./tickVerdict.js";
 
 // `StakeLoss.by`'s own type: the statement a guard file's holder wrote, as

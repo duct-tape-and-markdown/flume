@@ -979,6 +979,7 @@ export class Dispatcher {
       tags,
       mergeOutcomes,
       invocations,
+      timings,
       clearedPriorAttempts,
     } = phaseOutcome;
 
@@ -1069,6 +1070,11 @@ export class Dispatcher {
       shippedTags: result.shippedTags,
       mergeOutcomes,
       invocations,
+      // spec/loop.md "The tick verdict — one facts artifact": what this tick
+      // spent off the agent's clock, from the leg that measured it — the same
+      // rows the wave's refusal verdict carries, so the completing and the
+      // refused producer report one fact set.
+      timings,
       provisionFailures,
       // The wave's lost stake races, on the artifact the next tick reads —
       // the same records `result.stakeLosses` already handed `handoff`, so

@@ -1893,6 +1893,33 @@ const dispatcher = new Dispatcher({
 await dispatcher.tick();
 ```
 
+`log` is a seam, not a sink: the engine narrates through it and never formats
+for a destination. A host that wants a timestamp on every line — or a level
+prefix, or a route into a structured logger — wraps `consoleLogger` instead of
+asking for an option:
+
+```ts
+import { consoleLogger, type Logger } from "@dtmd/flume";
+
+const stamped = (inner: Logger): Logger => ({
+  info: (l) => inner.info(`${new Date().toISOString()} ${l}`),
+  warn: (l) => inner.warn(`${new Date().toISOString()} ${l}`),
+  error: (l) => inner.error(`${new Date().toISOString()} ${l}`),
+});
+
+// ... then `log: stamped(consoleLogger)` in the options above.
+```
+
+The engine ships no such default and exports no decorator for it: a stamp
+format is taste, and taste carrying the engine's authority is something every
+consumer inherits silently and has to discover to turn off.
+
+What the engine does own is the measurement a stamped log used to be read for.
+`TickVerdict.timings` carries one row per gate run and per merge — the gate's
+name or the entry's tag, and the milliseconds the engine's own clock measured —
+so what a tick spent outside the agent is a field to read rather than a
+difference between two stamped lines (§8).
+
 ## 5. The prompt template format
 
 A prompt file is markdown plus two extensions the renderer applies

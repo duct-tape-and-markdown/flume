@@ -35,6 +35,7 @@ import type {
   StakeLoss,
   TickVerdict,
   TickVerdictInvocation,
+  TickVerdictTiming,
   TickVerdictMergeOutcome,
 } from "./tickVerdict.js";
 import type { WorktreeContext } from "./worktrees.js";
@@ -62,6 +63,8 @@ export type PhaseTickOutcome = {
   mergeOutcomes?: TickVerdictMergeOutcome[];
   /** See {@link TickVerdict.invocations}. */
   invocations?: TickVerdictInvocation[];
+  /** See {@link TickVerdict.timings}. */
+  timings?: TickVerdictTiming[];
   /** See {@link TickVerdict.clearedPriorAttempts}; fanout only. */
   clearedPriorAttempts?: string[];
 };

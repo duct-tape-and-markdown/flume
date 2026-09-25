@@ -277,6 +277,44 @@ export function reportedGateRow(
 }
 
 /**
+ * One span of the tick's own non-agent time, on the clock the engine took it
+ * with: a gate run, or one span's carry onto trunk. `invocations[]` states
+ * what the agent cost; these rows state what the harness cost around it, so
+ * gate and merge time is read off the verdict instead of differenced out of
+ * two timestamps a reader went looking for (spec/loop.md "The tick verdict —
+ * one facts artifact").
+ *
+ * The milliseconds are the engine's, never the chain's: a {@link GateResult}
+ * carries no duration field and gains none. A gate reporting its own cost
+ * would be a fact the engine copies rather than measures — and a gate that
+ * threw would report nothing at all, while the run it spent that time in is
+ * exactly the one worth timing.
+ *
+ * `kind` discriminates because the two rows name different subjects. A gate
+ * row names the gate; a merge row names the entry whose span was carried,
+ * absent for a singleton phase's own span, which has no entry to tag — the
+ * same rule and the same name as {@link TickVerdictMergeOutcome.entryTag}.
+ */
+export type TickVerdictTiming =
+  | { kind: "gate"; gate: string; ms: number }
+  | { kind: "merge"; entryTag?: string; ms: number };
+
+/**
+ * Start the engine's own clock over a span about to run, returning the reader
+ * that states its elapsed milliseconds.
+ *
+ * One home for the clock every {@link TickVerdictTiming} row is measured
+ * against — the afterCommit loop's, both afterMerge loops', and each leg's
+ * merge span — so "the engine's own clock" is one thing the artifact reports
+ * rather than one `Date.now()` pair per measuring site
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+export function startTiming(): () => number {
+  const started = Date.now();
+  return () => Date.now() - started;
+}
+
+/**
  * How a fanout entry's landed worktree commit fared once the wave tried to
  * put it on trunk:
  *  - `merged`                cherry-picked, passed every afterMerge gate,
@@ -639,6 +677,15 @@ export interface TickVerdict {
    */
   invocations: TickVerdictInvocation[];
   /**
+   * spec/loop.md "The tick verdict — one facts artifact": one
+   * {@link TickVerdictTiming} row per gate run and per merge this tick took,
+   * in the order the engine ran them. Beside the gate list the way
+   * `invocations[]` is, and for the mirrored reason: that list says which
+   * gates ran and what they ruled, this one says what they cost. Empty when
+   * the tick ran no gate and merged no span.
+   */
+  timings: TickVerdictTiming[];
+  /**
    * Pre-tick worktree provisioning failures (sweep or
    * create) this tick recorded, before any agent ran for the affected
    * entries. Absent/empty when the tick hit none.
@@ -723,6 +770,7 @@ interface TickVerdictFacts {
   shippedTags: readonly string[];
   mergeOutcomes?: readonly TickVerdictMergeOutcome[] | undefined;
   invocations?: readonly TickVerdictInvocation[] | undefined;
+  timings?: readonly TickVerdictTiming[] | undefined;
   provisionFailures?: readonly ProvisionFailure[] | undefined;
   stakeLosses?: readonly StakeLoss[] | undefined;
   mergeFailures?: readonly MergeFailure[] | undefined;
@@ -769,6 +817,7 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
     shippedTags: [...facts.shippedTags],
     mergeOutcomes: [...(facts.mergeOutcomes ?? [])],
     invocations: [...(facts.invocations ?? [])],
+    timings: [...(facts.timings ?? [])],
     ...(facts.provisionFailures?.length
       ? { provisionFailures: [...facts.provisionFailures] }
       : {}),
@@ -833,6 +882,7 @@ function isTickVerdict(rec: unknown): rec is TickVerdict {
     Array.isArray(r.shippedTags) &&
     Array.isArray(r.mergeOutcomes) &&
     Array.isArray(r.invocations) &&
+    Array.isArray(r.timings) &&
     typeof r.summary === "string" &&
     typeof r.headSha === "string" &&
     typeof r.at === "string"

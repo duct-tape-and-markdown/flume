@@ -599,6 +599,7 @@ export async function runFanout(
     tags: provisioned.map((e) => e.tag),
     mergeOutcomes: mergeStage.mergeOutcomes,
     invocations: mergeStage.invocations,
+    timings: mergeStage.timings,
     ...(clearedPriorAttempts.length > 0 ? { clearedPriorAttempts } : {}),
   };
 }
@@ -650,13 +651,20 @@ async function runFanoutEntry(
     entry.tag,
   );
   if (consult === "declined") {
-    return { ...site, committed: false, gateResults: [], declined: true };
+    return {
+      ...site,
+      committed: false,
+      gateResults: [],
+      timings: [],
+      declined: true,
+    };
   }
   if (consult === "refused") {
     return {
       ...site,
       committed: false,
       gateResults: [],
+      timings: [],
       noCommit: "render-refused",
     };
   }
