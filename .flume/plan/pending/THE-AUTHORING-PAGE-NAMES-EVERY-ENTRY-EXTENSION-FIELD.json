@@ -1,0 +1,29 @@
+{
+  "tag": "THE-AUTHORING-PAGE-NAMES-EVERY-ENTRY-EXTENSION-FIELD",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the harness-package bullet's entry-extension roster names every field the package declares"
+      },
+      {
+        "path": "tests/harnessEntryExtension.test.ts",
+        "description": "the roster arm, off `entryExtension()` itself against that bullet, beside the package-fields cases"
+      }
+    ]
+  },
+  "summary": "The authoring page's harness-package bullet rosters six entry-extension fields; the package ships seven, and a consumer declaring the omitted one meets a chain-load throw",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the roster the shipped page states for the package's entry extension is read against `entryExtension()` itself — every field the package declares, over a bullet the arm first asserts it cut — so `contractTouching` is named there and a field added to the declaration cannot ship beside a page still naming six",
+  "tests": [
+    "docs/CHAIN-AUTHORING.md names every field the package's entry extension declares"
+  ],
+  "notes": "Measured: `docs/CHAIN-AUTHORING.md:61` is the page's one roster site, naming the six `spec/harness.md`, *The entry extension* lists; `harness/entryExtension.ts:3`-`:5` names the seventh. Every sibling package roster has this arm — `tests/harnessDeclaration.test.ts:687`, `:720`, `harnessGates.test.ts:1624` — and none covers this one. `sectionOf`/`bulletOf` (`tests/helpers/docSections.ts:75`, `:385`) cut the bullet. Seams the page with THE-QUARANTINE-ACCOUNTING-TAKES-RENDER-AS-A-STAGE."
+}
