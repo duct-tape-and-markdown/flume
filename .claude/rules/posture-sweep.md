@@ -139,11 +139,13 @@ vacuous verdict over load-bearing machinery.
   A later rotation re-noting the same debt is cheaper than a queue that
   grows faster than build drains it — until the re-note is itself the
   recurring cost. **A shape family accepted as debt in three plan commit
-  bodies of one rotation is filed once**: a single entry `per` this section
-  that claims no property (no `tests[]`, no `pins[]`), names every site in
-  `files`, and ships in a wave of its own. The count is read off `git log`
-  from the rotation's cursor, never estimated; below it, shape stays out of
-  the queue.
+  bodies is filed once**: a single entry `per` this section that claims no
+  property (no `tests[]`, no `pins[]`), names every site in `files`, and
+  ships in a wave of its own. The count is read off `git log` over every
+  plan commit body, unbounded and never estimated, for the reason
+  `spec/harness.md`, *The phases* gives: it self-terminates, since a filed
+  family stops being re-noted, and a window is how a family re-noted once
+  per rotation never files; below it, shape stays out of the queue.
 - Needs a design decision → an **open question**, naming the section and the
   fork.
 
