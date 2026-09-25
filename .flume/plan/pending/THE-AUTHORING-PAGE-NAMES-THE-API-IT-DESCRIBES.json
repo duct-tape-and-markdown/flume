@@ -1,0 +1,28 @@
+{
+  "tag": "THE-AUTHORING-PAGE-NAMES-THE-API-IT-DESCRIBES",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the fourteen api members the page names nowhere, each where the page teaches the job it does"
+      },
+      {
+        "path": "tests/chain.test.ts",
+        "description": "the converse arm, read off `buildFlumeApi`'s own keys beside the members already pinned there"
+      }
+    ]
+  },
+  "summary": "`buildFlumeApi` ships 40 members and the authoring page names 14 of them nowhere: the page-to-surface direction is pinned, the converse is held by nothing",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "every member `buildFlumeApi` returns is named somewhere on the authoring page, judged off the real producer's own keys, so an api member cannot ship with no consumer surface naming it; the `api.`-prefixed spelling counts as named",
+  "tests": [
+    "docs/CHAIN-AUTHORING.md names every member buildFlumeApi ships"
+  ],
+  "notes": "Off note THE-MAX-PATH-FOLD-RIDES-THE-CHAIN-SURFACE item 2, which asked whether another consumer surface carries the same hole. Measured this drain: 40 keys, 14 named nowhere — `Baton`, four error classes incl. `TipClaimHeldError`, `gitPath`, `isPickableNow`, `matchesAny`, `parsePendingQueueLoose`, `priorAttemptsDir`, `readGatedQueue`, `readLatestVerdictsSync`, `slugify`, `stopFlagPath`. The page-to-surface direction is already pinned. The bar must admit `api.paths`, named only prefixed."
+}
