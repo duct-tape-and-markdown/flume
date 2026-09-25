@@ -1,0 +1,44 @@
+{
+  "tag": "THE-VERDICT-CARRIES-A-TIMING-PER-GATE-RUN-AND-MERGE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "a `timings` row type and field beside the gate list, the way `invocations[]` sits, through `buildTickVerdict` and the shape's own reader"
+      },
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "the afterCommit gate loop measures each run off the engine's own clock"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "each merge and each afterMerge gate run is measured, and the refused-rewrite producer carries the rows"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the singleton's own merge and gate runs are measured"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the completing producer carries the rows into the verdict"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the four-line stamping decorator beside the `log: consoleLogger` wiring — the log half, a seam the consumer wraps, no engine default and no export"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the rows both producers name, beside the verdict-facts cases"
+      }
+    ]
+  },
+  "summary": "Non-agent time is invisible on the verdict: duration appears only on `invocations[]`, so gate and merge cost is read by differencing timestamps",
+  "per": { "path": "spec/loop.md", "section": "The tick verdict — one facts artifact" },
+  "acceptance": "the verdict carries one timing row per gate run and per merge — the gate's name or the entry's tag and the milliseconds the engine's own clock measured — beside the gate list rather than on the chain-authored `GateResult`, from both producers; the authoring page states the stamping decorator the log seam already admits",
+  "tests": [
+    "the tick verdict carries a timing row per gate run and per merge",
+    "a wave's ledger-refusal verdict carries the same timing rows its completing verdict would"
+  ],
+  "notes": "Ruled off the verdict-timings record; both halves, as it permits. Verified this tick: no `timings` in `src/` or `harness/`, and `TickVerdict` names duration only on `invocations[]` (`src/tickVerdict.ts:653`). Two producers to reach — `src/Dispatcher.ts:1058`, `src/waveMerge.ts:784` — the seam THE-WAVES-TWO-VERDICT-PRODUCERS-NAME-ONE-FACT-SET already pins. Whether `flume verdict` renders the rows is unspecced and deliberately out of scope; `src/cliVerdict.ts:181` is where it would land."
+}

@@ -1,0 +1,26 @@
+{
+  "tag": "THE-RECORD-WINDOW-READS-THE-TICKS-OWN-TREE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/inboxWindow.ts",
+        "description": "the record render resolves its listing and its reads under the tick's own `cwd`, not the shared state root; the friction channel and the lane store stay on `flumeDir`, and the one-derivation paragraph names the two trees its legs read"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the render over a worktree whose base lacks a record the shared disk holds, beside the record-block cases"
+      }
+    ]
+  },
+  "summary": "The record window lists and reads from the primary checkout's state root, so a drain routes records its worktree's base does not hold and cannot `git rm`",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "Dispatch reads come from the tip, not the tree"
+  },
+  "acceptance": "the records the inbox window renders come from the tree the tick's commit descends from, so every record the drain is handed is one its commit can remove; the gitignored friction channel and the lane store keep reading the shared state root, which no commit carries",
+  "tests": [
+    "the inbox window renders no record its tick's own tree does not hold"
+  ],
+  "notes": "Observed 70bb7045 -> db75a751: ten records routed and not removable. Verified this tick: `renderRecords(ctx.flumeDir, ...)` (`harness/inboxWindow.ts:111`) reads the absolute shared state root, while `PlanSliceWindowsOptions.repoRoot` (`harness/sliceWindow.ts:116`) already declares the split — liveness off the repo root, \"a render reads the tick's own `cwd` instead\". `ctx.cwd` is on `WindowContext` (`:51`). Seams `harness/inboxWindow.ts` with THE-CLAIM-COVERS-THE-ENTRYS-RECORDS."
+}
