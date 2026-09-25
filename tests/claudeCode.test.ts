@@ -252,6 +252,48 @@ describe("claudeCode — win32 .cmd shim fallback", () => {
       expect(spawnMock).toHaveBeenCalledOnce();
     });
   });
+
+  // The retry hands its whole argv to a shell that re-parses it, and
+  // `--settings` is the one word of that argv the provider module composed
+  // rather than the chain: inline JSON whose quotes the re-parse eats. So the
+  // fallback that would reach a shim is refused here rather than taken over a
+  // value it would rewrite (`.claude/rules/engineering.md`, *Loud or
+  // nothing*) — the chain-authored `extraArgs` tradeoff is untouched, which
+  // the retry case above still drives.
+  it("claudeCode refuses the win32 shell retry when a declared budget put its settings JSON on the argv", async () => {
+    await withPlatform("win32", async () => {
+      const first = fakeChildProcess();
+      // A second child nobody should reach: without it the pre-fix tree's
+      // retry spawns `undefined` and reds on a TypeError inside an 'error'
+      // handler rather than on the spawn count this case is about.
+      const second = fakeChildProcess();
+      spawnMock
+        .mockReturnValueOnce(first as never)
+        .mockReturnValueOnce(second as never);
+
+      const result = claudeCode({
+        budget: { contextWindow: 200_000 },
+      }).invoke({ cwd: "C:\\wt", prompt: "p" });
+
+      // The argv the refusal is about, asserted before it fires: a build that
+      // stopped putting the flag there would leave the rejection below
+      // passing over an argv no shell could have damaged.
+      const [, args] = spawnMock.mock.calls[0]!;
+      const flag = (args as string[]).indexOf("--settings");
+      expect(flag).toBeGreaterThanOrEqual(0);
+      expect((args as string[])[flag + 1]).toContain('"hooks"');
+
+      const err = enoent();
+      first.emit("error", err);
+
+      expect(spawnMock).toHaveBeenCalledOnce();
+      const caught = await result.catch((e: unknown) => e);
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toContain("--settings");
+      // The spawn failure the caller is really looking at is still reachable.
+      expect((caught as Error).cause).toBe(err);
+    });
+  });
 });
 
 /**

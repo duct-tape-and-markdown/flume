@@ -90,8 +90,13 @@ export interface ClaudeCodeOptions {
  * so the direct child is never the tree.
  *
  * A win32 shim spawn failure (`src/spawnShim.ts`) retries once through the
- * shell: argv is fixed flags plus chain-authored `extraArgs`, the same
- * quoting tradeoff `shellGate` accepts.
+ * shell, which re-parses the argv it is handed. That argv is `-p`, the format
+ * and permission flags, `--strict-mcp-config`, `--model`, the `--settings`
+ * value a declared `budget` composes, and chain-authored `extraArgs`. Every
+ * word of it but `--settings` is either a bare flag or a value the chain
+ * chose, the same quoting tradeoff `shellGate` accepts; `--settings` is
+ * inline JSON this module composed, and the retry refuses rather than carry
+ * it through a shell (`shellRetryRefusal` below).
  */
 export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
   const binary = opts.binary ?? "claude";
@@ -196,6 +201,10 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
             // Detection is shared; the mechanics stay here — a streaming
             // proc is abandoned and re-run, not re-awaited.
             if (!useShell && isWin32ShimSpawnFailure(err)) {
+              if (budgetArgs.length > 0) {
+                reject(shellRetryRefusal(err));
+                return;
+              }
               abandoned = true;
               run(true);
               return;
@@ -233,6 +242,40 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
       });
     },
   };
+}
+
+/**
+ * The refusal that bounds the shell retry above: a shim fallback this
+ * invocation's argv cannot survive.
+ *
+ * `cmd /d /s /c` re-parses what it is handed, and the `--settings` value is a
+ * JSON object whose every quote is a fence that re-parse consumes — the
+ * provider would receive `{hooks:{...}}` and either reject it or read some
+ * other declaration out of it. Handing it over would arm a budget hook the
+ * chain never declared, so the failure is raised where it is detected rather
+ * than left for the provider to interpret
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * Refusal rather than quoting, because the fence this value needs is the one
+ * `cmd.exe` applies over a batch shim, and no host this package is tested on
+ * can measure it. `shellQuote` (`src/budgetHook.ts`) is written for the shell
+ * the provider runs a hook's command in, which is not that shell. A quoting
+ * rule nobody has run would be the confident wrong answer this refusal exists
+ * to refuse.
+ *
+ * The original spawn failure rides as `cause`: what the caller is looking at
+ * is still a shim that could not be spawned.
+ */
+function shellRetryRefusal(cause: unknown): Error {
+  return new Error(
+    "claude could not be spawned directly on win32, and the shell retry that " +
+      "would reach a .cmd shim cannot carry this invocation's argv: the " +
+      "--settings value a declared budget puts there is inline JSON, which a " +
+      "shell re-parse strips of every quote. Point the agent's binary option " +
+      "at something Node can spawn without a shell, or drop the budget " +
+      "declaration on this agent.",
+    { cause },
+  );
 }
 
 /**
