@@ -1,0 +1,32 @@
+{
+  "tag": "THE-PRODUCER-REFUSAL-MODES-HAVE-ONE-TABLE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/standingRefusal.ts",
+        "description": "the one table of the modes a producer's refusal covers, `render-refused` answering the cited enumeration, and the doc's walled-render sentence and its one-indexing-site claim read against both readers"
+      },
+      {
+        "path": "harness/handoff.ts",
+        "description": "the per-entry refusal reads that table rather than spelling a second one, its own paragraph pointing at it"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the window's open set, and the shut arm over a standing render-refused record"
+      },
+      {
+        "path": "tests/harnessHandoff.test.ts",
+        "description": "the render-refused case, whose claim of a wall only one of the two surfaces makes"
+      }
+    ]
+  },
+  "summary": "Two tables answer whether a mode is a producer's refusal and disagree on `render-refused`, so one record both wakes the drain with nothing to file and is handed back to build",
+  "per": { "path": "spec/harness.md", "section": "The default `handoff`" },
+  "acceptance": "the modes a producer's refusal covers are one table the inbox window and the per-entry refusal both read, with `render-refused` outside it as the section's own enumeration leaves it, so a standing render refusal neither opens a window the drain cannot file from nor reads as a wall on one surface and a retry on the other",
+  "tests": [
+    "a standing render-refused prior-attempt record leaves the inbox window shut",
+    "the inbox window and the per-entry build refusal agree on every prior-attempt mode"
+  ],
+  "notes": "Verified: `PLAN_RESOLVES_STANDING` (`harness/standingRefusal.ts:76`) says true, `RESOLVED_BY_A_PRODUCER` (`harness/handoff.ts:199`) false — one question, two answers, two opposite rationales. The cited enumeration names three and not this one, so false is the plain read; the wall is a spec edit, the human's. `tests/harnessWindows.test.ts:784` compares the window against a handoff that calls it, so the real pair went unpinned. Off note THE-PARK-IS-REFUSED-UNTIL-PLAN-RECONCILES-IT, item 1."
+}
