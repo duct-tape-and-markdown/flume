@@ -419,6 +419,67 @@ it("the lane block renders a lane whose latest completed run passed as green", (
   expect(calls().some((call) => call.includes("--log-failed"))).toBe(false);
 }, SPAWN_BUDGET_MS);
 
+/**
+ * The three cases below are one claim in three places: a lane block states
+ * the read behind its verdict, not the verdict alone (`spec/harness.md`, *CI
+ * lanes as a findings source*). Each reads the evidence back off the stub's
+ * own call log or its own fixture conclusion rather than spelling what the
+ * reader should have said, so the block is checked against what the forge was
+ * actually asked and actually answered (`.claude/rules/engineering.md`, *A
+ * seam gate reads what the real writer wrote*).
+ */
+it("a lane's block names the forge invocation the reader made for it", () => {
+  plantForge({
+    runs: [RUN],
+    jobs: [job("failure")],
+    log: `${framed("FAIL tests/paths.test.ts > a long path is refused by name")}\n`,
+  });
+
+  const rendered = laneBlock();
+
+  // Vacuity, and the subject: the invocation whose answer chose this verdict
+  // is the one the stub recorded, taken from the log rather than restated —
+  // a fixture spelling the argv here would pin the tester's idea of the call.
+  const jobsAsk = calls().find(
+    (call) => call.includes("--json") && call.includes("jobs"),
+  );
+  expect(jobsAsk).toBeDefined();
+  expect(rendered).toContain("FAILING");
+  expect(rendered).toContain(`\`${FORGE} ${jobsAsk?.join(" ")}\``);
+}, SPAWN_BUDGET_MS);
+
+it("a green lane's block names the raw conclusion the forge gave its declared job", () => {
+  plantForge({ runs: [{ ...RUN, conclusion: "success" }], jobs: [job("success")] });
+
+  const rendered = laneBlock();
+
+  // Vacuity: both questions were asked and answered, so the word below came
+  // off a job the forge named and not off an empty read.
+  expect(calls().length).toBe(2);
+  expect(rendered).toContain("GREEN");
+  expect(rendered).toContain("conclusion `success`");
+}, SPAWN_BUDGET_MS);
+
+it("a failing lane's block names the raw conclusion the forge gave its declared job", () => {
+  // `timed_out` rather than `failure`: the forge's word here is not the
+  // verdict's word, so a block echoing its own FAILING heading cannot pass
+  // this, and the conclusion asserted is the one the fixture's job carries.
+  const conclusion = "timed_out";
+  plantForge({
+    runs: [{ ...RUN, conclusion }],
+    jobs: [job(conclusion)],
+    log: `${framed("FAIL tests/loop.test.ts > a tick puts the rotation down")}\n`,
+  });
+
+  const rendered = laneBlock();
+
+  // Vacuity: the declared job really was reached and its log really fetched,
+  // so this is a block over a job the forge concluded and not over an unread.
+  expect(calls().some((call) => call.includes("--log-failed"))).toBe(true);
+  expect(rendered).toContain("FAILING");
+  expect(rendered).toContain(`conclusion \`${conclusion}\``);
+}, SPAWN_BUDGET_MS);
+
 it("the lane block renders a lane as unread when no completed run for the tip's branch exists", () => {
   plantForge({ runs: [] });
 

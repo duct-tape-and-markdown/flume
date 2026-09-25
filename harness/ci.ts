@@ -207,12 +207,43 @@ export interface CiRun {
   readonly at: string;
 }
 
-/** A lane the forge named a run for, with the run and the branch it keys to. */
-interface CiLaneRun {
-  readonly lane: CiLane;
+/**
+ * A run one lane's verdict was reached at, with the forge call that reached
+ * it and the word the forge answered the declared job with.
+ *
+ * **The call and its raw answer travel with the run, not beside it.** A
+ * verdict is this reader's word for what the forge said; the conclusion is
+ * what the forge actually said, and the invocation is which question it was
+ * answering. A block naming the verdict alone leaves a divergence between the
+ * two — a conclusion folded the wrong way, a run keyed to a branch or a
+ * status filter nobody expected — to be reconstructed from the forge a day
+ * later, when the run that caused it is no longer the latest
+ * (`spec/harness.md`, *CI lanes as a findings source*). Reported rather than
+ * left for a consumer to ask the forge again
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ */
+export interface CiRunEvidence {
   /** The branch the run is keyed to — the repository's, not the tick's. */
   readonly branch: string;
   readonly run: CiRun;
+  /**
+   * The forge invocation whose answer chose this verdict, exactly as this
+   * reader made it — one spelling with the failures that quote it
+   * ({@link invocation}), so the call a block names is the call that ran.
+   */
+  readonly asked: string;
+  /**
+   * The conclusion the forge gave the *declared job*, verbatim — never this
+   * reader's reading of it. `success`, `failure`, `timed_out`: the word is
+   * the forge's, and a verdict that disagrees with it says so on its face.
+   */
+  readonly conclusion: string;
+}
+
+/** A lane the forge named a run for, with the evidence behind its verdict. */
+interface CiLaneRun extends CiRunEvidence {
+  readonly lane: CiLane;
 }
 
 /**
@@ -250,8 +281,8 @@ export type CiLaneStatus =
     };
 
 /**
- * The run an unread reading degraded from, where the read named one before
- * coming up short.
+ * The run an unread reading degraded from, with the evidence behind the
+ * verdict it degraded from, where the read named one before coming up short.
  *
  * Present on exactly one unread: the lane whose declared job failed and whose
  * log the forge would not then hand over. That run is the one such a lane may
@@ -259,12 +290,7 @@ export type CiLaneStatus =
  * wake with no visible cause in the render (`spec/harness.md`, *CI lanes as a
  * findings source*).
  */
-interface CiUnreadOver {
-  /** The branch the run is keyed to — the repository's, not the tick's. */
-  readonly branch: string;
-  /** The run whose material this read could not fetch. */
-  readonly run: CiRun;
-}
+type CiUnreadOver = CiRunEvidence;
 
 /**
  * One lane's status with a failing job's material on it — what the slice's
@@ -384,7 +410,12 @@ export function ciLaneReading(
       kind: "unread",
       lane: status.lane,
       reason: readFailure(err),
-      over: { branch: status.branch, run: status.run },
+      over: {
+        branch: status.branch,
+        run: status.run,
+        asked: status.asked,
+        conclusion: status.conclusion,
+      },
     };
   }
 }
@@ -539,13 +570,8 @@ function readLaneStatus(
       url: latest.url,
       at: latest.createdAt,
     };
-    const { jobs } = forgeJson(RunJobsSchema, options.repoRoot, [
-      "run",
-      "view",
-      run.id,
-      "--json",
-      "jobs",
-    ]);
+    const jobsAsk = ["run", "view", run.id, "--json", "jobs"];
+    const { jobs } = forgeJson(RunJobsSchema, options.repoRoot, jobsAsk);
     const job = jobs.find((candidate) => candidate.name === lane.job);
     if (job === undefined) {
       return unread(
@@ -554,7 +580,18 @@ function readLaneStatus(
       );
     }
 
-    if (job.conclusion === PASSED) return { kind: "green", lane, branch, run };
+    // The call that chose this verdict and the word it answered with — the
+    // evidence every run-bearing arm below carries out of this read. An arm
+    // that never reached a job has neither, and its reason quotes the call it
+    // did make instead.
+    const at: CiRunEvidence = {
+      branch,
+      run,
+      asked: invocation(jobsAsk),
+      conclusion: job.conclusion,
+    };
+
+    if (job.conclusion === PASSED) return { kind: "green", lane, ...at };
     if (!FAILED.has(job.conclusion)) {
       return unread(
         `job ${lane.job} of run ${run.id} concluded ${job.conclusion || "nothing"}, ` +
@@ -562,7 +599,7 @@ function readLaneStatus(
       );
     }
 
-    return { kind: "failing", lane, branch, run, jobId: job.databaseId };
+    return { kind: "failing", lane, ...at, jobId: job.databaseId };
   } catch (err) {
     return unread(readFailure(err));
   }
@@ -579,6 +616,16 @@ function readLaneStatus(
 const forge = (cwd: string, args: readonly string[]): string =>
   captureSync(FORGE_CLI, args, { cwd });
 
+/**
+ * One forge call as it was made, in the single spelling this module quotes a
+ * call by — what a reading reports as its `asked` ({@link CiRunEvidence}),
+ * and what a refusal names when that same call fails. One home, so a block
+ * cannot name a call in one alphabet while the failure beside it names
+ * another (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+const invocation = (args: readonly string[]): string =>
+  `${FORGE_CLI} ${args.join(" ")}`;
+
 /** One invocation's stdout, decoded against the shape the reader asked for. */
 function forgeJson<T>(schema: z.ZodType<T>, cwd: string, args: readonly string[]): T {
   const raw = forge(cwd, args);
@@ -587,13 +634,13 @@ function forgeJson<T>(schema: z.ZodType<T>, cwd: string, args: readonly string[]
     parsed = JSON.parse(raw);
   } catch (err) {
     throw new Error(
-      `\`${FORGE_CLI} ${args.join(" ")}\` did not print JSON — ${detailOf(err)}`,
+      `\`${invocation(args)}\` did not print JSON — ${detailOf(err)}`,
     );
   }
   const verdict = schema.safeParse(parsed);
   if (!verdict.success) {
     throw new Error(
-      `\`${FORGE_CLI} ${args.join(" ")}\` printed a payload this reader does ` +
+      `\`${invocation(args)}\` printed a payload this reader does ` +
         `not recognize: ${verdict.error.issues
           .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
           .join("; ")}`,

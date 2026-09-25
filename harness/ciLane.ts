@@ -22,6 +22,7 @@ import {
   type CiLaneReading,
   type CiLaneStatus,
   type CiRun,
+  type CiRunEvidence,
 } from "./ci.js";
 import { INBOX_PHASE, type Declaration } from "./declaration.js";
 import { readPlanState, type PlanStateOf } from "./planState.js";
@@ -202,9 +203,31 @@ function woke(
   return !sameTitleSet(material.titles ?? [], stamp.titles);
 }
 
-/** One run as every block names it: its identity, its branch, and where it sits. */
-function renderRun(run: CiRun, branch: string): string {
-  return `run ${run.id} on branch ${branch} — ${run.title} (${run.at})\n${run.url}`;
+/**
+ * One run as every block names it: its identity, its branch, where it sits,
+ * and the read the verdict above was reached by — the forge call this tick
+ * made, and the word the forge answered the declared job with.
+ *
+ * **The evidence is the verdict's, so it is stated wherever the verdict is.**
+ * The verdict a block heads with is this package's word for what the forge
+ * said; a reader who has only that word has to ask the forge again to tell a
+ * misread conclusion from a stale run from a question asked with the wrong
+ * filters — and by then the run is no longer the latest, so the answer is
+ * gone (`spec/harness.md`, *CI lanes as a findings source*). Quoted off the
+ * reader's own reading (`ci.ts`, `CiRunEvidence`), never composed here from
+ * the lane's declared fields, which would be this render restating the call
+ * rather than reporting it (`.claude/rules/engineering.md`, *A fact the
+ * engine holds is reported, never rediscovered*).
+ */
+function renderRun(at: CiRunEvidence): string {
+  const { run } = at;
+  return (
+    `run ${run.id} on branch ${at.branch} — ${run.title} (${run.at})\n` +
+    `${run.url}\n` +
+    `Read by \`${at.asked}\`, which gave this lane's declared job the ` +
+    `conclusion \`${at.conclusion}\` — the forge's own word, beside the ` +
+    `verdict this block heads with.`
+  );
 }
 
 /**
@@ -282,7 +305,7 @@ function renderLane(reading: CiLaneReading, woke: boolean): string {
         ? []
         : [
             `The run this lane was read at, whose log this tick could not fetch:`,
-            renderRun(reading.over.run, reading.over.branch),
+            renderRun(reading.over),
           ]),
       `${reading.reason}.`,
       `Unread is not green: this tick knows nothing about the lane's state, ` +
@@ -309,12 +332,12 @@ function renderLane(reading: CiLaneReading, woke: boolean): string {
           ]),
     ].join("\n");
   }
-  const { run, branch } = reading;
+  const { run } = reading;
   if (reading.kind === "green") {
     return [
       `=== ${head}: GREEN ===`,
       wake,
-      renderRun(run, branch),
+      renderRun(reading),
       `Nothing to drain. A finding already filed under this lane's name that ` +
         `this run no longer reports closes in the commit body.`,
     ].join("\n");
@@ -322,7 +345,7 @@ function renderLane(reading: CiLaneReading, woke: boolean): string {
   return [
     `=== ${head}: FAILING ===`,
     wake,
-    renderRun(run, branch),
+    renderRun(reading),
     // Stamped either way. A red lane this tick was not woken by reports
     // nothing its stamp does not already carry, and advancing the stamp on
     // the tick that ran anyway is what keeps a red that persists across runs
