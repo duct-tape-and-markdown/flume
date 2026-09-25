@@ -10,7 +10,7 @@
  * propagate — is judged on the host the suite actually runs on.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +18,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   const { promisify } = await import("node:util");
   const mock = vi.fn();
+  const syncMock = vi.fn();
   // The real `execFile` carries a `promisify.custom` that resolves
   // `{ stdout, stderr }`. Without it the promisified mock would resolve a
   // bare stdout string and every caller's destructuring would read
@@ -32,14 +33,17 @@ vi.mock("node:child_process", async (importOriginal) => {
         );
       }),
   });
-  return { ...actual, execFile: mock };
+  return { ...actual, execFile: mock, execFileSync: syncMock };
 });
 
 import { shellGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
+import { shellArgs } from "../harness/declaredShell.ts";
+import { captureSync } from "../harness/exec.ts";
 import {
   execFileWithShimRetry,
   isWin32ShimSpawnFailure,
+  wordShimRetryWouldRewrite,
 } from "../src/spawnShim.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
@@ -49,6 +53,7 @@ import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 const execFileMock = vi.mocked(execFile);
+const execFileSyncMock = vi.mocked(execFileSync);
 
 type ExecCb = (err: Error | null, stdout: string, stderr: string) => void;
 
@@ -102,8 +107,20 @@ async function withPlatform(
   }
 }
 
+/** The same swap for a case whose subject is synchronous. */
+function withPlatformSync(platform: NodeJS.Platform, fn: () => void): void {
+  const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: platform });
+  try {
+    fn();
+  } finally {
+    Object.defineProperty(process, "platform", original);
+  }
+}
+
 beforeEach(() => {
   execFileMock.mockReset();
+  execFileSyncMock.mockReset();
 });
 
 describe("spawnShim — the shared retry decision", () => {
@@ -164,6 +181,36 @@ describe("spawnShim — the shared retry decision", () => {
     });
   }, SPAWN_BUDGET_MS);
 
+  it("the argv verdict names the first word cmd.exe would rewrite, and passes an argv of bare flags", () => {
+    // Each arm is a way the re-parse damages a word: the split, the quote it
+    // eats, a metacharacter it acts on, an expansion it performs, and the
+    // empty word the join drops entirely.
+    expect(wordShimRetryWouldRewrite(["bash", "-c", "pnpm test"])).toBe(
+      "pnpm test",
+    );
+    expect(wordShimRetryWouldRewrite(["claude", "--settings", '{"hooks":{}}'])).toBe(
+      '{"hooks":{}}',
+    );
+    expect(wordShimRetryWouldRewrite(["git", "log", "--format=%H%x00%s"])).toBe(
+      "--format=%H%x00%s",
+    );
+    expect(wordShimRetryWouldRewrite(["sh", "-c", "a&b"])).toBe("a&b");
+    expect(wordShimRetryWouldRewrite(["pnpm", ""])).toBe("");
+    // The command is a word of that line too, so a binary whose path splits
+    // is refused on the same terms as an argument that does.
+    expect(
+      wordShimRetryWouldRewrite(["C:\\Program Files\\pnpm.cmd", "install"]),
+    ).toBe("C:\\Program Files\\pnpm.cmd");
+    // The argv the shipped retries actually carry survives, so the refusal
+    // above is a verdict on the word rather than on every retry.
+    expect(
+      wordShimRetryWouldRewrite(["pnpm", "install", "--frozen-lockfile"]),
+    ).toBeUndefined();
+    expect(
+      wordShimRetryWouldRewrite(["C:\\wt\\pnpm.cmd", "tsc", "--noEmit"]),
+    ).toBeUndefined();
+  });
+
   it("the predicate reads the platform at call time, so one error answers differently per host", async () => {
     const err = errno("ENOENT");
     await withPlatform("win32", async () => {
@@ -176,6 +223,66 @@ describe("spawnShim — the shared retry decision", () => {
       expect(isWin32ShimSpawnFailure(errno("EACCES"))).toBe(false);
       expect(isWin32ShimSpawnFailure(undefined)).toBe(false);
     });
+  });
+});
+
+/**
+ * The retry's refusal, driven through the argv a declared shell gate really
+ * hands it: `shellArgs` (`harness/declaredShell.ts`) puts a consumer's whole
+ * command line on the argv as one word, and a shell re-parse would hand the
+ * shim some other command rather than that one
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+it("execFileWithShimRetry refuses the win32 shim retry when an argv word would not survive the shell's re-parse", async () => {
+  await withPlatform("win32", async () => {
+    // The shell attempt resolves if it is made, so a single call below is the
+    // refusal deciding rather than a fallback that was never there.
+    enoentUntilShell("shim-ok");
+
+    const line = "pnpm vitest run --reporter dot";
+    const caught = await execFileWithShimRetry("bash", shellArgs(line), {
+      cwd: "C:\\wt",
+    }).catch((err: unknown) => err);
+
+    expect(execFileMock).toHaveBeenCalledOnce();
+    expect(optsOf(0).shell).toBeUndefined();
+    expect(caught).toBeInstanceOf(Error);
+    // Named, so the consumer reads which of its words it must respell.
+    expect((caught as Error).message).toContain(line);
+    expect((caught as Error).message).toContain("bash");
+    // The spawn failure the caller is really looking at stays reachable.
+    expect((caught as Error).cause).toMatchObject({ code: "ENOENT" });
+  });
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The same refusal on the synchronous leg (`captureSync`, `harness/exec.ts`),
+ * whose callers spawn a declared shell with a command line and git with a
+ * `--format` string — two argvs `cmd.exe` rewrites rather than forwards.
+ */
+it("captureSync refuses the win32 shim retry over an argv word cmd.exe would rewrite", () => {
+  withPlatformSync("win32", () => {
+    execFileSyncMock.mockImplementation(((
+      _cmd: string,
+      _args: string[],
+      opts: { shell?: boolean },
+    ) => {
+      if (opts.shell) return "shim-ok";
+      throw errno("ENOENT");
+    }) as never);
+
+    expect(() =>
+      captureSync("git", ["log", "--format=%H"], { cwd: "C:\\wt" }),
+    ).toThrow(/--format=%H/);
+    expect(execFileSyncMock).toHaveBeenCalledOnce();
+
+    // An argv every word of which survives still retries, so the refusal is
+    // not the sync leg refusing the fallback outright.
+    execFileSyncMock.mockClear();
+    expect(captureSync("git", ["rev-parse", "HEAD"], { cwd: "C:\\wt" })).toBe(
+      "shim-ok",
+    );
+    expect(execFileSyncMock).toHaveBeenCalledTimes(2);
   });
 });
 

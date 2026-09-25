@@ -19,7 +19,10 @@
  * HEAD from a broken git by git's own exit status, and the lane reader tells
  * a forge CLI that is absent from one that refused by its errno
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). Wrapping the
- * failure would be this module deciding a meaning it was never given.
+ * failure would be this module deciding a meaning it was never given. The one
+ * error built here is the shim retry's refusal, which is not a reading of a
+ * child's failure but a spawn this module declined to make, and it carries
+ * the platform's error as its `cause` either way.
  */
 
 import {
@@ -27,7 +30,11 @@ import {
   type ExecFileSyncOptionsWithStringEncoding,
 } from "node:child_process";
 
-import { isWin32ShimSpawnFailure } from "../src/spawnShim.js";
+import {
+  isWin32ShimSpawnFailure,
+  shimRetryRefusal,
+  wordShimRetryWouldRewrite,
+} from "../src/spawnShim.js";
 
 /**
  * How much of one child's stdout is readable: a window-sized diff, a failing
@@ -56,11 +63,16 @@ interface SyncSpawn {
  * The win32 `.cmd`-shim retry rides every spawn here, under the engine's own
  * detection of it (`src/spawnShim.ts`): the direct spawn first, so arguments
  * keep exact quoting, then one shell retry on the single failure a shell can
- * still turn green. A caller spawning a real executable pays nothing for it
- * — the predicate is false everywhere but a win32 ENOENT — and the
- * alternative is each caller deciding for itself whether its binary is ever
- * shimmed, which is how the same decision came to be spelled two different
- * ways in this package.
+ * still turn green — and a refusal instead, naming the word, where that
+ * retry's re-parse would rewrite the argv it was handed
+ * (`wordShimRetryWouldRewrite`, `src/spawnShim.ts`). The callers here spawn
+ * git with a format string and a shell with a whole command line, so the
+ * refusal is the difference between a failed spawn and a command nobody
+ * wrote. A caller spawning a real executable pays nothing for either — the
+ * predicate is false everywhere but a win32 ENOENT — and the alternative is
+ * each caller deciding for itself whether its binary is ever shimmed, which
+ * is how the same decision came to be spelled two different ways in this
+ * package.
  */
 export function captureSync(
   command: string,
@@ -78,6 +90,8 @@ export function captureSync(
     return execFileSync(command, args, options);
   } catch (err) {
     if (!isWin32ShimSpawnFailure(err)) throw err;
+    const rewritten = wordShimRetryWouldRewrite([command, ...args]);
+    if (rewritten !== undefined) throw shimRetryRefusal(command, rewritten, err);
     return execFileSync(command, args, { ...options, shell: true });
   }
 }

@@ -253,13 +253,13 @@ describe("claudeCode — win32 .cmd shim fallback", () => {
     });
   });
 
-  // The retry hands its whole argv to a shell that re-parses it, and
-  // `--settings` is the one word of that argv the provider module composed
-  // rather than the chain: inline JSON whose quotes the re-parse eats. So the
-  // fallback that would reach a shim is refused here rather than taken over a
-  // value it would rewrite (`.claude/rules/engineering.md`, *Loud or
-  // nothing*) — the chain-authored `extraArgs` tradeoff is untouched, which
-  // the retry case above still drives.
+  // The retry hands its whole argv to a shell that re-parses it, and whether
+  // this invocation's argv survives that is the shared predicate's verdict
+  // (`wordShimRetryWouldRewrite`, `src/spawnShim.ts`). A declared budget puts
+  // inline JSON on the argv, whose quotes the re-parse eats, so the fallback
+  // that would reach a shim is refused rather than taken over a value it
+  // would rewrite (`.claude/rules/engineering.md`, *Loud or nothing*) — an
+  // argv of bare flags still retries, which the case above drives.
   it("claudeCode refuses the win32 shell retry when a declared budget put its settings JSON on the argv", async () => {
     await withPlatform("win32", async () => {
       const first = fakeChildProcess();
@@ -281,7 +281,8 @@ describe("claudeCode — win32 .cmd shim fallback", () => {
       const [, args] = spawnMock.mock.calls[0]!;
       const flag = (args as string[]).indexOf("--settings");
       expect(flag).toBeGreaterThanOrEqual(0);
-      expect((args as string[])[flag + 1]).toContain('"hooks"');
+      const settings = (args as string[])[flag + 1]!;
+      expect(settings).toContain('"hooks"');
 
       const err = enoent();
       first.emit("error", err);
@@ -289,7 +290,9 @@ describe("claudeCode — win32 .cmd shim fallback", () => {
       expect(spawnMock).toHaveBeenCalledOnce();
       const caught = await result.catch((e: unknown) => e);
       expect(caught).toBeInstanceOf(Error);
-      expect((caught as Error).message).toContain("--settings");
+      // The refusal names the word it would not carry, which here is the
+      // settings JSON itself rather than the flag in front of it.
+      expect((caught as Error).message).toContain(settings);
       // The spawn failure the caller is really looking at is still reachable.
       expect((caught as Error).cause).toBe(err);
     });

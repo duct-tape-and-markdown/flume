@@ -69,8 +69,13 @@ export function shellGate(opts: ShellGateOptions): Gate {
     async run(ctx: GateContext): Promise<GateResult> {
       try {
         // A gate's cmd is whatever binary the chain named, so the spawn
-        // takes the shared shim retry (`src/spawnShim.ts`) — gate args are
-        // chain-authored flags, which is the quoting tradeoff that buys.
+        // takes the shared shim retry (`src/spawnShim.ts`). What that retry
+        // does with these args is not a tradeoff this site can accept on the
+        // chain's behalf — a gate whose args are a whole command line under
+        // a declared shell is as ordinary here as a pair of bare flags — so
+        // the retry refuses an argv it would rewrite, naming the word
+        // (`wordShimRetryWouldRewrite`, `src/spawnShim.ts`), and the gate
+        // reports that refusal as its failure.
         const { stdout, stderr } = await execFileWithShimRetry(
           opts.cmd,
           opts.args,
