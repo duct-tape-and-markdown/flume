@@ -39,11 +39,12 @@ import type { Chain } from "./Phase.js";
 /**
  * What the channel's refusal calls the thing it could not read — the noun
  * phrase `isDirectoryOrAbsentUnder` (`src/fsProbe.ts`) names an obstructed
- * ancestor with. One spelling for every caller of the listing, so the primary
- * dir, a worktree mirror and the count all tell an operator the same thing
- * about the same rung.
+ * ancestor with. One spelling for every read of the channel, so the primary
+ * dir, a worktree mirror, the count, and the `friction <name>` read verb
+ * (`src/cli.ts`), which proves the same descent for its own absent arm, all
+ * tell an operator the same thing about the same rung.
  */
-const FRICTION_SUBJECT = "friction channel";
+export const FRICTION_SUBJECT = "friction channel";
 
 /**
  * Validate a declared `Chain.friction`: must be relative and

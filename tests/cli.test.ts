@@ -4536,6 +4536,34 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
     }
   }, SPAWN_BUDGET_MS);
 
+  it("flume friction refuses a named note whose declared channel is present and is not a directory", async () => {
+    const repo = await makeScratchRepo("flume-cli-repo-", "main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
+      // A plain file where the declared channel should be — the structural
+      // denial that denies on every host (`.claude/rules/platform-facts.md`,
+      // *chmod denies nothing on win32*), and the one fixture that separates
+      // the read's errno from a proven absence: posix answers the note's own
+      // read `ENOTDIR` and win32 answers it `ENOENT` (*win32 reports a path
+      // through a non-directory as not found*), so only the descent from the
+      // state root down to the channel refuses alike on both lanes. This is
+      // the converse case that page sanctions: the reader under test carries
+      // the descent, so obstructing the channel *is* the arm, not an
+      // un-armed parent denial.
+      await mkdir(join(repo.dir, ".flume"), { recursive: true });
+      await writeFile(join(repo.dir, ".flume", "friction"), "not a dir\n");
+
+      const r = await runCli(repo.dir, ["friction", "note.md"]);
+      expect(r.code).toBe(EX_IOERR);
+      // The refusal names the rung an operator has to go fix, and never the
+      // absent reading the bare errno would have produced on win32.
+      expect(r.out).toContain("is present but is not a directory");
+      expect(r.out).not.toContain("no note named");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
   it("exits EX_IOERR naming the error on a non-ENOENT bare-list readdir failure, instead of listing empty", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {

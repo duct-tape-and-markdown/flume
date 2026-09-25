@@ -70,8 +70,12 @@ import {
   writeTickVerdict,
   type TickVerdict,
 } from "./tickVerdict.js";
-import { frictionCountLine, frictionNotes } from "./friction.js";
-import { existsLoudUnder } from "./fsProbe.js";
+import {
+  FRICTION_SUBJECT,
+  frictionCountLine,
+  frictionNotes,
+} from "./friction.js";
+import { existsLoudUnder, isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
@@ -798,7 +802,24 @@ async function main(): Promise<number> {
       let bytes: Buffer | undefined;
       if (isNote) {
         try {
-          bytes = readFileSync(namespacedJoin(frictionDir, name));
+          // The `no note named` arm below is a **proven** absence, never one
+          // read off this read's errno: `isDirectoryOrAbsentUnder`
+          // (src/fsProbe.ts) descends from the state root this verb resolved
+          // down to the declared channel — the same descent, under the same
+          // subject wording, that the bare listing takes inside
+          // `frictionNotes` (src/friction.ts) — so a channel a plain file
+          // stands at refuses on every host. One stat of the note cannot say
+          // that: win32 answers a path through a non-directory `ENOENT`
+          // (`.claude/rules/platform-facts.md`, *win32 reports a path through
+          // a non-directory as not found*), so keying the silent arm on the
+          // errno reports the note absent over an unresolved channel there
+          // while posix refuses on the same tree
+          // (`.claude/rules/engineering.md`, "Loud or nothing"). The descent's
+          // own refusal carries no errno and so lands in the catch below; a
+          // channel that is genuinely absent is the listing's empty answer,
+          // and naming a note in it reads as no such note.
+          if (isDirectoryOrAbsentUnder(FRICTION_SUBJECT, flumeDir, frictionDir))
+            bytes = readFileSync(namespacedJoin(frictionDir, name));
         } catch (err) {
           if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
             console.error(
