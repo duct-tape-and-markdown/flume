@@ -1,0 +1,41 @@
+{
+  "tag": "THE-SLICE-PROMPTS-NAME-THE-BAND-THEY-FILE-AT",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "edit": [
+      {
+        "path": "harness/prompts.ts",
+        "description": "the band each slice files at, one table, rendered as a plan-slice arg beside `PLAN_STATE_SHAPE` — the shape `putDownStatement(phase)` already takes"
+      },
+      {
+        "path": "harness/prompts/plan-inbox.md",
+        "description": "the slice's own band where it routes a record, and the drain's re-rank rule"
+      },
+      {
+        "path": "harness/prompts/plan-derive.md",
+        "description": "the slice's own band where it files an entry"
+      },
+      {
+        "path": "harness/prompts/plan-sweep.md",
+        "description": "the slice's own band where it files a finding"
+      },
+      {
+        "path": "harness/prompts/plan-discipline.md",
+        "description": "the rank-is-provenance rule the three slices share, `blockedBy` inheriting none"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "each slice's rendered band, beside the `PLAN_SLICES` spans"
+      }
+    ]
+  },
+  "summary": "No producer the package ships names a `priority`, so every entry a slice files takes the engine's default 0 and the queue is served alphabetically whatever the work is",
+  "per": { "path": "spec/harness.md", "section": "The phases" },
+  "acceptance": "each plan slice's rendered prompt names the band its own filed entries carry, off one table the package holds rather than a number spelled per prompt, and the discipline the slices share states that a rank is provenance — `blockedBy` inherits none, and only the drain re-ranks, on a ruling",
+  "tests": [
+    "each plan slice's rendered prompt names the priority band that slice files at",
+    "the inbox slice's rendered prompt names the report band and the build-note band"
+  ],
+  "notes": "Derived from 63a6b705. Verified: no `priority` in `harness/` outside two comments about declared phase order, and none in any prompt. `putDownStatement(phase)` (`harness/prompts.ts:243`) is the per-phase shared-arg idiom; `planSlicePromptArgs` (`:333`) is where a slice-only value belongs. Seams `harness/prompts.ts` and the three slice prompts with THE-THREE-PROMPTS-SHARE-ONE-RENDER-OF-EACH-SPAN."
+}

@@ -1,0 +1,41 @@
+{
+  "tag": "THE-ENTRIES-A-SLICE-ADDS-CARRY-ITS-OWN-BAND",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["THE-SLICE-PROMPTS-NAME-THE-BAND-THEY-FILE-AT"]
+  },
+  "priority": 10,
+  "files": {
+    "edit": [
+      {
+        "path": "harness/gates.ts",
+        "description": "the band the adding slice declares, read against the `priority` of every entry file this span added, beside the `per` gate that already reads the gated queue"
+      },
+      {
+        "path": "harness/chain.ts",
+        "description": "the gate joins the discipline set each plan slice runs"
+      },
+      {
+        "path": "harness/prompts.ts",
+        "description": "the band table the render and the gate share, wherever it ends up homed"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the refusal, the untouched amendment and the spelled empty case"
+      },
+      {
+        "path": "tests/harnessChain.test.ts",
+        "description": "the discipline gate roster every phase leads with"
+      }
+    ]
+  },
+  "summary": "A rank set by provenance is held by prompt prose alone, so an entry filed at the default is served behind every sweep finding and no drain may re-rank it without a ruling",
+  "per": { "path": "spec/harness.md", "section": "The phases" },
+  "acceptance": "a plan commit that added an entry file whose `priority` is outside the adding slice's declared band is refused naming the tag, the rank and the band; an entry the commit only amended is not read; and a commit that added none says so as a spelled skip",
+  "tests": [
+    "the band gate refuses a plan commit that added an entry outside the filing slice's band",
+    "the band gate passes a plan commit that amended an entry it did not add",
+    "the band gate skips a plan commit that added no entry"
+  ],
+  "notes": "The rung above the prose its parent files (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*); the gate reads entry JSON, never prompt text, so that section's harness-prose carve-out does not reach it. Added is decidable at the seam the `per` gate already uses: `readGatedQueue` (`harness/gates.ts:216`) for the bytes, `ctx.baseSha` for absent-means-added. The sweep's band is the engine default, so only derive and inbox can red."
+}

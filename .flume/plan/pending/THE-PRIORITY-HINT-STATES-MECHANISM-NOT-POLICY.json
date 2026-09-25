@@ -1,0 +1,27 @@
+{
+  "tag": "THE-PRIORITY-HINT-STATES-MECHANISM-NOT-POLICY",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "edit": [
+      {
+        "path": "src/PendingSchema.ts",
+        "description": "the `priority` hint states the ordering the engine consumes and drops the clause telling a producer when to set the field"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "description": "the hint line, through the reader already scoped to one field, and the block's own snapshot"
+      }
+    ]
+  },
+  "summary": "The engine's rendered `priority` hint tells a producer to omit the field, which the package now contradicts in the same prompt — and `spec/pending.md` states no such policy",
+  "per": {
+    "path": ".claude/rules/engine-boundary.md",
+    "section": "Surface, not prescription"
+  },
+  "acceptance": "the rendered schema's `priority` line states the default and the order the engine consumes, and says nothing about when a producer sets it, so a chain whose own discipline ranks every entry is not told otherwise by the engine in the same render",
+  "tests": [
+    "the rendered schema's priority hint names the ordering it decides and no rule about when to set it"
+  ],
+  "notes": "Fallout of 63a6b705: the package bands `priority` by provenance and files every entry with one, while `renderSchemaForPrompt` (`src/PendingSchema.ts:807`) reaches the same prompt saying \"Omit unless this entry must be carried ahead of its siblings\". Verified: `spec/pending.md`, *The entry core* states default and order alone. Two sites — the hint and the inline snapshot at `tests/PendingSchema.test.ts:1096`; `hintLineFor` (`:1135`) is the existing per-field reader."
+}
