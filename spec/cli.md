@@ -241,7 +241,14 @@ its paths from that one value: run from any subdirectory, or from inside
 observational verb was the sharp edge — it printed a correct-looking answer
 that is a lie about where it looked.
 
-Nested bays are not disambiguated: the walk picks the nearest, same as git.
+The walk picks the nearest, same as git — and a nearest that sits below the
+root git names paths from is refused (`74`) naming both roots, before the
+first path is composed against it, because every path the run hands git is
+named from the top-level and a state root composed against any other root
+loses that prefix on its fence globs, its queue pathspec, and the root a hook
+reads. A bay kept under a subdirectory is reached by running from the
+top-level with `FLUME_DIR` naming it, which resolves the state root's
+relative path in git's own alphabet.
 
 ## Direct invocation is detected by realpath
 
