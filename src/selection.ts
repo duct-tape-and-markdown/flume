@@ -102,7 +102,7 @@ function isPickable(
  * alone, where code-unit order *is* ascending, and a locale-sensitive collator
  * would make the queue's order a property of the machine reading it.
  */
-function byQueueOrder(a: PendingEntry, b: PendingEntry): number {
+export function byQueueOrder(a: PendingEntry, b: PendingEntry): number {
   if (a.priority !== b.priority) return b.priority - a.priority;
   return a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0;
 }

@@ -6,12 +6,15 @@
  * of all three.
  *
  * The wave is slot-driven, not batch-driven: it opens `maxParallel` slots on
- * the queue's pickable head, and each slot whose span has merged pulls the
- * next pickable entry disjoint from whatever is still in flight
- * (`nextDisjointPick`, `src/selection.ts`) and provisions it alone, from
- * trunk as it then stands. It ends when nothing is pickable — never with its
- * first batch (`spec/worktrees.md`, *Fanout and worktrees — provisioning,
- * isolation, teardown*).
+ * the queue's pickable head, and each slot whose span has merged re-reads the
+ * queue and pulls the highest-ranked entry it has not attempted that is
+ * disjoint from whatever is still in flight (`nextDisjointPick`,
+ * `src/selection.ts`), provisioning it alone from trunk as it then stands. It
+ * ends when nothing it has not attempted is pickable, or when the run is torn
+ * down — the dispatcher's stop signal, or the operator's stop flag read off
+ * disk at the same freed slot (`spec/worktrees.md`, *Fanout and worktrees —
+ * provisioning, isolation, teardown*; `spec/loop.md`, *Graceful stop — the
+ * stop flag*).
  *
  * The stage in the middle that carries each span onto trunk is its own
  * module (`src/waveMerge.ts`), driven from here once per finished attempt —
@@ -28,7 +31,9 @@
 
 import type { Agent } from "./Agent.js";
 import { bound } from "./bounds.js";
+import { existsLoud } from "./fsProbe.js";
 import * as git from "./git.js";
+import { namespacedJoin, stopFlagPath } from "./paths.js";
 import type { StakedPidClaim } from "./pidClaim.js";
 import {
   readPendingForDecision,
@@ -46,7 +51,7 @@ import type {
 } from "./Phase.js";
 import type { PriorAttempt } from "./Prompt.js";
 import { priorAttemptRef } from "./priorAttempts.js";
-import { blamedOn, nextDisjointPick } from "./selection.js";
+import { blamedOn, byQueueOrder, nextDisjointPick } from "./selection.js";
 import { consultShouldRun, runAttempt } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import {
@@ -249,8 +254,42 @@ export async function runFanout(
   // (`nextDisjointPick`, `src/selection.ts`) — not the batch, which says
   // nothing about which siblings are still open at the moment a slot frees.
   const inFlight = new Map<string, PendingEntry>();
-  // Every pickable entry no slot has pulled yet, in the queue's own order.
-  const remaining: PendingEntry[] = [...pickable];
+  // What the next slot picks from: the queue's pickable set in its own order,
+  // as of the last read. The wave opens on the selection above and a freed
+  // slot re-reads (`refillRead` below) rather than splicing this one down, so
+  // an entry filed or re-ranked while the wave ran is pulled at its live rank
+  // (`spec/worktrees.md`, *Fanout and worktrees — provisioning, isolation,
+  // teardown*).
+  let candidates: PendingEntry[] = [...pickable];
+  // Every entry a slot has pulled, whatever became of it — shipped, reverted,
+  // no-commit, declined, provisioning-failed, stake-lost. A re-read offers a
+  // no-commit entry again, and a wave that pulled it twice would spend a
+  // second agent on the attempt the first one already made, so the skip is
+  // stated here rather than left to this wave's own claims, which happen to
+  // cover the same set only while the claims directory is readable.
+  const attempted = new Set<string>();
+  // What `ctx.pickable`/`ctx.claimed` say for the entry a slot is about to
+  // run: the facts the selection that pulled it was taken over, not the
+  // wave's opening ones — an entry filed mid-wave is absent from those
+  // entirely (`spec/chain.md`, *What a hook receives*).
+  let livePickable: readonly PendingEntry[] = pickable;
+  let liveClaimedTags: readonly string[] = claimedTags;
+  // The operator's graceful stop, as the last refill read it off disk
+  // (`spec/loop.md`, *Graceful stop — the stop flag*). The supervisor reads
+  // the same flag through the same probe at its own child boundary; a wave
+  // long enough to outlast many merges would otherwise pull new entries for
+  // as long as the queue offered them, and the flag would take effect only
+  // once the wave it was written during had drained the queue it was written
+  // to stop. Read only where the run was told it is supervised — a bare
+  // `flume tick` is the operator's own explicit action and ignores the flag,
+  // which is the one command an operator has for testing a staged fix before
+  // acking the stop.
+  let stopFlagSeen = false;
+  // A refill read that did not resolve — an unparseable queue this phase
+  // cannot rewrite. The entries in flight settle and the wave leaves with
+  // them; it pulls nothing more over a queue it could not read
+  // (`.claude/rules/engineering.md`, *Loud or nothing*).
+  let refillWalled = false;
   // One promise per slot this wave opened, appended to as freed slots refill.
   const slots: Promise<void>[] = [];
   // The first throw out of a slot's own leg — the attempt machinery, not the
@@ -280,6 +319,7 @@ export async function runFanout(
   const runSlot = async (
     entry: PendingEntry,
     baseRef: () => Promise<string>,
+    offered: { pickable: readonly PendingEntry[]; claimed: readonly string[] },
   ): Promise<void> => {
     // Staked *before* the worktree exists, which is the whole point of the
     // ordering: from here until this wave lets go, the entry is this tick's
@@ -360,8 +400,8 @@ export async function runFanout(
       agent,
       chain,
       extraEnv,
-      pickable,
-      claimedTags,
+      offered.pickable,
+      offered.claimed,
       priorAttempts,
     );
     perEntry.push(r);
@@ -379,45 +419,110 @@ export async function runFanout(
   };
 
   /**
+   * Whether this wave still pulls. The teardown signal and the operator's
+   * stop flag say the run is ending; the two error holders and a refill read
+   * that did not resolve say the wave has hit a wall. Either way the entries
+   * in flight settle and the wave leaves with them.
+   */
+  const wavePulls = (): boolean =>
+    !leg.attemptCtx.stopSignal?.aborted &&
+    !stopFlagSeen &&
+    !refillWalled &&
+    mergeError === undefined &&
+    slotError === undefined;
+
+  /**
+   * What a freed slot pulls against, read at the moment it frees: the queue
+   * as it then stands, selected under this tick's own holds against the tip
+   * and the records as they then stand, minus everything this wave has
+   * already attempted. The stop flag is read here too, off the same disk and
+   * through the same loud probe the supervisor spends at its child boundary
+   * (`existsLoud`, `src/fsProbe.ts`).
+   *
+   * Asynchronous, so it runs in the settling slot's own continuation rather
+   * than inside {@link fillSlots}, which must stay synchronous.
+   *
+   * The width and the partition's ignore list are the wave's for its whole
+   * life (`BatchSelection.maxParallel`, `src/selection.ts`), so the
+   * re-selection is read for its pickable set alone.
+   */
+  const refillRead = async (): Promise<void> => {
+    if (leg.supervisedRun) {
+      stopFlagSeen ||= existsLoud(namespacedJoin(stopFlagPath(leg.flumeDir)));
+    }
+    if (!wavePulls()) return;
+    const { pending: live, queueParseFailure: broken } =
+      await readPendingForDecision(leg, phase);
+    if (broken) {
+      refillWalled = true;
+      leg.log.warn(
+        `[flume] ${phase.name}: the queue did not parse mid-wave; this wave pulls nothing further and the entries in flight finish`,
+      );
+      return;
+    }
+    const selection = leg.selection(
+      chain,
+      live,
+      isForkResolved,
+      {
+        priorAttempts: await leg.attempts.readAll(),
+        headSha: await git.revParse(repoRoot),
+      },
+      await leg.claims.readLive(),
+    );
+    candidates = selection.pickable.filter((e) => !attempted.has(e.tag));
+    livePickable = selection.pickable;
+    liveClaimedTags = selection.claimedTags;
+  };
+
+  /**
    * Open every slot this moment leaves room for — the wave's initial fill on
    * the first call, and one freed slot's refill on each call after it.
    *
    * Synchronous by construction: it is called from a settling slot's own
    * continuation, and an `await` inside it would let two calls interleave over
-   * `inFlight` and open the same slot twice. The tip a refill branches from is
-   * therefore read inside the slot's serialized provisioning, not here.
+   * `inFlight` and open the same slot twice. The queue re-read a refill picks
+   * from ({@link refillRead}) and the tip it branches from are therefore taken
+   * outside it — the first in that continuation, the second inside the slot's
+   * serialized provisioning.
    */
   const fillSlots = (): void => {
-    // A run being torn down provisions nothing further, and neither does a
-    // wave that has already hit a wall: the entries still in flight settle
-    // and the wave leaves with them.
-    if (leg.attemptCtx.stopSignal?.aborted) return;
-    if (mergeError !== undefined || slotError !== undefined) return;
+    if (!wavePulls()) return;
     const baseRef: () => Promise<string> = initialFill
       ? () => Promise.resolve(preHead)
       : () => git.revParse(repoRoot);
     initialFill = false;
     while (inFlight.size < maxParallel) {
       const entry = nextDisjointPick({
-        candidates: remaining,
+        candidates,
         inFlight: [...inFlight.values()],
         ignore: partitionIgnore,
       });
       if (entry === undefined) return;
-      remaining.splice(remaining.indexOf(entry), 1);
+      candidates = candidates.filter((e) => e.tag !== entry.tag);
+      attempted.add(entry.tag);
       inFlight.set(entry.tag, entry);
+      const offered = { pickable: livePickable, claimed: liveClaimedTags };
       slots.push(
         (async () => {
           try {
-            await runSlot(entry, baseRef);
+            await runSlot(entry, baseRef, offered);
           } catch (err) {
             slotError ??= err;
           } finally {
             // The slot is free from here, so the pick below sees this entry
             // out of the in-flight set it must be disjoint from.
             inFlight.delete(entry.tag);
-            fillSlots();
           }
+          // Outside the block above and guarded on its own: a refill read is
+          // disk, and a throw from it is this wave's wall like any other —
+          // never an unhandled rejection out of a slot's tail.
+          try {
+            await refillRead();
+          } catch (err) {
+            slotError ??= err;
+          }
+          fillSlots();
         })(),
       );
     }
@@ -518,13 +623,11 @@ export async function runFanout(
   // The queue's own order (`byQueueOrder`, `src/selection.ts`), not the order
   // the agents happened to return in: `perEntry` fills as each slot's agent
   // finishes, and which of two siblings finished first is a fact about the
-  // machine, never one a `handoff` should route on. Every attempt's entry came
-  // off `pickable`, which is already in that order.
-  const queuePosition = new Map(pickable.map((e, i) => [e.tag, i]));
-  perEntry.sort(
-    (a, b) =>
-      queuePosition.get(a.entry.tag)! - queuePosition.get(b.entry.tag)!,
-  );
+  // machine, never one a `handoff` should route on. The comparator itself,
+  // not a position map off the wave's opening selection: a freed slot pulls
+  // from the queue as it then stands, so an entry this wave ran may have no
+  // position in the set it opened on.
+  perEntry.sort((a, b) => byQueueOrder(a.entry, b.entry));
   const entries: FanoutEntryOutcome[] = perEntry.map((r) => {
     const merge = mergeStage.mergeOutcomes.find(
       (m) => m.entryTag === r.entry.tag,

@@ -1031,6 +1031,14 @@ async function main(): Promise<number> {
   const ownTipClaimPid = process.env.FLUME_TIP_CLAIM_HELD
     ? Number(process.env.FLUME_TIP_CLAIM_HELD)
     : process.pid;
+  // spec/loop.md "Graceful stop — the stop flag": the flag ends a
+  // supervisor's iteration and a supervised wave's refill, and a bare tick
+  // ignores it. The same env var the claim read above keys on is what says
+  // which this process is — the supervisor sets it on the children it spawns
+  // — so the CLI states the fact and the wave never infers it from a
+  // quarantine set or a pid match (.claude/rules/engine-boundary.md, "Told,
+  // not inferred").
+  const supervisedRun = process.env.FLUME_TIP_CLAIM_HELD !== undefined;
   // This process's teardown, reaching the agent a tick starts: the tick
   // command's signal handlers abort it and await the tick, so the agent tree
   // is gone before the tip claim drops (spec/loop.md, "The loop lock and the
@@ -1051,6 +1059,7 @@ async function main(): Promise<number> {
     flumeDir,
     agent: claudeCode(),
     ownTipClaimPid,
+    supervisedRun,
     stopSignal: stopTick.signal,
     ...(quarantinedSlugs ? { quarantinedSlugs } : {}),
   });

@@ -109,6 +109,12 @@ export interface TickLegContext extends PendingLedgerContext {
   /** This run's live quarantine — `DispatcherOptions.quarantinedSlugs`. */
   readonly quarantinedSlugs?: ReadonlySet<string>;
   /**
+   * Whether a wave reads the operator's stop flag at each freed slot —
+   * `DispatcherOptions.supervisedRun`, resolved to a boolean here because a
+   * leg decides on it rather than passing it along.
+   */
+  readonly supervisedRun: boolean;
+  /**
    * {@link BatchSelection} under this dispatcher's own quarantine and
    * parallelism ceiling.
    *

@@ -224,6 +224,21 @@ export interface DispatcherOptions {
    */
   quarantinedSlugs?: ReadonlySet<string>;
   /**
+   * spec/loop.md "Graceful stop — the stop flag": whether this run honors the
+   * operator's `<flumeDir>/stop` flag *inside* a tick — a fanout wave reads it
+   * at each freed slot and pulls nothing more, while everything in flight
+   * finishes, merges and is recorded. The flag stops a supervisor's iteration
+   * and a supervised wave's refill; a bare `flume tick` is the operator's own
+   * explicit action and ignores it, which is why this is told rather than
+   * inferred (.claude/rules/engine-boundary.md, "Told, not inferred"): the
+   * CLI already knows which of the two it is — it reads `FLUME_TIP_CLAIM_HELD`
+   * to decide whether to acquire a claim of its own — and states it here. A
+   * wave whose run never refills past its first fill never reads the flag
+   * either way. Default: unset — a run nobody told, which is every embedder
+   * that never wired a supervisor.
+   */
+  supervisedRun?: boolean;
+  /**
    * spec/loop.md "The loop lock and the tip claim": the pid of the tip
    * claim *this run* operates under — its own (a bare `flume tick`, which
    * acquires directly in-process, so this equals `process.pid`) or its
@@ -721,6 +736,7 @@ export class Dispatcher {
       ...(this.opts.quarantinedSlugs !== undefined
         ? { quarantinedSlugs: this.opts.quarantinedSlugs }
         : {}),
+      supervisedRun: this.opts.supervisedRun === true,
       selection: (chain, pending, isForkResolved, refusalFacts, claimed) =>
         this.selection(chain, pending, isForkResolved, refusalFacts, claimed),
     };

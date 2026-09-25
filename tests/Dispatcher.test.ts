@@ -52,6 +52,7 @@ import {
   defaultStateRoot,
   mergingDir,
   slugify,
+  stopFlagPath,
   worktreesBase,
 } from "../src/paths.ts";
 import {
@@ -2767,6 +2768,280 @@ describe("Dispatcher fanout — a freed slot pulls the next disjoint entry (WAVE
     );
   });
 });
+
+/**
+ * THE-REFILL-READS-THE-LIVE-QUEUE-AND-THE-STOP-FLAG — `spec/worktrees.md`,
+ * *Fanout and worktrees — provisioning, isolation, teardown*: a freed slot
+ * reads the queue **as it stands**, in priority order, skipping every entry
+ * this wave has already attempted, and the wave ends when nothing it has not
+ * attempted is pickable or the run is torn down.
+ *
+ * Both are invisible to a wave that splices a wave-start snapshot: the
+ * snapshot cannot hold an entry filed after it was taken, and the dispatcher's
+ * in-process stop signal is not the flag `flume stop` writes — a supervisor
+ * reads that at its child boundary, which a wave long enough to outlast many
+ * merges never reaches.
+ */
+describe("Dispatcher fanout — a freed slot reads the live queue and the stop flag", () => {
+  it("a wave pulls an entry filed mid-wave at a higher priority before a lower-ranked one it started with", async () => {
+    // One slot wide, so every entry past the first is a refill and the
+    // invocation order *is* the pick order.
+    const entries = [
+      { ...makeEntry("MW-FIRST", ["src/mw-first.ts"]), priority: 10 },
+      { ...makeEntry("MW-LOW", ["src/mw-low.ts"]), priority: 0 },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 1 },
+    };
+
+    // Filed onto trunk while MW-FIRST's agent runs, outranking the entry the
+    // wave opened beside it. Committed, not merely written: every dispatch
+    // read resolves the committed tip (spec/pending.md, "Dispatch reads come
+    // from the tip, not the tree").
+    const filedMidWave: PendingEntry = {
+      ...makeEntry("MW-HIGH", ["src/mw-high.ts"]),
+      priority: 20,
+    };
+
+    const order: string[] = [];
+    const fileBySlug: Record<string, string> = {
+      "mw-first": "src/mw-first.ts",
+      "mw-high": "src/mw-high.ts",
+      "mw-low": "src/mw-low.ts",
+    };
+    const agent: Agent = {
+      name: "live-queue-probe",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        order.push(slug);
+        if (slug === "mw-first") {
+          await commitEntryFile(
+            fx.repo,
+            entryFileName("MW-HIGH"),
+            JSON.stringify(filedMidWave, null, 2) + "\n",
+          );
+        }
+        await writeAndCommit(
+          inv.cwd,
+          fileBySlug[slug]!,
+          `${slug}\n`,
+          `build(${slug}): ship`,
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The freed slot re-read the queue and took its head: MW-HIGH did not
+    // exist when the wave selected, and MW-LOW — the only entry the wave
+    // started with that it had not attempted — waited behind it.
+    expect(order).toEqual(["mw-first", "mw-high", "mw-low"]);
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "MW-FIRST",
+      "MW-HIGH",
+      "MW-LOW",
+    ]);
+    expect(outcome.result?.pendingAfter).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+  });
+
+  it("a wave pulls nothing more once the stop flag is written while a slot's agent runs", async () => {
+    const entries = [
+      { ...makeEntry("SF-A", ["src/sf-a.ts"]), priority: 30 },
+      { ...makeEntry("SF-B", ["src/sf-b.ts"]), priority: 20 },
+      { ...makeEntry("SF-C", ["src/sf-c.ts"]), priority: 10 },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 2 },
+    };
+
+    // SF-A writes the flag; SF-B holds until it is on disk, so both slots
+    // this wave opened are still in flight when the stop lands and neither
+    // refill can have read the disk before it. The wave's own ending is
+    // therefore the flag and never a drained queue — SF-C is pickable
+    // throughout.
+    let flagWritten!: () => void;
+    const stopped = new Promise<void>((resolve) => {
+      flagWritten = resolve;
+    });
+    const order: string[] = [];
+    const fileBySlug: Record<string, string> = {
+      "sf-a": "src/sf-a.ts",
+      "sf-b": "src/sf-b.ts",
+      "sf-c": "src/sf-c.ts",
+    };
+    const agent: Agent = {
+      name: "stop-flag-probe",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        order.push(slug);
+        if (slug === "sf-a") {
+          await writeFile(
+            stopFlagPath(join(fx.repo, ".flume")),
+            "stopped by test\n",
+            "utf8",
+          );
+          flagWritten();
+        } else {
+          await stopped;
+        }
+        await writeAndCommit(
+          inv.cwd,
+          fileBySlug[slug]!,
+          `${slug}\n`,
+          `build(${slug}): ship`,
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      // The flag ends a supervised wave's refill; the run is told which it is
+      // (spec/loop.md, *Graceful stop — the stop flag*).
+      supervisedRun: true,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Nothing was pulled past the two slots the wave opened.
+    expect([...order].sort()).toEqual(["sf-a", "sf-b"]);
+    // And both of those finished and merged — a stop ends the pulling, never
+    // the spans already in flight.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "SF-A",
+      "SF-B",
+    ]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["SF-C"]);
+  });
+
+  it("a bare tick's wave keeps refilling over a stop flag it was never told to honor", async () => {
+    // The converse arm of the case above, and the reason the fact is told
+    // rather than read unconditionally: `flume tick` is the operator's own
+    // explicit action, and it is the command they use to test a staged fix
+    // before acking the stop (spec/loop.md, *Graceful stop — the stop flag*).
+    const entries = [
+      { ...makeEntry("BT-A", ["src/bt-a.ts"]), priority: 20 },
+      { ...makeEntry("BT-B", ["src/bt-b.ts"]), priority: 10 },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 1 },
+    };
+
+    // Already on disk before the tick starts, so the very first refill would
+    // read it if this run honored the flag.
+    await writeFile(
+      stopFlagPath(join(fx.repo, ".flume")),
+      "stopped by test\n",
+      "utf8",
+    );
+
+    const agent = fanoutAgent({
+      "bt-a": (cwd) =>
+        writeAndCommit(cwd, "src/bt-a.ts", "A\n", "build(BT-A): ship"),
+      "bt-b": (cwd) =>
+        writeAndCommit(cwd, "src/bt-b.ts", "B\n", "build(BT-B): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // One slot wide, so BT-B could only have reached an agent as the refill
+    // of the slot BT-A's merge freed.
+    expect(outcome.result?.shippedTags).toEqual(["BT-A", "BT-B"]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+  });
+
+  it("a wave never pulls an entry it has already attempted", async () => {
+    // NP-A's agent commits nothing, so NP-A is still in the queue — and
+    // still pickable — at every refill after it. A wave re-reading the queue
+    // is offered it each time; the attempted set is what declines it.
+    const entries = [
+      { ...makeEntry("NP-A", ["src/np-a.ts"]), priority: 20 },
+      { ...makeEntry("NP-B", ["src/np-b.ts"]), priority: 10 },
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 1 },
+    };
+
+    const invocations: string[] = [];
+    const agent: Agent = {
+      name: "attempted-once-probe",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        invocations.push(slug);
+        if (slug === "np-b") {
+          await writeAndCommit(inv.cwd, "src/np-b.ts", "B\n", "build(NP-B): ship");
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Both entries reached an agent, each exactly once: the vacuity guard is
+    // that NP-A ran at all, and the claim is that it ran no second time
+    // however many refills the wave made.
+    expect(invocations).toEqual(["np-a", "np-b"]);
+    expect(outcome.result?.shippedTags).toEqual(["NP-B"]);
+    // NP-A stayed pending — it was attempted, not shipped, and a wave that
+    // re-picked it would have spent a second agent on the same attempt.
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["NP-A"]);
+  });
+});
+
 
 
 /**
