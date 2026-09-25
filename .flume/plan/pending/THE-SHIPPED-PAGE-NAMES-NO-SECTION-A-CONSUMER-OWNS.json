@@ -1,0 +1,34 @@
+{
+  "tag": "THE-SHIPPED-PAGE-NAMES-NO-SECTION-A-CONSUMER-OWNS",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": [
+      "THE-RENDERED-PAGE-SCAN-LEAVES-A-CONSUMER-TREE-PATH"
+    ]
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/helpers/commentCitations.ts",
+        "description": "the rendered surfaces' section arm reports a cite whose page sits under a consumer's state root rather than resolving it against this tree, off the same root the page arm's exemption takes"
+      },
+      {
+        "path": "tests/commentCitations.test.ts",
+        "description": "the fixture arm over a shipped surface citing a section under a state root, and the repo pin over every surface `shippedPages()` renders"
+      }
+    ]
+  },
+  "summary": "A shipped page naming a section of the page the consumer owns resolves green off *this* repo's copy, so the one cite the spec calls a guess is the one nothing reports",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "Adoption and upgrade"
+  },
+  "acceptance": "a section cite a shipped surface states against a page under a consumer's state root is a finding of the rendered scan rather than a heading resolved in this checkout, and the surfaces the package ships are pinned to state none",
+  "tests": [
+    "the rendered section scan reports a section cite whose page sits under a consumer's state root"
+  ],
+  "pins": [
+    "no surface the package ships names a section of a page the consumer owns"
+  ],
+  "notes": "Last clause of 16bb69d3's paragraph; the other three are the two standing siblings'. Measured this tick: a fixture surface citing `.flume/PROTOCOL.md`, *Records: one file each* resolves through `scanRenderedCitations` with no finding on either arm, while *No Such Heading* reds \u2014 the heading read is this repo's copy of a page init writes and the consumer then edits. Blocked rather than seamed: the under-a-state-root predicate is the parent's."
+}
