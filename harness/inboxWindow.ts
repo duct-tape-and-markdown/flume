@@ -33,14 +33,29 @@
  * own state file and nothing else, which its fence holds
  * (`layout.ts`, `planArtifacts`).
  *
- * **One derivation per leg, two readers.** The wake set asks "is this slice
- * live"; the prompt asks "what is in it". Both answers come from the same
- * scan, so the slice cannot be woken over material its prompt then renders as
- * empty (`.claude/rules/engineering.md`, *Derived state is computed, never
- * restated beside its source*).
+ * **One derivation per leg, two readers — and, for the record queues, two
+ * trees.** The wake set asks "is this slice live"; the prompt asks "what is
+ * in it". Both answers come from one scan, so neither leg can apply a rule
+ * the other does not — the same extension filter, the same claim
+ * withholding, the same order (`.claude/rules/engineering.md`, *Derived state
+ * is computed, never restated beside its source*). Where they differ is the
+ * root that one scan starts from, and only for the records: liveness runs at the
+ * handoff, which has no worktree of its own, so it reads the shared state
+ * root; the render runs inside the tick's provisioned worktree and reads
+ * *that* tree's state root, because a record the drain is handed must be one
+ * the drain's own commit can `git rm` (`spec/pending.md`, *Dispatch reads
+ * come from the tip, not the tree*). A record the shared disk holds and the
+ * worktree's base does not — an operator's finding still uncommitted, a note
+ * that landed after this worktree was cut — therefore wakes the slice and
+ * renders as nothing: the tick spends its other legs, and the record is the
+ * next tick's, once a worktree cut past it carries the file. **The friction
+ * channel and the lane store stay on the shared root either way**, both legs
+ * alike: they are gitignored, so no commit carries them and no worktree
+ * checkout holds them.
  */
 
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { namespacedJoin } from "../src/paths.js";
 import { recordAttemptKey } from "../src/priorAttempts.js";
@@ -108,7 +123,12 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
-      RECORDS: renderRecords(ctx.flumeDir, friction, ctx.claimed ?? []),
+      RECORDS: renderRecords(
+        treeStateRoot(ctx.cwd, options.stateRootRel),
+        ctx.flumeDir,
+        friction,
+        ctx.claimed ?? [],
+      ),
       BUILD_RECORDS: renderBuildRecords(options.stateRootRel, ctx),
       CI_LANES: lanes.render(ctx.flumeDir),
     }),
@@ -154,9 +174,36 @@ function renderQueueParseFailure(ctx: WindowContext): string {
 }
 
 /**
+ * The state root as the tick's own tree holds it.
+ *
+ * `stateRootRel` arrives in git's alphabet, forward-slashed, because that is
+ * the dialect every path this package compares against a commit is composed
+ * in (`chain.ts`, `repoRelativeStateRoot`). The fold to host-native happens
+ * here, at the one join that means to read disk, exactly as the queue
+ * listings fold theirs (`fileUnderStateRoot`, `dirListing.ts`) — never by
+ * handing the slashed value to a `node:path` call that is right on posix by
+ * accident (`.claude/rules/posture-sweep.md`, *A repo-relative path composed
+ * with `node:path`*).
+ */
+const treeStateRoot = (cwd: string, stateRootRel: string): string =>
+  join(cwd, ...stateRootRel.split("/"));
+
+/**
  * Every waiting record's bytes, oldest first, each under the path it sits
  * at, with an over-cap record marked by what it measured — the record
  * queues first, then the declared friction channel.
+ *
+ * **The two queues are read from two roots, and that is the point of the
+ * split.** `treeRoot` is the tick's own worktree's state root: a record the
+ * drain routes leaves by `git rm` in the drain's own commit, so the only
+ * records it may be shown are the ones the tree that commit descends from
+ * actually carries (`spec/pending.md`, *Dispatch reads come from the tip, not
+ * the tree*). Read from the shared root instead, the drain is handed the
+ * primary checkout's files — including ones no commit ever held — and routes
+ * them into a commit that cannot remove them, so the same records come back
+ * every tick. `frictionRoot` is that shared root, and stays: the channel is
+ * gitignored, a note leaves it by `rm` rather than by a commit, and no
+ * worktree checkout holds a copy to read.
  *
  * **The friction channel is read as the inbox is** (`spec/harness.md`,
  * *Declared findings sources*): one record per file, in the same block, so
@@ -196,13 +243,14 @@ function renderQueueParseFailure(ctx: WindowContext): string {
  * same listing the same question and the two must not disagree.
  */
 function renderRecords(
-  flumeDir: string,
+  treeRoot: string,
+  frictionRoot: string,
   friction: string | undefined,
   claimed: readonly string[],
 ): string {
   const blocks = [
-    ...renderFiles(recordFiles(flumeDir, claimed), RECORD_MAX_BYTES),
-    ...renderFiles(frictionFiles(flumeDir, friction), undefined),
+    ...renderFiles(recordFiles(treeRoot, claimed), RECORD_MAX_BYTES),
+    ...renderFiles(frictionFiles(frictionRoot, friction), undefined),
   ];
   if (blocks.length === 0) return "(no records)";
   return blocks.join("\n\n");

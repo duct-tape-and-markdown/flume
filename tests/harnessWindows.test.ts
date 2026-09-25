@@ -688,6 +688,86 @@ it("the inbox slice is live for a waiting friction file", () => {
 });
 
 /**
+ * The record queues are read from the **tick's own tree**, and the friction
+ * channel from the shared state root (`spec/pending.md`, *Dispatch reads come
+ * from the tip, not the tree*).
+ *
+ * A record leaves the queue by `git rm` in the drain's own commit, so a
+ * record the primary checkout holds and the drain's worktree base does not —
+ * an operator's finding still uncommitted, a note that landed after the
+ * worktree was cut — is one the drain cannot remove, and routing it walls the
+ * same records into the window every tick. The friction channel is the
+ * converse: gitignored, so no checkout carries it and the shared root is the
+ * only place it exists.
+ *
+ * **The tree is a real `git worktree`**, cut from the commit under test
+ * exactly as the dispatcher provisions one — the checkout is git's, and what
+ * the window reads is whatever git put there
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+it("the inbox window renders no record its tick's own tree does not hold", () => {
+  const carriedRel = "inbox/2026-09-16-carried.md";
+  commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      [`${STATE_ROOT_REL}/${carriedRel}`]:
+        "# Carried\n\nThe finding the committed tree holds.\n",
+    },
+    "inbox: a finding the tree carries",
+  );
+  writeState();
+
+  // The tick's own tree, cut from that commit.
+  const tree = join(stateRoot(), "worktrees", "tick");
+  git("worktree", "add", "--detach", "-q", tree, "HEAD");
+
+  const sharedCarried = join(stateRoot(), ...carriedRel.split("/"));
+  const treeCarried = join(tree, STATE_ROOT_REL, ...carriedRel.split("/"));
+
+  // On the shared disk alone: a finding nobody committed, and the engine's
+  // own revert note in the channel git never carries.
+  const uncommitted = writeRecord(
+    "inbox/2026-09-25-uncommitted.md",
+    "# Uncommitted\n\nDropped into the primary checkout.\n",
+  );
+  const note = writeFriction("revert-note-a54de89.md", "# Reverted\n");
+
+  const inbox = (): PlanSliceWindow =>
+    windows({ friction: FRICTION_DIR })[INBOX_PHASE];
+  const shared = inbox().args({ cwd: repo, flumeDir: stateRoot() }).RECORDS!;
+  const rendered = inbox().args({ cwd: tree, flumeDir: stateRoot() }).RECORDS!;
+
+  expect({
+    // Non-vacuity, on both roots: the shared disk really holds both records —
+    // a tick whose tree *is* the primary checkout is handed them — and the
+    // worktree really holds the committed one, so neither arm below is over
+    // an empty queue.
+    sharedUncommitted: shared.includes(uncommitted),
+    sharedCarried: shared.includes(sharedCarried),
+    treeCarried: rendered.includes(treeCarried),
+    treeCarriedBody: rendered.includes("The finding the committed tree holds."),
+    // The record the drain's commit could not remove is not in its window ...
+    treeUncommitted: rendered.includes(uncommitted),
+    // ... nor is the primary checkout's copy of the one it can, which is what
+    // says the listing was drawn from the tree and not filtered on the shared
+    // root.
+    treeSharedPath: rendered.includes(sharedCarried),
+    // ... while the gitignored channel is read from the shared root as
+    // before, because no checkout carries a copy of it to read.
+    treeFriction: rendered.includes(note),
+  }).toEqual({
+    sharedUncommitted: true,
+    sharedCarried: true,
+    treeCarried: true,
+    treeCarriedBody: true,
+    treeUncommitted: false,
+    treeSharedPath: false,
+    treeFriction: true,
+  });
+});
+
+/**
  * The slug is what keys a record, so a tag carrying anything outside the key's
  * alphabet is filed under text it does not itself spell. Both arms run over
  * one such tag, and the map is keyed by the engine's own `entryAttemptKey`
