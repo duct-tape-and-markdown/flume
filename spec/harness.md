@@ -452,11 +452,15 @@ usage and exits 0 before anything is written. A consumer never copies a
 prompt, a slice, or a judge from another consumer; what it wants to change it
 declares.
 
-A page the package ships — the `PROTOCOL.md` init writes, a prompt, a
-`--help` literal — cites only what the install carries: `docs/`, the README,
-a `--help` page. It never cites the spec corpus, which does not ship, and so
-it resolves its page names against the file set the package ships rather than
-the tree it was written in, since that file set is the disk its reader holds.
+A page the package puts in front of a consumer inside the consumer's own
+tree or terminal — the `PROTOCOL.md` init writes, a prompt, a `--help`
+literal — cites only what the install carries: `docs/`, the README, a
+`--help` page. Its reader stands in a repository that holds no spec corpus,
+so it resolves its page names against the file set the package ships rather
+than the tree it was written in. A `docs/` page and the README are read where
+the package's own repository resolves them — a checkout, the forge, the
+registry page that links back to it — so their citations into the spec
+corpus stand, and the pin over them keeps reading this tree.
 It names a page the consumer owns but never a section in one, because the
 consumer edits its copy after init and any section name is a guess.
 
