@@ -154,9 +154,10 @@ export interface GateContext {
    *
    * It is how a per-entry cumulative gate on trunk — one that measures a set
    * before and after this entry and refuses growth — reads the right
-   * *before*. {@link baseSha} is what the tick *saw* when it branched, and
-   * every sibling in a fanout wave shares it, so a gate measured against it
-   * inherits every sibling's landing; `HEAD^` is right only while a span
+   * *before*. {@link baseSha} is what the tick *saw* when its own slot was
+   * filled — shared with every sibling of a wave's initial fill, and later
+   * than theirs for an entry a freed slot pulled — so a gate measured against
+   * it inherits whatever landed before it; `HEAD^` is right only while a span
    * lands as one commit (spec/chain.md "What a gate receives"). Set on every
    * dispatcher-built `afterMerge` context, so an `afterMerge` gate reads it
    * without a fallback; the dispatcher already holds the sha it

@@ -59,9 +59,9 @@ export interface ShipContext {
   /** Sha of this entry's commit as cherry-picked onto trunk. */
   mergedSha: string;
   /**
-   * The sha this entry's span branched from — its worktree's tip when the
-   * tick started, the same value `GateContext.baseSha` carries and the base
-   * the dispatcher cherry-picked the span from. A `shipped` predicate
+   * The sha this entry's span branched from — its worktree's tip when this
+   * entry's slot was filled, the same value `GateContext.baseSha` carries and
+   * the base the dispatcher cherry-picked the span from. A `shipped` predicate
    * judging the commit against the inputs the agent actually read reads
    * `git show <baseSha>:<path>`, and `git log <baseSha>..<mergedSha>` is the
    * span itself (spec/chain.md "What a hook receives").
@@ -392,9 +392,10 @@ export interface TickResult {
    * `GateContext.baseSha` carries, so a `handoff` routing on "did anything
    * land on trunk that this tick could not have seen" compares against the
    * engine's number rather than the worktree's reflog (spec/chain.md "What
-   * a hook receives"). Under fanout it is the trunk tip every worktree in
-   * the wave was provisioned from; a per-entry base that diverged from it
-   * (a `setupWorktree` hook that committed) is on that entry's own
+   * a hook receives"). Under fanout it is the trunk tip the wave's initial
+   * fill was provisioned from; an entry a freed slot pulled mid-wave branched
+   * from trunk as it then stood, and its own base — like one a
+   * `setupWorktree` hook moved by committing — is on that entry's
    * {@link ShipContext}. Absent when the tick provisioned no span at all —
    * a provisioning failure, a nothing-pickable wave, or a singleton
    * declined before its worktree tip was read.
@@ -964,7 +965,9 @@ export interface Chain {
      *
      * Distinct from `maxParallel` below, which is how wide one *fanout wave
      * inside a single tick* runs: this bounds the tick processes the
-     * supervisor owns, that bounds the entry worktrees one of them provisions.
+     * supervisor owns, that bounds the entry worktrees one of them holds open
+     * at once — not how many entries that tick ships, which is however many
+     * of them become pickable before the wave runs dry.
      * Distinct again from `flume loop --max N`, which caps how many children
      * a run starts in total rather than at once.
      */
@@ -984,9 +987,13 @@ export interface Chain {
      */
     killGraceMs?: number;
     /**
-     * Max parallel ticks per fanout batch — overrides
+     * How many entry worktrees one fanout wave holds open at once — overrides
      * `DispatcherOptions.maxParallel` (`src/Dispatcher.ts`), whose own
-     * default is 4. Unlike `quarantineScope`/`abortThreshold` this is not
+     * default is 4. A width, never a ship limit: a slot a merged entry frees
+     * pulls the next pickable entry disjoint from what is still in flight, so
+     * a queue of disjoint entries drains in one tick whatever this says
+     * (spec/worktrees.md, *Fanout and worktrees — provisioning, isolation,
+     * teardown*). Unlike `quarantineScope`/`abortThreshold` this is not
      * run-scoped: the dispatcher already reloads `chain.ts` fresh every
      * tick, so `runFanout` reads this straight off the tick's own resolved
      * chain rather than a value bound once per run.

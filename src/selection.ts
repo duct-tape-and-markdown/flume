@@ -1,6 +1,6 @@
 /**
- * Selection — which entries of a queue a tick may pick, and the batch a
- * fanout wave carries off it.
+ * Selection — which entries of a queue a tick may pick, the batch a fanout
+ * wave opens on, and the entry a freed slot pulls next.
  *
  * One derivation for every surface that asks: `runSingleton`'s pre-tick read
  * (`src/singletonTick.ts`), `runFanout`'s wave (`src/waveTick.ts`),
@@ -23,7 +23,7 @@
 
 import { entryClaimSlug } from "./entryClaims.js";
 import { entryDeclaredKey } from "./entryKey.js";
-import { partitionByFileOverlap } from "./partition.js";
+import { isDisjointFrom, partitionByFileOverlap } from "./partition.js";
 import { isPickableNow, type PendingEntry } from "./PendingSchema.js";
 import type { Chain, QuarantinedTag } from "./Phase.js";
 import { entryAttemptKey } from "./priorAttempts.js";
@@ -313,6 +313,43 @@ export interface BatchSelection extends PickableSelection {
    * the list the partition collided on.
    */
   partitionIgnore: string[];
+  /**
+   * The width `batches` was capped at — the chain's declaration where it made
+   * one, the caller's ceiling below it. Reported for the same reason
+   * `partitionIgnore` is: a wave runs this many slots at once for its whole
+   * life, refills included, and re-reading the chain beside the selection
+   * would let the batch and the slot count disagree
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   */
+  maxParallel: number;
+}
+
+/**
+ * The entry a freed fanout slot pulls: the first candidate, in the queue's own
+ * order, whose touched paths are disjoint from every entry the wave is still
+ * carrying (`isDisjointFrom`, `src/partition.ts`).
+ *
+ * The same read the batch partition makes, asked of a set no batch describes.
+ * A wave's initial fill is `batches[0]`, and every slot freed after it pulls
+ * against whatever is still in flight at that moment — which is a set the
+ * partition could not have known, since it depends on the order the agents
+ * finished in (`spec/worktrees.md`, *Fanout and worktrees — provisioning,
+ * isolation, teardown*).
+ *
+ * `candidates` is the pickable remainder in {@link byQueueOrder}; `undefined`
+ * is "nothing left that this moment's in-flight set leaves room for", which a
+ * wave reads as a slot it does not refill rather than as a drained queue.
+ */
+export function nextDisjointPick(opts: {
+  candidates: readonly PendingEntry[];
+  inFlight: readonly PendingEntry[];
+  /** `BatchSelection.partitionIgnore`, so a refill collides on the list the batch did. */
+  ignore: string[];
+}): PendingEntry | undefined {
+  return opts.candidates.find((e) =>
+    isDisjointFrom(e, opts.inFlight, { ignore: opts.ignore }),
+  );
 }
 
 /**
@@ -370,12 +407,14 @@ export function selectBatch(opts: {
   // so reading its declaration at the point of use is byte-identical to a
   // per-run bind.
   const partitionIgnore = chain.supervisorPolicy?.partitionIgnore ?? [];
+  const maxParallel = chain.supervisorPolicy?.maxParallel ?? opts.maxParallel;
   return {
     ...selected,
     batches: partitionByFileOverlap(pickable, {
-      maxParallel: chain.supervisorPolicy?.maxParallel ?? opts.maxParallel,
+      maxParallel,
       ignore: partitionIgnore,
     }),
     partitionIgnore,
+    maxParallel,
   };
 }

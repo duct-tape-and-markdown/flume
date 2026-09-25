@@ -1,8 +1,17 @@
 /**
  * The wave leg of a tick: what a `fanout` phase does between `tick()`'s chain
- * load and its verdict — the batch it selects off the queue, the worktree it
- * provisions per entry, the per-entry attempts it runs in parallel, the
- * teardown that follows them, and the handoff facts it folds out of all three.
+ * load and its verdict — the slots it opens off the queue, the worktree each
+ * provisions for the entry it pulled, the per-entry attempts they run in
+ * parallel, the teardown that follows them, and the handoff facts it folds out
+ * of all three.
+ *
+ * The wave is slot-driven, not batch-driven: it opens `maxParallel` slots on
+ * the queue's pickable head, and each slot whose span has merged pulls the
+ * next pickable entry disjoint from whatever is still in flight
+ * (`nextDisjointPick`, `src/selection.ts`) and provisions it alone, from
+ * trunk as it then stands. It ends when nothing is pickable — never with its
+ * first batch (`spec/worktrees.md`, *Fanout and worktrees — provisioning,
+ * isolation, teardown*).
  *
  * The stage in the middle that carries each span onto trunk is its own
  * module (`src/waveMerge.ts`), driven from here once per finished attempt —
@@ -36,7 +45,7 @@ import type {
 } from "./Phase.js";
 import type { PriorAttempt } from "./Prompt.js";
 import { priorAttemptRef } from "./priorAttempts.js";
-import { blamedOn } from "./selection.js";
+import { blamedOn, nextDisjointPick } from "./selection.js";
 import { consultShouldRun, runAttempt } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import {
@@ -100,8 +109,8 @@ export async function runFanout(
     quarantinedTags,
     refusedTags,
     claimedTags,
-    batches,
     partitionIgnore,
+    maxParallel,
   } = leg.selection(
     chain,
     pending,
@@ -139,9 +148,8 @@ export async function runFanout(
   }
 
   const waveStart = Date.now();
-  const batch = batches[0]!;
   leg.log.info(
-    `[flume] ${phase.name}: fanout ${batch.length}/${pickable.length} pickable in batch 1/${batches.length}`,
+    `[flume] ${phase.name}: fanout over ${pickable.length} pickable, ${maxParallel} slot(s) wide`,
   );
 
   // A repo-level provisioning wall (prune itself fails — no single
@@ -167,22 +175,10 @@ export async function runFanout(
     );
   }
 
-  // Serialize worktree creation. `createWorktree` internally does
-  // `git worktree remove` (stale-slug cleanup) then `git worktree add`,
-  // both mutating the shared `.git/worktrees/` metadata dir — and git is
-  // NOT concurrency-safe there: a sibling's `--force` remove can fail
-  // another's add mid-validation. Run them one at a time, mirroring the
-  // already-serialized pre-wave `pruneWorktrees` above. The per-entry
-  // agent fanout below stays parallel — that is the expensive work, and
-  // it does not touch `.git/worktrees/`.
-  //
-  // A provisioning failure (sweep or create) is isolated to the
-  // entry whose slug hit it — a held/EBUSY worktree dir on one entry must
-  // not crash the whole batch when its siblings are perfectly pickable
-  // (the ship-detection-declared-files-diff incident: 12/16 ticks burned
-  // on one held slug while 6/7 other entries sat pickable). The failed
-  // entry stays pending; `provisioned`/`worktrees` stay index-aligned for
-  // everything downstream.
+  // Every worktree this wave created, and the entry each was created for —
+  // index-aligned, because the teardown walk below reads them as one list.
+  // Both grow as freed slots refill, so neither is the batch: they are what
+  // the wave provisioned by the time it put the work down.
   const worktrees: Array<{ path: string; branch: string }> = [];
   const provisioned: PendingEntry[] = [];
   // spec/pending.md "Claims — an entry in flight is left alone": every claim
@@ -194,77 +190,6 @@ export async function runFanout(
   // log line beside the push (`.claude/rules/engineering.md`, *A fact the
   // engine holds is reported, never rediscovered*).
   const stakeLosses: StakeLoss[] = [];
-  for (const entry of batch) {
-    // Staked *before* the worktree exists, which is the whole point of the
-    // ordering: from here until this wave lets go, the entry is this tick's
-    // and a producer that would have re-scoped it is told so. A `held`
-    // answer is a sibling that staked between this wave's selection read and
-    // now — it carries the entry, this wave does not.
-    const claim = await leg.claims.stake(entry.tag);
-    if (claim.kind === "held") {
-      stakeLosses.push({ tag: entry.tag, by: claim.by });
-      leg.log.warn(
-        `[flume] ${phase.name}: ${entry.tag} was claimed by pid ${claim.by.pid} after this wave selected it; entry stays pending`,
-      );
-      continue;
-    }
-    staked.push(claim.claim);
-    try {
-      worktrees.push(
-        await createWorktree(entry.tag, preHead, leg.worktreeCtx),
-      );
-      provisioned.push(entry);
-    } catch (err) {
-      const message = (err as Error).message;
-      const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
-      provisionFailures.push({ ...blamedOn(entry), signature, message });
-      leg.log.warn(
-        `[flume] ${phase.name}: worktree provisioning failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
-      );
-    }
-  }
-
-  // Optional per-phase setup (e.g. symlink node_modules / .env so gates
-  // run). The return value MAY contribute extraEnv that this leg
-  // layers onto the agent invocation env (e.g. per-worktree DATABASE_URL
-  // from a chain that provisioned an ephemeral DB at setup time).
-  //
-  // Isolated the same way `createWorktree` above isolates a per-entry
-  // failure: a hook throw for one entry must not reject the
-  // `Promise.all` and crash the whole wave when its siblings' hooks
-  // succeeded. The worktree this entry got from `createWorktree` still
-  // exists and still needs teardown below, so `worktrees`/`provisioned`
-  // stay untouched (and index-aligned to each other) for that loop; only
-  // the set of entries handed to the agent excludes this one.
-  const extraEnvByIndex: Array<Record<string, string> | undefined> =
-    worktrees.map(() => undefined);
-  const setupFailedIndices = new Set<number>();
-  if (phase.setupWorktree) {
-    const setupResults = await Promise.all(
-      provisioned.map(async (entry, i) => {
-        try {
-          return await phase.setupWorktree!({
-            worktreePath: worktrees[i]!.path,
-            repoRoot,
-            worktreeKey: entry.tag,
-          });
-        } catch (err) {
-          const message = (err as Error).message;
-          const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
-          provisionFailures.push({ ...blamedOn(entry), signature, message });
-          setupFailedIndices.add(i);
-          leg.log.warn(
-            `[flume] ${phase.name}: setupWorktree hook failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
-          );
-          return undefined;
-        }
-      }),
-    );
-    for (let i = 0; i < setupResults.length; i++) {
-      const r = setupResults[i];
-      if (r && r.extraEnv) extraEnvByIndex[i] = r.extraEnv;
-    }
-  }
 
   // Carry each entry's span onto trunk as that entry's own agent finishes:
   // the merge/gate/revert stage, one span at a time under its own ship lock
@@ -295,44 +220,202 @@ export async function runFanout(
   // their worktrees are torn down under them by nothing.
   let mergeError: unknown;
 
-  // Run agent in each worktree concurrently — skipping any entry whose
-  // setupWorktree hook threw above. Its worktree/branch still get torn
-  // down in the cleanup loop below; it just never reaches the agent or
-  // cherry-pick, so it stays pending like any other provisioning failure.
-  //
-  // Resolved in batch order (the attempts are what `entries` below reports),
-  // while the merges they queue run in finish order.
-  const perEntry = await Promise.all(
-    provisioned
-      .map((entry, i) => ({ entry, i }))
-      .filter(({ i }) => !setupFailedIndices.has(i))
-      .map(({ entry, i }) =>
-        runFanoutEntry(
-          leg,
-          phase,
-          entry,
-          worktrees[i]!,
-          agent,
-          chain,
-          extraEnvByIndex[i],
-          pickable,
-          claimedTags,
-          priorAttempts,
-        ).then(async (r) => {
-          const queued = mergeTail.then(() =>
-            mergeError === undefined ? mergeAttempt(merge, r) : undefined,
-          );
-          // The tail itself never rejects: a merge that threw must not take
-          // the queue down with it, or every sibling behind it would reject
-          // with the same error and the wave would report a wall per entry.
-          mergeTail = queued.catch((err) => {
-            mergeError ??= err;
-          });
-          await mergeTail;
-          return r;
-        }),
-      ),
-  );
+  // `git worktree add`/`remove` mutate the shared `.git/worktrees/` metadata
+  // dir and git is not concurrency-safe there: one slot's create can fail a
+  // sibling's mid-validation. So creation is serialized for the wave's whole
+  // life, refills included, mirroring the pre-wave `pruneWorktrees` above.
+  // Its own queue rather than `mergeTail`'s, because the expensive half of
+  // provisioning — the chain's `setupWorktree` install — must not hold a
+  // finished sibling's span off trunk, and the agent fanout past it stays
+  // parallel: neither touches `.git/worktrees/`.
+  let provisionTail: Promise<void> = Promise.resolve();
+
+  // The entries whose span this wave is still carrying: provisioning, agent
+  // or merge. This is what a freed slot's pick is made disjoint from
+  // (`nextDisjointPick`, `src/selection.ts`) — not the batch, which says
+  // nothing about which siblings are still open at the moment a slot frees.
+  const inFlight = new Map<string, PendingEntry>();
+  // Every pickable entry no slot has pulled yet, in the queue's own order.
+  const remaining: PendingEntry[] = [...pickable];
+  // One promise per slot this wave opened, appended to as freed slots refill.
+  const slots: Promise<void>[] = [];
+  // The first throw out of a slot's own leg — the attempt machinery, not the
+  // merge, which `mergeError` above holds. Held for the same reason: the
+  // siblings still running settle before this leg leaves, and no freed slot
+  // pulls another entry into a wave that is already walled.
+  let slotError: unknown;
+  // The wave's initial fill cuts every worktree from the tip the tick started
+  // on; an entry a freed slot pulls is cut from trunk as it then stands,
+  // because a refill cut from the pre-head would re-earn every conflict the
+  // merges before it already resolved (`spec/worktrees.md`, *Fanout is the
+  // engine's declared navigation carve-out*).
+  let initialFill = true;
+
+  // Every attempt this wave handed to an agent — the set the per-entry records
+  // below are mapped off, appended to as each agent returns and ordered into
+  // the queue's own order there.
+  const perEntry: EntryAttempt[] = [];
+
+  /**
+   * One slot's whole life: the claim it stakes, the worktree it provisions
+   * alone, the chain's setup hook for that worktree, the agent, and the merge
+   * its span joins. One spelling for the wave's initial fill and for every
+   * refill a freed slot makes — the two differ in the ref the worktree is cut
+   * from and in nothing else.
+   */
+  const runSlot = async (
+    entry: PendingEntry,
+    baseRef: () => Promise<string>,
+  ): Promise<void> => {
+    // Staked *before* the worktree exists, which is the whole point of the
+    // ordering: from here until this wave lets go, the entry is this tick's
+    // and a producer that would have re-scoped it is told so. A `held`
+    // answer is a sibling that staked between this wave's selection read and
+    // now — it carries the entry, this wave does not.
+    const claim = await leg.claims.stake(entry.tag);
+    if (claim.kind === "held") {
+      stakeLosses.push({ tag: entry.tag, by: claim.by });
+      leg.log.warn(
+        `[flume] ${phase.name}: ${entry.tag} was claimed by pid ${claim.by.pid} after this wave selected it; entry stays pending`,
+      );
+      return;
+    }
+    staked.push(claim.claim);
+
+    // A provisioning failure (base read, create, or the chain's hook) is
+    // isolated to the entry whose slot hit it — a held/EBUSY worktree dir on
+    // one entry must not crash the whole wave when its siblings are perfectly
+    // pickable (the ship-detection-declared-files-diff incident: 12/16 ticks
+    // burned on one held slug while 6/7 other entries sat pickable). The
+    // failed entry stays pending, its slot frees like any other, and
+    // `provisioned`/`worktrees` stay index-aligned for everything downstream.
+    let wt: { path: string; branch: string } | undefined;
+    const create = provisionTail.then(async () => {
+      try {
+        const from = await baseRef();
+        wt = await createWorktree(entry.tag, from, leg.worktreeCtx);
+        worktrees.push(wt);
+        provisioned.push(entry);
+      } catch (err) {
+        const message = (err as Error).message;
+        const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
+        provisionFailures.push({ ...blamedOn(entry), signature, message });
+        leg.log.warn(
+          `[flume] ${phase.name}: worktree provisioning failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
+        );
+      }
+    });
+    provisionTail = create;
+    await create;
+    if (wt === undefined) return;
+
+    // Optional per-phase setup (e.g. materialize node_modules / .env so gates
+    // run). The return value MAY contribute extraEnv that this leg layers
+    // onto the agent invocation env (e.g. per-worktree DATABASE_URL from a
+    // chain that provisioned an ephemeral DB at setup time).
+    //
+    // Off the creation queue above, so N slots' hooks still run concurrently.
+    // A throw is this entry's provisioning failure: the worktree it already
+    // got still exists and still needs teardown, so `worktrees`/`provisioned`
+    // are untouched; only this entry never reaches the agent.
+    let extraEnv: Record<string, string> | undefined;
+    if (phase.setupWorktree) {
+      try {
+        const setup = await phase.setupWorktree({
+          worktreePath: wt.path,
+          repoRoot,
+          worktreeKey: entry.tag,
+        });
+        if (setup && setup.extraEnv) extraEnv = setup.extraEnv;
+      } catch (err) {
+        const message = (err as Error).message;
+        const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
+        provisionFailures.push({ ...blamedOn(entry), signature, message });
+        leg.log.warn(
+          `[flume] ${phase.name}: setupWorktree hook failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
+        );
+        return;
+      }
+    }
+
+    const r = await runFanoutEntry(
+      leg,
+      phase,
+      entry,
+      wt,
+      agent,
+      chain,
+      extraEnv,
+      pickable,
+      claimedTags,
+      priorAttempts,
+    );
+    perEntry.push(r);
+    const queued = mergeTail.then(() =>
+      mergeError === undefined ? mergeAttempt(merge, r) : undefined,
+    );
+    // The tail itself never rejects: a merge that threw must not take the
+    // queue down with it, or every sibling behind it would reject with the
+    // same error and the wave would report a wall per entry.
+    mergeTail = queued.catch((err) => {
+      mergeError ??= err;
+    });
+    await mergeTail;
+  };
+
+  /**
+   * Open every slot this moment leaves room for — the wave's initial fill on
+   * the first call, and one freed slot's refill on each call after it.
+   *
+   * Synchronous by construction: it is called from a settling slot's own
+   * continuation, and an `await` inside it would let two calls interleave over
+   * `inFlight` and open the same slot twice. The tip a refill branches from is
+   * therefore read inside the slot's serialized provisioning, not here.
+   */
+  const fillSlots = (): void => {
+    // A run being torn down provisions nothing further, and neither does a
+    // wave that has already hit a wall: the entries still in flight settle
+    // and the wave leaves with them.
+    if (leg.attemptCtx.stopSignal?.aborted) return;
+    if (mergeError !== undefined || slotError !== undefined) return;
+    const baseRef: () => Promise<string> = initialFill
+      ? () => Promise.resolve(preHead)
+      : () => git.revParse(repoRoot);
+    initialFill = false;
+    while (inFlight.size < maxParallel) {
+      const entry = nextDisjointPick({
+        candidates: remaining,
+        inFlight: [...inFlight.values()],
+        ignore: partitionIgnore,
+      });
+      if (entry === undefined) return;
+      remaining.splice(remaining.indexOf(entry), 1);
+      inFlight.set(entry.tag, entry);
+      slots.push(
+        (async () => {
+          try {
+            await runSlot(entry, baseRef);
+          } catch (err) {
+            slotError ??= err;
+          } finally {
+            // The slot is free from here, so the pick below sees this entry
+            // out of the in-flight set it must be disjoint from.
+            inFlight.delete(entry.tag);
+            fillSlots();
+          }
+        })(),
+      );
+    }
+  };
+
+  fillSlots();
+  // The wave ends when every slot it opened has settled and no settling slot
+  // found another disjoint entry to pull — never with its first batch. The
+  // walk re-reads `slots.length` each turn because a refill appends to it, and
+  // awaiting a slot is what guarantees its own refill is already appended:
+  // the append happens in the slot promise's own `finally`.
+  for (let i = 0; i < slots.length; i++) await slots[i]!;
+  if (slotError !== undefined) throw slotError;
   if (mergeError !== undefined) throw mergeError;
 
   // Close the stage: the pending-ledger rewrite over everything that landed,
@@ -417,6 +500,16 @@ export async function runFanout(
   // the verdict log for. `find`, not a filter: at most one record per tag,
   // pinned by "records exactly one mergeOutcomes entry for that tag"
   // (tests/Dispatcher.test.ts).
+  // The queue's own order (`byQueueOrder`, `src/selection.ts`), not the order
+  // the agents happened to return in: `perEntry` fills as each slot's agent
+  // finishes, and which of two siblings finished first is a fact about the
+  // machine, never one a `handoff` should route on. Every attempt's entry came
+  // off `pickable`, which is already in that order.
+  const queuePosition = new Map(pickable.map((e, i) => [e.tag, i]));
+  perEntry.sort(
+    (a, b) =>
+      queuePosition.get(a.entry.tag)! - queuePosition.get(b.entry.tag)!,
+  );
   const entries: FanoutEntryOutcome[] = perEntry.map((r) => {
     const merge = mergeStage.mergeOutcomes.find(
       (m) => m.entryTag === r.entry.tag,
@@ -470,11 +563,11 @@ export async function runFanout(
       priorAttempts: priorAttemptsAfter,
       flumeDir: leg.flumeDir,
       configDir: leg.configDir,
-      // The tip every worktree in this wave was provisioned from
-      // (`createWorktree(entry.tag, preHead)` above) — the wave-level
-      // answer to "what could this tick not have seen". A per-entry base
-      // that diverged from it (a `setupWorktree` hook that committed) is
-      // on that entry's own ShipContext.
+      // The tip this wave's initial fill was provisioned from — the
+      // wave-level answer to "what could this tick not have seen". An entry
+      // a freed slot pulled branched from trunk as it then stood, and so
+      // does a base a `setupWorktree` hook moved by committing; either way
+      // the per-entry number is on that entry's own ShipContext.
       baseSha: preHead,
       ...(entries.length > 0 ? { entries } : {}),
       // The entries this wave dropped before an agent ran are nameable

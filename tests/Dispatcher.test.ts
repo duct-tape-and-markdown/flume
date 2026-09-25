@@ -423,6 +423,56 @@ function fanoutAgent(
 }
 
 /**
+ * A {@link fanoutAgent} with a slot probe around each invocation: the peak
+ * number of agents the wave held open at once, and a barrier that opens once
+ * `openAt` of them have started.
+ *
+ * The barrier is how a width claim is proven without a wall-clock window
+ * (flaky under CPU contention — the window can elapse before a delayed second
+ * invocation even starts): a wave genuinely that wide opens it every time,
+ * while a narrower one leaves the invocations waiting on a barrier the last
+ * never reaches, failing the case's own timeout rather than quietly reporting
+ * a low-but-plausible peak. `openAt: 1` is the no-barrier form, for a case
+ * whose claim is that the wave *serialized* — a peak that structurally cannot
+ * exceed one is observable with no window at all.
+ *
+ * The peak is the observable a slot-driven wave leaves for a width claim: a
+ * wave refills a freed slot until nothing is pickable (`spec/worktrees.md`,
+ * *Fanout and worktrees — provisioning, isolation, teardown*), so which
+ * entries ship says nothing about how wide it ran.
+ */
+function probedFanoutAgent(
+  bySlug: Record<string, (cwd: string) => Promise<void>>,
+  openAt: number,
+): { agent: Agent; peak: () => number } {
+  const inner = fanoutAgent(bySlug);
+  let live = 0;
+  let peak = 0;
+  let started = 0;
+  let open!: () => void;
+  const barrier = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return {
+    agent: {
+      name: "probed-fanout",
+      async invoke(inv) {
+        live++;
+        peak = Math.max(peak, live);
+        if (++started >= openAt) open();
+        await barrier;
+        try {
+          return await inner.invoke(inv);
+        } finally {
+          live--;
+        }
+      },
+    },
+    peak: () => peak,
+  };
+}
+
+/**
  * Fixture roots for a bare `loadChainModule` unit. The temp config dir is
  * standing in for a whole checkout, so all three roots are the same
  * directory — the load path only needs them to build the `FlumeApi` it hands
@@ -2338,13 +2388,18 @@ describe("Dispatcher fanout — wave auto-unblock (spec/pending.md § Wave auto-
 /**
  * CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE — `Chain.supervisorPolicy.maxParallel`
  * (`src/Phase.ts`) joins `quarantineScope`/`abortThreshold` as a
- * chain-overridable default for `runFanout`'s batch width
- * (`partitionByFileOverlap`, `src/partition.ts`). Unlike those two knobs this
- * needs no `superviseLoop`/CLI pre-read: it is tick-scoped, not run-scoped —
- * `runFanout` reads it straight off the chain the tick already resolved.
- * Three disjoint, single-file entries make the batch-1 boundary observable
- * via `shippedTags`/`pendingAfter`, the same seam the "two disjoint entries
- * both ship" suite above exercises.
+ * chain-overridable default for `runFanout`'s wave width — the slots it holds
+ * open at once, which is also the cap `partitionByFileOverlap`
+ * (`src/partition.ts`) places its initial fill under. Unlike those two knobs
+ * this needs no `superviseLoop`/CLI pre-read: it is tick-scoped, not
+ * run-scoped — `runFanout` reads it straight off the chain the tick already
+ * resolved.
+ *
+ * The width is not a ship limit: a freed slot pulls the next pickable entry
+ * (`spec/worktrees.md`, *Fanout and worktrees — provisioning, isolation,
+ * teardown*), so a queue of disjoint entries drains in one tick whatever the
+ * width. What the declaration decides is how many agents are open at once, and
+ * `probedFanoutAgent`'s peak is the seam that observes it.
  */
 describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch width (CHAIN-MAXPARALLEL-CHAIN-OVERRIDABLE)", () => {
   it("a chain declaring supervisorPolicy.maxParallel: 2 ships only the first two of three disjoint entries", async () => {
@@ -2367,14 +2422,19 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
       supervisorPolicy: { maxParallel: 2 },
     };
 
-    const agent = fanoutAgent({
-      "mp-a": (cwd) =>
-        writeAndCommit(cwd, "src/mp-a.ts", "from-A\n", "build(MP-A): ship"),
-      "mp-b": (cwd) =>
-        writeAndCommit(cwd, "src/mp-b.ts", "from-B\n", "build(MP-B): ship"),
-      "mp-c": (cwd) =>
-        writeAndCommit(cwd, "src/mp-c.ts", "from-C\n", "build(MP-C): ship"),
-    });
+    // openAt 2: the declared width. Three disjoint entries are pickable, so a
+    // wave that ran wider would open a third slot and the peak would say so.
+    const { agent, peak } = probedFanoutAgent(
+      {
+        "mp-a": (cwd) =>
+          writeAndCommit(cwd, "src/mp-a.ts", "from-A\n", "build(MP-A): ship"),
+        "mp-b": (cwd) =>
+          writeAndCommit(cwd, "src/mp-b.ts", "from-B\n", "build(MP-B): ship"),
+        "mp-c": (cwd) =>
+          writeAndCommit(cwd, "src/mp-c.ts", "from-C\n", "build(MP-C): ship"),
+      },
+      2,
+    );
 
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
@@ -2389,17 +2449,21 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.committed).toBe(true);
-    // Batch 1 closes on capacity (2) even though a third disjoint entry was
-    // pickable — it stays pending for the next tick's fresh partition.
+    // The declaration is a width, not a ship limit: the wave held two agents
+    // open at once and the third entry went into the slot the first merge
+    // freed, so all three ship in this one tick and the queue drains.
+    expect(peak()).toBe(2);
     // Sorted: a wave carries each span as its own agent finishes
     // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
-    // teardown"), so the order two clean siblings reach trunk in is finish
+    // teardown"), so the order clean siblings reach trunk in is finish
     // order and is no part of this case.
-    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(["MP-A", "MP-B"]);
-    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["MP-C"]);
-    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "MP-A",
+      "MP-B",
       "MP-C",
     ]);
+    expect(outcome.result?.pendingAfter).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
   });
 
   it("a chain declaring nothing gets maxParallel: 4", async () => {
@@ -2421,18 +2485,23 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
     // No supervisorPolicy at all — the undeclared-fields-fall-through case.
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
-    const agent = fanoutAgent({
-      "mpd-a": (cwd) =>
-        writeAndCommit(cwd, "src/mpd-a.ts", "from-A\n", "build(MPD-A): ship"),
-      "mpd-b": (cwd) =>
-        writeAndCommit(cwd, "src/mpd-b.ts", "from-B\n", "build(MPD-B): ship"),
-      "mpd-c": (cwd) =>
-        writeAndCommit(cwd, "src/mpd-c.ts", "from-C\n", "build(MPD-C): ship"),
-      "mpd-d": (cwd) =>
-        writeAndCommit(cwd, "src/mpd-d.ts", "from-D\n", "build(MPD-D): ship"),
-      "mpd-e": (cwd) =>
-        writeAndCommit(cwd, "src/mpd-e.ts", "from-E\n", "build(MPD-E): ship"),
-    });
+    // openAt 4: the built-in default. Five disjoint entries are pickable, so a
+    // wave that ran wider would open a fifth slot and the peak would say so.
+    const { agent, peak } = probedFanoutAgent(
+      {
+        "mpd-a": (cwd) =>
+          writeAndCommit(cwd, "src/mpd-a.ts", "from-A\n", "build(MPD-A): ship"),
+        "mpd-b": (cwd) =>
+          writeAndCommit(cwd, "src/mpd-b.ts", "from-B\n", "build(MPD-B): ship"),
+        "mpd-c": (cwd) =>
+          writeAndCommit(cwd, "src/mpd-c.ts", "from-C\n", "build(MPD-C): ship"),
+        "mpd-d": (cwd) =>
+          writeAndCommit(cwd, "src/mpd-d.ts", "from-D\n", "build(MPD-D): ship"),
+        "mpd-e": (cwd) =>
+          writeAndCommit(cwd, "src/mpd-e.ts", "from-E\n", "build(MPD-E): ship"),
+      },
+      4,
+    );
 
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
@@ -2447,19 +2516,251 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.committed).toBe(true);
-    // Sorted: the batch's width is this case's subject, and a wave carries
-    // each span as its own agent finishes (spec/worktrees.md, "Fanout and
-    // worktrees — provisioning, isolation, teardown"), so which of the four
-    // reaches trunk first is finish order and says nothing about the batch.
+    // The width is this case's subject, and the width is the peak: the fifth
+    // entry rides the slot the first merge freed rather than the next tick.
+    expect(peak()).toBe(4);
+    // Sorted: a wave carries each span as its own agent finishes
+    // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
+    // teardown"), so which of the five reaches trunk first is finish order.
     expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
       "MPD-A",
       "MPD-B",
       "MPD-C",
       "MPD-D",
+      "MPD-E",
     ]);
-    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["MPD-E"]);
+    expect(outcome.result?.pendingAfter).toEqual([]);
   });
 });
+
+/**
+ * WAVE-REFILLS-A-FREED-SLOT — `spec/worktrees.md`, *Fanout and worktrees —
+ * provisioning, isolation, teardown*: a slot a merged entry frees pulls the
+ * next pickable entry disjoint from everything still in flight and provisions
+ * it alone, from trunk as it then stands, and the tick ends when nothing is
+ * pickable rather than when one batch has drained.
+ *
+ * The width `maxParallel` declares stays what it was (CHAIN-MAXPARALLEL above);
+ * what changes is that the width no longer bounds how many entries a tick
+ * ships. Each case below is red on a wave that stops at `batches[0]`.
+ */
+describe("Dispatcher fanout — a freed slot pulls the next disjoint entry (WAVE-REFILLS-A-FREED-SLOT)", () => {
+  it("a slot freed by a merged entry pulls the next pickable entry disjoint from what is still in flight", async () => {
+    // Queue order (equal priority, tag ascending): RF-A, RF-B, RF-C, RF-D.
+    // RF-C collides with RF-B and with nothing else, so it is the entry the
+    // freed slot must *skip*: the pick is disjointness against what is still
+    // in flight, not "the next entry in the queue".
+    const entries = [
+      makeEntry("RF-A", ["src/rf-a.ts"]),
+      makeEntry("RF-B", ["src/rf-shared.ts"]),
+      makeEntry("RF-C", ["src/rf-shared.ts"]),
+      makeEntry("RF-D", ["src/rf-d.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 2 },
+    };
+
+    const fileBySlug: Record<string, string> = {
+      "rf-a": "src/rf-a.ts",
+      "rf-b": "src/rf-shared.ts",
+      "rf-c": "src/rf-shared.ts",
+      "rf-d": "src/rf-d.ts",
+    };
+    // RF-B holds its slot open until a third agent starts, so the pick the
+    // freed slot makes is observed while RF-B is genuinely still in flight.
+    // A wave that stopped at its first batch never starts a third agent and
+    // leaves RF-B on this barrier — the case then fails its own timeout
+    // rather than reporting a plausible order (the probe discipline
+    // `probedFanoutAgent` above states).
+    const order: string[] = [];
+    let openBarrier!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      openBarrier = resolve;
+    });
+    const agent: Agent = {
+      name: "refill-probe",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        order.push(slug);
+        if (order.length >= 3) openBarrier();
+        if (slug === "rf-b") await barrier;
+        await writeAndCommit(
+          inv.cwd,
+          fileBySlug[slug]!,
+          `${slug}\n`,
+          `build(${slug}): ship`,
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The initial fill is the two-wide head of the queue; which of the two
+    // reached its agent first is scheduling and no part of this case.
+    expect(order.length).toBe(4);
+    expect([...order.slice(0, 2)].sort()).toEqual(["rf-a", "rf-b"]);
+    // The slot RF-A's merge freed pulled RF-D, not the queue's own next entry:
+    // RF-C still collided with RF-B, which was still in flight.
+    expect(order[2]).toBe("rf-d");
+    // RF-C only became pickable-into-a-slot once RF-B left flight.
+    expect(order[3]).toBe("rf-c");
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "RF-A",
+      "RF-B",
+      "RF-C",
+      "RF-D",
+    ]);
+    expect(outcome.result?.pendingAfter).toEqual([]);
+  });
+
+  it("an entry a freed slot pulls is provisioned from the tip it is pulled at rather than the tip the wave started on", async () => {
+    const entries = [
+      makeEntry("TB-A", ["src/tb-a.ts"]),
+      makeEntry("TB-B", ["src/tb-b.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // One slot wide, so TB-B can only run as the refill of the slot TB-A's
+    // merge freed — and its base is therefore the trunk that merge left.
+    const baseBySlug: Record<string, string> = {};
+    const recordBase: Gate = {
+      name: "record-base",
+      when: "afterCommit",
+      async run(ctx) {
+        baseBySlug[basename(ctx.repoRoot)] = ctx.baseSha;
+        return { ok: true, message: "recorded" };
+      },
+    };
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [recordBase],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 1 },
+    };
+
+    // What TB-B's own worktree held of TB-A's shipped file: the base read as
+    // bytes rather than as a sha.
+    let sawFromA: string | undefined;
+    const agent: Agent = {
+      name: "refill-base-probe",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        if (slug === "tb-b") {
+          sawFromA = await readFile(join(inv.cwd, "src/tb-a.ts"), "utf8");
+        }
+        await writeAndCommit(
+          inv.cwd,
+          slug === "tb-a" ? "src/tb-a.ts" : "src/tb-b.ts",
+          `${slug}\n`,
+          `build(${slug}): ship`,
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const preHead = await head(fx.repo);
+    const outcome = await dispatcher.tick();
+
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "TB-A",
+      "TB-B",
+    ]);
+    // The wave-level base is the tip the tick started on, and it is TB-A's
+    // own: TB-A was the initial fill.
+    expect(outcome.result?.baseSha).toBe(preHead);
+    expect(baseBySlug["tb-a"]).toBe(preHead);
+    // TB-B's is not — its worktree was cut after TB-A's span landed, which is
+    // why TB-A's shipped bytes were already checked out in it.
+    expect(baseBySlug["tb-b"]).toBeDefined();
+    expect(baseBySlug["tb-b"]).not.toBe(preHead);
+    expect(sawFromA).toBe("tb-a\n");
+  });
+
+  it("a wave keeps pulling pickable entries until none remain rather than ending with its first batch", async () => {
+    // Three entries all colliding on one file: the partition puts exactly one
+    // in each batch, so a wave that ended with its first batch shipped one and
+    // left two pending however wide it ran.
+    const entries = [
+      makeEntry("QD-A", ["src/queue-drain.ts"]),
+      makeEntry("QD-B", ["src/queue-drain.ts"]),
+      makeEntry("QD-C", ["src/queue-drain.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const agent = fanoutAgent({
+      "qd-a": (cwd) =>
+        writeAndCommit(cwd, "src/queue-drain.ts", "A\n", "build(QD-A): ship"),
+      "qd-b": (cwd) =>
+        writeAndCommit(cwd, "src/queue-drain.ts", "B\n", "build(QD-B): ship"),
+      "qd-c": (cwd) =>
+        writeAndCommit(cwd, "src/queue-drain.ts", "C\n", "build(QD-C): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Every entry shipped in this one tick, in queue order — each slot could
+    // hold only one of them at a time, so the order spans landed in is the
+    // order they were pulled.
+    expect(outcome.result?.shippedTags).toEqual(["QD-A", "QD-B", "QD-C"]);
+    expect(outcome.result?.pendingAfter).toEqual([]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+    // Each refill was cut from the trunk the merge before it left, so the
+    // last writer's bytes are on trunk and no cherry-pick conflicted.
+    expect(await readFile(join(fx.repo, "src/queue-drain.ts"), "utf8")).toBe(
+      "C\n",
+    );
+  });
+});
+
 
 /**
  * SUPERVISORPOLICY-TICKTIMEOUTMS — `Chain.supervisorPolicy.tickTimeoutMs`
@@ -2770,6 +3071,13 @@ describe("Dispatcher — the stop signal and kill grace reach the agent invocati
  * `declaredPaths` (the fence, the write guard, ship detection) is
  * untouched, so a wave that widens on the ignored path still gates and
  * ships each entry against its real declared files.
+ *
+ * The collision set decides **concurrency**, not shipping: a colliding sibling
+ * rides the slot the first one's merge frees, cut from the trunk that merge
+ * left (`spec/worktrees.md`, *Fanout and worktrees — provisioning, isolation,
+ * teardown*). So each case below reads the ignore off `probedFanoutAgent`'s
+ * peak — how many agents the wave held open — rather than off which tags
+ * shipped.
  */
 describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the collision set (CHAIN-PARTITIONIGNORE)", () => {
   it("two entries colliding only on an ignored path ship in the same wave", async () => {
@@ -2787,12 +3095,18 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
       supervisorPolicy: { partitionIgnore: ["shared-lock.json"] },
     };
 
-    const agent = fanoutAgent({
-      "pi-a": (cwd) =>
-        writeAndCommit(cwd, "src/pi-a.ts", "from-A\n", "build(PI-A): ship"),
-      "pi-b": (cwd) =>
-        writeAndCommit(cwd, "src/pi-b.ts", "from-B\n", "build(PI-B): ship"),
-    });
+    // openAt 2: with the ignore in effect the two are disjoint, so the wave
+    // opens both slots at once. Without it the barrier never opens and this
+    // case fails its own timeout rather than reporting a plausible peak.
+    const { agent, peak } = probedFanoutAgent(
+      {
+        "pi-a": (cwd) =>
+          writeAndCommit(cwd, "src/pi-a.ts", "from-A\n", "build(PI-A): ship"),
+        "pi-b": (cwd) =>
+          writeAndCommit(cwd, "src/pi-b.ts", "from-B\n", "build(PI-B): ship"),
+      },
+      2,
+    );
 
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
@@ -2805,8 +3119,10 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
     const outcome = await dispatcher.tick();
 
     // Both entries only ever touch src/pi-a.ts / src/pi-b.ts + the ignored
-    // shared-lock.json, so with the ignore in effect they're disjoint and
-    // both ship in wave 1 — no cherry-pick conflict on the ignored file.
+    // shared-lock.json, so with the ignore in effect they're disjoint: the
+    // wave holds both slots open at once and both ship — no cherry-pick
+    // conflict on the ignored file.
+    expect(peak()).toBe(2);
     // Sorted: a wave carries each span as its own agent finishes
     // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
     // teardown"), so the order two clean siblings reach trunk in is finish
@@ -2830,12 +3146,18 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
       supervisorPolicy: { partitionIgnore: ["shared-lock.json"] },
     };
 
-    const agent = fanoutAgent({
-      "pic-a": (cwd) =>
-        writeAndCommit(cwd, "src/shared.ts", "from-A\n", "build(PIC-A): ship"),
-      "pic-b": (cwd) =>
-        writeAndCommit(cwd, "src/shared.ts", "from-B\n", "build(PIC-B): ship"),
-    });
+    // openAt 1: no barrier. The claim is that the two did NOT run at once, so
+    // the peak needs no window to observe — a colliding entry is pulled only
+    // once the slot its sibling held has merged.
+    const { agent, peak } = probedFanoutAgent(
+      {
+        "pic-a": (cwd) =>
+          writeAndCommit(cwd, "src/shared.ts", "from-A\n", "build(PIC-A): ship"),
+        "pic-b": (cwd) =>
+          writeAndCommit(cwd, "src/shared.ts", "from-B\n", "build(PIC-B): ship"),
+      },
+      1,
+    );
 
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
@@ -2847,10 +3169,17 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
 
     const outcome = await dispatcher.tick();
 
-    // src/shared.ts is not ignored, so PIC-A and PIC-B still collide and
-    // only the first ships this wave — the ignore widened nothing here.
-    expect(outcome.result?.shippedTags).toEqual(["PIC-A"]);
-    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PIC-B"]);
+    // src/shared.ts is not ignored, so PIC-A and PIC-B still collide and the
+    // wave never holds both open — the ignore widened nothing here. PIC-B
+    // still ships, from the slot PIC-A's merge freed and cut from the trunk
+    // that merge left, which is why its own write of the shared file
+    // cherry-picks clean.
+    expect(peak()).toBe(1);
+    expect(outcome.result?.shippedTags).toEqual(["PIC-A", "PIC-B"]);
+    expect(outcome.result?.pendingAfter).toEqual([]);
+    expect(await readFile(join(fx.repo, "src/shared.ts"), "utf8")).toBe(
+      "from-B\n",
+    );
   });
 
   it("a chain declaring no partitionIgnore still collides on the shared path", async () => {
@@ -2865,12 +3194,26 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
     // No supervisorPolicy at all — the undeclared-fields-fall-through case.
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
-    const agent = fanoutAgent({
-      "pid-a": (cwd) =>
-        writeAndCommit(cwd, "shared-lock.json", "from-A\n", "build(PID-A): ship"),
-      "pid-b": (cwd) =>
-        writeAndCommit(cwd, "shared-lock.json", "from-B\n", "build(PID-B): ship"),
-    });
+    // openAt 1: no barrier — see the sibling case above.
+    const { agent, peak } = probedFanoutAgent(
+      {
+        "pid-a": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "shared-lock.json",
+            "from-A\n",
+            "build(PID-A): ship",
+          ),
+        "pid-b": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "shared-lock.json",
+            "from-B\n",
+            "build(PID-B): ship",
+          ),
+      },
+      1,
+    );
 
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
@@ -2882,8 +3225,12 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
 
     const outcome = await dispatcher.tick();
 
-    expect(outcome.result?.shippedTags).toEqual(["PID-A"]);
-    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PID-B"]);
+    // Undeclared means nothing is ignored, so the shared path collides and the
+    // wave never holds both slots open. Both still ship: the freed slot cuts
+    // PID-B from the trunk PID-A's merge left.
+    expect(peak()).toBe(1);
+    expect(outcome.result?.shippedTags).toEqual(["PID-A", "PID-B"]);
+    expect(outcome.result?.pendingAfter).toEqual([]);
   });
 
   it("declaredPaths / write guard / ship detection are unaffected — an ignored path still fails writablePaths outside the phase's ceiling", async () => {
