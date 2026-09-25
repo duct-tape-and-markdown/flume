@@ -222,11 +222,11 @@ Exit codes:
       completion summary names the errors).
   1   Harness error, another live loop holds the lock; also, the stop flag
       (\`.flume/stop\`) is already present — the refusal names the path, and
-      removing it is how the stop is acknowledged (spec/loop.md, "Graceful
-      stop — the stop flag"); also, HEAD is detached (checkout a branch
-      first — the tip claim below keys on the ref); also, another process
-      holds the tip claim (the refusal names the holder pid and claim path);
-      also, at least one tick errored and the run shipped nothing; also, an
+      removing it is how the stop is acknowledged (docs/CLI.md, "flume
+      stop"); also, HEAD is detached (checkout a branch first — the tip
+      claim below keys on the ref); also, another process holds the tip
+      claim (the refusal names the holder pid and claim path); also, at
+      least one tick errored and the run shipped nothing; also, an
       identical failure signature repeated on as many consecutive ticks as
       the chain's supervisorPolicy.abortThreshold declares (default
       ${DEFAULT_ABORT_THRESHOLD}), with no successful tick between them — a
@@ -263,10 +263,10 @@ Exit codes:
       a merge interrupted before its ship bookkeeping is unreconciled — a
       \`.flume/merging/<slug>.json\` marker survived a crash between the
       cherry-pick and the queue rewrite, so the picked commit may sit on
-      trunk ungated with its entry still open (spec/loop.md, "Crash equals
-      stop"). The refusal names the file, the branch and the entry; nothing
-      is touched and the startup sweep does not run, so the branch survives
-      — reconcile, then remove the file to acknowledge.
+      trunk ungated with its entry still open (docs/CLI.md, "flume loop
+      [--max N]"). The refusal names the file, the branch and the entry;
+      nothing is touched and the startup sweep does not run, so the branch
+      survives — reconcile, then remove the file to acknowledge.
   2   Bad --max: missing, non-numeric, or negative. No tick runs. Also, a
       stray positional past --max/<value> — loop consumes no positionals,
       and running anything other than what was typed is refused rather
@@ -417,7 +417,7 @@ A dot-prefixed name is not a note: the listing omits it, <name> refuses it,
 and the status count skips it.
 With <name>: print that note's bytes verbatim to stdout — the channel's
 content is never interpreted, only moved, counted, listed, or printed
-(spec/chain.md, "Chain.friction — the declared friction channel"). Read-only:
+(docs/CLI.md, "flume friction [name]"). Read-only:
 no baton flag is touched, no agent runs.
 
 Exit codes:

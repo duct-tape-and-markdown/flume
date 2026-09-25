@@ -46,6 +46,7 @@ import {
 import { externalVocabulary } from "./helpers/externalVocabulary.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { INTERFACE_PAGES, pageIdentifiers } from "./helpers/pageAnchors.ts";
+import { packedPages } from "./helpers/packedPages.ts";
 import { shippedHelpPages, shippedPages } from "./helpers/shippedHelp.ts";
 import {
   NO_FINDINGS,
@@ -140,6 +141,16 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * are counted rather than guessed.
  */
 const FIXTURE_FILES: Readonly<Record<string, string>> = {
+  // The fixture's own manifest, so the packed set below is read off a real
+  // `files` list by the reader the repo claim uses — a directory it packs, a
+  // page under that directory it subtracts, and a root-level page it names.
+  "package.json": JSON.stringify({
+    name: "probe",
+    type: "module",
+    files: ["docs", "!docs/internal-*.md", "guide.md"],
+  }),
+  "docs/internal-notes.md":
+    "# the page the fixture tree holds and its manifest subtracts\n",
   "tsconfig.json": JSON.stringify({
     compilerOptions: {
       target: "ES2023",
@@ -479,9 +490,10 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
  * heading the page really opens, a cite into a page the tree does not hold,
  * and — on a second surface, which a scan stopping at the first would never
  * reach — the italicized emphasis beside the quoted one. A third surface
- * carries the two halves of the page arm's one exemption: a page this tree
+ * carries the two halves of the page arm's one exemption — a page this tree
  * does not hold under the reader's own state root, and a page it does not
- * hold outside one.
+ * hold outside one — beside the name that separates the pack from the tree: a
+ * page this tree does hold and the fixture manifest subtracts.
  *
  * Written one line per rendered line, so the line numbers the assertions cite
  * are counted rather than guessed.
@@ -533,6 +545,9 @@ const FIXTURE_HELP_SURFACES: readonly RenderedSurface[] = [
       ``,
       `The conventions behind it are in docs/adopt.md, a page of this`,
       `package's own that the tree does not hold either.`,
+      ``,
+      `Beside it, docs/internal-notes.md — a page this tree does hold and the`,
+      `manifest subtracts from what it packs, so the install carries neither.`,
       ``,
     ].join("\n"),
   },
@@ -599,12 +614,16 @@ let repoScan: CitationScan;
 let fixturePageScan: PageCitationScan;
 /** The one page-arm scan of this repo's widened domain. */
 let repoPageScan: PageCitationScan;
+/** The `*.md` pages the fixture's own manifest packs. */
+let fixturePacked: ReadonlySet<string>;
 /** The one rendered-surface scan of the two fixture help pages. */
 let fixtureHelpScan: RenderedCitationScan;
 /** Every help page this repo's CLI really prints, one surface each. */
 let shippedHelp: readonly RenderedSurface[];
 /** Every surface this package ships prose in — those pages and the packed assets. */
 let shippedProse: readonly RenderedSurface[];
+/** The `*.md` pages this repo's own manifest packs — what an install carries. */
+let repoPacked: ReadonlySet<string>;
 /** The one rendered-surface scan of all of them. */
 let repoHelpScan: RenderedCitationScan;
 
@@ -633,19 +652,25 @@ beforeAll(async () => {
     root: REPO_ROOT,
     domain: PAGE_ARM_DOMAIN,
   });
+  fixturePacked = packedPages(fixtureRoot);
   fixtureHelpScan = scanRenderedCitations({
     root: fixtureRoot,
     consumerRoot: FIXTURE_CONSUMER_ROOT,
+    packed: fixturePacked,
     surfaces: FIXTURE_HELP_SURFACES,
   });
   shippedHelp = shippedHelpPages();
   shippedProse = shippedPages();
+  repoPacked = packedPages(REPO_ROOT);
   repoHelpScan = scanRenderedCitations({
     root: REPO_ROOT,
     // The root taken off the verb that writes it, not spelled here: a page
     // this package ships names paths under the consumer's state root, and
     // those are that tree's to answer.
     consumerRoot: DEFAULT_STATE_ROOT,
+    // The authority a shipped page's own names are answered by, off the
+    // manifest the consumer's install obeys rather than off this checkout.
+    packed: repoPacked,
     surfaces: shippedProse,
   });
 });
@@ -1565,7 +1590,7 @@ it("a section cite in a shipped help literal naming a section its page does not 
   ]);
 });
 
-it("a *.md page name in a shipped literal the working tree cannot answer is a finding", () => {
+it("a *.md page name in a shipped literal the package does not carry is a finding", () => {
   // Vacuity guard: the arm drew every page name the surfaces state, both
   // fencings and every surface, before a verdict is read off any of them. A
   // reader that stopped at the first surface, or that read only a backticked
@@ -1577,15 +1602,43 @@ it("a *.md page name in a shipped literal the working tree cannot answer is a fi
     "probe --help:10 docs/absent.md",
     "probe list --help:3 docs/sections.md",
     "probe adopt --help:7 docs/adopt.md",
+    "probe adopt --help:10 docs/internal-notes.md",
   ]);
 
-  // The verdict, and it is the title arm's verdict: the page name is answered
-  // by the working tree and by nothing else, so a page the tree holds
-  // resolves however the literal spells it and a page it does not hold reds.
+  // The verdict, and it is the title arm's verdict one authority over: the
+  // page name is answered by the file set the manifest packs and by nothing
+  // else, so a page the install carries resolves however the literal spells
+  // it, and a page it does not — absent from the tree, or held by the tree
+  // and subtracted from the pack — reds.
   expect(fixtureHelpScan.pages.findings.map(formatCitation)).toEqual([
     "probe --help:10 docs/absent.md",
     "probe adopt --help:7 docs/adopt.md",
+    "probe adopt --help:10 docs/internal-notes.md",
   ]);
+});
+
+it("the rendered page scan reports a page name a shipped page states that the package does not pack", () => {
+  const page = "docs/internal-notes.md";
+
+  // Vacuity guard, three halves: the surface really states that name, the
+  // scanned tree really does hold the file — so the tree is not what reds it
+  // — and the manifest really packs the directory it sits under, so what
+  // subtracts it is the `!` entry and not a directory the pack never named.
+  expect(adoptSurface().text).toContain(page);
+  expect(`${page} on disk -> ${existsSync(join(fixtureRoot, page))}`).toBe(
+    `${page} on disk -> true`,
+  );
+  expect([...fixturePacked]).toContain("docs/sections.md");
+
+  // The verdict: a page name a shipped literal states is answered by the
+  // install rather than by the checkout that wrote it, so a page this tree
+  // holds and the manifest leaves out of the pack is a dead pointer for every
+  // reader the page was written for (`spec/harness.md`, *Adoption and
+  // upgrade*).
+  expect([...fixturePacked]).not.toContain(page);
+  expect(fixtureHelpScan.pages.findings.map(formatCitation)).toContain(
+    "probe adopt --help:10 docs/internal-notes.md",
+  );
 });
 
 /**
@@ -2246,8 +2299,8 @@ it("every section a shipped help literal cites is a section its page still carri
       .map((site) => `${site.page} :: ${site.text}`),
   );
   for (const cite of [
-    "spec/loop.md :: Graceful stop — the stop flag",
-    "spec/chain.md :: Chain.friction — the declared friction channel",
+    "docs/CLI.md :: flume stop",
+    "docs/CLI.md :: flume friction [name]",
   ]) {
     expect(`${cite} -> ${resolved.has(cite)}`).toBe(`${cite} -> true`);
   }
@@ -2262,7 +2315,7 @@ it("every section a shipped help literal cites is a section its page still carri
   );
 });
 
-it("every *.md page name a page the package ships states resolves on disk", () => {
+it("every *.md page name a page the package ships states resolves in the file set the package packs", () => {
   // Vacuity guard: the judged surfaces are both halves of what this package
   // ships prose in — the pages its bins print and the `*.md` assets the build
   // packs beside the emit — and they state page names, before the emptiness
@@ -2275,24 +2328,54 @@ it("every *.md page name a page the package ships states resolves on disk", () =
   expect(surfaces).toContain("harness/templates/PROTOCOL.md");
   expect(repoHelpScan.pages.scanned.length).toBeGreaterThan(2);
 
+  // And the authority is narrower than the checkout, which is the whole
+  // point of it: the manifest's own `!` entry subtracts a page this tree
+  // holds, so a set that had fallen back to a disk read would pass the
+  // verdict below for the reason this arm exists to refuse.
+  expect(existsSync(join(REPO_ROOT, "docs/PRD-dock-collapse.md"))).toBe(true);
+  expect([...repoPacked]).not.toContain("docs/PRD-dock-collapse.md");
+
   // Judged in the direction that matters: a page name a shipped literal
-  // states is answered by the working tree, so a page renamed out from under
-  // one reds here as it already reds a comment naming it.
+  // states is answered by what the install carries, so a page renamed out
+  // from under one reds here as it already reds a comment naming it.
   const dangling = new Set(repoHelpScan.pages.findings);
   const resolved = new Set(
     repoHelpScan.pages.scanned
       .filter((site) => !dangling.has(site))
       .map((site) => site.text),
   );
-  for (const page of ["spec/loop.md", "spec/harness.md"]) {
+  for (const page of ["docs/CLI.md", "docs/CHAIN-AUTHORING.md"]) {
     expect(`${page} -> ${resolved.has(page)}`).toBe(`${page} -> true`);
   }
 
   // The verdict: an operator reading a `--help` page and an agent reading a
-  // packed prompt follow the page it names, so a name the tree cannot answer
-  // is a dead pointer in the one surface neither of them can check. A name
-  // under the consumer's own state root is out of it — that tree is the
+  // packed prompt follow the page it names, so a name the install cannot
+  // answer is a dead pointer in the one surface neither of them can check. A
+  // name under the consumer's own state root is out of it — that tree is the
   // reader's, and what covers the path the page composes under it is the
   // agreement pin over its writer above.
   expectNoFindings(repoHelpScan.pages.findings.map(formatCitation));
+});
+
+it("no page the package ships names a page of the spec corpus", () => {
+  // Vacuity guard: the page arm really drew names off these surfaces, and
+  // they really are the pages the package ships, before the emptiness below
+  // is read off them. A scan that reached no name would report a clean
+  // surface over nothing.
+  expect(shippedProse.map((surface) => surface.name)).toContain(
+    "harness/templates/PROTOCOL.md",
+  );
+  expect(repoHelpScan.pages.scanned.length).toBeGreaterThan(2);
+
+  // The verdict: the spec corpus ships nowhere — the manifest packs `docs`,
+  // the README and the emit, and nothing else — so a shipped page naming one
+  // of its files points its reader at a file no install holds
+  // (`spec/harness.md`, *Adoption and upgrade*). Held here as well as at the
+  // pack read above, because this is the claim a reviewer can check by
+  // reading the page: a shipped surface cites `docs/`, never `spec/`.
+  expectNoFindings(
+    repoHelpScan.pages.scanned
+      .filter((site) => site.text.startsWith("spec/"))
+      .map(formatCitation),
+  );
 });

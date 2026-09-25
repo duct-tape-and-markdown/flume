@@ -1587,6 +1587,18 @@ export interface RenderedCitationScanRequest {
    * restated beside its source*).
    */
   readonly consumerRoot: string;
+  /**
+   * The `*.md` pages the package packs, repo-relative — what the surfaces'
+   * reader holds after installing it (`packedPages`,
+   * `tests/helpers/packedPages.ts`).
+   *
+   * The authority a shipped page's own citations are answered by, in place of
+   * the working tree: the reader stands in a repository this checkout is not,
+   * so a page name the tree answers by being that tree is a pointer that reads
+   * as current and resolves to nothing where it is read
+   * (`spec/harness.md`, *Adoption and upgrade*).
+   */
+  readonly packed: ReadonlySet<string>;
   /** The rendered texts whose citations are judged. */
   readonly surfaces: readonly RenderedSurface[];
 }
@@ -1616,24 +1628,33 @@ export interface RenderedCitationScan {
  *
  * Two of the arms reach here, and they are the two a test title carries for
  * the same reason: a literal is itself a resolution arm, so an identifier
- * written in one would resolve against itself, while the working tree is
- * written by no literal. A page name is answered by the tree, and a section
- * by the named page's own headings.
+ * written in one would resolve against itself, while a page is written by no
+ * literal. A page name is answered by the file set the package packs, and a
+ * section by the named page's own headings.
+ *
+ * **The pack, not this checkout**, and that is the whole difference between
+ * this reader and the two comment scans. A doc comment is read where this
+ * repository resolves it, so the tree is its authority; a shipped page is
+ * read in a repository that holds no `spec/` corpus and no `src/`, so the
+ * only names it may state are the ones the install carries
+ * (`spec/harness.md`, *Adoption and upgrade*). Resolved against the tree, a
+ * cite into the spec corpus passes here and dangles for every reader the page
+ * was written for — green for the author, dead for the audience. The section
+ * arm keeps reading this tree, because the pages a shipped cite may name are
+ * `docs/` pages and the README, which this repository is the home of.
  *
  * One page name is answered by neither, and it is the one the surface is not
  * talking about this tree with: a name under the reader's own state root
  * (`consumerRoot`) is a file the *reader's* repository holds after adopting
- * the package, so this tree's copy answers it by coincidence — the same
- * coincidence passes a path the writer stopped composing and reds a rename
- * this repository is free to make. Left out of the disk read entirely rather
- * than resolved and excused, so the vacuity pin over `pages.scanned` counts
- * the names this tree really is the authority for, and what covers the
- * composed path instead is the agreement pin over its writer
- * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
- * wrote*). The section arm is not narrowed with it: a shipped page names a
- * page the consumer owns but never a section in one (`spec/harness.md`,
- * *Adoption and upgrade*), so there is nothing under that root for it to
- * leave alone.
+ * the package, so a verdict either way would be drawn from the wrong tree.
+ * Left out of the judged set entirely rather than resolved and excused, so
+ * the vacuity pin over `pages.scanned` counts the names this package really
+ * is the authority for, and what covers the composed path instead is the
+ * agreement pin over its writer (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*). The section arm is not narrowed with
+ * it: a shipped page names a page the consumer owns but never a section in
+ * one (`spec/harness.md`, *Adoption and upgrade*), so there is nothing under
+ * that root for it to leave alone.
  *
  * The surfaces are the caller's to render, from the program that prints them
  * rather than from a copy of their text — a cite read off a hand copy pins the
@@ -1662,7 +1683,7 @@ export const scanRenderedCitations = (
   return {
     pages: {
       scanned: pages,
-      findings: pages.filter((site) => !holdsFile(root, site.text)),
+      findings: pages.filter((site) => !request.packed.has(site.text)),
     },
     sections: resolveSectionCites(
       root,

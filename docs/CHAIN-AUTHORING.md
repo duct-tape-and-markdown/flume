@@ -383,6 +383,48 @@ workflow, a single phase, a different queue, a chain embedded in something
 larger. `examples/backlog-groomer-chain.ts` is exactly that case, and the
 engine underneath is the same engine either way.
 
+### Records: one file each
+
+A finding for plan and a note from a build tick are **records**, and the
+package owns three things about them: where they live, how they open, and
+what they may weigh. The `PROTOCOL.md` that `flume-harness init` writes cites
+this section for those three and states the project-side conventions itself.
+
+A record is one file, never a section appended to a shared document. Git
+merges by line position, so two ticks appending to one document conflict
+whatever the syntax and two ticks creating two files never do — which is why
+these are paths at all. All of them sit under the state root:
+
+| Record | Path | Written by |
+| ------ | ---- | ---------- |
+| Inbox finding | `inbox/<name>.md` | whoever observes something in the field |
+| Build note | `plan/notes/<TAG>.md` | the build tick assigned that entry |
+| Build park | `plan/notes/parked/<TAG>.md` | a build tick that cannot ship the entry |
+| Build continuation | `plan/notes/continuing/<TAG>.md` | a build tick that put the rest down |
+| Open question | `plan/questions/<slug>.md` | any session |
+
+**Presence is state, location is kind, content is for the reader.** No slice
+derives a state from a word — not a status read out of a heading, not a park
+read out of a commit's path list. A park and an observation are the same note
+in two directories, and the directory is what says which: a commit carrying a
+note under `parked/` keeps its entry in the queue whatever else that commit
+touched. A continuation is not a record the drain takes at all — it is build's
+channel to its own next tick on one entry, so no plan tick reads it and the
+commit that completes the entry removes it.
+
+A written record opens with a title line: `# <title>`, then what was observed,
+where, and why it matters. The records gate holds that, plus the two rules
+that protect the tree rather than the prose — a build tick touches only a note
+its own tag names, and a plan slice drains records rather than writing one.
+
+The cap is `RECORD_MAX_BYTES` (2,000) and it is the package's value, not a
+declaration knob: a consumer free to raise it would be free to turn the record
+channel back into the design document the cap exists to refuse. Measured in
+**bytes**, so an em-dash costs three. **The drain reports an overrun; no gate
+reverts one** — an over-cap record ships with the commit that wrote it, and
+the plan tick that drains it names the overrun in its commit body, where a
+shape rule on a prose channel belongs.
+
 ## Where the chain lives
 
 The harness re-resolves `.flume/chain.ts` (relative to your repo root) at

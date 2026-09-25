@@ -8,8 +8,8 @@ apply, and add whatever a fresh tick could not derive from the tree.
 What does NOT belong here: anything the harness package already owns — the
 plan slices and their order, the judges, the record cap, the gates, the
 entry extension's fields. Those ship with `@dtmd/flume/harness` and are
-declared, not restated (`spec/harness.md`). What belongs here is the part of
-this project no declaration encodes.
+declared, not restated (`docs/CHAIN-AUTHORING.md`). What belongs here is the
+part of this project no declaration encodes.
 -->
 
 Runtime mechanics — the phases, their prompts, the gates, the entry
@@ -55,10 +55,10 @@ implementation.**
 
 A finding for plan and a note from a build tick are **records**: one file
 each, drained by the inbox slice and deleted on the way out. The paths, the
-title line, and the byte cap are the package's (`spec/harness.md`, *Records
-as one file each*) — the cap measured in bytes, and reported by the drain
-rather than reverted by the records gate; what belongs in one here is this
-project's:
+title line, and the byte cap are the package's (`docs/CHAIN-AUTHORING.md`,
+*Records: one file each*) — the cap measured in bytes, and reported by the
+drain rather than reverted by the records gate; what belongs in one here is
+this project's:
 
 - **Inbox** — `{{STATE_ROOT}}/inbox/<YYYY-MM-DD>-<slug>.md`, from whoever
   observes something in the field.
