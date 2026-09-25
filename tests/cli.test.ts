@@ -2333,18 +2333,40 @@ const ANNOUNCED_GRACE_MS = 600_000;
 const signalledPids: (number | undefined)[] = [];
 
 /**
- * SIGKILL a pid this suite recorded, if it is still there. Teardown only: an
- * arm that reds before its assertions — the whole point of the parks above
- * outlasting the budget — must not leave a parked tree behind for the rest of
- * the lane to run alongside.
+ * SIGKILL every pid this suite recorded that is still there, and return only
+ * once none of them is in the process table. Teardown only: an arm that reds
+ * before its assertions — the whole point of the parks above outlasting the
+ * budget — must not leave a parked tree behind for the rest of the lane to
+ * run alongside.
+ *
+ * The wait is the point. A signal is delivered, not completed, so a teardown
+ * that removed its scratch trees in the same breath walked them while a
+ * supervisor, tick child or agent was still exiting inside — the removal
+ * reds `ENOTEMPTY` on whatever that writer recreated, attributed to whichever
+ * case happened to run it (`.claude/rules/engineering.md`, "Loud or nothing":
+ * gone is observed here, by name, rather than assumed downstream).
+ *
+ * Signal the whole set before waiting on any of it: waiting on a parent while
+ * its child is still unsignalled gives that child time to write more of the
+ * tree the caller is about to remove. One deadline over the set rather than
+ * one per pid, for the same reason the hooks below share a budget.
  */
-function killIfAlive(pid: number | undefined): void {
-  if (pid === undefined || !processAlive(pid)) return;
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch {
-    // raced its own exit — gone is the outcome either way
+async function reapAll(pids: readonly (number | undefined)[]): Promise<void> {
+  const known = [
+    ...new Set(pids.filter((pid): pid is number => pid !== undefined)),
+  ];
+  for (const pid of known) {
+    if (!processAlive(pid)) continue;
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // raced its own exit — gone is the outcome either way
+    }
   }
+  await waitFor(
+    `the signalled pids (${known.join(", ")}) to leave the process table`,
+    () => (known.some((pid) => processAlive(pid)) ? undefined : "gone"),
+  );
 }
 
 /**
@@ -2405,18 +2427,21 @@ async function signalledLoopRun(opts: {
   let parkedPid: number | undefined;
   let grandchildPid: number | undefined;
   let loop: ReturnType<typeof spawn> | undefined;
-  const cleanup = async (): Promise<void> => {
-    killIfAlive(grandchildPid);
-    killIfAlive(parkedPid);
-    killIfAlive(loop?.pid);
-    await rm(scratch, { recursive: true, force: true });
-    await repo.cleanup();
-  };
   // Recorded lazily as each pid is learned, so the hook can finish a teardown
-  // this function never reached.
+  // this function never reached — and so this run's own cleanup reaps exactly
+  // what it got as far as learning, rather than a second list kept by hand
+  // beside this one, which is how the supervisor's own pid came to be one the
+  // hook killed and the cleanup below left standing over its `rm`.
+  const mine: (number | undefined)[] = [];
   const record = <T extends number | undefined>(pid: T): T => {
     signalledPids.push(pid);
+    mine.push(pid);
     return pid;
+  };
+  const cleanup = async (): Promise<void> => {
+    await reapAll(mine);
+    await rm(scratch, { recursive: true, force: true });
+    await repo.cleanup();
   };
   try {
     const parkedPidPath = join(scratch, "parked.pid");
@@ -2546,8 +2571,8 @@ async function signalledLoopRun(opts: {
  * rather than passing silently.
  */
 describe("flume loop — a signalled run takes down its whole tick tree (spec/loop.md \"The loop lock and the tip claim\")", () => {
-  afterEach(() => {
-    for (const pid of signalledPids.splice(0)) killIfAlive(pid);
+  afterEach(async () => {
+    await reapAll(signalledPids.splice(0));
   });
 
   /**
@@ -2894,18 +2919,20 @@ async function signalledBareTickRun(opts: {
   let agentPid: number | undefined;
   let grandchildPid: number | undefined;
   let tick: ReturnType<typeof spawn> | undefined;
-  const cleanup = async (): Promise<void> => {
-    killIfAlive(grandchildPid);
-    killIfAlive(agentPid);
-    killIfAlive(tick?.pid);
-    await rm(scratch, { recursive: true, force: true });
-    await repo.cleanup();
-  };
-  // Recorded lazily as each pid is learned, so the hook can finish a teardown
-  // this function never reached.
+  // Recorded lazily as each pid is learned, as the loop driver above records
+  // its own, and for the same two reasons: the hook can finish a teardown
+  // this function never reached, and this run's cleanup reaps the tick
+  // process the tsx handle is not rather than a hand-kept second list.
+  const mine: (number | undefined)[] = [];
   const record = <T extends number | undefined>(pid: T): T => {
     signalledPids.push(pid);
+    mine.push(pid);
     return pid;
+  };
+  const cleanup = async (): Promise<void> => {
+    await reapAll(mine);
+    await rm(scratch, { recursive: true, force: true });
+    await repo.cleanup();
   };
   try {
     const agentPidPath = join(scratch, "agent.pid");
@@ -3002,8 +3029,8 @@ async function signalledBareTickRun(opts: {
  * Every arm here states that skip rather than passing silently.
  */
 describe("flume tick — a signalled bare tick takes its agent down (spec/loop.md \"The loop lock and the tip claim\")", () => {
-  afterEach(() => {
-    for (const pid of signalledPids.splice(0)) killIfAlive(pid);
+  afterEach(async () => {
+    await reapAll(signalledPids.splice(0));
   });
 
   it.skipIf(process.platform === "win32")(
