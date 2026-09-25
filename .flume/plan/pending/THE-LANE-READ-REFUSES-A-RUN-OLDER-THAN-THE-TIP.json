@@ -1,0 +1,25 @@
+{
+  "tag": "THE-LANE-READ-REFUSES-A-RUN-OLDER-THAN-THE-TIP",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/ci.ts",
+        "description": "the tip's own commit instant is resolved once beside the branch, and a newest completed run created before it resolves `unread` naming both instants"
+      },
+      {
+        "path": "tests/harnessCi.test.ts",
+        "description": "the stale-run arms in both directions, beside the no-completed-run unread case"
+      }
+    ]
+  },
+  "summary": "A forge index that answers behind the tree is read as current in both directions: nothing in the lane read compares a run's created instant against the tip's",
+  "per": { "path": "spec/harness.md", "section": "CI lanes as a findings source" },
+  "acceptance": "a newest completed run whose created instant precedes the tip's own commit instant resolves `unread` in the reader, naming both instants, so neither a green nor a red is taken off an index answering behind the tree; every other unread reason is unchanged",
+  "tests": [
+    "a lane whose newest completed run predates the tip's own commit reads as unread rather than green",
+    "a lane whose newest completed run predates the tip's own commit reads as unread rather than failing",
+    "the unread reason a stale run resolves to names the run's created instant and the tip's own"
+  ],
+  "notes": "Fork (2) of the stale-lane record, ruled 1b150761. Verified this tick: no instant comparison anywhere in `harness/` — `readLaneStatus` (`harness/ci.ts:504`) resolves green/failing straight off `job.conclusion`, and `CiRun.at` (`:206`) is rendered and never read. The tip instant is one fact about one tree, so it resolves beside `branchAt` (`:482`); a read that fails is that lane's unread reason, as `branchAt`'s already is. Seams `harness/ci.ts` with THE-LANE-BLOCK-STATES-THE-FORGE-CALL-IT-MADE."
+}
