@@ -1,0 +1,31 @@
+{
+  "tag": "THE-FRONTIER-SCAN-READS-A-MERGES-OWN-RESOLUTION",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/gitRange.ts",
+        "description": "`commitsPast` asks git for the paths a merge's own tree differs from every parent on, and its doc names that reading"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the merge arms, beside the frontier-union cases"
+      }
+    ]
+  },
+  "summary": "`commitsPast` takes git's default merge listing, which is empty, so a path a merge changed in neither parent is in no frontier and arms no rotation",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "The frontier is decidable; the neighborhood is judged"
+  },
+  "acceptance": "a merge commit whose tree differs from every parent reports those paths, so the frontier, the liveness scan and the retired-claim narrowing each name a module a merge resolution changed; a merge that resolved nothing still reports none",
+  "tests": [
+    "the frontier lists a path a merge commit changed in neither parent"
+  ],
+  "pins": [
+    "a merge commit that resolved nothing adds no path to the frontier"
+  ],
+  "notes": "Measured over this repo's own 7 merges: `commitsPast` (`harness/gitRange.ts:139`) gets 0 paths for every one, while 92c9cdd1 changed `src/Dispatcher.ts`, `src/PendingSchema.ts`, `src/Phase.ts`, `src/cli.ts` in neither parent and 707663bc changed `src/Dispatcher.ts` — all `src/**`. `--cc` reports exactly those 7 and 3, parses through the existing `-z` reader unchanged, and costs a resolved-nothing merge nothing. `diffOf`'s `git show` already narrows a merge to them."
+}
