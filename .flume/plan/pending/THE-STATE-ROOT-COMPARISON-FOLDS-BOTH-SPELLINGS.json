@@ -1,0 +1,33 @@
+{
+  "tag": "THE-STATE-ROOT-COMPARISON-FOLDS-BOTH-SPELLINGS",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/cliStateDirs.ts",
+        "description": "the second-root comparison decides two paths are one directory through the fold this run already owns, not raw string equality"
+      },
+      {
+        "path": "src/cli.ts",
+        "description": "`canonicalDir` takes a home both root comparisons reach, `bayRootDisagreement` keeping its caller"
+      },
+      {
+        "path": "tests/cliStateDirs.test.ts",
+        "description": "the two alias spellings, beside the refusal and the agreeing-root cases"
+      }
+    ]
+  },
+  "summary": "The second-root refusal compares resolved strings, so a FLUME_DIR naming the checkout's own bay by another on-disk spelling is refused as a second root",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "the second-root refusal and the bay-root disagreement both decide directory identity through one fold — the OS's own name for a path, absolutized — so two spellings of one directory never read as two roots, and no refusal message names one directory twice",
+  "tests": [
+    "a FLUME_DIR naming the checkout's own state root through a symlink resolves rather than refusing as a second root",
+    "a checkout reached through a symlinked path resolves its own bay rather than refusing it as a second root"
+  ],
+  "notes": "Measured this tick through `resolveStateDirs`: both alias spellings throw `SecondStateRootError`; a trailing slash resolves. `src/cliStateDirs.ts:188` is `resolve(flumeDir) !== resolve(own)`; `canonicalDir` (`src/cli.ts:219`) is the realpath+`plainPath`+`resolve` fold the sibling root comparison already spends, and `onDiskIdentity` (`:1674`) is a third spelling of it. Seams `src/cli.ts` with THE-OBSTRUCTED-STATE-ROOT-REFUSES-AT-ONE-SEAM and all three paths with the in-flight second-root entry."
+}
