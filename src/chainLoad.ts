@@ -179,25 +179,39 @@ function validateNoDeadDeclarations(chain: Chain): void {
 }
 
 /**
- * tsx's ESM loader failing to recognize the chain as a module because the
- * host repo's `package.json` (or one beside `.flume/chain.ts`) lacks
- * `"type": "module"` — two known empirical shapes:
- * tsx 4.21 falls through to a CJS parse of the compiled output and Node's
- * CJS loader rejects the `import`/`export` syntax outright; tsx 4.23
- * instead fails resolution one step earlier, `ERR_MODULE_NOT_FOUND` against
- * a path carrying its internal `tsImport` `?namespace=` query. That query
- * reaches the message in either spelling — literal where the resolver
- * reports the specifier as written, percent-encoded where it round-tripped
- * the specifier through a URL first — and a win32 host reported the literal
- * one, so both are matched. Declining to support CJS-context hosts; this
- * class exists only so `loadChainModule`'s caller can refuse with a fix
- * instead of relaying either raw shape as a stack trace.
+ * tsx refusing the chain because the host repo's `package.json` (or one
+ * beside `.flume/chain.ts`) lacks `"type": "module"`
+ * (`.claude/rules/platform-facts.md`, *tsx decides a module's interop shape
+ * from the nearest `package.json` `type`*). The shapes
+ * `isCjsContextLoadFailure` matches — four, each empirical, none inferred:
+ *
+ * - tsx 4.21 falls through to a CJS parse of the compiled output and Node's
+ *   CJS loader rejects the `import`/`export` syntax outright.
+ * - tsx 4.23 instead fails resolution one step earlier,
+ *   `ERR_MODULE_NOT_FOUND` against a path carrying its internal `tsImport`
+ *   `?namespace=` query. That query reaches the message in either spelling —
+ *   literal where the resolver reports the specifier as written,
+ *   percent-encoded where it round-tripped the specifier through a URL first
+ *   — and a win32 host reported the literal one, so both are matched.
+ * - A top-level await in the chain itself never reaches the loader at all: a
+ *   CJS context compiles under esbuild's `cjs` output format, which carries
+ *   no top-level await, so the transform refuses first, with a TransformError
+ *   naming the file that holds the await and the format that cannot hold it.
+ *   Keyed on the format rather than on the await: every refusal esbuild
+ *   raises under `cjs` is the same host misconfiguration with the same fix.
+ * - A top-level await in a module the chain imports is refused a stage
+ *   later, by the CJS loader that requires it: `ERR_REQUIRE_ASYNC_MODULE`.
+ *
+ * Declining to support CJS-context hosts; this class exists only so
+ * `loadChainModule`'s caller can refuse with a fix instead of relaying any of
+ * those raw shapes as a stack trace.
  */
 export class CjsContextLoadError extends Error {
   constructor(chainPath: string, cause: Error) {
     super(
-      `${chainPath} failed to load: tsx's ESM loader can't parse it as a ` +
-        `module. Fix: add "type": "module" to this repo's package.json ` +
+      `${chainPath} failed to load: tsx can't load it as a module — the ` +
+        `parse, the resolution, or the transform refused it. Fix: add ` +
+        `"type": "module" to this repo's package.json ` +
         `(or one beside .flume/chain.ts). Flume does not support a ` +
         `CJS-context host otherwise. (raw loader error, for debugging: ` +
         `${cause.message})`,
@@ -209,17 +223,30 @@ export class CjsContextLoadError extends Error {
 const CJS_CONTEXT_IMPORT_OUTSIDE_MODULE =
   /Cannot use import statement outside a module/;
 const CJS_CONTEXT_NAMESPACE_QUERY = /(?:\?|%3F)namespace(?:=|%3D)/i;
+const CJS_CONTEXT_OUTPUT_FORMAT = /the "cjs" output format/;
 
 /**
  * Empirical match only — never a false positive at the cost of missing
  * a shape: a genuinely missing dependency (a bare `ERR_MODULE_NOT_FOUND`
- * with no `tsImport` namespace query in the path) must keep surfacing as
- * itself, unshadowed by this refusal.
+ * with no `tsImport` namespace query in the path) and a transform that
+ * failed on anything else (a syntax error in the chain) must keep surfacing
+ * as themselves, unshadowed by this refusal.
+ *
+ * Two arms read English, the sanctioned divergence
+ * `.claude/rules/engine-boundary.md`, *Told, not inferred* names: Node's CJS
+ * parse rejection and esbuild's TransformError each arrive with no `code`
+ * and no structured field naming the cause — measured on tsx 4.21, where the
+ * transform failure carries `name` and nothing else — so the message is the
+ * only thing there is to read. The other two arms key on a code, and the
+ * namespace arm reads the message only after its code has already narrowed
+ * the field.
  */
 function isCjsContextLoadFailure(err: unknown): err is Error {
   if (!(err instanceof Error)) return false;
   if (CJS_CONTEXT_IMPORT_OUTSIDE_MODULE.test(err.message)) return true;
+  if (CJS_CONTEXT_OUTPUT_FORMAT.test(err.message)) return true;
   const code = (err as NodeJS.ErrnoException).code;
+  if (code === "ERR_REQUIRE_ASYNC_MODULE") return true;
   return (
     code === "ERR_MODULE_NOT_FOUND" &&
     CJS_CONTEXT_NAMESPACE_QUERY.test(err.message)

@@ -15615,23 +15615,135 @@ describe("Dispatcher — dead declaration refused at load (DEADDECL-LOAD-REFUSAL
 /**
  * A CJS-context host (package.json lacking `"type": "module"`)
  * must refuse chain load with a usage-shaped `CjsContextLoadError`, not
- * relay tsx's raw loader stack. Two empirical signatures (build's own
- * `isCjsContextLoadFailure` (`src/chainLoad.ts`)): tsx 4.21's CJS-fallback
- * parse failure ("Cannot use import statement outside a module") — real,
- * this installed tsx (4.21.0) reproduces it directly — and tsx 4.23's
- * `ERR_MODULE_NOT_FOUND` against a path carrying its `?namespace=` query,
- * which this installed tsx never emits on its own and so is exercised via
- * the `tsx/esm/api` partial mock declared at the top of this file. That
- * query arrives in either spelling — a win32 consumer reported the literal
- * one, node percent-encodes it where the specifier round-tripped through a
- * URL — so each spelling gets its own case. A final case proves the
- * detector isn't trigger-happy: a genuinely missing dependency (plain
- * `ERR_MODULE_NOT_FOUND`, no namespace artifact) must surface unshadowed.
+ * relay tsx's raw loader stack. A case per signature
+ * `isCjsContextLoadFailure` (`src/chainLoad.ts`) names, real where this
+ * installed tsx (4.21.0) produces the shape and injected through the
+ * `tsx/esm/api` partial mock declared at the top of this file where it
+ * does not:
+ *
+ * - Real: tsx 4.21's CJS-fallback parse failure ("Cannot use import
+ *   statement outside a module").
+ * - Real: a top-level await, one case per position the platform-facts
+ *   section names (`.claude/rules/platform-facts.md`, *tsx decides a
+ *   module's interop shape from the nearest `package.json` `type`*), because
+ *   the two positions are refused by different machinery — the entry's await
+ *   by esbuild's transform, which compiles a CJS context under the `cjs`
+ *   output format and cannot carry one, and a dependency's by the CJS loader
+ *   that requires it (`ERR_REQUIRE_ASYNC_MODULE`). A third case applies the
+ *   fix the refusal names to the second graph, so neither rests on a fixture
+ *   that was simply broken.
+ * - Injected: tsx 4.23's `ERR_MODULE_NOT_FOUND` against a path carrying its
+ *   `?namespace=` query, in either spelling — a win32 consumer reported the
+ *   literal one, node percent-encodes it where the specifier round-tripped
+ *   through a URL — so each spelling gets its own case.
+ *
+ * Two closing cases prove the detector isn't trigger-happy: a genuinely
+ * missing dependency (plain `ERR_MODULE_NOT_FOUND`, no namespace artifact),
+ * and a transform that failed on a syntax error rather than on the output
+ * format — each must surface unshadowed.
  */
 describe("Dispatcher — CJS-context host chain-load refusal", () => {
   async function writeCfg(cfg: string, chainSrc: string): Promise<void> {
     await writeFile(join(cfg, "chain.ts"), chainSrc, "utf8");
   }
+
+  // The nearest package.json above the chain is what decides the context
+  // (`.claude/rules/platform-facts.md`, *tsx decides a module's interop
+  // shape from the nearest `package.json` `type`*), and the temp dirs these
+  // cases run in have none above them, so each writes its own. An omitted
+  // `type` is a CJS context exactly as `"commonjs"` is; which spelling a
+  // case uses is not decorative, because the two reach different arms —
+  // under `"commonjs"` the entry's own import statement is refused before
+  // any dependency is transformed, so the dependency-position await is only
+  // observable under the omission.
+  async function writeHost(
+    cfg: string,
+    name: string,
+    type?: "commonjs" | "module",
+  ): Promise<void> {
+    await writeFile(
+      join(cfg, "package.json"),
+      JSON.stringify(type === undefined ? { name } : { name, type }),
+      "utf8",
+    );
+  }
+
+  // The graph both await cases build: a chain whose factory returns a
+  // loadable chain, so nothing downstream of the loader is what refuses.
+  const AWAITED_MODULE = `export const awaited = await Promise.resolve(1);\n`;
+  const CHAIN_OVER_AWAITED_MODULE =
+    `import { awaited } from "./awaited.ts";\n` +
+    `export default () => ({ chain: { phases: [], humanOnly: [], awaited } });\n`;
+
+  it("a CJS-context host whose chain carries a top-level await throws CjsContextLoadError naming the fix", async () => {
+    const cfg = await mkTempDir("flume-cfg-cjs-tla-entry-");
+    try {
+      await writeHost(cfg, "cjs-host-tla-entry", "commonjs");
+      await writeCfg(
+        cfg,
+        `const awaited = await Promise.resolve(1);\n` +
+          `export default () => ({ chain: { phases: [], humanOnly: [], awaited } });\n`,
+      );
+
+      let caught: unknown;
+      try {
+        await loadChainModule(chainPaths(cfg));
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(CjsContextLoadError);
+      expect((caught as Error).message).toContain('"type": "module"');
+      // The raw shape rides along as debugging detail, and naming it is what
+      // proves the output-format arm fired rather than one of the others.
+      expect((caught as Error).message).toContain('"cjs" output format');
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("a CJS-context host whose chain imports a module carrying a top-level await throws CjsContextLoadError naming the fix", async () => {
+    const cfg = await mkTempDir("flume-cfg-cjs-tla-dep-");
+    try {
+      await writeHost(cfg, "cjs-host-tla-dep");
+      await writeFile(join(cfg, "awaited.ts"), AWAITED_MODULE, "utf8");
+      await writeCfg(cfg, CHAIN_OVER_AWAITED_MODULE);
+
+      let caught: unknown;
+      try {
+        await loadChainModule(chainPaths(cfg));
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(CjsContextLoadError);
+      expect((caught as Error).message).toContain('"type": "module"');
+      // The entry transformed fine here and the CJS loader refused the
+      // awaited dependency instead — the second of the two positions the
+      // platform-facts section names, and a different arm from the case above.
+      expect((caught as Error).message).toContain("top-level await");
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("the same top-level-await chain graph under a \"type\": \"module\" host loads clean", async () => {
+    const cfg = await mkTempDir("flume-cfg-esm-tla-dep-");
+    try {
+      await writeHost(cfg, "esm-host-tla-dep", "module");
+      await writeFile(join(cfg, "awaited.ts"), AWAITED_MODULE, "utf8");
+      await writeCfg(cfg, CHAIN_OVER_AWAITED_MODULE);
+
+      // The fix the refusal names, applied: byte-identical chain and
+      // dependency, one field different in the manifest. Without this the
+      // case above would pass over a graph that was simply broken.
+      const mod = await loadChainModule(chainPaths(cfg));
+
+      expect(mod.chain.phases).toEqual([]);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
 
   it("tsx 4.21 signature — a CJS-context package.json plus a real import statement throws CjsContextLoadError naming the fix", async () => {
     const cfg = await mkTempDir("flume-cfg-cjs-import-");
@@ -15723,6 +15835,33 @@ describe("Dispatcher — CJS-context host chain-load refusal", () => {
       expect(caught).not.toBeInstanceOf(CjsContextLoadError);
       expect((caught as NodeJS.ErrnoException).code).toBe("ERR_MODULE_NOT_FOUND");
       expect((caught as Error).message).toContain("does-not-exist");
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("a chain whose transform fails on a syntax error surfaces that error rather than the CJS-context refusal", async () => {
+    const cfg = await mkTempDir("flume-cfg-cjs-syntax-");
+    try {
+      // A CJS host, so the transform runs under the same `cjs` output format
+      // the await cases refuse on — what differs is only what esbuild
+      // objected to, which is the whole distinction the detector must keep.
+      await writeHost(cfg, "cjs-host-syntax", "commonjs");
+      await writeCfg(cfg, `export default () => ({ chain: { phases: [ } });\n`);
+
+      let caught: unknown;
+      try {
+        await loadChainModule(chainPaths(cfg));
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).not.toBeInstanceOf(CjsContextLoadError);
+      expect((caught as Error).message).toContain("Transform failed");
+      // Positively: esbuild's own objection, which is the thing the
+      // operator needs and the refusal would have buried.
+      expect((caught as Error).message).toContain('Unexpected "}"');
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }
