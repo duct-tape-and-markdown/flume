@@ -36,14 +36,18 @@
       {
         "path": "tests/cliVerdict.test.ts",
         "description": "the completion-summary negative reads the stage phrase its own arm renders, not the whole summary"
+      },
+      {
+        "path": "tests/Prompt.test.ts",
+        "description": "the six prior-attempt negatives read the `<prior-attempt>` block the case renders, not the whole prompt the `<harness>` block also sits in"
       }
     ]
   },
-  "summary": "Eighteen negative assertions take a whole rendered window, prompt, verdict or module text as their subject — the family sixteen plan commit bodies have now accepted as debt",
+  "summary": "Twenty-four negative assertions take a whole rendered window, prompt, verdict or module text as their subject — the family sixteen plan commit bodies accepted as debt before it filed",
   "per": {
     "path": ".claude/rules/posture-sweep.md",
     "section": "Routing"
   },
   "acceptance": "every one of those assertions names a subject its own arm produces — a cut block, the producer's own marker phrase, or one line — so none can red for a path, tag, commit subject or error string the artifact merely happens to quote",
-  "notes": "Off the three-notes escalation, long past: 8 plan bodies since last filed (A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK, c0fbb6a9). Verified: harnessWindows 938/1006/1506/1507/1518/1521 (`\"REFUSE\"`, `\"bootstrap\"`; `blockUnder` at :1209 is the file's own cut, :1006 carries a raw fs error path), terminalRender 88-93, harnessGates 810, harnessPrompts 871, harnessBuildArgs 508, cliRender 287, worktrees 304, cliVerdict 317 (`\"worktree provisioning\"`, emitted only at `loopSupervisor.ts:690`)."
+  "notes": "Off the three-notes escalation, long past: 8 plan bodies since last filed (A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK, c0fbb6a9). Verified: harnessWindows 938/1006/1506/1507/1518/1521 (`blockUnder` :1209 is that file's own cut), terminalRender 88-93, harnessGates 810, harnessPrompts 871, harnessBuildArgs 508, cliRender 287, worktrees 304, cliVerdict 319, Prompt 810-812/842/872-873 — added this tick, `/refused/i` over a render whose `<harness>` block quotes phase and gate names."
 }
