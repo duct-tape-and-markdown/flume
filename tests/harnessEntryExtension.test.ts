@@ -62,6 +62,24 @@ const entryQueue = (fields: Record<string, unknown>): QueueFile[] => [
   },
 ];
 
+/**
+ * A value for every field the package declares, so a parse over it reaches
+ * the whole set the render leg already does. The values are the tester's —
+ * only a human can choose one each field's schema accepts — but the *keys*
+ * are checked against `entryExtension()`'s own before the parse, so a field
+ * the package adds reds here instead of going unparsed behind a populated
+ * set narrower than the claim.
+ */
+const everyPackageField: Record<string, unknown> = {
+  summary: "extract the package's entry extension",
+  per: { path: "spec/harness.md", section: "The entry extension" },
+  acceptance: "every declared field parses",
+  tests: ["a behavior this entry introduces"],
+  pins: ["a property that already holds"],
+  notes: "context the spec does not carry",
+  [CONTRACT_TOUCHING_FIELD]: true,
+};
+
 /** A Standard Schema that accepts anything — this file judges wiring, not validation. */
 const anything = { "~standard": { version: 1, vendor: "test", validate: (value: unknown) => ({ value }) } } as const;
 
@@ -98,6 +116,24 @@ it("the package's entry extension declares summary, per, acceptance, tests, pins
   const parsed = parsePendingQueue(entryQueue({}), extension);
   expect(parsed.errors).toEqual([]);
   expect(parsed.entries).toHaveLength(1);
+});
+
+it("parsePendingQueue accepts an entry carrying a value for every field the package's entry extension declares", () => {
+  const extension = entryExtension();
+
+  // Ahead of the parse: the fixture covers the declaration's whole key set,
+  // read off the declaration rather than off this file's own list. Without
+  // this the parse below would pass over whichever fields the fixture
+  // happened to value, while reading as a claim about all of them.
+  expect(Object.keys(everyPackageField).sort()).toEqual(Object.keys(extension).sort());
+
+  // And every one of them survives the real parser, carrying its value out:
+  // an optional field the schema silently dropped would leave the render
+  // leg's set and the parse leg's disagreeing.
+  const parsed = parsePendingQueue(entryQueue(everyPackageField), extension);
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.entries).toHaveLength(1);
+  expect(parsed.entries[0]).toMatchObject(everyPackageField);
 });
 
 it("a consumer field is merged into the entry extension beside the package's own", () => {
@@ -144,6 +180,26 @@ it("a summary past the package's cap is refused", () => {
   );
   expect(past.ok).toBe(false);
   expect(past.errors.map((e) => e.path)).toContain("summary");
+});
+
+it("a notes value past the package's cap is refused through the real parser", () => {
+  const extension = entryExtension();
+
+  // At the cap first, for the reason the summary pair above has one: a
+  // schema that rejected every `notes` would satisfy the refusal alone.
+  const atCap = parsePendingQueue(
+    entryQueue({ notes: "x".repeat(ENTRY_CAPS.notes) }),
+    extension,
+  );
+  expect(atCap.errors).toEqual([]);
+  expect(atCap.entries[0]).toMatchObject({ notes: "x".repeat(ENTRY_CAPS.notes) });
+
+  const past = parsePendingQueue(
+    entryQueue({ notes: "x".repeat(ENTRY_CAPS.notes + 1) }),
+    extension,
+  );
+  expect(past.ok).toBe(false);
+  expect(past.errors.map((e) => e.path)).toContain("notes");
 });
 
 it("the package entry extension accepts an entry that omits contractTouching", () => {
