@@ -182,6 +182,72 @@ it("a slice's state at a commit is judged against its state at the base through 
   });
 });
 
+/**
+ * The retired-claim cursor moves on its own tick, ahead of a stamp the
+ * rotation pins in place — so it is a field of the sweep's own file rather
+ * than a second hand on `sweptThrough`, and absent reads as the stamp
+ * (`.claude/rules/posture-sweep.md`, *The stamp*).
+ */
+it("the sweep's retired-claim cursor is carried as a field, and dropping it under a standing stamp is not a move the sweep's own invariants allow", async () => {
+  const searching: PlanStateWriteOf<"plan-sweep"> = {
+    ...stateOf("plan-sweep"),
+    retiredThrough: DERIVED,
+  };
+  writePlanState(stateRoot, "plan-sweep", searching);
+  expect(readPlanState(stateRoot, "plan-sweep")).toEqual({
+    sweptThrough: SWEPT,
+    rotation: { kind: "closed" },
+    retiredThrough: DERIVED,
+  });
+
+  // Absent is a state, never a refusal: every sweep file written before this
+  // field existed carries none, and the sweep slice is the only writer of its
+  // own file — so a required field would refuse the very window whose tick
+  // would have added one.
+  writePlanState(stateRoot, "plan-sweep", stateOf("plan-sweep"));
+  expect(
+    readPlanState(stateRoot, "plan-sweep")?.retiredThrough,
+  ).toBeUndefined();
+
+  const base = await artifactOf("plan-sweep", searching);
+  // Vacuity pin: the base really carries the cursor every arm below is about.
+  expect((base.parsed as { retiredThrough?: string }).retiredThrough).toBe(
+    DERIVED,
+  );
+
+  // Advancing it under a standing stamp is the sweep's ordinary tick: where
+  // it moves to is git's to order, not this file's.
+  const advanced = await artifactOf("plan-sweep", {
+    ...searching,
+    retiredThrough: SWEPT,
+  });
+  expect(judgeSliceState("plan-sweep", advanced, base).problems).toEqual([]);
+
+  // Dropping it is the loss no cursor can show: absent reads as the stamp, so
+  // the next tick re-renders every line the locus retired since it.
+  const dropped = judgeSliceState(
+    "plan-sweep",
+    await artifactOf("plan-sweep", stateOf("plan-sweep")),
+    base,
+  ).problems;
+  expect(dropped).toHaveLength(1);
+  expect(dropped[0]).toContain("retired-claim cursor");
+
+  // The closing tick drops it with the rotation it indexed, and that is the
+  // rotation's verdict rather than a loss — the next delta is drawn over the
+  // paths the new stamp's own range touched.
+  expect(
+    judgeSliceState(
+      "plan-sweep",
+      await artifactOf("plan-sweep", {
+        sweptThrough: DERIVED,
+        rotation: { kind: "closed" },
+      }),
+      base,
+    ).problems,
+  ).toEqual([]);
+});
+
 it("a slice stating no rule over its own state is spelled at the table, not left out", async () => {
   // Derive's cursor is bounded by its step through history and by nothing its
   // own file says, so even a value stepped backwards is no problem of this

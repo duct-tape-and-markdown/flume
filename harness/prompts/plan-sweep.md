@@ -44,6 +44,8 @@ Findings route per the pages' own bar: correctness-adjacent → a pending entry 
 
 **The cursor and the rotation.** An open rotation is `rotation: { kind: "open", covered: [...] }` in the plan state; the chain keeps this slice live while it is open. When the frontier empties, close the rotation and advance `sweptThrough` to the tip `<sweep-window>` names as the one it was drawn from — copy that sha, never one you resolve yourself. Quiet-on-clean advances the cursor alone.
 
+**The retired-claim cursor.** `retiredThrough` is where the retired-claim delta is drawn from, and it moves on its own tick rather than with the stamp: search the deleted lines the delta carries, then set `retiredThrough` to the sha `<sweep-window>` names as the one the tick that searched it advances to — copied, never resolved yourself. That line is rendered only where the whole delta fits this tick's budget; where it names no sha the block is a prefix, so search what it shows and leave `retiredThrough` where it stands. A cursor already in the plan state is carried forward verbatim on a tick that searched nothing, never dropped — absent reads as the stamp, which re-opens every line the locus has retired since it.
+
 Discipline: `{{DISCIPLINE}}` — read it before writing the queue.
 
 {{PUT_DOWN}}

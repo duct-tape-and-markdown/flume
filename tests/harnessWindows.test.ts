@@ -53,6 +53,7 @@ import {
   PLAN_SLICES,
   type PlanSlice,
 } from "../harness/declaration.ts";
+import { readPlanState } from "../harness/planState.ts";
 import { checkoutRecords, listRecords } from "../harness/records.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
 import type { EntryRefusalContext, TickResult } from "../src/Phase.ts";
@@ -122,11 +123,17 @@ const STATE_ROOT_REL = ".flume";
 /** The state root is the repo's own `.flume`, as a real consumer's is. */
 const stateRoot = (): string => join(repo, STATE_ROOT_REL);
 
-/** The three cursor facts a case varies, off a closed rotation at HEAD. */
+/** The cursor facts a case varies, off a closed rotation at HEAD. */
 interface StateOverrides {
   readonly derivedThrough?: string;
   readonly sweptThrough?: string;
   readonly rotation?: PlanStateWriteOf<"plan-sweep">["rotation"];
+  /**
+   * The sweep's retired-claim cursor. Optional on the artifact too, so a case
+   * that names none writes a file carrying none — which is the state every
+   * sweep file written before the field existed is in.
+   */
+  readonly retiredThrough?: string;
 }
 
 /**
@@ -146,6 +153,9 @@ function writeState(overrides: StateOverrides = {}): void {
   writePlanState(stateRoot(), "plan-sweep", {
     sweptThrough: overrides.sweptThrough ?? head,
     rotation: overrides.rotation ?? { kind: "closed" },
+    ...(overrides.retiredThrough === undefined
+      ? {}
+      : { retiredThrough: overrides.retiredThrough }),
   });
 }
 
@@ -1998,6 +2008,167 @@ it("the retired-claim delta excludes the diff's own file-header lines", () => {
     "=== deleted from spec/loop.md ===",
     "-",
     "-A ratified claim.",
+  ]);
+});
+
+/**
+ * The window's closing block: the sha the retired-claim cursor may advance
+ * to, where the delta rendered whole, and the tip line under it.
+ *
+ * Cut out of the render rather than asserted against the whole of it, so a
+ * case saying the advance sha is *absent* reads its own block instead of an
+ * artifact that also quotes a frontier listing, a posture-page callout and a
+ * diff (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+ */
+function closingBlock(rendered: string | undefined): string[] {
+  if (rendered === undefined) throw new Error("the sweep window is unrendered");
+  const lines = rendered.split("\n");
+  const last = lines.lastIndexOf("");
+  expect(last, "the window renders no closing block").not.toBe(-1);
+  return lines.slice(last + 1);
+}
+
+/** The advance line a window drawn to `tip` names for the retired-claim cursor. */
+const advanceLine = (tip: string): string =>
+  `=== the whole retired-claim delta above rendered; the tick that ` +
+  `searched it advances \`retiredThrough\` to ${tip} ===`;
+
+/**
+ * A rotation stands open across many ticks, and the lines the locus retired
+ * before it opened are the same lines on every one of them. Drawn past the
+ * stamp alone, each tick searches the tree for claims the tick before it
+ * already searched; the retired-claim cursor is what that tick leaves behind
+ * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*).
+ */
+it("the retired-claim delta renders the lines deleted since the retired-claim cursor", () => {
+  const base = commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "spec/loop.md": "# Loop\n\nAn early claim.\nA later claim.\n",
+    },
+    "build: a",
+  );
+
+  commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
+  const searched = commit(
+    { "spec/loop.md": "# Loop\n\nA later claim.\n" },
+    "spec: retire the early claim",
+  );
+  commit({ "spec/loop.md": "# Loop\n" }, "spec: retire the later claim");
+
+  // The stamp stands where the rotation opened it; a prior tick of that same
+  // rotation searched the locus as far as `searched`.
+  writeState({ sweptThrough: base, retiredThrough: searched });
+
+  // Vacuity pin: the stamp's own range really does carry the early claim, so
+  // the narrowing below is a delta that shrank rather than one that was
+  // never wide.
+  expect(git("diff", `${base}..HEAD`, "--", "spec/loop.md")).toContain(
+    "-An early claim.",
+  );
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  expect(rendered).toContain(
+    `=== lines the spec locus no longer states since ${searched} ` +
+      `(retired-claim delta) ===`,
+  );
+  // Exactly what the locus retired past the cursor — the claim the prior
+  // tick already searched for is not re-rendered for this one.
+  expect(retiredDelta(rendered)).toEqual([
+    "=== deleted from spec/loop.md ===",
+    "-",
+    "-A later claim.",
+  ]);
+});
+
+/**
+ * The field is optional, and absent is a state rather than a degradation: a
+ * slice that has advanced it through no commit yet has searched nothing past
+ * its stamp, which is what the stamp already says.
+ */
+it("a sweep state carrying no retired-claim cursor draws the delta from the stamp", () => {
+  const base = commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "spec/loop.md": "# Loop\n\nA ratified claim.\n",
+    },
+    "build: a",
+  );
+  writeState();
+
+  commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
+  const tip = commit({ "spec/loop.md": "# Loop\n" }, "spec: retire the claim");
+
+  // Vacuity pin: the state the window reads really carries no retired-claim
+  // cursor, so the fallback below is the arm under test.
+  expect(
+    readPlanState(stateRoot(), "plan-sweep")?.retiredThrough,
+  ).toBeUndefined();
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  expect(rendered).toContain(
+    `=== lines the spec locus no longer states since ${base} ` +
+      `(retired-claim delta) ===`,
+  );
+  expect(retiredDelta(rendered)).toContain("-A ratified claim.");
+  // And the window hands that tick the sha its cursor takes, so the tick
+  // after it is drawn past the claims this one searched rather than over
+  // them again.
+  expect(closingBlock(rendered)).toContain(advanceLine(tip));
+});
+
+/**
+ * The advance is all-or-nothing on the delta rendering whole. The budget cuts
+ * mid-page, so a prefix names no commit at which "the lines up to here are
+ * searched" is true — and a cursor advanced over one would retire claims no
+ * tick ever searched for (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+it("a retired-claim delta cut by the tick's budget names no cursor advance sha", () => {
+  commit({ "spec/chain.md": "# Chain\n\nfirst\nsecond\nthird\n" }, "spec: a page");
+  writeState();
+  const tip = commit(
+    { "spec/chain.md": "# Chain\n" },
+    "spec: retire every claim",
+  );
+
+  const ctx = { cwd: repo, flumeDir: stateRoot() };
+
+  // The control: the same window with room for every deleted line names the
+  // sha, so the absence below is the budget's doing rather than a render that
+  // never names one.
+  const whole = windows({}, 40)["plan-sweep"].args(ctx).SWEEP_WINDOW;
+  expect(retiredDelta(whole)).toEqual([
+    "=== deleted from spec/chain.md ===",
+    "-",
+    "-first",
+    "-second",
+    "-third",
+  ]);
+  expect(closingBlock(whole)).toContain(advanceLine(tip));
+
+  const cut = windows({}, 2)["plan-sweep"].args(ctx).SWEEP_WINDOW;
+  // Vacuity pin: the delta really was cut, and by two of its four lines.
+  expect(retiredDelta(cut)).toEqual([
+    "=== deleted from spec/chain.md ===",
+    "-",
+    "-first",
+    "=== 2 further deleted line(s) beyond this tick's budget; narrow the " +
+      "range by closing this rotation ===",
+  ]);
+  // The closing block rendered, and carries the tip line alone: no sha the
+  // prefix's own reader could advance the cursor to.
+  expect(closingBlock(cut)).toEqual([
+    `=== this window was drawn from tip ${tip}; the tick that closes the ` +
+      `rotation stamps \`sweptThrough\` at exactly that sha ===`,
   ]);
 });
 

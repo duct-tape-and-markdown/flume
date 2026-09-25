@@ -1,14 +1,15 @@
 /**
  * The plan state the package's slices keep between ticks (`spec/harness.md`,
  * *Plan state as declared state*): the derive cursor, the sweep cursor, the
- * sweep's continuation signal, and the per-lane drained-run stamp, as fields
- * of typed artifacts the package reads through this accessor.
+ * sweep's continuation signal, its retired-claim cursor, and the per-lane
+ * drained-run stamp, as fields of typed artifacts the package reads through
+ * this accessor.
  *
  * **One file per writer.** Each slice's state is its own file, and the
  * accessor is keyed by the slice that owns it, so a slice cannot so much as
  * name a field it does not write: the derive cursor is derive's file, the
- * sweep cursor and its rotation are sweep's, the drained runs are the
- * inbox's. Two slices stamping in one wave land on disjoint paths and merge
+ * sweep cursor, its rotation and its retired-claim cursor are sweep's, the
+ * drained runs are the inbox's. Two slices stamping in one wave land on disjoint paths and merge
  * as disjoint files; a fourth field wanting a fourth writer is a fourth
  * file, not a fifth hand on one page. The fence holds the same statement
  * mechanically — a plan phase is fenced to its own file alone
@@ -137,19 +138,36 @@ const DeriveStateSchema = strict({
 });
 
 /**
- * The sweep slice's state: the cursor the frontier was derived from, and the
- * rotation that frontier is being worked through.
+ * The sweep slice's state: the cursor the frontier was derived from, the
+ * rotation that frontier is being worked through, and the cursor the
+ * retired-claim delta is drawn from.
  *
- * The two ride one file because one slice writes both, and because they are
- * one fact in two halves — a rotation is open *over* the frontier the cursor
- * names, so a tick that advanced one without the other would leave a covered
- * set describing a frontier nobody drew.
+ * The three ride one file because one slice writes them all, and because the
+ * first two are one fact in two halves — a rotation is open *over* the
+ * frontier the cursor names, so a tick that advanced one without the other
+ * would leave a covered set describing a frontier nobody drew.
+ *
+ * **The retired-claim cursor is optional, and absent reads as the stamp.**
+ * It moves on its own, ahead of a stamp the rotation pins in place, so it
+ * cannot ride `sweptThrough` — and it cannot be required either: every sweep
+ * state already on a consumer's disk was written without it, the sweep slice
+ * is the only writer of its own file, and a required field would refuse the
+ * very window whose tick would add it (`.claude/rules/engineering.md`, *Loud
+ * or nothing* — the refusal is the file's, so nothing proceeds over it). A
+ * slice that has advanced it through no commit yet has searched nothing past
+ * the stamp, which is what the stamp already says.
  */
 const SweepStateSchema = strict({
   /** The sweep cursor: the sha the frontier was derived from. */
   sweptThrough: objectName,
   /** The sweep's continuation signal, with its covered set while open. */
   rotation: Rotation,
+  /**
+   * The retired-claim cursor: the sha whose deleted spec lines this slice has
+   * already searched the tree for (`.claude/rules/posture-sweep.md`, *The
+   * frontier is decidable; the neighborhood is judged*). Absent is the stamp.
+   */
+  retiredThrough: objectName.optional(),
 });
 
 /**
@@ -236,10 +254,15 @@ export const PLAN_STATE_SHAPES: {
 } = {
   "plan-derive": [{ derivedThrough: "<sha>" }],
   "plan-sweep": [
-    { sweptThrough: "<sha>", rotation: { kind: "closed" } },
+    {
+      sweptThrough: "<sha>",
+      rotation: { kind: "closed" },
+      retiredThrough: "<sha>",
+    },
     {
       sweptThrough: "<sha>",
       rotation: { kind: "open", covered: ["<covered module path>"] },
+      retiredThrough: "<sha>",
     },
   ],
   [INBOX_PHASE]: [
@@ -509,6 +532,36 @@ const coveredOnlyGrowsWhileOpen: SliceStateRule<"plan-sweep"> = (at, base) => {
 };
 
 /**
+ * The retired-claim cursor a tick advanced as it searched is not dropped
+ * while the stamp it searched under stands still.
+ *
+ * Absent reads as the stamp ({@link SweepStateSchema}), so dropping it is not
+ * clearing a note: it re-opens every line the spec locus deleted since
+ * `sweptThrough`, which is the whole delta this cursor exists to shrink — and
+ * a claim searched once per rotation becomes one searched once per tick
+ * again (`.claude/rules/posture-sweep.md`, *The stamp*).
+ *
+ * Read only while the stamp stands where it stood, for the reason
+ * {@link coveredOnlyGrowsWhileOpen} is read only across an open pair: a tick
+ * that moved `sweptThrough` closed the rotation, and the next delta is drawn
+ * over the paths that new stamp's own range touched, so a retired-claim
+ * cursor dropped on the closing tick costs the tick after it nothing.
+ *
+ * Where a standing cursor *moves to* is git's to order and not this file's —
+ * the window names the sha it may advance to — so only its disappearance is
+ * the loss no later tick can see.
+ */
+const retiredClaimsStayRetiredWhileTheStampStands: SliceStateRule<
+  "plan-sweep"
+> = (at, base) =>
+  base !== undefined &&
+  base.sweptThrough === at.sweptThrough &&
+  base.retiredThrough !== undefined &&
+  at.retiredThrough === undefined
+    ? "the retired-claim cursor the base carried is gone from the file while sweptThrough stands where it stood, so the next tick re-renders every line the spec locus deleted since the stamp rather than the ones this rotation has not searched"
+    : undefined;
+
+/**
  * A lane the slice has drained stays drained. A lane missing from the map
  * reads as never drained — the one absence this state reads as a state
  * ({@link InboxStateSchema}) — so a tick that drops a standing lane's stamp
@@ -553,7 +606,11 @@ const lanesKeepTheStampsTheyHave: SliceStateRule<typeof INBOX_PHASE> = (
  */
 const SLICE_STATE_RULES = {
   "plan-derive": [],
-  "plan-sweep": [stampsOnlyOnTheTickThatCloses, coveredOnlyGrowsWhileOpen],
+  "plan-sweep": [
+    stampsOnlyOnTheTickThatCloses,
+    coveredOnlyGrowsWhileOpen,
+    retiredClaimsStayRetiredWhileTheStampStands,
+  ],
   [INBOX_PHASE]: [lanesKeepTheStampsTheyHave],
 } as const satisfies { [S in PlanSlice]: readonly SliceStateRule<S>[] };
 

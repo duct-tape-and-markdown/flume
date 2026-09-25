@@ -4,6 +4,13 @@
  * pages among them, and the lines the spec locus no longer states — the
  * retired-claim delta.
  *
+ * **Two cursors, one file.** The frontier is drawn past `sweptThrough`, which
+ * the rotation pins in place; the retired-claim delta is drawn past
+ * `retiredThrough`, which the tick that searched it moves on its own
+ * ({@link retiredCursor}). Both are the sweep slice's own state, and the
+ * window names the sha each may advance to rather than leaving either tick to
+ * resolve one for itself.
+ *
  * **The frontier is a set of paths, not a walk of commits.** A path is in it
  * or it is not, so it is named once however many commits of the range touched
  * it; the commits are a count. A rotation that stays open across hundreds of
@@ -35,7 +42,7 @@ import {
   type DeletedPage,
   type RangeCommit,
 } from "./gitRange.js";
-import { readPlanStateBounded } from "./planState.js";
+import { readPlanState, readPlanStateBounded } from "./planState.js";
 import {
   SLICE_DATA_KEYS,
   budgetOf,
@@ -130,6 +137,11 @@ function sweepInputs(declaration: Declaration): {
  * (`.claude/rules/posture-sweep.md`, *The stamp*). It is the sibling of the
  * `may advance to` line the derive window ends on, and costs no second git
  * call.
+ *
+ * **The same sha is the retired-claim cursor's advance, and it is named only
+ * where the delta rendered whole.** A tick that searched every line the block
+ * carried has searched the locus through this tip; a tick handed a prefix has
+ * not, and no sha states where that prefix ended ({@link retiredBlock}).
  */
 function renderSweepWindow(
   ctx: WindowContext,
@@ -148,27 +160,62 @@ function renderSweepWindow(
 
     const lines = frontierListing(cursor, touching, domain, posturePages);
 
+    const searched = retiredCursor(ctx, cursor);
     lines.push(
       "",
-      `=== lines the spec locus no longer states since ${cursor} ` +
+      `=== lines the spec locus no longer states since ${searched} ` +
         `(retired-claim delta) ===`,
     );
-    const retired = retiredLines(ctx.cwd, cursor, all, locus);
-    if (retired.length === 0) {
-      lines.push("(none)");
-    } else {
-      lines.push(...retiredBlock(retired, budget));
-    }
+    const retired = retiredBlock(
+      retiredLines(ctx.cwd, searched, all, locus),
+      budget,
+    );
+    lines.push(...retired.lines);
 
     const tip = all.at(-1)?.sha ?? cursor;
+    lines.push("");
+    if (retired.whole) {
+      lines.push(
+        `=== the whole retired-claim delta above rendered; the tick that ` +
+          `searched it advances \`retiredThrough\` to ${tip} ===`,
+      );
+    }
     lines.push(
-      "",
       `=== this window was drawn from tip ${tip}; the tick that closes the ` +
         `rotation stamps \`sweptThrough\` at exactly that sha ===`,
     );
     return lines.join("\n");
   });
 }
+
+/**
+ * The sha the retired-claim delta is drawn from: what this slice has already
+ * searched the tree for, or the stamp where it has searched nothing past it
+ * (`.claude/rules/posture-sweep.md`, *The stamp*).
+ *
+ * **The delta shrinks as the frontier does.** Drawn from the stamp alone, a
+ * rotation re-renders every line the locus deleted since it opened on every
+ * one of its ticks — the same claims, searched once per tick, for a search
+ * whose answer the tree already gave. This cursor is what the tick that
+ * searched them leaves behind, so the next one is handed the lines it has
+ * not.
+ *
+ * The slice's own state file, read here rather than carried down from
+ * `cursorWindow`: that module is keyed by the cursor a window is *drawn
+ * past*, and this one is not one — it is a second position inside one
+ * slice's file, and teaching the shared module about it would put a sweep
+ * field in the derive's path (`.claude/rules/engineering.md`, *A module is
+ * one job*). The read sits inside the render, so an artifact that will not
+ * parse refuses by name there rather than throwing out of `promptArgs`
+ * (`bounded`, `cursorWindow.ts`).
+ *
+ * `undefined` is unreachable from here — a slice with no state file takes
+ * `cursorWindow`'s bootstrap leg and never reaches this render — and is
+ * answered rather than asserted away, since it is the same answer the absent
+ * field has.
+ */
+const retiredCursor = (ctx: WindowContext, cursor: string): string =>
+  readPlanState(ctx.flumeDir, "plan-sweep")?.retiredThrough ?? cursor;
 
 /** The paths a commit touched that a glob list names. */
 const pathsIn = (commit: RangeCommit, globs: string[]): readonly string[] =>
@@ -255,8 +302,24 @@ function retiredLines(
  * them: a page whose lines do not all fit renders the prefix that does, and
  * the count below names every line no page here shows — so a rotation wide
  * enough to truncate still reports its own size honestly.
+ *
+ * **Whole is the block's own answer, and it is all-or-nothing.** The cut
+ * falls mid-page, so a truncated block is a prefix of one page's lines and
+ * names no commit the reader could advance a cursor to: there is no sha at
+ * which "the lines up to here are searched" is true. The advance the render
+ * names therefore rides this flag and nothing else — a tick handed a prefix
+ * searches it and leaves the cursor where it was, which costs a re-render and
+ * loses nothing (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * An empty delta is whole: a rotation whose locus retired nothing has been
+ * searched by the tick that read this, and closes in one.
  */
-function retiredBlock(pages: readonly DeletedPage[], budget: number): string[] {
+function retiredBlock(
+  pages: readonly DeletedPage[],
+  budget: number,
+): { lines: string[]; whole: boolean } {
+  if (pages.length === 0) return { lines: ["(none)"], whole: true };
+
   const total = pages.reduce((n, page) => n + page.lines.length, 0);
   const lines: string[] = [];
   let used = 0;
@@ -272,5 +335,5 @@ function retiredBlock(pages: readonly DeletedPage[], budget: number): string[] {
         `budget; narrow the range by closing this rotation ===`,
     );
   }
-  return lines;
+  return { lines, whole: total === used };
 }
