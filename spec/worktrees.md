@@ -22,7 +22,10 @@ and never creates or deletes a ref outside `flume/**`. Fanout is where both halv
 condition are exercised — these are the details:
 
 - `git worktree add -B <branch> <path> <fromRef>`, where `branch`
-  is `flume/<slug>` (`createWorktree`), and `fromRef` is the tip the tick started on for the wave's initial fill, and the
+  is `flume/<checkout>/<slug>` (`createWorktree`) — `<checkout>` a name the
+  checkout owns, stable for its life and distinct between any two checkouts of
+  one repository, because linked checkouts share one ref namespace and a bare
+  `flume/<slug>` is a name two efforts reach for at once — and `fromRef` is the tip the tick started on for the wave's initial fill, and the
   trunk as it then stands for an entry a freed slot pulls — a refilled entry cut from the
   pre-head would re-earn every conflict the merges before it already resolved.
 - `git branch -D <branch>` at teardown.
@@ -36,7 +39,7 @@ engine ships, and it exists solely because `git worktree add` requires a branch 
 
 ## Singleton runs in a worktree
 
-A singleton tick provisions one worktree — branch `flume/<phase>` from
+A singleton tick provisions one worktree — branch `flume/<checkout>/<phase>` from
 the tip the tick started on — invokes its agent there, and carries the span back
 through the same cherry-pick + `afterMerge` machinery a wave of one uses.
 `setupWorktree`/`teardownWorktree` run; the write fence, prior-attempt records, and

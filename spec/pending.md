@@ -256,8 +256,10 @@ three behaviors fall out of the one filter:
 
 ## Claims — an entry in flight is left alone
 
-A build tick that selects an entry stakes `<git-common-dir>/flume/claims/<slug>` — pid and
-instant, by exclusive create — before it provisions the entry's worktree, and removes it when
+A build tick that selects an entry stakes `<git-common-dir>/flume/claims/<checkout>/<slug>` —
+pid and instant, by exclusive create, under the same checkout segment its branch carries, so a
+sibling checkout's claim on a tag of the same spelling never hides this checkout's entry —
+before it provisions the entry's worktree, and removes it when
 the attempt ends: with the ship, or with the teardown of an attempt that did not ship. The
 claim is what a concurrent producer reads. While it stands the entry is someone's, and a
 ledger commit that edits or removes the claimed file is refused by the pending gate's claim

@@ -107,7 +107,9 @@ output:
 - **`cherry-pick`.** A fanout wave's per-entry worktree commits are carried onto the trunk as it then stands,
 each as its agent finishes, under the ship lock, with `cherry-pick --abort` on conflict.
 - **Ephemeral `flume/**` branch names.** `createWorktree` constructs
-  `flume/<slug>` —
+  `flume/<checkout>/<slug>` — the checkout's own segment first, since linked
+  checkouts share one ref namespace (`spec/worktrees.md`, *Fanout is the
+  engine's declared navigation carve-out*), and
   the slug is a fanout entry's tag under fanout and the phase name under singleton
   (`spec/worktrees.md`, *Singleton runs in a worktree*); provisioning is
   `git worktree add -B` (`git.addWorktree`), and teardown removes the
@@ -260,7 +262,7 @@ defect rather than a workaround the operator owes the engine:
 - **Locks and claims self-heal.** A stale `loop.pid` (dead pid) is reclaimed
   silently; a stale tip claim, ship lock, or worktree lock is reclaimed by the next
   acquirer's liveness probe (above).
-- **An entry claim outlives nothing.** `<git-common-dir>/flume/claims/<slug>` is
+- **An entry claim outlives nothing.** `<git-common-dir>/flume/claims/<checkout>/<slug>` is
   staked by the build tick that selected the entry and removed by the ship or the
   teardown that ends its attempt (`spec/pending.md`, *Claims — an entry in flight
   is left alone*); one surviving a crash names a dead pid, and the next selection

@@ -61,4 +61,9 @@ that names neither root.
 **Why:** everything the engine keys by is already the checkout's — the tip a
 claim is taken on, the branch a worktree is minted from, the install a setup
 provisions, the tree a gate reads. A second axis beneath it names the same
-work twice and separates none of it.
+work twice and separates none of it. Where git shares state across linked
+checkouts — the ref namespace a worktree's branch lives in, and the entry
+claims beside it under the common directory — the engine keys it by the
+checkout explicitly, so the sentence above holds rather than only reading as
+if it did. The locks it takes there stay shared: they guard what the
+checkouts really do share.
