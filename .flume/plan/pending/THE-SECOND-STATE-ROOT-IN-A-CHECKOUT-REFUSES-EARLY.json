@@ -34,5 +34,5 @@
     "a state root resolved in a checkout holding a different flume state root is refused naming both roots",
     "a second state root's tick refuses at resolution rather than at worktree provisioning"
   ],
-  "notes": "Ruled (a) on the two-roots-in-one-clone question, field report item 4. Verified: `resolveStateDirs` (`src/cliStateDirs.ts:101`) carries one refusal today — cross-repo, mapped at `src/cli.ts:389` — and reads no disk; the decidable evidence is the probe bay discovery already makes (`resolveRepoRoot`, `:61`). Undecided by the ruling: two checkouts share one ref namespace, so the sanctioned escape still collides on a singleton's branch."
+  "notes": "Ruled (a) on the two-roots-in-one-clone question, field report item 4. Verified: `resolveStateDirs` (`src/cliStateDirs.ts:101`) carries one refusal today — cross-repo, mapped at `src/cli.ts:389` — and reads no disk; the decidable evidence is the probe bay discovery already makes (`resolveRepoRoot`, `:61`). The ref-namespace half of the same field report item is THE-TICK-BRANCH-AND-ENTRY-CLAIM-CARRY-THE-CHECKOUT; disjoint files, no seam."
 }
