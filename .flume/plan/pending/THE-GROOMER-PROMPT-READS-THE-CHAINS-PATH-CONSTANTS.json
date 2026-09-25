@@ -1,0 +1,30 @@
+{
+  "tag": "THE-GROOMER-PROMPT-READS-THE-CHAINS-PATH-CONSTANTS",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "examples/prompts/backlog-groomer.md",
+        "description": "the two artifact paths render from placeholders instead of being spelled"
+      },
+      {
+        "path": "examples/backlog-groomer-chain.ts",
+        "description": "`promptArgs()` supplies both path constants beside the schema it already returns"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "the prompt states no path literal its chain holds"
+      }
+    ]
+  },
+  "summary": "The groomer prompt spells `BACKLOG.json` and `SHIPPED.md` five times while its own chain holds both as the constants every other reader takes them from",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Derived state is computed, never restated beside its source"
+  },
+  "acceptance": "the groomer prompt names its two artifacts through placeholders the chain supplies, so `BACKLOG_PATH` and `SHIPPED_PATH` are the single home `writablePaths`, the parse gate and the ledger writer already read them as",
+  "tests": [
+    "the backlog groomer prompt states no path literal its chain holds as a constant"
+  ],
+  "notes": "Off note THE-GROOMER-PROMPT-POINTS-AT-THE-FENCE-THE-BLOCK-RENDERS, its observed-not-built half. Verified this tick: prompt `:3`, `:15`, `:21` spell `BACKLOG.json`, `:16`, `:21` spell `SHIPPED.md`; the chain holds both (`:48`, `:49`) and `writablePaths` (`:312`), the parse gate and the ledger writer all read them there. `promptArgs()` (`:314`) already returns a map, so each is one line. The `groom:` prefix and the ledger line stay spelled: the chain holds neither as a value."
+}

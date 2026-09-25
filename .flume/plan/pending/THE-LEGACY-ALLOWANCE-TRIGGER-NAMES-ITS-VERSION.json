@@ -1,0 +1,26 @@
+{
+  "tag": "THE-LEGACY-ALLOWANCE-TRIGGER-NAMES-ITS-VERSION",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/layout.ts",
+        "description": "each legacy allowance's retirement trigger states the version it is due at, beside the page that explains the cutover"
+      },
+      {
+        "path": "tests/harnessLayout.test.ts",
+        "description": "the named version read against the package's own"
+      }
+    ]
+  },
+  "summary": "Both legacy allowances date their retirement to \"the release after `docs/MIGRATING-0.19.md`\", a trigger no reader can evaluate without resolving which release shipped that page",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "each legacy allowance names the version its retirement is due at rather than a page whose own release must be resolved first, and a check reds once `package.json` reaches that version; both constants stay standing at this tree, the trigger being unfired",
+  "tests": [
+    "a legacy layout allowance outliving the version it names fails the suite"
+  ],
+  "notes": "Off note THE-LEGACY-QUESTIONS-PAGE-ALLOWANCE-IS-RETIRED. The era spelling has misread twice: 7fb802c6's body records the 0.17 allowance standing two cuts past its due 0.18.0, and that note read this one as due at 0.19.0. Measured this tick: the page shipped in v0.19.0 (absent from v0.18.0), so both are due at 0.20.0 and neither is retirable now — `LEGACY_QUEUE_REL` (`harness/layout.ts:220`) and `LEGACY_PLAN_STATE_REL` (`:91`) stay, with their adjacent `planArtifacts` lines (`:439`, `:441`)."
+}
