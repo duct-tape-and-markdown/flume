@@ -452,6 +452,14 @@ usage and exits 0 before anything is written. A consumer never copies a
 prompt, a slice, or a judge from another consumer; what it wants to change it
 declares.
 
+A page the package ships — the `PROTOCOL.md` init writes, a prompt, a
+`--help` literal — cites only what the install carries: `docs/`, the README,
+a `--help` page. It never cites the spec corpus, which does not ship, and so
+it resolves its page names against the file set the package ships rather than
+the tree it was written in, since that file set is the disk its reader holds.
+It names a page the consumer owns but never a section in one, because the
+consumer edits its copy after init and any section name is a guess.
+
 Upgrading is one version bump plus the release's migration note. A
 consumer whose state root carries no `package.json` adds the one init writes
 — `"type": "module"`, beside `chain.ts` — or its chain stops loading on node
