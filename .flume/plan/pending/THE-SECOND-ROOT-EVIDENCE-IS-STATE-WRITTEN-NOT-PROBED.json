@@ -1,0 +1,29 @@
+{
+  "tag": "THE-SECOND-ROOT-EVIDENCE-IS-STATE-WRITTEN-NOT-PROBED",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "src/cliStateDirs.ts",
+        "description": "the artifact read counts a runtime-owned name that holds something, and the doc stating the depth follows it"
+      },
+      {
+        "path": "tests/cliStateDirs.test.ts",
+        "description": "the empty-directory let-through, and the refusal fixture planting state the case really rests on"
+      }
+    ]
+  },
+  "summary": "An empty `awake/` planted by one read-only `flume status` makes the bay a second state root, so the documented state-only relocation is refused after any default-root look",
+  "per": {
+    "path": "spec/jobs.md",
+    "section": "The checkout is the unit of isolation"
+  },
+  "acceptance": "the second-root evidence is a runtime-owned name that holds something, so an empty directory among them reads as a bay the runtime probed rather than flume state it wrote and the documented state-only relocation composes after a default-root `flume status`, while a bay holding a standing flag, a lock, a verdict or a populated runtime directory refuses as it does now",
+  "tests": [
+    "a state root relocated beside a bay whose only runtime name is an empty directory resolves rather than refusing as a second root"
+  ],
+  "notes": "Off note THE-SECOND-STATE-ROOT-IN-A-CHECKOUT-REFUSES-EARLY, consequence 1. Measured via `resolveStateDirs`: a bay holding only `chain.ts` resolves, an empty `.flume/awake/` refuses. `status` plants it (`src/cli.ts:410`). `checkoutStateRootArtifact` (`src/cliStateDirs.ts:106`) reads bare presence; `checkoutHoldingState` (`tests/cliStateDirs.test.ts:689`) plants the empty dir, so that fixture moves \u2014 `:771` wakes a real flag. Seams both paths with THE-STATE-ROOT-COMPARISON-FOLDS-BOTH-SPELLINGS."
+}
