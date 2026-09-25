@@ -5,7 +5,7 @@
 </spec-window>
 
 <pending-now>
-!`d="{{PENDING_DIR}}"; test -d "$d" || { echo "queue directory absent: $d" >&2; exit 1; }; n=0; for f in "$d"/*.json; do test -e "$f" || break; n=$((n+1)); printf '=== %s\n' "${f##*/}"; cat "$f"; done; test "$n" -gt 0 || echo "(queue empty)"`
+!`d="{{PENDING_DIR}}"; test -d "$d" || { echo "queue directory absent: $d" >&2; exit 1; }; c=" {{CLAIMED_TAGS}} "; n=0; for f in "$d"/*.json; do test -e "$f" || break; n=$((n+1)); b="${f##*/}"; t="${b%.json}"; m=""; case "$c" in *" $t "*) m=" [in flight]" ;; esac; printf '=== %s%s\n' "$b" "$m"; cat "$f"; done; test "$n" -gt 0 || echo "(queue empty)"`
 </pending-now>
 
 {{CLAIMED_ENTRIES}}

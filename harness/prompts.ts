@@ -285,6 +285,7 @@ export const PLAN_SLICE_PROMPT_DATA_KEYS = [
   "PLAN_STATE_PATH",
   "PLAN_STATE_SHAPE",
   "CLAIMED_ENTRIES",
+  "CLAIMED_TAGS",
 ] as const;
 
 /** One argument every plan slice's prompt is given, beyond the shared set. */
@@ -306,6 +307,13 @@ export type PlanSlicePromptArg = (typeof PLAN_SLICE_PROMPT_DATA_KEYS)[number];
  * it is a fact the engine already reported on the tick, not a scan either
  * ({@link claimedBlock}).
  *
+ * It is rendered twice from that one value — the block a slice reads once,
+ * and the bare tags the queue listing's own span marks its lines by
+ * ({@link claimedTagWords}) — because a prose block above a listing is not
+ * where a drain decides on an entry: the line is. Two renderings of one
+ * argument, not two sources (`.claude/rules/engineering.md`, *Derived state
+ * is computed, never restated beside its source*).
+ *
  * `claimed` defaults to the empty set for the reason `TickContext.claimed`
  * is optional — a hand-built context carries no engine read — and a
  * dispatcher-built one always names it.
@@ -319,6 +327,7 @@ export function planSlicePromptArgs(
     PLAN_STATE_PATH: planStatePath(stateRoot, slice),
     PLAN_STATE_SHAPE: planStateShape(slice),
     CLAIMED_ENTRIES: claimedBlock(claimed),
+    CLAIMED_TAGS: claimedTagWords(claimed),
   };
 }
 
@@ -369,6 +378,24 @@ function claimedBlock(claimed: readonly string[]): string {
     "body.",
     "</in-flight>",
   ].join("\n");
+}
+
+/**
+ * The same set as shell words: each tag as itself, space-separated, for the
+ * membership test the queue listing's span runs over the file names it is
+ * already printing.
+ *
+ * Substituted into a double-quoted shell string, and safe there by the tag
+ * grammar rather than by escaping: `TAG_PATTERN` (`src/PendingSchema.ts`)
+ * admits `[A-Za-z0-9._()-]` alone, so no tag carries a space, a quote, a
+ * backslash, or an expansion character. A grammar that widened to any of
+ * those moves this renderer with it.
+ *
+ * Empty for an empty set, so the span's test matches nothing and the listing
+ * renders exactly as it did before claims existed.
+ */
+function claimedTagWords(claimed: readonly string[]): string {
+  return claimed.join(" ");
 }
 
 /** A list as prompt prose: each item in backticks, comma-separated. */

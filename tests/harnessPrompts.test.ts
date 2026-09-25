@@ -53,6 +53,7 @@ import {
   type PromptName,
   type SharedPromptArg,
 } from "../harness/prompts.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import { resolvePendingDir } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
 import {
@@ -1179,16 +1180,85 @@ it("every plan slice prompt renders the claimed entries the tick reported", asyn
   }
 }, SPAWN_BUDGET_MS);
 
-it("a plan slice tick with nothing in flight renders no claimed block at all", async () => {
+/** Two entries in the queue, one of which a case hands over as claimed. */
+const HELD_TAG = "HELD-BY-A-BUILD-TICK";
+const FREE_TAG = "FREE-FOR-THE-TAKING";
+
+/**
+ * A state root whose queue carries both tags above — one file each, named by
+ * the engine's own rule rather than by a `.json` spelled here
+ * (`entryFileName`, `src/PendingSchema.ts`), since the listing's span keys
+ * its mark off exactly that name.
+ *
+ * Two entries, because the claim is per entry: a listing holding only the
+ * claimed one would pass a mark that rode every line.
+ */
+async function queueRoot(prefix: string): Promise<string> {
+  const root = await scratchRoot(prefix);
+  const dir = resolvePendingDir(root);
+  await mkdir(dir, { recursive: true });
+  for (const tag of [HELD_TAG, FREE_TAG]) {
+    await writeFile(join(dir, entryFileName(tag)), `{ "tag": "${tag}" }\n`);
+  }
+  return root;
+}
+
+/**
+ * Every header line the queue listing's span printed, sorted — the span is
+ * the only thing in a plan slice's render that opens a line this way, and
+ * sorted because the order is the shell's glob collation, not a claim.
+ *
+ * Read as lines rather than as a substring of the whole render: a mark
+ * asserted over the entire artifact turns on whatever else it quotes, while
+ * the property under test is which *line* carries it
+ * (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+ */
+const queueHeaders = (rendered: string): string[] =>
+  rendered
+    .split("\n")
+    .filter((line) => line.startsWith("=== "))
+    .sort();
+
+it("a plan slice's queue listing marks an entry a build tick holds at that entry's own line", async () => {
+  const root = await queueRoot("flume-prompts-in-flight-");
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  for (const name of PLAN_SLICES) {
+    const rendered = await render(name, root, [HELD_TAG]);
+    // Both lines named, so the assertion carries its own non-vacuity: a
+    // listing that rendered nothing at all answers neither of them
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect({ name, headers: queueHeaders(rendered) }).toEqual({
+      name,
+      headers: [
+        `=== ${entryFileName(FREE_TAG)}`,
+        `=== ${entryFileName(HELD_TAG)} [in flight]`,
+      ].sort(),
+    });
+  }
+}, SPAWN_BUDGET_MS);
+
+it("a plan slice tick with nothing in flight renders no in-flight mark and no claimed block", async () => {
+  const root = await queueRoot("flume-prompts-quiet-queue-");
   expect(PLAN_SLICES.length).toBeGreaterThan(0);
 
   for (const name of PLAN_SLICES) {
     // The producer's own empty answer, so the assertion is about what the
     // renderer put in the file rather than about a value this case invented.
-    expect(args(name, stateRoot, [])["CLAIMED_ENTRIES"]).toBe("");
-    const rendered = await render(name);
-    expect({ name, block: rendered.includes("<in-flight>") }).toEqual({
+    expect(args(name, root, [])["CLAIMED_ENTRIES"]).toBe("");
+    expect(args(name, root, [])["CLAIMED_TAGS"]).toBe("");
+    const rendered = await render(name, root);
+    expect({
       name,
+      headers: queueHeaders(rendered),
+      block: rendered.includes("<in-flight>"),
+    }).toEqual({
+      name,
+      headers: [
+        `=== ${entryFileName(FREE_TAG)}`,
+        `=== ${entryFileName(HELD_TAG)}`,
+      ].sort(),
       block: false,
     });
   }
