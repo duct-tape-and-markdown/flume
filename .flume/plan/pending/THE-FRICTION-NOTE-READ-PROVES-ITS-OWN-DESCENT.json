@@ -1,0 +1,29 @@
+{
+  "tag": "THE-FRICTION-NOTE-READ-PROVES-ITS-OWN-DESCENT",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["THE-ENGINES-REMAINING-ABSENT-ARMS-PROVE-THEIR-ANCESTRY"]
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/cli.ts",
+        "description": "`friction <name>`'s read proves the descent from the state root to the declared channel before reading an absent note as no such note"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the named-note read over an obstructed channel, beside the listing's own arm"
+      }
+    ]
+  },
+  "summary": "`flume friction <name>` reads an absent note off one errno, so a channel present and not a directory reports the note absent on win32 and refuses on posix",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "the read-by-name proves the descent from the root it holds — one call to the shipped composer — so an unreachable channel refuses on every host rather than answering `no note named '<name>'` on one of them",
+  "pins": [
+    "flume friction refuses a named note whose declared channel is present and is not a directory"
+  ],
+  "notes": "Verified this tick: `src/cli.ts:795` keys the read's absence on `code !== \"ENOENT\"`, with no descent from `flumeDir` to the channel it joined at `:774`. The sibling entry moves cli.ts's four other absence arms to `isDirectoryOrAbsentUnder` (`src/fsProbe.ts`) and does not name this one; blocked on it because both edit `src/cli.ts`. No `tests[]`: posix ENOTDIR already refuses through this arm, so the `windows` lane is what the pin protects."
+}

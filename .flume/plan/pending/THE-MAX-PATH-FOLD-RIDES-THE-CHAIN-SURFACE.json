@@ -1,0 +1,37 @@
+{
+  "tag": "THE-MAX-PATH-FOLD-RIDES-THE-CHAIN-SURFACE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/flumeApi.ts",
+        "description": "`namespacedJoin` rides the surface beside `gitPath` and `isDirectoryOrAbsent`, for the same reason each of those does"
+      },
+      {
+        "path": "src/index.ts",
+        "description": "the same name from the entry point, beside the other path rules"
+      },
+      {
+        "path": "tests/namespacedFsPaths.test.ts",
+        "description": "`examples/` is a pinned tree beside `src/` and `harness/`"
+      },
+      {
+        "path": "examples/backlog-groomer-chain.ts",
+        "description": "the three fs calls on paths composed off `ctx.cwd` take the fold"
+      },
+      {
+        "path": "examples/cascade-chain.ts",
+        "description": "the inbox listing takes the fold the probe above it already applies"
+      }
+    ]
+  },
+  "summary": "The win32 MAX_PATH fold is reachable from no chain, and the scan that enforces it stops at `src/` and `harness/` — so the shipped chains compose fs paths unfolded and unread",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "the fold is a path rule a chain reads off the engine, as `gitPath` and `isDirectoryOrAbsent` already are, and the namespaced-fs scan reads `examples/` beside `src/` and `harness/`, so a shipped chain's fs call on a worktree-rooted path is composed and judged by the one lens that judges the package's own",
+  "tests": ["every fs call in examples/ is made on a composed path"],
+  "pins": ["the examples/ scan reads modules, fs importers among them, and path arguments in those"],
+  "notes": "Verified: the scan pins `src/` and `harness/` alone (`tests/namespacedFsPaths.test.ts:148`, `:156`), and `namespacedJoin` rides neither `FlumeApi` nor `src/index.ts:106`, where `gitPath` and `isDirectoryOrAbsent` do. So the shipped chains compose fs paths off `ctx.cwd` (a worktree at `<worktreesBase>/<slug>`) unfolded and unread — `examples/backlog-groomer-chain.ts:197`, `:232`, `:278`, the shape `spec/cli.md`, *Path discipline* says needs the idiom."
+}
