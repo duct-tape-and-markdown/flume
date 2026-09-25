@@ -10,14 +10,12 @@ export type { Agent, AgentInvocation, AgentResult, AgentUsage } from "./Agent.js
 // from the entry point (`.claude/rules/engineering.md`, *An export earns its
 // consumer*).
 export type { BudgetDeclaration } from "./budgetHook.js";
+export { claudeCode, type ClaudeCodeOptions } from "./claudeCode.js";
+export { withSessionCapture, type SessionCaptureOpts } from "./sessionCapture.js";
 export {
-  claudeCode,
-  withSessionCapture,
   withTerminalRenderer,
-  type ClaudeCodeOptions,
-  type SessionCaptureOpts,
   type TerminalRendererOpts,
-} from "./Agent.js";
+} from "./terminalRender.js";
 
 // `BatonToken` is what `Baton.token` answers and `Baton.sleepIfUnchanged`
 // takes, so a chain holding a phase's token across its own work needs to name

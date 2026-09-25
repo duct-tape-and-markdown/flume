@@ -79,7 +79,7 @@ import { existsLoudUnder } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
-import { claudeCode } from "./Agent.js";
+import { claudeCode } from "./claudeCode.js";
 import type { Chain } from "./Phase.js";
 import { parsePendingQueue, type QueueFile } from "./PendingSchema.js";
 import { InlineExecRenderError } from "./Prompt.js";
@@ -1160,7 +1160,7 @@ async function main(): Promise<number> {
     };
     // The release a signalled tick performs is its agent tree's too, never
     // this process's alone: the agent leads its own process group
-    // (`src/Agent.ts`), writes in the worktree under the very state root the
+    // (`src/claudeCode.ts`), writes in the worktree under the very state root the
     // claim guards, and outlives a bare `process.exit` here — which handed
     // that root to the next acquirer with a live writer inside it. Aborting
     // `stopTick` takes the tree down through the same SIGTERM-then-SIGKILL

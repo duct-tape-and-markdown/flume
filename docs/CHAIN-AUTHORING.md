@@ -2667,6 +2667,7 @@ any of them is safe to wake autonomously.
   environment, declared against the package it ships.
 - [`docs/INTENT.md`](INTENT.md) — design rationale.
 - [`docs/CLI.md`](CLI.md) — every `flume <subcommand>` with exit semantics.
-- `src/Phase.ts`, `src/Gate.ts`, `src/Agent.ts`, `src/Prompt.ts`,
+- `src/Phase.ts`, `src/Gate.ts`, `src/Agent.ts`, `src/claudeCode.ts`,
+  `src/sessionCapture.ts`, `src/terminalRender.ts`, `src/Prompt.ts`,
   `src/PendingSchema.ts` — JSDoc on these types is the authoritative
   reference once you're past this introduction.

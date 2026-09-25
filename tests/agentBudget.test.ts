@@ -3,7 +3,7 @@
  * on the argv, and what an undeclared budget leaves alone
  * (`spec/chain.md`, *The agent seam*).
  *
- * Its own file rather than a case in `tests/Agent.test.ts`, because both
+ * Its own file rather than a case in `tests/claudeCode.test.ts`, because both
  * cases here carry a named line of the entry that shipped the option: the
  * judge lays a line's file over the base tree, so a file importing the
  * modules that entry introduced would red at the base for the import rather
@@ -20,7 +20,7 @@ vi.mock("node:child_process", () => ({
 
 import { spawn } from "node:child_process";
 
-import { claudeCode, type ClaudeCodeOptions } from "../src/Agent.ts";
+import { claudeCode, type ClaudeCodeOptions } from "../src/claudeCode.ts";
 
 const spawnMock = vi.mocked(spawn);
 
@@ -82,7 +82,8 @@ it("a declared budget puts the adapter's hook on that invocation's own settings 
   // The event key is spelled by hand here and in the two reads below —
   // declared divergence from `.claude/rules/engineering.md`, *Derived state is
   // computed, never restated beside its source*, over `HOOK_EVENT_NAME`
-  // (`src/budgetHook.ts`), which is the key `budgetSettings` (`src/Agent.ts`)
+  // (`src/budgetHook.ts`), which is the key `budgetSettings`
+  // (`src/claudeCode.ts`)
   // writes. The name is the provider's, not ours, so a hand spelling is the
   // only thing holding the key this adapter registers under in agreement with
   // the event the provider fires. Keying this reader off the constant would

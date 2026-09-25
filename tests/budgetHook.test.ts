@@ -85,7 +85,7 @@ async function transcriptAt(...events: unknown[]): Promise<string> {
  * beside its source*. The event name is not this suite's value to derive: it
  * is the provider's, and a hand spelling is the only thing holding the two
  * production sites that key on it — the settings key `budgetSettings`
- * (`src/Agent.ts`) arms the hook under, and the `hookEventName` the hook
+ * (`src/claudeCode.ts`) arms the hook under, and the `hookEventName` the hook
  * echoes to claim its output — in agreement with the provider. Reading it
  * off the constant would compare the constant to itself and leave a provider
  * rename green on both sides, the self-agreement

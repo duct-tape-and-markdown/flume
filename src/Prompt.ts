@@ -245,7 +245,7 @@ export interface CleanExitAttempt extends PriorAttemptEnvelope {
   mode: "clean-exit";
   /**
    * The tail of the agent's own final message, bounded — lifted from the
-   * transcript by the adapter's `extractFinalMessage` (`src/Agent.ts`) and
+   * transcript by the adapter's `extractFinalMessage` (`src/claudeCode.ts`) and
    * quoted verbatim. Whatever the exit meant, the agent said it here; the
    * engine neither names nor paraphrases it.
    */

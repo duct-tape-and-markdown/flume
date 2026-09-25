@@ -51,7 +51,7 @@ import {
 import { writePlanState } from "../harness/planState.ts";
 import type { RunnerContext, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
-import type { ClaudeCodeOptions } from "../src/Agent.ts";
+import type { ClaudeCodeOptions } from "../src/claudeCode.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
 import { computeStateRootRel } from "../src/paths.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";

@@ -62,7 +62,8 @@ import {
   type PriorAttemptRef,
 } from "../src/priorAttempts.ts";
 import type { Agent } from "../src/Agent.ts";
-import { extractFinalMessage, withTerminalRenderer } from "../src/Agent.ts";
+import { extractFinalMessage } from "../src/claudeCode.ts";
+import { withTerminalRenderer } from "../src/terminalRender.ts";
 import { Baton } from "../src/Baton.ts";
 import { superviseLoop } from "../src/loopSupervisor.ts";
 import {
@@ -2572,7 +2573,7 @@ describe("Dispatcher — supervisorPolicy.tickTimeoutMs overrides the per-invoca
  * claim"). Both ride the invocation the same way `tickTimeoutMs` above does —
  * off the tick's own resolved chain, at the `invokeAgent` call site — so a
  * recording agent is how they are observed here too. What the provider then
- * does with them is `tests/Agent.test.ts`'s subject.
+ * does with them is `tests/terminalRender.test.ts`'s subject.
  */
 describe("Dispatcher — the stop signal and kill grace reach the agent invocation", () => {
   it("the dispatcher's stopSignal is the signal a singleton phase's agent invocation receives", async () => {
@@ -9985,7 +9986,7 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
         prompts.push(inv.prompt);
         // Clean exit, no commit, the reason stated in the final message.
         // `finalMessage` stands in for what claudeCode's own extraction
-        // would produce for this plain-text transcript (Agent.ts,
+        // would produce for this plain-text transcript (claudeCode.ts,
         // extractFinalMessage) — the Dispatcher no longer re-derives it.
         const stdout = `working…\n\n${CONSTRAINT}\n`;
         return {
@@ -10138,7 +10139,7 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
         prompts.push(inv.prompt);
         // Clean exit, no commit; the closing prose is the final message,
         // delivered only inside the stream-json transcript. `finalMessage`
-        // stands in for claudeCode's own extraction (Agent.ts,
+        // stands in for claudeCode's own extraction (claudeCode.ts,
         // extractFinalMessage) — the Dispatcher no longer re-parses stdout.
         return {
           exitCode: 0,
@@ -10199,7 +10200,7 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     // sawStreamJson flips true) but never emits a `result` or `assistant`
     // event — e.g. the process was cut off after the `system`/`init` line.
     // DISPATCHER-FINALAGENTMESSAGE-STREAMJSON-SILENT-EMPTY: pre-fix,
-    // finalAgentMessage (now Agent.ts's extractFinalMessage) tailBound'd the
+    // finalAgentMessage (now claudeCode.ts's extractFinalMessage) tailBound'd the
     // empty string here, and the retry prompt lost the message entirely.
     const phase = makePhase({ name: "plan", concurrency: "singleton" });
     const chain: Chain = { phases: [phase], humanOnly: [] };

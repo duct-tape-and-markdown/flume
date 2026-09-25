@@ -15,11 +15,9 @@
  * module state at equal versions with nothing reporting it.
  */
 
-import {
-  claudeCode,
-  withSessionCapture,
-  withTerminalRenderer,
-} from "./Agent.js";
+import { claudeCode } from "./claudeCode.js";
+import { withSessionCapture } from "./sessionCapture.js";
+import { withTerminalRenderer } from "./terminalRender.js";
 import { Baton } from "./Baton.js";
 import {
   shellGate,

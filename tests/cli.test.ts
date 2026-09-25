@@ -105,7 +105,9 @@ const CLI_SRC_PATH = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
  * an absolute path, because the chain it is written into lives in a temp repo
  * with no view of this one.
  */
-const AGENT_SRC_PATH = fileURLToPath(new URL("../src/Agent.ts", import.meta.url));
+const AGENT_SRC_PATH = fileURLToPath(
+  new URL("../src/claudeCode.ts", import.meta.url),
+);
 
 /**
  * `isInvokedDirectly` (`src/cli.ts`), the seam gating `main()`.
@@ -2767,7 +2769,8 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
 });
 
 /**
- * A chain whose agent is the shipped `claudeCode` provider (`src/Agent.ts`)
+ * A chain whose agent is the shipped `claudeCode` provider
+ * (`src/claudeCode.ts`)
  * pointed at a node one-liner instead of the real binary — so the bare tick
  * below drives the engine's own spawn and teardown rather than a fixture's
  * imitation of them (`.claude/rules/engineering.md`, *A seam gate reads what

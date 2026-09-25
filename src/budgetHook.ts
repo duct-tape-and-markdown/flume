@@ -75,7 +75,7 @@ const THRESHOLDS_FLAG = "--thresholds";
 /**
  * The provider's event this hook runs on. One declaration because both ends
  * of the registration spell it: the settings key the adapter arms the hook
- * under (`budgetSettings`, `src/Agent.ts`) and the `hookEventName` the hook
+ * under (`budgetSettings`, `src/claudeCode.ts`) and the `hookEventName` the hook
  * echoes back to claim its output. The provider matches the two, so an event
  * renamed on one side alone is a line the agent's next turn never sees, with
  * nothing failing to say so.

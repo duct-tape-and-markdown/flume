@@ -13,7 +13,7 @@
  * Two callers, one rung apart, and they take different halves.
  * `src/loopSupervisor.ts` starts a `flume tick` child this way and, on
  * teardown, signals that child's group and waits on its exit unbounded —
- * {@link signalProcessTree} alone. `src/Agent.ts` starts the agent the same
+ * {@link signalProcessTree} alone. `src/claudeCode.ts` starts the agent the same
  * way and bounds it — {@link terminateProcessTree}, escalating to SIGKILL
  * after the grace the chain declares. The agent leads a group of its own, so
  * a timer at the supervisor would fire over a tree it cannot see, killing the
@@ -78,7 +78,7 @@ function hasProcessGroups(): boolean {
  * by its parent races the parent's release against a death it never ordered.
  *
  * The all-pipes overload carries `spawn`'s own narrowing through the wrapper:
- * a caller that streams its child's output (`src/Agent.ts`) reads the same
+ * a caller that streams its child's output (`src/claudeCode.ts`) reads the same
  * non-nullable stdio handles it would have read from `spawn` directly, rather
  * than paying an assertion for a shape this call already fixed.
  */
@@ -153,7 +153,7 @@ export function signalProcessTree(
  *
  * Defaults to {@link DEFAULT_KILL_GRACE_MS}; the dispatcher forwards a
  * chain's `supervisorPolicy.killGraceMs` (`src/Phase.ts`) here through the
- * agent invocation it bounds (`src/Agent.ts`).
+ * agent invocation it bounds (`src/claudeCode.ts`).
  */
 export function terminateProcessTree(
   child: ChildProcess,

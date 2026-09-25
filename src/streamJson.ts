@@ -4,9 +4,10 @@
  * *The agent seam*).
  *
  * Its own file rather than a corner of the adapter, because the readers sit
- * on both sides of it: `src/Agent.ts` renders and extracts from the stream it
- * spawned, and `src/budgetLine.ts` reads the same events back off the session
- * transcript on disk. With the alphabet inside the adapter, the transcript
+ * on both sides of it: `src/terminalRender.ts` renders and `src/claudeCode.ts`
+ * extracts from the stream it spawned, and `src/budgetLine.ts` reads the same
+ * events back off the session transcript on disk. With the alphabet inside the
+ * adapter, the transcript
  * reader imports the process spawner to learn what an `assistant` event is,
  * and the hook the adapter registers closes that into a cycle
  * (`.claude/rules/engineering.md`, *A module is one job*).

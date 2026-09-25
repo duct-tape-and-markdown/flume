@@ -703,7 +703,7 @@ export async function buildGateRevert(
  * Build the clean-exit record: the agent exited cleanly and left no usable
  * commit. What rides the record is the tail of its final message —
  * extracted from the full transcript by the adapter's own
- * `extractFinalMessage` (`src/Agent.ts`, spec/chain.md "The agent seam"),
+ * `extractFinalMessage` (`src/claudeCode.ts`, spec/chain.md "The agent seam"),
  * unbound at that layer; `tailBound` here is record-size policy, not
  * provider shape, so it stays on this side of the seam. The message is
  * quoted, never classified: whether the exit was a refusal, a park, or

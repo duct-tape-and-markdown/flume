@@ -39,7 +39,7 @@ export function isWin32ShimSpawnFailure(err: unknown): boolean {
  * is what the caller sees.
  *
  * For a spawn whose retry cannot be a second `await` — a streaming child
- * that must be abandoned and re-run (`claudeCode`, `src/Agent.ts`) — take
+ * that must be abandoned and re-run (`claudeCode`, `src/claudeCode.ts`) — take
  * the predicate alone and keep the mechanics local.
  */
 export async function execFileWithShimRetry(

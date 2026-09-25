@@ -3,7 +3,7 @@
  *
  * The three sites that spawn a possibly-shimmed binary — `shellGate`
  * (src/builtinGates.ts), `setupWorktree` (src/setupWorktree.ts) and
- * `claudeCode` (src/Agent.ts) — used to spell the detection themselves, and
+ * `claudeCode` (src/claudeCode.ts) — used to spell the detection themselves, and
  * `shellGate`'s copy was exercised only under `describe.runIf(win32)`, which
  * runs in none of this repo's runs. Here the platform is a shim of its own
  * (`withPlatform`) and `execFile` is mocked, so the decision — retry, or
