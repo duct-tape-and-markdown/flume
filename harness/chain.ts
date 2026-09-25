@@ -399,8 +399,10 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     humanOnly: [],
     // The package's per-entry refusal (`handoff.ts`), unconditional because
     // it is the floor: whatever handoff a phase runs, declared or default,
-    // runs above it (`spec/harness.md`, *The default `handoff`*).
-    refusesEntry: defaultRefusesEntry,
+    // runs above it (`spec/harness.md`, *The default `handoff`*). Over the
+    // same repo-relative state root the put-down predicate reads, since
+    // telling a park from a continuation is where each note lives.
+    refusesEntry: defaultRefusesEntry(stateRoot),
     // Whole, and unread: which strings an environment asserts is the
     // consumer's fact, and the engine's only use of one is matching it
     // against a `requiresCapability` entry's gate. Declared-but-empty

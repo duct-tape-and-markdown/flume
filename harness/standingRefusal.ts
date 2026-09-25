@@ -12,6 +12,14 @@
  * from one and nowhere from the other (`.claude/rules/engineering.md`, *The
  * fix lands at the mechanism*).
  *
+ * **The park/continuation split has a second reader, and so is exported.**
+ * Which declined ship is a park is the same question on both halves of the
+ * routing decision: the wake set asks it to route the record to the drain,
+ * and the per-entry refusal asks it to hold the entry back until the drain
+ * answers ({@link isContinuation}, `handoff.ts`). One of the two spelling it
+ * for itself is how an entry comes to be walled on one surface and re-picked
+ * on the other, every tick, for as long as the park stands.
+ *
  * Nothing here re-derives an engine fact. The record's `mode` is the one the
  * engine stamped, its `touchedPaths` are the list the `shipped` predicate was
  * handed, and the key each record is looked up under is the engine's own
@@ -45,7 +53,7 @@ import { declaredPutDown } from "./putDown.js";
  *
  * The mode alone does not settle `not-shipped`, which is why this table is
  * not the whole answer: the package's own predicate declines a continuation
- * on the same mode, and that one is build's ({@link continuation}).
+ * on the same mode, and that one is build's ({@link isContinuation}).
  *
  * The other three are not plan's. A `gate-revert` and a `platform-preempt`
  * are a reverted commit and a killed process, both worth retrying from the
@@ -119,7 +127,7 @@ export function standingRefusals(
     const record = priorAttempts.get(entryAttemptKey(entry));
     if (record === undefined) return [];
     return PLAN_RESOLVES_STANDING[record.mode] &&
-      !continuation(stateRoot, entry, record)
+      !isContinuation(stateRoot, entry, record)
       ? [record]
       : [];
   });
@@ -127,8 +135,8 @@ export function standingRefusals(
 
 /**
  * Whether a standing record is a **continuation** — the one `not-shipped`
- * that is nothing for a plan slice to reconcile (`spec/harness.md`, *A tick
- * puts work down*).
+ * that is nothing for a plan slice to reconcile, and the one a build wave may
+ * carry on from (`spec/harness.md`, *A tick puts work down*).
  *
  * The package's `shipped` predicate declines a landed commit on two different
  * statements, and they route opposite ways: a park is the entry the tick
@@ -136,7 +144,9 @@ export function standingRefusals(
  * is a green segment of an entry whose rest is another *build* tick's, with
  * nothing in it plan has to read. Classifying both by the mode they share
  * wakes the drain on the second with nothing to reconcile, every tick, for as
- * long as the entry takes.
+ * long as the entry takes — and, on the other surface, hands the *first*
+ * straight back to a build wave that will read exactly what the last one
+ * could not do (`defaultRefusesEntry`, `handoff.ts`).
  *
  * Which one it was is **on the record**, never re-derived: `touchedPaths` is
  * the same list the predicate itself was handed (`buildNotShipped`,
@@ -159,7 +169,7 @@ export function standingRefusals(
  * the record states its own `omittedPaths` and renders whole into the prompt
  * (`inboxWindow.ts`).
  */
-function continuation(
+export function isContinuation(
   stateRoot: string,
   entry: PendingEntry,
   record: PriorAttempt,

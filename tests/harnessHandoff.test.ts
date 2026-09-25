@@ -78,6 +78,13 @@ const FLUME_DIR = "/tmp/flume-handoff-fixture/.flume";
  */
 const STATE_ROOT_REL = ".flume";
 
+/**
+ * The package's per-entry refusal, bound over the state root above — the
+ * binding the chain factory makes (`harness/chain.ts`), so no case here
+ * reaches the predicate through a root the package would not have handed it.
+ */
+const refuses = defaultRefusesEntry(STATE_ROOT_REL);
+
 /** One queue entry — the handoff reads only whether the set is non-empty. */
 const entry = (tag: string): PendingEntry => ({
   tag,
@@ -477,11 +484,11 @@ describe("the harness package's default handoff", () => {
       headSha: head,
       declaredAs: entryDeclaredKey(entry("READY")),
     };
-    expect(defaultRefusesEntry({ ...ctx, priorAttempt: walled })).toBe(true);
+    expect(refuses({ ...ctx, priorAttempt: walled })).toBe(true);
 
     // Non-vacuity for that floor: the same predicate hands over an entry
     // nothing has walled on, so the refusal above is the record's doing.
-    expect(defaultRefusesEntry(ctx)).toBe(false);
+    expect(refuses(ctx)).toBe(false);
   });
 });
 
@@ -691,13 +698,19 @@ describe("the default handoff's stop after a contract-touching ship", () => {
  * from the record it already read and the declaration it read that record
  * against.
  *
- * Every case drives the real `defaultRefusesEntry` over a real
+ * Every case drives the real `defaultRefusesEntry`, bound over the state root
+ * the chain factory binds it over ({@link refuses}), against a real
  * `EntryRefusalContext` — the shape the engine composes at selection
  * (`bindEntryRefusal`, `src/selection.ts`) — with records built through the
  * engine's own `PriorAttempt` union and keyed through the engine's own
  * `entryDeclaredKey` (`src/entryKey.ts`), so neither a field it renames nor a
  * key it derives differently can leave a case green on the tester's own
  * spelling.
+ *
+ * The two declined-ship cases carry that through to the note paths: which of
+ * the two a `not-shipped` record declared is read off the footprint the engine
+ * recorded, composed by `layout.ts` rather than spelled here, so a case cannot
+ * agree with the refusal on a path no build tick writes.
  *
  * Each refusal carries its control: the same record with the one fact changed
  * — a different declaration, a different mode — so "refused" is proven to be
@@ -731,10 +744,16 @@ describe("the default handoff's per-entry refusal", () => {
    * `headSha` is the tip the record was written at, defaulting to the one the
    * first selection is taken at: a case about a moved tip moves the *selection*
    * instead, which is what actually happens when a commit lands.
+   *
+   * `touched` is the footprint beside a declined ship, carried by the
+   * `not-shipped` arm alone because it is the only mode whose two kinds — the
+   * park and the continuation — differ in nothing else. Empty by default,
+   * which is a footprint stating neither note.
    */
   function attempt(
     mode: PriorAttempt["mode"],
     declaration: PendingEntry = DECLARED,
+    touched: readonly string[] = [],
   ): PriorAttempt {
     const anchor = {
       key: "entry" as const,
@@ -765,7 +784,12 @@ describe("the default handoff's per-entry refusal", () => {
       case "render-refused":
         return { mode, failures: "span failed", ...anchor };
       case "not-shipped":
-        return { mode, mergedSha: "a".repeat(40), touchedPaths: [], ...anchor };
+        return {
+          mode,
+          mergedSha: "a".repeat(40),
+          touchedPaths: [...touched],
+          ...anchor,
+        };
       case "tip-moved":
         return {
           mode,
@@ -801,7 +825,7 @@ describe("the default handoff's per-entry refusal", () => {
     // predicate that refuses every clean exit it sees.
     expect(record.declaredAs).toBe(entryDeclaredKey(DECLARED));
 
-    expect(defaultRefusesEntry(context(record))).toBe(true);
+    expect(refuses(context(record))).toBe(true);
   });
 
   it("a standing build refusal survives an operator commit that moves the tip", () => {
@@ -818,7 +842,7 @@ describe("the default handoff's per-entry refusal", () => {
     expect(moved.headSha).not.toBe(record.headSha);
     expect(moved.declaredAs).toBe(record.declaredAs);
 
-    expect(defaultRefusesEntry(moved)).toBe(true);
+    expect(refuses(moved)).toBe(true);
   });
 
   it("a producer's rewrite of the refused entry lifts the refusal", () => {
@@ -835,30 +859,78 @@ describe("the default handoff's per-entry refusal", () => {
     expect(rewritten.declaredAs).not.toBe(record.declaredAs);
     expect(rewritten.headSha).toBe(record.headSha);
 
-    expect(defaultRefusesEntry(rewritten)).toBe(false);
+    expect(refuses(rewritten)).toBe(false);
 
     // The control: the same record against the declaration it was written
     // for is still refused, so the lift above is the rewrite's doing.
-    expect(defaultRefusesEntry(context(record))).toBe(true);
+    expect(refuses(context(record))).toBe(true);
   });
 
   it("an entry whose latest attempt is a gate revert is handed to build", () => {
     // The declaration matches; the mode does not. A reverted commit left the
     // gate's own verdict on the record, which is a fact the next attempt
     // reads without any producer touching the entry.
-    expect(defaultRefusesEntry(context(attempt("gate-revert")))).toBe(false);
+    expect(refuses(context(attempt("gate-revert")))).toBe(false);
   });
 
-  it("every mode but a clean exit is handed to build against the same declaration", () => {
-    const modes = PRIOR_ATTEMPT_MODES.filter((mode) => mode !== "clean-exit");
+  it("every mode but a clean exit and a declined ship is handed to build against the same declaration", () => {
+    const REFUSED = ["clean-exit", "not-shipped"] as const;
+    const modes = PRIOR_ATTEMPT_MODES.filter(
+      (mode) => !REFUSED.includes(mode as (typeof REFUSED)[number]),
+    );
 
-    // Non-vacuity: the sweep judges the engine's whole roster minus the one
-    // refused mode, so a roster that collapsed would pass over nothing.
+    // Non-vacuity: the sweep judges the engine's whole roster minus the two
+    // refused modes, so a roster that collapsed would pass over nothing.
     expect(modes.length).toBeGreaterThan(0);
 
-    expect(
-      modes.filter((mode) => defaultRefusesEntry(context(attempt(mode)))),
-    ).toEqual([]);
+    expect(modes.filter((mode) => refuses(context(attempt(mode))))).toEqual([]);
+  });
+
+  /**
+   * The footprint a build tick's own commit carries when it put the work down
+   * — the note path composed by `layout.ts`, the same spelling the `shipped`
+   * predicate reads and the classifier reads back, so neither case below
+   * agrees with the refusal on a path the package does not write
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*).
+   */
+  const putDown = (note: (root: string, tag: string) => string) =>
+    attempt("not-shipped", DECLARED, ["src/a.ts", note(STATE_ROOT_REL, DECLARED.tag)]);
+
+  it("the default refusal holds back an entry whose latest prior attempt parked", () => {
+    const park = putDown(parkedNotePath);
+
+    // Non-vacuity: the record really does stand against the declaration this
+    // selection is about, so the refusal below is the comparison and not a
+    // predicate that refuses every declined ship it sees.
+    expect(park.declaredAs).toBe(entryDeclaredKey(DECLARED));
+
+    expect(refuses(context(park))).toBe(true);
+
+    // The same reconciliation lifts it: a producer that re-scoped the entry
+    // re-keys it, and the park no longer stands against what the queue
+    // declares.
+    expect(refuses(context(park, { entry: REWRITTEN }))).toBe(false);
+  });
+
+  it("the default refusal hands back an entry whose latest prior attempt wrote a continuation", () => {
+    const continued = putDown(continuingNotePath);
+
+    // Non-vacuity: the two footprints differ in exactly the note path, and the
+    // continuation's record stands against this declaration just as the park's
+    // does — so "handed back" below is where the tick wrote its note, and
+    // never the mode the two share or a record the predicate never read.
+    const park = putDown(parkedNotePath);
+    expect(continued.mode).toBe(park.mode);
+    expect(continued.declaredAs).toBe(entryDeclaredKey(DECLARED));
+    expect(parkedNotePath(STATE_ROOT_REL, DECLARED.tag)).not.toBe(
+      continuingNotePath(STATE_ROOT_REL, DECLARED.tag),
+    );
+
+    expect({
+      continued: refuses(context(continued)),
+      parked: refuses(context(park)),
+    }).toEqual({ continued: false, parked: true });
   });
 
   it("an entry nothing has attempted yet is handed to build", () => {
@@ -866,7 +938,7 @@ describe("the default handoff's per-entry refusal", () => {
     // where one stands (`bindEntryRefusal`, `src/selection.ts`).
     const first = context();
     expect(first).not.toHaveProperty("priorAttempt");
-    expect(defaultRefusesEntry(first)).toBe(false);
+    expect(refuses(first)).toBe(false);
   });
 });
 
