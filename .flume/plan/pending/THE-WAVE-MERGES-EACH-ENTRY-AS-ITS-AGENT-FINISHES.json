@@ -1,0 +1,31 @@
+{
+  "tag": "THE-WAVE-MERGES-EACH-ENTRY-AS-ITS-AGENT-FINISHES",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveTick.ts",
+        "description": "the wave drives merge per finished attempt and refills the freed slot from the tip as it then stands, disjoint from everything in flight"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the merge stage takes one finished attempt under the ship lock rather than the whole batch after it"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the rolling arms, beside the batch-merge cases they replace"
+      }
+    ]
+  },
+  "summary": "A wave holds every merge until its slowest agent finishes, so a two-minute entry waits on a fifteen-minute one and the freed slot pulls nothing",
+  "per": {
+    "path": "spec/worktrees.md",
+    "section": "Fanout and worktrees — provisioning, isolation, teardown"
+  },
+  "acceptance": "each entry's span is carried onto the trunk as its own agent finishes, under the ship lock, from the tip as it then stands, and the slot that frees pulls the next pickable entry disjoint from everything still in flight; the tick still ends when nothing is pickable or the budget says to put the wave down",
+  "tests": [
+    "a wave merges a finished entry while a slower sibling's agent is still running",
+    "a slot freed by a merged entry pulls the next pickable entry disjoint from what is still in flight"
+  ],
+  "notes": "Field report, 0.19, and this repo's own 31%-of-slot-time idle measurement on the same shape. The ship lock the rolling wave needed exists (`spec/loop.md`, *The ship lock and the worktree lock — sibling ticks take turns at git*); `runWaveMerge` (`src/waveMerge.ts`) is today called once, after every attempt in `runFanout` (`src/waveTick.ts:47`) has settled. The per-entry merge isolation and the footprint it reports are unchanged."
+}

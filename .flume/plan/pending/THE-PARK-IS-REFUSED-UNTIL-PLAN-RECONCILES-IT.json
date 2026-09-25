@@ -1,0 +1,35 @@
+{
+  "tag": "THE-PARK-IS-REFUSED-UNTIL-PLAN-RECONCILES-IT",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/handoff.ts",
+        "description": "the per-entry refusal covers a park, told apart from a continuation by the classification the standing-refusal read already makes"
+      },
+      {
+        "path": "harness/standingRefusal.ts",
+        "description": "that classification stops being module-local, so both readers index one table"
+      },
+      {
+        "path": "harness/chain.ts",
+        "description": "`refusesEntry` is wired with the state root the classification needs"
+      },
+      {
+        "path": "tests/harnessHandoff.test.ts",
+        "description": "the parked leg and the continuation leg, beside the clean-exit cases"
+      }
+    ]
+  },
+  "summary": "A parked entry is re-picked before the drain routes its park — eleven consecutive full ticks on one unanswered question, against a spec that already lists a park among the refusals",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The default `handoff`"
+  },
+  "acceptance": "an entry whose latest prior attempt is a park is not handed to build while that record stands against the entry as declared, and a continuation on the same mode is re-picked at once, told apart by where the tick wrote its note and never by the mode alone",
+  "tests": [
+    "the default refusal holds back an entry whose latest prior attempt parked",
+    "the default refusal hands back an entry whose latest prior attempt wrote a continuation"
+  ],
+  "notes": "Field report, 0.19: eleven parks in a row. Verified this tick — the spec lists \"a clean exit, a park, a merge the queue must answer\" and `RESOLVED_BY_A_PRODUCER[\"not-shipped\"]` is `false` (`harness/handoff.ts:172`). The park/continuation split is already made from the record's own `touchedPaths`, no tree read: `continuation` (`harness/standingRefusal.ts:161`) through `declaredPutDown`. Under one tick the inbox slice ran first and hid it."
+}
