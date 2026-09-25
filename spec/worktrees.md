@@ -4,9 +4,11 @@ A fanout wave runs each pickable entry in its own ephemeral git worktree and car
 entry's commits back onto the trunk **as its agent finishes**, under the ship lock, from the
 tip as it then stands; a slot freed that way pulls the next entry disjoint from everything
 still in flight (`spec/loop.md`, *The ship lock and the worktree lock — sibling ticks take
-turns at git*). A wave pulls only from the entries pickable when it started, each at most
-once, so it ends when that set is drained or the run is torn down, and never re-picks an
-entry it already attempted. Each entry's ledger commit lands with its own merge, under the
+turns at git*). A freed slot reads the queue as it
+stands, in priority order, so an entry filed or re-ranked mid-wave is pulled ahead of
+lower-ranked work the wave has not reached; it skips every entry this wave has already
+attempted, so a wave never re-picks one, and it ends when nothing it has not attempted is
+pickable or the run is torn down. Each entry's ledger commit lands with its own merge, under the
 same hold of the ship lock, never at the wave's end: a wave can now outlast many merges, and
 a queue that went on listing entries already on the trunk would be read as current by every
 producer beside it. An agent's put-down bounds its entry, never the wave (`spec/harness.md`,
