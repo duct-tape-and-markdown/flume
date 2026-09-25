@@ -38,6 +38,7 @@ import {
   type PageCitationScan,
   type RenderedCitationScan,
   type RenderedSurface,
+  declaredSweepTrees,
   formatCitation,
   scanCommentCitations,
   scanPageCitations,
@@ -576,34 +577,13 @@ const PAGE_ARM_DOMAIN: ScanDomain = {
 /**
  * Every tree the sweep domain names, read off the domain this repository
  * declares rather than spelled a second time beside it: a tree the
- * declaration gains or loses moves the coverage pin with it. The union of
+ * declaration gains or loses moves the coverage pin with it, and a
+ * declaration that enables no sweep at all moves it to nothing
+ * (`declaredSweepTrees`, `tests/helpers/commentCitations.ts`). The union of
  * the two scans' modules is asserted to cover this, so a tree the sweep
  * reads and neither scan opens reds rather than going unjudged.
- *
- * The domain is written in globs and the scans report modules, so each entry
- * is folded to the prefix a module is matched on. A glob naming anything but
- * a whole tree is refused here rather than silently covering nothing — the
- * prefix fold is the only reading this pin has for one.
  */
-function declaredSweepTrees(): readonly string[] {
-  const sweep = declaration.slices.sweep;
-  if (sweep === undefined) {
-    throw new Error(
-      "this repo enables the sweep slice, so its declaration carries the domain this pin covers — nothing to read",
-    );
-  }
-  return sweep.domain.map((glob) => {
-    const tree = /^([^*?]+\/)\*\*$/.exec(glob)?.[1];
-    if (tree === undefined) {
-      throw new Error(
-        `sweep domain entry \`${glob}\` names no whole tree; the coverage pin reads modules by prefix`,
-      );
-    }
-    return tree;
-  });
-}
-
-const SWEEP_DOMAIN: readonly string[] = declaredSweepTrees();
+const SWEEP_DOMAIN: readonly string[] = declaredSweepTrees(declaration.slices);
 
 let fixtureRoot = "";
 /** The one scan of that tree — every case below reads the same verdict. */
@@ -2194,10 +2174,13 @@ it("every .md page name a comment in bin/, examples/, scripts/ or .flume/chain.t
 });
 
 it("the two citation scans cover every tree the repository's declared sweep domain names", () => {
-  // Vacuity guard: the domain came off the declaration populated, and both
-  // scans opened modules. A declaration read as empty — or a scan that read
-  // nothing — would leave the coverage below green over no trees at all.
-  expect(SWEEP_DOMAIN.length).toBeGreaterThan(0);
+  // Vacuity guard: the subject is every glob the declaration's sweep names,
+  // folded one for one, and both scans opened modules. A domain read as empty
+  // while the declaration names trees — or a scan that read nothing — would
+  // leave the coverage below green over no trees at all. What a declaration
+  // naming none leaves it is the case below, spelled rather than inherited
+  // here.
+  expect(SWEEP_DOMAIN.length).toBe(declaration.slices.sweep?.domain.length ?? 0);
   expect(repoScan.modules.length).toBeGreaterThan(0);
   expect(repoPageScan.modules.length).toBeGreaterThan(0);
 
@@ -2210,6 +2193,40 @@ it("the two citation scans cover every tree the repository's declared sweep doma
       `${tree} -> true`,
     );
   }
+});
+
+it("the citation scan's tree coverage resolves over a declaration that enables no sweep slice", () => {
+  // A consumer enables or disables the slices the package offers
+  // (`spec/harness.md`, *The phases*), so the sweep's domain is a field a
+  // declaration may not carry at all — and the fold reads that as the empty
+  // coverage it is rather than as a declaration it can refuse.
+  expect(declaredSweepTrees({ enabled: ["plan-inbox", "plan-derive"] })).toEqual(
+    [],
+  );
+
+  // Discriminating arm: a declaration that does carry the slice folds its
+  // globs, so the empty above is the absent sweep's and not a fold that
+  // returns nothing whatever it is handed.
+  expect(
+    declaredSweepTrees({
+      enabled: ["plan-sweep"],
+      sweep: {
+        domain: ["src/**", "bin/**"],
+        posturePages: [".claude/rules/engineering.md"],
+      },
+    }),
+  ).toEqual(["src/", "bin/"]);
+
+  // And the refusal the fold keeps is the glob naming less than a whole tree:
+  // the prefix fold is its only reading for one, so covering nothing quietly
+  // is not among its verdicts (`.claude/rules/engineering.md`, *Loud or
+  // nothing*).
+  expect(() =>
+    declaredSweepTrees({
+      enabled: ["plan-sweep"],
+      sweep: { domain: ["src/*.ts"], posturePages: [] },
+    }),
+  ).toThrow(/names no whole tree/);
 });
 
 it("every section a comment in bin/, examples/, scripts/ or .flume/chain.ts cites is a section its page still carries", () => {

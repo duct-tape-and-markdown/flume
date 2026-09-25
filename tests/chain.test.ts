@@ -33,6 +33,7 @@ import { readFileAtRef } from "../src/git.ts";
 import { gitPath, matchesAny, namespacedJoin } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 import { declaration } from "../.flume/declaration.ts";
+import { PLAN_SLICES } from "../harness/declaration.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { pageIdentifiers } from "./helpers/pageAnchors.ts";
 import { REPO_ROOT } from "./helpers/repoProgram.ts";
@@ -320,14 +321,33 @@ describe("this repo's chain is the harness factory applied to its declaration (s
   const { chain } = chainFactory(buildFlumeApi(REPO_PATHS));
   const byName = Object.fromEntries(chain.phases.map((p) => [p.name, p]));
 
-  it("declares build ahead of the three plan slices, and nothing else", () => {
-    expect(chain.phases.map((p) => p.name)).toEqual(["build", "plan-inbox", "plan-derive", "plan-sweep"]);
-    expect(chain.phases.map((p) => p.concurrency)).toEqual(["fanout", "singleton", "singleton", "singleton"]);
+  // The plan slices this repo runs, in the order the factory places them
+  // behind build: `PLAN_SLICES` order, which is where the package puts
+  // insurance behind product (`harness/declaration.ts`). Read off the
+  // declaration rather than spelled again here — a consumer enables or
+  // disables the slices the package offers (`spec/harness.md`, *The
+  // phases*), and a pin naming them by hand reds on a toggle rather than
+  // moving with it.
+  const enabledSlices = PLAN_SLICES.filter((name) =>
+    declaration.slices.enabled.includes(name),
+  );
+
+  it("declares build ahead of the plan slices its declaration enables, and nothing else", () => {
+    // Vacuity pin: every slice the declaration enables is placed, counted
+    // against that list rather than assumed — a filter that dropped one would
+    // read as a chain that never declared it.
+    expect(enabledSlices.length).toBe(declaration.slices.enabled.length);
+
+    expect(chain.phases.map((p) => p.name)).toEqual(["build", ...enabledSlices]);
+    expect(chain.phases.map((p) => p.concurrency)).toEqual([
+      "fanout",
+      ...enabledSlices.map(() => "singleton"),
+    ]);
   });
 
   it("every phase's prompt is an absolute path into the package that exists on disk", () => {
-    // Vacuity pin: four phases, four prompts.
-    expect(chain.phases).toHaveLength(4);
+    // Vacuity pin: build plus every enabled slice, one prompt each.
+    expect(chain.phases).toHaveLength(1 + enabledSlices.length);
     for (const p of chain.phases) {
       expect(isAbsolute(p.promptPath), p.name).toBe(true);
       expect(p.promptPath, p.name).toContain(join("harness", "prompts"));
@@ -352,14 +372,20 @@ describe("this repo's chain is the harness factory applied to its declaration (s
   });
 
   it("every plan slice may write the package's plan artifacts and nothing of the consumer's", () => {
-    for (const name of ["plan-inbox", "plan-derive", "plan-sweep"]) {
+    // Vacuity pin: the subject is every slice the declaration enables, and it
+    // enables some — a loop over none would read as a fence pinned where no
+    // slice runs.
+    expect(enabledSlices.length).toBe(declaration.slices.enabled.length);
+    expect(enabledSlices.length).toBeGreaterThan(0);
+
+    for (const name of enabledSlices) {
       const paths = byName[name]!.writablePaths;
       expect(paths, name).toContain(".flume/plan/pending/*.json");
       // Plan state is one file per writer, so each slice's fence names its
       // own and no sibling's (`spec/harness.md`, *Plan state as declared
       // state*).
       expect(paths, name).toContain(`.flume/plan/state/${name}.json`);
-      for (const other of ["plan-inbox", "plan-derive", "plan-sweep"]) {
+      for (const other of enabledSlices) {
         if (other === name) continue;
         expect(paths, `${name} may not write ${other}'s state`).not.toContain(
           `.flume/plan/state/${other}.json`,

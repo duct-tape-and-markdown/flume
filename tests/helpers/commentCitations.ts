@@ -146,6 +146,7 @@ import { resolve } from "node:path";
 
 import ts from "typescript";
 
+import type { DeclarationInput } from "../../harness/index.ts";
 import { sectionTitles, type ProseLine } from "./docSections.ts";
 import {
   eachToken,
@@ -1443,6 +1444,37 @@ export const scanCommentCitations = (
 /** `module:line text`, the form a failure message cites a finding in. */
 export const formatCitation = (site: CitationSite): string =>
   `${site.module}:${site.line} ${site.text}`;
+
+/**
+ * Every tree a declaration's sweep domain names, folded to the prefixes the
+ * citation scans report modules by — the home the coverage pin over those
+ * scans reads, rather than the sweep's own field at the callsite.
+ *
+ * A consumer enables or disables the slices the package offers; it does not
+ * re-author them (`spec/harness.md`, *The phases*). So the sweep's domain is
+ * a field a declaration may simply not carry, and a pin that read it as
+ * required would red a toggle the package invites. A declaration enabling no
+ * sweep names no trees, the fold is empty, and the coverage claim has no
+ * subject — a reading its pin spells rather than inherits
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ *
+ * The domain is written in globs and the scans report modules, so each entry
+ * is folded to the prefix a module is matched on. A glob naming anything but
+ * a whole tree is refused here rather than silently covering nothing — the
+ * prefix fold is the only reading this has for one.
+ */
+export const declaredSweepTrees = (
+  slices: DeclarationInput["slices"],
+): readonly string[] =>
+  (slices.sweep?.domain ?? []).map((glob) => {
+    const tree = /^([^*?]+\/)\*\*$/.exec(glob)?.[1];
+    if (tree === undefined) {
+      throw new Error(
+        `sweep domain entry \`${glob}\` names no whole tree; the coverage pin reads modules by prefix`,
+      );
+    }
+    return tree;
+  });
 
 /**
  * What the page-name arm reads, and the root it reads against. Its own domain
