@@ -59,6 +59,18 @@ observation and routes as it always has. Without the bar every
 shipped entry spawned the next through its own note, and the queue filled
 with work nothing asked for.
 
+**Every entry a package producer files carries a `priority`, set by where
+the work came from**, because the engine's tie-break is the tag and a queue
+with no priorities is served in alphabetical order, whatever the work is.
+An entry answering a downstream report or an operator's ruling files at
+`30`; one routed from a build note at `20`; one derived from a spec commit
+at `10`; one the sweep files at `0`. Within a band the tag decides, and an
+entry `blockedBy` another inherits no rank from it. The drain re-ranks an
+entry already queued when a ruling says its source was misread, and never
+otherwise, so a rank is a fact about provenance rather than a lever a tick
+pulls. The product is served before the insurance, which is the order the
+declared phases already keep (above).
+
 Two orderings the serial baton used to carry are mechanism now. A refused
 entry is not re-picked before the drain reconciles it: the refusal keys on the
 entry as declared, and stands until a producer rewrites or drops it (*The
