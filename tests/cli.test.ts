@@ -1011,6 +1011,35 @@ describe("flume status — supervisor liveness", () => {
     }
   }, SPAWN_BUDGET_MS);
 
+  it("flume status refuses an obstructed state root with the io-error exit code rather than a raw stack", async () => {
+    // Not `mkFixtureRoot`: the bay this fixture plants is the subject, and it
+    // is planted *obstructed* — a plain file where the state root belongs.
+    // Bay discovery stops at it (it is present, so `existsLoud` answers
+    // there), resolution names it, and the baton's `mkdir` of `awake/` under
+    // it fails ENOTDIR. Before that construction joined a guard the throw
+    // escaped to `main()`'s catch: a raw stack and exit 1, the one exit
+    // `status` is specced never to take (spec/cli.md, "Subcommand surface").
+    const dir = await mkTempDir("flume-status-obstructed-root-");
+    try {
+      const flumeDir = join(dir, ".flume");
+      await writeFile(flumeDir, "not a directory\n", "utf8");
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(EX_IOERR);
+      // The root the verb resolved, not the leaf the errno happens to carry:
+      // `<root>/.flume/awake` alone leaves the operator to infer which state
+      // root a walk — or a relocating `FLUME_DIR` — picked.
+      expect(r.out).toContain(
+        `[flume] status: state root at ${flumeDir} failed to open`,
+      );
+      expect(r.out).not.toContain("hibernating");
+      expect(r.out).not.toContain("    at ");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
   it("is unchanged from today when no pidfile exists", async () => {
     const dir = await mkFixtureRoot("flume-status-nopid-");
     try {

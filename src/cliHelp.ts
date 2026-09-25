@@ -147,7 +147,10 @@ Exit codes:
       Naming the file and the underlying error. Also, under a live
       supervisor, tick-verdicts.jsonl exists but could not be read: the
       spend line is refused rather than withheld, since withholding it
-      states a run that has spent nothing.
+      states a run that has spent nothing. And the state root itself,
+      present and not a directory: the awake dir this verb creates under
+      it — its one filesystem effect — cannot be made, and the refusal
+      names the root that was resolved rather than the dir it tried.
       ${bayDiscoveryRefusal(6)}
 `,
   tick: `Usage: flume tick [--phase <name>]

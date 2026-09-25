@@ -1668,9 +1668,9 @@ interface StatusIoRefusal {
 
 /**
  * Every file `flume status` refuses over, in the order the verb reaches them:
- * the bay it is discovered through, the lock, the stop flag, the tip claim,
- * and — under a live supervisor alone — the verdict history its spend line
- * totals.
+ * the bay it is discovered through, that same bay obstructed under the baton
+ * it constructs, the lock, the stop flag, the tip claim, and — under a live
+ * supervisor alone — the verdict history its spend line totals.
  */
 const STATUS_IO_REFUSALS: readonly StatusIoRefusal[] = [
   {
@@ -1689,6 +1689,27 @@ const STATUS_IO_REFUSALS: readonly StatusIoRefusal[] = [
         // at the path is exactly what discovery is looking for.
         await rm(denied, { recursive: true, force: true });
         await symlink(STATE_ROOT_DIRNAME, denied);
+        return { ...(await runCli(bay, ["status"])), denied };
+      } finally {
+        await rm(bay, { recursive: true, force: true });
+      }
+    },
+  },
+  {
+    arm: "a state root that stats and is not a directory",
+    fileName: STATE_ROOT_DIRNAME,
+    drive: async () => {
+      // A root of its own, for the reason the arm above gives, and denied
+      // structurally rather than by a link: this arm's subject is a bay that
+      // stats clean and cannot hold the baton's awake dir, which is a plain
+      // file standing where the state root belongs. Discovery stops at it —
+      // it is present — so the refusal is the verb's own, past discovery and
+      // ahead of every read below.
+      const bay = await mkFixtureRoot("flume-doc-status-74-obstructed-");
+      const denied = join(bay, STATE_ROOT_DIRNAME);
+      try {
+        await rm(denied, { recursive: true, force: true });
+        await writeFile(denied, "not a directory\n", "utf8");
         return { ...(await runCli(bay, ["status"])), denied };
       } finally {
         await rm(bay, { recursive: true, force: true });

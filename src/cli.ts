@@ -401,8 +401,23 @@ async function main(): Promise<number> {
   const paths: FlumePaths = { repoRoot, configDir, flumeDir };
 
   if (cmd === "status") {
-    const baton = new Baton(flumeDir);
-    const awake = baton.awake();
+    // The baton read sits inside a guard, like the loop-lock and tip-claim
+    // reads below: constructing it creates `<flumeDir>/awake/` (spec/cli.md,
+    // "Subcommand surface" — this verb's one filesystem effect), and a state
+    // root that is present and not a directory fails that mkdir. Uncaught,
+    // the throw reached `main()`'s catch as a raw stack and exit 1 — the one
+    // exit `status` is specced never to take. The refusal names the root the
+    // verb resolved: the errno carries the `awake` path it tried, which does
+    // not say which state root the walk (or a relocating `FLUME_DIR`) picked.
+    let awake: string[];
+    try {
+      awake = new Baton(flumeDir).awake();
+    } catch (err) {
+      console.error(
+        `[flume] status: state root at ${flumeDir} failed to open: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return EX_IOERR;
+    }
     console.log(awake.length ? `awake: ${awake.join(", ")}` : "hibernating");
     // Surface supervisor liveness beside the awake markers — the 2026-07-29
     // incident's "hibernating" reading left the operator to infer
