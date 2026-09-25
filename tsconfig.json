@@ -5,6 +5,7 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2023"],
     "strict": true,
+    "allowJs": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,

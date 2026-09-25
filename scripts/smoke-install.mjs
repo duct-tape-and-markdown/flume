@@ -34,14 +34,20 @@
  * answering with some other version fails the run instead of passing under
  * the tag's name.
  *
+ * The steps run under `main()`, behind the direct-invocation guard every
+ * script in this directory carries (`isDirectInvocation`,
+ * `scripts/directInvocation.mjs`): importing this module reaches `stepRunner`
+ * and spawns nothing, which is how the suite drives the win32 argv refusal
+ * below from a posix lane.
+ *
  * Usage: `node --import tsx scripts/smoke-install.mjs [--scratch <dir>] [--from-registry <spec>]`.
  * Both CI lanes run this one script rather than a second spelling of it; the
  * POSIX lane passes `--scratch` because its consumer type-resolution gate
  * typechecks against the tarball and installed consumer this run leaves
  * behind.
  *
- * The `--import tsx` is not decoration. `run` below reads the engine's own
- * re-parse predicate out of `src/spawnShim.ts` rather than spelling it a
+ * The `--import tsx` is not decoration. `stepRunner` below reads the engine's
+ * own re-parse predicate out of `src/spawnShim.ts` rather than spelling it a
  * second time, and bare `node` cannot load a `.ts` file — so every site that
  * invokes this script carries the loader, the package's `smoke:install`
  * script included.
@@ -54,10 +60,21 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { wordShimRetryWouldRewrite } from "../src/spawnShim.ts";
+import { isDirectInvocation } from "./directInvocation.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..");
-const IS_WIN = process.platform === "win32";
+/**
+ * Whether a step on `platform` runs through a shell — and so through
+ * `cmd.exe`'s re-parse. Windows requires `shell: true` to invoke .cmd/.bat
+ * targets (npm itself, and the generated flume.cmd shim under test) — Node no
+ * longer auto-invokes cmd.exe for them.
+ *
+ * One spelling, read by the step runner below and by the generated shims'
+ * filenames, which npm suffixes `.cmd` on exactly the platform that needs the
+ * shell.
+ */
+const needsShell = (platform) => platform === "win32";
 
 // Strip FLUME_* from the child env: this script itself may run under a
 // flume tick (flume-on-flume dogfooding), which sets FLUME_DIR /
@@ -86,9 +103,15 @@ class SmokeStepError extends Error {}
 const STEP_OUTPUT_CAP_BYTES = 64 << 20;
 
 /**
- * Windows requires shell:true to invoke .cmd/.bat targets (npm itself, and
- * the generated flume.cmd shim under test) — Node no longer auto-invokes
- * cmd.exe for them.
+ * One step of the smoke, run on the platform this runner is handed: the shell
+ * it spawns through, and the argv refusal that shell brings with it.
+ *
+ * The platform is a parameter rather than this module's own read of
+ * `process.platform`, because the refusal below is the whole of the win32
+ * argv fence and a fence only the win32 lane can reach is a fence no lane
+ * holds — `tests/bin.test.ts` drives it on any host by asking for a `win32`
+ * runner (`.claude/rules/engineering.md`, *A fix ships the test that would
+ * have caught it*).
  *
  * `shell: true` is not a quoting request. Node joins the command and its
  * arguments with single spaces into one `cmd /d /s /c` line and quotes none
@@ -107,36 +130,39 @@ const STEP_OUTPUT_CAP_BYTES = 64 << 20;
  * character set. The message is this script's, because what a smoke failure
  * is read by is the step that stopped.
  */
-function run(step, cmd, args, opts = {}) {
-  console.log(`[smoke-install] ${step}: ${cmd} ${args.join(" ")}`);
-  if (IS_WIN) {
-    const rewritten = wordShimRetryWouldRewrite([cmd, ...args]);
-    if (rewritten !== undefined) {
-      throw new SmokeStepError(
-        `${step}: this step takes a shell on win32, and cmd.exe would re-parse ` +
-          `${rewritten === "" ? "an empty word" : `the word \`${rewritten}\``} ` +
-          `rather than hand it to \`${cmd}\` intact — the step would run some ` +
-          `other command and report its status as this one's. Point --scratch ` +
-          `at a path whose every word is free of whitespace, quotes and cmd ` +
-          `metacharacters, or run the smoke from one.`,
-      );
+export function stepRunner(platform) {
+  const shell = needsShell(platform);
+  return function run(step, cmd, args, opts = {}) {
+    console.log(`[smoke-install] ${step}: ${cmd} ${args.join(" ")}`);
+    if (shell) {
+      const rewritten = wordShimRetryWouldRewrite([cmd, ...args]);
+      if (rewritten !== undefined) {
+        throw new SmokeStepError(
+          `${step}: this step takes a shell on win32, and cmd.exe would re-parse ` +
+            `${rewritten === "" ? "an empty word" : `the word \`${rewritten}\``} ` +
+            `rather than hand it to \`${cmd}\` intact — the step would run some ` +
+            `other command and report its status as this one's. Point --scratch ` +
+            `at a path whose every word is free of whitespace, quotes and cmd ` +
+            `metacharacters, or run the smoke from one.`,
+        );
+      }
     }
-  }
-  const result = spawnSync(cmd, args, {
-    stdio: opts.capture ? ["ignore", "pipe", "inherit"] : "inherit",
-    shell: IS_WIN,
-    cwd: opts.cwd,
-    env: CHILD_ENV,
-    encoding: "utf8",
-    maxBuffer: STEP_OUTPUT_CAP_BYTES,
-  });
-  if (result.error) {
-    throw new SmokeStepError(`${step}: ${result.error.message}`);
-  }
-  if (result.status !== 0) {
-    throw new SmokeStepError(`${step}: exited ${result.status}`);
-  }
-  return result.stdout ?? "";
+    const result = spawnSync(cmd, args, {
+      stdio: opts.capture ? ["ignore", "pipe", "inherit"] : "inherit",
+      shell,
+      cwd: opts.cwd,
+      env: CHILD_ENV,
+      encoding: "utf8",
+      maxBuffer: STEP_OUTPUT_CAP_BYTES,
+    });
+    if (result.error) {
+      throw new SmokeStepError(`${step}: ${result.error.message}`);
+    }
+    if (result.status !== 0) {
+      throw new SmokeStepError(`${step}: exited ${result.status}`);
+    }
+    return result.stdout ?? "";
+  };
 }
 
 /**
@@ -196,152 +222,168 @@ function flagValue(flag) {
 }
 
 /**
- * Where the run works, and who owns the cleanup.
+ * The smoke itself: every step, in order, on this host's platform.
  *
- * Default: a fresh `mkdtemp`, removed on the way out — a local run leaves
- * nothing behind. With `--scratch <dir>` the caller has named the directory
- * and keeps it: what this run packs and installs there is the next step's
- * input, and deleting it would delete that. The two cases differ in
- * ownership only; every step below runs identically either way.
+ * A function rather than this module's top level, behind the guard below, so
+ * that importing the module for `stepRunner` packs and installs nothing —
+ * which is what lets the suite drive the win32 refusal on any host.
  */
-const SUPPLIED_SCRATCH = flagValue("--scratch");
-const REGISTRY_SPEC = flagValue("--from-registry");
+function main() {
+  const platform = process.platform;
+  const run = stepRunner(platform);
 
-/**
- * The version `--from-registry` pinned, when it pinned one: everything past
- * the spec's last `@`, which is the scope separator only for a bare scoped
- * name (`@scope/pkg` — index 0) and the version separator otherwise. Null
- * leaves the shim's `--version` unasserted, because there is nothing to hold
- * it to — a bare name, and equally a dist-tag (`@latest`), which names a
- * version the spec does not spell and would fail the comparison for being a
- * word rather than for installing the wrong package.
- */
-const REGISTRY_VERSION = (() => {
-  if (!REGISTRY_SPEC) return null;
-  const at = REGISTRY_SPEC.lastIndexOf("@");
-  const pinned = at > 0 ? REGISTRY_SPEC.slice(at + 1) : "";
-  return /^\d/.test(pinned) ? pinned : null;
-})();
+  /**
+   * Where the run works, and who owns the cleanup.
+   *
+   * Default: a fresh `mkdtemp`, removed on the way out — a local run leaves
+   * nothing behind. With `--scratch <dir>` the caller has named the directory
+   * and keeps it: what this run packs and installs there is the next step's
+   * input, and deleting it would delete that. The two cases differ in
+   * ownership only; every step below runs identically either way.
+   */
+  const suppliedScratch = flagValue("--scratch");
+  const registrySpec = flagValue("--from-registry");
 
-let scratch;
-try {
-  if (SUPPLIED_SCRATCH) {
-    scratch = resolve(SUPPLIED_SCRATCH);
-    mkdirSync(scratch, { recursive: true });
-  } else {
-    scratch = mkdtempSync(join(tmpdir(), "flume-smoke-"));
-  }
-  console.log(`[smoke-install] scratch dir: ${scratch}`);
+  /**
+   * The version `--from-registry` pinned, when it pinned one: everything past
+   * the spec's last `@`, which is the scope separator only for a bare scoped
+   * name (`@scope/pkg` — index 0) and the version separator otherwise. Null
+   * leaves the shim's `--version` unasserted, because there is nothing to hold
+   * it to — a bare name, and equally a dist-tag (`@latest`), which names a
+   * version the spec does not spell and would fail the comparison for being a
+   * word rather than for installing the wrong package.
+   */
+  const registryVersion = (() => {
+    if (!registrySpec) return null;
+    const at = registrySpec.lastIndexOf("@");
+    const pinned = at > 0 ? registrySpec.slice(at + 1) : "";
+    return /^\d/.test(pinned) ? pinned : null;
+  })();
 
-  // What `npm install` is pointed at below. Everything after this block is
-  // the same acceptance whichever source produced it.
-  let installTarget;
-  if (REGISTRY_SPEC) {
-    installTarget = REGISTRY_SPEC;
-    console.log(`[smoke-install] install source: registry, ${REGISTRY_SPEC}`);
-  } else {
-    const packOut = run(
-      "npm pack",
+  let scratch;
+  try {
+    if (suppliedScratch) {
+      scratch = resolve(suppliedScratch);
+      mkdirSync(scratch, { recursive: true });
+    } else {
+      scratch = mkdtempSync(join(tmpdir(), "flume-smoke-"));
+    }
+    console.log(`[smoke-install] scratch dir: ${scratch}`);
+
+    // What `npm install` is pointed at below. Everything after this block is
+    // the same acceptance whichever source produced it.
+    let installTarget;
+    if (registrySpec) {
+      installTarget = registrySpec;
+      console.log(`[smoke-install] install source: registry, ${registrySpec}`);
+    } else {
+      const packOut = run(
+        "npm pack",
+        "npm",
+        ["pack", "--pack-destination", scratch],
+        { cwd: REPO_ROOT, capture: true },
+      );
+      const tarballName = packOut.trim().split(/\r?\n/).pop();
+      if (!tarballName) {
+        throw new SmokeStepError("npm pack: no tarball name in output");
+      }
+      installTarget = join(scratch, tarballName);
+      console.log(`[smoke-install] packed: ${installTarget}`);
+    }
+
+    const consumerDir = join(scratch, "consumer");
+    mkdirSync(consumerDir, { recursive: true });
+
+    // The manifest `npm init` produces, and nothing done to it: it declares no
+    // `"type"`, which is the CommonJS module scope a consumer adopts under
+    // (`spec/harness.md`, *Adoption and upgrade*). This step used to patch
+    // `type=module` in, which put the whole fixture in ESM scope and hid the
+    // fact that the chain `flume-harness init` writes loaded on no node 22 at
+    // all (`.claude/rules/platform-facts.md`, *A CommonJS-scoped `chain.ts`
+    // stops loading the ESM-only package at node 22.23*).
+    run("npm init", "npm", ["init", "-y"], { cwd: consumerDir });
+    run(
+      registrySpec ? "npm install from registry" : "npm install tarball",
       "npm",
-      ["pack", "--pack-destination", scratch],
-      { cwd: REPO_ROOT, capture: true },
+      // --no-save: without it npm records a file: pin in the consumer's
+      // package.json, pinning the consumer to a tarball this script deletes on
+      // cleanup — same class as ci.yml's Consumer-install smoke fix (7ee70ed).
+      // A consumer-install smoke tests "works when installed", not "works when
+      // pinned".
+      ["install", "--no-audit", "--no-fund", "--no-save", installTarget],
+      { cwd: consumerDir },
     );
-    const tarballName = packOut.trim().split(/\r?\n/).pop();
-    if (!tarballName) {
-      throw new SmokeStepError("npm pack: no tarball name in output");
+
+    // Both generated shims, by the same rule: npm writes a `.cmd` per bin entry
+    // on win32 and an extensionless script elsewhere, and the package ships two
+    // (`spec/cli.md`, *Distribution*).
+    const shimFor = (bin) =>
+      join(consumerDir, "node_modules", ".bin", needsShell(platform) ? `${bin}.cmd` : bin);
+    const shimPath = shimFor("flume");
+    const harnessShimPath = shimFor("flume-harness");
+
+    const reportedVersion = run("generated shim --version", shimPath, ["--version"], {
+      cwd: consumerDir,
+      capture: true,
+    }).trim();
+    console.log(`[smoke-install] shim reports version ${reportedVersion}`);
+    // A spec pinning a version is a claim about *which* package this run
+    // installed. Without this the step passes on whatever the registry handed
+    // back — a version the tag lane never published included.
+    if (registryVersion && reportedVersion !== registryVersion) {
+      throw new SmokeStepError(
+        `generated shim --version: installed ${reportedVersion || "(nothing)"}, but ` +
+          `--from-registry asked for ${registryVersion}`,
+      );
     }
-    installTarget = join(scratch, tarballName);
-    console.log(`[smoke-install] packed: ${installTarget}`);
-  }
 
-  const consumerDir = join(scratch, "consumer");
-  mkdirSync(consumerDir, { recursive: true });
+    writeFileSync(join(consumerDir, "subpaths.mjs"), SUBPATH_PROBE);
+    run("exports subpaths", process.execPath, ["subpaths.mjs"], {
+      cwd: consumerDir,
+    });
 
-  // The manifest `npm init` produces, and nothing done to it: it declares no
-  // `"type"`, which is the CommonJS module scope a consumer adopts under
-  // (`spec/harness.md`, *Adoption and upgrade*). This step used to patch
-  // `type=module` in, which put the whole fixture in ESM scope and hid the
-  // fact that the chain `flume-harness init` writes loaded on no node 22 at
-  // all (`.claude/rules/platform-facts.md`, *A CommonJS-scoped `chain.ts`
-  // stops loading the ESM-only package at node 22.23*).
-  run("npm init", "npm", ["init", "-y"], { cwd: consumerDir });
-  run(
-    REGISTRY_SPEC ? "npm install from registry" : "npm install tarball",
-    "npm",
-    // --no-save: without it npm records a file: pin in the consumer's
-    // package.json, pinning the consumer to a tarball this script deletes on
-    // cleanup — same class as ci.yml's Consumer-install smoke fix (7ee70ed).
-    // A consumer-install smoke tests "works when installed", not "works when
-    // pinned".
-    ["install", "--no-audit", "--no-fund", "--no-save", installTarget],
-    { cwd: consumerDir },
-  );
+    // The chain under the load step is the one adoption writes, through the
+    // harness bin's own generated shim (`spec/harness.md`, *Adoption and
+    // upgrade*): the verb a consumer's first command line runs, over the
+    // manifest above, writing the declaration, the chain, the state root's own
+    // `package.json` and the empty queue. A hand-written fixture here proved
+    // the CLI finds *a* chain; it could never prove the one every adopter
+    // starts from loads, which is the shape that reached a consumer broken.
+    run("git init", "git", ["init"], { cwd: consumerDir });
+    run("generated shim flume-harness init", harnessShimPath, ["init"], {
+      cwd: consumerDir,
+    });
 
-  // Both generated shims, by the same rule: npm writes a `.cmd` per bin entry
-  // on win32 and an extensionless script elsewhere, and the package ships two
-  // (`spec/cli.md`, *Distribution*).
-  const shimFor = (bin) =>
-    join(consumerDir, "node_modules", ".bin", IS_WIN ? `${bin}.cmd` : bin);
-  const shimPath = shimFor("flume");
-  const harnessShimPath = shimFor("flume-harness");
+    run(`generated shim ${CHAIN_LOAD_VERB}`, shimPath, [CHAIN_LOAD_VERB], {
+      cwd: consumerDir,
+    });
 
-  const reportedVersion = run("generated shim --version", shimPath, ["--version"], {
-    cwd: consumerDir,
-    capture: true,
-  }).trim();
-  console.log(`[smoke-install] shim reports version ${reportedVersion}`);
-  // A spec pinning a version is a claim about *which* package this run
-  // installed. Without this the step passes on whatever the registry handed
-  // back — a version the tag lane never published included.
-  if (REGISTRY_VERSION && reportedVersion !== REGISTRY_VERSION) {
-    throw new SmokeStepError(
-      `generated shim --version: installed ${reportedVersion || "(nothing)"}, but ` +
-        `--from-registry asked for ${REGISTRY_VERSION}`,
+    console.log(
+      `[smoke-install] OK — ${registrySpec ? `registry ${registrySpec}` : "pack"}, ` +
+        `install, shim --version, exports subpaths, flume-harness init, and shim ` +
+        `${CHAIN_LOAD_VERB} over the chain it wrote all passed`,
     );
-  }
-
-  writeFileSync(join(consumerDir, "subpaths.mjs"), SUBPATH_PROBE);
-  run("exports subpaths", process.execPath, ["subpaths.mjs"], {
-    cwd: consumerDir,
-  });
-
-  // The chain under the load step is the one adoption writes, through the
-  // harness bin's own generated shim (`spec/harness.md`, *Adoption and
-  // upgrade*): the verb a consumer's first command line runs, over the
-  // manifest above, writing the declaration, the chain, the state root's own
-  // `package.json` and the empty queue. A hand-written fixture here proved
-  // the CLI finds *a* chain; it could never prove the one every adopter
-  // starts from loads, which is the shape that reached a consumer broken.
-  run("git init", "git", ["init"], { cwd: consumerDir });
-  run("generated shim flume-harness init", harnessShimPath, ["init"], {
-    cwd: consumerDir,
-  });
-
-  run(`generated shim ${CHAIN_LOAD_VERB}`, shimPath, [CHAIN_LOAD_VERB], {
-    cwd: consumerDir,
-  });
-
-  console.log(
-    `[smoke-install] OK — ${REGISTRY_SPEC ? `registry ${REGISTRY_SPEC}` : "pack"}, ` +
-      `install, shim --version, exports subpaths, flume-harness init, and shim ` +
-      `${CHAIN_LOAD_VERB} over the chain it wrote all passed`,
-  );
-} catch (err) {
-  if (err instanceof SmokeStepError) {
-    console.error(`[smoke-install] FAILED: ${err.message}`);
-  } else {
-    console.error("[smoke-install] FAILED with unexpected error:");
-    console.error(err);
-  }
-  process.exitCode = 1;
-} finally {
-  if (scratch && !SUPPLIED_SCRATCH) {
-    try {
-      rmSync(scratch, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup; a held file handle shouldn't fail the run
+  } catch (err) {
+    if (err instanceof SmokeStepError) {
+      console.error(`[smoke-install] FAILED: ${err.message}`);
+    } else {
+      console.error("[smoke-install] FAILED with unexpected error:");
+      console.error(err);
     }
-  } else if (scratch) {
-    console.log(`[smoke-install] kept caller-supplied scratch dir: ${scratch}`);
+    process.exitCode = 1;
+  } finally {
+    if (scratch && !suppliedScratch) {
+      try {
+        rmSync(scratch, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup; a held file handle shouldn't fail the run
+      }
+    } else if (scratch) {
+      console.log(`[smoke-install] kept caller-supplied scratch dir: ${scratch}`);
+    }
   }
+}
+
+if (isDirectInvocation(import.meta.url)) {
+  main();
 }

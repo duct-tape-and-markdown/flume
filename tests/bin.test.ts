@@ -22,16 +22,19 @@
 
 import { chmod, cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { declaration } from "../.flume/declaration.ts";
+import { stepRunner } from "../scripts/smoke-install.mjs";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   SPAWN_BUDGET_MS,
+  TSX_CLI,
   exec,
   runCli,
+  runNodeStreams,
   spawnCaptureSync,
 } from "./helpers/subprocess.ts";
 
@@ -525,6 +528,88 @@ it("every site that invokes the install smoke loads it under tsx", async () => {
     }
   }
 });
+
+/**
+ * The smoke's win32 argv fence, driven from whatever host the lane runs on.
+ *
+ * The step runner `scripts/smoke-install.mjs` exports takes the platform it
+ * decides from, so both of its win32 decisions — the shell it spawns through
+ * and the `cmd.exe` re-parse refusal that shell brings with it — are reachable
+ * from the posix lane. Read off `process.platform` when the module loaded, as they
+ * were, the refusal was held by nothing in-tree: deleting it stayed green on
+ * every lane, the windows-latest one included, whose scratch path carries no
+ * word `cmd.exe` would rewrite.
+ *
+ * Importing the script at all is what its direct-invocation guard buys
+ * (`scripts/directInvocation.mjs`), and what tsconfig.json's allowJs lets
+ * this file typecheck. A .mjs body stays unchecked — checkJs is off — so this
+ * case drives the behavior, never the types.
+ */
+it("the smoke step runner refuses an argv cmd.exe would re-parse when the platform it is given is win32", () => {
+  // The shape every step is handed: a path the run composed under a scratch
+  // dir whose name carries a space, which `cmd /d /s /c` would arrive at as
+  // two words.
+  const tarball = join("/smoke scratch", "dtmd-flume-0.0.0.tgz");
+  const step = "npm install tarball";
+
+  // Quiet, and the same silence the other cases here keep: the step runner
+  // announces every step on stdout before it decides anything.
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    expect(() => stepRunner("win32")(step, "npm", ["install", tarball])).toThrow(
+      `${step}: this step takes a shell on win32, and cmd.exe would re-parse ` +
+        `the word \`${tarball}\``,
+    );
+
+    // The refusal is the platform's, not the argv's. The same words handed a
+    // posix runner reach the spawn — which is the one place a missing binary
+    // can be reported from, so this arm also proves the win32 arm above threw
+    // *before* spawning anything.
+    expect(() =>
+      stepRunner("linux")(step, "flume-smoke-no-such-binary", ["install", tarball]),
+    ).toThrow(/ENOENT/);
+  } finally {
+    log.mockRestore();
+  }
+});
+
+/**
+ * The guard the case above leans on, checked rather than assumed: a module
+ * whose steps run at load offers no runner to drive, and `npm pack` inside a
+ * vitest worker is not a thing this lane can afford either.
+ *
+ * The probe hands the module the smoke's own `--scratch` with no value, which
+ * the script refuses as a usage error at exit 2. So a module that parses argv
+ * and runs its steps at import reds here in milliseconds, on its own refusal,
+ * rather than after a full pack and install; and the marker it prints instead
+ * is asserted as the whole of stdout, so a step that merely logged before
+ * failing cannot pass either.
+ */
+it("importing the install smoke module does not run the smoke", async () => {
+  const marker = "imported, nothing ran";
+  const dir = await mkTempDir("flume-smoke-import-");
+  try {
+    const probe = join(dir, "probe.mjs");
+    await writeFile(
+      probe,
+      `process.argv = [process.argv[0], import.meta.filename, "--scratch"];\n` +
+        `await import(${JSON.stringify(
+          pathToFileURL(fileURLToPath(new URL(`../${SMOKE_SCRIPT}`, import.meta.url)))
+            .href,
+        )});\n` +
+        `console.log(${JSON.stringify(marker)});\n`,
+    );
+
+    const r = await runNodeStreams(dir, [TSX_CLI, probe]);
+    expect({ code: r.code, stdout: r.stdout.trim() }).toEqual({
+      code: 0,
+      stdout: marker,
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, SPAWN_BUDGET_MS);
+
 
 /**
  * A tsconfig `include` entry as a matcher over repo-relative paths: `**` and
