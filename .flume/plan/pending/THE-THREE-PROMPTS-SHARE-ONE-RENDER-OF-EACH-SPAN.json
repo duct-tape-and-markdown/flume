@@ -21,10 +21,14 @@
       {
         "path": "harness/prompts/plan-sweep.md",
         "description": "each shared block becomes its placeholder"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "the seam: the `PLAN_SLICES` pins reading a block that becomes a placeholder, shared with THE-PROTOCOL-SEAM-IS-PINNED-AT-EVERY-PHASE-PROMPT"
       }
     ]
   },
-  "summary": "Six blocks are spelled byte-identically in all three slice prompts \u2014 the family three plan commit bodies have now accepted as debt, and the queue named two of them",
+  "summary": "Six blocks are spelled byte-identically in all three slice prompts — the family three plan commit bodies have now accepted as debt, and the queue named two of them",
   "per": {
     "path": ".claude/rules/posture-sweep.md",
     "section": "Routing"
