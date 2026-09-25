@@ -23,7 +23,7 @@
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -49,11 +49,11 @@ import { readQueueOnDisk } from "../src/pendingLedger.ts";
 import { queueDir } from "../harness/layout.ts";
 import { resolvePendingDir } from "../src/paths.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { commitInto } from "./helpers/scratchRepo.ts";
 import {
   SPAWN_BUDGET_MS,
   TSX_CLI,
   exec,
-  gitOut,
   runNodeStreams,
 } from "./helpers/subprocess.ts";
 
@@ -269,35 +269,6 @@ it("the queue directory flume-harness init writes reads as an empty pending queu
   });
   expect(parsed.entries).toEqual([]);
 });
-
-/**
- * A repository with one commit in it, for the cases below that need an
- * adopting tip. Not `makeScratchRepo`: that fixture roots at a bay, and init
- * refuses a state root that is already there — the whole subject here is what
- * the adoption puts in one.
- *
- * Returns the tip it committed, so a case compares the cursors init stamped
- * against the sha git reports rather than against one the writer reported
- * about itself.
- */
-async function commitInto(
-  dir: string,
-  files: Record<string, string>,
-): Promise<string> {
-  const opts = { cwd: dir };
-  await exec("git", ["init", "-q", "-b", "main"], opts);
-  await exec("git", ["config", "user.email", "test@example.com"], opts);
-  await exec("git", ["config", "user.name", "Test User"], opts);
-  await exec("git", ["config", "commit.gpgsign", "false"], opts);
-  for (const [rel, body] of Object.entries(files)) {
-    const path = join(dir, ...rel.split("/"));
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, body, "utf8");
-  }
-  await exec("git", ["add", "-A"], opts);
-  await exec("git", ["commit", "-q", "-m", "seed"], opts);
-  return (await gitOut(dir, ["rev-parse", "HEAD"])).trim();
-}
 
 /**
  * The plan state is the other artifact an adopted repository needs before its

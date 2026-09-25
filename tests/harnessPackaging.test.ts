@@ -24,15 +24,22 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
+import { PLAN_SLICES } from "../harness/declaration.ts";
 import * as harnessSource from "../harness/index.ts";
 import { consumerIgnores } from "../harness/ignores.ts";
-import { harnessInit, protocolTemplatePath } from "../harness/init.ts";
+import {
+  harnessInit,
+  protocolTemplatePath,
+  type HarnessInitResult,
+} from "../harness/init.ts";
+import { planStatePath } from "../harness/layout.ts";
 import { PROMPT_NAMES, promptPath } from "../harness/prompts.ts";
 import { resolvePackageJson } from "../src/selfPackage.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { markdownLinks } from "./helpers/pageAnchors.ts";
+import { commitInto } from "./helpers/scratchRepo.ts";
 import {
   SPAWN_BUDGET_MS,
   exec,
@@ -272,6 +279,19 @@ let emitted: string[];
  * in this file behind a `beforeAll` stack.
  */
 let packAssets: { stdout: string; stderr: string; code: number };
+/**
+ * The adoption the README list cases read — `harnessInit` over a repository
+ * that **carries a commit**, run once for the file.
+ *
+ * The commit is the whole point of the fixture, not scenery: init seeds a
+ * cursor only where there is a tip for one to stand at (`PlanStateOutcome`,
+ * `harness/init.ts`), so an adoption into a bare directory reports the
+ * skeleton alone and every claim below would be judged over a set missing
+ * every plan-state file a real adopter gets — green over the half of the
+ * write set nobody was reading (`.claude/rules/engineering.md`, *A green
+ * verdict is proven non-vacuous*).
+ */
+let adoption: HarnessInitResult;
 
 async function filesUnder(dir: string, prefix: string): Promise<string[]> {
   const out: string[] = [];
@@ -340,6 +360,14 @@ beforeAll(async () => {
     JSON.stringify({ name: "packaging-consumer", type: "module" }),
   );
   await symlink(pkgDir, join(consumerDir, "node_modules", "@dtmd", "flume"), "junction");
+
+  // A repository, not a directory: see `adoption` above for why the commit is
+  // load-bearing. Its own state root is what init writes, so nothing is
+  // planted here beyond the file the commit needs.
+  const adopted = join(scratch, "readme-adoption");
+  await mkdir(adopted, { recursive: true });
+  await commitInto(adopted, { "README.md": "seed\n" });
+  adoption = await harnessInit({ repoRoot: adopted });
 }, SPAWN_BUDGET_MS);
 
 afterAll(async () => {
@@ -818,9 +846,10 @@ it("the README adoption passage names every verb the flume-harness bin dispatche
  * the list they will look for on disk once the verb has run.
  *
  * An agreement gate (`.claude/rules/engineering.md`, *A seam gate reads what
- * the real writer wrote*): the writer is `harnessInit` over a real empty
- * repository, and the set is the `written` list it reports — the same fact a
- * consumer commits their adoption from (`tests/harnessInit.test.ts`,
+ * the real writer wrote*): the writer is `harnessInit` over a real
+ * repository carrying a commit, and the set is the `written` list it
+ * reports — the same fact a consumer commits their adoption from
+ * (`tests/harnessInit.test.ts`,
  * *flume-harness init seeds an empty queue in the state root*). A file added
  * to the write set, or renamed in it, reds here rather than leaving the front
  * door listing a file init no longer writes. The default state root is the
@@ -833,27 +862,69 @@ it("the README adoption passage names every verb the flume-harness bin dispatche
  * that every file init writes is named at all.
  */
 it("the README adoption section names every file flume-harness init writes", async () => {
-  const adopt = join(scratch, "readme-adoption");
-  await mkdir(adopt, { recursive: true });
-  const { written } = await harnessInit({ repoRoot: adopt });
+  const { written } = adoption;
 
-  // Non-vacuity, both sides: an init reporting nothing, or a list that parsed
-  // to nothing, would leave the loop below judging an empty set.
+  // Non-vacuity, all three ways this claim can empty out: an init reporting
+  // nothing, or a list that parsed to nothing, would leave the loop below
+  // judging an empty set — and an adoption that left the plan state unseeded
+  // would leave it judging half of one, with "every file" meaning the
+  // skeleton.
+  expect(adoption.planState.kind).toBe("seeded");
   expect(written.length).toBeGreaterThan(0);
   const quickstart = await quickstartSection();
   expect(quickstart).toContain(QUICKSTART_HEADING);
-  const adoption = listUnderFirstBlock(quickstart);
-  expect(adoption.split("\n").filter((line) => line.startsWith("- ")).length).toBeGreaterThan(0);
+  const list = listUnderFirstBlock(quickstart);
+  expect(list.split("\n").filter((line) => line.startsWith("- ")).length).toBeGreaterThan(0);
 
   // The scan's own detection, before the verdict: a path this adoption did
   // not write is one the list does not name, so a matcher that answered
   // `true` for everything cannot pass for agreement.
   const outside = `${written[0]}.backup`;
   expect(written).not.toContain(outside);
-  expect(namesPath(adoption, outside)).toBe(false);
+  expect(namesPath(list, outside)).toBe(false);
 
   for (const path of written) {
-    expect({ path, named: namesPath(adoption, path) }).toEqual({ path, named: true });
+    expect({ path, named: namesPath(list, path) }).toEqual({ path, named: true });
+  }
+});
+
+/**
+ * The half of that list a commitless adoption never writes, read as its own
+ * claim: the plan state (`spec/harness.md`, *Adoption and upgrade*) — one
+ * file per cursor-carrying slice, stamped at the tip the consumer adopted
+ * on, and what keeps their first plan wave about what lands next rather than
+ * about the whole history that preceded the package.
+ *
+ * Its own case because it is what holds the fixture the case above depends
+ * on: init seeds a cursor only where a tip exists, so an adoption pointed at
+ * a bare directory narrows "every file init writes" to the skeleton and the
+ * list passes over a set the seeded files were never in. Asserting the
+ * seeded set non-empty by name is what makes that narrowing red with its
+ * reason stated (`.claude/rules/engineering.md`, *A green verdict is proven
+ * non-vacuous*).
+ *
+ * The paths come off the package's own layout against what the writer
+ * reported, never spelled here: a fourth cursor-carrying slice is a file the
+ * README owes a reader, judged without this case being touched.
+ */
+it("the README adoption section names the plan state flume-harness init seeds", async () => {
+  expect(adoption.planState.kind).toBe("seeded");
+  const seeded = PLAN_SLICES.map((slice) =>
+    planStatePath(adoption.stateRoot, slice),
+  ).filter((path) => adoption.written.includes(path));
+  expect(seeded.length).toBeGreaterThan(0);
+
+  const quickstart = await quickstartSection();
+  expect(quickstart).toContain(QUICKSTART_HEADING);
+  const list = listUnderFirstBlock(quickstart);
+  expect(list.split("\n").filter((line) => line.startsWith("- ")).length).toBeGreaterThan(0);
+
+  // The scan's own detection, before the verdict: a state file this adoption
+  // did not write is one the list does not name.
+  expect(namesPath(list, `${seeded[0]}.backup`)).toBe(false);
+
+  for (const path of seeded) {
+    expect({ path, named: namesPath(list, path) }).toEqual({ path, named: true });
   }
 });
 

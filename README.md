@@ -66,6 +66,12 @@ It writes, into the current repository:
   directory in the tree once every entry has shipped — git holds no empty
   directory, and the engine reads only `*.json` directly under it, so nothing
   reads the placeholder as work.
+- **`.flume/plan/state/plan-derive.json`** and
+  **`.flume/plan/state/plan-sweep.json`** — the plan cursors, stamped at the
+  commit you adopted on, so your first plan wave is about what lands next
+  rather than about every line of spec written before flume was here. Written
+  only where the repository has a commit for a cursor to stand at; adopt
+  before your first one and init says so and writes neither.
 - **`.flume/PROTOCOL.md`** — the project-side conventions no declaration
   encodes.
 - the runtime `.gitignore` lines, and `@dtmd/flume` in your `package.json`.
