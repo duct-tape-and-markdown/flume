@@ -47,6 +47,7 @@ import {
   computeStateRootRel,
   gitPath,
   matchesAny,
+  namespacedJoin,
   slugify,
   stopFlagPath,
 } from "./paths.js";
@@ -187,6 +188,29 @@ export interface FlumeApi {
    * that silently matches nothing on win32.
    */
   gitPath: typeof gitPath;
+  /**
+   * The engine's own win32 total-path fold: `join` and `toNamespacedPath` in
+   * one call (`namespacedJoin`, `src/paths.ts`), the idiom every path the
+   * engine hands an fs call is composed through (`spec/cli.md`, *Total path
+   * length*).
+   *
+   * What a chain composing a path for an fs call reads instead of joining one
+   * itself. The depth is the *consumer's*, which is why the engine's own
+   * discipline is not enough: a fanout tick's `cwd` is a worktree under a base
+   * the chain may have declared, an entry-derived artifact extends a state
+   * root a `FLUME_DIR` may have relocated, and either can pass win32's
+   * ~260-character total-path limit with no single component anywhere near it
+   * (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks
+   * fs calls with no long component*). A chain-local `join(ctx.cwd, …)` has no
+   * fold on it at all, and what it fails with is ENOENT on a path that is
+   * there — on the one host a chain author is least likely to be running.
+   *
+   * Reported as a **rule**, not a policy: it answers a path, and which of a
+   * chain's paths are deep enough to want one stays the chain's
+   * (`.claude/rules/engine-boundary.md`). Handing it a single path is a
+   * legitimate use — the join is a no-op and the namespacing is the point.
+   */
+  namespacedJoin: typeof namespacedJoin;
   /**
    * The engine's own **proven**-absence probe: a descent down the chain of
    * directories a read depends on, each asserted a directory before the next
@@ -407,6 +431,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     readLatestVerdictsSync,
     slugify,
     gitPath,
+    namespacedJoin,
     isDirectoryOrAbsent,
     priorAttemptPath,
     priorAttemptsDir,

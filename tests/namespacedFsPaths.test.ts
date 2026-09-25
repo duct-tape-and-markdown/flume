@@ -1,10 +1,17 @@
 /**
- * The package's paths as they reach disk — `src/` and `harness/` together.
- * Every path either tree hands an fs call is composed under a state root, a
- * repo root or a worktree base *a consumer chose*, none of which the package
- * bounds, so win32's ~260-character total-path limit is reachable at all of
- * them (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars)
- * breaks fs calls with no long component*).
+ * The package's paths as they reach disk — `src/`, `harness/` and `examples/`
+ * together. Every path any of the three hands an fs call is composed under a
+ * state root, a repo root or a worktree base *a consumer chose*, none of which
+ * the package bounds, so win32's ~260-character total-path limit is reachable
+ * at all of them (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260
+ * chars) breaks fs calls with no long component*).
+ *
+ * `examples/` is judged here and not merely read, because the package ships it
+ * (`package.json`'s `files`) as the shape a chain author copies: a reference
+ * chain composing `<cwd>/BACKLOG.json` out of a bare `join` teaches the one
+ * spelling that breaks on the host the engine's own paths are folded for. The
+ * fold reaches a chain off the api (`FlumeApi.namespacedJoin`), so there is a
+ * composed form for these call sites to be in.
  *
  * Two lenses, because one cannot see what the other does:
  *
@@ -159,6 +166,15 @@ describe("harness/ — win32 MAX_PATH fix (.claude/rules/platform-facts.md)", ()
       "the harness/ scan reads modules, fs importers among them, and path arguments in those",
     composed: "every fs call in harness/ is made on a composed path",
     uncalled: "every fs symbol harness/ imports is called, so none is imported past the scan",
+  });
+});
+
+describe("examples/ — win32 MAX_PATH fix (.claude/rules/platform-facts.md)", () => {
+  pinTree("examples", {
+    vacuity:
+      "the examples/ scan reads modules, fs importers among them, and path arguments in those",
+    composed: "every fs call in examples/ is made on a composed path",
+    uncalled: "every fs symbol examples/ imports is called, so none is imported past the scan",
   });
 });
 

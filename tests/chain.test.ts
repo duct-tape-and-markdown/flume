@@ -26,7 +26,7 @@ import {
 } from "../src/priorAttempts.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
 import { readFileAtRef } from "../src/git.ts";
-import { gitPath, matchesAny } from "../src/paths.ts";
+import { gitPath, matchesAny, namespacedJoin } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 import { declaration } from "../.flume/declaration.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -112,6 +112,20 @@ describe("buildFlumeApi().gitPath (.claude/rules/engineering.md 'A fact the engi
     // rule it is: both separators fold, which a chain-local respelling keyed
     // on the host `sep` would get half-right.
     expect(api.gitPath(String.raw`a\b/c`)).toBe("a/b/c");
+  });
+});
+
+describe("buildFlumeApi().namespacedJoin (.claude/rules/engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
+  it("buildFlumeApi().namespacedJoin is the engine's own win32 path fold, by reference", () => {
+    const api = buildFlumeApi(REPO_PATHS);
+    // Identity is the whole claim here, and it is the only reachable one: the
+    // fold is `toNamespacedPath(join(...))` and identity off win32, so a
+    // behavioral probe on this host would compare the body against itself
+    // (tests/paths.test.ts, header). What the chain gets is *this* function —
+    // the same one the engine composes its own fs paths through, and the one
+    // the source scan over `examples/` holds those chains to
+    // (tests/namespacedFsPaths.test.ts).
+    expect(api.namespacedJoin).toBe(namespacedJoin);
   });
 });
 

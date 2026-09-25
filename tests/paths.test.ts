@@ -19,6 +19,7 @@ import {
   entryWriteScopeUnion,
   gitPath,
   matchesAny,
+  namespacedJoin,
   plainPath,
   queueFenceViolations,
   resolvePendingDir,
@@ -33,6 +34,7 @@ import {
 import {
   gitPath as indexGitPath,
   matchesAny as indexMatchesAny,
+  namespacedJoin as indexNamespacedJoin,
   slugify as indexSlugify,
   stopFlagPath as indexStopFlagPath,
 } from "../src/index.ts";
@@ -845,9 +847,13 @@ describe("src/index.ts — matchesAny barrel export (INDEX-EXPORTS-THE-GLOB-MATC
 
   it("the entry point's path rules are the same functions src/paths.ts exports, not second copies", () => {
     // The `beside` half of the claim: one set of path rules reaches a chain
-    // through the entry point, so none of the four can drift from the
-    // matcher the engine itself keys its fences by.
+    // through the entry point, so none of the five can drift from the
+    // matcher the engine itself keys its fences by. Identity, not behavior —
+    // the win32 fold's own body is the one thing no test here can assert
+    // against (header, top of file); that a chain reaches *this* function is
+    // a different claim, and the reachable one.
     expect(indexGitPath).toBe(gitPath);
+    expect(indexNamespacedJoin).toBe(namespacedJoin);
     expect(indexSlugify).toBe(slugify);
     expect(indexStopFlagPath).toBe(stopFlagPath);
   });

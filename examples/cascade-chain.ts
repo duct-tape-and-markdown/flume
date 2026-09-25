@@ -351,6 +351,7 @@ export function declaredFilesGate(
  */
 const factory: ChainFactory = (api) => {
   const {
+    namespacedJoin,
     pendingGate,
     renderSchemaForPrompt,
     shellGate,
@@ -570,11 +571,19 @@ const factory: ChainFactory = (api) => {
    * raises `ENOENT`, so one spelling reads the obstruction as unreadable on
    * one host and as drained on the other. Past the descent every ancestor is
    * proven a directory, so the listing carries no arm of its own.
+   *
+   * The listing's own path is folded through `namespacedJoin`, the engine's
+   * win32 total-path idiom, for the same reason the descent is the engine's: a
+   * `FLUME_DIR` this chain never chose can seat `<flumeDir>/inbox` past win32's
+   * ~260-character limit with no long component (`.claude/rules/platform-facts.md`,
+   * *Windows MAX_PATH (~260 chars) breaks fs calls with no long component*).
+   * The descent namespaces each of its own steps, so `dir` reaches it
+   * unfolded and the fold sits at the one call that is this chain's.
    */
   function inboxPending(flumeDir: string): boolean {
     const dir = resolve(flumeDir, "inbox");
     if (!api.isDirectoryOrAbsent("inbox queue", flumeDir, dir)) return false;
-    return readdirSync(dir).some((f) => f.endsWith(".md"));
+    return readdirSync(namespacedJoin(dir)).some((f) => f.endsWith(".md"));
   }
 
   const SLICES: PlanSlice[] = [

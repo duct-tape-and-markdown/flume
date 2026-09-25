@@ -103,7 +103,20 @@ export {
 
 export { partitionByFileOverlap, type PartitionOptions } from "./partition.js";
 
-export { gitPath, matchesAny, slugify, stopFlagPath } from "./paths.js";
+// `namespacedJoin` rides beside the others for the same reason they do: it is
+// the fold the engine composes every fs path through, and the depth that makes
+// it necessary is the consumer's — a worktree under a declared base, an
+// entry-derived artifact under a relocated state root
+// (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks fs
+// calls with no long component*). Also on `FlumeApi`; named here so a chain
+// helper composing a path outside a factory's scope can reach it.
+export {
+  gitPath,
+  matchesAny,
+  namespacedJoin,
+  slugify,
+  stopFlagPath,
+} from "./paths.js";
 
 // The proven-absence descent rides beside the path rules, and for the same
 // reason: a chain gating on a directory of its own re-derives the

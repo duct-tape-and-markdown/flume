@@ -1606,6 +1606,24 @@ state root is relocated outside the repository; a chain whose artifacts are
 committed refuses at load (`examples/cascade-chain.ts` is the worked case),
 and a chain that commits nothing under the root ignores it.
 
+**For a path you hand an `fs` call, use `api.namespacedJoin`.** It joins the
+segments and prepends win32's extended-length prefix in one call — the engine's
+own fold, the one every path it hands an fs call is composed through. Reach for
+it and not a bare `join`
+whenever the path extends a root you were given rather than one you bounded: a
+tick's `cwd` is a worktree under a base the chain or `FLUME_WORKTREES_DIR` may
+have moved, and `flumeDir` is wherever `FLUME_DIR` put it, so
+`<cwd>/BACKLOG.json` can pass win32's ~260-character **total** path limit with
+no single component anywhere near it
+(`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks fs
+calls with no long component*). Handing it one path is a legitimate use — the
+join is a no-op and the namespacing is the point, which is the shape a listing
+takes after `api.isDirectoryOrAbsent` has proven the descent
+(`examples/cascade-chain.ts`'s inbox probe). What it will not do is announce
+itself: the fold is identity off win32, so an unfolded path is green on your
+host and an `ENOENT` on a path that is there on someone else's. Both reference
+chains under `examples/` compose every fs path through it.
+
 #### Gates and prompts get `flumeDir` injected too
 
 A chain never reaches into the global env for its roots. Which surface hands

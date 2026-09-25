@@ -31,7 +31,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import { z } from "zod";
 import type {
@@ -111,12 +111,34 @@ const entryExtension = {
  * engine import, so the chain resolves no engine copy of its own.
  */
 const factory: ChainFactory = (api) => {
-  const { composePendingEntry, isPickableNow, renderSchemaForPrompt, withSessionCapture } = api;
+  const {
+    composePendingEntry,
+    isPickableNow,
+    namespacedJoin,
+    renderSchemaForPrompt,
+    withSessionCapture,
+  } = api;
+
+  // ---------- paths for fs calls ----------
+  //
+  // Every path below reaches an fs call through `namespacedJoin`, never a bare
+  // `join`, because the root it extends is not this chain's to bound: a groom
+  // tick's `cwd` is a worktree the dispatcher provisioned under a base a chain
+  // or `FLUME_WORKTREES_DIR` may have moved, so `<cwd>/BACKLOG.json` can pass
+  // win32's ~260-character total-path limit with no component anywhere near it
+  // (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks
+  // fs calls with no long component*). The fold is the engine's own — the idiom
+  // every path it hands an fs call is composed through — so it arrives on the
+  // api rather than being re-paired out of `join` and `toNamespacedPath` here
+  // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+  // never rediscovered*). It is a no-op off win32, which is why the shape of
+  // the call site, and not a green tick on your host, is what carries it.
+
   // ---------- the groom agent ----------
 
   /** Tags already shipped, read back from `SHIPPED.md` so a `blockedBy` item unblocks across ticks. */
   function readShippedTags(cwd: string): Set<string> {
-    const path = join(cwd, SHIPPED_PATH);
+    const path = namespacedJoin(cwd, SHIPPED_PATH);
     if (!existsSync(path)) return new Set();
     const tags = new Set<string>();
     for (const line of readFileSync(path, "utf8").split("\n")) {
@@ -194,7 +216,7 @@ const factory: ChainFactory = (api) => {
         inv.onStdout?.(`${line}\n`);
         return line;
       };
-      const backlogPath = join(cwd, BACKLOG_PATH);
+      const backlogPath = namespacedJoin(cwd, BACKLOG_PATH);
       let raw: string;
       try {
         raw = readFileSync(backlogPath, "utf8");
@@ -229,7 +251,7 @@ const factory: ChainFactory = (api) => {
       // reached here carrying a newline throws rather than writing a ledger
       // line `readShippedTags` would read as a second tag.
       const reason = entryExtension.reason.schema.parse(pick.reason);
-      const shippedPath = join(cwd, SHIPPED_PATH);
+      const shippedPath = namespacedJoin(cwd, SHIPPED_PATH);
       const prior = existsSync(shippedPath) ? readFileSync(shippedPath, "utf8") : "";
       writeFileSync(shippedPath, `${prior}- ${pick.tag}: ${reason}\n`);
 
@@ -275,7 +297,7 @@ const factory: ChainFactory = (api) => {
     async run(ctx) {
       let raw: string;
       try {
-        raw = readFileSync(join(ctx.cwd, BACKLOG_PATH), "utf8");
+        raw = readFileSync(namespacedJoin(ctx.cwd, BACKLOG_PATH), "utf8");
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         return { ok: true, message: "BACKLOG.json absent (nothing groomed this tick)" };
