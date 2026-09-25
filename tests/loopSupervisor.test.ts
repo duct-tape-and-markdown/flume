@@ -1397,22 +1397,248 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 });
 
 /**
+ * spec/loop.md "Repeated identical failures — quarantine, then abort": render
+ * is the stage with no other per-entry trace — a refusal leaves no failing
+ * `gateResults` row and no `mergeOutcomes` record, and a wave that shipped a
+ * sibling loses even the tick-level `noCommit` — so without this leg an entry
+ * whose prompt refuses deterministically is re-picked at full agent price
+ * every wave to `--max`. Same `runTick` fixture idiom as the sibling suites: a
+ * stub writes the `renderFailures` record (`src/tickVerdict.ts`) a real child
+ * would, whose own production `tests/Dispatcher.test.ts` proves.
+ */
+describe("superviseLoop — the render stage joins the quarantine and the backstop", () => {
+  const verdictPath = (phase: string): string =>
+    childVerdictPath(join(fx.repo, ".flume"), phase);
+
+  it("a blamed render refusal quarantines its entry for the run", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async ({
+      phase,
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      if (calls === 1) {
+        // The wave ships OK-A and refuses to render UNRENDERABLE-B: the
+        // shipped sibling swallows the tick-level `noCommit`, so this record
+        // is the only trace the refusal leaves.
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              committed: true,
+              shippedTags: ["OK-A"],
+              renderFailures: [
+                {
+                  ...blamedOnFixture("UNRENDERABLE-B"),
+                  signature: "inline exec failed: pnpm -s flume-context",
+                  message:
+                    "inline exec failed: pnpm -s flume-context — exit 1: no such script",
+                },
+              ],
+            }),
+          ),
+          "utf8",
+        );
+      } else {
+        // Same tip as the placing tick, so nothing lifts the hold: the entry
+        // is held for the rest of the run.
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(verdictFixture({ committed: false })),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      runTick,
+      log,
+    });
+
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(2);
+    expect(res.shippedTags).toEqual(["OK-A"]);
+    expect(receivedSlugs[0]).toEqual([]);
+    expect(receivedSlugs[1]).toEqual(["unrenderable-b@00112233aa"]);
+    expect(
+      warnings.some(
+        (w) => w.includes("UNRENDERABLE-B") && w.includes("render-stage"),
+      ),
+    ).toBe(true);
+  });
+
+  it("an unbroken streak of the identical render refusal aborts the loop at the threshold", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build"); // never hibernates — the abort comes from the backstop alone
+
+    // A singleton phase's own refusal: no entry to blame, so nothing to
+    // quarantine and the backstop is the only brake on the burn.
+    const SIGNATURE = "inline exec failed: pnpm -s flume-context";
+    let calls = 0;
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      await writeFile(
+        verdictPath(phase),
+        JSON.stringify(
+          verdictFixture({
+            committed: false,
+            noCommit: "render-refused",
+            renderFailures: [
+              { signature: SIGNATURE, message: `${SIGNATURE} — exit 1` },
+            ],
+          }),
+        ),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const errors: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      runTick,
+      log: { info: () => {}, warn: () => {}, error: (l) => errors.push(l) },
+    });
+
+    // The default threshold, reached and stopped at: the remaining seven
+    // ticks of the budget are never spent against the same refusal.
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    expect(res.repeatedFailure).toEqual({
+      stage: "render",
+      signature: SIGNATURE,
+      count: 3,
+    });
+    expect(
+      errors.some((e) => e.includes("render-stage") && e.includes(SIGNATURE)),
+    ).toBe(true);
+  });
+});
+
+/**
  * spec/loop.md "Repeated identical failures — quarantine, then abort": a
  * run-scoped hold is keyed by the entry as the failing tick read it, and a
- * *gate*-stage or *merge*-stage hold carries one more expiry — the tip that
- * tick reported. Once trunk has moved past it the tree that gate judged, or
- * the trunk that pick conflicted against, is gone, so the hold lifts and the
- * entry is pickable again; a provision-stage hold has no such expiry, since
- * nothing landing on trunk changes what a worktree could not provision. The
- * tip each tick reports is `TickVerdict.headSha`, which the stub writes here
- * exactly as a real child does — the supervisor reads no ref of its own.
+ * *render*-, *gate*- or *merge*-stage hold carries one more expiry — the tip
+ * that tick reported. Once trunk has moved past it the tree that gate judged,
+ * the trunk that pick conflicted against, or the declaration that render read,
+ * is gone, so the hold lifts and the entry is pickable again; a
+ * provision-stage hold has no such expiry, since nothing landing on trunk
+ * changes what a worktree could not provision. The tip each tick reports is
+ * `TickVerdict.headSha`, which the stub writes here exactly as a real child
+ * does — the supervisor reads no ref of its own.
  */
-describe("superviseLoop — a gate- or merge-stage hold expires with the tip it was placed at", () => {
+describe("superviseLoop — a render-, gate- or merge-stage hold expires with the tip it was placed at", () => {
   const verdictPath = (phase: string): string =>
     childVerdictPath(join(fx.repo, ".flume"), phase);
 
   const TIP_A = "a".repeat(40);
   const TIP_B = "b".repeat(40);
+
+  it("a render-stage quarantine hold lifts once a verdict reports a different tip", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    let calls = 0;
+    const runTick = async ({
+      phase,
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      if (calls === 1) {
+        // The chain's own `promptArgs` hook throws over the tree at TIP_A,
+        // and the tick ends with trunk still there.
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              committed: false,
+              headSha: TIP_A,
+              noCommit: "render-refused",
+              renderFailures: [
+                {
+                  ...blamedOnFixture("UNRENDERABLE-B"),
+                  signature: "promptArgs hook threw: ctx.entry is undefined",
+                  message: "promptArgs hook threw: ctx.entry is undefined",
+                },
+              ],
+            }),
+          ),
+          "utf8",
+        );
+      } else if (calls === 2) {
+        // The hold stands over the tree it was placed on: this tick is told
+        // the key, and it is this tick that moves trunk — the operator's hook
+        // fix, or any sibling landing.
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              committed: true,
+              headSha: TIP_B,
+              shippedTags: ["OK-B"],
+            }),
+          ),
+          "utf8",
+        );
+      } else {
+        // Trunk is no longer the tree that render read, so the entry is
+        // pickable again and the next refusal is a fresh one to judge.
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(verdictFixture({ committed: false, headSha: TIP_B })),
+          "utf8",
+        );
+        baton.sleep("build");
+      }
+      return { exitCode: 0 };
+    };
+
+    const infos: string[] = [];
+    const log: Logger = {
+      info: (l) => infos.push(l),
+      warn: () => {},
+      error: () => {},
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      runTick,
+      log,
+    });
+
+    expect(res.ticks).toBe(3);
+    expect(receivedSlugs).toEqual([[], ["unrenderable-b@00112233aa"], []]);
+    expect(
+      infos.some(
+        (l) =>
+          l.includes("lifting the render-stage quarantine") &&
+          l.includes("UNRENDERABLE-B"),
+      ),
+    ).toBe(true);
+  });
 
   it("a gate-stage quarantine is lifted once the tip moves past the tick that placed it", async () => {
     const baton = new Baton(join(fx.repo, ".flume"));
@@ -2054,6 +2280,10 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
     (record: { signature: string; message: string }) => Partial<TickVerdict>
   > = {
     provision: (record) => ({ provisionFailures: [record] }),
+    render: (record) => ({
+      noCommit: "render-refused" as const,
+      renderFailures: [record],
+    }),
     merge: (record) => ({
       mergeFailures: [{ ...blamedOnFixture("STAGED"), ...record }],
     }),

@@ -2348,9 +2348,10 @@ other prompt-args decision (§1).
 `flume loop`'s supervisor runs a deterministic-failure safety net around every
 tick, singleton and fanout alike. It accounts for every per-entry failure fact
 the tick verdict records, keyed by **stage-tagged signature** — `provision` (a
-pre-tick worktree sweep, create, or `setupWorktree` throw), `merge` (a
-cherry-pick conflict or a dirty trunk refusing the pick), and `gate` (a gate
-revert). The two legs reach different failures: an entry a failure can be
+pre-tick worktree sweep, create, or `setupWorktree` throw), `render` (a prompt
+that refused to render, so no agent ever read the entry), `merge` (a cherry-pick
+conflict or a dirty trunk refusing the pick), and `gate` (a gate revert). The
+two legs reach different failures: an entry a failure can be
 **blamed** on is quarantined for the rest of the run, whichever stage it failed
 at, so the supervisor stops re-attempting a wall it already hit (entry-keyed,
 so fanout's in practice), and a consecutive-identical-failure backstop aborts
@@ -2384,14 +2385,16 @@ const chain: Chain = {
 ```
 
 - **`quarantineScope`** — `"run"` (default): a tagged failure at any of the
-  three stages quarantines that entry for the rest of the run, under the key
+  four stages quarantines that entry for the rest of the run, under the key
   the failing tick reported — its slug plus a hash of its bytes in
   its queue file, so a re-scope on trunk is a new key and lifts the hold.
-  A **gate**-stage hold carries one expiry beyond the key: the trunk tip the
-  placing tick reported. Once a later tick reports a different tip, the tree
-  that gate judged is gone and the hold lifts on its own — which is what makes
-  a gate fixed on trunk mid-run reach the entries it would pass, instead of
-  waiting for a restart
+  A **render**-, **merge**- or **gate**-stage hold carries one expiry beyond
+  the key: the trunk tip the placing tick reported. Each of the three judged
+  one tree — the prompt render read, the trunk the pick went onto, the tree
+  the gate ran over — so once a later tick reports a different tip that
+  judgment is gone and the hold lifts on its own. That is what makes a gate,
+  or a `promptArgs` hook that threw, fixed on trunk mid-run reach the entries
+  it would now pass, instead of waiting for a restart
   ([*Where the chain lives*](#where-the-chain-lives)). A **provision**-stage
   hold has no such expiry: nothing landing on trunk changes what a worktree
   could not provision. Either way the lift is logged with the tips it

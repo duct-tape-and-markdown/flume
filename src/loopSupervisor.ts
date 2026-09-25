@@ -223,19 +223,25 @@ interface SuperviseLoopOptions {
 }
 
 /**
- * Every stage a per-entry failure record can come from — the three the tick
- * verdict carries in separate lists (`provisionFailures`, `mergeFailures`,
- * `gateFailures`), declared once as a runtime value so whatever enumerates
- * the stages — the fold below, a prompt, a test driving every stage through
- * the abort path — names them from the engine rather than from a copy an
- * engine rename would strand (`.claude/rules/engineering.md`, *Derived state
- * is computed, never restated beside its source*).
+ * Every stage a per-entry failure record can come from — the four the tick
+ * verdict carries in separate lists (`provisionFailures`, `renderFailures`,
+ * `mergeFailures`, `gateFailures`), declared once as a runtime value so
+ * whatever enumerates the stages — the fold below, a prompt, a test driving
+ * every stage through the abort path — names them from the engine rather than
+ * from a copy an engine rename would strand
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
  *
  * Load-bearing rather than decorative: `superviseLoop`'s per-stage failure
  * fold is keyed by this roster, so a member added here is a compile error
  * until the verdict list it reads is named.
  */
-export const FAILURE_STAGES = ["provision", "merge", "gate"] as const;
+export const FAILURE_STAGES = [
+  "provision",
+  "render",
+  "merge",
+  "gate",
+] as const;
 
 /**
  * One member of {@link FAILURE_STAGES}, derived from it so the two cannot
@@ -305,13 +311,13 @@ export interface SuperviseResult {
    * — quarantine, then abort") — the consecutive-failure backstop for
    * non-entry-scoped walls the run-scoped quarantine can't isolate, and a
    * wider abort than the mount-dead one, which keeps its own semantics.
-   * `stage` names which of the three walls the aborting streak came from —
-   * the supervisor holds it at the abort site, so it is reported rather than
-   * left for a consumer to infer from the signature's wording. `signature`
-   * is the raw comparison key, never prefixed with the stage it came from —
-   * the stage rides the sibling field, never the signature text. Distinct
-   * from `mountDead` — the chain resolved and ran fine; only a provision,
-   * merge, or gate wall kept hitting the identical failure.
+   * `stage` names which of {@link FAILURE_STAGES}'s walls the aborting streak
+   * came from — the supervisor holds it at the abort site, so it is reported
+   * rather than left for a consumer to infer from the signature's wording.
+   * `signature` is the raw comparison key, never prefixed with the stage it
+   * came from — the stage rides the sibling field, never the signature text.
+   * Distinct from `mountDead` — the chain resolved and ran fine; only one of
+   * those walls kept hitting the identical failure.
    */
   repeatedFailure?: { stage: FailureStage; signature: string; count: number };
   /**
@@ -353,15 +359,17 @@ interface QuarantineHold {
 
 /**
  * The stages whose holds expire with the tip they were placed at (spec/loop.md,
- * *Repeated identical failures — quarantine, then abort*). Both judge one tree:
- * a gate's verdict is over the tree it ran on, and a cherry-pick's conflict is
- * against the trunk it picked onto — once trunk is not that tree, neither
- * judgment has been re-made. Spelled as a membership set over
- * {@link FAILURE_STAGES} rather than as an inequality against `provision`, so a
- * stage added to the roster keeps the run-scoped default until this line says
- * otherwise.
+ * *Repeated identical failures — quarantine, then abort*). Each judges one
+ * tree: a gate's verdict is over the tree it ran on, a cherry-pick's conflict
+ * is against the trunk it picked onto, and a render reads the declaration and
+ * the host that trunk holds — a chain's own hook fixed on trunk is a new
+ * render — so once trunk is not that tree, none of the three judgments has
+ * been re-made. Spelled as a membership set over {@link FAILURE_STAGES} rather
+ * than as an inequality against `provision`, so a stage added to the roster
+ * keeps the run-scoped default until this line says otherwise.
  */
 const LIFTS_ON_A_MOVED_TIP: ReadonlySet<FailureStage> = new Set<FailureStage>([
+  "render",
   "gate",
   "merge",
 ]);
@@ -525,11 +533,13 @@ export async function superviseLoop(
    * {@link LIFTS_ON_A_MOVED_TIP}'s to say; once the tip is not the one the
    * placing tick reported, the hold is standing on a judgment nothing re-made —
    * a gate fixed on trunk mid-run otherwise kept holding entries the fix would
-   * have passed, and a pick that conflicted kept holding one a fresh pick onto
-   * the moved trunk would land, until an operator restarted the loop. A
-   * provision-stage hold is untouched, since nothing landing on trunk changes
-   * what a worktree could not provision. The consecutive-identical-failure
-   * backstop below is what bounds the retry a lift allows.
+   * have passed, a pick that conflicted kept holding one a fresh pick onto the
+   * moved trunk would land, and a prompt whose refusing hook was fixed on
+   * trunk kept holding the entry its next render would resolve, until an
+   * operator restarted the loop. A provision-stage hold is untouched, since
+   * nothing landing on trunk changes what a worktree could not provision. The
+   * consecutive-identical-failure backstop below is what bounds the retry a
+   * lift allows.
    */
   const liftStaleHolds = (): void => {
     for (const [key, hold] of quarantine) {
@@ -729,8 +739,8 @@ export async function superviseLoop(
 
     // Every per-entry failure fact the
     // verdict records, tagged with the stage it came from — a clean exit
-    // never joins this list, since it writes no provision/merge/gate failure
-    // record at all.
+    // never joins this list, since it writes no provision/render/merge/gate
+    // failure record at all.
     // The one place a roster member meets the verdict list that carries it.
     // Keyed by `FailureStage`, so the mapping is exhaustive over
     // `FAILURE_STAGES` by type: a stage added to the roster is a compile
@@ -741,6 +751,7 @@ export async function superviseLoop(
       readonly (StageFailureEntry & { signature: string; message: string })[]
     > = {
       provision: verdict?.provisionFailures ?? [],
+      render: verdict?.renderFailures ?? [],
       merge: verdict?.mergeFailures ?? [],
       gate: verdict?.gateFailures ?? [],
     };

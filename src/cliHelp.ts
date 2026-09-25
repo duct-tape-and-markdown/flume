@@ -351,9 +351,9 @@ Exit codes:
       identical failure signature repeated on as many consecutive ticks as
       the chain's supervisorPolicy.abortThreshold declares (default
       ${DEFAULT_ABORT_THRESHOLD}), with no successful tick between them — a
-      provision-stage, merge-stage or gate-stage wall alike, with the
-      completion summary naming the aborting stage, the streak it reached
-      and the repeated signature. A single entry's failure alone does not
+      provision-stage, render-stage, merge-stage or gate-stage wall alike,
+      with the completion summary naming the aborting stage, the streak it
+      reached and the repeated signature. A single entry's failure alone does not
       abort: it quarantines that entry for the rest of the run while the
       others keep dispatching.
       A graceful stop mid-run (\`.flume/stop\` written while the loop is
