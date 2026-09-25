@@ -30,6 +30,8 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { declaration } from "../.flume/declaration.ts";
 import { HARNESS_HELP } from "../harness/cliHelp.ts";
+import { DEFAULT_STATE_ROOT } from "../harness/init.ts";
+import { protocolPath } from "../harness/layout.ts";
 import {
   type CitationScan,
   type CitationSite,
@@ -2107,6 +2109,27 @@ it("the shipped help surfaces include the page flume-harness --help prints", () 
   const page = shippedHelp.find((surface) => surface.name === "flume-harness --help");
   expect(page?.text).toBe(HARNESS_HELP);
   expect(HARNESS_HELP).toContain("Usage: flume-harness <command>");
+});
+
+it("the flume-harness help page states the protocol path the layout composes", () => {
+  const page = shippedHelp.find(
+    (surface) => surface.name === "flume-harness --help",
+  );
+  expect(page, "the harness bin's page is not among the shipped surfaces").toBeDefined();
+
+  // Vacuity guard: the page really names a `*.md` file of the adoption it
+  // describes, before the equality below is read off that set. A page that
+  // had stopped quoting any path at all would satisfy an emptier claim.
+  const named = [...new Set(page?.text.match(/\S+\.md\b/g) ?? [])];
+  expect(named.length).toBeGreaterThan(0);
+
+  // The verdict: the one path the page states for that file is the one
+  // `protocolPath` composes over the default root — the same value
+  // `flume-harness init` writes it to and the plan prompts send a reader to.
+  // A hand-spelled second copy reds here, whatever it happens to spell today,
+  // because the page-name scan below answers `.flume/PROTOCOL.md` from *this*
+  // repository's own page and would pass a path the verb stopped writing.
+  expect(named).toEqual([protocolPath(DEFAULT_STATE_ROOT)]);
 });
 
 it("every section a shipped help literal cites is a section its page still carries", () => {

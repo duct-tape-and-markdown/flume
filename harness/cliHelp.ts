@@ -12,10 +12,16 @@
  */
 
 import { DEFAULT_STATE_ROOT } from "./init.js";
+import { protocolPath } from "./layout.js";
 
 /**
  * The whole page `flume-harness --help` prints, and the trailer both of the
  * command line's usage refusals print under their own first line.
+ *
+ * Every path it quotes is composed from the layout the verb writes through,
+ * never spelled beside it (`.claude/rules/engineering.md`, *Derived state is
+ * computed, never restated beside its source*): a page advertising a path
+ * `init` stopped writing is a pointer that reads as current.
  */
 export const HARNESS_HELP = `flume-harness — adopt flume's harness package in this repository.
 
@@ -25,7 +31,7 @@ Commands:
   init                Write the declaration skeleton, the chain.ts that
                       applies the package's factory to it, the package.json
                       scoping both as ESM, the state root, the runtime
-                      ignore lines and ${DEFAULT_STATE_ROOT}/PROTOCOL.md into
+                      ignore lines and ${protocolPath(DEFAULT_STATE_ROOT)} into
                       the current directory, and declare the package in its
                       package.json.
                       Refuses if ${DEFAULT_STATE_ROOT}/ is already there.
