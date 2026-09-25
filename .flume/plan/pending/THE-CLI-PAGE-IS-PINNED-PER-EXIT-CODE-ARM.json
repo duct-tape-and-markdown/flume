@@ -1,10 +1,7 @@
 {
   "tag": "THE-CLI-PAGE-IS-PINNED-PER-EXIT-CODE-ARM",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM"
-    ]
+    "kind": "open"
   },
   "priority": 30,
   "files": {
