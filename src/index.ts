@@ -122,10 +122,15 @@ export {
 // reason: a chain gating on a directory of its own re-derives the
 // ENOENT-vs-obstructed split otherwise, and the errno that split keys on is
 // the one thing about it that is not portable (`.claude/rules/engineering.md`,
-// *A fact the engine holds is reported, never rediscovered*). Also on
-// `FlumeApi`; named here so a chain declaring a helper around it can type the
-// value it holds.
-export { isDirectoryOrAbsent } from "./fsProbe.js";
+// *A fact the engine holds is reported, never rediscovered*). Both shapes,
+// because composing the rooted one out of the other is that same
+// rediscovery one rung lower: a chain holding a root and a directory beneath
+// it hands over both and the engine walks between them
+// (`isDirectoryOrAbsentUnder`), while a fan of siblings under a root already
+// proven names its own list (`isDirectoryOrAbsent`). Also on `FlumeApi`;
+// named here so a chain declaring a helper around either can type the value
+// it holds.
+export { isDirectoryOrAbsent, isDirectoryOrAbsentUnder } from "./fsProbe.js";
 
 // The keyers ride the surface beside the paths: the map a chain reads
 // (`TickContext.priorAttempts`) is keyed by a join the engine composes, so a

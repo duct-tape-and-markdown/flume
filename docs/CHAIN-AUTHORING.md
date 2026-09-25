@@ -1683,11 +1683,31 @@ no single component anywhere near it
 (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks fs
 calls with no long component*). Handing it one path is a legitimate use — the
 join is a no-op and the namespacing is the point, which is the shape a listing
-takes after `api.isDirectoryOrAbsent` has proven the descent
+takes after `api.isDirectoryOrAbsentUnder` has proven the descent
 (`examples/cascade-chain.ts`'s inbox probe). What it will not do is announce
 itself: the fold is identity off win32, so an unfolded path is green on your
 host and an `ENOENT` on a path that is there on someone else's. Both reference
 chains under `examples/` compose every fs path through it.
+
+**For a directory a silent arm depends on, use
+`api.isDirectoryOrAbsentUnder`.** A `shouldRun` that reads its own queue
+empty, a gate that treats a missing store as nothing-filed-yet: each is
+answering "is this directory there", and that is the question whose errno is
+not portable. A plain file where the directory belongs raises `ENOTDIR` on
+posix and `ENOENT` on win32
+(`.claude/rules/platform-facts.md`, *win32 reports a path through a
+non-directory as not found*), so a chain-local `code !== "ENOENT"` refuses on
+one host and reports the queue **drained** on the other — silently skipping
+work that is sitting right there. Hand over the root you answer for and the
+directory beneath it (`api.isDirectoryOrAbsentUnder("inbox queue", flumeDir,
+dir)`) and the engine walks every rung between them, asserting each a
+directory before probing the next: `true` means it stands, `false` is a
+*proven* absence, and anything else throws. Do not spell the rungs yourself —
+that is `api.isDirectoryOrAbsent`, whose list exists for the one shape a walk
+cannot express, a fan of sibling directories under a root already proven, and
+a hand-spelled descent is right until the day your directory sits one level
+deeper than the day you wrote it. Past either call every ancestor is proven,
+so the listing after it carries no `ENOENT` arm of its own.
 
 #### Gates and prompts get `flumeDir` injected too
 

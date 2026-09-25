@@ -565,12 +565,19 @@ const factory: ChainFactory = (api) => {
    * never a reason to report it empty (`.claude/rules/engineering.md`, *Loud
    * or nothing*).
    *
-   * The proof is the engine's — `api.isDirectoryOrAbsent`, the descent it
-   * runs on its own stores. A chain-local arm keyed on the listing's errno
+   * The proof is the engine's — `api.isDirectoryOrAbsentUnder`, the descent
+   * it runs on its own stores. A chain-local arm keyed on the listing's errno
    * cannot make it: posix raises `ENOTDIR` through a plain file and win32
    * raises `ENOENT`, so one spelling reads the obstruction as unreadable on
    * one host and as drained on the other. Past the descent every ancestor is
    * proven a directory, so the listing carries no arm of its own.
+   *
+   * The root and the directory beneath it are what this chain hands over; the
+   * rungs between them are the engine's to walk. Naming them here is correct
+   * at the one segment `inbox` happens to be and wrong at the first queue
+   * seated deeper, and the rung a chain forgets is the ancestor its silent
+   * arm rests on — which on win32 answers `ENOENT` and reads the queue
+   * drained.
    *
    * The listing's own path is folded through `namespacedJoin`, the engine's
    * win32 total-path idiom, for the same reason the descent is the engine's: a
@@ -582,7 +589,8 @@ const factory: ChainFactory = (api) => {
    */
   function inboxPending(flumeDir: string): boolean {
     const dir = resolve(flumeDir, "inbox");
-    if (!api.isDirectoryOrAbsent("inbox queue", flumeDir, dir)) return false;
+    if (!api.isDirectoryOrAbsentUnder("inbox queue", flumeDir, dir))
+      return false;
     return readdirSync(namespacedJoin(dir)).some((f) => f.endsWith(".md"));
   }
 

@@ -8,7 +8,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +25,10 @@ import {
   recordAttemptKey,
 } from "../src/priorAttempts.ts";
 import { buildFlumeApi, type FlumePaths } from "../src/flumeApi.ts";
+import {
+  isDirectoryOrAbsent,
+  isDirectoryOrAbsentUnder,
+} from "../src/fsProbe.ts";
 import { readFileAtRef } from "../src/git.ts";
 import { gitPath, matchesAny, namespacedJoin } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
@@ -128,6 +132,59 @@ describe("buildFlumeApi().namespacedJoin (.claude/rules/engineering.md 'A fact t
     // the source scan over `examples/` holds those chains to
     // (tests/namespacedFsPaths.test.ts).
     expect(api.namespacedJoin).toBe(namespacedJoin);
+  });
+});
+
+/**
+ * A chain gating on a directory of its own — an inbox, a findings queue, a
+ * scratch store — holds a root it answers for and the directory beneath it,
+ * never the rungs in between; those are the engine's to walk
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*). Handing out the variadic spelling alone leaves every such
+ * chain composing its own descent, which is right at the one segment it was
+ * written over and wrong at the first queue seated deeper — and the rung it
+ * skips is the ancestor its silent arm rests on, answering `ENOENT` on win32
+ * where the queue is read **drained** (`.claude/rules/platform-facts.md`,
+ * *win32 reports a path through a non-directory as not found*).
+ *
+ * Driven through the real `buildFlumeApi`, the seam a chain factory is handed:
+ * an engine export a chain cannot reach there is one it composes by hand,
+ * whatever the package root also names.
+ */
+describe("buildFlumeApi().isDirectoryOrAbsentUnder (.claude/rules/engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
+  it("buildFlumeApi hands out the rooted absence descent, by reference", async () => {
+    const api = buildFlumeApi(REPO_PATHS);
+    expect(api.isDirectoryOrAbsentUnder).toBe(isDirectoryOrAbsentUnder);
+    // The rungs form stays for the fan it answers — siblings under a root
+    // already proven — so the claim is that both shapes are reachable, not
+    // that the composer replaced the list.
+    expect(api.isDirectoryOrAbsent).toBe(isDirectoryOrAbsent);
+
+    // Identity is the claim; one behavioral probe says which rule it is. The
+    // directory sits two segments under the root, so an answer at all is the
+    // engine composing the rungs — the shape a chain handing `(root, dir)` to
+    // the variadic form would leave with its middle segment never probed.
+    const root = await mkTempDir("chain-rooted-descent-");
+    const dir = join(root, "queue", "inbox");
+    expect(api.isDirectoryOrAbsentUnder("inbox queue", root, dir)).toBe(false);
+    await mkdir(dir, { recursive: true });
+    expect(api.isDirectoryOrAbsentUnder("inbox queue", root, dir)).toBe(true);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("the api's rooted descent refuses a directory whose intermediate rung is present and is not a directory", async () => {
+    const api = buildFlumeApi(REPO_PATHS);
+    const root = await mkTempDir("chain-rooted-descent-obstructed-");
+    // The obstruction sits *between* the root and the directory — the rung a
+    // chain naming `(root, dir)` itself never probes. Both hosts stat that
+    // rung and find a plain file, so this refusal is portable; what is not is
+    // the leaf's own stat, ENOTDIR on posix and ENOENT on win32, which is the
+    // reading the skipped rung would have left standing.
+    await writeFile(join(root, "queue"), "not a directory\n");
+    expect(() =>
+      api.isDirectoryOrAbsentUnder("inbox queue", root, join(root, "queue", "inbox")),
+    ).toThrow(/inbox queue is unreadable: .*queue is present but is not a directory/);
+    await rm(root, { recursive: true, force: true });
   });
 });
 

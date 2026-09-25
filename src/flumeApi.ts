@@ -31,7 +31,7 @@ import {
   pendingGate,
 } from "./builtinGates.js";
 import { CjsContextLoadError } from "./chainLoad.js";
-import { isDirectoryOrAbsent } from "./fsProbe.js";
+import { isDirectoryOrAbsent, isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import { PendingParseFailure } from "./PendingSchema.js";
 import { readGatedQueue } from "./pendingLedger.js";
 import { readTickVerdicts, readLatestVerdictsSync } from "./tickVerdict.js";
@@ -212,11 +212,13 @@ export interface FlumeApi {
    */
   namespacedJoin: typeof namespacedJoin;
   /**
-   * The engine's own **proven**-absence probe: a descent down the chain of
-   * directories a read depends on, each asserted a directory before the next
-   * is probed, answering `true` when the last one stands, `false` only when
-   * it or an ancestor is absent, and throwing when one is present and is not
-   * a directory (`isDirectoryOrAbsent`, `src/fsProbe.ts`).
+   * The engine's own **proven**-absence probe, at the shape a chain holding
+   * a root and a directory beneath it already has: the rungs between them
+   * are composed here and each asserted a directory before the next is
+   * probed, answering `true` when the directory stands, `false` only when it
+   * or a directory between it and the root is absent, and throwing when one
+   * of them is present and is not a directory
+   * (`isDirectoryOrAbsentUnder`, `src/fsProbe.ts`).
    *
    * What a chain gating on its own directory — an inbox, a findings queue, a
    * scratch store — reads instead of keying a silent arm off the errno a
@@ -230,9 +232,31 @@ export interface FlumeApi {
    * proof that answers alike on both, and the engine already runs it on its
    * own stores.
    *
+   * The rungs are the engine's to compose for the same reason the split is:
+   * a chain spelling them itself is correct at one segment and wrong at two,
+   * and the rung it skips is the ancestor its silent arm was resting on. The
+   * root is the outermost directory the chain is willing to answer for — the
+   * `flumeDir` it was handed, a base it declared — and everything beneath it
+   * is walked (`.claude/rules/engineering.md`, *A fact the engine holds is
+   * reported, never rediscovered*).
+   *
    * Reported as a **fact**: the directory stands, or is provably absent, or
    * the read cannot be made. What a drained queue means for the tick stays
    * the chain's (`.claude/rules/engine-boundary.md`).
+   */
+  isDirectoryOrAbsentUnder: typeof isDirectoryOrAbsentUnder;
+  /**
+   * The same proof over rungs the chain names itself, for the one shape the
+   * rooted form cannot express: a fan of sibling directories under a root
+   * already proven, read one bucket at a time
+   * (`isDirectoryOrAbsent`, `src/fsProbe.ts`). Each path handed over is
+   * asserted a directory in turn, so a descent is what a caller spells only
+   * when it is not one contiguous walk.
+   *
+   * A root and a directory beneath it is not that shape: it takes
+   * {@link isDirectoryOrAbsentUnder}, which composes the rungs rather than
+   * leaving the chain to remember them. Same fact, same refusal
+   * (`.claude/rules/engine-boundary.md`).
    */
   isDirectoryOrAbsent: typeof isDirectoryOrAbsent;
   priorAttemptPath: typeof priorAttemptPath;
@@ -432,6 +456,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     slugify,
     gitPath,
     namespacedJoin,
+    isDirectoryOrAbsentUnder,
     isDirectoryOrAbsent,
     priorAttemptPath,
     priorAttemptsDir,
