@@ -41,6 +41,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -48,6 +49,7 @@ import {
   type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.js";
+import { isDirectoryOrAbsentUnder } from "../src/fsProbe.js";
 import { namespacedJoin, resolvePendingDir } from "../src/paths.js";
 import { NO_COMMIT_MODES } from "../src/Prompt.js";
 
@@ -604,6 +606,13 @@ function continuingBlock(path: string, text: string | null): string {
 }
 
 /**
+ * The subject the descent below names when it refuses — one spelling for
+ * both artifacts read through this reader, since what is obstructed is the
+ * tick's tree and the refusal already carries the rung itself.
+ */
+const TREE_SUBJECT = "the tick's working tree";
+
+/**
  * The tick's own working tree as a reader: bytes under `cwd`, and `null` for
  * a path the tree does not hold — the two answers the engine's at-ref reader
  * gives a gate, so one resolver serves both the cite and the standing
@@ -612,11 +621,30 @@ function continuingBlock(path: string, text: string | null): string {
  * Every other read failure travels out: a cited path that is a directory, or
  * one this process may not read, is a fault at the reader rather than a cite
  * to be refused for a reason it did not commit (*Loud or nothing*).
+ *
+ * `null` is proven from the **path**, never read off the errno the read
+ * raised. A plain file anywhere above the artifact makes the artifact
+ * beneath it `ENOENT` on win32 while posix raises `ENOTDIR`
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so an errno-keyed silent arm reads an
+ * obstructed tree as a tree holding nothing on exactly one host — which
+ * renders a continuation the prior tick did leave as no block at all, and
+ * hands the next tick an entry whose landed segment is described nowhere.
+ * Hence the descent from `cwd` down to the directory the artifact sits in,
+ * every rung asserted a directory before the next is probed
+ * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`, which composes those
+ * rungs for every reader running this walk), so both hosts answer alike.
+ * `cwd` is where the descent starts: the dispatcher provisioned it, and what
+ * stands above it is not this reader's to answer for. The read past it keeps
+ * the one ENOENT arm the leaf still needs — its directory is proven by then,
+ * so that errno is the artifact's own.
  */
 function inTree(cwd: string): (path: string) => string | null {
   return (path) => {
+    const full = join(cwd, path);
+    if (!isDirectoryOrAbsentUnder(TREE_SUBJECT, cwd, dirname(full))) return null;
     try {
-      return readFileSync(namespacedJoin(cwd, path), "utf8");
+      return readFileSync(namespacedJoin(full), "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;

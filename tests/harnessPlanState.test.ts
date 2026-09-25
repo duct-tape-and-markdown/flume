@@ -23,7 +23,7 @@
  */
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, normalize } from "node:path";
+import { dirname, join, normalize } from "node:path";
 
 import { afterEach, beforeEach, expect, it } from "vitest";
 
@@ -628,4 +628,33 @@ it("a plan state artifact whose lane stamp is malformed is refused, naming the f
   );
   expect(flat).toContain("drainedRuns");
   expect(flat).not.toContain("unknown field");
+});
+
+it("readPlanState refuses a state root that is present and is not a directory", async () => {
+  // Non-vacuity: the real root, absent of any plan directory, really is the
+  // "no cursor yet" answer this case exists to tell an obstruction apart
+  // from — so the refusal below is the obstruction's and not the read's.
+  expect(readPlanState(stateRoot, "plan-derive")).toBeUndefined();
+
+  // A plain file where a consumer's state root should stand: a chain
+  // pointed at a path someone else took, or a clone that landed a file over
+  // the directory. Everything a slice would read sits beneath it, so every
+  // window opens on nothing — and a derive window opening on nothing
+  // re-derives the whole spec history (`.claude/rules/engineering.md`,
+  // *Loud or nothing*).
+  const obstructed = join(stateRoot, "taken-by-a-file");
+  await writeFile(obstructed, "not a state root\n");
+
+  // Named down to the rung an operator has to go fix, which is the root
+  // itself here. Asserted as a substring of the refusal rather than as the
+  // whole message: posix reaches the same refusal through `ENOTDIR` on the
+  // file read, and this case is the proof that holds on the host where that
+  // lookup answers `ENOENT` instead (`.claude/rules/platform-facts.md`,
+  // *win32 reports a path through a non-directory as not found*).
+  expect(() => readPlanState(obstructed, "plan-derive")).toThrow(obstructed);
+
+  // Every slice, since each composes its own path under that same root.
+  for (const slice of PLAN_SLICES) {
+    expect(() => readPlanState(obstructed, slice)).toThrow(obstructed);
+  }
 });

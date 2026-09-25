@@ -666,3 +666,49 @@ function buildPhase(promptFile: string): Phase {
     handoff: () => [],
   };
 }
+
+it("a prompt span refuses an artifact whose ancestor is present and is not a directory", async () => {
+  // A tick of its own, so the obstruction below is this case's alone: a
+  // dispatcher-provisioned worktree with the cite's page under it.
+  const root = join(repoRoot, "obstructed");
+  const at = join(root, ".flume", "worktrees", "HARNESS-BUILD-PROMPT-ARGS");
+  await mkdir(join(at, "spec"), { recursive: true });
+  await writeFile(join(at, "spec", "harness.md"), SPEC);
+  const assigned = entry();
+  const ctx: BuildTickContext = {
+    cwd: at,
+    flumeDir: join(root, ".flume"),
+    stateRootRel: computeStateRootRel(root, join(root, ".flume")),
+    assignedEntry: assigned,
+  };
+  const rel = continuingNotePath(".flume", assigned.tag);
+
+  // Non-vacuity, in both directions: this reader really reads that path on
+  // this tree — a note planted there reaches the rendered block — and its
+  // absence really is the silent arm, rendering nothing at all. Those are
+  // the two answers an obstruction must not be folded into.
+  await mkdir(dirname(join(at, rel)), { recursive: true });
+  await writeFile(join(at, rel), "# what the last tick landed\n");
+  expect(buildPromptArgs({ declaration: declare(), ctx }).CONTINUING_NOTE).toContain(
+    "what the last tick landed",
+  );
+  await rm(join(at, rel));
+  expect(buildPromptArgs({ declaration: declare(), ctx }).CONTINUING_NOTE).toBe("");
+
+  // A plain file where the notes' own ancestor should stand. Every artifact
+  // this reader reaches for sits beneath it, so an errno-keyed silent arm
+  // hands the next tick on this entry an empty block — a continuation the
+  // prior tick did leave, described nowhere (`.claude/rules/engineering.md`,
+  // *Loud or nothing*).
+  const obstructed = join(at, ".flume", "plan");
+  await rm(obstructed, { recursive: true });
+  await writeFile(obstructed, "not the notes' parent\n");
+
+  // Named down to the rung an operator has to go fix. Asserted as a
+  // substring rather than as the whole message: posix reaches the same
+  // refusal through `ENOTDIR` on the read, and this case is the proof that
+  // holds on the host where that lookup answers `ENOENT` instead
+  // (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+  // non-directory as not found*).
+  expect(() => buildPromptArgs({ declaration: declare(), ctx })).toThrow(obstructed);
+});

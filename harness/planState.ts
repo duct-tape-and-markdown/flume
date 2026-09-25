@@ -46,6 +46,7 @@ import { dirname } from "node:path";
 
 import { z } from "zod";
 
+import { isDirectoryOrAbsentUnder } from "../src/fsProbe.js";
 import { namespacedJoin } from "../src/paths.js";
 
 import { INBOX_PHASE, PLAN_SLICES, type PlanSlice } from "./declaration.js";
@@ -273,9 +274,26 @@ const schemaFor = <S extends PlanSlice>(
 const onDisk = (stateRoot: string, slice: PlanSlice): string =>
   namespacedJoin(planStatePath(stateRoot, slice));
 
-/** The directory that holds them, same form — what the writer creates. */
+/**
+ * The plain directory that holds them — the leaf of the descent the reader
+ * proves before it reads absence as "no cursor yet", and, namespaced, what
+ * the writer creates. Plain here because the descent namespaces every rung
+ * itself ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`), owning the
+ * whole walk rather than a path a caller composed.
+ */
+const stateDir = (stateRoot: string, slice: PlanSlice): string =>
+  dirname(planStatePath(stateRoot, slice));
+
+/** The directory that holds them in the host's form — what the writer creates. */
 const onDiskDir = (stateRoot: string, slice: PlanSlice): string =>
-  namespacedJoin(dirname(planStatePath(stateRoot, slice)));
+  namespacedJoin(stateDir(stateRoot, slice));
+
+/**
+ * The subject the descent names when it refuses — one spelling, so the rung
+ * an operator is told to go fix reads the same whichever ancestor of a
+ * slice's file was obstructed.
+ */
+const STATE_SUBJECT = "plan state";
 
 /**
  * `slice`'s state under `stateRoot`, or `undefined` when that slice has
@@ -290,6 +308,22 @@ const onDiskDir = (stateRoot: string, slice: PlanSlice): string =>
  * whole spec history or re-sweep a whole domain, confidently
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
+ * That absence is proven from the **path**, never read off the errno the
+ * read raised. A plain file anywhere above the slice's file makes the file
+ * beneath it `ENOENT` on win32 while posix raises `ENOTDIR`
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so an errno-keyed silent arm answers "no
+ * cursor yet" over an obstructed state root on exactly one host — and a
+ * derive window that opens on the whole spec history is the confident wrong
+ * answer this refuses. Hence the descent every reader under a state root
+ * runs: `stateRoot`, then each segment down to the directory the file sits
+ * in, every one asserted a directory before the next is probed
+ * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`, which composes those
+ * rungs), so both hosts answer alike. `stateRoot` is where the descent
+ * starts: the caller declared it, and what stands above it is the caller's
+ * to answer for. The read past it keeps the one ENOENT arm the leaf still
+ * needs — its directory is proven by then, so that errno is the file's own.
+ *
  * **Per slice, so absence is per slice too.** A consumer mid-cutover has
  * written one slice's file and not another's, and each window opens on its
  * own slice's answer rather than on whether any plan state exists at all.
@@ -301,6 +335,8 @@ export function readPlanState<S extends PlanSlice>(
   stateRoot: string,
   slice: S,
 ): PlanStateOf<S> | undefined {
+  if (!isDirectoryOrAbsentUnder(STATE_SUBJECT, stateRoot, stateDir(stateRoot, slice)))
+    return undefined;
   const path = onDisk(stateRoot, slice);
 
   let text: string;
