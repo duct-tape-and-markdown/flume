@@ -1,11 +1,8 @@
 {
   "drainedRuns": {
     "windows": {
-      "run": "36083376750",
-      "titles": [
-        "pendingGate — hint option (PENDING-GATE-HINT-OPTION, .claude/rules/engine-boundary.md § Capability vs convention) > leaves the schema-violation message unchanged when the hint is omitted",
-        "pendingGate — reads ctx.pendingDir, not an option of its own (CHAIN-PENDINGPATH) > undeclared ctx.pendingDir (the default fixture shape) still resolves to plan/pending"
-      ]
+      "run": "34619272992",
+      "titles": []
     },
     "posix": {
       "run": "36047091221",
