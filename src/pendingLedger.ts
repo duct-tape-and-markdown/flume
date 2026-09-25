@@ -511,7 +511,7 @@ export interface PendingRewriteResult {
  * merge", "Harness-driven commits carry no expected-tip bookkeeping": no sha
  * comparison — `liveForeignClaimPid`, checked fresh immediately before this
  * function's own harness-driven `commitPaths` call, the wave's other
- * tip-verify site beside `cherryPickRange` (`runWaveMerge`,
+ * tip-verify site beside `cherryPickRange` (`mergeAttempt`,
  * `src/waveMerge.ts`). Checked before the writes: a refusal here leaves
  * every entry file untouched on disk rather than a write with no commit
  * behind it. No live claim means the rewrite recommits on whatever tip is

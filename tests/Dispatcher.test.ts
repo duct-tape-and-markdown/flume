@@ -344,6 +344,24 @@ async function markersNow(repo: string): Promise<Map<string, unknown>> {
   return out;
 }
 
+/**
+ * Hold until `subject` names a commit on the primary checkout's trunk.
+ *
+ * A wave carries each entry's span as that entry's own agent finishes
+ * (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
+ * teardown"), so which of two siblings reaches trunk first is finish order. A
+ * case that needs a particular order gates the later agent on this event —
+ * never on a sleep, which under the suite's own load is a coin flip.
+ */
+async function awaitOnTrunk(repo: string, subject: string): Promise<void> {
+  await waitFor(`${subject} on the trunk`, async () => {
+    const { stdout } = await exec("git", ["log", "--format=%s", "-n", "50"], {
+      cwd: repo,
+    });
+    return stdout.includes(subject) ? true : undefined;
+  });
+}
+
 function makeEntry(tag: string, editPaths: string[]): PendingEntry {
   return {
     tag,
@@ -1865,7 +1883,11 @@ describe("Dispatcher fanout — two disjoint entries both ship", () => {
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.committed).toBe(true);
-    expect(outcome.result?.shippedTags).toEqual(["TEST-A", "TEST-B"]);
+    // Sorted: a wave carries each span as its own agent finishes
+    // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
+    // teardown"), so the order two clean siblings reach trunk in is finish
+    // order and is no part of this case.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(["TEST-A", "TEST-B"]);
 
     // Trunk advanced past preHead — two cherry-picks + chore commit.
     const trunkHead = await head(fx.repo);
@@ -2369,7 +2391,11 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
     expect(outcome.result?.committed).toBe(true);
     // Batch 1 closes on capacity (2) even though a third disjoint entry was
     // pickable — it stays pending for the next tick's fresh partition.
-    expect(outcome.result?.shippedTags).toEqual(["MP-A", "MP-B"]);
+    // Sorted: a wave carries each span as its own agent finishes
+    // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
+    // teardown"), so the order two clean siblings reach trunk in is finish
+    // order and is no part of this case.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(["MP-A", "MP-B"]);
     expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["MP-C"]);
     expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
       "MP-C",
@@ -2421,7 +2447,11 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
     const outcome = await dispatcher.tick();
 
     expect(outcome.result?.committed).toBe(true);
-    expect(outcome.result?.shippedTags).toEqual([
+    // Sorted: the batch's width is this case's subject, and a wave carries
+    // each span as its own agent finishes (spec/worktrees.md, "Fanout and
+    // worktrees — provisioning, isolation, teardown"), so which of the four
+    // reaches trunk first is finish order and says nothing about the batch.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
       "MPD-A",
       "MPD-B",
       "MPD-C",
@@ -2777,7 +2807,11 @@ describe("Dispatcher fanout — supervisorPolicy.partitionIgnore narrows the col
     // Both entries only ever touch src/pi-a.ts / src/pi-b.ts + the ignored
     // shared-lock.json, so with the ignore in effect they're disjoint and
     // both ship in wave 1 — no cherry-pick conflict on the ignored file.
-    expect(outcome.result?.shippedTags).toEqual(["PI-A", "PI-B"]);
+    // Sorted: a wave carries each span as its own agent finishes
+    // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
+    // teardown"), so the order two clean siblings reach trunk in is finish
+    // order and is no part of this case.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(["PI-A", "PI-B"]);
     expect(outcome.result?.pendingAfter).toEqual([]);
   });
 
@@ -3839,7 +3873,11 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
     // shipped — no `git worktree add` failed on a sibling's concurrent
     // remove (the stale-slug N≥2 wave completes).
     expect(outcome.result?.committed).toBe(true);
-    expect(outcome.result?.shippedTags).toEqual(["RACE-A", "RACE-B"]);
+    // Sorted: a wave carries each span as its own agent finishes
+    // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
+    // teardown"), so the order two clean siblings reach trunk in is finish
+    // order and is no part of this case.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(["RACE-A", "RACE-B"]);
     expect(await readFile(join(fx.repo, "src/race-a.ts"), "utf8")).toBe("A\n");
     expect(await readFile(join(fx.repo, "src/race-b.ts"), "utf8")).toBe("B\n");
     expect(readPendingFromDisk(fx.repo)).toEqual([]);
@@ -4781,16 +4819,24 @@ describe("Dispatcher fanout — the wave's merge failures reach handoff (TICK-RE
     const reported = [...(handedToHandoff!.mergeFailures ?? [])].sort((a, b) =>
       (a.tag ?? "").localeCompare(b.tag ?? ""),
     );
+    // Exactly one span wins the shared channel file and the other two
+    // conflict against it. *Which* one wins is the wave's finish order — a
+    // span is carried as its own agent finishes (spec/worktrees.md, "Fanout
+    // and worktrees — provisioning, isolation, teardown") — so the winner is
+    // read off the result and the two failures are its complement, never a
+    // batch position this case would be pinning by accident.
+    expect(handedToHandoff!.shippedTags).toHaveLength(1);
+    const conflictedTags = [
+      "MERGE-FAIL-A",
+      "MERGE-FAIL-B",
+      "MERGE-FAIL-C",
+    ].filter((t) => t !== handedToHandoff!.shippedTags[0]);
     // Non-vacuity: the wave really did leave two spans off trunk, so what
     // follows is judged over two blamed records and not over an empty list.
     expect(reported).toHaveLength(2);
-    expect(reported.map((f) => f.tag)).toEqual([
-      "MERGE-FAIL-B",
-      "MERGE-FAIL-C",
-    ]);
-    // Only A's work landed — the wave committed, so `committed`/`shippedTags`
-    // alone say nothing about the two that did not.
-    expect(handedToHandoff!.shippedTags).toEqual(["MERGE-FAIL-A"]);
+    expect(reported.map((f) => f.tag)).toEqual(conflictedTags);
+    // Only the winner's work landed — the wave committed, so
+    // `committed`/`shippedTags` alone say nothing about the two that did not.
     expect(handedToHandoff!.committed).toBe(true);
 
     // Each record carries git's own refusal and a signature derived from it
@@ -4805,10 +4851,7 @@ describe("Dispatcher fanout — the wave's merge failures reach handoff (TICK-RE
     // computes it from the queue the wave read: both entries are still
     // pending, their commits having stayed off trunk.
     const stillPending = readPendingFromDisk(fx.repo);
-    expect(stillPending.map((e) => e.tag)).toEqual([
-      "MERGE-FAIL-B",
-      "MERGE-FAIL-C",
-    ]);
+    expect(stillPending.map((e) => e.tag)).toEqual(conflictedTags);
     expect(reported.map((f) => f.quarantineKey)).toEqual(
       stillPending.map((e) => entryDeclaredKey(e)),
     );
@@ -4831,10 +4874,7 @@ describe("Dispatcher fanout — the wave's merge failures reach handoff (TICK-RE
     const conflicted = (outcome.verdict?.mergeOutcomes ?? []).filter(
       (m) => m.outcome === "cherry-pick-conflict",
     );
-    expect(conflicted.map((m) => m.entryTag).sort()).toEqual([
-      "MERGE-FAIL-B",
-      "MERGE-FAIL-C",
-    ]);
+    expect(conflicted.map((m) => m.entryTag).sort()).toEqual(conflictedTags);
     for (const row of conflicted) {
       expect(Object.keys(row)).not.toContain("signature");
       expect(Object.keys(row)).not.toContain("quarantineKey");
@@ -5269,13 +5309,17 @@ describe("Dispatcher fanout — branch and path take no level beneath the base",
 });
 
 describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entry in pending", () => {
-  it("ships the first entry; second cherry-pick aborts; entry persists in pending", async () => {
+  it("ships whichever entry merged first; the other's cherry-pick aborts and it persists in pending", async () => {
     // Both fake agents write their declared file plus a shared baseline file
     // with different content. Declared paths are disjoint so partition packs
     // them together; the shared file is an entryChannelPaths allowance — the
     // surviving conflict vector, since disjoint declared files can no longer
     // collide directly. The first cherry-pick succeeds; the second conflicts
-    // because trunk now has 'from-A' where B's diff expects 'baseline'.
+    // because trunk now carries the winner's line where the loser's diff
+    // expects 'baseline'. Which one wins is the wave's finish order — a span
+    // is carried as its own agent finishes (spec/worktrees.md, "Fanout and
+    // worktrees — provisioning, isolation, teardown") — so every assertion
+    // below reads the winner off the result rather than naming a tag.
     await mkdir(join(fx.repo, "src"), { recursive: true });
     await writeFile(join(fx.repo, "src", "shared.ts"), "baseline\n");
     const repoOpts = { cwd: fx.repo };
@@ -5325,19 +5369,20 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
 
     const outcome = await dispatcher.tick();
 
-    // Only A made it onto trunk.
-    expect(outcome.result?.shippedTags).toEqual(["CONFLICT-A"]);
+    // Exactly one made it onto trunk, and the shared file carries its line.
+    expect(outcome.result?.shippedTags).toHaveLength(1);
+    const winner = outcome.result!.shippedTags![0]!;
+    const loser = winner === "CONFLICT-A" ? "CONFLICT-B" : "CONFLICT-A";
+    const mark = (tag: string) => tag.slice("CONFLICT-".length);
     expect(outcome.result?.committed).toBe(true);
     expect(await readFile(join(fx.repo, "src/shared.ts"), "utf8")).toBe(
-      "from-A\n",
+      `from-${mark(winner)}\n`,
     );
 
     // pending.json now has only the un-shipped entry.
     const onDisk = readPendingFromDisk(fx.repo);
-    expect(onDisk.map((e) => e.tag)).toEqual(["CONFLICT-B"]);
-    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
-      "CONFLICT-B",
-    ]);
+    expect(onDisk.map((e) => e.tag)).toEqual([loser]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([loser]);
 
     // The verdict's per-entry merge outcomes distinguish the two
     // fates — A merged cleanly, B's cherry-pick itself failed.
@@ -5346,21 +5391,26 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
       [...(outcome.verdict?.mergeOutcomes ?? [])].sort((a, b) =>
         (a.entryTag ?? "").localeCompare(b.entryTag ?? ""),
       ),
-    ).toEqual([
-      {
-        entryTag: "CONFLICT-A",
-        outcome: "merged",
-        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
-        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
-      },
-      {
-        entryTag: "CONFLICT-B",
-        outcome: "cherry-pick-conflict",
-        footprint: ["src/decoy-b.ts", "src/shared.ts"],
-        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
-        headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
-      },
-    ]);
+    ).toEqual(
+      [
+        {
+          entryTag: winner,
+          outcome: "merged",
+          baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+          headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+        },
+        {
+          entryTag: loser,
+          outcome: "cherry-pick-conflict",
+          footprint: [
+            `src/decoy-${mark(loser).toLowerCase()}.ts`,
+            "src/shared.ts",
+          ],
+          baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+          headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+        },
+      ].sort((a, b) => a.entryTag.localeCompare(b.entryTag)),
+    );
 
     // Generalized past provisioning (spec/loop.md "Repeated identical
     // failures — quarantine, then abort"): a merge-stage cherry-pick conflict
@@ -5368,13 +5418,10 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
     // entry-scoped, unlike a provisioning failure, so superviseLoop's
     // quarantine leg can isolate it.
     expect(outcome.verdict?.mergeFailures).toEqual([
-      expect.objectContaining({
-        tag: "CONFLICT-B",
-        signature: expect.any(String),
-      }),
+      expect.objectContaining({ tag: loser, signature: expect.any(String) }),
     ]);
     expect(outcome.mergeFailures).toEqual([
-      expect.objectContaining({ tag: "CONFLICT-B" }),
+      expect.objectContaining({ tag: loser }),
     ]);
 
     // No lingering cherry-pick state in the worktree — the dispatcher
@@ -5570,15 +5617,89 @@ describe("Dispatcher — the ship lock and the worktree lock (SIBLING-TICKS-TAKE
   });
 });
 
+/**
+ * THE-WAVE-MERGES-EACH-ENTRY-AS-ITS-AGENT-FINISHES — a wave carries each
+ * entry's span onto the trunk as that entry's own agent finishes, under the
+ * ship lock, from the tip as it then stands (spec/worktrees.md, "Fanout and
+ * worktrees — provisioning, isolation, teardown"). A wave that held every
+ * merge until its slowest agent returned made a two-minute entry's span wait
+ * on a fifteen-minute one before it reached trunk.
+ */
+describe("Dispatcher fanout — a wave merges each entry as its agent finishes", () => {
+  it("a wave merges a finished entry while a slower sibling's agent is still running", async () => {
+    await writePending(fx.repo, [
+      makeEntry("WAVE-FAST", ["src/wave-fast.ts"]),
+      makeEntry("WAVE-SLOW", ["src/wave-slow.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // What the slow agent waits on is the claim itself: the fast entry's own
+    // commit, on the *trunk*, read from the primary checkout from inside a
+    // sibling worktree whose agent has not returned. A wave that held its
+    // merges until the batch settled cannot satisfy it — the wait is then a
+    // deadlock, and this case reds as the wait's own refusal rather than as
+    // a wrong value.
+    let slowSawFastOnTrunk = false;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "wave-fast": (cwd) =>
+          writeAndCommit(cwd, "src/wave-fast.ts", "f\n", "build: WAVE-FAST"),
+        "wave-slow": async (cwd) => {
+          await awaitOnTrunk(fx.repo, "build: WAVE-FAST");
+          slowSawFastOnTrunk = true;
+          await writeAndCommit(cwd, "src/wave-slow.ts", "s\n", "build: WAVE-SLOW");
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The ordering the entry buys: the fast span was already on trunk while
+    // the slow agent was still writing its own worktree.
+    expect(slowSawFastOnTrunk).toBe(true);
+    // And the wave still carried both — the rolling merge is the whole
+    // difference, not a wave that dropped its slower half. Sorted, because
+    // the order spans land is now finish order and this case does not pin it.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "WAVE-FAST",
+      "WAVE-SLOW",
+    ]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+    // Each landed as its own commit on trunk, picked one at a time rather
+    // than as one batch: two spans, two subjects, both reachable from HEAD.
+    const { stdout: subjects } = await exec(
+      "git",
+      ["log", "--format=%s", "-n", "20"],
+      { cwd: fx.repo },
+    );
+    expect(subjects).toContain("build: WAVE-FAST");
+    expect(subjects).toContain("build: WAVE-SLOW");
+  });
+});
+
 describe("Dispatcher fanout — the merge-stage crash marker", () => {
   it("the merge stage writes a merging marker naming the branch, the base sha and the entry before the pick", async () => {
-    // Three entries, picked in batch order. MARK-B's pick *conflicts* and is
-    // aborted — it never reaches an afterMerge gate, never lands on trunk,
-    // never ships. So MARK-B's marker being on disk when MARK-C's gate runs
-    // is only explicable by it having been written ahead of B's own pick:
-    // no later point in B's life had the chance. (The shared file is an
-    // entryChannelPaths allowance, the only way disjoint declared files can
-    // still collide — same vector as the cherry-pick-conflict test above.)
+    // Three entries, carried in A → B → C order. A wave picks each span as
+    // its own agent finishes (spec/worktrees.md, "Fanout and worktrees —
+    // provisioning, isolation, teardown"), so the order is fixed here by
+    // holding each agent on an event the previous entry's merge produces —
+    // never on a sleep, which under the gate's own load is a coin flip.
+    //
+    // MARK-B's pick *conflicts* and is aborted — it never reaches an
+    // afterMerge gate, never lands on trunk, never ships. So MARK-B's marker
+    // being on disk when MARK-C's gate runs is only explicable by it having
+    // been written ahead of B's own pick: no later point in B's life had the
+    // chance. (The shared file is an entryChannelPaths allowance, the only
+    // way disjoint declared files can still collide — same vector as the
+    // cherry-pick-conflict test above.)
     await mkdir(join(fx.repo, "src"), { recursive: true });
     await writeFile(join(fx.repo, "src", "shared.ts"), "baseline\n");
     await exec("git", ["add", "--", "src/shared.ts"], { cwd: fx.repo });
@@ -5614,7 +5735,15 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
     });
 
     const writeEntry =
-      (decoy: string, shared?: string) => async (cwd: string) => {
+      (
+        decoy: string,
+        shared: string | undefined,
+        // The gate on this agent's own finish: resolves once the entry ahead
+        // of it in the intended merge order has reached the stage.
+        turn?: () => Promise<unknown>,
+      ) =>
+      async (cwd: string) => {
+        if (turn) await turn();
         await mkdir(join(cwd, "src"), { recursive: true });
         await writeFile(join(cwd, "src", decoy), "x\n");
         if (shared) await writeFile(join(cwd, "src", "shared.ts"), shared);
@@ -5628,8 +5757,20 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
       configDir: fx.configDir,
       agent: fanoutAgent({
         "mark-a": writeEntry("decoy-a.ts", "from-A\n"),
-        "mark-b": writeEntry("decoy-b.ts", "from-B\n"),
-        "mark-c": writeEntry("decoy-c.ts"),
+        // A's span is on trunk and gated before B's agent even commits —
+        // the probe below only runs after A's pick landed.
+        "mark-b": writeEntry("decoy-b.ts", "from-B\n", () =>
+          waitFor("MARK-A's afterMerge probe", () =>
+            seen.length >= 1 ? true : undefined,
+          ),
+        ),
+        // And B's merge is under way — its marker is staked before its pick
+        // — before C's agent commits.
+        "mark-c": writeEntry("decoy-c.ts", undefined, () =>
+          waitFor("MARK-B's merge marker", async () =>
+            (await markersNow(fx.repo)).has("mark-b.json") ? true : undefined,
+          ),
+        ),
       }),
       log: silent,
       maxParallel: 4,
@@ -6614,11 +6755,12 @@ describe("Dispatcher — staged bystander state is checkpointed to a recoverable
 
 describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMerge-revert site does not crash the tick", () => {
   it("fanout: a collision reverting one entry does not crash the wave; an already-merged sibling still ships and the pending-ledger rewrite still runs", async () => {
-    // SHIP-CLEAN declares the higher `priority`: this case turns on its
-    // merge completing ahead of COLLIDE-BAD's, and the wave's order is that
-    // field rather than the array's (`spec/pending.md`, *The entry core*).
+    // This case turns on SHIP-CLEAN's merge completing ahead of
+    // COLLIDE-BAD's. A wave picks each span as its own agent finishes, so
+    // the order is fixed by holding COLLIDE-BAD's agent until SHIP-CLEAN's
+    // span is on trunk (`awaitOnTrunk`), never by a queue field.
     const entries = [
-      { ...makeEntry("SHIP-CLEAN", ["src/clean.ts"]), priority: 1 },
+      makeEntry("SHIP-CLEAN", ["src/clean.ts"]),
       makeEntry("COLLIDE-BAD", ["src/collide.ts"]),
     ];
     await writePending(fx.repo, entries);
@@ -6655,6 +6797,7 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
         await writeAndCommit(cwd, "src/clean.ts", "clean\n", "build(SHIP-CLEAN)");
       },
       "collide-bad": async (cwd) => {
+        await awaitOnTrunk(fx.repo, "build(SHIP-CLEAN)");
         await writeAndCommit(cwd, "src/collide.ts", "collide\n", "build(COLLIDE-BAD)");
       },
     });
@@ -8453,10 +8596,11 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     // Same corruption mechanism as the single-entry sibling above, but the
     // wave now carries a second, declined entry (the shouldRun seam)
     // alongside the shipping one — the shape spec/loop.md "The tick verdict
-    // — one facts artifact" drift (b) actually describes: `waveDeclined`,
-    // computed from the per-entry loop before `commitPendingUpdate` runs,
-    // must survive onto `WaveLedgerRefusal`'s carried verdict exactly like
-    // `shippedTags` does, not just the trivial single-entry case.
+    // — one facts artifact" drift (b) actually describes: the declined flag
+    // `mergeAttempt` sets as it carries each attempt, before
+    // `commitPendingUpdate` runs, must survive onto `WaveLedgerRefusal`'s
+    // carried verdict exactly like `shippedTags` does, not just the trivial
+    // single-entry case.
     const corrupt = "{ corrupted mid-wave, not json";
     const invoked: string[] = [];
     const agent = fanoutAgent({
@@ -11914,7 +12058,11 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
     });
 
     const outcome = await dispatcher.tick();
-    expect(outcome.result?.shippedTags).toEqual(["TEST-A", "TEST-B"]);
+    // Sorted: a wave carries each span as its own agent finishes
+    // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
+    // teardown"), so the order two clean siblings reach trunk in is finish
+    // order and is no part of this case.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(["TEST-A", "TEST-B"]);
 
     const invocations = outcome.verdict!.invocations;
     expect(invocations).toHaveLength(2);
@@ -12051,7 +12199,11 @@ describe("Uncommitted tracked edits ride the tick verdict (spec/loop.md 'Tip ver
 
     const outcome = await dispatcher.tick();
 
-    expect(outcome.result?.shippedTags).toEqual(["TEST-A", "TEST-B"]);
+    // Sorted: a wave carries each span as its own agent finishes
+    // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
+    // teardown"), so the order two clean siblings reach trunk in is finish
+    // order and is no part of this case.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(["TEST-A", "TEST-B"]);
     const byTag = new Map(
       outcome.verdict!.invocations.map((i) => [i.entryTag, i.uncommittedTracked]),
     );
@@ -12169,7 +12321,11 @@ describe("The rendered prompt is persisted before the agent runs (spec/prompt.md
     });
 
     const outcome = await dispatcher.tick();
-    expect(outcome.result?.shippedTags).toEqual(["REC-A", "REC-B"]);
+    // Sorted: a wave carries each span as its own agent finishes
+    // (spec/worktrees.md, "Fanout and worktrees — provisioning, isolation,
+    // teardown"), so the order two clean siblings reach trunk in is finish
+    // order and is no part of this case.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(["REC-A", "REC-B"]);
     expect(handed.size).toBe(2);
 
     const rows = outcome.verdict!.invocations;
@@ -13119,6 +13275,8 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     // Same conflict vector as the cherry-pick-conflict suite above: disjoint
     // declared files, a shared entryChannelPaths file both agents rewrite,
     // so the second pick lands on trunk content its diff does not expect.
+    // Which one is second is fixed by `awaitOnTrunk` below, because this case
+    // names the conflicting entry.
     await mkdir(join(fx.repo, "src"), { recursive: true });
     await writeFile(join(fx.repo, "src", "shared.ts"), "baseline\n");
     await exec("git", ["add", "--", "src/shared.ts"], { cwd: fx.repo });
@@ -13138,13 +13296,15 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
-    const collide = (decoy: string, mine: string) => async (cwd: string) => {
-      await mkdir(join(cwd, "src"), { recursive: true });
-      await writeFile(join(cwd, "src", decoy), `${mine}\n`);
-      await writeFile(join(cwd, "src", "shared.ts"), `from-${mine}\n`);
-      await exec("git", ["add", "."], { cwd });
-      await exec("git", ["commit", "-q", "-m", `build: ${mine}`], { cwd });
-    };
+    const collide =
+      (decoy: string, mine: string, after?: string) => async (cwd: string) => {
+        if (after) await awaitOnTrunk(fx.repo, after);
+        await mkdir(join(cwd, "src"), { recursive: true });
+        await writeFile(join(cwd, "src", decoy), `${mine}\n`);
+        await writeFile(join(cwd, "src", "shared.ts"), `from-${mine}\n`);
+        await exec("git", ["add", "."], { cwd });
+        await exec("git", ["commit", "-q", "-m", `build: ${mine}`], { cwd });
+      };
 
     const outcome = await new Dispatcher({
       chainLoader: staticLoader(chain),
@@ -13152,7 +13312,9 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       configDir: fx.configDir,
       agent: fanoutAgent({
         "picks-clean": collide("decoy-a.ts", "A"),
-        "picks-dirty": collide("decoy-b.ts", "B"),
+        // PICKS-DIRTY is the entry whose pick must land second, so its agent
+        // does not finish until PICKS-CLEAN's span is on trunk.
+        "picks-dirty": collide("decoy-b.ts", "B", "build: A"),
       }),
       log: silent,
       maxParallel: 4,

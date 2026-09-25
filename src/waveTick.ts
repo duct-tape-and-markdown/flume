@@ -5,8 +5,10 @@
  * teardown that follows them, and the handoff facts it folds out of all three.
  *
  * The stage in the middle that carries each span onto trunk is its own
- * module: `runWaveMerge` (`src/waveMerge.ts`), called under the ship lock it
- * owns.
+ * module (`src/waveMerge.ts`), driven from here once per finished attempt —
+ * `openWaveMerge`, then a serialized `mergeAttempt` behind each agent as it
+ * returns, then `closeWaveMerge` — each of the latter two under the ship
+ * lock it owns.
  *
  * Its sibling is `src/singletonTick.ts` — the same provisioning, attempt and
  * afterMerge machinery over a wave of one — and the orchestration around
@@ -42,7 +44,12 @@ import {
   type ProvisionFailure,
   type StakeLoss,
 } from "./tickVerdict.js";
-import { runWaveMerge, type EntryAttempt } from "./waveMerge.js";
+import {
+  closeWaveMerge,
+  mergeAttempt,
+  openWaveMerge,
+  type EntryAttempt,
+} from "./waveMerge.js";
 import { createWorktree, teardownWorktreeInstance } from "./worktrees.js";
 
 export async function runFanout(
@@ -259,10 +266,42 @@ export async function runFanout(
     }
   }
 
+  // Carry each entry's span onto trunk as that entry's own agent finishes:
+  // the merge/gate/revert stage, one span at a time under its own ship lock
+  // (`src/waveMerge.ts`). A wave never waits on its slowest agent to merge
+  // its fastest (`spec/worktrees.md`, *Fanout and worktrees — provisioning,
+  // isolation, teardown*), so the stage is opened here and fed per finished
+  // attempt rather than called once over a settled batch.
+  const merge = openWaveMerge({
+    leg,
+    phase,
+    provisioned,
+    partitionIgnore,
+    provisionFailures,
+    stakeLosses,
+    clearedPriorAttempts,
+  });
+  // The merges are serialized *in this process* before they reach the lock,
+  // because the ship lock is a pid claim: a second acquire from this same
+  // process would read its own live pid as a holder and wait on itself
+  // forever (`acquireWaitLock`, `src/waitLock.ts`). `mergeTail` is that
+  // queue — each attempt joins it the moment its agent returns, so the order
+  // spans land is finish order, not batch order.
+  let mergeTail: Promise<void> = Promise.resolve();
+  // The first throw out of a merge, held rather than propagated on the spot.
+  // A throw there is the same wall it has always been — it stops the wave
+  // carrying any further span and the ledger rewrite never runs — but the
+  // siblings still running have to settle before this leg can leave, or
+  // their worktrees are torn down under them by nothing.
+  let mergeError: unknown;
+
   // Run agent in each worktree concurrently — skipping any entry whose
   // setupWorktree hook threw above. Its worktree/branch still get torn
   // down in the cleanup loop below; it just never reaches the agent or
   // cherry-pick, so it stays pending like any other provisioning failure.
+  //
+  // Resolved in batch order (the attempts are what `entries` below reports),
+  // while the merges they queue run in finish order.
   const perEntry = await Promise.all(
     provisioned
       .map((entry, i) => ({ entry, i }))
@@ -279,14 +318,25 @@ export async function runFanout(
           pickable,
           claimedTags,
           priorAttempts,
-        ),
+        ).then(async (r) => {
+          const queued = mergeTail.then(() =>
+            mergeError === undefined ? mergeAttempt(merge, r) : undefined,
+          );
+          // The tail itself never rejects: a merge that threw must not take
+          // the queue down with it, or every sibling behind it would reject
+          // with the same error and the wave would report a wall per entry.
+          mergeTail = queued.catch((err) => {
+            mergeError ??= err;
+          });
+          await mergeTail;
+          return r;
+        }),
       ),
   );
+  if (mergeError !== undefined) throw mergeError;
 
-  // Carry each entry's span onto trunk: the serial merge/gate/revert/ledger
-  // stage, under its own ship lock (`runWaveMerge`, `src/waveMerge.ts`). The
-  // per-entry agent fanout above stays parallel — this stage is the part that
-  // touches shared git state, so it runs one span at a time.
+  // Close the stage: the pending-ledger rewrite over everything that landed,
+  // under the ship lock like each pick was.
   //
   // A `WaveLedgerRefusal` thrown out of it propagates past the worktree
   // cleanup below, straight to `tick()`'s catch: the spans it already landed
@@ -295,16 +345,7 @@ export async function runFanout(
   // next `pruneWorktrees` call reclaims their metadata once a human has
   // cleared the refusal, and the claims below stay staked for the same reason
   // — the reclaim needs no repair.
-  const mergeStage = await runWaveMerge({
-    leg,
-    phase,
-    perEntry,
-    provisioned,
-    partitionIgnore,
-    provisionFailures,
-    stakeLosses,
-    clearedPriorAttempts,
-  });
+  const mergeStage = await closeWaveMerge(merge);
 
   // Cleanup worktrees. Best-effort teardown fires before git.removeWorktree
   // so chain-provisioned ephemera (per-worktree DB, scratch lease, etc.)
