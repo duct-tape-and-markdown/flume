@@ -5,6 +5,7 @@
  */
 
 import { type TickOutcome } from "./Dispatcher.js";
+import { clauseOf, type ExitCauseLabel } from "./exitCauses.js";
 import { EX_TERMINAL_MISCONFIG, EX_MOUNT_DEAD } from "./exitCodes.js";
 import { type PhaseAgentUsage, type TickVerdict } from "./tickVerdict.js";
 import type { SuperviseResult } from "./loopSupervisor.js";
@@ -20,11 +21,13 @@ import type { CurrentRef } from "./git.js";
  *
  * One standalone clause per cause: the reader of these is a `--help`
  * exit-code block (`src/cliHelp.ts`), which lays each out on its own line
- * and supplies no connective vocabulary of its own.
+ * and supplies no connective vocabulary of its own. `docs/CLI.md` documents
+ * the same range in its own register and cannot carry that clause whole,
+ * so the clause designates the span both surfaces share as its
+ * {@link ExitCauseLabel.phrase}.
  */
-interface TickExitCause {
+interface TickExitCause extends ExitCauseLabel {
   readonly code: number;
-  readonly cause: string;
 }
 
 /**
@@ -44,10 +47,11 @@ const TICK_EXIT_ARMS: readonly TickExitArm[] = [
   {
     // A chain that resolved but declares an inconsistent world.
     code: EX_TERMINAL_MISCONFIG,
-    cause:
-      "Terminal misconfiguration (EX_CONFIG): every awake flag names a " +
-      "phase the chain does not declare. The flags are left on disk — " +
-      "inspect, then `flume sleep <phase>` or fix the chain.",
+    phrase: "Terminal misconfiguration",
+    rest:
+      " (EX_CONFIG): every awake flag names a phase the chain does not " +
+      "declare. The flags are left on disk — inspect, then `flume sleep " +
+      "<phase>` or fix the chain.",
     when: (outcome) => outcome.terminal !== undefined,
   },
   {
@@ -59,26 +63,30 @@ const TICK_EXIT_ARMS: readonly TickExitArm[] = [
     // not the tick's: no agent ran, no baton flag moved, and the chain
     // mounted fine.
     code: 2,
-    cause:
-      "`--phase <name>` named a phase the chain does not declare — the " +
-      "refusal names the phases it does, no agent runs, and no baton flag " +
-      "moves, the same code `wake`, `sleep` and `render` answer an " +
-      "undeclared phase name with.",
+    phrase: "`--phase <name>`",
+    rest:
+      " named a phase the chain does not declare — the refusal names the " +
+      "phases it does, no agent runs, and no baton flag moves, the same " +
+      "code `wake`, `sleep` and `render` answer an undeclared phase name " +
+      "with.",
     when: (outcome) => outcome.undeclaredPhase !== undefined,
   },
   {
     // A nameable fix, and read before `failed` for the same reason: a
     // chain-load failure sets at most one of these two.
     code: 2,
-    cause:
-      "The chain load failed with the CJS-context refusal — the host " +
-      'repo\'s package.json (or the one beside .flume/chain.ts) lacks "type": ' +
-      '"module". Add it and re-run.',
+    opening: "The chain load failed with ",
+    phrase: "the CJS-context refusal",
+    rest:
+      " — the host repo's package.json (or the one beside .flume/chain.ts) " +
+      'lacks "type": "module". Add it and re-run.',
     when: (outcome) => outcome.usageError === true,
   },
   {
     code: 0,
-    cause: "Success, or hibernation (no phase awake).",
+    opening: "Success, or ",
+    phrase: "hibernation",
+    rest: " (no phase awake).",
     when: (outcome) => outcome.failed !== true,
   },
   {
@@ -89,13 +97,13 @@ const TICK_EXIT_ARMS: readonly TickExitArm[] = [
     // over a wall the next process has every reason to get past, so it exits
     // 1 and the run proceeds.
     code: 1,
-    cause:
-      "A wave whose entries merged and gated clean and whose " +
-      "pending-ledger commit then refused — a paused merge or cherry-pick " +
-      "in the checkout, a lost index.lock: the shipped entries are on " +
-      "trunk, the chain is fine, and a fresh process has every reason to " +
-      "get further. Clear the refusal and re-run; the queue still names " +
-      "what has not shipped.",
+    opening: "A wave whose entries merged and gated clean and whose ",
+    phrase: "pending-ledger commit",
+    rest:
+      " then refused — a paused merge or cherry-pick in the checkout, a " +
+      "lost index.lock: the shipped entries are on trunk, the chain is " +
+      "fine, and a fresh process has every reason to get further. Clear " +
+      "the refusal and re-run; the queue still names what has not shipped.",
     when: (outcome) => outcome.ledgerRefusal === "commit-refusal",
   },
 ];
@@ -111,13 +119,14 @@ const TICK_EXIT_ARMS: readonly TickExitArm[] = [
  */
 const TICK_EXIT_OTHERWISE: TickExitCause = {
   code: EX_MOUNT_DEAD,
-  cause:
-    "Mount-dead (EX_UNAVAILABLE): the chain module could not load, its " +
-    "state root is missing, or its declaration is invalid. No agent ran — " +
-    "fix the chain (or its state root) and re-run. Also the queue failing " +
-    "to parse, where a fresh process reads the same bytes until the " +
-    "queue's declared writer runs over them; a wave that shipped before " +
-    "its rewrite read hit them still exits 69, and its work is on trunk.",
+  phrase: "Mount-dead",
+  rest:
+    " (EX_UNAVAILABLE): the chain module could not load, its state root is " +
+    "missing, or its declaration is invalid. No agent ran — fix the chain " +
+    "(or its state root) and re-run. Also the queue failing to parse, " +
+    "where a fresh process reads the same bytes until the queue's declared " +
+    "writer runs over them; a wave that shipped before its rewrite read " +
+    "hit them still exits 69, and its work is on trunk.",
 };
 
 /**
@@ -131,15 +140,35 @@ export function tickExitCode(outcome: TickOutcome): number {
 }
 
 /**
- * Why `flume tick` exits with `code` — one phrase per arm that answers it,
- * in the order {@link tickExitCode} reads them. Empty for a code no arm
- * returns: the process reaches 74 without ever classifying an outcome, and
- * the page that documents that row owns its causes.
+ * The arms that answer `code`, in the order {@link tickExitCode} reads
+ * them — one walk, so the two reads below cannot disagree about which arms
+ * a code has (`.claude/rules/engineering.md`, *A module is one job*). Empty
+ * for a code no arm returns: the process reaches 74 without ever
+ * classifying an outcome, and the page that documents that row owns its
+ * causes.
+ */
+function tickExitArmsFor(code: number): TickExitCause[] {
+  return [...TICK_EXIT_ARMS, TICK_EXIT_OTHERWISE].filter(
+    (arm) => arm.code === code,
+  );
+}
+
+/**
+ * Why `flume tick` exits with `code` — one standalone clause per arm that
+ * answers it, for a `--help` exit-code block to lay out.
  */
 export function tickExitCauses(code: number): readonly string[] {
-  return [...TICK_EXIT_ARMS, TICK_EXIT_OTHERWISE]
-    .filter((arm) => arm.code === code)
-    .map((arm) => arm.cause);
+  return tickExitArmsFor(code).map(clauseOf);
+}
+
+/**
+ * The phrase each of those arms is labelled with — what a surface
+ * documenting `code` in a register of its own states that arm's cause
+ * under, when the whole clause above is more than its register can carry
+ * (`docs/CLI.md`, which spends one flowing sentence per verb on the range).
+ */
+export function tickExitPhrases(code: number): readonly string[] {
+  return tickExitArmsFor(code).map((arm) => arm.phrase);
 }
 
 /**

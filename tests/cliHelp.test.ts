@@ -19,7 +19,11 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
-import { helpPageFor } from "../src/cliHelp.ts";
+import {
+  SHARED_ROOT_ONLY_LEAD,
+  SHARED_ROOT_PHRASES,
+  helpPageFor,
+} from "../src/cliHelp.ts";
 import {
   STATE_ROOT_DIRNAME,
   STATE_ROOT_NAMES,
@@ -35,6 +39,7 @@ import {
   loopExitCode,
   tickExitCauses,
   tickExitCode,
+  tickExitPhrases,
 } from "../src/cliVerdict.ts";
 import {
   DEFAULT_ABORT_THRESHOLD,
@@ -537,6 +542,17 @@ function sentencesNamingExitCode(section: string, code: number): string[] {
     );
 }
 
+/**
+ * A passage as a phrase read compares it: the page's own wrapping folded
+ * out, since a phrase broken across two source lines is one phrase, and case
+ * folded, since a phrase opening a `--help` row is capitalized where the
+ * same phrase mid-sentence on a page is not. Nothing else — the backticks a
+ * phrase carries are part of what it names.
+ */
+function asStated(prose: string): string {
+  return prose.replace(/\s+/g, " ").toLowerCase();
+}
+
 /** `docs/CLI.md` as the working tree holds it. */
 async function readCliDoc(): Promise<string> {
   return readFile(
@@ -578,6 +594,173 @@ describe("docs/CLI.md's flume tick section against tickExitCode's derived range 
     expect(namedExitCodes(section)).toEqual(
       wholeRange(returned, TICK_PROCESS_LEVEL_EXIT_CODES),
     );
+  });
+});
+
+/**
+ * CLI-DOC-TICK-EXIT-CAUSES-PINNED-PER-ARM — the other half of the read
+ * above. The page names the right codes, and each code's sentences state the
+ * cause of the arm that returns it — the drift the `--help` block's own rows
+ * already refuse, now for the second prose copy of the same range.
+ *
+ * The page cannot carry the block's clause whole: the block lays each cause
+ * out as a standalone clause, the page spends one flowing sentence per verb
+ * on the whole range. What crosses is the phrase each arm designates inside
+ * its own clause (`tickExitPhrases`, `src/cliVerdict.ts`), so both surfaces
+ * are read against the label the arm carries rather than against each other
+ * — two prose copies compared to each other move together in the commit that
+ * changes the behavior, and agree while both are wrong
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+describe("docs/CLI.md's flume tick causes against the labels their arms carry (CLI-DOC-TICK-EXIT-CAUSES-PINNED-PER-ARM)", () => {
+  it("docs/CLI.md's flume tick section states each exit code's cause under the phrase its arm is labelled with", async () => {
+    const { returned, spanned } = driveTickExitCodes();
+    // Non-vacuity, as above: a collapsed outcome space or range would leave
+    // every read below holding over almost nothing.
+    expect(spanned).toBeGreaterThan(1);
+    expect(returned.size).toBeGreaterThan(1);
+
+    const labelled = [...returned].map(
+      (code) => [code, tickExitPhrases(code)] as const,
+    );
+    // Every code the classifier returns is labelled at its arm, and one code
+    // carries two labels — which is what makes this a per-arm read rather
+    // than a per-code one, exactly as the block's own row read is.
+    expect(
+      labelled.filter(([, phrases]) => phrases.length === 0).map(([code]) => code),
+    ).toEqual([]);
+    expect(
+      Math.max(...labelled.map(([, phrases]) => phrases.length)),
+    ).toBeGreaterThan(1);
+    // And each phrase is its arm's own span of the clause the block renders,
+    // so the page below is read against the words the shipped help text
+    // really carries rather than against a label nothing states.
+    for (const [code, phrases] of labelled) {
+      const clauses = asStated(tickExitCauses(code).join("\n"));
+      for (const phrase of phrases) {
+        expect(
+          clauses,
+          `the ${code} block rows do not state the phrase their arms are labelled with`,
+        ).toContain(asStated(phrase));
+      }
+    }
+
+    const section = sectionOf(await readCliDoc(), "## `flume tick`");
+    expect(section.length).toBeGreaterThan(0);
+
+    const windows = new Map(
+      labelled.map(([code]) => [
+        code,
+        asStated(sentencesNamingExitCode(section, code).join("\n")),
+      ]),
+    );
+    for (const [code, phrases] of labelled) {
+      const window = windows.get(code)!;
+      expect(
+        window.length,
+        `the section spends no sentence on ${code}`,
+      ).toBeGreaterThan(0);
+      for (const phrase of phrases) {
+        expect(
+          window,
+          `the ${code} sentences do not state the cause its arm is labelled with`,
+        ).toContain(asStated(phrase));
+      }
+    }
+
+    // The window is scoped to one code rather than to the section: the page
+    // documents the whole range in one paragraph, so a reader handing back
+    // all of it would carry every arm's phrase into every code's window and
+    // pass over a sentence that had gone silent.
+    const missed = labelled.flatMap(([code]) =>
+      labelled
+        .filter(([other]) => other !== code)
+        .flatMap(([, phrases]) => phrases)
+        .filter((phrase) => !windows.get(code)!.includes(asStated(phrase))),
+    );
+    expect(
+      missed.length,
+      "the per-code read handed back the same text for every code",
+    ).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * CLI-DOC-SHARED-ROOT-CAUSES-PINNED-PER-VERB — the refusals bay discovery
+ * takes before any verb reaches work of its own. The help blocks render them
+ * from one clause (`SHARED_ROOT_PHRASES`, `src/cliHelp.ts`); `docs/CLI.md`
+ * spells them again per verb section, in its own register, and those copies
+ * had drifted apart from each other and from the clause.
+ *
+ * Scoped to the verbs whose `74` row says the shared refusals are its only
+ * ones, read off the shipped pages rather than listed here: a verb with
+ * refusals of its own documents those beside these, and which verbs those
+ * are is the help table's to say (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*).
+ */
+describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-SHARED-ROOT-CAUSES-PINNED-PER-VERB)", () => {
+  it("each docs/CLI.md verb section states the shared state-root exit-code cause the help block renders for that verb", async () => {
+    const names = topLevelCommandNames();
+    const sharedOnly = names.filter((name) => {
+      const page = helpPageFor(name);
+      expect(page, `the help table answers no page for \`${name}\``).toBeDefined();
+      const row = documentedExitCodeRows(page!).get(EX_IOERR);
+      return (
+        row !== undefined && asStated(row).includes(asStated(SHARED_ROOT_ONLY_LEAD))
+      );
+    });
+    // Non-vacuity in both directions: a marker that matched nothing would
+    // leave this green over no verb at all, and one that matched every verb
+    // would not be reading "this verb's only ones" — the verbs with refusals
+    // of their own are what it has to leave out.
+    expect(sharedOnly.length).toBeGreaterThan(1);
+    expect(sharedOnly.length).toBeLessThan(names.length);
+    expect(SHARED_ROOT_PHRASES.length).toBeGreaterThan(1);
+
+    const doc = await readCliDoc();
+    for (const name of sharedOnly) {
+      // The producer's side first: the phrases are spans of the clause the
+      // shipped row really renders, so the page is read against what an
+      // operator running `--help` sees.
+      const row = asStated(documentedExitCodeRows(helpPageFor(name)!).get(EX_IOERR)!);
+      for (const phrase of SHARED_ROOT_PHRASES) {
+        expect(
+          row,
+          `flume ${name} --help's ${EX_IOERR} row does not state one of its own causes`,
+        ).toContain(asStated(phrase));
+      }
+
+      const section = sectionOf(doc, new RegExp(`^## \`flume ${name}\\b`));
+      expect(section.length, `docs/CLI.md has no \`flume ${name}\` section`).toBeGreaterThan(0);
+      const window = asStated(sentencesNamingExitCode(section, EX_IOERR).join("\n"));
+      for (const phrase of SHARED_ROOT_PHRASES) {
+        expect(
+          window,
+          `docs/CLI.md's flume ${name} section states no ${EX_IOERR} cause under one of the phrases the row renders`,
+        ).toContain(asStated(phrase));
+      }
+    }
+
+    // The window is scoped to this code rather than to the section: each of
+    // these sections documents usage refusals too, and those sentences carry
+    // none of the shared causes, so a reader handing back the whole section
+    // could not tell a stated cause from a neighbouring one.
+    const elsewhere = sharedOnly.flatMap((name) => {
+      const section = sectionOf(doc, new RegExp(`^## \`flume ${name}\\b`));
+      return namedExitCodes(section)
+        .filter((code) => code !== EX_IOERR)
+        .flatMap((code) => {
+          const window = asStated(sentencesNamingExitCode(section, code).join("\n"));
+          return SHARED_ROOT_PHRASES.filter(
+            (phrase) => !window.includes(asStated(phrase)),
+          );
+        });
+    });
+    expect(
+      elsewhere.length,
+      "the per-code read handed back the whole section",
+    ).toBeGreaterThan(0);
   });
 });
 

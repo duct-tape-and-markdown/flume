@@ -6,6 +6,7 @@
  */
 
 import { tickExitCauses } from "./cliVerdict.js";
+import { clauseOf, type ExitCauseLabel } from "./exitCauses.js";
 import {
   DEFAULT_ABORT_THRESHOLD,
   DEFAULT_MAX_TICKS,
@@ -28,32 +29,84 @@ const SUBCOMMANDS = [
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 /**
- * The `EX_IOERR` causes every verb shares, worded once. Bay discovery and the
- * state-root resolution behind it both run before any verb reaches work of
- * its own, and every way they can fail to hand back a usable root lands here,
- * so every page's `74` row carries them and no page states a narrower range
- * than its own process can return (`spec/loop.md`, *Exit codes — the run
- * never lies to CI*).
+ * The `EX_IOERR` causes every verb shares, labelled once. Bay discovery and
+ * the state-root resolution behind it both run before any verb reaches work
+ * of its own, and every way they can fail to hand back a usable root lands
+ * here, so every page's `74` row carries them and no page states a narrower
+ * range than its own process can return (`spec/loop.md`, *Exit codes — the
+ * run never lies to CI*).
+ *
+ * Labelled rather than spelled as flat prose because `docs/CLI.md` states
+ * these same refusals per verb in a register of its own: each carries the
+ * phrase that copy has to state it under ({@link ExitCauseLabel}).
  */
-const SHARED_ROOT_LINES = [
-  `The state root (\`${STATE_ROOT_DIRNAME}\`) is present but will not stat at the bay`,
-  "discovery every verb starts with — a symlink loop, a permission-denied",
-  "parent. Refused rather than walked past to an unrelated ancestor's",
-  "bay, naming the cwd the walk began at and the underlying error.",
-  "Or that walk resolved a bay below the root git names paths from —",
-  "every path composed against it would be spelled in an alphabet git",
-  "does not use. Refused before the first one is composed, naming",
-  "both roots. Or the root it resolved stats clean and is not a",
-  "directory, so nothing can be read or made beneath it: refused where",
-  "the roots resolve, ahead of every verb's own work, naming the root",
-  "rather than the first path under it a verb would have tried. An",
-  "absent state root is none of these — that is an ordinary first run.",
+const SHARED_ROOT_CAUSES: readonly ExitCauseLabel[] = [
+  {
+    phrase: `The state root (\`${STATE_ROOT_DIRNAME}\`) is present but will not stat`,
+    rest:
+      " at the bay discovery every verb starts with — a symlink loop, a " +
+      "permission-denied parent. Refused rather than walked past to an " +
+      "unrelated ancestor's bay, naming the cwd the walk began at and the " +
+      "underlying error.",
+  },
+  {
+    opening: "Or that walk resolved a bay ",
+    phrase: "below the root git names paths from",
+    rest:
+      " — every path composed against it would be spelled in an alphabet " +
+      "git does not use. Refused before the first one is composed, naming " +
+      "both roots.",
+  },
+  {
+    opening: "Or the root it resolved ",
+    phrase: "stats clean and is not a directory",
+    rest:
+      ", so nothing can be read or made beneath it: refused where the roots " +
+      "resolve, ahead of every verb's own work, naming the root rather than " +
+      "the first path under it a verb would have tried.",
+  },
 ];
+
+/**
+ * What closes the shared clause: an absent state root is an ordinary first
+ * run, not one of the refusals above. No surface documents it as a cause of
+ * its own, so it carries no label — it is the clause's closing note.
+ */
+const ABSENT_ROOT_NOTE =
+  "An absent state root is none of these — that is an ordinary first run.";
+
+/** The whole shared clause, as a `74` row states it. */
+const SHARED_ROOT_CLAUSE = [
+  ...SHARED_ROOT_CAUSES.map(clauseOf),
+  ABSENT_ROOT_NOTE,
+].join(" ");
+
+/**
+ * The phrases those causes are labelled with — what every surface
+ * documenting this verb's `74` row states them under, whatever register it
+ * states them in. Exported for the seam that reads `docs/CLI.md`'s per-verb
+ * copies against this clause.
+ */
+export const SHARED_ROOT_PHRASES: readonly string[] = SHARED_ROOT_CAUSES.map(
+  (cause) => cause.phrase,
+);
+
+/**
+ * The lead a `74` row takes when the shared causes are the whole of it —
+ * the verb reads the state root and nothing else before it answers, so its
+ * every other refusal is usage-shaped or a chain that would not come up.
+ * Exported as the marker for which verbs those are, so nothing restates the
+ * list beside {@link HELP_SUB}.
+ */
+export const SHARED_ROOT_ONLY_LEAD =
+  "I/O error (EX_IOERR): the refusals every verb shares, and this verb's " +
+  "only ones.";
 
 /**
  * The clause above, wrapped into a page's own exit-code block. `indent` is
  * that block's continuation column — a block aligns its rows to the widest
- * code it lists, so `check`'s sits one past everyone else's.
+ * code it lists, so `check`'s sits one past everyone else's. The first line
+ * is unindented: the page's own template supplies that column.
  *
  * Rendered rather than spelled once per page: ten hand copies of one
  * sentence is the shape that leaves nine of them stale
@@ -61,22 +114,15 @@ const SHARED_ROOT_LINES = [
  * restated beside its source*).
  */
 function sharedRootRefusal(indent: number): string {
-  return SHARED_ROOT_LINES.join(`\n${" ".repeat(indent)}`);
+  return wrapClause(SHARED_ROOT_CLAUSE, indent).join(`\n${" ".repeat(indent)}`);
 }
 
 /**
  * The whole `74` row for a verb that reads the state root and nothing else
- * before it answers — `wake`, `sleep`, `stop`, `render`. Their every other
- * refusal is usage-shaped or a chain that would not come up, so the root
- * itself is the only file read they can take.
+ * before it answers — `wake`, `sleep`, `stop`, `render`.
  */
 function sharedRootRow(indent: number): string {
-  const pad = " ".repeat(indent);
-  return (
-    `  74${" ".repeat(indent - 4)}I/O error (EX_IOERR): the refusals every verb shares,\n` +
-    `${pad}and this verb's only ones.\n` +
-    `${pad}${sharedRootRefusal(indent)}`
-  );
+  return exitCodeRow(74, [SHARED_ROOT_ONLY_LEAD, SHARED_ROOT_CLAUSE], indent);
 }
 
 /**
@@ -169,7 +215,7 @@ function tickExitCodeBlock(): string {
           "already landed and it has printed its own summary; recording is " +
           "what failed and there is nothing to re-run. Naming the file and " +
           "the underlying error.",
-        SHARED_ROOT_LINES.join(" "),
+        SHARED_ROOT_CLAUSE,
       ],
     ],
     [78, []],
