@@ -3,8 +3,10 @@
   "gate": {
     "kind": "open"
   },
+  "dependsOnForks": [],
   "priority": 30,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "src/pidClaim.ts",
@@ -34,7 +36,8 @@
         "path": "docs/CLI.md",
         "description": "the `flume loop` section's two-line guard shape and its live-holder refusal, which the third line retires"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "The tip claim states pid and instant only, so a second effort in one checkout under its own FLUME_DIR refuses as a busy tip, naming neither state root",
   "per": {
@@ -46,5 +49,16 @@
     "the tip claim states the state root its holder resolved on its third line",
     "a second tick in one checkout under its own state root refuses naming both the root that holds the tip and the root it resolved"
   ],
-  "notes": "Ruled 76262932 \u2014 a checkout has one tip. Verified: `renderPidClaim` (`src/pidClaim.ts`) writes two lines; `TipClaimHeldError` (`src/git.ts:1117`) names ref, pid and path only, and both CLI sites print `err.message` alone (`src/cli.ts:1242`, `:1478`). `flumeDir` is in scope at both. Widened this tick off the retired-claim delta: `docs/CLI.md:61` still states \u201cBoth files carry the same two lines\u201d. Seams `src/cli.ts` with THE-SUPERVISOR-CLAIM-HANDOFF-IS-DECODED-ONCE."
+  "pins": [],
+  "notes": "Ruled 76262932 — a checkout has one tip. Verified: `renderPidClaim` (`src/pidClaim.ts`) writes two lines; `TipClaimHeldError` (`src/git.ts:1117`) names ref, pid and path only, and both CLI sites print `err.message` alone (`src/cli.ts:1242`, `:1478`). `flumeDir` is in scope at both. Widened this tick off the retired-claim delta: `docs/CLI.md:61` still states “Both files carry the same two lines”. Seams `src/cli.ts` with THE-SUPERVISOR-CLAIM-HANDOFF-IS-DECODED-ONCE.",
+  "observedFiles": [
+    ".flume/plan/notes/THE-TIP-CLAIM-NAMES-THE-STATE-ROOT-IT-HOLDS-FOR.md",
+    "docs/CHAIN-AUTHORING.md",
+    "src/cli.ts",
+    "src/git.ts",
+    "src/pidClaim.ts",
+    "tests/cli.test.ts",
+    "tests/git.test.ts",
+    "tests/pidClaim.test.ts"
+  ]
 }
