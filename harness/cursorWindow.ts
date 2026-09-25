@@ -34,7 +34,7 @@ import {
 } from "./gitRange.js";
 import { planStatePath } from "./layout.js";
 import { cursorSlice, readCursor, type CursorField } from "./planState.js";
-import type { WindowContext } from "./sliceWindow.js";
+import { windowRefusal, type WindowContext } from "./sliceWindow.js";
 
 /**
  * The window a slice drawn past this cursor opens: the commits past it handed
@@ -110,19 +110,22 @@ const stateFileFor = (field: CursorField, flumeDir: string): string =>
   planStatePath(flumeDir, cursorSlice(field));
 
 /**
- * The window an unreadable range opens over: nothing, loudly.
+ * The window an unreadable range opens over: nothing, loudly — in the shape
+ * every window that cannot be computed refuses in ({@link windowRefusal},
+ * `sliceWindow.ts`, which is where the reason it is rendered rather than
+ * thrown is stated).
  *
- * Rendered into the prompt rather than thrown out of it, and that is
- * deliberate. A throw here kills the tick before any agent runs — the engine
- * invokes `promptArgs` uncaught — so the tick ends with no verdict and the
- * next one is woken over the same unreadable tree with nothing said. The
- * refusal instead reaches the woken slice, naming what could not be read and
- * forbidding any cursor advance in the meantime
- * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * The stand-down is the same for both refusals below and stated once here: a
+ * cursor window's whole output is the commits past a cursor, so a tick handed
+ * one it could not read has nothing to process and no ground to move the
+ * cursor over.
  */
 const refusal = (cause: string, repair: string): string =>
-  `REFUSE: ${cause}, so this window cannot be computed. Process nothing and ` +
-  `advance no cursor this tick; ${repair}`;
+  windowRefusal({
+    cause,
+    standDown: "Process nothing and advance no cursor",
+    repair,
+  });
 
 /** The refusal a cursor that names no commit in this tree renders. */
 const unresolvedCursor = (

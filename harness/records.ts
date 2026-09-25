@@ -36,6 +36,7 @@ import {
   filesCarrying,
   pathsUnderStateRoot,
 } from "./dirListing.js";
+import { detailOf } from "./exec.js";
 import { tipPathsUnder } from "./gitRange.js";
 import { NOTE_DIR_RELS, RECORD_DIR_NAMES, RECORD_EXT } from "./layout.js";
 
@@ -207,23 +208,60 @@ function claimedNotes(
 }
 
 /**
+ * {@link recordFiles} over `tree`, with the failure it raises **reported
+ * rather than thrown**: the files waiting, or the reason the queue could not
+ * be listed.
+ *
+ * One home for "can this tree's queue be read at all", because two readers
+ * ask it and they stand in different trees. The wake asks it of the tip and
+ * fails open on the answer ({@link recordsPending}); the tick that wake woke
+ * asks it again, of the same tip, and refuses in its own window on it
+ * (`inboxWindow.ts`). Two try blocks beside each other would be two readings
+ * of one attempt, free to disagree about what an unreadable queue is
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ *
+ * Exactly one of the two comes back, never an empty file set standing in for
+ * a failure: a listing that reported "unreadable" as "drained" is the silent
+ * degradation both readers exist to refuse (`.claude/rules/engineering.md`,
+ * *Loud or nothing*).
+ *
+ * The failure's text is the platform's own, folded by the package's one
+ * reader of that ({@link detailOf}, `harness/exec.ts`). What stopped the
+ * listing is a git exit or an errno, and classifying it here would be this
+ * module deciding a meaning it was never given
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ */
+export function listRecords(
+  tree: RecordTree,
+  claimed: readonly string[] = [],
+): { readonly files: readonly string[] } | { readonly failure: string } {
+  try {
+    return { files: recordFiles(tree, claimed) };
+  } catch (err) {
+    return { failure: detailOf(err) };
+  }
+}
+
+/**
  * Whether any record is waiting to be drained in `tree` — the inbox slice's
  * record leg, true while {@link recordFiles} names anything.
  *
- * Where that listing throws, the window reports **live**: an unreadable
- * queue is a reason to run the tick that drains it, never a reason to skip
- * one. That is a degraded path taken deliberately, and it is bounded — the
- * slice it wakes renders the same listing and fails loudly there rather than
- * proceeding over the unread bytes (`.claude/rules/engineering.md`, *Loud or
- * nothing*).
+ * Where that listing could not be made, the wake reports **live**: an
+ * unreadable queue is a reason to run the tick that drains it, never a reason
+ * to skip one. That is a degraded path taken deliberately, and the refusal
+ * that bounds it is the woken tick's own record window — which makes the same
+ * listing, in the same tree, and hands the tick a `REFUSE:` block naming what
+ * could not be read instead of a block that would read as a drained queue
+ * (`renderRecordQueues`, `harness/inboxWindow.ts`;
+ * `.claude/rules/engineering.md`, *Loud or nothing*). The bound is the
+ * listing being re-made where the tick is, never this answer carried there:
+ * the wake runs at the handoff, in a process the tick does not share.
  */
 export function recordsPending(
   tree: RecordTree,
   claimed: readonly string[] = [],
 ): boolean {
-  try {
-    return recordFiles(tree, claimed).length > 0;
-  } catch {
-    return true;
-  }
+  const listing = listRecords(tree, claimed);
+  return "failure" in listing || listing.files.length > 0;
 }

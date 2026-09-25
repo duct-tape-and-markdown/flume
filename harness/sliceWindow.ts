@@ -1,7 +1,8 @@
 /**
  * The vocabulary one plan slice's window is spelled in (`spec/harness.md`,
- * *The phases*): what a tick hands a window, what a window hands back, and
- * the line budget a render works within.
+ * *The phases*): what a tick hands a window, what a window hands back, the
+ * line budget a render works within, and the shape a window that could not be
+ * computed refuses in.
  *
  * Every window in this package and the assembly that collects them
  * (`windows.ts`) is typed from here, so the three slices share one spelling
@@ -164,3 +165,38 @@ export const budgetOf = (options: PlanSliceWindowsOptions): number =>
  */
 export const queueResolved = (window: SliceWindow): boolean =>
   window.queueParseFailure === undefined;
+
+/**
+ * A window that could not be computed, as the material the slice it woke is
+ * handed: what failed, what the tick must not do over it, and the repair.
+ *
+ * **Rendered into the prompt rather than thrown out of it**, and that is
+ * deliberate. A throw kills the tick before any agent runs — the engine
+ * invokes `promptArgs` uncaught — so the tick ends with no verdict and the
+ * next one is woken over the same unreadable input with nothing said. The
+ * refusal instead reaches the woken slice, naming what could not be read and
+ * forbidding the work it would otherwise have done
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * **One spelling, because two windows refuse.** A cursor range git will not
+ * read (`cursorWindow.ts`) and a record listing the wake could not make
+ * (`inboxWindow.ts`) are one shape to the tick that is handed either: the
+ * `REFUSE:` lead is what a prompt paragraph tells an agent to stop on, and a
+ * second spelling beside this is a block one reader keys on and the other
+ * misses (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * `standDown` is the one part that is the caller's: what a tick must not do
+ * over an unreadable window is the window's own — a cursor it must not
+ * advance, a record it must not route — and this composer has no way to know
+ * it.
+ */
+export const windowRefusal = (refusal: {
+  /** What failed, in the failing reader's own words. */
+  readonly cause: string;
+  /** What this tick must not do, as an imperative with no trailing period. */
+  readonly standDown: string;
+  /** What repairs it, as a sentence. */
+  readonly repair: string;
+}): string =>
+  `REFUSE: ${refusal.cause}, so this window cannot be computed. ` +
+  `${refusal.standDown} this tick; ${refusal.repair}`;

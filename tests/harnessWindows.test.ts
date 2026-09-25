@@ -875,6 +875,76 @@ it("the inbox window renders no record its tick's own tree does not hold", () =>
 });
 
 /**
+ * The wake's record leg fails open — a tip it could not list wakes the drain
+ * rather than skipping it (`recordsPending`, `harness/records.ts`) — and the
+ * render reads the tick's own checkout, which is a different tree. So the
+ * checkout render cannot be that arm's bound: it lists happily while the tip
+ * does not, and the tick the failure woke would be handed a block reading as
+ * a drained queue, every tick, forever.
+ *
+ * The unreadable tip here is an **unborn HEAD**, which is the shape a real
+ * one takes: `ls-tree HEAD` exits 128 in a repository with no commit yet, and
+ * the record sitting on the shared disk is one the checkout lists without
+ * trouble. Committing it is the control — the same window, the same disk, the
+ * one fact flipped — so the refusal below is the tip's doing and not this
+ * fixture's (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+it("a tip record listing the wake could not read reaches the inbox slice as a rendered refusal", () => {
+  const rel = "inbox/2026-09-25-a-finding.md";
+  const path = writeRecord(rel, "# A finding\n\nLeft for the drain.\n");
+  const ctx = { cwd: repo, flumeDir: stateRoot() };
+  const inbox = (): PlanSliceWindow => windows()[INBOX_PHASE];
+
+  // git's own sentence about the listing the wake makes, read rather than
+  // written by hand, so the assertion is that git's text reached the refusal.
+  let said = "";
+  try {
+    git("ls-tree", "--name-only", "-z", "HEAD", "--", `${STATE_ROOT_REL}/inbox/`);
+  } catch (err) {
+    said = err instanceof Error ? err.message : String(err);
+  }
+  const fatal =
+    said.split("\n").find((line) => line.startsWith("fatal:")) ?? "";
+  // Vacuity guard: a tip git listed happily would leave every assertion below
+  // standing over a wake that never failed open.
+  expect(fatal).not.toBe("");
+
+  const unborn = inbox();
+  const window = unborn.args(ctx).RECORDS!;
+
+  expect({
+    // The arm under test: the wake reports live over the listing it could not
+    // make ...
+    live: unborn.live({ flumeDir: stateRoot(), pickable: false }),
+    // ... and the tick it woke is handed the refusal, in the shape an
+    // unreadable cursor range already renders, carrying git's own text.
+    refused: window.includes("REFUSE:"),
+    saidWhatFailed: window.includes(fatal),
+    stoodDown: window.includes("Route nothing and delete no record this tick"),
+    // Nothing of the checkout's own queue past the refusal: the record the
+    // shared disk holds is exactly what a block rendered over an unread tip
+    // would show, and showing it is the tick acting on a listing that failed.
+    leaked: window.includes(path),
+  }).toEqual({
+    live: true,
+    refused: true,
+    saidWhatFailed: true,
+    stoodDown: true,
+    leaked: false,
+  });
+
+  // The control: the one fact flipped. The tip now holds the same record, the
+  // same window renders it, and no refusal is in it.
+  git("add", "-A");
+  git("commit", "-q", "-m", "inbox: a finding");
+  expect(tipHolds(rel)).toBe(true);
+  const listed = inbox().args(ctx).RECORDS!;
+  expect(listed).toContain(path);
+  expect(listed).toContain("Left for the drain.");
+  expect(listed).not.toContain("REFUSE:");
+});
+
+/**
  * The slug is what keys a record, so a tag carrying anything outside the key's
  * alphabet is filed under text it does not itself spell. Both arms run over
  * one such tag, and the map is keyed by the engine's own `entryAttemptKey`

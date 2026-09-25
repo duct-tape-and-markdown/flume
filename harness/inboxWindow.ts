@@ -51,10 +51,22 @@
  * finding still uncommitted — is in neither, so it wakes nothing. Woken on
  * it, the tick would be handed none of it, file nothing, and be woken by it
  * again (`spec/harness.md`, *The phases*). What lands after a worktree is cut
- * is the next tick's, whose own cut carries it. **The
- * friction channel and the lane store stay on the shared root either way**,
- * both legs alike: they are gitignored, so no commit carries them and no
- * worktree checkout holds them.
+ * is the next tick's, whose own cut carries it.
+ *
+ * **The split is why the render asks the tip a question of its own.** The
+ * wake's tip listing can fail — an unborn HEAD, a tree git will not read —
+ * and it reports live on that rather than skipping the drain
+ * (`recordsPending`, `harness/records.ts`). Two trees means the checkout
+ * render cannot be that arm's bound: it lists happily while the tip does not,
+ * so the woken tick would say "no records" over a queue nobody could read.
+ * The render therefore re-makes the tip listing and refuses on it
+ * ({@link renderRecordQueues}), which is what keeps the fail-open arm a
+ * degraded path with a refusal behind it (`.claude/rules/engineering.md`,
+ * *Loud or nothing*).
+ *
+ * **The friction channel and the lane store stay on the shared root either
+ * way**, both legs alike: they are gitignored, so no commit carries them and
+ * no worktree checkout holds them.
  */
 
 import { readFileSync } from "node:fs";
@@ -70,6 +82,7 @@ import { frictionFiles, frictionPending } from "./friction.js";
 import {
   RECORD_MAX_BYTES,
   checkoutRecords,
+  listRecords,
   recordFiles,
   recordsPending,
   tipRecords,
@@ -79,6 +92,7 @@ import {
   SLICE_DATA_KEYS,
   budgetOf,
   queueResolved,
+  windowRefusal,
   type PlanSliceWindow,
   type PlanSliceWindowsOptions,
   type SliceArgs,
@@ -140,12 +154,7 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
-      RECORDS: renderRecords(
-        checkoutRecords(treeStateRoot(ctx.cwd, options.stateRootRel)),
-        ctx.flumeDir,
-        friction,
-        ctx.claimed ?? [],
-      ),
+      RECORDS: renderRecordQueues(tip, options.stateRootRel, friction, ctx),
       BUILD_RECORDS: renderBuildRecords(options.stateRootRel, ctx),
       CI_LANES: lanes.render(ctx.flumeDir),
     }),
@@ -204,6 +213,67 @@ function renderQueueParseFailure(ctx: WindowContext): string {
  */
 const treeStateRoot = (cwd: string, stateRootRel: string): string =>
   join(cwd, ...stateRootRel.split("/"));
+
+/**
+ * The record block the woken tick is handed: every waiting record, or the
+ * refusal that says the listing the wake fails open over could not be made
+ * here either.
+ *
+ * **The tip listing is re-made here, and that is the bound on the wake's
+ * fail-open arm** (`recordsPending`, `records.ts`). The wake reports live
+ * over a tip it could not list, and the render below reads the tick's own
+ * checkout — so without this leg a tree whose tip will not list wakes the
+ * drain every tick and hands it a block that reads as a drained queue
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). The listing is made
+ * again rather than carried: the wake ran at the handoff, in a process this
+ * tick does not share, and a decision about what is on disk is made from what
+ * is on disk (`.claude/rules/engine-boundary.md`, *Told, not inferred*). It
+ * costs one `ls-tree` per queue, and only on a tick whose slice is already
+ * running.
+ *
+ * What that listing *names* is the wake's answer and not this block's
+ * material: a record is rendered at the path this tick can open and this
+ * tick's own commit can `git rm`, which is the checkout's spelling and never
+ * the tip's (`spec/pending.md`, *Dispatch reads come from the tip, not the
+ * tree*).
+ *
+ * Refused in the shape every uncomputable window refuses in
+ * ({@link windowRefusal}, `sliceWindow.ts`) and never as a throw, for the
+ * reason stated there: `promptArgs` is invoked uncaught, so a throw kills the
+ * tick before any agent runs.
+ *
+ * **Nothing else is rendered beside the refusal** — not the checkout's
+ * records, not the friction channel. A tick shown files to route under a
+ * block saying the queue could not be listed is being asked to act on a
+ * listing that failed; every one of those files stays where it sits, and the
+ * legs that wake on them wake again.
+ */
+function renderRecordQueues(
+  tip: RecordTree,
+  stateRootRel: string,
+  friction: string | undefined,
+  ctx: WindowContext,
+): string {
+  const claimed = ctx.claimed ?? [];
+  const listing = listRecords(tip, claimed);
+  if ("failure" in listing) {
+    return windowRefusal({
+      cause:
+        `the record queue in the tip this tick's tree was cut from could ` +
+        `not be listed: ${listing.failure}`,
+      standDown: "Route nothing and delete no record",
+      repair:
+        `say in the commit body what failed; every record stays where it ` +
+        `sits, so the queue re-opens over the same tip next tick.`,
+    });
+  }
+  return renderRecords(
+    checkoutRecords(treeStateRoot(ctx.cwd, stateRootRel)),
+    ctx.flumeDir,
+    friction,
+    claimed,
+  );
+}
 
 /**
  * Every waiting record's bytes, oldest first, each under the path it sits
