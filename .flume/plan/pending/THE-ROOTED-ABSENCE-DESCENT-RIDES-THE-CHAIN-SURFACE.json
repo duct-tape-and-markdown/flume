@@ -1,0 +1,41 @@
+{
+  "tag": "THE-ROOTED-ABSENCE-DESCENT-RIDES-THE-CHAIN-SURFACE",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/flumeApi.ts",
+        "description": "the rooted descent rides the api beside the rungs form, its doc naming which shape each answers"
+      },
+      {
+        "path": "src/index.ts",
+        "description": "the same name on the barrel, beside the rungs form already there"
+      },
+      {
+        "path": "examples/cascade-chain.ts",
+        "description": "the inbox probe hands over its root and its dir instead of spelling the rungs between them"
+      },
+      {
+        "path": "tests/chain.test.ts",
+        "description": "the by-reference pin and the intermediate-rung refusal, beside the rungs form's own block"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the descent paragraph names the rooted form where it teaches the probe"
+      }
+    ]
+  },
+  "summary": "The api hands a chain the rungs-form absence probe and not the composer, so a chain holding a root and a dir beneath it spells the descent itself \u2014 one skipped rung from a win32 drained read",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "a chain holding a root and a directory beneath it hands both over and the engine composes the descent, so no consumer's silent arm can rest on a rung it forgot to name; the rungs form stays for the sibling fan it answers",
+  "tests": [
+    "buildFlumeApi hands out the rooted absence descent, by reference",
+    "the api's rooted descent refuses a directory whose intermediate rung is present and is not a directory"
+  ],
+  "notes": "Verified this tick: the api and the barrel carry the variadic rungs form alone (`src/flumeApi.ts:237`, `src/index.ts:128`), while `src/fsProbe.ts:101` sends a caller holding a root and a dir beneath it to `isDirectoryOrAbsentUnder`, which 8 engine and harness sites take. `examples/cascade-chain.ts:585` spells its own two rungs: correct at one segment, and the shape a deeper dir gets wrong, since the skipped rung answers `ENOENT` on win32 and the queue reads drained."
+}
