@@ -22,5 +22,5 @@
     "a wave's ledger-refusal verdict names every fact field that wave's completing verdict names",
     "the wave both verdict comparisons read populates fact fields buildTickVerdict omits when empty"
   ],
-  "notes": "Off note THE-LEDGER-REFUSAL-VERDICT-NAMES-THE-STAKE-LOSSES, fork (2); fork (1) — one shared facts value — is unavailable: `src/Dispatcher.ts:1056` serves singletons too. Sharpened off 43ea774f: `buildTickVerdict` (`src/tickVerdict.ts:770`) omits 8 of the 18 fact fields when empty, so a clean wave's verdict names 10 keys and \"every field\" reads as complete over half the shape. `tests/Dispatcher.test.ts:8302` is the refusal leg."
+  "notes": "Off note THE-LEDGER-REFUSAL-VERDICT-NAMES-THE-STAKE-LOSSES, fork (2); fork (1) — one shared facts value — is unavailable: `src/Dispatcher.ts:1060` serves singletons too. Sharpened off 43ea774f: `buildTickVerdict` (`src/tickVerdict.ts:770`) omits 8 of the 18 fact fields when empty, so a clean wave's verdict names 10 keys and \"every field\" reads as complete over half the shape. `tests/Dispatcher.test.ts:8586` is the refusal leg."
 }
