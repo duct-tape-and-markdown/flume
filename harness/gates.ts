@@ -474,38 +474,40 @@ function cleanTreeGate(
 /**
  * Every slice's state file moves **only as that slice's own invariants
  * allow**, read as a rule over the file at the base and at the commit
- * (`spec/harness.md`, *The gates the discipline needs*): a cursor an ancestor
- * of the gated commit and a descendant of the value the tick read before it,
- * the sweep's stamp moving only on the tick that closes its rotation, that
- * rotation's covered set only growing while it stands open.
+ * (`spec/harness.md`, *The gates the discipline needs*).
  *
- * **The invariants ride the table, never this gate.** Each slice's rules sit
- * beside its accessors — `SLICE_STATE_RULES` (`planState.ts`) — so the
- * sweep's two are judged here without this gate naming the sweep, the
- * rotation, or a field, and derive's none leaves its cursor held to the two
- * ancestry halves alone. A fourth slice's rule arrives at a table that
- * exists, where judging one named field would be a branch on a single
- * instance inside machinery already generic over the type
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ * **One check is this gate's own**, made over every declared cursor whatever
+ * slice holds it: an ancestor of the gated commit, and a descendant of the
+ * value the tick read before it.
+ *
+ * **Every other invariant rides the table, never this gate.** Each slice's
+ * rules sit beside its accessors — `SLICE_STATE_RULES` (`planState.ts`) —
+ * which is the set, and this comment names none of them: a slice's invariant
+ * arrives at a table that exists, and a roster here would be a second copy
+ * the next rule forgets to join (`.claude/rules/engineering.md`, *Derived
+ * state is computed, never restated beside its source*). A slice that states
+ * no rule of its own is left held to the two ancestry halves alone, and
+ * judging one named field here would be a branch on a single instance inside
+ * machinery already generic over the type (`.claude/rules/engineering.md`,
+ * *The fix lands at the mechanism*).
  *
  * A rule reads the **pair**, not the step: a tick that rewrites its own state
- * without moving a cursor — arming a rotation, extending a covered set — is
- * exactly the tick a rule keyed on a changed cursor value passes over, and it
- * is also the tick that can drop coverage nobody re-derives. What a rule may
- * not do is refuse the arming itself, which is why each is stated over both
- * ends rather than over the commit's alone.
+ * without moving a cursor is exactly the tick a rule keyed on a changed
+ * cursor value passes over, and it is also the tick that can drop state no
+ * later tick re-derives. What a rule may not do is refuse that rewrite
+ * itself, which is why the table is handed both ends rather than the
+ * commit's alone.
  *
  * Both halves fail the same silent way and that is why they are gated. A
- * cursor stepped past commits nobody derived or swept does not red anything —
- * the slice simply never opens on the span that was skipped, every tick
- * after, and the window it renders looks exactly like a quiet tree. A cursor
- * stepped *backwards*, or sideways onto a sha this commit cannot reach,
- * re-derives history or names a window the next tick cannot draw at all. A
- * cursor stamped under an open rotation, or a covered set shrunk while one
- * stands open, loses coverage the next tick re-draws as a smaller
- * neighborhood rather than as a failure. None is recoverable by reading the
- * artifact, because the artifact reads as plan state either way
- * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * cursor stepped past commits no tick did that slice's work over does not red
+ * anything — the slice simply never opens on the span that was skipped, every
+ * tick after, and the window it renders looks exactly like a quiet tree. A
+ * cursor stepped *backwards*, or sideways onto a sha this commit cannot
+ * reach, re-derives history or names a window the next tick cannot draw at
+ * all. Neither is recoverable by reading the artifact, because the artifact
+ * reads as plan state either way (`.claude/rules/engineering.md`, *Loud or
+ * nothing*) — which is the same reason a slice's own losses are refused at
+ * the table rather than left for a reader to spot.
  *
  * **Both refs the gate reads are ones the commit already carries.** The
  * commit's state is at `ctx.commitSha`; the pre-commit state is at
@@ -531,8 +533,8 @@ function cleanTreeGate(
  * package declares none today (`JUDGED_SLICES`, `planState.ts`).
  *
  * The **leading-run** half of the bound — whether the span a cursor stepped
- * over was one this tick actually derived or swept — is judgement, and stays
- * prose in the slice's own prompt. What is decidable is direction,
+ * over is one this tick actually did its slice's work over — is judgement,
+ * and stays prose in the slice's own prompt. What is decidable is direction,
  * reachability, and what the file itself says, and that is what this holds.
  *
  * A cursor naming a sha the repository does not hold throws out of the
