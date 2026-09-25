@@ -1,0 +1,31 @@
+{
+  "tag": "THE-LANE-READ-REFUSES-ON-THE-RUNS-OWN-COMMIT",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/ci.ts",
+        "description": "the run schema asks the forge for the run's own commit, the tip read resolves the tip's sha, and the staleness refusal compares the two naming both; `commitInstantAt` and the ISO `instant` parse leave with the ordering they served"
+      },
+      {
+        "path": "harness/ciLane.ts",
+        "description": "the run render names the run's own commit, the fact the block now states beside the id and the conclusion"
+      },
+      {
+        "path": "tests/harnessCi.test.ts",
+        "description": "both arms of the swap, beside the existing staleness cases"
+      }
+    ]
+  },
+  "summary": "A lane read orders created instants, so an amended tip or a re-run of an older run reads another tree's run as this tip's — the forge states the run's own commit outright",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "CI lanes as a findings source"
+  },
+  "acceptance": "a lane's newest completed run is this tip's evidence exactly when the run's own commit is the tip, and reads `UNREAD` naming both commits otherwise — so the render's block and the stamp-bearing run report the run's commit rather than its created instant, and the tip-instant read and its offset parse leave with the comparison they served",
+  "tests": [
+    "a lane read refuses a run whose own commit is not the tip's",
+    "a lane read gives a verdict off the tip's own run whatever instant the forge created it at"
+  ],
+  "notes": "Drains the ruling on `questions/is-a-lane-read-refused-by-the-runs-own-sha-rather-than-its-instant.md`, fork (A); closed here. Verified on disk: `behindTheTip` (`harness/ci.ts:591`) orders `instant(run.at)` against `instant(tip.at)`; `RUN_FIELDS` (`:181`) is derived from `RunSchema`'s keys, so asking for `headSha` is one field. The wake follows with no edit — a stale run is `unread` before the conclusion is read, and `harness/ciLane.ts:197` keys liveness on `failing`."
+}
