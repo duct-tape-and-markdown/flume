@@ -146,15 +146,20 @@ export async function runSingleton(
     ref,
     phase.name,
   );
-  if (consult === "declined") return { result: await noRunResult(), declined: true };
+  if (consult.verdict === "declined")
+    return { result: await noRunResult(), declined: true };
   // A throw is a refusal, never the decline above: no worktree is
   // provisioned either way, but the verdict must not record a chain
   // decision the chain never reached (spec/chain.md, "What a hook
   // receives").
-  if (consult === "refused") {
+  if (consult.verdict === "refused") {
     return {
       result: { ...(await noRunResult()), noCommit: "render-refused" },
       noCommit: "render-refused",
+      // Unblamed: a singleton assigns no entry, so there is nothing to
+      // quarantine and the record falls to the consecutive-failure backstop
+      // alone — same shape this leg's gate and merge failures already take.
+      renderFailures: [consult.failure],
     };
   }
 
@@ -593,6 +598,9 @@ export async function runSingleton(
     ...(bystanderCheckpointSha ? { bystanderCheckpointSha } : {}),
     ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
     ...(gateFailures.length > 0 ? { gateFailures } : {}),
+    ...(attempt.renderFailure
+      ? { renderFailures: [attempt.renderFailure] }
+      : {}),
     ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
     mergeOutcomes,
     ...(invocation ? { invocations: [invocation] } : {}),

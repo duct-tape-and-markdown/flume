@@ -12,6 +12,7 @@ import type {
   MergeFailure,
   MergeOutcome,
   ProvisionFailure,
+  RenderFailure,
   ReportedGateResult,
   StakeLoss,
 } from "./tickVerdict.js";
@@ -460,6 +461,31 @@ export interface TickResult {
    * and interactive sessions)*).
    */
   stakeLosses?: readonly StakeLoss[];
+  /**
+   * Every render-stage failure this tick recorded — a prompt that never
+   * resolved, so no agent ran for the entry it is blamed on — the same
+   * {@link RenderFailure} records the tick verdict persists. Each carries the
+   * refusing entry's `tag` and `quarantineKey` (absent for a singleton
+   * phase's own refusal, which no entry can be blamed for), the refusal's
+   * `message` — the failing spans' commands and what they printed, or the
+   * hook that threw — and the `signature` a repeat of the same wall is
+   * recognized by. Absent when every render this tick reached resolved.
+   *
+   * What this adds beyond {@link noCommit}: that field is `render-refused`
+   * for the whole tick, so under fanout it cannot say *which* entry refused,
+   * and a wave whose sibling shipped carries no `noCommit` at all. A refusal
+   * leaves no other per-entry trace either — no `gateResults` row, since no
+   * gate ran, and no {@link FanoutEntryOutcome.mergeOutcome}, since nothing
+   * reached the pick. A `handoff` reconciling one — holding the phase awake,
+   * counting how many waves in a row refused on the same span, keying a hold
+   * under the entry — reads the records here (spec/chain.md "What a hook
+   * receives").
+   *
+   * A fact, never a verdict: whether a repeated refusal means retry, park or
+   * a chain fix stays the chain's (`.claude/rules/engine-boundary.md`,
+   * *Routing rule (plan, build, and interactive sessions)*).
+   */
+  renderFailures?: readonly RenderFailure[];
   /**
    * Every merge-stage failure this tick recorded — a cherry-pick conflict,
    * or a trunk that refused the pick, that kept an already-committed span

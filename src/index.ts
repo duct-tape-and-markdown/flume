@@ -191,12 +191,13 @@ export { consoleLogger, type Logger } from "./log.js";
 export {
   readTickVerdicts,
   readLatestVerdictsSync,
-  // The two stage-failure records `TickVerdict`/`TickOutcome` list beside
+  // The three stage-failure records `TickVerdict`/`TickOutcome` list beside
   // `ProvisionFailure`: a chain routing a quarantine decision off one needs
   // to name what it is holding.
   type GateFailure,
   type MergeFailure,
   type ProvisionFailure,
+  type RenderFailure,
   // The record beside them that is not a failure: an entry a sibling tick
   // took between this wave's selection and its stake, with the holder it
   // names (`PidClaim`, re-exported below for the same reason).

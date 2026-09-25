@@ -14135,6 +14135,151 @@ describe("Dispatcher fanout — render-refused: an unresolved inline-exec span a
   });
 });
 
+/**
+ * THE-VERDICT-NAMES-A-RENDER-REFUSAL-PER-ENTRY — a refusal reaches no gate
+ * loop and no cherry-pick, so the only trace of one used to be the tick-level
+ * `noCommit` a shipping sibling erases: nothing on the verdict said which
+ * entry refused, or on what wall, and the next wave re-picked it at full
+ * agent price (`RenderFailure`, `src/tickVerdict.ts`).
+ */
+describe("TickVerdict renderFailures — the render stage names the entry it refused on", () => {
+  it("a wave's tick verdict carries a render failure under the tag whose prompt refused", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SHIPS-ONE", ["src/ships-one.ts"]),
+      makeEntry("REFUSES-TWO", ["src/refuses-two.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // One shared span, one arg: `CMD` is what makes exactly one entry's
+    // render refuse while its sibling's resolves and ships.
+    await writeFile(
+      join(fx.configDir, "prompt.md"),
+      "digest: !`{{CMD}}`\n",
+      "utf8",
+    );
+    const failingSpan = "echo span-detail 1>&2; exit 3";
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      promptArgs: (ctx) => ({
+        CMD: ctx.assignedEntry?.tag === "REFUSES-TWO" ? failingSpan : "exit 0",
+      }),
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // REFUSES-TWO is registered nowhere: its render aborts before an
+      // invocation, and an accidental one throws.
+      agent: fanoutAgent({
+        "ships-one": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/ships-one.ts",
+            "A\n",
+            "build(SHIPS-ONE): ship",
+          ),
+      }),
+      log: silent,
+      maxParallel: 2,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity, and the case's whole point: the sibling really shipped, so
+    // the wave carries no `noCommit` at all — every fold above the per-entry
+    // record has lost the refusal.
+    expect(outcome.verdict?.shippedTags).toEqual(["SHIPS-ONE"]);
+    expect(outcome.verdict?.noCommit).toBeUndefined();
+
+    const reported = outcome.verdict?.renderFailures ?? [];
+    expect(reported).toHaveLength(1);
+    expect(reported[0]!.tag).toBe("REFUSES-TWO");
+    // The wall is the span that would not resolve; what it printed rides the
+    // message beside the command itself.
+    expect(reported[0]!.signature).toBe(failingSpan);
+    expect(reported[0]!.message).toContain(failingSpan);
+    expect(reported[0]!.message).toContain("span-detail");
+
+    // Held under the entry's own key, as the engine's rule computes it from
+    // the queue the wave read — REFUSES-TWO is what is still pending, its
+    // sibling having shipped out of the ledger.
+    const stillPending = readPendingFromDisk(fx.repo);
+    expect(stillPending.map((e) => e.tag)).toEqual(["REFUSES-TWO"]);
+    expect(reported[0]!.quarantineKey).toBe(
+      entryDeclaredKey(stillPending[0]!),
+    );
+
+    // One set of facts, three surfaces: what `handoff` read is what the
+    // verdict persisted and what the outcome carries.
+    expect(handedToHandoff?.renderFailures).toEqual(reported);
+    expect(outcome.renderFailures).toEqual(reported);
+  });
+
+  it("a singleton tick whose prompt refused to render carries a render failure on its verdict", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const failingSpan = "echo boom-detail 1>&2; exit 3";
+    await writeFile(
+      join(fx.configDir, "prompt.md"),
+      `digest: !\`${failingSpan}\`\n`,
+      "utf8",
+    );
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "must-not-run-while-render-fails",
+        async invoke() {
+          throw new Error("agent invoked over a refused render");
+        },
+      },
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: this tick really did refuse its render, and at the render
+    // stage — no agent ran, so no other stage could have recorded it.
+    expect(outcome.verdict?.noCommit).toBe("render-refused");
+    expect(outcome.verdict?.invocations).toEqual([]);
+
+    const reported = outcome.verdict?.renderFailures ?? [];
+    expect(reported).toHaveLength(1);
+    // Unblamed, both halves: a singleton assigns no entry, so there is
+    // nothing to quarantine and the record falls to the consecutive-failure
+    // backstop alone.
+    expect(reported[0]!.tag).toBeUndefined();
+    expect(reported[0]!.quarantineKey).toBeUndefined();
+    expect(reported[0]!.signature).toBe(failingSpan);
+    expect(reported[0]!.message).toContain("boom-detail");
+
+    expect(handedToHandoff?.renderFailures).toEqual(reported);
+    expect(outcome.renderFailures).toEqual(reported);
+  });
+});
+
 describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED)", () => {
   it("both callsites persist byte-identical prior-attempt record content and emit a same-shaped log line for equivalent input, driven through the one shared persist+log method", async () => {
     await writeFile(

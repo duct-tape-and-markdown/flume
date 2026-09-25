@@ -51,6 +51,7 @@ import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import {
   MAX_FAILURE_SIGNATURE,
   type ProvisionFailure,
+  type RenderFailure,
   type StakeLoss,
 } from "./tickVerdict.js";
 import {
@@ -190,6 +191,14 @@ export async function runFanout(
   // log line beside the push (`.claude/rules/engineering.md`, *A fact the
   // engine holds is reported, never rediscovered*).
   const stakeLosses: StakeLoss[] = [];
+  // And every entry whose render refused before its agent was invoked — an
+  // inline-exec span that would not run, or a `shouldRun`/`promptArgs` that
+  // threw. The mode folds to one tick-level `noCommit` a shipping sibling
+  // erases, so the record under the tag is the only per-entry trace
+  // (`RenderFailure`, `src/tickVerdict.ts`). Filled as each attempt returns
+  // below, and read by the merge stage's own refusal verdict, which holds this
+  // same array.
+  const renderFailures: RenderFailure[] = [];
 
   // Carry each entry's span onto trunk as that entry's own agent finishes:
   // the merge/gate/revert stage, one span at a time under its own ship lock
@@ -203,6 +212,7 @@ export async function runFanout(
     provisioned,
     partitionIgnore,
     provisionFailures,
+    renderFailures,
     stakeLosses,
     clearedPriorAttempts,
   });
@@ -351,6 +361,7 @@ export async function runFanout(
       priorAttempts,
     );
     perEntry.push(r);
+    if (r.renderFailure) renderFailures.push(r.renderFailure);
     const queued = mergeTail.then(() =>
       mergeError === undefined ? mergeAttempt(merge, r) : undefined,
     );
@@ -590,6 +601,7 @@ export async function runFanout(
       : {}),
     ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
     ...(stakeLosses.length > 0 ? { stakeLosses } : {}),
+    ...(renderFailures.length > 0 ? { renderFailures } : {}),
     ...(mergeStage.mergeFailures.length > 0
       ? { mergeFailures: mergeStage.mergeFailures }
       : {}),
@@ -650,7 +662,7 @@ async function runFanoutEntry(
     ref,
     entry.tag,
   );
-  if (consult === "declined") {
+  if (consult.verdict === "declined") {
     return {
       ...site,
       committed: false,
@@ -659,13 +671,14 @@ async function runFanoutEntry(
       declined: true,
     };
   }
-  if (consult === "refused") {
+  if (consult.verdict === "refused") {
     return {
       ...site,
       committed: false,
       gateResults: [],
       timings: [],
       noCommit: "render-refused",
+      renderFailure: consult.failure,
     };
   }
 

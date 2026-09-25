@@ -40,9 +40,10 @@ import type { NoCommitMode } from "./Prompt.js";
  *
  * The exported name is pinned by `src/index.ts`'s barrel export and by
  * `tests/Dispatcher.test.ts`'s barrel-export pin, so it stays `ProvisionFailure`
- * — provision-stage only — even though {@link MergeFailure} and
- * {@link GateFailure} below now share its exact shape for the two stages
- * spec/loop.md's "Repeated identical failures" generalized the backstop to.
+ * — provision-stage only — even though {@link RenderFailure},
+ * {@link MergeFailure} and {@link GateFailure} below now share its exact
+ * shape for the three stages spec/loop.md's "Repeated identical failures"
+ * generalized the backstop to.
  */
 export type ProvisionFailure = StageFailureEntry & {
   /**
@@ -143,6 +144,37 @@ export type GateFailure = StageFailureEntry & {
 };
 
 /**
+ * A render-stage failure (`spec/chain.md`, *What a hook receives*): the prompt
+ * never resolved, so no agent was invoked — an inline-exec span that would not
+ * run (`InlineExecRenderError`, `src/Prompt.ts`), or a pre-invocation hook
+ * (`shouldRun`, `promptArgs`) that threw, which the tick classes as the same
+ * `render-refused`. `tag` is the fanout entry whose render refused; absent for
+ * a singleton phase's own refusal (no entry to blame — same rationale as
+ * {@link StageFailureEntry}, it falls to the consecutive-failure backstop
+ * alone).
+ *
+ * The one stage with no other per-entry trace. A revert leaves a failing
+ * `gateResults` row and a conflict leaves a `mergeOutcomes` record, but a
+ * refusal reaches neither loop: it folds into the tick-level `noCommit`, and a
+ * wave that shipped a sibling loses even that. Without this record an entry
+ * whose render refuses identically every wave is re-picked at full price, and
+ * nothing on the verdict says which entry refused or whether the refusal was
+ * the same one.
+ */
+export type RenderFailure = StageFailureEntry & {
+  /**
+   * Same comparison-key contract as `ProvisionFailure.signature`: the failing
+   * spans' commands, or the hook that threw and the message it raised. Keyed
+   * on the wall rather than on everything the refusal printed — a span's
+   * stderr and a throw's frames move with output that is not the wall, and
+   * both ride `message` (or, for the frames, the prior-attempt record the
+   * retry reads).
+   */
+  signature: string;
+  message: string;
+};
+
+/**
  * One gate's result as the engine reports it — the single row shape every
  * reporting surface carries: a {@link TickVerdict}'s `gateResults` on disk,
  * `TickResult.gateResults` for `handoff`, and `ShipContext.gateResults` for
@@ -204,7 +236,7 @@ export interface ReportedGateResult {
   blamesSpan?: false;
 }
 
-/** Bound on a persisted stage-failure signature (provision/merge/gate alike) — a comparison key, not a transcript. */
+/** Bound on a persisted stage-failure signature (provision/render/merge/gate alike) — a comparison key, not a transcript. */
 export const MAX_FAILURE_SIGNATURE = 500;
 
 /**
@@ -699,6 +731,13 @@ export interface TickVerdict {
    */
   stakeLosses?: StakeLoss[];
   /**
+   * Render-stage failures this tick recorded — a prompt that never resolved,
+   * so no agent ran for the entry it is blamed on
+   * (`spec/chain.md`, *What a hook receives*). Absent/empty when every render
+   * this tick reached resolved.
+   */
+  renderFailures?: RenderFailure[];
+  /**
    * Merge-stage cherry-pick-conflict failures this tick recorded
    * (spec/loop.md "Repeated identical failures — quarantine, then
    * abort"). Absent/empty when the tick hit none.
@@ -773,6 +812,7 @@ interface TickVerdictFacts {
   timings?: readonly TickVerdictTiming[] | undefined;
   provisionFailures?: readonly ProvisionFailure[] | undefined;
   stakeLosses?: readonly StakeLoss[] | undefined;
+  renderFailures?: readonly RenderFailure[] | undefined;
   mergeFailures?: readonly MergeFailure[] | undefined;
   gateFailures?: readonly GateFailure[] | undefined;
   clearedPriorAttempts?: readonly string[] | undefined;
@@ -823,6 +863,9 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
       : {}),
     ...(facts.stakeLosses?.length
       ? { stakeLosses: [...facts.stakeLosses] }
+      : {}),
+    ...(facts.renderFailures?.length
+      ? { renderFailures: [...facts.renderFailures] }
       : {}),
     ...(facts.mergeFailures?.length
       ? { mergeFailures: [...facts.mergeFailures] }

@@ -80,6 +80,7 @@ import {
   type GateFailure,
   type MergeFailure,
   type ProvisionFailure,
+  type RenderFailure,
   type TickVerdict,
 } from "./tickVerdict.js";
 import * as git from "./git.js";
@@ -425,6 +426,12 @@ export interface TickOutcome {
    * singleton tick or a clean fanout wave.
    */
   provisionFailures?: ProvisionFailure[];
+  /**
+   * See {@link TickVerdict.renderFailures}.
+   * Present only when the tick hit at least one; absent on a tick whose every
+   * render resolved.
+   */
+  renderFailures?: RenderFailure[];
   /**
    * See {@link TickVerdict.mergeFailures}.
    * Present only when the tick hit at least one; absent on a singleton tick or
@@ -974,6 +981,7 @@ export class Dispatcher {
       bystanderCheckpointSha,
       provisionFailures,
       stakeLosses,
+      renderFailures,
       mergeFailures,
       gateFailures,
       tags,
@@ -1004,6 +1012,9 @@ export class Dispatcher {
     const resultForHandoff: TickResult = {
       ...result,
       ...(noCommit ? { noCommit } : {}),
+      ...(renderFailures && renderFailures.length > 0
+        ? { renderFailures }
+        : {}),
       ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
     };
@@ -1080,6 +1091,7 @@ export class Dispatcher {
       // the same records `result.stakeLosses` already handed `handoff`, so
       // the two surfaces cannot disagree about which entries a sibling took.
       stakeLosses,
+      renderFailures,
       mergeFailures,
       gateFailures,
       clearedPriorAttempts,
@@ -1097,6 +1109,9 @@ export class Dispatcher {
       ...(declined ? { declined } : {}),
       ...(provisionFailures && provisionFailures.length > 0
         ? { provisionFailures }
+        : {}),
+      ...(renderFailures && renderFailures.length > 0
+        ? { renderFailures }
         : {}),
       ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),

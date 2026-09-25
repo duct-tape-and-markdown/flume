@@ -23,6 +23,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { Agent, AgentUsage } from "./Agent.js";
+import { bound } from "./bounds.js";
 import { writablePathsGate } from "./builtinGates.js";
 import type { Gate } from "./Gate.js";
 import { runGate } from "./gateRun.js";
@@ -53,9 +54,11 @@ import { renderPrompt, InlineExecRenderError } from "./Prompt.js";
 import type { NoCommitMode } from "./Prompt.js";
 import {
   gateFailureSignature,
+  MAX_FAILURE_SIGNATURE,
   reportedGateRow,
   throwFacts,
   type GateFailure,
+  type RenderFailure,
   type ReportedGateResult,
   type TickVerdictTiming,
 } from "./tickVerdict.js";
@@ -150,6 +153,13 @@ type AttemptFacts = {
   footprint?: string[];
   /** Set only alongside `noCommit: "gate-revert"` — the blamed record of the failing gate. */
   gateFailure?: GateFailure;
+  /**
+   * Set only alongside `noCommit: "render-refused"` — the blamed record of the
+   * refusal, the render stage's own answer to {@link AttemptFacts.gateFailure}.
+   * The mode alone is tick-level once a caller folds it, so the record is what
+   * names the entry and the wall (`RenderFailure`, `src/tickVerdict.ts`).
+   */
+  renderFailure?: RenderFailure;
 };
 
 /**
@@ -244,13 +254,14 @@ export async function runAttempt(
   const argsResult = await resolvePromptArgs(ctx, phase, tickCtx, ref, label);
   if (!argsResult.ok) {
     // A thrown `promptArgs` never reaches the render, and lands on the
-    // render's own refusal — same no-commit mode, same persisted record
-    // (spec/chain.md, "What a hook receives").
+    // render's own refusal — same no-commit mode, same persisted record, same
+    // stage-failure row (spec/chain.md, "What a hook receives").
     return {
       committed: false,
       gateResults: [],
       timings: [],
       noCommit: "render-refused",
+      renderFailure: argsResult.failure,
     };
   }
 
@@ -270,12 +281,19 @@ export async function runAttempt(
     // An unresolved inline-exec span aborts the render — the agent is
     // never invoked. Distinct from clean-exit/platform-preempt: no agent
     // ran at all.
-    await persistRenderRefused(ctx, ref, label, err);
+    const renderFailure = await persistRenderRefused(
+      ctx,
+      ref,
+      label,
+      entry,
+      err,
+    );
     return {
       committed: false,
       gateResults: [],
       timings: [],
       noCommit: "render-refused",
+      renderFailure,
     };
   }
 
@@ -853,18 +871,36 @@ async function recordRenderedPrompt(
  * Each callsite still builds its own return shape from here, matching how
  * `classifyNoCommit`'s two callers already differ. `label` is the
  * phase name (singleton) or entry tag (fanout) — whichever scope `key`
- * itself was derived from.
+ * itself was derived from, and `entry` is the fanout entry the refusal is
+ * blamed on (absent for a singleton, which has none).
+ *
+ * Returns the {@link RenderFailure} the caller reports, so the refusal is the
+ * attempt's own fact rather than a log line a reader would have to parse back
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*).
  */
 async function persistRenderRefused(
   ctx: AttemptContext,
   ref: PriorAttemptRef,
   label: string,
+  entry: PendingEntry | undefined,
   err: InlineExecRenderError,
-): Promise<void> {
+): Promise<RenderFailure> {
   await ctx.attempts.write(ref, buildRenderRefused(err.message));
   ctx.log.warn(
     `[flume] ${label}: render-refused (no commit): ${err.message}`,
   );
+  return {
+    ...(entry ? blamedOn(entry) : {}),
+    // The commands that would not resolve, never what they printed: the same
+    // span failing twice with two different stderrs is one wall, and the
+    // stderr is on `message` either way.
+    signature: bound(
+      err.failures.map((f) => f.cmd).join("; "),
+      MAX_FAILURE_SIGNATURE,
+    ),
+    message: err.message,
+  };
 }
 
 /**
@@ -884,19 +920,28 @@ async function persistHookRefusal(
   ctx: AttemptContext,
   ref: PriorAttemptRef,
   label: string,
+  entry: PendingEntry | undefined,
   hook: "shouldRun" | "promptArgs",
   err: unknown,
-): Promise<void> {
+): Promise<RenderFailure> {
   const { message, stack } = throwFacts(err);
+  const wall = `${hook} hook threw: ${message}`;
   await ctx.attempts.write(
     ref,
-    buildRenderRefused(
-      `${hook} hook threw: ${message}${stack === undefined ? "" : `\n${stack}`}`,
-    ),
+    buildRenderRefused(`${wall}${stack === undefined ? "" : `\n${stack}`}`),
   );
   ctx.log.warn(
     `[flume] ${label}: ${hook} threw: ${message}; render-refused (no commit)`,
   );
+  return {
+    ...(entry ? blamedOn(entry) : {}),
+    // The hook and the message it raised, never the frames: a stack's line
+    // numbers move with any edit to the chain, so keying on them would report
+    // a fresh wall for an unchanged one. The frames are in the record written
+    // above, which the retry reads.
+    signature: bound(wall, MAX_FAILURE_SIGNATURE),
+    message: wall,
+  };
 }
 
 /**
@@ -914,6 +959,12 @@ async function persistHookRefusal(
  * hook receives*), so the caller takes its no-invocation refusal path and
  * the verdict never records a chain decision the chain never reached. An
  * absent hook runs, byte-identically to one that returned `true`.
+ *
+ * The refusal answer carries its own {@link RenderFailure}, for the reason the
+ * render's does: the mode a caller folds is tick-level, and the record is what
+ * names the entry that refused and the wall it refused on. Which is why the
+ * three answers are a shape rather than three strings — a caller told only
+ * "refused" would have to rebuild the record the consult already holds.
  */
 export async function consultShouldRun(
   ctx: AttemptContext,
@@ -921,19 +972,36 @@ export async function consultShouldRun(
   tickCtx: TickContext,
   ref: PriorAttemptRef,
   label: string,
-): Promise<"run" | "declined" | "refused"> {
-  if (!phase.shouldRun) return "run";
+): Promise<
+  | { verdict: "run" }
+  | { verdict: "declined" }
+  | { verdict: "refused"; failure: RenderFailure }
+> {
+  if (!phase.shouldRun) return { verdict: "run" };
   let verdict: boolean;
   try {
     verdict = phase.shouldRun(tickCtx);
   } catch (err) {
-    await persistHookRefusal(ctx, ref, label, "shouldRun", err);
-    return "refused";
+    return {
+      verdict: "refused",
+      // The entry off the context the hook itself was handed — a fanout
+      // assignment, absent for a singleton, which is exactly the blame the
+      // record carries.
+      failure: await persistHookRefusal(
+        ctx,
+        ref,
+        label,
+        tickCtx.assignedEntry,
+        "shouldRun",
+        err,
+      ),
+    };
   }
-  if (verdict) return "run";
+  if (verdict) return { verdict: "run" };
   ctx.log.info(`[flume] ${label}: declined (shouldRun) — no invocation`);
-  return "declined";
+  return { verdict: "declined" };
 }
+
 
 /**
  * `phase.promptArgs`, called for both concurrencies at one site. A throw is
@@ -948,11 +1016,23 @@ async function resolvePromptArgs(
   tickCtx: TickContext,
   ref: PriorAttemptRef,
   label: string,
-): Promise<{ ok: true; args: Record<string, string> } | { ok: false }> {
+): Promise<
+  | { ok: true; args: Record<string, string> }
+  | { ok: false; failure: RenderFailure }
+> {
   try {
     return { ok: true, args: phase.promptArgs?.(tickCtx) ?? {} };
   } catch (err) {
-    await persistHookRefusal(ctx, ref, label, "promptArgs", err);
-    return { ok: false };
+    return {
+      ok: false,
+      failure: await persistHookRefusal(
+        ctx,
+        ref,
+        label,
+        tickCtx.assignedEntry,
+        "promptArgs",
+        err,
+      ),
+    };
   }
 }

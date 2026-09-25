@@ -254,6 +254,7 @@ const TICK_OUTCOME_SPACE: {
   result: [ABSENT, A_TICK_RESULT],
   noCommit: [ABSENT, "clean-exit"],
   provisionFailures: [ABSENT, [A_STAGE_FAILURE]],
+  renderFailures: [ABSENT, [A_STAGE_FAILURE]],
   mergeFailures: [ABSENT, [A_STAGE_FAILURE]],
   gateFailures: [ABSENT, [A_STAGE_FAILURE]],
   verdict: [ABSENT, A_TICK_VERDICT],

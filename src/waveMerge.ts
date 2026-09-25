@@ -62,6 +62,7 @@ import {
   type GateFailure,
   type MergeFailure,
   type ProvisionFailure,
+  type RenderFailure,
   type ReportedGateResult,
   type StakeLoss,
   type TickVerdict,
@@ -227,6 +228,14 @@ interface WaveMergeSetup {
   readonly partitionIgnore: string[];
   /** Provisioning walls the wave recorded before the fanout. */
   readonly provisionFailures: ProvisionFailure[];
+  /**
+   * Render refusals the wave recorded, one per entry whose prompt never
+   * resolved. The leg's own array, filled as each attempt returns — the
+   * refusal is not this stage's fact, and this stage reads it for the same
+   * reason it reads `provisionFailures`: the refusal verdict below has to name
+   * every stage-failure class the completing verdict would.
+   */
+  readonly renderFailures: RenderFailure[];
   /**
    * Entries the wave selected and then lost the stake race for, each naming
    * the holder that took it.
@@ -833,6 +842,7 @@ export async function closeWaveMerge(w: WaveMerge): Promise<WaveMergeResult> {
     provisioned,
     partitionIgnore,
     provisionFailures,
+    renderFailures,
     stakeLosses,
     clearedPriorAttempts,
   } = w.setup;
@@ -921,6 +931,7 @@ export async function closeWaveMerge(w: WaveMerge): Promise<WaveMergeResult> {
           mergeOutcomes: w.mergeOutcomes,
           invocations: w.invocations,
           provisionFailures,
+          renderFailures,
           stakeLosses,
           mergeFailures: w.mergeFailures,
           gateFailures: w.gateFailures,
