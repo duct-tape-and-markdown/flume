@@ -1,11 +1,12 @@
 {
   "tag": "THE-FREED-SLOT-PULLS-THE-NEXT-DISJOINT-ENTRY",
   "gate": {
-    "kind": "blockedBy",
-    "tags": ["THE-WAVE-MERGES-EACH-ENTRY-AS-ITS-AGENT-FINISHES"]
+    "kind": "open"
   },
+  "dependsOnForks": [],
   "priority": 30,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "src/waveTick.ts",
@@ -19,7 +20,8 @@
         "path": "tests/Dispatcher.test.ts",
         "description": "the refill arms, beside the batch-width cases"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "The width a merged entry releases sits idle until the whole wave settles: nothing refills a freed slot, and the tick ends at its first batch",
   "per": {
@@ -32,5 +34,6 @@
     "an entry a freed slot pulls is provisioned from the tip it is pulled at rather than the tip the wave started on",
     "a wave keeps pulling pickable entries until none remain rather than ending with its first batch"
   ],
+  "pins": [],
   "notes": "Half two of the ruling; chained rather than seamed because the refill is written against the per-entry merge's own completion. Per-entry base and setup are `d4185664`'s own half: today `createWorktree(entry.tag, preHead)` (`src/waveTick.ts:207`) and one batch-wide setup `Promise.all` (`:236`). `partitionByFileOverlap` (`src/partition.ts`) is declared and the batch read stays (`src/selection.ts:359`) — the refill wants its one-entry form against the in-flight set."
 }
