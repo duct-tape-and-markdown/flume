@@ -485,6 +485,29 @@ function fakeChild(stdout: string): {
   return { child, getWritten: () => written };
 }
 
+describe("renderPrompt — an unresolved {{KEY}} refuses the render", () => {
+  it("names every missing key, sorted, in one refusal", async () => {
+    await expect(render("a={{BETA}} b={{ALPHA}} c={{BETA}}\n")).rejects.toThrow(
+      "prompt references missing args: ALPHA, BETA",
+    );
+  }, SPAWN_BUDGET_MS);
+
+  it("refuses rather than returning a prompt whose resolvable keys were substituted", async () => {
+    const promptFile = join(dir, "prompt.md");
+    await writeFile(promptFile, "here={{HERE}} gone={{GONE}}\n", "utf8");
+
+    await expect(
+      renderPrompt({
+        phase: phase(),
+        flumeDir: "/state-root",
+        promptFile,
+        cwd: dir,
+        args: { HERE: "resolved-value" },
+      }),
+    ).rejects.toThrow("prompt references missing args: GONE");
+  }, SPAWN_BUDGET_MS);
+});
+
 describe("renderPrompt — inline-exec reaches sh through stdin", () => {
   it("spawns sh with no command argv and writes the command text to stdin — the pre-fix tree always passed ['-c', cmd] and never wrote stdin, on every platform", async () => {
     const { child, getWritten } = fakeChild("mock-output");

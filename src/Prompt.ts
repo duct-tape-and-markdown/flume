@@ -464,17 +464,15 @@ function substitutePlaceholders(
   args: Record<string, string>,
 ): string {
   const missing = new Set<string>();
-  const result = raw.replace(PLACEHOLDER_RE, (_, key: string) => {
-    if (key in args) return args[key]!;
-    missing.add(key);
-    return `{{${key}}}`; // leave as-is so the failure surfaces
-  });
+  for (const [, key] of raw.matchAll(PLACEHOLDER_RE)) {
+    if (!(key! in args)) missing.add(key!);
+  }
   if (missing.size > 0) {
     throw new Error(
       `prompt references missing args: ${[...missing].sort().join(", ")}`,
     );
   }
-  return result;
+  return raw.replace(PLACEHOLDER_RE, (_, key: string) => args[key]!);
 }
 
 /**
