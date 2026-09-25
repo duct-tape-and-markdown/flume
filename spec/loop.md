@@ -73,7 +73,12 @@ grow it into one.
 **A run finishes on the contract it started with.** Tick children re-read HEAD's
 code on every spawn, but the supervisor stays resident at its launch version — so
 any supervisor↔child contract (the claim-inheritance env, the verdict paths, the
-exit-code map) is frozen on one side and live on the other. A commit changing such
+exit-code map) is frozen on one side and live on the other. The same holds between
+two children: a wave that refills can outlast many merges, so it runs the code it
+started on beside siblings spawned after a merge changed it, and every path two
+children read and write as one — the entry claims, the locks, the branch grammar —
+is a contract of the same kind. A move of any of them left an older wave's claims
+invisible to a newer drain, which then edited entries the wave still carried. A commit changing such
 a contract is unsafe to absorb mid-run; the observed shape is fresh children reading
 their own stale supervisor as a foreign engine instance and refusing every merge.
 The rule is operational, deliberately un-engineered while the event stays rare:
