@@ -11,6 +11,86 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-25
+
+The field release. A downstream consumer's 0.19 report named ten items from
+the scheduler's first day of real use, and the defects among them have
+shipped: a nested state root no longer moves the repository root, an empty
+plan commit is no longer logged as a merge failure, the drain no longer edits
+what a build tick carries, a parked entry waits for plan, and a quarantine
+lifts once the world it judged is gone. Two of the report's asks are still
+queued: a wave that merges each entry as its agent finishes, and a verdict
+that times each gate run and merge. CI lanes read
+only a run for the tip's own commit, and the inbox counts a record once it is
+committed. `docs/MIGRATING-0.20.md` walks the one break and the two behavior
+changes a consumer notices first.
+
+### Breaking
+
+- **The legacy `plan/pending.json` and `plan/state.json` leave the plan
+  fence**, and the harness export `legacyPlanStatePath` goes with them. The
+  0.19 cutover's one-release allowance is spent; a tree still holding either
+  page runs the 0.19 note's queue or plan-state cutover by hand first
+  ([`docs/MIGRATING-0.20.md`](docs/MIGRATING-0.20.md), section 1).
+
+### Added
+
+- **`isDirectoryOrAbsent` and `isDirectoryOrAbsentUnder`**, the proven-absence
+  descent, exported and on `FlumeApi`: a chain gating on a directory of its
+  own gets the absent-versus-obstructed split without keying on an errno.
+- **`namespacedJoin`**, the fold the engine composes every fs path through,
+  exported for a chain composing a deep path outside a factory.
+- **`FlumeApi.readGatedQueue`** types, `GatedQueue` and `GatedQueueContext`.
+- **The harness's record trees**, `checkoutRecords`, `tipRecords`, and
+  `RecordTree`, so a chain can read the record queue the way the drain does.
+- **The CI lane block states the forge call it made** and its raw answer, run
+  id, the run's commit, and conclusion, beside each lane's verdict.
+- **A shipped page's citations are judged against what the package packs**,
+  and a shipped page never names a section of a page the consumer owns.
+
+### Changed
+
+- **A CI lane reads only a run made for the tip's own commit.** Any other run
+  reads as `UNREAD` naming both commits, where an ordering of instants let an
+  amended tip or a re-run of an older run read as current. While a loop ships
+  faster than CI finishes, most lane reads are `UNREAD`; a red that persists
+  reports once the tip's own run completes.
+- **An inbox record counts once it is committed.** The drain wakes from and
+  reads the tip's tree, since its worktree is cut from the tip; an
+  uncommitted file used to wake the slice after every tick that could not
+  route it. The friction channel is still read from the shared disk.
+- **A gate-stage or merge-stage quarantine lifts when the tip moves**, instead
+  of lasting the run; a provision-stage hold still lasts the run.
+- **A parked entry is held back until plan reconciles it**, instead of being
+  re-picked by the next wave.
+- **An agent that ended over an empty span is a clean exit**, never a merge
+  failure.
+- **A nested state root is refused**, naming both roots in git's alphabet,
+  with `FLUME_DIR` as the remedy; the bay root is proven to be the root git
+  names paths from.
+- **A claim covers its entry's records**, so the drain no longer edits notes
+  a build tick is carrying.
+
+### Fixed
+
+- **A failed session capture is the invocation's error**, never swallowed.
+- **A signalled run reaps its children before removing their worktrees.**
+- **The win32 shell retry and the install smoke refuse an argument list
+  `cmd.exe` would re-parse**, instead of running a rewritten command.
+- **Every absent-path answer proves its descent first**, across the engine,
+  the harness readers, the dispatch listings, and the cursor probe, which
+  reads git's own exit status.
+- **`flume status` refuses an obstructed state root** instead of reporting
+  no baton.
+- **Every plan slice bounds its state read on the liveness leg.**
+- **The sweep's frontier scan reads a merge's own resolution.**
+
+### Internal
+
+- The agent seam's four jobs take four files; every git child is composed
+  through one spawner; the prior-attempt variants share one envelope; one
+  table decides a producer's refusal.
+
 ## [0.19.0] - 2026-09-24
 
 The scheduler release: **every phase is a worker, and the tick bound is the

@@ -76,22 +76,6 @@ const PLAN_STATE_DIR_REL = "plan/state";
 const PLAN_STATE_EXT = ".json";
 
 /**
- * Where the single page every slice's state was a field of sat, before each
- * slice's state was its own file.
- *
- * **A migration allowance, and the only reason it is still spelled.** No
- * slice reads it and nothing writes it; it rides {@link planArtifacts} so
- * that the tick which splits a consumer's plan state into the per-slice files
- * can `git rm` the page in the same commit — outside the fence, that page is
- * a file no phase can reach and every plan tick reverts on. Retired at 0.20.0,
- * the release after the one that shipped `docs/MIGRATING-0.19.md`, whose § 6 is
- * what tells consumers to take the split; this constant, its accessor, its
- * fence line and the case dating it (`tests/harnessLayout.test.ts`) go with it
- * in that commit.
- */
-const LEGACY_PLAN_STATE_REL = "plan/state.json";
-
-/**
  * The questions directory's name under a state root — the directory a plan
  * slice's questions block lists and a session adds a file to.
  */
@@ -220,30 +204,6 @@ export function queueGlob(stateRoot: string): string {
 }
 
 /**
- * The file the whole queue was one array in, before each entry was its own
- * file.
- *
- * **A migration allowance, and the only reason it is still spelled.** No
- * slice reads it and nothing writes it; it rides {@link planArtifacts} so
- * that the tick which moves a consumer's entries into {@link queueDir} can
- * `git rm` the page in the same commit — outside the fence, that page is a
- * file no phase can reach and every plan tick reverts on. Retired at 0.20.0,
- * the release after the one that shipped `docs/MIGRATING-0.19.md`, whose § 5 is
- * what tells consumers to take the split; this constant, its accessor, its
- * fence line and the case dating it (`tests/harnessLayout.test.ts`) go with it
- * in that commit.
- */
-const LEGACY_QUEUE_REL = "plan/pending.json";
-
-/**
- * The legacy queue page under a state root ({@link LEGACY_QUEUE_REL}) —
- * addressable so the cutover can delete it, and for nothing else.
- */
-export function legacyQueuePath(stateRoot: string): string {
-  return underStateRoot(stateRoot, LEGACY_QUEUE_REL);
-}
-
-/**
  * Where `slice`'s own state file lives under `stateRoot`. One spelling, so
  * the fence admitting one slice's artifact and the accessor reading it cannot
  * name different files.
@@ -258,15 +218,6 @@ export function planStatePath(stateRoot: string, slice: PlanSlice): string {
     stateRoot,
     `${PLAN_STATE_DIR_REL}/${slice}${PLAN_STATE_EXT}`,
   );
-}
-
-/**
- * The legacy plan state page under a state root
- * ({@link LEGACY_PLAN_STATE_REL}) — addressable so a split can delete it, and
- * for nothing else.
- */
-export function legacyPlanStatePath(stateRoot: string): string {
-  return underStateRoot(stateRoot, LEGACY_PLAN_STATE_REL);
 }
 
 /**
@@ -460,9 +411,7 @@ export function noteGlobs(stateRoot: string): string[] {
 export function planArtifacts(stateRoot: string, slice: PlanSlice): string[] {
   return [
     queueGlob(stateRoot),
-    legacyQueuePath(stateRoot),
     planStatePath(stateRoot, slice),
-    legacyPlanStatePath(stateRoot),
     questionGlob(stateRoot),
     ...recordGlobs(stateRoot),
   ];

@@ -97,7 +97,6 @@ export {
 export {
   continuingNotePath,
   continuingNotesDir,
-  legacyPlanStatePath,
   noteGlobs,
   notePath,
   notePaths,

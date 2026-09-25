@@ -442,15 +442,18 @@ follows enough usage signal to commit under semver.
   who owns what, how each is extended from outside, where a finding goes.
 - [`docs/INTENT.md`](docs/INTENT.md) — design rationale: the spine, what
   stays prose, what becomes JSON, non-goals.
-- [`docs/MIGRATING-0.19.md`](docs/MIGRATING-0.19.md) — the note for the line
-  in progress, for a chain on `0.18.x`: two shared files become two
+- [`docs/MIGRATING-0.20.md`](docs/MIGRATING-0.20.md) — upgrade note for a
+  chain on `0.19.x`: one break, the legacy queue and plan state pages off the
+  plan fence, and two behavior changes, an inbox record counting once
+  committed and a CI lane reading only the tip's own run.
+- [`docs/MIGRATING-0.19.md`](docs/MIGRATING-0.19.md) — upgrade note for a
+  chain on `0.18.x`: two shared files become two
   directories. The pending queue becomes one JSON file per entry, which moves
   a chain field, a gate-context field, three parse exports, every fence glob
   and prompt span naming the queue, and the queue you already have on disk;
   the harness package's plan state becomes one file per plan slice, which
   moves the accessors, the fence helper, one prompt arg, and the page you
-  already have on disk. It grows as further breaks land, and the release's
-  `### Breaking` section is the census at the cut.
+  already have on disk.
 - [`docs/MIGRATING-0.18.md`](docs/MIGRATING-0.18.md) — upgrade note for a
   chain on `0.17.x`: one API break, the suspect-flake marker off the
   gate-revert record, with the gate's own `blamesSpan: false` in its place.

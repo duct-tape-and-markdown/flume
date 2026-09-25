@@ -354,7 +354,7 @@ describe("this repo's chain is the harness factory applied to its declaration (s
   it("every plan slice may write the package's plan artifacts and nothing of the consumer's", () => {
     for (const name of ["plan-inbox", "plan-derive", "plan-sweep"]) {
       const paths = byName[name]!.writablePaths;
-      expect(paths, name).toContain(".flume/plan/pending.json");
+      expect(paths, name).toContain(".flume/plan/pending/*.json");
       // Plan state is one file per writer, so each slice's fence names its
       // own and no sibling's (`spec/harness.md`, *Plan state as declared
       // state*).

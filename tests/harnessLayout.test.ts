@@ -11,7 +11,6 @@
  * by the tester's hand, and the one-sided rename is exactly what this is for.
  */
 
-import { readFile } from "node:fs/promises";
 
 import { expect, it } from "vitest";
 
@@ -20,7 +19,6 @@ import {
   QUESTION_EXT,
   continuingNotePath,
   continuingNotesDir,
-  legacyPlanStatePath,
   noteGlobs,
   notePath,
   notePaths,
@@ -33,7 +31,6 @@ import {
   questionsDir,
   queueDir,
   queueGlob,
-  legacyQueuePath,
   recordDirs,
   underStateRoot,
 } from "../harness/layout.ts";
@@ -72,7 +69,6 @@ it("the plan fence admits every artifact the package's own accessors address", (
   // a glob over the directory rather than the directory itself.
   const artifacts = [
     `${gitPath(resolvePendingDir(STATE_ROOT))}/SOME-ENTRY.json`,
-    legacyQueuePath(STATE_ROOT),
     planStatePath(STATE_ROOT, SOME_SLICE),
     `${questionsDir(STATE_ROOT)}/a-parked-fork${QUESTION_EXT}`,
     notePath(STATE_ROOT, "SOME-ENTRY"),
@@ -186,30 +182,6 @@ it("each plan slice's fence admits its own state file and no sibling's", () => {
   }
 });
 
-it("the plan fence admits the legacy plan state page a split deletes", () => {
-  // The migration allowance (`harness/layout.ts`): a consumer upgrading into
-  // the per-slice state files holds its cursors in the single page, and the
-  // tick that splits them `git rm`s it in the same commit. Outside the fence,
-  // that page is a file no phase can reach. Every slice, because which one
-  // runs first is the loop's call and not the layout's.
-  expect(PLAN_SLICES.length).toBeGreaterThan(0);
-  for (const slice of PLAN_SLICES) {
-    const fence = planArtifacts(STATE_ROOT, slice);
-    expect({
-      slice,
-      fenced: matchesAny(legacyPlanStatePath(STATE_ROOT), fence),
-    }).toEqual({ slice, fenced: true });
-  }
-
-  // And it is not one of the per-slice files wearing the old name: the page
-  // the split deletes and the file a slice writes are different paths.
-  for (const slice of PLAN_SLICES) {
-    expect(planStatePath(STATE_ROOT, slice)).not.toBe(
-      legacyPlanStatePath(STATE_ROOT),
-    );
-  }
-});
-
 it("the queue's fence path is the engine's resolved queue directory, in git's alphabet", () => {
   // One spelling for three readers — the plan fence, the adoption verb's
   // written line, and the gate that reads the queue at a commit. The engine's
@@ -232,17 +204,6 @@ it("the queue's fence path is the engine's resolved queue directory, in git's al
   expect(matchesAny(`${queueDir(STATE_ROOT)}/.gitkeep`, [
     queueGlob(STATE_ROOT),
   ])).toBe(false);
-});
-
-it("the legacy queue page rides the plan fence so a cutover can git rm it", () => {
-  // The one reason it is still addressable (`harness/layout.ts`): outside
-  // the fence, the page the cutover deletes is a file no phase can reach and
-  // every plan tick reverts on.
-  expect(legacyQueuePath(STATE_ROOT)).toBe(`${STATE_ROOT}/plan/pending.json`);
-  expect(legacyQueuePath(STATE_ROOT)).not.toBe(queueDir(STATE_ROOT));
-  expect(
-    matchesAny(legacyQueuePath(STATE_ROOT), planArtifacts(STATE_ROOT, SOME_SLICE)),
-  ).toBe(true);
 });
 
 it("a path under a state root is git-alphabet whatever alphabet its tail arrived in", () => {
@@ -360,81 +321,4 @@ it("the continuing note directory is a note home the build fence admits", () => 
   expect(matchesAny(continuing, planArtifacts(STATE_ROOT, SOME_SLICE))).toBe(
     false,
   );
-});
-
-/** The module the allowances live in, read as the text their dates sit in. */
-const LAYOUT_SRC = new URL("../harness/layout.ts", import.meta.url);
-
-/** The manifest whose version says which cut a consumer is installing. */
-const MANIFEST = new URL("../package.json", import.meta.url);
-
-/** A cut, as the three numbers releases order by. */
-function order(cut: string): [number, number, number] {
-  const parts = /^(\d+)\.(\d+)\.(\d+)$/.exec(cut);
-  if (!parts) throw new Error(`not a cut this case can order: ${cut}`);
-  return [Number(parts[1]), Number(parts[2]), Number(parts[3])];
-}
-
-/** Whether `shipped` has reached `due` — the predicate an expiry fires on. */
-function hasReached(shipped: string, due: string): boolean {
-  const [major, minor, patch] = order(shipped);
-  const [dueMajor, dueMinor, duePatch] = order(due);
-  if (major !== dueMajor) return major > dueMajor;
-  if (minor !== dueMinor) return minor > dueMinor;
-  return patch >= duePatch;
-}
-
-/**
- * The migration allowances' expiry, dated rather than narrated
- * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
- * Each allowance is a decision carrying an expiry predicate, and a predicate
- * spelled as an era — "the release after the migration page" — is one no
- * reader evaluates without first resolving which cut shipped that page; it
- * has been misread on this tree twice. Named as a version, the predicate is a
- * token the manifest answers, so this case is the rung the prose no longer
- * hand-holds: the allowances stay standing while the cut is short of the
- * version they name, and the tick that cuts it reds here until the constants,
- * their accessors, their fence lines and this case are gone.
- */
-it("a legacy layout allowance outliving the version it names fails the suite", async () => {
-  const source = await readFile(LAYOUT_SRC, "utf8");
-  const allowances = [...source.matchAll(/^const (LEGACY_\w+) = /gm)].map(
-    (found) => found[1],
-  );
-  // `[\s*]` for the wrap: a comment paragraph breaks where its width says
-  // to, so the date and the words before it need not share a line. Bare of
-  // backticks, as every version in a comment here is — a cut is not a
-  // declaration, and the citation pin resolves backticked spans as ones.
-  const dated = [
-    ...source.matchAll(/Retired at[\s*]+(\d+\.\d+\.\d+)/g),
-  ].map((found) => found[1] ?? "");
-
-  // Non-vacuity, and the agreement that makes it one: every allowance the
-  // module still spells carries a due version, so an allowance added with an
-  // era for a trigger — or one dated and then left undated by a rewrite —
-  // reds here rather than passing over an empty set of dates.
-  expect(allowances.length).toBeGreaterThan(0);
-  expect({ allowances, dated: dated.length }).toEqual({
-    allowances,
-    dated: allowances.length,
-  });
-
-  const shipped = (
-    JSON.parse(await readFile(MANIFEST, "utf8")) as { version: string }
-  ).version;
-
-  for (const due of dated) {
-    // The direction the title claims: the predicate really fires at the named
-    // cut, so the verdict below is the manifest being short of it rather than
-    // a comparison that never bites.
-    expect({ due, fires: hasReached(due, due) }).toEqual({ due, fires: true });
-
-    // And the allowance is still in its window. When this reds, the fix is
-    // the retirement each allowance's comment describes, not a later date.
-    expect({ due, shipped, outlived: hasReached(shipped, due) }).toEqual({
-      due,
-      shipped,
-      outlived: false,
-    });
-  }
 });
