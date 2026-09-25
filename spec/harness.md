@@ -202,8 +202,13 @@ invocation, before and after.
 ### CI lanes as a findings source
 
 A declared CI lane is a findings source beside the inbox. The inbox slice
-reads the latest completed run of the declared workflow job for the tip's
-branch through the forge's CLI, takes the failing test titles as findings
+reads the latest completed run of the declared workflow job for the tip's branch
+through the forge's CLI, and the block states that invocation and its raw
+answer — run id, created instant, job conclusion — beside each lane's verdict,
+so a divergence is self-evidencing; a newest run created before the tip's own
+commit reads as `UNREAD`, never green or red, naming both instants, because a
+forge index that can answer stale must not be read as current in either
+direction, takes the failing test titles as findings
 keyed by lane name and title, and files or re-files each the way it drains a
 record: a title already heading a queue entry or an open question is not
 re-filed, and a title the latest run reports green closes in the plan commit

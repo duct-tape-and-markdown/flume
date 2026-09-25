@@ -22,8 +22,9 @@ and never creates or deletes a ref outside `flume/**`. Fanout is where both halv
 condition are exercised — these are the details:
 
 - `git worktree add -B <branch> <path> <fromRef>`, where `branch`
-  is `flume/<slug>` (`createWorktree`), and `fromRef` is the tip the tick
-  started on.
+  is `flume/<slug>` (`createWorktree`), and `fromRef` is the tip the tick started on for the wave's initial fill, and the
+  trunk as it then stands for an entry a freed slot pulls — a refilled entry cut from the
+  pre-head would re-earn every conflict the merges before it already resolved.
 - `git branch -D <branch>` at teardown.
 - The per-entry commits are `cherry-pick`ed onto the trunk as it then stands, one at a time
   under the ship lock, each as its agent finishes —
