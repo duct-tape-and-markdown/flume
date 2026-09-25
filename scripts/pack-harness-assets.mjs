@@ -16,10 +16,14 @@
  * modules: `prompts/` today, `templates/` beside it, and whatever a later
  * change adds without this file being touched
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
- * beside its source*). That split is checked here rather than assumed: a
- * candidate directory carrying a TypeScript module is an address `tsc` emits
- * into, and the copy names it and stops instead of removing the emit and
- * publishing the sources in its place.
+ * beside its source*). That split is checked in both directions rather than
+ * assumed, because each way of breaking it reaches a consumer only as a dead
+ * address. A candidate directory carrying a TypeScript module is an address
+ * `tsc` emits into, and the copy names it and stops instead of removing the
+ * emit and publishing the sources in its place. A candidate that is neither
+ * a module `tsc` emits nor a directory this step can carry reaches the emit
+ * by no route at all, and the copy names it and stops instead of dropping it
+ * silently (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * **One home, two callers.** `pnpm build` runs it after `tsc`, and
  * `tests/harnessPackaging.test.ts` runs this same file over the scratch emit
@@ -134,10 +138,47 @@ async function main() {
     );
   }
 
-  const assetDirs = (await readdir(source, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
+  // Every candidate is classified before anything is written, because the
+  // copy below is destructive: a directory carrying a module is `tsc`'s own
+  // output address, and replacing it would delete the emit and publish the
+  // sources over it — a package that installs and fails at its first import.
+  // Refuse naming the offender rather than let the premise above hold only
+  // because nobody has broken it yet
+  // (`.claude/rules/engineering.md`, *Loud or nothing*).
+  const assetDirs = [];
+  const entries = (await readdir(source, { withFileTypes: true })).sort((a, b) =>
+    a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+  );
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      // `tsc` carries the modules and this step carries the directories;
+      // nothing carries anything else, so an asset addressed here would be
+      // absent from the install with no step having reported it missing.
+      if (emitsAModule(entry.name)) continue;
+      throw new Error(
+        `pack-harness-assets: ${join(source, entry.name)} is neither a ` +
+          `TypeScript module \`tsc\` emits nor a directory this step can ` +
+          `carry, so nothing writes it into ${emittedHarness} and any ` +
+          `address the package computes for it is dead in a published ` +
+          `install. Move it into one of the asset directories beside the ` +
+          `package's modules, or teach this step to carry files as well as ` +
+          `directories.`,
+      );
+    }
+    const carried = await moduleUnder(join(source, entry.name));
+    if (carried !== undefined) {
+      throw new Error(
+        `pack-harness-assets: ${join(source, entry.name)} carries the ` +
+          `TypeScript module ${carried}, so \`tsc\` emits into ` +
+          `${join(emittedHarness, entry.name)} and this step cannot copy the ` +
+          `directory there as package content — the copy replaces its ` +
+          `destination, so it would remove that emit and publish sources in ` +
+          `its place. Move the module beside the package's other modules, or ` +
+          `teach this step to carry assets into a directory the emit shares.`,
+      );
+    }
+    assetDirs.push(entry.name);
+  }
   if (assetDirs.length === 0) {
     throw new Error(
       `pack-harness-assets: ${source} holds no asset directory to copy. The ` +
@@ -145,28 +186,6 @@ async function main() {
         `(harness/prompts.ts, harness/init.ts), so an emit without them is a ` +
         `package whose every asset address is dead.`,
     );
-  }
-
-  // Every candidate is classified before anything is written, because the
-  // copy below is destructive: a directory carrying a module is `tsc`'s own
-  // output address, and replacing it would delete the emit and publish the
-  // sources over it — a package that installs and fails at its first import.
-  // Refuse naming the directory rather than let the precondition above hold
-  // only because nobody has added one yet
-  // (`.claude/rules/engineering.md`, *Loud or nothing*).
-  for (const name of assetDirs) {
-    const carried = await moduleUnder(join(source, name));
-    if (carried !== undefined) {
-      throw new Error(
-        `pack-harness-assets: ${join(source, name)} carries the TypeScript ` +
-          `module ${carried}, so \`tsc\` emits into ` +
-          `${join(emittedHarness, name)} and this step cannot copy the ` +
-          `directory there as package content — the copy replaces its ` +
-          `destination, so it would remove that emit and publish sources in ` +
-          `its place. Move the module beside the package's other modules, or ` +
-          `teach this step to carry assets into a directory the emit shares.`,
-      );
-    }
   }
 
   for (const name of assetDirs) {

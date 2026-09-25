@@ -651,6 +651,50 @@ it("the asset copy refuses a harness subdirectory carrying a TypeScript module",
 }, SPAWN_BUDGET_MS);
 
 /**
+ * The same classification read the other way. The copy step carries
+ * directories and `tsc` carries modules, so a file beside the package's
+ * modules that is neither reaches the emit by no route at all: the build
+ * exits green, the package installs, and the address its modules compute for
+ * that file resolves to nothing — the failure lands at a consumer's first
+ * import rather than at the step that could see it
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * Authored the same way and for the same reason as the case above: the
+ * writer and the emit are the build's, and only the source tree is the
+ * tester's, because a real writer cannot produce the input a refusal is
+ * tested on. The emit is read back afterwards to prove the step refused
+ * before writing rather than partway through.
+ */
+it("pack-harness-assets refuses a non-module file sitting beside the harness package's own modules", async () => {
+  const authored = join(scratch, "harness-carrying-a-loose-file");
+  await cp(join(REPO_ROOT, "harness"), authored, { recursive: true });
+  const loose = join(authored, "BANNER.txt");
+  await writeFile(loose, "addressed by nothing the build writes\n");
+
+  const emitRoot = join(pkgDir, "dist");
+  // Non-vacuity: the emit the refusal must leave alone has content to be
+  // judged against, so the untouched read below compares two populated
+  // listings rather than two empty ones.
+  const before = (await readdir(join(emitRoot, "harness", "prompts"))).sort();
+  expect(before.length).toBeGreaterThan(0);
+  // And the offending file really is in the tree handed to the writer, so a
+  // refusal below is about this subject rather than about a missing source.
+  expect(existsSync(loose)).toBe(true);
+
+  const refused = await runNodeStreams(REPO_ROOT, [PACK_ASSETS, emitRoot, authored]);
+  expect({
+    code: refused.code,
+    namesTheFile: refused.stderr.includes(loose),
+  }).toEqual({ code: 1, namesTheFile: true });
+
+  // Nothing written: the assets the build's own copy put there are still the
+  // ones on disk, and the loose file reached the emit at all only if the
+  // step started copying before it classified.
+  expect((await readdir(join(emitRoot, "harness", "prompts"))).sort()).toEqual(before);
+  expect(existsSync(join(emitRoot, "harness", "BANNER.txt"))).toBe(false);
+}, SPAWN_BUDGET_MS);
+
+/**
  * `bin.flume-harness` end to end over the published layout: the shim spawns
  * `dist/harness/cli.js`, the verb resolves its template beside the emitted
  * module, and a repository that had nothing comes out adopted
