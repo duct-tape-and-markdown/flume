@@ -1,28 +1,33 @@
 {
   "tag": "THE-THREE-PROMPTS-SHARE-ONE-RENDER-OF-EACH-SPAN",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
   "files": {
     "edit": [
       {
         "path": "harness/prompts.ts",
-        "description": "a placeholder and its render for each span, beside `QUESTIONS_INDEX` in the key roster and the arg map"
+        "description": "a placeholder and its render for each shared block, beside `QUESTIONS_INDEX` in the key roster and the arg map"
       },
       {
         "path": "harness/prompts/plan-inbox.md",
-        "description": "both spans become the placeholders"
+        "description": "each shared block becomes its placeholder"
       },
       {
         "path": "harness/prompts/plan-derive.md",
-        "description": "both spans become the placeholders"
+        "description": "each shared block becomes its placeholder"
       },
       {
         "path": "harness/prompts/plan-sweep.md",
-        "description": "both spans become the placeholders"
+        "description": "each shared block becomes its placeholder"
       }
     ]
   },
-  "summary": "The `<pending-now>` and `<plan-state>` spans are each spelled byte-identically in all three slice prompts — the family three plan commit bodies have now accepted as debt",
-  "per": { "path": ".claude/rules/posture-sweep.md", "section": "Routing" },
-  "acceptance": "each of the two spans is one placeholder in the three slice prompts rendered from one `promptArgs` value, the shape `QUESTIONS_INDEX` already takes, and every rendered prompt is unchanged",
-  "notes": "Third body of this family: 0fe5ae63, 7f0bdf4e, a7c044e8 — the last counting it second off the rotation window 9385f596 retired. Target shape is the tree's own: `QUESTIONS_INDEX` (`harness/prompts.ts:200`, `:270`) is one render three prompts share, said so in its doc. Sites: `plan-inbox.md:20`/`:30`, `plan-derive.md:8`/`:14`, `plan-sweep.md:17`/`:8`. Claims no property; held by the `PLAN_SLICES` pins in `tests/harnessPrompts.test.ts`. Wants a wave of its own."
+  "summary": "Six blocks are spelled byte-identically in all three slice prompts \u2014 the family three plan commit bodies have now accepted as debt, and the queue named two of them",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "every block the three slice prompts spell byte-identically is one placeholder rendered from one `promptArgs` value, the shape `QUESTIONS_INDEX` already takes, and every rendered prompt is unchanged",
+  "notes": "Third body of this family: 0fe5ae63, 7f0bdf4e, a7c044e8. Target shape is the tree's own: `QUESTIONS_INDEX` (`harness/prompts.ts:200`, `:270`) is one render three prompts share. Measured byte-identical this tick across the three slice prompts: `<pending-now>`, `<plan-state>`, `<plan-state-shape>`, `<artifacts>`, and the `<open-questions-index>` and `<schema>` wrappers. Claims no property; held by the `PLAN_SLICES` pins in `tests/harnessPrompts.test.ts`."
 }
