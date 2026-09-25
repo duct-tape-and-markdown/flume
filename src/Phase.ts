@@ -25,17 +25,21 @@ import type {
 import type { NoCommitMode, PriorAttempt } from "./Prompt.js";
 
 /**
- * Concurrency model for a phase:
+ * Concurrency model for a phase — how many ticks of it the dispatcher runs at
+ * once, and what each tick is scoped to:
  *
- * - "singleton": one tick at a time. Plan and spec phases must be singleton
- *   because they derive shared artifacts (the plan file, the spec corpus)
- *   that don't admit concurrent edits.
+ * - "singleton": one tick at a time, scoped to the phase itself. It picks no
+ *   pending entry, so nothing partitions it and nothing bounds what it may
+ *   rewrite beyond its own fence — the model a phase declares when two of its
+ *   ticks would be editing the same artifact. The tick still runs in a
+ *   worktree, and its span is cherry-picked onto the trunk and gated there
+ *   like a wave of one (spec/worktrees.md, "Singleton runs in a worktree").
  *
- * - "fanout": the dispatcher picks N disjoint-by-Files: pending entries and
- *   runs N tick invocations in parallel worktrees. Build is the canonical
- *   fanout phase. Each entry's commit is cherry-picked onto the trunk and
- *   gated individually; an afterMerge gate failure reverts only that
- *   entry's commit, and the rest of the wave stays shipped.
+ * - "fanout": the dispatcher picks N pending entries no two of which declare
+ *   an overlapping file and runs N tick invocations in parallel worktrees, one
+ *   entry each. Each entry's commit is cherry-picked onto the trunk and gated
+ *   individually; an afterMerge gate failure reverts only that entry's commit,
+ *   and the rest of the wave stays shipped.
  */
 export type Concurrency = "singleton" | "fanout";
 

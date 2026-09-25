@@ -47,20 +47,73 @@ const docCommentBefore = (
 const docCommentFor = (source: string, field: string): string =>
   docCommentBefore(source, String.raw`${field}\??:`, `\`${field}\``);
 
-it("the shipped `forkResolver` and `entryChannelPaths` doc comments name no term in the shared chain-vocabulary list", () => {
-  const docs = {
-    forkResolver: docCommentFor(srcText("Dispatcher.ts"), "forkResolver"),
-    entryChannelPaths: docCommentFor(srcText("Phase.ts"), "entryChannelPaths"),
-  };
+/**
+ * Register the vocabulary scan over one shipped surface. The scan is one
+ * sequence — find the block, prove it is the block, assert the absence — so
+ * it has one home and each subject is a call site rather than a copy
+ * (`.claude/rules/engineering.md` § A module is one job). Subjects are named
+ * one per call, never gathered into a list a rename could empty: an empty
+ * list registers no test at all, which is the vacuous green the anchors below
+ * exist to catch.
+ *
+ * `decl` is the declaration the block precedes, as a regex source, so a type
+ * alias is a subject on the same footing as a field. `anchors` are spans only
+ * *this* block states, asserted before the absence — a block renamed or
+ * absorbed elsewhere fails loudly instead of passing an absence over nothing.
+ */
+const itNamesNoChainVocabulary = (subject: {
+  readonly label: string;
+  readonly module: string;
+  readonly decl: string;
+  readonly anchors: readonly string[];
+}): void => {
+  it(`the shipped \`${subject.label}\` doc comment names no term in the shared chain-vocabulary list`, () => {
+    const doc = docCommentBefore(
+      srcText(subject.module),
+      subject.decl,
+      `\`${subject.label}\``,
+    );
 
-  // Vacuity guard: each block is the one it claims to be before any absence
-  // is asserted over it — an absence over a vanished subject is a false green.
-  expect(docs.forkResolver).toContain("dependsOnForks");
-  expect(docs.entryChannelPaths).toContain("entry-scoped fanout tick");
+    // Vacuity guard: the block is the one it claims to be, judged by anchors
+    // this subject actually declares, before any absence is asserted over it.
+    expect(subject.anchors.length).toBeGreaterThan(0);
+    for (const anchor of subject.anchors) {
+      expect(
+        doc,
+        `\`${subject.label}\` doc no longer states ${anchor}`,
+      ).toContain(anchor);
+    }
 
-  for (const [field, doc] of Object.entries(docs)) {
-    expectNoChainVocabulary(doc, `\`${field}\` doc`);
-  }
+    expectNoChainVocabulary(doc, `\`${subject.label}\` doc`);
+  });
+};
+
+itNamesNoChainVocabulary({
+  label: "forkResolver",
+  module: "Dispatcher.ts",
+  decl: String.raw`forkResolver\??:`,
+  anchors: ["dependsOnForks"],
+});
+
+itNamesNoChainVocabulary({
+  label: "entryChannelPaths",
+  module: "Phase.ts",
+  decl: String.raw`entryChannelPaths\??:`,
+  anchors: ["entry-scoped fanout tick"],
+});
+
+/**
+ * `Concurrency` ships from `src/index.ts`, so its block is the hover text
+ * every consumer reads about what each mode does. Naming which of *our*
+ * phases takes which mode there hands one chain's roster the engine's
+ * authority, and the modes are machinery any roster may spend
+ * (`.claude/rules/engine-boundary.md` § Capability vs convention).
+ */
+itNamesNoChainVocabulary({
+  label: "Concurrency",
+  module: "Phase.ts",
+  decl: String.raw`export type Concurrency\s*=`,
+  anchors: ['"singleton"', '"fanout"', "cherry-picked"],
 });
 
 /**
