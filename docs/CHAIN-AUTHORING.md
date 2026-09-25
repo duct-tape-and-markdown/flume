@@ -2346,7 +2346,9 @@ const chain: Chain = {
   ticks take turns at git"). Raise it when the
   chain has phases that genuinely do independent work — a queue-deriving
   phase beside a shipping one — and leave it alone when every phase writes
-  the same files. A positive integer; anything else refuses the chain at
+  the same files. Price it before raising it: every child it holds is another
+  agent resident at the same instant, and the host is a bound nothing in this
+  block checks ([*What a wave costs in memory*](#what-a-wave-costs-in-memory)). A positive integer; anything else refuses the chain at
   load rather than at the boundary where a supervisor holding no child would
   read the standing flags as an orphaned baton. Distinct from `flume loop
   --max N`, which is how many children the run may start in *total*. Bound
@@ -2373,7 +2375,9 @@ const chain: Chain = {
   disjoint declared files — and this decides how many of that set actually
   run together; the rest wait for the next wave. Lower it when the agent seam
   is rate-limited or the machine has fewer cores than the wave has entries,
-  raise it when ticks are cheap and cherry-picks land clean. A singleton
+  raise it when ticks are cheap and cherry-picks land clean. Cores are rarely
+  the scarce resource, though: a wave's agents are a memory term the host holds
+  all at once, and this number is what multiplies it ([*What a wave costs in memory*](#what-a-wave-costs-in-memory)). A singleton
   chain never reads it. Read **per tick**.
 - **`tickTimeoutMs`** — wall-clock cap on one agent invocation, in
   milliseconds. Default unset: **no cap**, which means the only brake on a
@@ -2422,6 +2426,89 @@ mount-dead (exit `69`) naming the load error, before any child — a chain that
 will not resolve in the supervisor's process will not resolve in a child's
 either, and over an empty baton there is no child that would have reported it
 at all.
+
+### What a wave costs in memory
+
+**Neither knob that widens a run prices it.** How many tick children the
+supervisor holds and how wide a fanout wave runs — the two numbers above —
+schedule work; nothing in the loop asks whether the host can hold what they
+scheduled, and nothing refuses a number that cannot. A host out of memory is
+the kernel's call, taken on resident size against whatever is largest — so the
+casualty need not be the tick that over-committed, and the loss arrives outside
+every accounting this section describes: no verdict, no failure signature, no
+quarantine, no `abortThreshold`. A wave sized past its
+host does not degrade into a slower wave; it takes a process out. Size both
+numbers against a measurement.
+
+**What one in-flight tick holds.** Three terms, and they do not multiply
+alike:
+
+- One `flume tick` child per scheduled slot — a node process holding the
+  resolved chain, linear in the child count.
+- **One agent invocation per in-flight entry.** This is the term the two
+  numbers multiply: a fanout tick holds a wave's width in agents at once, a
+  singleton tick holds one, and the supervisor holds as many of those ticks as
+  it was given. The ceiling is therefore their product where every scheduled
+  phase is fanout, and the width plus one per further child for the shape most
+  chains actually run — one fanout phase beside singletons.
+- **The gates, split by their `when`.** An `afterCommit` gate runs in its
+  entry's own worktree while siblings run theirs, so it multiplies with wave
+  width exactly as the agents do — which is the memory half of why cheap
+  structural checks belong there and expensive ones do not (§2). An
+  `afterMerge` gate, and the judge that drives the consumer's `runner` after
+  it, runs under the ship lock: **one suite at a time, whatever the wave's
+  width** (`spec/loop.md`, "The ship lock and the worktree lock — sibling
+  ticks take turns at git"). That lock is the only thing bounding the largest
+  term there is.
+
+**Worked example: flume's own chain, on the host that found the edge.** 11 GB
+of RAM, 20 cores, `{ maxTicks: 2, maxParallel: 2 }` — a two-wide build wave
+beside one plan slice, three agents live. Peak resident, measured on that host:
+
+| What | Peak RSS | Multiplies with |
+| ---- | -------- | --------------- |
+| `flume loop` supervisor | ~170 MB | nothing — one per run |
+| `flume tick` child | ~165 MB | `maxTicks` |
+| a `claude -p` agent | 270–300 MB, rising with the context the tick accumulates | in-flight entries |
+| `pnpm tsc --noEmit`, an `afterCommit` gate | ~550 MB for ~4 s | in-flight entries |
+| `vitest run`, the `afterMerge` judge | **~3.2 GB across ~40 processes for ~3 min** | nothing — the ship lock |
+
+The whole loop tree at that declaration — supervisor, two tick children, three
+agents — measured 1.35 GB. The suite is more than double everything else in the
+run put together, and it is the one term the two numbers do not reach: its
+width is the test runner's worker pool, which flume's own `vitest.config.ts`
+bounds at four for exactly this reason, and each worker's own subprocesses ride
+on top of that. So the arithmetic that matters is a fixed suite plus a linear
+agent term, never agents alone:
+
+```
+peak ≈ one suite + (agents × ~300 MB) + (ticks × ~165 MB) + supervisor
+```
+
+At `{ maxTicks: 2, maxParallel: 2 }` that comes to ~4.5 GB of 11 GB, which
+leaves the host the editor and the two interactive sessions it was also holding
+at ~300–390 MB each when these figures were taken. Two four-wide waves — back
+when the judge suites could overlap, before the ship lock serialized them —
+reached the OOM edge on this host twice, which is why the declaration says two
+and not four. An eight-wide wave at `maxTicks: 3` admits 24 agents, 6–7 GB,
+before one suite starts; a downstream operator who sized one that way lost the
+supervisor to the kernel.
+
+**Sizing yours.** Measure rather than derive, because only the linear term is
+derivable:
+
+1. Run at the defaults through a tick that reaches `afterMerge`, sampling the
+   resident total of the whole process tree — `ps` summed over the process
+   group, `/usr/bin/time -v` for one child's peak, or a cgroup's `memory.peak`
+   for the lot.
+2. Take the suite's peak as a floor the wave cannot amortize: one suite is the
+   price of shipping anything at all, at any width.
+3. Raise both numbers until that floor plus the linear agent term still leaves
+   the host headroom for everything that is not flume.
+
+A chain whose suite dominates gets more out of making the suite cheaper than
+out of a wider wave — the wave multiplies the agents, and the agents were never
+what filled the host.
 
 ## 10. Declaring an entry extension (`entryExtension`)
 
