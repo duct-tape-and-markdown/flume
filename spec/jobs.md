@@ -51,10 +51,13 @@ that retargets one. Two efforts that share a checkout share its tip, and the
 tip claim serializes them whatever their files are called, so a partition
 under one checkout buys separate files and no separate execution.
 
-The engine holds that line rather than leaving it to fail later: a state root
-resolved in a checkout whose flume state already names a different one is
-refused at resolution, naming both roots and the checkout, before anything is
-provisioned. Left unrefused, the second root surfaces several steps on as
+The engine holds that line rather than leaving it to fail later. A checkout
+has one tip, and the tip claim is one writer per tip whatever state root the
+writer resolved (`spec/loop.md`, *Tip claim — one flume writer per tip,
+advisory*), so a second effort in a checkout is refused while the first holds
+it, and the refusal names both state roots and the checkout. A second root
+beside a checkout's own `.flume` that the runtime has already written into is
+refused at resolution, before any claim is read. Left unrefused, the second root surfaces several steps on as
 git's own error over a branch the first root's tick holds, in a vocabulary
 that names neither root.
 

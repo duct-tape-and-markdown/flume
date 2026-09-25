@@ -147,10 +147,14 @@ other.
     `git-lfs`/`sequencer` precedent: shared, untracked, surviving branch switches.
   - *Acquire:* exclusive-create (`wx`). On `EEXIST`, probe the recorded pid with the
     same liveness check as the loop lock — live → refuse, naming the holder
-    (`tip refs/heads/X claimed by pid N (<path>)`), exit 1; dead → reclaim (unlink,
+    (`tip refs/heads/X claimed by pid N for <state root> (<path>)`), exit 1; dead → reclaim (unlink,
     retry the create, re-probing rather than assuming this call won the race).
   - *Contents:* the holder's pid on the first line and the claim instant on
-    the second — the same shape as `loop.pid`.
+    the second — the same shape as `loop.pid` — and the state root the holder
+    resolved on the third, so a refusal names the root that holds the tip beside
+    the one refused, and a second effort in one checkout reads as that rather
+    than as a busy tip. A reader that needs only liveness still reads the first
+    line.
   - *Release:* the same `exit`/`SIGINT`/`SIGTERM` handlers that drop the loop lock,
     and before they drop it they take down the in-flight tick and everything it
     spawned. On POSIX the tick child runs in its own process group and the agent
