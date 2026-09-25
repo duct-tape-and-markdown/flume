@@ -3,6 +3,7 @@
   "gate": {
     "kind": "open"
   },
+  "priority": 30,
   "files": {
     "edit": [
       {

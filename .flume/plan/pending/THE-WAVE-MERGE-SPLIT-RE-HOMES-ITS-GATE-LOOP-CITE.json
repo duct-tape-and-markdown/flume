@@ -1,6 +1,7 @@
 {
   "tag": "THE-WAVE-MERGE-SPLIT-RE-HOMES-ITS-GATE-LOOP-CITE",
   "gate": { "kind": "open" },
+  "priority": 30,
   "files": {
     "edit": [
       {

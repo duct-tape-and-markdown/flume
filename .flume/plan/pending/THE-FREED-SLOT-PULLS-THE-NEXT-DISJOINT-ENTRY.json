@@ -4,6 +4,7 @@
     "kind": "blockedBy",
     "tags": ["THE-WAVE-MERGES-EACH-ENTRY-AS-ITS-AGENT-FINISHES"]
   },
+  "priority": 30,
   "files": {
     "edit": [
       {

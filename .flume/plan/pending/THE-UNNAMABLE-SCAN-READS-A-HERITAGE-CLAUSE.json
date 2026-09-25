@@ -1,6 +1,7 @@
 {
   "tag": "THE-UNNAMABLE-SCAN-READS-A-HERITAGE-CLAUSE",
   "gate": { "kind": "open" },
+  "priority": 20,
   "files": {
     "edit": [
       {

@@ -1,0 +1,31 @@
+{
+  "tag": "THE-CITATION-COVERAGE-READS-A-HOME-THE-SWEEP-OWNS",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "tests/helpers/commentCitations.ts",
+        "description": "the trees the citation scan covers take a home that stands whatever slices the declaration enables"
+      },
+      {
+        "path": "tests/commentCitations.test.ts",
+        "description": "the coverage pin reads that home, and its own case over a declaration with no sweep"
+      },
+      {
+        "path": "tests/chain.test.ts",
+        "description": "the phase-shape pins read the enabled list off the declaration rather than four names by hand"
+      }
+    ]
+  },
+  "summary": "An operator toggle the package offers is one this repository cannot use: disabling `plan-sweep` throws the citation coverage pin and reds the chain test",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The phases"
+  },
+  "acceptance": "the citation scan's tree coverage and the chain test's phase shape both read homes that stand whether or not the sweep slice is declared, so a consumer disabling a slice the package offers keeps a green suite",
+  "tests": [
+    "the citation scan's tree coverage resolves over a declaration that enables no sweep slice"
+  ],
+  "notes": "Observed interactively; the record set the rank. Verified: `declaredSweepTrees` (`tests/commentCitations.test.ts:588`) throws on an absent `slices.sweep` and `SWEEP_DOMAIN` (`:606`) is read at module load, while `tests/chain.test.ts:324`-`:330` spells the four phase names and the length by hand. Dropping the block is forced — the dead-declaration rule refuses a leftover `slices.sweep`. Seams `tests/commentCitations.test.ts` with THE-SHIPPED-PAGE-NAMES-NO-SECTION-A-CONSUMER-OWNS."
+}

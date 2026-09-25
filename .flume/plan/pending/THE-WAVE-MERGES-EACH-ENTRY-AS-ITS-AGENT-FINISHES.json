@@ -1,6 +1,7 @@
 {
   "tag": "THE-WAVE-MERGES-EACH-ENTRY-AS-ITS-AGENT-FINISHES",
   "gate": { "kind": "open" },
+  "priority": 31,
   "files": {
     "edit": [
       {

@@ -4,6 +4,7 @@
     "kind": "blockedBy",
     "tags": ["THE-VERDICT-NAMES-A-RENDER-REFUSAL-PER-ENTRY"]
   },
+  "priority": 30,
   "files": {
     "edit": [
       {

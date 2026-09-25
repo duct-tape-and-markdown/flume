@@ -4,6 +4,7 @@
     "kind": "blockedBy",
     "tags": ["THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM"]
   },
+  "priority": 30,
   "files": {
     "edit": [
       {

@@ -1,6 +1,7 @@
 {
   "tag": "THE-WORKTREES-BASE-DECLARATION-REFUSES-AT-THE-LOAD",
   "gate": { "kind": "open" },
+  "priority": 0,
   "files": {
     "edit": [
       {

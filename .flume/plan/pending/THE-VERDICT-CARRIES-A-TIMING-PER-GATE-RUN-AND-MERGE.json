@@ -1,6 +1,7 @@
 {
   "tag": "THE-VERDICT-CARRIES-A-TIMING-PER-GATE-RUN-AND-MERGE",
   "gate": { "kind": "open" },
+  "priority": 30,
   "files": {
     "edit": [
       {

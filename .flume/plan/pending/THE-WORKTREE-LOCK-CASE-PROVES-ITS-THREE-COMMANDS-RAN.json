@@ -1,6 +1,7 @@
 {
   "tag": "THE-WORKTREE-LOCK-CASE-PROVES-ITS-THREE-COMMANDS-RAN",
   "gate": { "kind": "open" },
+  "priority": 0,
   "files": {
     "edit": [
       {

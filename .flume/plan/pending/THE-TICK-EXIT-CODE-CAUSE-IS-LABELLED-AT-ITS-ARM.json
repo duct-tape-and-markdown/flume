@@ -1,6 +1,7 @@
 {
   "tag": "THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM",
   "gate": { "kind": "open" },
+  "priority": 30,
   "files": {
     "edit": [
       {
