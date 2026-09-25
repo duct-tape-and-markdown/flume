@@ -1,0 +1,44 @@
+{
+  "tag": "THE-OBSTRUCTED-STATE-ROOT-REFUSES-AT-ONE-SEAM",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "src/cli.ts",
+        "description": "the obstructed-root refusal is taken once where the state roots resolve, and `status`'s own copy folds into it"
+      },
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the four pages whose 74 row calls bay discovery their only file read"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the same four sections' 74 clause, which the doc pin reads against the pages"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the four verbs' refusals, beside the status one"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the widened rows, through the readers already scoped to one code"
+      }
+    ]
+  },
+  "summary": "`wake`, `sleep`, `stop` and `render` exit 1 on a raw stack over an obstructed state root, under pages whose 74 row calls discovery their only file read",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Exit codes — the run never lies to CI"
+  },
+  "acceptance": "the obstructed-state-root refusal is taken once where the CLI resolves its state roots rather than copied per verb, so each of those four verbs answers `EX_IOERR` naming the root it resolved, and every page stating their exit range names that cause",
+  "tests": [
+    "flume wake refuses an obstructed state root with EX_IOERR naming the resolved root",
+    "flume sleep refuses an obstructed state root with EX_IOERR naming the resolved root",
+    "flume stop refuses an obstructed state root with EX_IOERR naming the resolved root",
+    "flume render refuses an obstructed state root with EX_IOERR naming the resolved root"
+  ],
+  "notes": "Off note THE-STATUS-VERB-REFUSES-AN-OBSTRUCTED-STATE-ROOT, item 1; widened here from two verbs to four. Measured this tick against a repo whose `.flume` is a plain file: all four exit 1 on a raw stack, `status` answers 74. Unguarded at `src/cli.ts:657`, `:674`, `:694`, and the `new Dispatcher` at `:1015` that `:1077`'s declared bound never reaches. `bayDiscoveryRow` (`src/cliHelp.ts:67`) and `docs/CLI.md:71`, `:79`, `:93`, `:217` all call 74 their only one. One guard at `:401`."
+}

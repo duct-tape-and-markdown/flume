@@ -20,7 +20,7 @@
       }
     ]
   },
-  "summary": "`flume loop`'s default cap and the top-level help page each spell 50 beside `DEFAULT_TICK_BUDGET`, whose own doc claims one home \u2014 the constant decides nothing",
+  "summary": "`flume loop`'s default cap and the top-level help page each spell 50 beside `DEFAULT_TICK_BUDGET`, whose own doc claims one home — the constant decides nothing",
   "per": {
     "path": ".claude/rules/engineering.md",
     "section": "Derived state is computed, never restated beside its source"
@@ -29,5 +29,5 @@
   "tests": [
     "the loop verb and the top-level help page restate no DEFAULT_TICK_BUDGET literal"
   ],
-  "notes": "Verified this tick: `src/cli.ts:1160` is `let max = 50` and always passes `tickBudget: max`, so `DEFAULT_TICK_BUDGET` (`src/loopSupervisor.ts:64`) is unreachable from the CLI; `src/cliHelp.ts:81` spells 50 while `:211` interpolates it. Move the constant and the loop page moves alone, against a cap and a top-level page that did not. `tests/docComments.test.ts:106` is the existing arm for the sibling default. Seams `src/cliHelp.ts` with THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM."
+  "notes": "Verified this tick: `src/cli.ts:1290` is `let max = 50` and always passes `tickBudget: max`, so `DEFAULT_TICK_BUDGET` (`src/loopSupervisor.ts:64`) is unreachable from the CLI; `src/cliHelp.ts:81` spells 50 while `:211` interpolates it. Move the constant and the loop page moves alone, against a cap and a top-level page that did not. `tests/docComments.test.ts:106` is the existing arm for the sibling default. Seams `src/cliHelp.ts` with THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM."
 }

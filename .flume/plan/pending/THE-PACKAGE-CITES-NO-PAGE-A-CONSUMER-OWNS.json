@@ -1,0 +1,29 @@
+{
+  "tag": "THE-PACKAGE-CITES-NO-PAGE-A-CONSUMER-OWNS",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "harness/layout.ts",
+        "description": "the record roster's warrant names the shipped page that states the order, not the one a consumer edits"
+      },
+      {
+        "path": "tests/commentCitations.test.ts",
+        "description": "the harness/ arm of that rule, off the consumer root the rendered scan already takes"
+      }
+    ]
+  },
+  "summary": "`RECORD_DIR_NAMES` warrants its order with `.flume/PROTOCOL.md`, a page the consumer owns — and the page the package ships spells that heading `Records`",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "Adoption and upgrade"
+  },
+  "acceptance": "the package's source cites, for a fact the package owns, a page the install carries rather than one under a consumer's state root, and no comment in `harness/` names a page under that root",
+  "tests": [
+    "no comment in harness/ cites a page under a consumer's state root"
+  ],
+  "notes": "`harness/layout.ts:147` cites `.flume/PROTOCOL.md`, *Records: one file each*, and the section pin resolves it against this repo's own copy — respelled to a missing heading it reds, so the green is this checkout's. The page the package ships heads that section `## Records` (`harness/templates/PROTOCOL.md:54`); the shipped home is `docs/CHAIN-AUTHORING.md`, *Records: one file each* (`:386`), written for these facts by 41fafb3c. Seams `tests/commentCitations.test.ts` with two standing entries."
+}
