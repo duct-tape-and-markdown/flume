@@ -1,0 +1,29 @@
+{
+  "tag": "THE-RENDERED-PAGE-SCAN-LEAVES-A-CONSUMER-TREE-PATH",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "tests/helpers/commentCitations.ts",
+        "description": "the rendered surfaces' page arm leaves a name under a consumer's state root to that consumer's tree, taking the root off the writer that composes it"
+      },
+      {
+        "path": "tests/commentCitations.test.ts",
+        "description": "the fixture arm: a shipped surface naming an absent page under a state root, and one naming an absent page outside it"
+      }
+    ]
+  },
+  "summary": "The rendered page-name arm answers a path a shipped page composes under a consumer's state root off *this* repo's tree, so the same coincidence that hid a dead pointer reds a correct rename",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "Adoption and upgrade"
+  },
+  "acceptance": "a `*.md` name a shipped page states under a consumer's state root is out of the rendered scan's disk read — that tree is the consumer's to answer, and the agreement pin over the composing writer is what covers it — while every other page name a shipped page states stays judged on disk",
+  "tests": [
+    "the rendered page scan reports no finding for a page name under a consumer's state root this tree does not hold"
+  ],
+  "pins": [
+    "the rendered page scan reports a page name outside a consumer's state root this tree does not hold"
+  ],
+  "notes": "Off note THE-HARNESS-HELP-PAGE-COMPOSES-THE-PROTOCOL-PATH. Verified: `holdsFile` (`tests/helpers/commentCitations.ts:1084`) resolves every rendered name against `root`, and `harness/cliHelp.ts:34` interpolates `protocolPath(DEFAULT_STATE_ROOT)` — a post-init consumer tree, green today only because this repo holds `.flume/PROTOCOL.md`. Of the note's two forks this is the decidable one; the per-path exemption cannot check that its pin exists. `tests/commentCitations.test.ts:2132` is that pin."
+}
