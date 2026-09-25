@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join, sep } from "node:path";
 
 vi.mock("node:child_process", () => ({
@@ -602,6 +602,91 @@ describe("withSessionCapture", () => {
       expect(captured).toBe("bytes");
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a failed capture write as the invocation's error rather than an uncaught exception", async () => {
+    const dir = await mkTempDir("flume-capture-fail-");
+    try {
+      // A directory where the capture file goes: the stream's open refuses
+      // with EISDIR on every host, where a permission bit would deny nothing
+      // on win32 (`.claude/rules/platform-facts.md`, *chmod denies nothing on
+      // win32*).
+      await mkdir(join(dir, "session.txt"));
+
+      let settled = false;
+      const fake: Agent = {
+        name: "fake",
+        async invoke(inv) {
+          inv.onStdout?.("hello ");
+          inv.onStdout?.("world\n");
+          settled = true;
+          return { exitCode: 0, stdout: "hello world\n", stderr: "" };
+        },
+      };
+
+      let outerSaw = "";
+      const wrapped = withSessionCapture(fake, {
+        dir,
+        filename: () => "session.txt",
+      });
+      const error = await wrapped
+        .invoke({
+          cwd: "/tmp",
+          prompt: "",
+          onStdout: (chunk) => {
+            outerSaw += chunk;
+          },
+        })
+        .then(
+          () => undefined,
+          (err: unknown) => err,
+        );
+
+      // The wrapped agent ran to completion and the caller still saw its
+      // stdout — the capture failure is what the rejection is about.
+      expect(settled).toBe(true);
+      expect(outerSaw).toBe("hello world\n");
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain("session capture failed");
+      expect((error as Error).message).toContain("session.txt");
+      expect(((error as Error).cause as NodeJS.ErrnoException).code).toBe(
+        "EISDIR",
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a wrapped agent's own rejection and rides the capture failure on it as cause", async () => {
+    const dir = await mkTempDir("flume-capture-both-");
+    try {
+      await mkdir(join(dir, "session.txt"));
+
+      const agentFailure = new Error("agent blew up");
+      const fake: Agent = {
+        name: "fake",
+        async invoke(inv) {
+          inv.onStdout?.("partial");
+          throw agentFailure;
+        },
+      };
+
+      const wrapped = withSessionCapture(fake, {
+        dir,
+        filename: () => "session.txt",
+      });
+      const error = await wrapped.invoke({ cwd: "/tmp", prompt: "" }).then(
+        () => undefined,
+        (err: unknown) => err,
+      );
+
+      expect(error).toBe(agentFailure);
+      expect(((error as Error).cause as NodeJS.ErrnoException).code).toBe(
+        "EISDIR",
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 

@@ -9,7 +9,7 @@
 import { mkdir } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { basename, toNamespacedPath } from "node:path";
-import { fsStamp, namespacedJoin } from "./paths.js";
+import { fsStamp, namespacedJoin, plainPath } from "./paths.js";
 import {
   assistantTurnText,
   contentBlocksOfType,
@@ -467,6 +467,16 @@ export interface SessionCaptureOpts {
  * The file is created when the invocation starts and closed when it
  * resolves (success or failure). Stderr is not captured to file; the
  * underlying agent's `onStderr` still fires normally.
+ *
+ * A capture that fails — the open refused, a write or the flush errored —
+ * is this invocation's error, raised once the wrapped agent has settled and
+ * the stream is closed. Nothing aborts the agent for it: the tree under the
+ * invocation's cwd is still running, so the failure waits rather than
+ * leaving the process to die on an unhandled stream `error` mid-tick. A
+ * wrapped agent that rejects on its own keeps its own rejection — that call
+ * is already loud, and its shape is what a caller classifies a preempt by
+ * (`abortError` above) — so the capture failure rides it as `cause` where
+ * the rejection has none.
  */
 export function withSessionCapture(
   agent: Agent,
@@ -477,8 +487,11 @@ export function withSessionCapture(
     async invoke(inv) {
       await mkdir(toNamespacedPath(opts.dir), { recursive: true });
       const name = opts.filename?.(inv) ?? defaultCaptureFilename(inv);
-      const stream = createWriteStream(namespacedJoin(opts.dir, name), {
-        encoding: "utf8",
+      const file = namespacedJoin(opts.dir, name);
+      const stream = createWriteStream(file, { encoding: "utf8" });
+      let captureError: unknown;
+      stream.on("error", (err) => {
+        captureError ??= err;
       });
       const wrapped: AgentInvocation = {
         ...inv,
@@ -487,13 +500,32 @@ export function withSessionCapture(
           inv.onStdout?.(chunk);
         },
       };
-      try {
-        return await agent.invoke(wrapped);
-      } finally {
-        await new Promise<void>((r) => stream.end(r));
+      const settled = await agent.invoke(wrapped).then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      await new Promise<void>((r) => stream.end(r));
+      if (!settled.ok) {
+        if (captureError !== undefined) attachCause(settled.error, captureError);
+        throw settled.error;
       }
+      if (captureError !== undefined) {
+        throw new Error(`session capture failed for ${plainPath(file)}`, {
+          cause: captureError,
+        });
+      }
+      return settled.value;
     },
   };
+}
+
+/**
+ * Records a second failure on an error that is already being thrown, where
+ * doing so costs the reader nothing: an error carrying its own `cause` keeps
+ * it.
+ */
+function attachCause(err: unknown, cause: unknown): void {
+  if (err instanceof Error && err.cause === undefined) err.cause = cause;
 }
 
 function defaultCaptureFilename(inv: AgentInvocation): string {
