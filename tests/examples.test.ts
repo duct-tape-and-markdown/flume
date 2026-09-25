@@ -2643,3 +2643,76 @@ describe("backlog-groomer-chain.ts — the reason is one line", () => {
     }
   });
 });
+
+/**
+ * `.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source* — the groom template spelled its two artifacts by hand
+ * while the chain that ships it holds both as the constants its fence, its
+ * parse gate and its ledger writer already read. A consumer copying the pair
+ * into a repo of its own renames the artifact in one place and the prompt goes
+ * on naming the old one, in the surface no typecheck reads.
+ *
+ * Agreement pin (*A seam gate reads what the real writer wrote*): the literals
+ * are read off the phase's real `writablePaths` — the chain's own home for
+ * them, never spelled here — and the template is the shipped bytes the
+ * engine's `renderPrompt` reads, run with the phase's real `promptArgs`. So a
+ * path respelled on either side reds this rather than drifting quietly.
+ *
+ * The negative assertion's subject is the template on disk, whose bytes are
+ * fixed, rather than a rendered artifact quoting content this case did not
+ * author (`.claude/rules/posture-sweep.md`, *Standing lenses*); what the
+ * render proves is the positive half — the placeholders it names instead all
+ * resolve, and the body still names both artifacts.
+ */
+describe("backlog-groomer-chain.ts — the prompt names its artifacts through the chain's constants", () => {
+  const groom = backlogGroomerChain.phases.find((p) => p.name === "groom");
+
+  it("the backlog groomer prompt states no path literal its chain holds as a constant", async () => {
+    // Vacuity pins (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*): an empty fence or an undeclared builder would leave every
+    // claim below asserted over nothing.
+    expect(groom, "the groomer chain declares a groom phase").toBeDefined();
+    expect(groom!.promptArgs, "the groom phase declares promptArgs").toBeTypeOf(
+      "function",
+    );
+    const held = groom!.writablePaths;
+    expect(held.length, "the groom fence names the artifacts it holds").toBe(2);
+
+    const promptFile = fileURLToPath(
+      new URL(`../examples/${groom!.promptPath}`, import.meta.url),
+    );
+    const template = readFileSync(promptFile, "utf8");
+    for (const path of held) {
+      expect(template, `the template spells ${path} itself`).not.toContain(path);
+    }
+
+    // `renderPrompt` throws on a `{{KEY}}` no promptArgs supplies, so the
+    // template and the builder are read together rather than one at a time.
+    const args = groom!.promptArgs!({
+      cwd: EXAMPLE_PATHS.repoRoot,
+      flumeDir: EXAMPLE_PATHS.flumeDir,
+    });
+    const placeholders = [...template.matchAll(/\{\{([A-Z][A-Z0-9_]*)\}\}/g)].map(
+      (m) => m[1]!,
+    );
+    expect(placeholders.length).toBeGreaterThan(0);
+    // FLUME_DIR is the dispatcher's reserved arg, injected past promptArgs.
+    expect(
+      placeholders.filter((k) => k !== "FLUME_DIR" && !(k in args)),
+    ).toEqual([]);
+
+    const rendered = await renderPrompt({
+      phase: groom!,
+      promptFile,
+      cwd: EXAMPLE_PATHS.repoRoot,
+      flumeDir: EXAMPLE_PATHS.flumeDir,
+      args,
+    });
+    // Past the fence block, which states the same two paths from the same
+    // constants — the body is what the substitution had to fill.
+    const body = rendered.slice(rendered.indexOf("</harness>"));
+    for (const path of held) {
+      expect(body, `the rendered task body names ${path}`).toContain(path);
+    }
+  });
+});

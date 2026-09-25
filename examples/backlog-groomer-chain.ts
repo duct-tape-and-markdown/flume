@@ -305,14 +305,29 @@ const factory: ChainFactory = (api) => {
    */
   const groom: Phase = {
     name: "groom",
-    description: "Read BACKLOG.json, ship the top pickable item, commit.",
+    description: `Read ${BACKLOG_PATH}, ship the top pickable item, commit.`,
     promptPath: "prompts/backlog-groomer.md",
     concurrency: "singleton",
     agent: capturingGroomAgent,
     writablePaths: [BACKLOG_PATH, SHIPPED_PATH],
     gates: [backlogParseGate],
+    /**
+     * The schema block, and the two artifact paths the prompt names. Both
+     * paths are constants this chain already holds — the fence above, the
+     * parse gate and the ledger writer all read them from there — so the
+     * template renders them rather than spelling them a second time
+     * (`.claude/rules/engineering.md`, *Derived state is computed, never
+     * restated beside its source*). A consumer renaming either artifact edits
+     * one line at the top of this file, and the prompt follows. What stays
+     * spelled in the template is what this chain holds no value for: the
+     * `groom:` commit prefix, and the ledger line's own shape.
+     */
     promptArgs() {
-      return { BACKLOG_SCHEMA: renderSchemaForPrompt(entryExtension) };
+      return {
+        BACKLOG_SCHEMA: renderSchemaForPrompt(entryExtension),
+        BACKLOG_PATH,
+        SHIPPED_PATH,
+      };
     },
     // One phase, no sibling to hand off to — the chain hibernates after every
     // tick, same as minimal-chain's `notes`.
