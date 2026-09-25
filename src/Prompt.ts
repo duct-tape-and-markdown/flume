@@ -140,10 +140,58 @@ export function isPriorAttemptMode(value: unknown): value is PriorAttemptMode {
 export type PriorAttemptKeyspace = "entry" | "phase";
 
 /**
+ * What every {@link PriorAttempt} record carries whatever mode tagged it:
+ * where the record is keyed, the identity it was keyed under, the entry
+ * declaration it was written against, and the world it was written in. Each
+ * variant below extends this and declares only the facts its own mode holds,
+ * so a fact the envelope gains is gained by all six at once rather than by
+ * six edits that have to agree.
+ */
+export interface PriorAttemptEnvelope {
+  /**
+   * Which keyspace this record's key lives in (spec/loop.md "No false
+   * signal") — stamped by the writer, never derived from the key's text.
+   */
+  key: PriorAttemptKeyspace;
+  /**
+   * The identity this record was written under — the entry tag slug
+   * (fanout) or the phase name as the chain spells it (singleton), stamped
+   * by the writer from the same ref that chose the file's path.
+   * `TickContext.priorAttempts` keys by {@link key} and this together —
+   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
+   * stem, so a phase whose name `slugify` rewrites still finds its own
+   * record under the name it already holds, and a phase and a tag that slug
+   * alike stay two records. The stem stays slugged, under its keyspace's own
+   * directory; only the map key is the written identity.
+   */
+  keyedAs: string;
+  /**
+   * The entry **as declared** when this record was written — its slug and a
+   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
+   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
+   * file's path. Entry-keyed records only: a singleton phase has no
+   * declaration to hash, and a record whose `key` says `entry` and carries
+   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
+   * than as a stale slot standing against the entry a queue holds now.
+   *
+   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
+   * phases*): {@link headSha} says which world the attempt was made in, this
+   * says which declaration it was made against. A producer's rewrite is a new
+   * key and lifts the refusal; a commit that only moves the tip leaves it
+   * standing.
+   */
+  declaredAs?: string;
+  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
+  headSha: string;
+  /** ISO timestamp alongside {@link headSha}. */
+  at: string;
+}
+
+/**
  * A prior attempt that committed and was then REVERTED by a gate
  * (`afterCommit` or `afterMerge`).
  */
-export interface GateRevertAttempt {
+export interface GateRevertAttempt extends PriorAttemptEnvelope {
   mode: "gate-revert";
   /** Which gate phase reverted the prior commit. */
   when: "afterCommit" | "afterMerge";
@@ -180,43 +228,6 @@ export interface GateRevertAttempt {
    * inferred by the engine.
    */
   blamesSpan?: false;
-  /**
-   * Which keyspace this record's key lives in (spec/loop.md "No false
-   * signal") — stamped by the writer, never derived from the key's text.
-   */
-  key: PriorAttemptKeyspace;
-  /**
-   * The identity this record was written under — the entry tag slug
-   * (fanout) or the phase name as the chain spells it (singleton), stamped
-   * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by {@link key} and this together —
-   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
-   * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds, and a phase and a tag that slug
-   * alike stay two records. The stem stays slugged, under its keyspace's own
-   * directory; only the map key is the written identity.
-   */
-  keyedAs: string;
-  /**
-   * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
-   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
-   * file's path. Entry-keyed records only: a singleton phase has no
-   * declaration to hash, and a record whose `key` says `entry` and carries
-   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
-   * than as a stale slot standing against the entry a queue holds now.
-   *
-   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
-   * phases*): {@link headSha} says which world the attempt was made in, this
-   * says which declaration it was made against. A producer's rewrite is a new
-   * key and lifts the refusal; a commit that only moves the tip leaves it
-   * standing.
-   */
-  declaredAs?: string;
-  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
-  headSha: string;
-  /** ISO timestamp alongside {@link headSha}. */
-  at: string;
 }
 
 /**
@@ -230,7 +241,7 @@ export interface GateRevertAttempt {
  * tail of what the agent last said — and leaves the reading to whoever
  * reads {@link finalMessage}.
  */
-export interface CleanExitAttempt {
+export interface CleanExitAttempt extends PriorAttemptEnvelope {
   mode: "clean-exit";
   /**
    * The tail of the agent's own final message, bounded — lifted from the
@@ -254,43 +265,6 @@ export interface CleanExitAttempt {
    * span dies with its worktree rather than reaching the merge stage.
    */
   spanHead: string;
-  /**
-   * Which keyspace this record's key lives in (spec/loop.md "No false
-   * signal") — stamped by the writer, never derived from the key's text.
-   */
-  key: PriorAttemptKeyspace;
-  /**
-   * The identity this record was written under — the entry tag slug
-   * (fanout) or the phase name as the chain spells it (singleton), stamped
-   * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by {@link key} and this together —
-   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
-   * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds, and a phase and a tag that slug
-   * alike stay two records. The stem stays slugged, under its keyspace's own
-   * directory; only the map key is the written identity.
-   */
-  keyedAs: string;
-  /**
-   * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
-   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
-   * file's path. Entry-keyed records only: a singleton phase has no
-   * declaration to hash, and a record whose `key` says `entry` and carries
-   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
-   * than as a stale slot standing against the entry a queue holds now.
-   *
-   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
-   * phases*): {@link headSha} says which world the attempt was made in, this
-   * says which declaration it was made against. A producer's rewrite is a new
-   * key and lifts the refusal; a commit that only moves the tip leaves it
-   * standing.
-   */
-  declaredAs?: string;
-  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
-  headSha: string;
-  /** ISO timestamp alongside {@link headSha}. */
-  at: string;
 }
 
 /**
@@ -299,47 +273,10 @@ export interface CleanExitAttempt {
  * attempt's work — its reasoning is not discredited; the retry resumes the
  * work rather than treating the cut-off as a wall.
  */
-export interface PlatformPreemptAttempt {
+export interface PlatformPreemptAttempt extends PriorAttemptEnvelope {
   mode: "platform-preempt";
   /** The non-work failure class, bounded. */
   failureClass: string;
-  /**
-   * Which keyspace this record's key lives in (spec/loop.md "No false
-   * signal") — stamped by the writer, never derived from the key's text.
-   */
-  key: PriorAttemptKeyspace;
-  /**
-   * The identity this record was written under — the entry tag slug
-   * (fanout) or the phase name as the chain spells it (singleton), stamped
-   * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by {@link key} and this together —
-   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
-   * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds, and a phase and a tag that slug
-   * alike stay two records. The stem stays slugged, under its keyspace's own
-   * directory; only the map key is the written identity.
-   */
-  keyedAs: string;
-  /**
-   * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
-   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
-   * file's path. Entry-keyed records only: a singleton phase has no
-   * declaration to hash, and a record whose `key` says `entry` and carries
-   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
-   * than as a stale slot standing against the entry a queue holds now.
-   *
-   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
-   * phases*): {@link headSha} says which world the attempt was made in, this
-   * says which declaration it was made against. A producer's rewrite is a new
-   * key and lifts the refusal; a commit that only moves the tip leaves it
-   * standing.
-   */
-  declaredAs?: string;
-  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
-  headSha: string;
-  /** ISO timestamp alongside {@link headSha}. */
-  at: string;
 }
 
 /**
@@ -351,7 +288,7 @@ export interface PlatformPreemptAttempt {
  * failed): under either writer the agent never ran at all, so a chain's
  * `handoff` can tell "could not see" from "chose not to act".
  */
-export interface RenderRefusedAttempt {
+export interface RenderRefusedAttempt extends PriorAttemptEnvelope {
   mode: "render-refused";
   /**
    * What refused, bounded: every failing span's command text and stderr, or
@@ -359,43 +296,6 @@ export interface RenderRefusedAttempt {
    * retrying tick reads the text, and the two have no error type in common.
    */
   failures: string;
-  /**
-   * Which keyspace this record's key lives in (spec/loop.md "No false
-   * signal") — stamped by the writer, never derived from the key's text.
-   */
-  key: PriorAttemptKeyspace;
-  /**
-   * The identity this record was written under — the entry tag slug
-   * (fanout) or the phase name as the chain spells it (singleton), stamped
-   * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by {@link key} and this together —
-   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
-   * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds, and a phase and a tag that slug
-   * alike stay two records. The stem stays slugged, under its keyspace's own
-   * directory; only the map key is the written identity.
-   */
-  keyedAs: string;
-  /**
-   * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
-   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
-   * file's path. Entry-keyed records only: a singleton phase has no
-   * declaration to hash, and a record whose `key` says `entry` and carries
-   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
-   * than as a stale slot standing against the entry a queue holds now.
-   *
-   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
-   * phases*): {@link headSha} says which world the attempt was made in, this
-   * says which declaration it was made against. A producer's rewrite is a new
-   * key and lifts the refusal; a commit that only moves the tip leaves it
-   * standing.
-   */
-  declaredAs?: string;
-  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
-  headSha: string;
-  /** ISO timestamp alongside {@link headSha}. */
-  at: string;
 }
 
 /**
@@ -414,7 +314,7 @@ export interface RenderRefusedAttempt {
  * it discarded nothing, and the refused entry's commit is still on its own
  * worktree branch.
  */
-export interface TipMovedAttempt {
+export interface TipMovedAttempt extends PriorAttemptEnvelope {
   mode: "tip-moved";
   /** The base the agent's branch was recorded at, which the observed HEAD no longer descends from. */
   expectedTip: string;
@@ -423,43 +323,6 @@ export interface TipMovedAttempt {
    * own top commit as the intruder and leave it undiscoverable.
    */
   observedTip: string;
-  /**
-   * Which keyspace this record's key lives in (spec/loop.md "No false
-   * signal") — stamped by the writer, never derived from the key's text.
-   */
-  key: PriorAttemptKeyspace;
-  /**
-   * The identity this record was written under — the entry tag slug
-   * (fanout) or the phase name as the chain spells it (singleton), stamped
-   * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by {@link key} and this together —
-   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
-   * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds, and a phase and a tag that slug
-   * alike stay two records. The stem stays slugged, under its keyspace's own
-   * directory; only the map key is the written identity.
-   */
-  keyedAs: string;
-  /**
-   * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
-   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
-   * file's path. Entry-keyed records only: a singleton phase has no
-   * declaration to hash, and a record whose `key` says `entry` and carries
-   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
-   * than as a stale slot standing against the entry a queue holds now.
-   *
-   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
-   * phases*): {@link headSha} says which world the attempt was made in, this
-   * says which declaration it was made against. A producer's rewrite is a new
-   * key and lifts the refusal; a commit that only moves the tip leaves it
-   * standing.
-   */
-  declaredAs?: string;
-  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
-  headSha: string;
-  /** ISO timestamp alongside {@link headSha}. */
-  at: string;
 }
 
 /**
@@ -479,7 +342,7 @@ export interface TipMovedAttempt {
  * merged sha, what that commit touched, and whether the predicate ran to a
  * verdict at all.
  */
-export interface NotShippedAttempt {
+export interface NotShippedAttempt extends PriorAttemptEnvelope {
   mode: "not-shipped";
   /** The cherry-picked commit on trunk the predicate declined — still reachable, so the next tick can read it. */
   mergedSha: string;
@@ -503,43 +366,6 @@ export interface NotShippedAttempt {
   touchedPaths: string[];
   /** How many further paths the commit touched beyond {@link touchedPaths}'s bound. Absent when the list is whole. */
   omittedPaths?: number;
-  /**
-   * Which keyspace this record's key lives in (spec/loop.md "No false
-   * signal") — stamped by the writer, never derived from the key's text.
-   */
-  key: PriorAttemptKeyspace;
-  /**
-   * The identity this record was written under — the entry tag slug
-   * (fanout) or the phase name as the chain spells it (singleton), stamped
-   * by the writer from the same ref that chose the file's path.
-   * `TickContext.priorAttempts` keys by {@link key} and this together —
-   * `entry:<tag slug>`, `phase:<phase name>` — rather than by the filename
-   * stem, so a phase whose name `slugify` rewrites still finds its own
-   * record under the name it already holds, and a phase and a tag that slug
-   * alike stay two records. The stem stays slugged, under its keyspace's own
-   * directory; only the map key is the written identity.
-   */
-  keyedAs: string;
-  /**
-   * The entry **as declared** when this record was written — its slug and a
-   * hash of the declaration its queue file carried for it (`entryDeclaredKey`,
-   * `src/entryKey.ts`), stamped by the writer from the same ref that chose the
-   * file's path. Entry-keyed records only: a singleton phase has no
-   * declaration to hash, and a record whose `key` says `entry` and carries
-   * none reads as absent (`PriorAttemptStore` (`src/priorAttempts.ts`)) rather
-   * than as a stale slot standing against the entry a queue holds now.
-   *
-   * What a standing per-entry refusal keys on (`spec/harness.md`, *The
-   * phases*): {@link headSha} says which world the attempt was made in, this
-   * says which declaration it was made against. A producer's rewrite is a new
-   * key and lifts the refusal; a commit that only moves the tip leaves it
-   * standing.
-   */
-  declaredAs?: string;
-  /** Trunk tip when this record was written (spec/loop.md "Every record is anchored"). */
-  headSha: string;
-  /** ISO timestamp alongside {@link headSha}. */
-  at: string;
 }
 
 /**
