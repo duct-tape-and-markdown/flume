@@ -1,0 +1,26 @@
+{
+  "tag": "THE-SHIM-RETRY-ARGV-SURVIVES-ITS-OWN-SHELL",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/Agent.ts",
+        "description": "the shell retry refuses the engine-composed settings value rather than handing it to a shell that rewrites it, and the retry's doc enumerates the argv it actually carries"
+      },
+      {
+        "path": "tests/Agent.test.ts",
+        "description": "the refusal leg under `withPlatform(\"win32\")`, beside the shim-fallback cases"
+      }
+    ]
+  },
+  "summary": "The win32 shim retry hands its argv to a shell unquoted, and the `--settings` JSON a declared budget puts there does not survive that re-parse",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a shell retry whose argv carries the engine-composed `--settings` value refuses at the point of detection, naming it, instead of handing the provider a value the shell rewrote; the chain-authored `extraArgs` tradeoff the site already declares is untouched, and the retry's doc names the argv it carries",
+  "tests": [
+    "claudeCode refuses the win32 shell retry when a declared budget put its settings JSON on the argv"
+  ],
+  "notes": "Verified: `src/Agent.ts:245`-`:247` declares the retry's argv as fixed flags plus `extraArgs`; `:262`-`:265` composes `budgetArgs` and `:286` puts it on the argv. Measured here — a shell re-parse of that JSON strips every quote, leaving `{hooks:{...}}`. This repo declares `contextWindow` for all four agents. Refusal rather than quoting because `budgetHook.ts:235`'s `shellQuote` is written for the provider's hook shell, not `cmd /d /s /c` over a batch shim, and no host here can measure that."
+}

@@ -1,0 +1,19 @@
+{
+  "tag": "THE-AGENT-SEAM-PROSE-STATES-ITS-CONDITION-ONCE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/Agent.ts",
+        "description": "the one-provider fact is stated once at the seam, as its condition, and the module header points at it"
+      }
+    ]
+  },
+  "summary": "`src/Agent.ts` spells \"v0 ships one implementation\" twice, scoped to a version era that names no retiring condition or actor — the family four plan commit bodies have accepted as debt",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "the fact that one provider ships today is stated once, at the `Agent` seam it is about, as the condition that would change it rather than as a version era, with the module header pointing at it; no `v0`-scoped span remains in `src/`",
+  "notes": "Filed under the three-notes rule; the count is four, read off `git log` over every plan commit body: a18bd053, 09abf7ac, 8292ffc7, 04dbb19e. Sites on disk this tick: `src/Agent.ts:4` (module header) and `:166` (the `Agent` interface's doc) — one fact in two copies, each era-scoped (`.claude/rules/engineering.md`, *Prefer the condition to the era*). Claims no property, as that rule states. Wants a wave of its own; collides `src/Agent.ts` with two siblings filed this tick."
+}
