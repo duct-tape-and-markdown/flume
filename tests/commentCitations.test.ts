@@ -34,23 +34,22 @@ import {
   type CitationScan,
   type CitationSite,
   type PageCitationScan,
+  type RenderedCitationScan,
   type RenderedSurface,
-  type SectionCitation,
   formatCitation,
   scanCommentCitations,
   scanPageCitations,
-  scanRenderedSections,
+  scanRenderedCitations,
 } from "./helpers/commentCitations.ts";
 import { externalVocabulary } from "./helpers/externalVocabulary.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { INTERFACE_PAGES, pageIdentifiers } from "./helpers/pageAnchors.ts";
-import { shippedHelpPages } from "./helpers/shippedHelp.ts";
+import { shippedHelpPages, shippedPages } from "./helpers/shippedHelp.ts";
 import {
   NO_FINDINGS,
   expectNoFindings,
   modulesUnder,
   renderFindings,
-  type Scan,
   type ScanDomain,
 } from "./helpers/repoProgram.ts";
 
@@ -574,11 +573,13 @@ let fixturePageScan: PageCitationScan;
 /** The one page-arm scan of this repo's widened domain. */
 let repoPageScan: PageCitationScan;
 /** The one rendered-surface scan of the two fixture help pages. */
-let fixtureHelpScan: Scan<SectionCitation>;
+let fixtureHelpScan: RenderedCitationScan;
 /** Every help page this repo's CLI really prints, one surface each. */
 let shippedHelp: readonly RenderedSurface[];
-/** The one rendered-surface scan of those pages. */
-let repoHelpScan: Scan<SectionCitation>;
+/** Every surface this package ships prose in — those pages and the packed assets. */
+let shippedProse: readonly RenderedSurface[];
+/** The one rendered-surface scan of all of them. */
+let repoHelpScan: RenderedCitationScan;
 
 beforeAll(async () => {
   fixtureRoot = await mkTempDir("flume-citation-scan-");
@@ -605,14 +606,15 @@ beforeAll(async () => {
     root: REPO_ROOT,
     domain: PAGE_ARM_DOMAIN,
   });
-  fixtureHelpScan = scanRenderedSections({
+  fixtureHelpScan = scanRenderedCitations({
     root: fixtureRoot,
     surfaces: FIXTURE_HELP_SURFACES,
   });
   shippedHelp = shippedHelpPages();
-  repoHelpScan = scanRenderedSections({
+  shippedProse = shippedPages();
+  repoHelpScan = scanRenderedCitations({
     root: REPO_ROOT,
-    surfaces: shippedHelp,
+    surfaces: shippedProse,
   });
 });
 
@@ -1509,7 +1511,7 @@ it("a section cite in a shipped help literal naming a section its page does not 
   // by the command that prints the page rather than by a path, because that
   // is where its reader finds it.
   expect(
-    fixtureHelpScan.scanned.map(
+    fixtureHelpScan.sections.scanned.map(
       (site) => `${formatCitation(site)} -> ${site.page}`,
     ),
   ).toEqual([
@@ -1525,9 +1527,30 @@ it("a section cite in a shipped help literal naming a section its page does not 
   // closes to the heading it names rather than being lost the way a broken
   // token is. What reds is the abbreviation and the page the tree does not
   // hold — the same two refusals, read off a literal the package ships.
-  expect(fixtureHelpScan.findings.map(formatCitation)).toEqual([
+  expect(fixtureHelpScan.sections.findings.map(formatCitation)).toEqual([
     "probe --help:9 Derived state is computed",
     "probe --help:10 Loud or nothing",
+  ]);
+});
+
+it("a *.md page name in a shipped literal the working tree cannot answer is a finding", () => {
+  // Vacuity guard: the arm drew every page name the two surfaces state, both
+  // fencings and both surfaces, before a verdict is read off any of them. A
+  // reader that stopped at the first surface, or that read only a backticked
+  // name, would report its finding for the wrong reason.
+  expect(fixtureHelpScan.pages.scanned.map(formatCitation)).toEqual([
+    "probe --help:5 docs/sections.md",
+    "probe --help:6 docs/sections.md",
+    "probe --help:9 docs/sections.md",
+    "probe --help:10 docs/absent.md",
+    "probe list --help:3 docs/sections.md",
+  ]);
+
+  // The verdict, and it is the title arm's verdict: the page name is answered
+  // by the working tree and by nothing else, so a page the tree holds
+  // resolves however the literal spells it and a page it does not hold reds.
+  expect(fixtureHelpScan.pages.findings.map(formatCitation)).toEqual([
+    "probe --help:10 docs/absent.md",
   ]);
 });
 
@@ -2096,15 +2119,15 @@ it("every section a shipped help literal cites is a section its page still carri
   expect(shippedHelp.map((surface) => surface.name)).toContain(
     "flume loop --help",
   );
-  expect(repoHelpScan.scanned.length).toBeGreaterThan(2);
+  expect(repoHelpScan.sections.scanned.length).toBeGreaterThan(2);
 
   // Judged in the direction that matters: the cites these pages state resolve
   // against the headings their pages still open, so a heading rewritten reds
   // here as it already reds a comment citing it. Spelled as the help text
   // spells them — the match folds the page's own backticks out.
-  const dangling = new Set(repoHelpScan.findings);
+  const dangling = new Set(repoHelpScan.sections.findings);
   const resolved = new Set(
-    repoHelpScan.scanned
+    repoHelpScan.sections.scanned
       .filter((site) => !dangling.has(site))
       .map((site) => `${site.page} :: ${site.text}`),
   );
@@ -2119,8 +2142,40 @@ it("every section a shipped help literal cites is a section its page still carri
   // once backticks and the wrapping are folded out, and there is no prefix arm
   // for an abbreviation to land on. Spell the section as its page titles it.
   expectNoFindings(
-    repoHelpScan.findings.map(
+    repoHelpScan.sections.findings.map(
       (site) => `${formatCitation(site)} -> ${site.page}`,
     ),
   );
+});
+
+it("every *.md page name a page the package ships states resolves on disk", () => {
+  // Vacuity guard: the judged surfaces are both halves of what this package
+  // ships prose in — the pages its bins print and the `*.md` assets the build
+  // packs beside the emit — and they state page names, before the emptiness
+  // below is read off them. A reader that drew the help pages alone, or an
+  // asset walk that found no page, would report a clean surface over a set
+  // narrower than the claim.
+  const surfaces = shippedProse.map((surface) => surface.name);
+  expect(surfaces).toContain("flume-harness --help");
+  expect(surfaces).toContain("harness/prompts/plan-derive.md");
+  expect(surfaces).toContain("harness/templates/PROTOCOL.md");
+  expect(repoHelpScan.pages.scanned.length).toBeGreaterThan(2);
+
+  // Judged in the direction that matters: a page name a shipped literal
+  // states is answered by the working tree, so a page renamed out from under
+  // one reds here as it already reds a comment naming it.
+  const dangling = new Set(repoHelpScan.pages.findings);
+  const resolved = new Set(
+    repoHelpScan.pages.scanned
+      .filter((site) => !dangling.has(site))
+      .map((site) => site.text),
+  );
+  for (const page of ["spec/loop.md", "spec/harness.md"]) {
+    expect(`${page} -> ${resolved.has(page)}`).toBe(`${page} -> true`);
+  }
+
+  // The verdict: an operator reading a `--help` page and an agent reading a
+  // packed prompt follow the page it names, so a name the tree cannot answer
+  // is a dead pointer in the one surface neither of them can check.
+  expectNoFindings(repoHelpScan.pages.findings.map(formatCitation));
 });

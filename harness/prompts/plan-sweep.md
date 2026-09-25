@@ -28,6 +28,7 @@ queue (one `<tag>.json` per entry): {{PENDING_DIR}}
 your plan state (this slice's own file): {{PLAN_STATE_PATH}}
 open questions: {{QUESTIONS_DIR}}
 record queues: {{RECORD_DIRS}}
+project conventions: {{PROTOCOL}}
 discipline: {{DISCIPLINE}}
 </artifacts>
 

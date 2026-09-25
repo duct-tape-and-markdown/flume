@@ -1,7 +1,7 @@
 /**
  * Where every plan artifact sits under a state root — the queue, each plan
- * slice's own state file, the questions directory, the record queues and
- * build's two notes —
+ * slice's own state file, the questions directory, the record queues,
+ * build's two notes and the protocol page adoption writes beside them —
  * and the fence that is their list (`spec/harness.md`, *Committed-path discipline*:
  * every mechanic the package wires addresses a path some commit holds).
  *
@@ -103,6 +103,15 @@ export const QUESTIONS_DIR_REL = "plan/questions";
  * tree is not a question and must not read as one still open.
  */
 export const QUESTION_EXT = ".md";
+
+/**
+ * Where the project's own conventions sit under a state root: the page
+ * `flume-harness init` writes from the shipped template, and the page the
+ * plan slices' prompts send a reader to. Two callers, so one home — a page
+ * the verb writes at one path and a prompt names at another is a pointer
+ * that reads as current and resolves nowhere.
+ */
+export const PROTOCOL_REL = "PROTOCOL.md";
 
 /** Where a build tick's observation to plan sits under a state root. */
 const NOTES_REL = "plan/notes";
@@ -280,6 +289,14 @@ export function questionsDir(stateRoot: string): string {
  */
 export function questionGlob(stateRoot: string): string {
   return `${questionsDir(stateRoot)}/*${QUESTION_EXT}`;
+}
+
+/**
+ * {@link PROTOCOL_REL} under a state root — the path adoption writes the page
+ * to, and the path a prompt sends its reader to.
+ */
+export function protocolPath(stateRoot: string): string {
+  return underStateRoot(stateRoot, PROTOCOL_REL);
 }
 
 /**

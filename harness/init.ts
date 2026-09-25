@@ -47,7 +47,7 @@ import { readSelfPackage } from "../src/selfPackage.js";
 import { detailOf } from "./exec.js";
 import { resolvesInTree, tipOf } from "./gitRange.js";
 import { consumerIgnores } from "./ignores.js";
-import { planStatePath, queueDir } from "./layout.js";
+import { planStatePath, PROTOCOL_REL, queueDir } from "./layout.js";
 import { seedPlanState } from "./planState.js";
 
 /** The directory holding this module, in whichever layout it is running from. */
@@ -79,9 +79,6 @@ const DECLARATION_REL = "declaration.ts";
  * for a consumer adopting the package is the state root init just made.
  */
 const CHAIN_REL = "chain.ts";
-
-/** Where the project's own conventions sit under a state root. */
-const PROTOCOL_REL = "PROTOCOL.md";
 
 /**
  * The manifest that sits beside {@link CHAIN_REL} — the one file deciding

@@ -1,6 +1,6 @@
 # Plan discipline — what every plan slice holds to
 
-Not injected into any tick: each slice's prompt names this file's path, and you open it once before writing the queue, your slice's plan state file, or a question. One home for the rules the slices share; `PROTOCOL.md` holds what an entry carries and what makes one good. Every path this page speaks of by name is spelled out in the `<artifacts>` block of the slice prompt that sent you here.
+Not injected into any tick: each slice's prompt names this file's path, and you open it once before writing the queue, your slice's plan state file, or a question. One home for the rules the slices share; the project conventions page the `<artifacts>` block names holds what an entry carries and what makes one good. Every path this page speaks of by name is spelled out in the `<artifacts>` block of the slice prompt that sent you here.
 
 ## Fields point, never restate
 

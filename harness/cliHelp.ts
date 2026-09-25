@@ -25,8 +25,8 @@ Commands:
   init                Write the declaration skeleton, the chain.ts that
                       applies the package's factory to it, the package.json
                       scoping both as ESM, the state root, the runtime
-                      ignore lines and PROTOCOL.md into the current
-                      directory, and declare the package in its
+                      ignore lines and ${DEFAULT_STATE_ROOT}/PROTOCOL.md into
+                      the current directory, and declare the package in its
                       package.json.
                       Refuses if ${DEFAULT_STATE_ROOT}/ is already there.
 

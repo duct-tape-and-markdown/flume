@@ -123,13 +123,14 @@
  * route them through, so a backtick around a page name there is decoration
  * the way a paren is.
  *
- * A shipped help literal is the third place, and the section arm is all that
- * reaches it: `scanRenderedSections` below reads the cites a `--help` page
- * states, rendered by the program that prints it rather than copied, and
- * resolves each against the page it names. A literal is a resolution arm, so
- * the identifier alphabet is left alone there for the reason a title leaves it
- * alone; a page's own headings are answered by the working tree, which no
- * literal can write into.
+ * A literal the package ships is the third place, and it takes the two arms a
+ * title takes: `scanRenderedCitations` below reads the page names and the
+ * section cites a `--help` page or a packed `*.md` asset states, rendered by
+ * the program that prints it or read from the file the build packs rather
+ * than copied, and resolves each on disk. A literal is a resolution arm, so
+ * the identifier alphabet is left alone there for the reason a title leaves
+ * it alone; a page name and a page's own headings are answered by the working
+ * tree, which no literal can write into.
  *
  * An interface page's own prose is the fourth, and takes the same arm: the
  * walk lives with the page readers (`scanPageSections`,
@@ -570,22 +571,28 @@ const titleSites = (sf: ts.SourceFile, module: string): CitationSite[] => {
 };
 
 /**
- * The backtick a title puts around a name. A title reaches no fenced arm —
- * the carve-out gives it the page-name arm alone — so a backtick there is
+ * The backtick a literal puts around a name. A literal reaches no fenced arm
+ * — the carve-out gives it the page-name arm alone — so a backtick there is
  * decoration the way a paren is. Blanked rather than deleted, so two names a
  * single backtick separates never join into one token.
  */
-const TITLE_FENCE = /`/g;
+const LITERAL_FENCE = /`/g;
 
 /**
- * The `*.md` page names one title carries, read by the arm that reads them
+ * The `*.md` page names one literal carries, read by the arm that reads them
  * unfenced in a comment — the same regex, the same left-edge trim, the same
  * subject rule — so a page name is judged the same wherever an author wrote
- * it. The line is the title's own: a name inside a literal has no line of its
- * own to cite.
+ * it. The line is the citing site's own: a name inside a literal has no line
+ * of its own to cite, and a rendered surface hands this reader one line at a
+ * time so a page's own line number is what a finding carries.
+ *
+ * One reader, two callers — the test titles the program scan collects and the
+ * rendered surfaces {@link scanRenderedCitations} reads — because a page name
+ * is the same claim wherever a literal the package ships states it
+ * (`.claude/rules/engineering.md`, *A module is one job*).
  */
-const titlePages = (site: CitationSite): CitationSite[] =>
-  [...site.text.replace(TITLE_FENCE, " ").matchAll(BARE_PAGE)].map((match) => ({
+const literalPages = (site: CitationSite): CitationSite[] =>
+  [...site.text.replace(LITERAL_FENCE, " ").matchAll(BARE_PAGE)].map((match) => ({
     module: site.module,
     line: site.line,
     text: match[0].replace(OPENING_PUNCTUATION, ""),
@@ -773,7 +780,7 @@ const SECTION_CITE = /`?([^\s`(),]+\.md)`?,?\s+(?:\*([^*]+)\*|"([^"]+)")/g;
  * string on every rewrap.
  *
  * One reader, two callers — the comment runs below and the rendered surfaces
- * `scanRenderedSections` reads — because a cite is the same claim wherever a
+ * `scanRenderedCitations` reads — because a cite is the same claim wherever a
  * shipped text states it (`.claude/rules/engineering.md`, *A module is one
  * job*).
  */
@@ -1381,7 +1388,7 @@ export const scanCommentCitations = (
   // in one is a token of the tree by having been written, and every verdict
   // read through `tokens` would answer the citation out of the citation.
   const titlePageNames = titled
-    .flatMap(titlePages)
+    .flatMap(literalPages)
     .filter((site) => isPageName(site.text));
 
   // The section arm is answered by the working tree the way the page-name arm
@@ -1562,46 +1569,81 @@ export interface RenderedSurface {
   readonly text: string;
 }
 
-/** The surfaces a rendered-section scan reads, and the root it resolves against. */
-export interface RenderedSectionScanRequest {
+/** The surfaces a rendered-citation scan reads, and the root it resolves against. */
+export interface RenderedCitationScanRequest {
   /** Absolute path to the scanned root. */
   readonly root: string;
-  /** The rendered texts whose section cites are judged. */
+  /** The rendered texts whose citations are judged. */
   readonly surfaces: readonly RenderedSurface[];
 }
 
 /**
- * The section cites a set of rendered surfaces state, and the ones their page
- * no longer titles.
+ * Two verdicts over two judged sets, the pair a literal the package ships can
+ * carry: the `*.md` page names its surfaces state, and the section halves
+ * they cite.
+ */
+export interface RenderedCitationScan {
+  /** The page names those surfaces state, and the ones the tree cannot answer. */
+  readonly pages: Scan<CitationSite>;
+  /** The section cites they state, and the ones their page no longer titles. */
+  readonly sections: Scan<SectionCitation>;
+}
+
+/**
+ * The citations a set of rendered surfaces state, and the ones nothing
+ * answers.
  *
- * The same arm the two comment scans run, reaching the third place a citation
- * sits: a literal the package ships to a reader. A doc comment is the hover
- * text a chain author reads and a `--help` page is what the operator reads
- * first, so a cite in one is as load-bearing as a cite in the other
- * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+ * The same arms the two comment scans run, reaching the third place a
+ * citation sits: a literal the package ships to a reader. A doc comment is
+ * the hover text a chain author reads and a `--help` page is what the
+ * operator reads first, so a cite in one is as load-bearing as a cite in the
+ * other (`.claude/rules/engineering.md`, *Narration is the ladder's bottom
+ * rung*).
  *
- * The section arm alone reaches here, for the reason a test title carries the
- * page-name arm alone: a literal is itself a resolution arm, so an identifier
- * written in one would resolve against itself. A section is answered by the
- * named page's own headings, which no literal can write into.
+ * Two of the arms reach here, and they are the two a test title carries for
+ * the same reason: a literal is itself a resolution arm, so an identifier
+ * written in one would resolve against itself, while the working tree is
+ * written by no literal. A page name is answered by the tree, and a section
+ * by the named page's own headings.
  *
  * The surfaces are the caller's to render, from the program that prints them
  * rather than from a copy of their text — a cite read off a hand copy pins the
  * copy (`.claude/rules/engineering.md`, *A seam gate reads what the real
  * writer wrote*).
  */
-export const scanRenderedSections = (
-  request: RenderedSectionScanRequest,
-): Scan<SectionCitation> =>
-  resolveSectionCites(
-    request.root,
-    request.surfaces.flatMap((surface) =>
-      sectionCitesIn(
-        surface.name,
-        surface.text.split(/\r?\n/).map((text, index) => ({ line: index + 1, text })),
+export const scanRenderedCitations = (
+  request: RenderedCitationScanRequest,
+): RenderedCitationScan => {
+  const root = resolve(request.root);
+  const pages = request.surfaces
+    .flatMap((surface) =>
+      surfaceLines(surface).flatMap((line) =>
+        literalPages({ module: surface.name, line: line.line, text: line.text }),
+      ),
+    )
+    .filter((site) => isPageName(site.text));
+
+  return {
+    pages: {
+      scanned: pages,
+      findings: pages.filter((site) => !holdsFile(root, site.text)),
+    },
+    sections: resolveSectionCites(
+      root,
+      request.surfaces.flatMap((surface) =>
+        sectionCitesIn(surface.name, surfaceLines(surface)),
       ),
     ),
-  );
+  };
+};
+
+/**
+ * One rendered surface as the run of lines its reader sees, numbered from the
+ * top of the printed page. Both arms above read the same numbering, so a
+ * finding cites one line whichever arm drew it.
+ */
+const surfaceLines = (surface: RenderedSurface): ProseLine[] =>
+  surface.text.split(/\r?\n/).map((text, index) => ({ line: index + 1, text }));
 
 /**
  * The section cites one run of text states, at the line each sits on.

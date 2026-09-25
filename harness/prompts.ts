@@ -66,6 +66,7 @@ import {
   notePath,
   parkedNotePath,
   planStatePath,
+  protocolPath,
   questionsDir,
   recordDirs,
 } from "./layout.js";
@@ -191,6 +192,7 @@ export const SHARED_PROMPT_DATA_KEYS = [
   "NO_COMMIT_MODES",
   "RECORD_MAX_BYTES",
   "DISCIPLINE",
+  "PROTOCOL",
   "PENDING_SCHEMA",
   "TESTS_HINT",
   "PINS_HINT",
@@ -255,6 +257,13 @@ export function sharedPromptArgs(
     RECORD_MAX_BYTES: String(RECORD_MAX_BYTES),
     /** Where the slices send a reader for the discipline they share. */
     DISCIPLINE: promptPath(DISCIPLINE),
+    /**
+     * Where the consumer's own conventions sit — the page adoption wrote,
+     * addressed under this tick's state root rather than spelled in the
+     * prompts. A prompt that named it by bare filename would name a page at
+     * no path any consumer holds (`layout.ts`).
+     */
+    PROTOCOL: protocolPath(stateRoot),
     PENDING_SCHEMA: renderSchemaForPrompt(extension),
     TESTS_HINT: hintOf(extension, "tests"),
     PINS_HINT: hintOf(extension, "pins"),

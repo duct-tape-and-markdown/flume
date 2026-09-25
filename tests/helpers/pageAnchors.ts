@@ -638,7 +638,7 @@ export interface PageSectionScan extends Scan<SectionCitation> {
  *
  * The fourth place the one section-cite arm reaches, after a doc comment, a
  * comment in the widened page domain, and a shipped help literal
- * (`scanRenderedSections`, `tests/helpers/commentCitations.ts`). A page that
+ * (`scanRenderedCitations`, `tests/helpers/commentCitations.ts`). A page that
  * states what a shipped interface does is the surface a consumer reads before
  * the hover text, so a cite it makes into a section that has been rewritten
  * out sends that reader nowhere, exactly as a comment's would
