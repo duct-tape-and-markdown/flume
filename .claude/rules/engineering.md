@@ -193,6 +193,12 @@ one-sided change ships green.
   against whatever enforces that schema at parse time; whatever declares a
   fence against whatever enforces it; a changelog against the diff it
   describes.
+- **The fixture reaches the whole output the pin claims.** A pin over a
+  producer's full set — every file a verb writes, every field a renderer
+  emits — asserts first that the input it handed the producer can produce
+  that set, because a populated set narrower than the claim passes `n > 0`
+  and reads as complete. A skeleton written into a repository with no
+  commit is the field-paid shape.
 - **The scope is agreement claims only.** Refusal and shape tests keep their
   hand-authored input — a real writer cannot produce the malformed input a
   reader's refusal is tested on.
