@@ -61,12 +61,13 @@ const spawned: ChildProcess[] = [];
 
 afterEach(() => {
   for (const child of spawned.splice(0)) {
-    if (child.pid === undefined || child.exitCode !== null) continue;
-    try {
-      process.kill(-child.pid, "SIGKILL");
-    } catch {
-      // already gone — the case's own teardown got there first
-    }
+    // Through the module's own guard rather than a liveness read beside it:
+    // a signal-killed child carries a null `exitCode` with its `signalCode`
+    // set, so a guard stopping at `exitCode` reads every case that ended on a
+    // SIGTERM as still live and aims SIGKILL at a group whose leader the host
+    // has already been free to re-hand. `false` here is the case's own
+    // teardown having got there first, which is the normal verdict.
+    signalProcessTree(child, "SIGKILL");
   }
 });
 
@@ -253,14 +254,37 @@ describe("terminateProcessTree — the escalation bounds the wait", () => {
       expect(code).toBe(0);
       expect(child.exitCode).toBe(0);
 
-      expect(() =>
-        terminateProcessTree(child, { graceMs: SHORT_GRACE_MS }),
-      ).not.toThrow();
+      // An escalation over a reaped pid is unobservable by construction —
+      // the SIGKILL it would deliver lands on whatever the host has since
+      // handed the pid to, never on anything this case holds — so the
+      // absence is read where the escalation is armed: the one `setTimeout`
+      // `terminateProcessTree` puts on the global clock. Sleeping past the
+      // grace instead leaves the case with no verdict at all
+      // (`.claude/rules/engineering.md`, "A green verdict is proven
+      // non-vacuous").
+      //
+      // The live child is spawned outside the spy's window so only the two
+      // terminate calls below are recorded, and both are synchronous, so
+      // nothing else can reach the clock between them.
+      const live = park(PARK);
+      const armings = vi.spyOn(globalThis, "setTimeout");
+      try {
+        // The instrument's control, first: the same call over a live child
+        // does arm, so the count of zero below is the guard refusing rather
+        // than a clock this module never reaches.
+        terminateProcessTree(live, { graceMs: SHORT_GRACE_MS });
+        expect(armings).toHaveBeenCalledTimes(1);
+        armings.mockClear();
 
-      // The SIGTERM found nothing, so no timer was armed: past the grace
-      // there is no SIGKILL left to land on whatever the host has since
-      // handed this pid to.
-      await delay(SHORT_GRACE_MS * 2);
+        terminateProcessTree(child, { graceMs: SHORT_GRACE_MS });
+        expect(armings).not.toHaveBeenCalled();
+      } finally {
+        armings.mockRestore();
+      }
+
+      // The control's own tree goes down on the SIGTERM it was handed, so the
+      // case leaves nothing for the teardown to reap.
+      expect((await ended(live)).signal).toBe("SIGTERM");
     },
     SPAWN_BUDGET_MS,
   );
