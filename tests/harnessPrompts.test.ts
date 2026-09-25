@@ -29,6 +29,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
 import {
+  BUILD_PHASE,
   INBOX_PHASE,
   PHASES,
   PLAN_SLICES,
@@ -41,6 +42,7 @@ import {
   QUESTION_EXT,
   QUESTIONS_DIR_REL,
   planStatePath,
+  protocolPath,
 } from "../harness/layout.ts";
 import { PLAN_STATE_SCHEMAS, writePlanState } from "../harness/planState.ts";
 import { NONE_OPEN, renderQuestions } from "../harness/questions.ts";
@@ -1148,6 +1150,37 @@ it("every phase prompt the package renders substitutes its own put-down statemen
   // One per phase, never one value handed to all of them: a `Record` keyed by
   // phase whose arms had converged would pass every assertion above.
   expect(statements.size).toBe(PHASES.length);
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The consumer's own conventions page reaches the build prompt, the way the
+ * three plan slices' `<artifacts>` blocks already name it.
+ *
+ * The value is a shared arg every phase is handed (`sharedPromptArgs`), so a
+ * prompt that names no placeholder for it simply drops it: a build tick then
+ * never reads the page adoption wrote for it, and the chain hands the same
+ * path over itself — the shape
+ * `.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*, files against the package. Judged at both ends of the seam
+ * like the two cases above: the placeholder at the markdown end, the
+ * producer's own state-root-relative path at the render's.
+ */
+it("a rendered build prompt names the consumer's PROTOCOL path", async () => {
+  // The producer's value, read from the producer — an empty one would make
+  // the `carries` assertion below trivially true.
+  const at = args(BUILD_PHASE)["PROTOCOL"];
+  expect(at, "the shared args supply no PROTOCOL").toBeDefined();
+  expect(at!.trim()).not.toBe("");
+  // Under this tick's state root, not a bare filename: the page sits at no
+  // path a consumer holds until the root is on the front of it
+  // (`harness/layout.ts`, `protocolPath`).
+  expect(at).toBe(protocolPath(stateRoot));
+
+  const raw = await readFile(promptPath(BUILD_PHASE), "utf8");
+  expect({
+    names: raw.includes("{{PROTOCOL}}"),
+    carries: (await render(BUILD_PHASE)).includes(at!),
+  }).toEqual({ names: true, carries: true });
 }, SPAWN_BUDGET_MS);
 
 /**

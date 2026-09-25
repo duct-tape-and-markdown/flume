@@ -20,6 +20,10 @@ The section the entry's `per` cites, from `{{PER_PATH}}` as this tick's tree hol
 !`git log -n 5 --oneline`
 </recent-commits>
 
+<artifacts>
+project conventions: {{PROTOCOL}}
+</artifacts>
+
 {{DOMAIN}}
 
 # TASK
