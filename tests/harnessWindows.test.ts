@@ -35,7 +35,6 @@ import {
   parseDeclaration,
   planSliceWindows,
   RECORD_MAX_BYTES,
-  recordsPending,
   planStatePath,
   writePlanState,
   type Declaration,
@@ -249,6 +248,10 @@ function record(
  *
  * Returns the host-native path the window renders the record at, so a case
  * asserting what the block carries compares against the file it wrote.
+ *
+ * **On the shared disk alone.** The render reads a checkout, so this is all a
+ * render case needs; the wake reads the tip, so a liveness case takes
+ * {@link commitRecord} instead (`spec/harness.md`, *The phases*).
  */
 function writeRecord(rel: string, text: string): string {
   const path = join(stateRoot(), ...rel.split("/"));
@@ -256,6 +259,30 @@ function writeRecord(rel: string, text: string): string {
   writeFileSync(path, text);
   return path;
 }
+
+/**
+ * The same record, landed on the tip — the tree a provisioned worktree is cut
+ * from, and so the one the wake leg counts.
+ *
+ * `-A`, so a case that left siblings on the shared disk lands them in the
+ * same commit: what a case is saying by calling this is "the tip carries the
+ * queue", never "this one file and no other".
+ */
+function commitRecord(rel: string, text: string): string {
+  const path = writeRecord(rel, text);
+  git("add", "-A");
+  git("commit", "-q", "-m", `records: ${rel}`);
+  return path;
+}
+
+/**
+ * Whether the tip holds a state-root-relative path — git's own answer, which
+ * is what the window's record leg is a claim about.
+ */
+const tipHolds = (rel: string): boolean =>
+  git("ls-tree", "--name-only", "-r", "HEAD")
+    .split("\n")
+    .includes(`${STATE_ROOT_REL}/${rel}`);
 
 /**
  * One file waiting in the declared friction channel — the engine's own
@@ -440,15 +467,16 @@ it("the inbox record leg is live while the queue carries a pickable entry", () =
   // Vacuity: nothing waits yet, so the window is shut over the same pickable
   // queue — the note written below is the only thing that opens it.
   const noRecord = inbox.live({ flumeDir: stateRoot(), pickable: true });
-  const path = writeRecord(
-    "plan/notes/AN-OBSERVATION.md",
+  const rel = "plan/notes/AN-OBSERVATION.md";
+  const path = commitRecord(
+    rel,
     "# An observation\n\nThe gate names its own command twice.\n",
   );
 
   expect({
     noRecord,
-    // The note really is in the queue the leg reads ...
-    waiting: recordsPending(stateRoot()),
+    // The note really is on the tip the leg reads ...
+    waiting: tipHolds(rel),
     // ... and the leg answers the same with the queue's one fact flipped.
     beside: inbox.live({ flumeDir: stateRoot(), pickable: true }),
     idle: inbox.live({ flumeDir: stateRoot(), pickable: false }),
@@ -459,6 +487,82 @@ it("the inbox record leg is live while the queue carries a pickable entry", () =
   const rendered = inbox.args({ cwd: repo, flumeDir: stateRoot() }).RECORDS;
   expect(rendered).toContain(path);
   expect(rendered).toContain("The gate names its own command twice.");
+});
+
+/**
+ * A record is read from the tip, as the drain that routes it is
+ * (`spec/harness.md`, *The phases*). The tick's worktree is cut from the tip,
+ * so a file the shared disk holds and the tip does not is work the woken tick
+ * cannot route: it would run, be handed none of it, file nothing, and be
+ * woken by the same file again.
+ *
+ * The pair below is one fixture read twice — an operator's finding on the
+ * shared disk alone, then one landed on the tip. Both legs are asserted each
+ * time, because the claim is that they agree: the render a tick in the
+ * primary checkout gets is what proves the uncommitted file was really there
+ * to have woken something.
+ */
+it("an inbox record the tip does not hold wakes no slice", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+  const rel = "inbox/2026-09-25-uncommitted.md";
+  const path = writeRecord(rel, "# A finding\n\nDropped into the checkout.\n");
+  const built = windows();
+
+  // Non-vacuity: the file is really on the shared disk — a tick whose tree
+  // *is* the primary checkout renders it — and the tip really does not hold
+  // it, so the verdicts below are that one fact and not an empty queue.
+  expect({
+    onDisk: existsSync(path),
+    onTip: tipHolds(rel),
+    rendered: built[INBOX_PHASE]
+      .args({ cwd: repo, flumeDir: stateRoot() })
+      .RECORDS!.includes(path),
+  }).toEqual({ onDisk: true, onTip: false, rendered: true });
+
+  // And no window opens over it. Every slice, because the cursors sit at HEAD
+  // and the rotation is closed: the record is the only unrouted thing in the
+  // tree, so a slice that woke here woke on it.
+  expect(
+    Object.fromEntries(
+      Object.entries(built).map(([name, window]) => [
+        name,
+        window.live({ flumeDir: stateRoot(), pickable: false }),
+      ]),
+    ),
+  ).toEqual({
+    [INBOX_PHASE]: false,
+    "plan-derive": false,
+    "plan-sweep": false,
+  });
+});
+
+it("a record the tip holds wakes the inbox slice", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+  const rel = "inbox/2026-09-25-a-finding.md";
+
+  // Vacuity: the tip carries no record yet, so the window is shut and the
+  // commit below is the only thing that opens it.
+  const beforeCommit = windows()[INBOX_PHASE].live({
+    flumeDir: stateRoot(),
+    pickable: false,
+  });
+  const path = commitRecord(rel, "# A finding\n\nObserved.\n");
+
+  expect({
+    beforeCommit,
+    onTip: tipHolds(rel),
+    live: windows()[INBOX_PHASE].live({
+      flumeDir: stateRoot(),
+      pickable: false,
+    }),
+    // ... and the tick it wakes is handed the record itself, which is the
+    // whole point of waking it.
+    rendered: windows()
+      [INBOX_PHASE].args({ cwd: repo, flumeDir: stateRoot() })
+      .RECORDS!.includes(path),
+  }).toEqual({ beforeCommit: false, onTip: true, live: true, rendered: true });
 });
 
 /**
@@ -480,7 +584,10 @@ it("the inbox window withholds a record whose entry another tick holds a claim o
     "plan/notes/HELD-ENTRY.md",
     "# Held\n\nThe note the build tick is still writing.\n",
   );
-  const park = writeRecord(
+  // Both, in one commit: the wake reads the tip, so a fixture that left
+  // either on the shared disk alone would assert the withholding over a
+  // window nothing opened.
+  const park = commitRecord(
     "plan/notes/parked/HELD-ENTRY.md",
     "# Parked\n\nThe park the build tick is still rewriting.\n",
   );
@@ -532,7 +639,7 @@ it("the inbox window renders a record whose entry no tick has claimed", () => {
 
   const held = writeRecord("plan/notes/HELD-ENTRY.md", "# Held\n\nIn flight.\n");
   const free = writeRecord("plan/notes/FREE-ENTRY.md", "# Free\n\nDrainable.\n");
-  const finding = writeRecord(
+  const finding = commitRecord(
     "inbox/2026-09-16-a-finding.md",
     "# A finding\n\nObserved.\n",
   );
@@ -582,7 +689,7 @@ it("the inbox slice is live for a standing park even while entries are pickable"
   // `park` above is the refusal leg's verdict.
   const bare = inbox.live({ flumeDir: stateRoot(), pickable: true });
 
-  writeRecord("inbox/2026-09-16-a-finding.md", "# A finding\n\nObserved.\n");
+  commitRecord("inbox/2026-09-16-a-finding.md", "# A finding\n\nObserved.\n");
   const waitingRecord = inbox.live({ flumeDir: stateRoot(), pickable: true });
 
   expect({ bare, park, waitingRecord }).toEqual({
@@ -1981,7 +2088,6 @@ it("a queue that fails to parse makes the inbox slice live", () => {
   // queue has nothing pickable by construction. What separates them is the
   // fact alone, which is the claim: an empty queue that never resolved is not
   // a drained one.
-  expect(recordsPending(stateRoot())).toBe(false);
   const resolved = inbox.live({ flumeDir: stateRoot(), pickable: false });
   const failed = inbox.live({
     flumeDir: stateRoot(),

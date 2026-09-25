@@ -136,6 +136,34 @@ export const tipOf = (cwd: string): string =>
   git(cwd, ["rev-parse", "HEAD"]).trim();
 
 /**
+ * Every path directly under `dir` in the tree at `cwd`'s tip, in git's own
+ * alphabet — the tip's reading of a state root's directory, for a caller
+ * whose answer has to be the one a worktree cut from that tip would carry
+ * (`recordFiles`, `harness/records.ts`).
+ *
+ * **Not recursive**, so a record directory nested inside another contributes
+ * its own name and not its files — the same shape a `readdir` of the
+ * checked-out directory hands back, which is what lets one filter read
+ * either (`pathsUnderStateRoot`, `harness/dirListing.ts`).
+ *
+ * A `dir` the tip's tree does not hold lists nothing and exits zero: git
+ * spells an unmatched pathspec as an empty tree listing here, so the absent
+ * queue is the empty answer without a second arm, exactly as an absent
+ * directory on disk is. Every other failure travels out as a throw, for the
+ * window's own bound to name.
+ *
+ * `-z`, decoded by the engine's own {@link nameOnlyPaths}, for the reason
+ * {@link commitsPast} reads its listing that way. The trailing separator is
+ * what asks `ls-tree` for the directory's contents rather than for the
+ * directory itself; under this module's literal dialect it is read as the
+ * path it spells and never as pathspec magic.
+ */
+export const tipPathsUnder = (cwd: string, dir: string): string[] =>
+  nameOnlyPaths(
+    git(cwd, ["ls-tree", "--name-only", "-z", "HEAD", "--", `${dir}/`]),
+  );
+
+/**
  * Every tracked path the globs name, in git's own listing order.
  *
  * `-z`, decoded by the engine's own {@link nameOnlyPaths}, for the reason

@@ -79,12 +79,50 @@ export function listUnderStateRoot(
   rel: string,
   ext: string,
 ): string[] {
+  return filesCarrying(pathsUnderStateRoot(what, stateRoot, rel), ext);
+}
+
+/**
+ * The same walk, **unfiltered and unordered** — every name the directory
+ * holds, each under the path {@link fileUnderStateRoot} composes it at.
+ *
+ * The half a caller takes when the filter and the order are its own to apply
+ * across more than one tree. The record queue is that caller: it reads the
+ * same directories off a checkout here and off a commit's tree
+ * (`tipPathsUnder`, `harness/gitRange.ts`), and the extension filter, the
+ * sort and the claim withholding are one derivation over whichever of them
+ * it was handed (`recordFiles`, `harness/records.ts`). Every absence and
+ * refusal rule above is this function's; {@link listUnderStateRoot} adds
+ * only what {@link filesCarrying} does.
+ */
+export function pathsUnderStateRoot(
+  what: string,
+  stateRoot: string,
+  rel: string,
+): string[] {
   const dir = join(stateRoot, ...rel.split("/"));
   if (!isDirectoryOrAbsentUnder(what, stateRoot, dir)) return [];
-  return readdirSync(namespacedJoin(dir))
-    .filter((name) => name.endsWith(ext))
-    .sort()
-    .map((name) => fileUnderStateRoot(stateRoot, rel, name));
+  return readdirSync(namespacedJoin(dir)).map((name) =>
+    fileUnderStateRoot(stateRoot, rel, name),
+  );
+}
+
+/**
+ * The `ext` files among `paths`, in name order — the one filter and the one
+ * order every queue under a state root is read through.
+ *
+ * Read off the whole path rather than off a name carried beside it: the
+ * extension is that path's own tail either way, and a name held alongside is
+ * a second value each walk would have to compose and keep in step
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*). The sort is by that path, which within one
+ * directory is by name — every path in a call shares its prefix.
+ */
+export function filesCarrying(
+  paths: readonly string[],
+  ext: string,
+): string[] {
+  return paths.filter((path) => path.endsWith(ext)).sort();
 }
 
 /**

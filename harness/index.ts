@@ -148,8 +148,11 @@ export {
 
 export {
   RECORD_MAX_BYTES,
+  checkoutRecords,
   recordFiles,
   recordsPending,
+  tipRecords,
+  type RecordTree,
 } from "./records.js";
 
 export {

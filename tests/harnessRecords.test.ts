@@ -13,6 +13,11 @@
  * the package hands a build tick is written to, and the package's own
  * predicate is asked whether it sees it.
  *
+ * **Two trees, one listing.** Every case but the last reads a checkout
+ * (`checkoutRecords`); the last drives the same listing over a real
+ * repository's tip (`tipRecords`) beside that checkout, so the rules the two
+ * readers share are read off one derivation rather than asserted twice.
+ *
  * Nothing here restates a directory name. Every case iterates
  * `recordDirs()`, so a record directory added to the package is covered by
  * these cases rather than silently skipped by them.
@@ -21,19 +26,28 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import {
   RECORD_MAX_BYTES,
+  checkoutRecords,
   continuingNotePath,
   notePath,
   notesDir,
   recordDirs,
   recordFiles,
   recordsPending,
+  tipRecords,
 } from "../harness/index.ts";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
+
+// The two-source case drives a real repository, and a git spawn is a spawn
+// like any other: the lane's one budget, for its cases and its hooks alike,
+// declared once for the file rather than inherited from the runner
+// (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
+vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 /** A fresh, empty state root per case — no directories, the untouched shape. */
 let stateRoot: string;
@@ -53,8 +67,10 @@ afterEach(async () => {
  * normalizes that to the host's separator so these cases read disk the same
  * way on win32.
  *
- * `recordFiles` needs no such conversion — it reads disk, so it already
- * answers host-native — and the case below is the pin on that difference.
+ * `recordFiles` over a checkout needs no such conversion — that tree reads
+ * disk, so it already answers host-native — and the case below is the pin on
+ * that difference. Over the tip it answers in git's alphabet, which the
+ * two-source case is the pin on.
  */
 const onDisk = (path: string): string => resolve(path);
 
@@ -76,10 +92,10 @@ it("the note path for an entry tag is that tag's file under the state root's not
   // And the loop closes: a build tick writing at this path is a record the
   // package's own predicate reports pending. Empty first, so the assertion
   // below is about the write rather than about the root.
-  expect(recordsPending(stateRoot)).toBe(false);
+  expect(recordsPending(checkoutRecords(stateRoot))).toBe(false);
   await mkdir(dirname(onDisk(path)), { recursive: true });
   await writeFile(onDisk(path), "# a note\n");
-  expect(recordsPending(stateRoot)).toBe(true);
+  expect(recordsPending(checkoutRecords(stateRoot))).toBe(true);
 });
 
 it("a record directory holding a file reports the record window live", async () => {
@@ -93,10 +109,10 @@ it("a record directory holding a file reports the record window live", async () 
     // that *this* directory opens the window rather than riding a sibling.
     await rm(stateRoot, { recursive: true, force: true });
     await mkdir(onDisk(dir), { recursive: true });
-    expect({ dir, live: recordsPending(stateRoot) }).toEqual({ dir, live: false });
+    expect({ dir, live: recordsPending(checkoutRecords(stateRoot)) }).toEqual({ dir, live: false });
 
     await writeFile(join(onDisk(dir), "2026-09-14-a-finding.md"), "# a finding\n");
-    expect({ dir, live: recordsPending(stateRoot) }).toEqual({ dir, live: true });
+    expect({ dir, live: recordsPending(checkoutRecords(stateRoot)) }).toEqual({ dir, live: true });
   }
 });
 
@@ -106,11 +122,11 @@ it("a record directory holding no file reports the record window empty", async (
 
   // Never created: an absent queue and an empty one are the same fact, and a
   // consumer that has never had a record should not have to mkdir to say so.
-  expect(recordsPending(stateRoot)).toBe(false);
+  expect(recordsPending(checkoutRecords(stateRoot))).toBe(false);
 
   // Created and empty — the steady state the inbox slice leaves behind.
   for (const dir of dirs) await mkdir(onDisk(dir), { recursive: true });
-  expect(recordsPending(stateRoot)).toBe(false);
+  expect(recordsPending(checkoutRecords(stateRoot))).toBe(false);
 
   // Holding something that is not a record. A `.gitkeep` is how an empty
   // queue directory survives a clone, and it must not hold the window open.
@@ -118,13 +134,13 @@ it("a record directory holding no file reports the record window empty", async (
     await writeFile(join(onDisk(dir), ".gitkeep"), "");
     await writeFile(join(onDisk(dir), "notes.txt"), "not a record\n");
   }
-  expect(recordsPending(stateRoot)).toBe(false);
+  expect(recordsPending(checkoutRecords(stateRoot))).toBe(false);
 
   // And the same directories do open the window for a record, so the three
   // verdicts above are the absence of records rather than a predicate that
   // never returns true.
   await writeFile(join(onDisk(dirs[0]!), "a-record.md"), "# a record\n");
-  expect(recordsPending(stateRoot)).toBe(true);
+  expect(recordsPending(checkoutRecords(stateRoot))).toBe(true);
 });
 
 it("recordFiles names each record at the path node:path composes under the state root", async () => {
@@ -146,7 +162,7 @@ it("recordFiles names each record at the path node:path composes under the state
   // this on posix and names every record at `C:\repo\.flume/inbox/x.md` on
   // win32 — a spelling fs accepts and no `join` reproduces, so the rendered
   // path would match nothing the tick that must open it composes.
-  expect(recordFiles(stateRoot)).toEqual(written);
+  expect(recordFiles(checkoutRecords(stateRoot))).toEqual(written);
 });
 
 /**
@@ -171,7 +187,7 @@ it("recordFiles refuses when a plain file sits above a record directory", async 
   // The reading the obstruction has to change. A bare root is the absent
   // queue, and absent is the silent arm — so a refusal below is the plain
   // file talking and not a listing that throws at every root.
-  expect(recordFiles(stateRoot)).toEqual([]);
+  expect(recordFiles(checkoutRecords(stateRoot))).toEqual([]);
 
   for (const dir of dirs) {
     const above = dirname(onDisk(dir));
@@ -183,7 +199,7 @@ it("recordFiles refuses when a plain file sits above a record directory", async 
 
     let message: string | undefined;
     try {
-      recordFiles(stateRoot);
+      recordFiles(checkoutRecords(stateRoot));
     } catch (error) {
       message = (error as Error).message;
     }
@@ -216,7 +232,7 @@ it("the record drain lists no note under the continuing directory", async () => 
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, "# a record\n");
   }
-  expect(recordFiles(stateRoot)).toHaveLength(dirs.length);
+  expect(recordFiles(checkoutRecords(stateRoot))).toHaveLength(dirs.length);
 
   // The continuation sits one segment across from the park, under a notes
   // directory the drain *does* walk — so it is skipped by the layout saying
@@ -226,15 +242,15 @@ it("the record drain lists no note under the continuing directory", async () => 
   await mkdir(dirname(onDisk(continuing)), { recursive: true });
   await writeFile(onDisk(continuing), "# what landed\n\nThe first segment.\n");
 
-  expect(recordFiles(stateRoot)).not.toContain(onDisk(continuing));
-  expect(recordFiles(stateRoot)).toHaveLength(dirs.length);
+  expect(recordFiles(checkoutRecords(stateRoot))).not.toContain(onDisk(continuing));
+  expect(recordFiles(checkoutRecords(stateRoot))).toHaveLength(dirs.length);
 
   // And a continuation standing alone leaves the drain's window shut: the
   // inbox slice is not woken by a note addressed to build.
   await rm(stateRoot, { recursive: true, force: true });
   await mkdir(dirname(onDisk(continuing)), { recursive: true });
   await writeFile(onDisk(continuing), "# what landed\n\nThe first segment.\n");
-  expect(recordsPending(stateRoot)).toBe(false);
+  expect(recordsPending(checkoutRecords(stateRoot))).toBe(false);
 });
 
 it("a record's byte cap is the package's own value, not a per-consumer knob", () => {
@@ -243,4 +259,105 @@ it("a record's byte cap is the package's own value, not a per-consumer knob", ()
   // lets an environment raise it. Pinned so widening the package's
   // discipline is a deliberate edit rather than a number that drifted.
   expect(RECORD_MAX_BYTES).toBe(2000);
+});
+
+/**
+ * One listing, two trees (`spec/harness.md`, *The phases*). The wake runs at
+ * the handoff with no worktree of its own and reads the tip a worktree would
+ * be cut from; the render runs inside that worktree and reads its checkout.
+ * Both go through `recordFiles`, so the extension filter, the queue order and
+ * the claim withholding are one derivation, and the two trees can differ only
+ * in what they hold.
+ *
+ * Driven over a real repository rather than a stubbed listing: what the tip
+ * holds is git's answer, and a hand-authored one would re-author the writer
+ * this case exists to read (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*).
+ */
+it("the record listing reads a checkout and the tip through one derivation", async () => {
+  const repo = await mkTempDir("flume-records-tip-");
+  const git = (...args: string[]): string => gitOutSync(repo, args);
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "records@example.test");
+  git("config", "user.name", "Records Fixture");
+  git("config", "commit.gpgsign", "false");
+
+  const rel = ".flume";
+  const root = join(repo, rel);
+  const dirs = recordDirs(root);
+  // Vacuity pin: with no record directories every arm below judges nothing.
+  expect(dirs.length).toBeGreaterThan(0);
+
+  // Each queue's name as the repository addresses it — the tail `recordDirs`
+  // joined onto the root it was handed, which is already git's alphabet.
+  const queue = (dir: string): string => dir.slice(root.length + 1);
+  /** The two spellings of one record: the host's, and git's. */
+  const at = (dir: string, name: string) => ({
+    disk: join(resolve(dir), name),
+    git: `${rel}/${queue(dir)}/${name}`,
+  });
+
+  // One record per queue, plus a `.gitkeep` the extension filter drops and a
+  // claimed entry's note the withholding drops — the three rules both trees
+  // apply, each with something on disk to apply it to.
+  const carried = dirs.map((dir) => at(dir, "2026-09-24-carried.md"));
+  const held = at(notesDir(root), "HELD-ENTRY.md");
+  for (const file of [...carried, held]) {
+    await mkdir(dirname(file.disk), { recursive: true });
+    await writeFile(file.disk, "# a record\n");
+  }
+  for (const dir of dirs) await writeFile(join(resolve(dir), ".gitkeep"), "");
+  git("add", "-A");
+  git("commit", "-q", "-m", "records: the tip's own queue");
+
+  // On the shared disk alone: nothing the tip holds, so it is the one file
+  // the two trees may disagree about.
+  const uncommitted = at(dirs[0]!, "2026-09-25-uncommitted.md");
+  await writeFile(uncommitted.disk, "# dropped in\n");
+
+  const checkout = checkoutRecords(root);
+  const tip = tipRecords(repo, rel);
+  // Queue order, spelled out: the inbox first and its two records by name,
+  // then the notes dir with the claimed entry's note behind the dated one,
+  // then the parked dir one segment below it.
+  const order = [
+    carried[0]!,
+    uncommitted,
+    carried[1]!,
+    held,
+    carried[2]!,
+  ];
+
+  expect({
+    // Both queues, in queue order, under each tree's own spelling ...
+    checkout: recordFiles(checkout),
+    tip: recordFiles(tip),
+    // ... the claim withheld by both, keyed to the tag and nothing else ...
+    checkoutClaimed: recordFiles(checkout, ["HELD-ENTRY"]),
+    tipClaimed: recordFiles(tip, ["HELD-ENTRY"]),
+    // ... and both windows open, so the difference below is the one file and
+    // not a predicate that never answers.
+    checkoutLive: recordsPending(checkout),
+    tipLive: recordsPending(tip),
+  }).toEqual({
+    checkout: order.map((file) => file.disk),
+    tip: order.filter((file) => file !== uncommitted).map((file) => file.git),
+    checkoutClaimed: order
+      .filter((file) => file !== held)
+      .map((file) => file.disk),
+    tipClaimed: order
+      .filter((file) => file !== held && file !== uncommitted)
+      .map((file) => file.git),
+    checkoutLive: true,
+    tipLive: true,
+  });
+
+  // And the file the tip does not hold is the whole of the difference: with
+  // it gone the two trees name the same records, segment for segment.
+  await rm(uncommitted.disk);
+  expect(recordFiles(checkout)).toEqual(
+    order.filter((file) => file !== uncommitted).map((file) => file.disk),
+  );
+
+  await rm(repo, { recursive: true, force: true });
 });

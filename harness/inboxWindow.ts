@@ -35,23 +35,26 @@
  *
  * **One derivation per leg, two readers — and, for the record queues, two
  * trees.** The wake set asks "is this slice live"; the prompt asks "what is
- * in it". Both answers come from one scan, so neither leg can apply a rule
+ * in it". Both answers come from one derivation over whichever tree the leg
+ * stands in (`RecordTree`, `harness/records.ts`), so neither can apply a rule
  * the other does not — the same extension filter, the same claim
  * withholding, the same order (`.claude/rules/engineering.md`, *Derived state
  * is computed, never restated beside its source*). Where they differ is the
- * root that one scan starts from, and only for the records: liveness runs at the
- * handoff, which has no worktree of its own, so it reads the shared state
- * root; the render runs inside the tick's provisioned worktree and reads
- * *that* tree's state root, because a record the drain is handed must be one
- * the drain's own commit can `git rm` (`spec/pending.md`, *Dispatch reads
- * come from the tip, not the tree*). A record the shared disk holds and the
- * worktree's base does not — an operator's finding still uncommitted, a note
- * that landed after this worktree was cut — therefore wakes the slice and
- * renders as nothing: the tick spends its other legs, and the record is the
- * next tick's, once a worktree cut past it carries the file. **The friction
- * channel and the lane store stay on the shared root either way**, both legs
- * alike: they are gitignored, so no commit carries them and no worktree
- * checkout holds them.
+ * tree that derivation reads, and only for the records: liveness runs at the
+ * handoff, which has no worktree of its own, so it reads the **tip** a
+ * worktree would be cut from; the render runs inside the tick's provisioned
+ * worktree and reads *that* checkout's state root, because a record the drain
+ * is handed must be one the drain's own commit can `git rm`
+ * (`spec/pending.md`, *Dispatch reads come from the tip, not the tree*). The
+ * two are the same tree, since the checkout is cut from the tip the wake
+ * read: a file on the shared disk the tip does not hold — an operator's
+ * finding still uncommitted — is in neither, so it wakes nothing. Woken on
+ * it, the tick would be handed none of it, file nothing, and be woken by it
+ * again (`spec/harness.md`, *The phases*). What lands after a worktree is cut
+ * is the next tick's, whose own cut carries it. **The
+ * friction channel and the lane store stay on the shared root either way**,
+ * both legs alike: they are gitignored, so no commit carries them and no
+ * worktree checkout holds them.
  */
 
 import { readFileSync } from "node:fs";
@@ -64,7 +67,14 @@ import type { PriorAttempt } from "../src/Prompt.js";
 import { laneLeg } from "./ciLane.js";
 import { INBOX_PHASE } from "./declaration.js";
 import { frictionFiles, frictionPending } from "./friction.js";
-import { RECORD_MAX_BYTES, recordFiles, recordsPending } from "./records.js";
+import {
+  RECORD_MAX_BYTES,
+  checkoutRecords,
+  recordFiles,
+  recordsPending,
+  tipRecords,
+  type RecordTree,
+} from "./records.js";
 import {
   SLICE_DATA_KEYS,
   budgetOf,
@@ -99,11 +109,13 @@ import { standingRefusals } from "./standingRefusal.js";
  * already walled on it.
  *
  * **The lane leg is asked last, and that ordering is load-bearing.** The
- * record, friction and refusal legs are three directory listings and a map
- * walk; the lane leg spawns the forge CLI once per lane on the selection
- * path. A tick the disk already woke needs no forge answer to know the slice
- * runs, so the short-circuit is what keeps a woken plan tick from paying for
- * the network.
+ * refusal leg is a map walk, the friction leg a directory listing, and the
+ * record leg one local `ls-tree` per queue; the lane leg spawns the forge CLI
+ * once per lane and waits on the network. The first three are all local and
+ * bounded by what a state root holds; the lane leg is neither, and a tick one
+ * of them already woke needs no forge answer to know the slice runs. That
+ * short-circuit is what keeps a woken plan tick from paying for the network,
+ * and it is the only ordering here that decides anything.
  */
 export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
   const lanes = laneLeg({
@@ -112,11 +124,16 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
     budget: budgetOf(options),
   });
   const friction = options.declaration.friction;
+  // The tip a provisioned worktree is cut from, composed once from the two
+  // facts this closure already holds: the handoff has no worktree of its own,
+  // so `repoRoot` is where git is asked and `stateRootRel` is how the
+  // repository addresses the queue.
+  const tip = tipRecords(options.repoRoot, options.stateRootRel);
   return {
     name: INBOX_PHASE,
     live: (inputs) =>
       !queueResolved(inputs) ||
-      recordsPending(inputs.flumeDir, inputs.claimed ?? []) ||
+      recordsPending(tip, inputs.claimed ?? []) ||
       frictionPending(inputs.flumeDir, friction) ||
       standingRefusals(options.stateRootRel, inputs.pending, inputs.priorAttempts)
         .length > 0 ||
@@ -124,7 +141,7 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
       RECORDS: renderRecords(
-        treeStateRoot(ctx.cwd, options.stateRootRel),
+        checkoutRecords(treeStateRoot(ctx.cwd, options.stateRootRel)),
         ctx.flumeDir,
         friction,
         ctx.claimed ?? [],
@@ -193,15 +210,15 @@ const treeStateRoot = (cwd: string, stateRootRel: string): string =>
  * at, with an over-cap record marked by what it measured — the record
  * queues first, then the declared friction channel.
  *
- * **The two queues are read from two roots, and that is the point of the
- * split.** `treeRoot` is the tick's own worktree's state root: a record the
- * drain routes leaves by `git rm` in the drain's own commit, so the only
- * records it may be shown are the ones the tree that commit descends from
- * actually carries (`spec/pending.md`, *Dispatch reads come from the tip, not
- * the tree*). Read from the shared root instead, the drain is handed the
- * primary checkout's files — including ones no commit ever held — and routes
- * them into a commit that cannot remove them, so the same records come back
- * every tick. `frictionRoot` is that shared root, and stays: the channel is
+ * **The two queues are read from two trees, and that is the point of the
+ * split.** `tree` is the tick's own worktree's checkout: a record the drain
+ * routes leaves by `git rm` in the drain's own commit, so the only records it
+ * may be shown are the ones the tree that commit descends from actually
+ * carries (`spec/pending.md`, *Dispatch reads come from the tip, not the
+ * tree*). Read from the shared root instead, the drain is handed the primary
+ * checkout's files — including ones no commit ever held — and routes them
+ * into a commit that cannot remove them, so the same records come back every
+ * tick. `frictionRoot` is the shared state root, and stays: the channel is
  * gitignored, a note leaves it by `rm` rather than by a commit, and no
  * worktree checkout holds a copy to read.
  *
@@ -243,13 +260,13 @@ const treeStateRoot = (cwd: string, stateRootRel: string): string =>
  * same listing the same question and the two must not disagree.
  */
 function renderRecords(
-  treeRoot: string,
+  tree: RecordTree,
   frictionRoot: string,
   friction: string | undefined,
   claimed: readonly string[],
 ): string {
   const blocks = [
-    ...renderFiles(recordFiles(treeRoot, claimed), RECORD_MAX_BYTES),
+    ...renderFiles(recordFiles(tree, claimed), RECORD_MAX_BYTES),
     ...renderFiles(frictionFiles(frictionRoot, friction), undefined),
   ];
   if (blocks.length === 0) return "(no records)";

@@ -24,12 +24,15 @@
  * is `*.md` because the package writes records, and a friction note is
  * whatever the engine and the consumer's loop wrote.
  *
- * **These answer host-native**, like `recordFiles` (`harness/records.ts`)
- * and for its reason: the caller hands the absolute state root and the declared
+ * **These answer host-native, and from one root only** — where the record
+ * queue is read out of a checkout for the render and out of the tip for the
+ * wake (`checkoutRecords`, `tipRecords`, `harness/records.ts`), this channel
+ * has one reading: the caller hands the absolute state root and the declared
  * directory, and what comes back is read off disk and rendered for a tick to
  * open, never handed to git. The friction channel is gitignored by machinery,
- * so a note leaves this queue by `rm` rather than by a commit — nothing here
- * is ever a fence glob or a pathspec.
+ * so a note leaves this queue by `rm` rather than by a commit — no commit
+ * ever carries one, no worktree checkout holds a copy, and nothing here is
+ * ever a fence glob or a pathspec.
  */
 
 import { join } from "node:path";
