@@ -1,0 +1,28 @@
+{
+  "tag": "THE-SMOKE-TAKES-A-SHELL-ONLY-WHERE-A-SHIM-NEEDS-ONE",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "scripts/smoke-install.mjs",
+        "description": "the shell \u2014 and so the argv fence it brings \u2014 is decided per step from the target that step names, and the doc block enumerating where a step's argv comes from names the two it omits"
+      },
+      {
+        "path": "tests/bin.test.ts",
+        "description": "the non-shim arm, beside the existing win32 refusal case"
+      }
+    ]
+  },
+  "summary": "The install smoke takes cmd.exe's shell on every win32 step, so its argv fence refuses `process.execPath` under a default win32 node install and the lane never reaches the acceptance",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "the shell a step spawns through is decided from the target that step names \u2014 the generated `.cmd` shims and `npm`, which need one \u2014 rather than from the platform alone, so the win32 argv fence bounds exactly those steps and a step node spawns directly is neither re-parsed nor refused for a word in a path this run never composed",
+  "tests": [
+    "the smoke step runner reaches the spawn on win32 for a step whose target is not a generated shim"
+  ],
+  "notes": "Measured through `stepRunner(\"win32\")`: `C:\\Program Files\\nodejs\\node.exe` refuses at `exports subpaths`, `git init` passes. `shell` is one value for every step (`scripts/smoke-install.mjs:134`, off `needsShell`, `:77`); `process.execPath` (`:341`) and `git` (`:352`) ride it. `REWRITTEN_BY_CMD` (`src/spawnShim.ts:57`) matches space and parens; the engine's `execFileWithShimRetry` shells only after a direct spawn ENOENTs. The `:123` doc enumerates the argv sources and omits both."
+}
