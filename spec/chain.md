@@ -160,8 +160,10 @@ default export that is not a factory, no `phases[]`. Two layers, both required.
 - **A CJS-context host is refused, not relayed.** When the load failure carries
   the module-context signature — `Cannot use import statement outside a
   module`, or an `ERR_MODULE_NOT_FOUND` whose path carries tsx's
-  `?namespace=` query in either spelling, literal or percent-encoded (an
-  empirical two-shape family)
+  `?namespace=` query in either spelling, literal or percent-encoded, or a
+  top-level await esbuild or node refuse in a CJS context — a family of
+  loader-failure signatures, each empirical, enumerated where the refusal is
+  decided
   — the engine refuses with a usage-shaped message naming the fix (`"type":
   "module"` in the repo's package.json, or one beside `chain.ts`) and the tick
   exits **2**, not the mount-dead constant (`CjsContextLoadError`,

@@ -47,8 +47,11 @@ The drain files by the sweep's bar (`.claude/rules/posture-sweep.md`,
 *Routing*). An observation a build note carries becomes an entry when the
 defect can change behavior, hide a failure, or leave a vacuous verdict over
 load-bearing machinery; anything else is an accepted-debt line in the plan
-commit body, and a family noted three times files once. A blocker or a park
-is not an observation and routes as it always has. Without the bar every
+commit body, and a family noted three times files once — counted over
+every plan commit body, unbounded, because the count self-terminates: a
+filed family stops being re-noted, and a bounded window is how a family
+re-noted twice per window never files. A blocker or a park is not an
+observation and routes as it always has. Without the bar every
 shipped entry spawned the next through its own note, and the queue filled
 with work nothing asked for.
 

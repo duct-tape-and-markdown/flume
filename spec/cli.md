@@ -265,10 +265,11 @@ that context is declined; lying about it with a raw loader stack is the defect.
 The engine matches the loader-failure signature family and refuses with a
 usage-shaped message naming the fix — the host must carry `"type": "module"` —
 exit 2, consistent with other usage errors, with the underlying loader error
-kept as debugging detail rather than the headline. Two empirical shapes are
-known: `Cannot use import statement outside a module`, and an
-`ERR_MODULE_NOT_FOUND` whose path carries tsx's percent-encoded `?namespace=`
-query. Detection is deliberately conservative — a genuinely missing dependency
+kept as debugging detail rather than the headline. The family is loader-failure signatures, each empirical, enumerated where
+the refusal is decided: `Cannot use import statement outside a module`, an
+`ERR_MODULE_NOT_FOUND` whose path carries tsx's `?namespace=` query in either
+spelling, literal or percent-encoded, and a top-level await refused in a CJS
+context. Detection is deliberately conservative — a genuinely missing dependency
 must keep surfacing as itself, so when the signature does not match, the raw
 error shows through unshadowed.
 
