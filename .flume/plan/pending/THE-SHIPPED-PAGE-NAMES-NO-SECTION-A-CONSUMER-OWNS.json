@@ -1,12 +1,12 @@
 {
   "tag": "THE-SHIPPED-PAGE-NAMES-NO-SECTION-A-CONSUMER-OWNS",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "THE-RENDERED-PAGE-SCAN-LEAVES-A-CONSUMER-TREE-PATH"
-    ]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "tests/helpers/commentCitations.ts",
@@ -16,7 +16,8 @@
         "path": "tests/commentCitations.test.ts",
         "description": "the fixture arm over a shipped surface citing a section under a state root, and the repo pin over every surface `shippedPages()` renders"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "A shipped page naming a section of the page the consumer owns resolves green off *this* repo's copy, so the one cite the spec calls a guess is the one nothing reports",
   "per": {
@@ -30,5 +31,5 @@
   "pins": [
     "no surface the package ships names a section of a page the consumer owns"
   ],
-  "notes": "Last clause of 16bb69d3's paragraph; the other three are the two standing siblings'. Measured this tick: a fixture surface citing `.flume/PROTOCOL.md`, *Records: one file each* resolves through `scanRenderedCitations` with no finding on either arm, while *No Such Heading* reds \u2014 the heading read is this repo's copy of a page init writes and the consumer then edits. Blocked rather than seamed: the under-a-state-root predicate is the parent's."
+  "notes": "Last clause of 16bb69d3's paragraph; the other three are the two standing siblings'. Measured this tick: a fixture surface citing `.flume/PROTOCOL.md`, *Records: one file each* resolves through `scanRenderedCitations` with no finding on either arm, while *No Such Heading* reds — the heading read is this repo's copy of a page init writes and the consumer then edits. Blocked rather than seamed: the under-a-state-root predicate is the parent's."
 }

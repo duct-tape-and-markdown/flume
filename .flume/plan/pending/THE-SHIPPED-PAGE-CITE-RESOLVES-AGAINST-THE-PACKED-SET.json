@@ -1,12 +1,12 @@
 {
   "tag": "THE-SHIPPED-PAGE-CITE-RESOLVES-AGAINST-THE-PACKED-SET",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "THE-RENDERED-PAGE-SCAN-LEAVES-A-CONSUMER-TREE-PATH"
-    ]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "priority": 0,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "tests/helpers/commentCitations.ts",
@@ -26,19 +26,21 @@
       },
       {
         "path": "docs/CHAIN-AUTHORING.md",
-        "description": "the records passage the template's cite needs a shipped home for \u2014 the paths, the title line, the byte cap"
+        "description": "the records passage the template's cite needs a shipped home for — the paths, the title line, the byte cap"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "Five cites in pages the package ships point into the spec corpus, which ships nowhere, and the pin over them reads the author's tree rather than the reader's",
   "per": {
     "path": "spec/harness.md",
     "section": "Adoption and upgrade"
   },
-  "acceptance": "a shipped page's `*.md` names are resolved against the file set `package.json` packs rather than the tree they were written in, and no page the package ships names the spec corpus \u2014 each of the five sites cites a `docs/` page instead, with `docs/CHAIN-AUTHORING.md` carrying the records passage no shipped page states today",
+  "acceptance": "a shipped page's `*.md` names are resolved against the file set `package.json` packs rather than the tree they were written in, and no page the package ships names the spec corpus — each of the five sites cites a `docs/` page instead, with `docs/CHAIN-AUTHORING.md` carrying the records passage no shipped page states today",
   "tests": [
     "the rendered page scan reports a page name a shipped page states that the package does not pack",
     "no page the package ships names a page of the spec corpus"
   ],
-  "notes": "Ruled by the inbox record answering the shipped-cite question, fork (b), no phrase edit. Measured this tick \u2014 the whole set `shippedPages()` states: `harness/templates/PROTOCOL.md:11`,`:58` (`spec/harness.md`), `src/cliHelp.ts:225`,`:266` (`spec/loop.md`), `:420` (`spec/chain.md`). `docs/CLI.md` already states the loop and friction facts, so only the records passage is new. Packed set is the manifest's `files`, negation included; the template's `spec/*.md` and `{{...}}` fail `PATH_SEGMENT`."
+  "pins": [],
+  "notes": "Ruled by the inbox record answering the shipped-cite question, fork (b), no phrase edit. Measured this tick — the whole set `shippedPages()` states: `harness/templates/PROTOCOL.md:11`,`:58` (`spec/harness.md`), `src/cliHelp.ts:225`,`:266` (`spec/loop.md`), `:420` (`spec/chain.md`). `docs/CLI.md` already states the loop and friction facts, so only the records passage is new. Packed set is the manifest's `files`, negation included; the template's `spec/*.md` and `{{...}}` fail `PATH_SEGMENT`."
 }
