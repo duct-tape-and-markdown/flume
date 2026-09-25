@@ -129,6 +129,13 @@ interface PathContract {
   /**
    * `true` when the callee folds each path it is handed, so the call site
    * owes nothing: the argument is read as a path and not judged.
+   *
+   * It is also what an *uncalled* import of the symbol means. Where the
+   * caller composes, a binding this scan saw no call site for went somewhere
+   * it cannot read and is reported ({@link FsCallScan.uncalled}); where the
+   * callee folds, no call site anywhere owes a fold, so handing the binding
+   * out — onto an API object, into a helper — escapes nothing there is to
+   * escape.
    */
   calleeFolds: boolean;
   /**
@@ -749,7 +756,11 @@ export interface FsCallScan {
   nativeOnly: number;
   /** Those of them spelled at a head that is not `.native`. */
   jsForm: JsFormCall[];
-  /** Imported fs symbols the module never calls — an import the scan cannot judge. */
+  /**
+   * Imported fs symbols the module never calls, whose contract leaves the
+   * fold to the caller — an import the scan cannot judge, over a symbol some
+   * call site owes one on ({@link PathContract.calleeFolds}).
+   */
   uncalled: string[];
 }
 
@@ -805,6 +816,7 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
   const lineOf = (index: number): number => source.slice(0, index).split("\n").length;
 
   for (const { specifier, fn } of bindings) {
+    const contract = contractFor(specifier, fn);
     const calls = [...masked.matchAll(callSites(fn))]
       .map((match) => ({
         index: match.index!,
@@ -816,11 +828,16 @@ export function scanFsCalls(module: string, source: string): FsCallScan {
       }))
       .filter((site) => !declaresParameters(masked, site.args));
     if (calls.length === 0) {
-      uncalled.push(fn);
+      // No call site here. Whether that is a finding is the symbol's
+      // contract to say: where the caller composes, the binding went
+      // somewhere this scan cannot read and the import is reported; where
+      // the callee folds every path it is handed, there is no obligation a
+      // call site could owe, so a module that only hands the binding out has
+      // let nothing past ({@link PathContract.calleeFolds}).
+      if (!contract.calleeFolds) uncalled.push(fn);
       continue;
     }
     if (isProbe) continue;
-    const contract = contractFor(specifier, fn);
     for (const { index, callee, args } of calls) {
       let namespacedAnswer = false;
       let namespacedArgument = false;

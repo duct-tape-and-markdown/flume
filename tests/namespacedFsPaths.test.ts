@@ -446,6 +446,40 @@ describe("the scan's reading of a type position", () => {
   });
 });
 
+/**
+ * A module that imports an fs symbol and hands the binding out instead of
+ * calling it — what `src/flumeApi.ts` does with the descent probe, so a chain
+ * can prove its own directory absent. Whether that is a finding is the
+ * symbol's contract: the probe namespaces every step of the descent itself
+ * (`src/fsProbe.ts`), so no call site anywhere owes a fold and the import
+ * escapes nothing; `readFileSync` beside it leaves the composition to
+ * whoever calls it, and an import the scan saw no call for is still an
+ * import it could not judge.
+ */
+const HANDED_OUT_SOURCE = `
+import { isDirectoryOrAbsent } from "./fsProbe.js";
+import { readFileSync } from "node:fs";
+
+export const api = { isDirectoryOrAbsent, readFileSync };
+`;
+
+describe("the scan's reading of an fs symbol handed out rather than called", () => {
+  it("the win32 path scan reports an uncalled caller-folds import and admits an uncalled callee-folds one", () => {
+    const handed = scanFsCalls("src/fixture.ts", HANDED_OUT_SOURCE);
+
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): the split below is a verdict over two imports the scan
+    // read, not the quiet of a scan that read neither.
+    expect([...handed.symbols].sort()).toEqual([
+      "isDirectoryOrAbsent",
+      "readFileSync",
+    ]);
+    expect(handed.uncalled.map((fn) => describeUncalled(handed, fn))).toEqual([
+      "src/fixture.ts imports readFileSync and never calls it",
+    ]);
+  });
+});
+
 describe("a namespaced path never leaves its fs call", () => {
   it("the win32 path scan admits a toNamespacedPath result spent at the fold that ends the alphabet", () => {
     const fixture = scanFsCalls("src/fixture.ts", FOLDED_SOURCE);

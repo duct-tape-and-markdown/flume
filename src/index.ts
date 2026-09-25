@@ -105,6 +105,15 @@ export { partitionByFileOverlap, type PartitionOptions } from "./partition.js";
 
 export { gitPath, matchesAny, slugify, stopFlagPath } from "./paths.js";
 
+// The proven-absence descent rides beside the path rules, and for the same
+// reason: a chain gating on a directory of its own re-derives the
+// ENOENT-vs-obstructed split otherwise, and the errno that split keys on is
+// the one thing about it that is not portable (`.claude/rules/engineering.md`,
+// *A fact the engine holds is reported, never rediscovered*). Also on
+// `FlumeApi`; named here so a chain declaring a helper around it can type the
+// value it holds.
+export { isDirectoryOrAbsent } from "./fsProbe.js";
+
 // The keyers ride the surface beside the paths: the map a chain reads
 // (`TickContext.priorAttempts`) is keyed by a join the engine composes, so a
 // consumer holding a queue entry, a singleton phase, or a record it pulled

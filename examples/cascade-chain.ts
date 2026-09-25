@@ -552,23 +552,29 @@ const factory: ChainFactory = (api) => {
     /**
      * This slice's window is non-empty. Pure over its inputs and
      * synchronous, per `shouldRun`'s contract — two facts in, and no I/O
-     * beyond a single directory listing.
+     * beyond one directory listing and the descent that proves it readable.
      */
     live: (inputs: { flumeDir: string; pickable: boolean }) => boolean;
   }
 
   /**
-   * Does `<flumeDir>/inbox/` hold a finding? A missing directory is the
-   * drained state; any other failure answers live, because an unreadable
-   * queue is a reason to run the tick and never a reason to skip it
-   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   * Does `<flumeDir>/inbox/` hold a finding? A **proven**-absent directory is
+   * the drained state; a directory that is there but obstructed — a plain
+   * file where the queue should be — refuses, because an unreadable queue is
+   * never a reason to report it empty (`.claude/rules/engineering.md`, *Loud
+   * or nothing*).
+   *
+   * The proof is the engine's — `api.isDirectoryOrAbsent`, the descent it
+   * runs on its own stores. A chain-local arm keyed on the listing's errno
+   * cannot make it: posix raises `ENOTDIR` through a plain file and win32
+   * raises `ENOENT`, so one spelling reads the obstruction as unreadable on
+   * one host and as drained on the other. Past the descent every ancestor is
+   * proven a directory, so the listing carries no arm of its own.
    */
   function inboxPending(flumeDir: string): boolean {
-    try {
-      return readdirSync(resolve(flumeDir, "inbox")).some((f) => f.endsWith(".md"));
-    } catch (e) {
-      return (e as NodeJS.ErrnoException).code !== "ENOENT";
-    }
+    const dir = resolve(flumeDir, "inbox");
+    if (!api.isDirectoryOrAbsent("inbox queue", flumeDir, dir)) return false;
+    return readdirSync(dir).some((f) => f.endsWith(".md"));
   }
 
   const SLICES: PlanSlice[] = [

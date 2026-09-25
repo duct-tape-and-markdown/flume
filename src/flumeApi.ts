@@ -31,6 +31,7 @@ import {
   pendingGate,
 } from "./builtinGates.js";
 import { CjsContextLoadError } from "./chainLoad.js";
+import { isDirectoryOrAbsent } from "./fsProbe.js";
 import { PendingParseFailure } from "./PendingSchema.js";
 import { readGatedQueue } from "./pendingLedger.js";
 import { readTickVerdicts, readLatestVerdictsSync } from "./tickVerdict.js";
@@ -186,6 +187,30 @@ export interface FlumeApi {
    * that silently matches nothing on win32.
    */
   gitPath: typeof gitPath;
+  /**
+   * The engine's own **proven**-absence probe: a descent down the chain of
+   * directories a read depends on, each asserted a directory before the next
+   * is probed, answering `true` when the last one stands, `false` only when
+   * it or an ancestor is absent, and throwing when one is present and is not
+   * a directory (`isDirectoryOrAbsent`, `src/fsProbe.ts`).
+   *
+   * What a chain gating on its own directory — an inbox, a findings queue, a
+   * scratch store — reads instead of keying a silent arm off the errno a
+   * listing raised. The errno is the one thing about an obstructed ancestor
+   * that is not portable: posix reports `ENOTDIR` where win32 reports
+   * `ENOENT` (`.claude/rules/platform-facts.md`, *win32 reports a path
+   * through a non-directory as not found*), so a chain-local
+   * `code !== "ENOENT"` refuses on one host and reports the queue drained on
+   * the other — a degradation nothing downstream can see
+   * (`.claude/rules/engineering.md`, *Loud or nothing*). The descent is the
+   * proof that answers alike on both, and the engine already runs it on its
+   * own stores.
+   *
+   * Reported as a **fact**: the directory stands, or is provably absent, or
+   * the read cannot be made. What a drained queue means for the tick stays
+   * the chain's (`.claude/rules/engine-boundary.md`).
+   */
+  isDirectoryOrAbsent: typeof isDirectoryOrAbsent;
   priorAttemptPath: typeof priorAttemptPath;
   priorAttemptsDir: typeof priorAttemptsDir;
   /**
@@ -382,6 +407,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     readLatestVerdictsSync,
     slugify,
     gitPath,
+    isDirectoryOrAbsent,
     priorAttemptPath,
     priorAttemptsDir,
     entryAttemptKey,

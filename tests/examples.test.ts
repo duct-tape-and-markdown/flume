@@ -1049,6 +1049,76 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
 });
 
 /**
+ * `.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered* — the inbox slice's window is a directory of the chain's own,
+ * and "is it there" is the one question about a directory whose errno is not
+ * portable (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*). The slice answered it from `code !== "ENOENT"`,
+ * which reads an obstructed inbox as live on posix and as **drained** on
+ * win32 — an operator's finding skipped silently on the host no lane here
+ * runs. It now reads the engine's own descent off `api.isDirectoryOrAbsent`.
+ *
+ * Denied structurally — a plain file where the queue directory belongs —
+ * because that is the one denial that bites on every host
+ * (`.claude/rules/platform-facts.md`, *chmod denies nothing on win32*). The
+ * two resolving arms ride beside the refusal so the descent is pinned for
+ * what it still answers, not only for what it refuses.
+ */
+describe("cascade-chain.ts — the inbox slice proves its own queue absent", () => {
+  const inboxSlice = cascadeChain.phases.find((p) => p.name === "plan-inbox");
+
+  let flumeDir: string;
+
+  beforeEach(() => {
+    flumeDir = join(mkTempDirSync("cascade-inbox-probe-"), ".flume");
+    mkdirSync(flumeDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(flumeDir, { recursive: true, force: true });
+  });
+
+  const live = (): boolean | undefined =>
+    inboxSlice!.shouldRun!({
+      cwd: join(flumeDir, ".."),
+      flumeDir,
+      pending: [],
+      pickable: [],
+      priorAttempts: new Map(),
+    });
+
+  it("the cascade example's inbox slice reads an absent inbox as drained and a filled one as live", () => {
+    // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): a chain that lost the slice, or a slice with no hook,
+    // would satisfy every verdict below by never running a predicate.
+    expect(inboxSlice, "cascade declares a plan-inbox slice").toBeDefined();
+    expect(inboxSlice!.shouldRun).toBeTypeOf("function");
+
+    expect(existsSync(join(flumeDir, "inbox"))).toBe(false);
+    expect(live()).toBe(false);
+
+    mkdirSync(join(flumeDir, "inbox"));
+    expect(live()).toBe(false);
+
+    writeFileSync(join(flumeDir, "inbox", "2026-09-11-report.md"), "finding\n");
+    expect(live()).toBe(true);
+  });
+
+  it("the cascade example's inbox slice refuses an obstructed inbox rather than reading it drained", () => {
+    expect(inboxSlice!.shouldRun).toBeTypeOf("function");
+
+    // A plain file at the queue's own path: present, and not a directory.
+    writeFileSync(join(flumeDir, "inbox"), "not a directory\n");
+    expect(existsSync(join(flumeDir, "inbox"))).toBe(true);
+
+    expect(() => live()).toThrow(/is present but is not a directory/);
+    // The refusal names the path an operator has to go fix, in the plain
+    // spelling rather than the namespaced one the probe stats through.
+    expect(() => live()).toThrow(join(flumeDir, "inbox"));
+  });
+});
+
+/**
  * `.claude/rules/engine-boundary.md`, *Surface, not prescription* — the engine
  * offers `handoff` and reads nothing into it: which phase runs next is the
  * chain's verdict, and a chain whose plan is more than one job has to order
