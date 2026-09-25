@@ -404,8 +404,12 @@ what a fence glob or a pathspec under the state root is built from, so a
 `writablePaths` entry never has to spell `.flume/`. The resolver
 refuses a default export that is not a
 function, and refuses a factory that returns no `chain` with a `phases[]`
-array. Take engine values from the parameter; your only engine `import` is
-`import type`, which is erased at runtime.
+array. A host that cannot load the module as ESM at all is refused ahead of
+either check, with `CjsContextLoadError` naming the fix — `"type": "module"`
+in the `package.json` nearest the chain — rather than relaying tsx's own
+parse, resolution or transform failure as a stack trace. Take engine values
+from the parameter; your only engine `import` is `import type`, which is
+erased at runtime.
 
 That shape is what makes a second engine copy unreachable rather than
 merely unlikely. A chain that imported engine *values* would resolve them
@@ -536,7 +540,11 @@ Things to notice:
 
 - **`writablePaths` is a hard boundary.** The harness diffs each commit and
   reverts on out-of-glob paths. This replaces "You may NOT modify X" rules
-  in prompts.
+  in prompts. A chain asking that same question of a path itself — a gate
+  summarizing what a commit touched, a `handoff` reading `showNameOnly` —
+  calls `api.matchesAny(path, globs)`, the engine's own `*`/`**` matcher and
+  the one the write guard judges by, rather than a second implementation that
+  agrees on the easy cases and parts from it at the edges.
 - **`handoff` reads the `TickResult`.** Fields: `committed`, `commitSha`,
   `gateResults` (the same `ReportedGateResult` rows the verdict persists —
   `details`, `verdict` and `skipped` included, so a handoff keys on the field
@@ -629,6 +637,30 @@ should exist instead.
 - **A declined tick is a distinguishable fact**, not a silent no-op — it
   reports its own outcome, separate from a `clean-exit` (the agent ran and
   committed nothing) and from hibernation (nothing was awake).
+
+### Waking a phase, and ending the run, from outside a `handoff`
+
+`handoff`'s return is the ordinary way a tick says who runs next, and a chain
+that needs nothing else never reaches past it. Two decisions sit outside that
+return, and each has a surface rather than a filename:
+
+- **`api.Baton`** is the awake-flag mechanism itself, constructed over a state
+  root. Presence of a phase's flag wakes it on the next tick and absence
+  sleeps it, and every wake writes a fresh token, so a wake landing while a
+  tick runs survives that tick's own sleep instead of being cleared by a
+  writer that never saw it (`spec/loop.md`, *Baton — presence wakes, absence
+  hibernates*). What reaches for it is code with no handoff to return — a
+  `setupWorktree` that provisioned something a sibling phase must now consume,
+  a gate that wants its producer re-run — rather than writing a file under
+  `awake/` itself.
+- **`api.stopFlagPath(flumeDir)`** is where the graceful-stop flag lives: the
+  same path `flume stop` writes, `flume loop` refuses to start over, and the
+  supervisor's per-iteration check ends a live run on (`spec/loop.md`,
+  *Graceful stop — the stop flag*). A chain that wants the run itself to end
+  rather than the baton to move — a `handoff` that saw something it will not
+  build past, a gate that will not let the next wave start — plants the flag
+  there. Returning `[]` ends the run only because nothing is left awake; the
+  flag ends it with work still queued.
 
 ## 2. Writing a custom Gate
 
@@ -986,6 +1018,28 @@ The shape to internalize:
   that rebuilds one of them out of literal segments is keeping a second copy
   of a fact the engine already holds, and it goes wrong the moment the chain
   relocates the real one.
+
+Three surfaces keep a queue-reading gate off the engine's own bookkeeping:
+
+- **`api.readGatedQueue(ctx)`** answers what queue the commit the gate is
+  attached to holds — the directory in the spelling a message names it by, the
+  same directory as a repo-relative pathspec, and every entry file already
+  read out of that commit's tree. It is the read `pendingGate` itself runs,
+  handed a gate's own context. Which ref to resolve at, which offset the state
+  root sits at, what a root relocated outside the repository reads instead,
+  and which alphabet each path comes back in are all facts the engine has
+  already decided; a gate composing them is one divergence from refusing over
+  a queue the gate beside it passed. The files come back `null` for no
+  readable queue, which a gate refuses on rather than judging the empty queue
+  it is not.
+- **`api.parsePendingQueue`** validates a listing against core + whatever your
+  `entryExtension` declared (§10). **`api.parsePendingQueueLoose`** is its
+  extension-less twin, for a read that wants the core shape and takes no
+  position on what a chain declared on top of it.
+- **`api.PendingParseFailure`** is what an engine read that refuses over a
+  broken queue throws. A gate that catches one branches on the class with
+  `instanceof` and reads `path` and `errors` off it — never a regex over the
+  message, which is the engine's prose rather than a fact it handed you.
 
 ### Where to place a gate: cheap structural at `afterCommit`, expensive at `afterMerge`
 
@@ -1606,6 +1660,17 @@ state root is relocated outside the repository; a chain whose artifacts are
 committed refuses at load (`examples/cascade-chain.ts` is the worked case),
 and a chain that commits nothing under the root ignores it.
 
+**For a path that arrived in the host's alphabet, use `api.gitPath`.** Git
+speaks forward slashes on every host, and so does every path the engine
+reports: `stateRootRel`, a fence glob, the names `showNameOnly` hands back. A
+path that came from anywhere else — `join`ed from segments, `relative()`d
+against a root, printed by a tool that speaks the platform's separator — goes
+through `api.gitPath` before it is compared against one of those or handed to
+git as a pathspec. It folds both separators, so a path that mixes them comes
+back in one alphabet; a chain-local fold keyed on the host's `sep` leaves the
+other one standing, and what it produces is a glob that matches nothing on the
+host it was written for.
+
 **For a path you hand an `fs` call, use `api.namespacedJoin`.** It joins the
 segments and prepends win32's extended-length prefix in one call — the engine's
 own fold, the one every path it hands an fs call is composed through. Reach for
@@ -1754,7 +1819,9 @@ Notes:
 - **A span that fails to resolve — non-zero exit, spawn failure, `sh` not
   found, or a cap overrun — aborts the whole render.** The agent is never
   invoked; the error names every failing span's command text and its
-  stderr, and the tick classifies as a no-commit outcome (`render-refused`)
+  stderr (`InlineExecRenderError`, whose `failures` carry the same pair
+  structurally for a caller that reads them rather than logging `.message`),
+  and the tick classifies as a no-commit outcome (`render-refused`)
   distinct from the agent's own `clean-exit`, which it never reached. There
   is no substituted placeholder and no partial send —
   every span in a prompt is load-bearing. An empty-but-successful command
@@ -1911,7 +1978,13 @@ never opens the directory itself. The join is the package's, not yours:
 `api.phaseAttemptKey(phase)` for a singleton phase's own record, and
 `api.recordAttemptKey(record)` for a record you pulled back out of the map — so
 nothing outside the engine composes `<keyspace>:<identity>` by hand, in either
-keyspace.
+keyspace. Two spellings sit underneath that, for a chain reading the store as a
+directory rather than through the map: `api.priorAttemptsDir(flumeDir)` is
+where the records and their reverted-file snapshots live, and
+`api.slugify(tag)` is the one tag-to-stem rule their filenames use — the same
+rule a fanout worktree and branch are named by, so the record and the worktree
+for one entry cannot disagree. A chain composing either out of literal
+segments is keeping a second copy of a layout the engine spells itself.
 
 The block is **absent on a first attempt** (no false signal), and a record
 clears two ways: an attempt that **ships clean** retires its own, and a
@@ -2022,6 +2095,17 @@ An entry gated on an unasserted capability is skipped, never silently —
 stuck on it, rather than reading a bare `hibernating`/`awake` line and
 guessing.
 
+A chain asking the dispatcher's own question — would this entry be picked
+right now — calls `api.isPickableNow(entry, shippedTags, isForkResolved?, capabilities?)`
+rather than walking the gate kinds itself: one answer over every axis at once
+— the declared forks through your `forkResolver` (§6), the gate kind, a
+`blockedBy` entry's blockers against the tags that have shipped, and a
+`requiresCapability` entry's capability against the set the chain asserted. A hook that wants *this* tick's answer reads `ctx.pickable`, which
+is the same predicate already applied by the dispatcher (§1). The function is
+for an entry the chain is holding but has not queued — a producer deciding
+whether the entry it is about to write would be buildable, or blocked on a
+fork nobody has resolved.
+
 `backlog-groomer-chain.ts` uses the same gate kind for a non-infrastructure
 capability — a backlog item can require `"ops-access"` just as easily as a
 docker host; the engine's mechanism doesn't care what the string names, only
@@ -2071,6 +2155,15 @@ const factory: ChainFactory = (flume) => {
   // ...
 };
 ```
+
+`readLatestVerdictsSync(flumeDir)` is the other read of that log: not a window
+of the last `n`, but the **latest verdict per phase**, keyed by phase name, and
+synchronous. That is the shape a `shouldRun` can use at all — the predicate is
+synchronous by contract (§1), so the async window above is unreachable from it
+— and it is what a phase asking "what did my own last tick do" reads instead
+of scanning the history itself. Absent history reads as an empty record, a
+corrupt line is skipped the same way, and a log present but unreadable throws
+for the same reason.
 
 Whether to render history at all, how far back, and what to do with a
 reverted tick's `gateResults[].details` (surface it verbatim? summarize it?
@@ -2437,6 +2530,16 @@ building the entry as it was.
 
 A claim left behind by a tick that died names a pid no longer alive, and the
 next selection reclaims it; nothing has to be swept by hand.
+
+**The tip has a claim of its own.** Beside the per-entry claims, one live
+process at a time holds the trunk tip's — the serialization every write that
+reaches the trunk passes through (`spec/loop.md`, *The loop lock and the tip
+claim*). A bare `flume tick` started against a repository another run is
+already ticking refuses on it and exits `1` rather than racing; a
+loop-spawned child runs under its supervisor's claim instead of taking a
+second. The refusal is `TipClaimHeldError`, naming the holder's pid — the
+operational-refusal class on the api so a consumer branches with `instanceof`
+rather than on the wording of a message.
 
 ## Putting it together
 

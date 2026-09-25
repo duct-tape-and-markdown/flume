@@ -30,6 +30,8 @@ import { gitPath, matchesAny, namespacedJoin } from "../src/paths.ts";
 import chainFactory from "../.flume/chain.ts";
 import { declaration } from "../.flume/declaration.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { pageIdentifiers } from "./helpers/pageAnchors.ts";
+import { REPO_ROOT } from "./helpers/repoProgram.ts";
 import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 
 // This file's cases drive real git repositories, and a git spawn is a spawn
@@ -192,6 +194,69 @@ describe("buildFlumeApi().git.readFileAtRef", () => {
       await rm(repo, { recursive: true, force: true });
     }
   });
+});
+
+/** The consumer surface that teaches the api a chain composes with. */
+const AUTHORING_PAGE = "docs/CHAIN-AUTHORING.md";
+
+/**
+ * The converse of the arm `tests/pageAnchors.test.ts` already holds that page
+ * to. There, every backticked identifier the page states must name a symbol
+ * the package ships — which says nothing at all about a member the page states
+ * nowhere. A chain takes every engine *value* off this object
+ * (`src/flumeApi.ts`), so a member no consumer surface names is a capability a
+ * chain author cannot find: the hover text is reachable only once you know
+ * what to hover, and what gets composed by hand instead is the fact the
+ * engine already holds (`.claude/rules/engineering.md`, *A fact the engine
+ * holds is reported, never rediscovered*).
+ *
+ * Judged off the real producer's own keys rather than a list kept beside them,
+ * and over the page's prose spans rather than its samples: a fenced block is
+ * code the page is showing, so a member named only inside one was never
+ * taught. The `api.`-prefixed spelling counts — `paths` is stated as
+ * `api.paths` and nowhere bare, which is how a reader meets it.
+ */
+it("docs/CHAIN-AUTHORING.md names every member buildFlumeApi ships", () => {
+  const read = pageIdentifiers({
+    root: REPO_ROOT,
+    domain: { trees: [], files: [AUTHORING_PAGE] },
+  });
+  // Every span the page states, a wrap closed the way its author spelled it:
+  // a member named across a line break is named.
+  const spans = [
+    ...read.backticked.map((site) => site.text),
+    ...read.wraps.scanned.map((site) => site.closed),
+  ];
+  const named = new Set(
+    spans.flatMap((span) => span.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? []),
+  );
+  const members = Object.keys(buildFlumeApi(REPO_PATHS));
+
+  // Non-vacuity on both sides, before the emptiness is read off either: the
+  // producer was built and the keys are the whole object rather than one
+  // branch of it, and the page was read with its prose spans populated.
+  expect(read.pages).toEqual([AUTHORING_PAGE]);
+  expect(members.length).toBeGreaterThan(30);
+  expect(members).toEqual(
+    expect.arrayContaining(["paths", "git", "Baton", "TipClaimHeldError"]),
+  );
+  expect(spans.length).toBeGreaterThan(500);
+
+  // And the span rule discriminates: each of these the page states only
+  // inside a fenced sample, so the verdict below is read over what the page
+  // teaches rather than over every byte it carries.
+  for (const sample of [
+    "pendingParseGate",
+    "dockerHostAvailable",
+    "effortFence",
+  ]) {
+    expect(`${sample} -> ${named.has(sample)}`).toBe(`${sample} -> false`);
+  }
+
+  expect({
+    page: AUTHORING_PAGE,
+    missing: members.filter((member) => !named.has(member)),
+  }).toEqual({ page: AUTHORING_PAGE, missing: [] });
 });
 
 describe("this repo's chain is the harness factory applied to its declaration (spec/harness.md 'What this repo is')", () => {
