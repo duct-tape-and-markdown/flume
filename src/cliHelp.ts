@@ -5,6 +5,7 @@
  * on disk this tick").
  */
 
+import { tickExitCauses } from "./cliVerdict.js";
 import {
   DEFAULT_ABORT_THRESHOLD,
   DEFAULT_MAX_TICKS,
@@ -71,6 +72,108 @@ function bayDiscoveryRow(indent: number): string {
     `${pad}and this verb's only ones.\n` +
     `${pad}${bayDiscoveryRefusal(indent)}`
   );
+}
+
+/**
+ * The column a `--help` page's prose stops at — the width every block in
+ * this file is typed to by hand, and the bound the rows rendered below wrap
+ * to.
+ */
+const HELP_WRAP_COLUMN = 76;
+
+/**
+ * `text` folded to lines that fit {@link HELP_WRAP_COLUMN} with `indent`
+ * spaces standing ahead of each — the wrap the pages do by hand wherever
+ * their prose is typed here, done for the clauses that arrive from
+ * elsewhere. Whitespace in the clause is a separator and nothing else: a
+ * clause is one paragraph, and where it breaks is this page's business.
+ */
+function wrapClause(text: string, indent: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(/\s+/).filter((word) => word !== "")) {
+    if (line === "") {
+      line = word;
+    } else if (indent + line.length + 1 + word.length <= HELP_WRAP_COLUMN) {
+      line += ` ${word}`;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line !== "") lines.push(line);
+  return lines;
+}
+
+/**
+ * One row of a page's own exit-code block: the code in the block's first
+ * column, then each of `clauses` opening its own line and wrapping under
+ * `indent` — that block's continuation column, the same one
+ * {@link bayDiscoveryRefusal} takes.
+ */
+function exitCodeRow(
+  code: number,
+  clauses: readonly string[],
+  indent: number,
+): string {
+  const pad = " ".repeat(indent);
+  const gap = " ".repeat(Math.max(indent - 2 - String(code).length, 2));
+  return clauses
+    .flatMap((clause) => wrapClause(clause, indent))
+    .map((line, at) => (at === 0 ? `  ${code}${gap}${line}` : `${pad}${line}`))
+    .join("\n");
+}
+
+/**
+ * `flume tick`'s exit-code block. Each row states the causes it owns — the
+ * refusals `main` takes before a `TickOutcome` exists, and the I/O row every
+ * verb shares — and the causes an arm of `tickExitCode` owns are rendered
+ * from the label that arm carries (`tickExitCauses`, `src/cliVerdict.ts`)
+ * rather than spelled a second time here, so a code re-routed between two
+ * arms cannot leave this page describing the arm it used to be
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ */
+function tickExitCodeBlock(): string {
+  const indent = 6;
+  const ownCauses: readonly (readonly [number, readonly string[]])[] = [
+    [0, []],
+    [
+      1,
+      [
+        "Harness error (unexpected exception), or HEAD is detached (the tick " +
+          "record's meaning is advancing a named tip; checkout a branch " +
+          "first). No claim is taken or checked — that's loop-level only.",
+      ],
+    ],
+    [
+      2,
+      [
+        "Usage: a stray trailing positional (`tick` consumes none — running " +
+          "something other than whichever phase is awake is refused, not " +
+          "honored), or `--phase` with no name after it.",
+      ],
+    ],
+    [69, []],
+    [
+      74,
+      [
+        "I/O error (EX_IOERR): the verdict history " +
+          "(`.flume/tick-verdicts.jsonl`) is present and unreadable — the " +
+          "tick reads it before appending its own record, so its work has " +
+          "already landed and it has printed its own summary; recording is " +
+          "what failed and there is nothing to re-run. Naming the file and " +
+          "the underlying error.",
+        BAY_DISCOVERY_LINES.join(" "),
+      ],
+    ],
+    [78, []],
+  ];
+  return ownCauses
+    .map(([code, own]) =>
+      exitCodeRow(code, [...own, ...tickExitCauses(code)], indent),
+    )
+    .join("\n");
 }
 
 export const HELP_TOP = `flume — a disciplined harness for AI-derivation pipelines.
@@ -169,40 +272,7 @@ Options:
                   wakes.
 
 Exit codes:
-  0   Success, or hibernation (no phase awake).
-  1   Harness error (unexpected exception), or HEAD is detached (the tick
-      record's meaning is advancing a named tip; checkout a branch first).
-      No claim is taken or checked — that's loop-level only. Also a wave
-      whose entries merged and gated clean and whose pending-ledger commit
-      then refused — a paused merge or cherry-pick in the checkout, a lost
-      index.lock: the shipped entries are on trunk, the chain is fine, and
-      a fresh process has every reason to get further. Clear the refusal and
-      re-run; the queue still names what has not shipped.
-  2   Usage: a stray trailing positional (\`tick\` consumes none — running
-      something other than whichever phase is awake is refused, not
-      honored), or \`--phase\` with no name after it, or \`--phase <name>\`
-      naming a phase the chain does not declare — the refusal names the
-      phases it does, no agent runs, and no baton flag moves, the same code
-      \`wake\`, \`sleep\` and \`render\` answer an undeclared phase name with.
-      Also the chain load failing with the CJS-context refusal — the host
-      repo's package.json (or the one beside .flume/chain.ts) lacks
-      "type": "module". Add it and re-run.
-  69  Mount-dead (EX_UNAVAILABLE): the chain module could not load, its
-      state root is missing, or its declaration is invalid. No agent ran —
-      fix the chain (or its state root) and re-run. Also the queue
-      failing to parse, where a fresh process reads the same bytes until the
-      queue's declared writer runs over them; a wave that shipped before its
-      rewrite read hit them still exits 69, and its work is on trunk.
-  74  I/O error (EX_IOERR): the verdict history
-      (\`.flume/tick-verdicts.jsonl\`) is present and unreadable — the tick
-      reads it before appending its own record, so its work has already
-      landed and it has printed its own summary; recording is what failed
-      and there is nothing to re-run. Naming the file and the underlying
-      error.
-      ${bayDiscoveryRefusal(6)}
-  78  Terminal misconfiguration (EX_CONFIG): every awake flag names a phase
-      the chain does not declare. The flags are left on disk — inspect, then
-      \`flume sleep <phase>\` or fix the chain.
+${tickExitCodeBlock()}
 `,
   loop: `Usage: flume loop [--max N]
 

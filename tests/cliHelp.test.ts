@@ -33,6 +33,7 @@ import { renderPidClaim } from "../src/pidClaim.ts";
 import {
   loopCompletionSummary,
   loopExitCode,
+  tickExitCauses,
   tickExitCode,
 } from "../src/cliVerdict.ts";
 import {
@@ -411,6 +412,60 @@ describe("flume tick --help — the exit-code list against tickExitCode's derive
       wholeRange(returned, TICK_PROCESS_LEVEL_EXIT_CODES),
     );
   }, SPAWN_BUDGET_MS);
+});
+
+/**
+ * The other half of the range read above: the block lists the right codes,
+ * and each row states the cause of the arm that returns it. Those causes were
+ * hand-copied prose beside the classifier, so a code re-routed between two
+ * arms already inside the range shipped green over both copies
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ *
+ * Driven the way the range is: the real classifier over the real outcome
+ * space for the codes, the labels its arms carry for the causes, and the
+ * shipped page decoded by the same block reader — never a hand copy of
+ * either side (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*).
+ */
+it("flume tick --help renders each exit code's cause from the label its arm carries", () => {
+  const page = helpPageFor("tick");
+  expect(page).toBeDefined();
+  const rows = documentedExitCodeRows(page!);
+  const { returned, spanned } = driveTickExitCodes();
+  // Non-vacuity: a collapsed outcome space, or a range that collapsed, would
+  // leave every read below holding over almost nothing.
+  expect(spanned).toBeGreaterThan(1);
+  expect(returned.size).toBeGreaterThan(1);
+
+  const labelled = [...returned].map(
+    (code) => [code, tickExitCauses(code)] as const,
+  );
+  // Every code the classifier can return is labelled at its arm — a code
+  // whose cause lives only on the page is the copy this pin exists to refuse.
+  expect(
+    labelled.filter(([, causes]) => causes.length === 0).map(([code]) => code),
+  ).toEqual([]);
+  // And one code carries two labels, which is what makes this a per-arm read
+  // rather than a per-code one: 2 answers both an undeclared `--phase` name
+  // and the CJS-context refusal, and a map keyed by code alone would hold
+  // one of them.
+  expect(
+    Math.max(...labelled.map(([, causes]) => causes.length)),
+  ).toBeGreaterThan(1);
+
+  for (const [code, causes] of labelled) {
+    const row = rows.get(code);
+    expect(row, `the block lists no ${code} row`).toBeDefined();
+    for (const cause of causes) {
+      // The reader folds a row to one line, so this compares against the
+      // clause the arm wrote rather than against where the page broke it.
+      expect(
+        row,
+        `the ${code} row does not state the cause its arm carries`,
+      ).toContain(cause.replace(/\s+/g, " "));
+    }
+  }
 });
 
 /**

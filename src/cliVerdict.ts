@@ -11,39 +11,135 @@ import type { SuperviseResult } from "./loopSupervisor.js";
 import type { CurrentRef } from "./git.js";
 
 /**
- * Map a tick outcome to the `flume tick` process exit code: 78 (`EX_CONFIG`)
- * terminal misconfiguration (a chain that resolved but declares an
- * inconsistent world), 2 (usage) the CJS-context refusal (a nameable fix,
- * checked before `failed` since a chain-load failure sets at most one of the
- * two) and a `--phase <name>` the chain does not declare
- * (`TickOutcome.undeclaredPhase`), 1 a ledger commit that refused for
- * anything but an unparseable queue (`TickOutcome.ledgerRefusal`), 69
- * (`EX_UNAVAILABLE`, {@link EX_MOUNT_DEAD}) every other failed tick, 0
- * otherwise (work done or clean hibernation). Exported for the exit-code
- * seam tests.
+ * A `flume tick` exit code and why the process took it — the cause phrase
+ * every surface that documents that code states for it, so a re-route
+ * between two codes already in the verb's range moves the phrase with it
+ * instead of leaving a page describing the code it used to be
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
  *
- * The 1 arm is the failure here that says nothing about the mount: the
- * chain loaded, the wave ran, its entries are on trunk, and only the queue
- * rewrite's own `git commit` refused — a paused cherry-pick, a lost
- * `index.lock`. Exiting 69 over that fail-fasts `flume loop` as mount-dead
- * (spec/loop.md, *Exit codes — the run never lies to CI*) over a wall the
- * next process has every reason to get past, so it exits 1 and the run
- * proceeds. An unparseable queue keeps 69: a fresh process reads the same
- * bytes until the queue's declared writer runs over them.
+ * One standalone clause per cause: the reader of these is a `--help`
+ * exit-code block (`src/cliHelp.ts`), which lays each out on its own line
+ * and supplies no connective vocabulary of its own.
+ */
+interface TickExitCause {
+  readonly code: number;
+  readonly cause: string;
+}
+
+/**
+ * One arm of {@link tickExitCode}: a {@link TickExitCause} plus the outcome
+ * shape that reaches it, read in declaration order.
+ */
+interface TickExitArm extends TickExitCause {
+  readonly when: (outcome: TickOutcome) => boolean;
+}
+
+/**
+ * The arms {@link tickExitCode} reads, in order — the first whose `when`
+ * holds decides the code. Ordered rather than keyed by it, because two arms
+ * answer 2 and which shape reaches which is the order's to say.
+ */
+const TICK_EXIT_ARMS: readonly TickExitArm[] = [
+  {
+    // A chain that resolved but declares an inconsistent world.
+    code: EX_TERMINAL_MISCONFIG,
+    cause:
+      "Terminal misconfiguration (EX_CONFIG): every awake flag names a " +
+      "phase the chain does not declare. The flags are left on disk — " +
+      "inspect, then `flume sleep <phase>` or fix the chain.",
+    when: (outcome) => outcome.terminal !== undefined,
+  },
+  {
+    // Argv the surface cannot honor as typed, which is the usage class every
+    // other verb already answers with — `wake`, `sleep` and `render` all
+    // exit 2 on a phase name their chain does not declare (spec/cli.md,
+    // *Subcommand surface*). One refusal carries one code whichever verb is
+    // handed it. Reached before `failed` because the code is the request's,
+    // not the tick's: no agent ran, no baton flag moved, and the chain
+    // mounted fine.
+    code: 2,
+    cause:
+      "`--phase <name>` named a phase the chain does not declare — the " +
+      "refusal names the phases it does, no agent runs, and no baton flag " +
+      "moves, the same code `wake`, `sleep` and `render` answer an " +
+      "undeclared phase name with.",
+    when: (outcome) => outcome.undeclaredPhase !== undefined,
+  },
+  {
+    // A nameable fix, and read before `failed` for the same reason: a
+    // chain-load failure sets at most one of these two.
+    code: 2,
+    cause:
+      "The chain load failed with the CJS-context refusal — the host " +
+      'repo\'s package.json (or the one beside .flume/chain.ts) lacks "type": ' +
+      '"module". Add it and re-run.',
+    when: (outcome) => outcome.usageError === true,
+  },
+  {
+    code: 0,
+    cause: "Success, or hibernation (no phase awake).",
+    when: (outcome) => outcome.failed !== true,
+  },
+  {
+    // The failure here that says nothing about the mount: the chain loaded,
+    // the wave ran, its entries are on trunk, and only the queue rewrite's
+    // own `git commit` refused. Exiting 69 over that fail-fasts `flume loop`
+    // as mount-dead (spec/loop.md, *Exit codes — the run never lies to CI*)
+    // over a wall the next process has every reason to get past, so it exits
+    // 1 and the run proceeds.
+    code: 1,
+    cause:
+      "A wave whose entries merged and gated clean and whose " +
+      "pending-ledger commit then refused — a paused merge or cherry-pick " +
+      "in the checkout, a lost index.lock: the shipped entries are on " +
+      "trunk, the chain is fine, and a fresh process has every reason to " +
+      "get further. Clear the refusal and re-run; the queue still names " +
+      "what has not shipped.",
+    when: (outcome) => outcome.ledgerRefusal === "commit-refusal",
+  },
+];
+
+/**
+ * Every other failed tick's code and cause — the arm with no shape of its
+ * own, held apart from {@link TICK_EXIT_ARMS} so the read below is total
+ * without a predicate nothing can fail.
  *
- * An undeclared `--phase` name is neither: it is argv the surface cannot
- * honor as typed, which is the usage class every other verb already answers
- * with — `wake`, `sleep` and `render` all exit 2 on a phase name their
- * chain does not declare (spec/cli.md, *Subcommand surface*). One refusal
- * carries one code whichever verb is handed it. Reached before `failed`
- * because the code is the request's, not the tick's: no agent ran, no baton
- * flag moved, and the chain mounted fine.
+ * An unparseable queue is in here rather than an arm of its own: a fresh
+ * process reads the same bytes until the queue's declared writer runs over
+ * them, so nothing about it is less dead than the mount.
+ */
+const TICK_EXIT_OTHERWISE: TickExitCause = {
+  code: EX_MOUNT_DEAD,
+  cause:
+    "Mount-dead (EX_UNAVAILABLE): the chain module could not load, its " +
+    "state root is missing, or its declaration is invalid. No agent ran — " +
+    "fix the chain (or its state root) and re-run. Also the queue failing " +
+    "to parse, where a fresh process reads the same bytes until the " +
+    "queue's declared writer runs over them; a wave that shipped before " +
+    "its rewrite read hit them still exits 69, and its work is on trunk.",
+};
+
+/**
+ * Map a tick outcome to the `flume tick` process exit code — the first arm
+ * above whose shape the outcome has, or {@link TICK_EXIT_OTHERWISE}.
+ * Exported for the exit-code seam tests.
  */
 export function tickExitCode(outcome: TickOutcome): number {
-  if (outcome.terminal) return EX_TERMINAL_MISCONFIG;
-  if (outcome.usageError || outcome.undeclaredPhase) return 2;
-  if (!outcome.failed) return 0;
-  return outcome.ledgerRefusal === "commit-refusal" ? 1 : EX_MOUNT_DEAD;
+  const arm = TICK_EXIT_ARMS.find((candidate) => candidate.when(outcome));
+  return (arm ?? TICK_EXIT_OTHERWISE).code;
+}
+
+/**
+ * Why `flume tick` exits with `code` — one phrase per arm that answers it,
+ * in the order {@link tickExitCode} reads them. Empty for a code no arm
+ * returns: the process reaches 74 without ever classifying an outcome, and
+ * the page that documents that row owns its causes.
+ */
+export function tickExitCauses(code: number): readonly string[] {
+  return [...TICK_EXIT_ARMS, TICK_EXIT_OTHERWISE]
+    .filter((arm) => arm.code === code)
+    .map((arm) => arm.cause);
 }
 
 /**
