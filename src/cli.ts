@@ -75,7 +75,7 @@ import {
   frictionCountLine,
   frictionNotes,
 } from "./friction.js";
-import { existsLoudUnder } from "./fsProbe.js";
+import { existsLoudUnder, statLoud } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
 import { readPackageVersion } from "./selfPackage.js";
@@ -405,24 +405,50 @@ async function main(): Promise<number> {
   // `resolveStateDirs` reached rather than re-deriving one from the env.
   const paths: FlumePaths = { repoRoot, configDir, flumeDir };
 
+  // The resolved state root proven usable once, here, rather than at each
+  // verb's first touch of it. A plain file standing where the root belongs
+  // stats clean — so bay discovery above stops at it and resolution names it —
+  // and then every read or write beneath it fails: the baton's `mkdir` of
+  // `awake/`, the stop flag's write, the dispatcher's own construction. Each
+  // of those threw past its verb into `main()`'s catch as a raw stack and
+  // exit 1, which is the one exit none of these verbs may take
+  // (`spec/loop.md`, *Exit codes — the run never lies to CI*). Refused at the
+  // seam the roots resolve because the root is what is unusable, not any one
+  // artifact under it: a per-verb copy is one verb behind the next verb added
+  // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+  //
+  // Absence is never this refusal — a state root that is not there yet is
+  // every verb's ordinary first run, and `statLoud` answers `undefined` for
+  // exactly that. Everything else it can raise (a relocating `FLUME_DIR`
+  // pointing through a symlink loop, a permission-denied parent — neither of
+  // which bay discovery walked, since `FLUME_DIR` bypasses that walk) is the
+  // same unusable root reported by the same line.
+  let rootObstruction: string | undefined;
+  try {
+    const at = statLoud(toNamespacedPath(flumeDir));
+    if (at !== undefined && !at.isDirectory())
+      rootObstruction = "it is present and is not a directory";
+  } catch (err) {
+    rootObstruction = err instanceof Error ? err.message : String(err);
+  }
+  if (rootObstruction !== undefined) {
+    // The root this process resolved, not the leaf an errno would have
+    // carried: `<root>/.flume/awake` alone leaves the operator to infer which
+    // state root a walk — or a relocating `FLUME_DIR` — picked.
+    console.error(
+      `[flume] state root at ${flumeDir} failed to open: ${rootObstruction}`,
+    );
+    return EX_IOERR;
+  }
+
   if (cmd === "status") {
-    // The baton read sits inside a guard, like the loop-lock and tip-claim
-    // reads below: constructing it creates `<flumeDir>/awake/` (spec/cli.md,
-    // "Subcommand surface" — this verb's one filesystem effect), and a state
-    // root that is present and not a directory fails that mkdir. Uncaught,
-    // the throw reached `main()`'s catch as a raw stack and exit 1 — the one
-    // exit `status` is specced never to take. The refusal names the root the
-    // verb resolved: the errno carries the `awake` path it tried, which does
-    // not say which state root the walk (or a relocating `FLUME_DIR`) picked.
-    let awake: string[];
-    try {
-      awake = new Baton(flumeDir).awake();
-    } catch (err) {
-      console.error(
-        `[flume] status: state root at ${flumeDir} failed to open: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return EX_IOERR;
-    }
+    // Constructing the baton creates `<flumeDir>/awake/` (spec/cli.md,
+    // "Subcommand surface" — this verb's one filesystem effect). The mkdir
+    // an obstructed state root fails is refused above, where the root
+    // resolves, so this read needs no guard of its own for it; the loop-lock
+    // and tip-claim reads below guard their own files, which that refusal
+    // says nothing about.
+    const awake = new Baton(flumeDir).awake();
     console.log(awake.length ? `awake: ${awake.join(", ")}` : "hibernating");
     // Surface supervisor liveness beside the awake markers — the 2026-07-29
     // incident's "hibernating" reading left the operator to infer

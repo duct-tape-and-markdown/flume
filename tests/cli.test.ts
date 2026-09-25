@@ -1015,10 +1015,11 @@ describe("flume status — supervisor liveness", () => {
     // Not `mkFixtureRoot`: the bay this fixture plants is the subject, and it
     // is planted *obstructed* — a plain file where the state root belongs.
     // Bay discovery stops at it (it is present, so `existsLoud` answers
-    // there), resolution names it, and the baton's `mkdir` of `awake/` under
-    // it fails ENOTDIR. Before that construction joined a guard the throw
-    // escaped to `main()`'s catch: a raw stack and exit 1, the one exit
-    // `status` is specced never to take (spec/cli.md, "Subcommand surface").
+    // there), resolution names it, and everything under it is unmakeable —
+    // for `status`, the baton's `mkdir` of `awake/`. Before the resolution
+    // grew its guard the throw escaped to `main()`'s catch: a raw stack and
+    // exit 1, the one exit `status` is specced never to take (spec/cli.md,
+    // "Subcommand surface").
     const dir = await mkTempDir("flume-status-obstructed-root-");
     try {
       const flumeDir = join(dir, ".flume");
@@ -1030,9 +1031,7 @@ describe("flume status — supervisor liveness", () => {
       // The root the verb resolved, not the leaf the errno happens to carry:
       // `<root>/.flume/awake` alone leaves the operator to infer which state
       // root a walk — or a relocating `FLUME_DIR` — picked.
-      expect(r.out).toContain(
-        `[flume] status: state root at ${flumeDir} failed to open`,
-      );
+      expect(r.out).toContain(`[flume] state root at ${flumeDir} failed to open`);
       expect(r.out).not.toContain("hibernating");
       expect(r.out).not.toContain("    at ");
     } finally {
@@ -1053,6 +1052,104 @@ describe("flume status — supervisor liveness", () => {
       await rm(dir, { recursive: true, force: true });
     }
   }, SPAWN_BUDGET_MS);
+});
+
+describe("the verbs whose whole file read is the state root", () => {
+  /**
+   * The same refusal at the three verbs beside `status` whose only file read
+   * is the state root itself, and at `render`, whose dispatcher is
+   * constructed against that root before any arm of its own is reached. Each
+   * ran the obstruction straight into `main()`'s catch — a raw stack and exit
+   * 1 — until the refusal moved to the resolution every verb passes through
+   * (`spec/loop.md`, *Exit codes — the run never lies to CI*).
+   *
+   * Each verb states its own case rather than riding a table: the claim is
+   * per-verb, and a title is what a queue entry cites.
+   */
+  async function runOverObstructedRoot(
+    argv: string[],
+  ): Promise<{ out: string; code: number; flumeDir: string }> {
+    // Not `mkFixtureRoot`: the obstruction is the fixture's whole point, so a
+    // plain file is planted where the state root belongs and discovery stops
+    // at it.
+    const dir = await mkTempDir("flume-obstructed-root-");
+    try {
+      const flumeDir = join(dir, ".flume");
+      await writeFile(flumeDir, "not a directory\n", "utf8");
+      return { ...(await runCli(dir, argv)), flumeDir };
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  it(
+    "flume wake refuses an obstructed state root with EX_IOERR naming the resolved root",
+    async () => {
+      const { out, code, flumeDir } = await runOverObstructedRoot([
+        "wake",
+        "plan",
+      ]);
+
+      expect(code).toBe(EX_IOERR);
+      expect(out).toContain(`[flume] state root at ${flumeDir} failed to open`);
+      // Never the raw stack it answered with before, and never the statement
+      // that the flag moved — no flag can be written under this root.
+      expect(out).not.toContain("    at ");
+      expect(out).not.toContain("woke plan");
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume sleep refuses an obstructed state root with EX_IOERR naming the resolved root",
+    async () => {
+      const { out, code, flumeDir } = await runOverObstructedRoot([
+        "sleep",
+        "plan",
+      ]);
+
+      expect(code).toBe(EX_IOERR);
+      expect(out).toContain(`[flume] state root at ${flumeDir} failed to open`);
+      // `sleep` over an absent flag is a no-op that exits 0, so the reading
+      // this refusal must never take is exactly its success line.
+      expect(out).not.toContain("    at ");
+      expect(out).not.toContain("slept plan");
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume stop refuses an obstructed state root with EX_IOERR naming the resolved root",
+    async () => {
+      const { out, code, flumeDir } = await runOverObstructedRoot(["stop"]);
+
+      expect(code).toBe(EX_IOERR);
+      expect(out).toContain(`[flume] state root at ${flumeDir} failed to open`);
+      // The flag write is this verb's whole effect, and its statement is what
+      // an operator reads as "the stop is filed".
+      expect(out).not.toContain("    at ");
+      expect(out).not.toContain("a live supervisor finishes its in-flight");
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume render refuses an obstructed state root with EX_IOERR naming the resolved root",
+    async () => {
+      const { out, code, flumeDir } = await runOverObstructedRoot([
+        "render",
+        "plan",
+      ]);
+
+      expect(code).toBe(EX_IOERR);
+      expect(out).toContain(`[flume] state root at ${flumeDir} failed to open`);
+      // Not the mount-dead reading either: the chain is never reached, and
+      // "nothing resolved" would send the operator after a chain that is fine.
+      expect(out).not.toContain("    at ");
+      expect(out).not.toContain("render: nothing resolved");
+    },
+    SPAWN_BUDGET_MS,
+  );
 });
 
 // ---------- the real CLI over a scratch repository ----------

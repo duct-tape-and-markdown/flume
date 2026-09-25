@@ -28,13 +28,14 @@ const SUBCOMMANDS = [
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 /**
- * The `EX_IOERR` causes every verb shares, worded once. Bay discovery runs
- * before any verb reaches work of its own, and both ways it can fail to hand
- * back a usable root land here, so every page's `74` row carries them and no
- * page states a narrower range than its own process can return
- * (`spec/loop.md`, *Exit codes — the run never lies to CI*).
+ * The `EX_IOERR` causes every verb shares, worded once. Bay discovery and the
+ * state-root resolution behind it both run before any verb reaches work of
+ * its own, and every way they can fail to hand back a usable root lands here,
+ * so every page's `74` row carries them and no page states a narrower range
+ * than its own process can return (`spec/loop.md`, *Exit codes — the run
+ * never lies to CI*).
  */
-const BAY_DISCOVERY_LINES = [
+const SHARED_ROOT_LINES = [
   `The state root (\`${STATE_ROOT_DIRNAME}\`) is present but will not stat at the bay`,
   "discovery every verb starts with — a symlink loop, a permission-denied",
   "parent. Refused rather than walked past to an unrelated ancestor's",
@@ -42,7 +43,11 @@ const BAY_DISCOVERY_LINES = [
   "Or that walk resolved a bay below the root git names paths from —",
   "every path composed against it would be spelled in an alphabet git",
   "does not use. Refused before the first one is composed, naming",
-  "both roots.",
+  "both roots. Or the root it resolved stats clean and is not a",
+  "directory, so nothing can be read or made beneath it: refused where",
+  "the roots resolve, ahead of every verb's own work, naming the root",
+  "rather than the first path under it a verb would have tried. An",
+  "absent state root is none of these — that is an ordinary first run.",
 ];
 
 /**
@@ -55,22 +60,22 @@ const BAY_DISCOVERY_LINES = [
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*).
  */
-function bayDiscoveryRefusal(indent: number): string {
-  return BAY_DISCOVERY_LINES.join(`\n${" ".repeat(indent)}`);
+function sharedRootRefusal(indent: number): string {
+  return SHARED_ROOT_LINES.join(`\n${" ".repeat(indent)}`);
 }
 
 /**
  * The whole `74` row for a verb that reads the state root and nothing else
  * before it answers — `wake`, `sleep`, `stop`, `render`. Their every other
- * refusal is usage-shaped or a chain that would not come up, so discovery is
- * the only file read they can take.
+ * refusal is usage-shaped or a chain that would not come up, so the root
+ * itself is the only file read they can take.
  */
-function bayDiscoveryRow(indent: number): string {
+function sharedRootRow(indent: number): string {
   const pad = " ".repeat(indent);
   return (
     `  74${" ".repeat(indent - 4)}I/O error (EX_IOERR): the refusals every verb shares,\n` +
     `${pad}and this verb's only ones.\n` +
-    `${pad}${bayDiscoveryRefusal(indent)}`
+    `${pad}${sharedRootRefusal(indent)}`
   );
 }
 
@@ -109,7 +114,7 @@ function wrapClause(text: string, indent: number): string[] {
  * One row of a page's own exit-code block: the code in the block's first
  * column, then each of `clauses` opening its own line and wrapping under
  * `indent` — that block's continuation column, the same one
- * {@link bayDiscoveryRefusal} takes.
+ * {@link sharedRootRefusal} takes.
  */
 function exitCodeRow(
   code: number,
@@ -164,7 +169,7 @@ function tickExitCodeBlock(): string {
           "already landed and it has printed its own summary; recording is " +
           "what failed and there is nothing to re-run. Naming the file and " +
           "the underlying error.",
-        BAY_DISCOVERY_LINES.join(" "),
+        SHARED_ROOT_LINES.join(" "),
       ],
     ],
     [78, []],
@@ -250,11 +255,8 @@ Exit codes:
       Naming the file and the underlying error. Also, under a live
       supervisor, tick-verdicts.jsonl exists but could not be read: the
       spend line is refused rather than withheld, since withholding it
-      states a run that has spent nothing. And the state root itself,
-      present and not a directory: the awake dir this verb creates under
-      it — its one filesystem effect — cannot be made, and the refusal
-      names the root that was resolved rather than the dir it tried.
-      ${bayDiscoveryRefusal(6)}
+      states a run that has spent nothing.
+      ${sharedRootRefusal(6)}
 `,
   tick: `Usage: flume tick [--phase <name>]
 
@@ -321,7 +323,7 @@ Exit codes:
       claiming it. Also, the merging-marker dir (\`.flume/merging/\`)
       exists but could not be listed: whether a marker stands is
       unknown, so the run refuses rather than reading it as none.
-      ${bayDiscoveryRefusal(6)}
+      ${sharedRootRefusal(6)}
   69  Mount-dead: the chain never resolved. The supervisor resolves it in
       its own process before the first child, so a chain that will not load
       refuses the run there, naming the load error and starting no tick; a
@@ -356,7 +358,7 @@ Exit codes:
   0   Success.
   2   Missing <phase> argument, an extra positional past <phase>, or <phase>
       names a phase the loaded chain does not declare. No flag is written.
-${bayDiscoveryRow(6)}
+${sharedRootRow(6)}
 `,
   sleep: `Usage: flume sleep <phase>
 
@@ -369,7 +371,7 @@ Exit codes:
   0   Success (no-op if already hibernating).
   2   Missing <phase> argument, an extra positional past <phase>, or <phase>
       names a phase the loaded chain does not declare.
-${bayDiscoveryRow(6)}
+${sharedRootRow(6)}
 `,
   stop: `Usage: flume stop
 
@@ -388,7 +390,7 @@ Exit codes:
   0   Always — including when the flag was already present.
   2   Usage: a stray trailing positional (\`stop\` consumes none). No flag is
       written.
-${bayDiscoveryRow(6)}
+${sharedRootRow(6)}
 `,
   log: `Usage: flume log [-n N] [--json]
 
@@ -409,7 +411,7 @@ Exit codes:
       Refused rather than printed as an empty history — exit 0 over silence
       means the log is not there, never that it could not be opened. Naming
       the file and the underlying error.
-      ${bayDiscoveryRefusal(6)}
+      ${sharedRootRefusal(6)}
 `,
   check: `Usage: flume check
 
@@ -441,7 +443,7 @@ Exit codes:
   74   I/O error (EX_IOERR): plan/pending/ exists but could not be read
        (permission denied, a path too long for the platform, …). Naming
        the underlying error.
-       ${bayDiscoveryRefusal(7)}
+       ${sharedRootRefusal(7)}
 `,
   render: `Usage: flume render <phase> [--entry <tag>]
 
@@ -480,7 +482,7 @@ Exit codes:
   69  Mount-dead (EX_UNAVAILABLE): the chain could not be brought up for any
       other reason — it failed to load, the queue at HEAD failed to parse,
       or the declared prompt file is not on disk. Nothing was rendered.
-${bayDiscoveryRow(6)}
+${sharedRootRow(6)}
 `,
   friction: `Usage: flume friction [name]
 
@@ -510,7 +512,7 @@ Exit codes:
       — that reading would tell the operator there is no friction to route
       when there may be some. The bare list prints no rows at all on a
       refusal, never a partial listing.
-      ${bayDiscoveryRefusal(6)}
+      ${sharedRootRefusal(6)}
 `,
 };
 
