@@ -1,0 +1,52 @@
+{
+  "tag": "THE-VERDICT-NAMES-A-RENDER-REFUSAL-PER-ENTRY",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "a `RenderFailure` row type and the `renderFailures` field beside the other three stage classes, through `buildTickVerdict` and the shape's reader"
+      },
+      {
+        "path": "src/Phase.ts",
+        "description": "the `TickResult` field beside `provisionFailures`, `mergeFailures` and `gateFailures`, with its doc"
+      },
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "the two persist sites hand the refusal back as the attempt's own fact rather than the log line alone"
+      },
+      {
+        "path": "src/waveTick.ts",
+        "description": "the wave collects a row per entry whose render refused"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the refused-rewrite producer carries the rows, as it already carries `provisionFailures`"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the singleton's own refusal, unblamed where there is no entry to name"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the completing producer carries the rows into the verdict"
+      },
+      {
+        "path": "src/index.ts",
+        "description": "`RenderFailure` exported beside its three siblings"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "both producers' rows, beside the verdict-facts cases"
+      }
+    ]
+  },
+  "summary": "A render refusal is tick-level `noCommit` only, so no per-entry render fact exists for a supervisor to fold and an identically-refusing entry is re-picked every wave",
+  "per": { "path": "spec/chain.md", "section": "What a hook receives" },
+  "acceptance": "the tick verdict names render as the fourth stage-failure class — the entry tag where one is blamed, the refusal's signature and the failing spans' text as its message — from every producer that writes a verdict, so the fact is read off the verdict rather than inferred from the tick-level no-commit mode",
+  "tests": [
+    "a wave's tick verdict carries a render failure under the tag whose prompt refused",
+    "a singleton tick whose prompt refused to render carries a render failure on its verdict"
+  ],
+  "notes": "Half one of the ruling on `questions/what-bounds-an-entry-whose-render-refuses-identically-every-wave.md`, fork (c); the stage roster is THE-QUARANTINE-ACCOUNTING-TAKES-RENDER-AS-A-STAGE, chained behind this. Verified: no `renderFailures` in `src/` or `harness/`; `noCommit` is tick-level (`src/tickVerdict.ts:624`-`:659`). Seams five `src/` paths with THE-VERDICT-CARRIES-A-TIMING-PER-GATE-RUN-AND-MERGE, which names them already."
+}

@@ -1,0 +1,32 @@
+{
+  "tag": "THE-QUARANTINE-ACCOUNTING-TAKES-RENDER-AS-A-STAGE",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["THE-VERDICT-NAMES-A-RENDER-REFUSAL-PER-ENTRY"]
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": "`FAILURE_STAGES` gains its fourth member, `stageLists` names the verdict's render list, and the hold-lift arm reads render with gate and merge"
+      },
+      {
+        "path": "tests/loopSupervisor.test.ts",
+        "description": "the quarantine, the abort and the lift over the render stage, beside the three stages already driven"
+      }
+    ]
+  },
+  "summary": "An entry whose prompt refuses deterministically is re-picked every wave to `--max`: the stage roster the streak fold reads stops at provision, merge and gate",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Repeated identical failures — quarantine, then abort"
+  },
+  "acceptance": "a blamed render refusal quarantines its entry under `quarantineScope` and an unbroken streak of the identical refusal aborts at `abortThreshold`, with the hold lifting once a verdict reports a different tip — a chain's own hook fixed on trunk being a new render — so no new member joins the handoff's refusal enumeration",
+  "tests": [
+    "a blamed render refusal quarantines its entry for the run",
+    "an unbroken streak of the identical render refusal aborts the loop at the threshold",
+    "a render-stage quarantine hold lifts once a verdict reports a different tip"
+  ],
+  "contractTouching": true,
+  "notes": "Half two of fork (c). `contractTouching` because `FailureStage` and the `FLUME_QUARANTINED_SLUGS` channel are shapes a resident supervisor and a fresh child share. Verified: `FAILURE_STAGES` (`src/loopSupervisor.ts:238`) is the three, and `stageLists` (`:739`) is exhaustive over it by type, so the fourth member is a compile error until the verdict list this entry's parent adds is named. `harness/standingRefusal.ts` is unchanged — f266b877's read stands."
+}

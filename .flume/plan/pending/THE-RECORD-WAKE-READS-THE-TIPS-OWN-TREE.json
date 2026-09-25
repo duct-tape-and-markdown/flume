@@ -1,0 +1,38 @@
+{
+  "tag": "THE-RECORD-WAKE-READS-THE-TIPS-OWN-TREE",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "harness/records.ts",
+        "description": "the record listing takes the tree it lists, so wake and render share one extension filter, claim withholding and order across two roots"
+      },
+      {
+        "path": "harness/gitRange.ts",
+        "description": "the synchronous tip listing of a state-root directory, beside the sync git reads already here"
+      },
+      {
+        "path": "harness/inboxWindow.ts",
+        "description": "the wake's record leg composes against the tip from the `repoRoot` and `stateRootRel` its closure already holds; the header's two-trees paragraph states the tip read and keeps the friction carve-out"
+      },
+      {
+        "path": "tests/harnessRecords.test.ts",
+        "description": "the listing over each source"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the wake over an uncommitted record, beside the existing record-leg cases"
+      }
+    ]
+  },
+  "summary": "The inbox wake counts records off the shared working tree while its drain reads the tip, so an uncommitted file wakes the slice after every tick that cannot route it",
+  "per": { "path": "spec/harness.md", "section": "The phases" },
+  "acceptance": "the record leg is live exactly for the records the tip's tree holds, under the same extension filter, claim withholding and order the render applies, so an uncommitted file wakes nothing; the friction channel and the lane store keep reading the shared disk, which no commit carries",
+  "tests": [
+    "an inbox record the tip does not hold wakes no slice"
+  ],
+  "pins": [
+    "a record the tip holds wakes the inbox slice"
+  ],
+  "notes": "Drains the ruling on `questions/can-the-record-wake-read-the-tip-when-live-is-synchronous.md`: neither (a) nor (c) — the tip read is synchronous and needs no contract. Verified: `inboxWindow` (`harness/inboxWindow.ts:108`) already closes over `options.repoRoot` and `options.stateRootRel`; `captureSync` (`harness/exec.ts:65`) is the sync spawn `gitRange.ts:98` already runs git through, so no `src/` change and no async `live`."
+}
