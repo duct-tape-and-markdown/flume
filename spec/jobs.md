@@ -51,6 +51,13 @@ that retargets one. Two efforts that share a checkout share its tip, and the
 tip claim serializes them whatever their files are called, so a partition
 under one checkout buys separate files and no separate execution.
 
+The engine holds that line rather than leaving it to fail later: a state root
+resolved in a checkout whose flume state already names a different one is
+refused at resolution, naming both roots and the checkout, before anything is
+provisioned. Left unrefused, the second root surfaces several steps on as
+git's own error over a branch the first root's tick holds, in a vocabulary
+that names neither root.
+
 **Why:** everything the engine keys by is already the checkout's — the tip a
 claim is taken on, the branch a worktree is minted from, the install a setup
 provisions, the tree a gate reads. A second axis beneath it names the same
