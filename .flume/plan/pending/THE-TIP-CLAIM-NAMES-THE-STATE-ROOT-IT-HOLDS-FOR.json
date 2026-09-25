@@ -37,10 +37,10 @@
     "path": "spec/loop.md",
     "section": "The loop lock and the tip claim"
   },
-  "acceptance": "the tip claim's statement carries the state root its holder resolved on a third line, and a live-holder refusal names that root beside the ref and the claim path, so two efforts in one checkout read as two state roots on one tip rather than as a busy tip; a reader that needs only liveness reads the first line unchanged",
+  "acceptance": "the tip claim's statement carries the state root its holder resolved on a third line, and a live-holder refusal names that root beside the root the refused effort resolved, the ref and the claim path, so two efforts in one checkout read as two state roots on one tip rather than as a busy tip; a reader that needs only liveness reads the first line unchanged",
   "tests": [
     "the tip claim states the state root its holder resolved on its third line",
-    "a second tick in one checkout under its own state root refuses naming the root that holds the tip"
+    "a second tick in one checkout under its own state root refuses naming both the root that holds the tip and the root it resolved"
   ],
-  "notes": "Ruled 76262932, closing `questions/does-the-second-root-refusal-reach-two-relocated-roots.md` on none of its three forks — a checkout has one tip. Verified: `renderPidClaim` (`src/pidClaim.ts`) writes two lines; `TipClaimHeldError` (`src/git.ts:1123`) names ref, pid and path only; `flumeDir` is in scope at both calls (`src/cli.ts:1239`, `:1474`). An absent third line follows `atMs`'s precedent at the same site. Seams `src/cli.ts` with THE-SUPERVISOR-CLAIM-HANDOFF-IS-DECODED-ONCE."
+  "notes": "Ruled 76262932, closing the two-relocated-roots question on none of its forks \u2014 a checkout has one tip. Verified: `renderPidClaim` (`src/pidClaim.ts`) writes two lines; `TipClaimHeldError` (`src/git.ts:1117`) names ref, pid and path only, and both CLI sites print `err.message` alone (`src/cli.ts:1242`, `:1478`), so the refused root is unnamed too. `flumeDir` is in scope at both calls. Seams `src/cli.ts` with THE-SUPERVISOR-CLAIM-HANDOFF-IS-DECODED-ONCE."
 }
