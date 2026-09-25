@@ -234,10 +234,16 @@ maps to `TerminateProcess`, which runs no handler (*The loop lock and the tip cl
 above), so a signal-based graceful stop is structurally unavailable on the one
 platform that most needs one.
 
-- **Checked between children only.** `superviseLoop` reads the flag off disk at the
-  same boundary it re-reads the baton. Nothing polls mid-tick; an in-flight tick
-  always completes. A hung agent is therefore still hung — the stop flag is not a
-  kill and does not subsume whatever the operator does about a tick that never ends.
+- **Checked at every boundary a run has, and nowhere else.** `superviseLoop` reads
+  the flag off disk at the same boundary it re-reads the baton, and a supervised
+  fanout wave reads it each time a slot frees, before pulling the next entry
+  (`spec/worktrees.md`): a refilling wave can outlast the queue it started on, so a
+  flag checked only between children would wait on the whole queue. On the flag
+  the wave pulls nothing more, and every entry already in flight finishes, merges,
+  and is recorded exactly as it would have been. Nothing polls inside an agent's
+  span; an in-flight entry always completes. A hung agent is therefore still hung —
+  the stop flag is not a kill and does not subsume whatever the operator does about
+  a tick that never ends.
 - **Presence at start refuses the run.** `flume loop` with the flag
   already on disk refuses before any tick, exit 1, naming the flag path — removing
   the flag is the operator's acknowledgement that the stop was seen, and the refusal
@@ -248,8 +254,8 @@ platform that most needs one.
   ever (*Exit codes*, below) — a graceful stop after errored ticks with nothing
   shipped still exits non-zero. The completion summary names the stop flag as the
   reason iteration ended.
-- **`flume tick` ignores the flag.** The flag stops the supervisor's iteration; a
-  bare tick is the operator's own explicit action, and refusing it would gate the
+- **`flume tick` ignores the flag.** The flag stops the supervisor's iteration and
+  a supervised wave's refill; a bare tick is the operator's own explicit action, and refusing it would gate the
   very command an operator uses to test a staged fix before acking the stop.
 - **`flume stop` writes the flag; `touch` is equally true.** The verb
   (`spec/cli.md`) is discoverability plus a printed statement of what happens next,
