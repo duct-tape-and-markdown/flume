@@ -1,0 +1,34 @@
+{
+  "tag": "THE-FREED-SLOT-PULLS-THE-NEXT-DISJOINT-ENTRY",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["THE-WAVE-MERGES-EACH-ENTRY-AS-ITS-AGENT-FINISHES"]
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveTick.ts",
+        "description": "a merged entry's slot provisions and invokes the next entry the selection hands it, and the wave ends on the selection rather than on its first batch"
+      },
+      {
+        "path": "src/selection.ts",
+        "description": "the next pickable entry disjoint from what is still in flight, off the collision read the batch partition already makes"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the refill arms, beside the batch-width cases"
+      }
+    ]
+  },
+  "summary": "The width a merged entry releases sits idle until the whole wave settles: nothing refills a freed slot, and the tick ends at its first batch",
+  "per": {
+    "path": "spec/worktrees.md",
+    "section": "Fanout and worktrees — provisioning, isolation, teardown"
+  },
+  "acceptance": "a slot freed by a merged entry pulls the next pickable entry disjoint from everything still in flight, from the tip as it then stands, and the tick ends when nothing is pickable or its budget says to put the wave down rather than when one batch has drained",
+  "tests": [
+    "a slot freed by a merged entry pulls the next pickable entry disjoint from what is still in flight",
+    "a wave keeps pulling pickable entries until none remain rather than ending with its first batch"
+  ],
+  "notes": "Half two of the ruling; chained rather than seamed because the refill is written against the per-entry merge's own completion. `partitionByFileOverlap` (`src/partition.ts`) is a declared export and the batch read stays (`src/selection.ts:359`) — what the refill needs is the one-entry form of the same collision test, against the in-flight set rather than a batch. `partitionIgnore` narrows that set as it narrows the batch's."
+}
