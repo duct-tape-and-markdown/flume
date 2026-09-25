@@ -137,8 +137,13 @@ const CONTINUING_NOTES_REL = `${NOTES_REL}/continuing`;
  * everything that addresses a note home composes from here — so a fourth home
  * added here reaches the fence, the gate and the prompt together rather than
  * one at a time.
+ *
+ * Exported as the **relative** names rather than through a composer of its
+ * own, because one reader wants them host-native: the record queue asks
+ * whether a listed file is a claimed entry's note, and that comparison has to
+ * be spelled the way the listing spelled it (`recordFiles`, `records.ts`).
  */
-const NOTE_DIR_RELS = [
+export const NOTE_DIR_RELS = [
   NOTES_REL,
   PARKED_NOTES_REL,
   CONTINUING_NOTES_REL,

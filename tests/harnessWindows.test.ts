@@ -24,7 +24,7 @@
  * environment no consumer could declare.
  */
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -452,6 +452,101 @@ it("the inbox record leg is live while the queue carries a pickable entry", () =
   const rendered = inbox.args({ cwd: repo, flumeDir: stateRoot() }).RECORDS;
   expect(rendered).toContain(path);
   expect(rendered).toContain("The gate names its own command twice.");
+});
+
+/**
+ * A claim covers the entry's records (`spec/pending.md`, *A claim covers the
+ * entry's records*): while a build tick carries an entry, the note and the
+ * park under that entry's tag are the tick's, so the drain's window does not
+ * show them and the drain is never woken by them.
+ *
+ * Both legs are asserted, because the withholding is one listing with two
+ * readers: a slice woken over a file its prompt then renders as absent is the
+ * loop this window's own doc refuses.
+ */
+it("the inbox window withholds a record whose entry another tick holds a claim on", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+  const inbox = windows()[INBOX_PHASE];
+
+  const note = writeRecord(
+    "plan/notes/HELD-ENTRY.md",
+    "# Held\n\nThe note the build tick is still writing.\n",
+  );
+  const park = writeRecord(
+    "plan/notes/parked/HELD-ENTRY.md",
+    "# Parked\n\nThe park the build tick is still rewriting.\n",
+  );
+
+  // Vacuity: with no claim standing, both files are the drain's material and
+  // the leg is live over them — so the withheld arm below is the claim's
+  // verdict, not an empty record queue.
+  const unclaimed = inbox.live({ flumeDir: stateRoot(), pickable: false });
+  const rendered = inbox.args({ cwd: repo, flumeDir: stateRoot() }).RECORDS!;
+  expect({ unclaimed, note: rendered.includes(note), park: rendered.includes(park) })
+    .toEqual({ unclaimed: true, note: true, park: true });
+
+  const claimed = ["HELD-ENTRY"];
+  const withheld = inbox.args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+    claimed,
+  }).RECORDS!;
+
+  expect({
+    // Neither file reaches the drain's window ...
+    note: withheld.includes(note),
+    park: withheld.includes(park),
+    block: withheld,
+    // ... nor wakes the slice over material it would be shown none of ...
+    live: inbox.live({ flumeDir: stateRoot(), pickable: false, claimed }),
+    // ... and both are still on disk for the listing after the claim lifts.
+    noteOnDisk: existsSync(note),
+    parkOnDisk: existsSync(park),
+  }).toEqual({
+    note: false,
+    park: false,
+    block: "(no records)",
+    live: false,
+    noteOnDisk: true,
+    parkOnDisk: true,
+  });
+});
+
+/**
+ * The withholding is keyed to the claimed tag, never to the directory: a
+ * sibling note in the same queue, and an operator's finding in the inbox
+ * beside it, are the drain's material while one entry is in flight.
+ */
+it("the inbox window renders a record whose entry no tick has claimed", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+  const inbox = windows()[INBOX_PHASE];
+
+  const held = writeRecord("plan/notes/HELD-ENTRY.md", "# Held\n\nIn flight.\n");
+  const free = writeRecord("plan/notes/FREE-ENTRY.md", "# Free\n\nDrainable.\n");
+  const finding = writeRecord(
+    "inbox/2026-09-16-a-finding.md",
+    "# A finding\n\nObserved.\n",
+  );
+
+  // Non-vacuity: three records are on disk and exactly one of them is the
+  // claimed entry's, so the two assertions below are over a populated queue.
+  expect([held, free, finding].filter((f) => existsSync(f))).toHaveLength(3);
+
+  const claimed = ["HELD-ENTRY"];
+  const rendered = inbox.args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+    claimed,
+  }).RECORDS!;
+
+  expect({
+    free: rendered.includes(free),
+    finding: rendered.includes(finding),
+    body: rendered.includes("Drainable."),
+    live: inbox.live({ flumeDir: stateRoot(), pickable: false, claimed }),
+  }).toEqual({ free: true, finding: true, body: true, live: true });
 });
 
 /**

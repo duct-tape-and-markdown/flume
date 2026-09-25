@@ -298,6 +298,30 @@ export interface PendingGateOptions {
    */
   fenceWhen?: (entry: PendingEntry) => boolean;
   /**
+   * Which paths besides its ledger file belong to one entry — the chain's
+   * declaration of that entry's **records**, which the claim check reads as
+   * it reads the ledger file (`spec/pending.md`, *Claims — an entry in flight
+   * is left alone*). Omitted, the claim check's subject is the ledger file
+   * alone, byte-identical to before this option existed.
+   *
+   * The engine holds no note layout: where a consumer keeps an entry's note,
+   * its park or any other per-entry file is that consumer's, so it is
+   * declared here rather than spelled in the engine
+   * (`.claude/rules/engine-boundary.md`, *Capability vs convention*). The
+   * engine supplies the enforcement — which tags to ask about, the claims
+   * walk, the refusal — and the chain supplies the paths.
+   *
+   * Handed the facts it needs rather than left to find them: `tag` is the
+   * entry's, and `stateRootRel` is `GateContext.stateRootRel`, the state
+   * root's offset in git's alphabet — the alphabet a commit's touched paths
+   * arrive in, so the answer is compared against them without a fold at
+   * either end (`.claude/rules/engine-boundary.md`, *Surface, not
+   * prescription*). A relocated state root — no offset any commit can name —
+   * never calls this, for the same reason it leaves the ledger leg with
+   * nothing to judge.
+   */
+  entryRecords?: (tag: string, stateRootRel: string) => readonly string[];
+  /**
    * Chain-authored operator guidance appended verbatim to both violation
    * messages (schema and fence). The chain supplies the text, the engine
    * supplies the enforcement — the same capability/convention split as
@@ -339,8 +363,11 @@ export interface PendingGateOptions {
  * Third, the **claim check**: an entry a concurrent tick holds a claim on
  * (`spec/pending.md`, *Claims — an entry in flight is left alone*) is left
  * byte-identical by the gated commit, or the commit is refused naming the
- * entry and its holder. `opts.when` is what a chain places that check where
- * it bites — see the option.
+ * entry and its holder. Its subject is the entry's ledger file plus whatever
+ * paths `opts.entryRecords` declares as that entry's records, so a drain
+ * cannot fold a note into an entry a build tick is mid-flight on any more
+ * than it can re-scope the entry itself. `opts.when` is what a chain places
+ * that check where it bites — see the option.
  */
 export function pendingGate(opts: PendingGateOptions): Gate {
   const fenceWhen = opts.fenceWhen ?? (() => true);
@@ -422,26 +449,38 @@ export function pendingGate(opts: PendingGateOptions): Gate {
       // where no commit can name it (`queueDirRel` absent), so no touched
       // path is an entry file and the check has nothing to judge.
       const touchedEntries = touchedEntryFiles(ctx, queueDirRel);
-      if (touchedEntries.length > 0) {
-        // Read only behind a touched entry file: the claims walk costs a
-        // `rev-parse` and a listing, and a phase whose fence never admits the
-        // queue — build's — pays neither.
+      const subjects = [
+        ...touchedEntries,
+        ...touchedEntryRecords(ctx, parsed.entries, touchedEntries, opts),
+      ];
+      if (subjects.length > 0) {
+        // Read only behind a touched entry file or record: the claims walk
+        // costs a `rev-parse` and a listing, and a phase that declares no
+        // record resolver and whose fence never admits the queue pays
+        // neither.
         const holders = await new EntryClaimStore(ctx.repoRoot).readHolders();
-        const held = touchedEntries.flatMap(({ path, tag }) => {
+        const held = subjects.flatMap(({ path, tag }) => {
           const by = holders.get(entryClaimSlug(tag));
-          return by === undefined
-            ? []
-            : [`  [${tag}] ${path} is claimed by pid ${by.pid}`];
+          return by === undefined ? [] : [{ path, tag, pid: by.pid }];
         });
         if (held.length > 0) {
+          // Counted by entry, not by path: one entry whose ledger file and
+          // whose note the same commit touched is one entry in flight, and
+          // the details name every path it changed.
+          const entries = new Set(held.map(({ tag }) => tag)).size;
           return {
             ok: false,
             message: withHint(
-              `this commit changes ${held.length} entr${
-                held.length === 1 ? "y" : "ies"
+              `this commit changes ${entries} entr${
+                entries === 1 ? "y" : "ies"
               } another tick holds a claim on`,
             ),
-            details: held.join("\n"),
+            details: held
+              .map(
+                ({ tag, path, pid }) =>
+                  `  [${tag}] ${path} is claimed by pid ${pid}`,
+              )
+              .join("\n"),
           };
         }
       }
@@ -482,6 +521,46 @@ function touchedEntryFiles(
     if (file.includes("/")) return [];
     const tag = entryTagFromFileName(file);
     return tag === null ? [] : [{ path, tag }];
+  });
+}
+
+/**
+ * The **records** the gated span changed, each paired with the entry whose
+ * they are — the other half of the claim check's subject
+ * (`spec/pending.md`, *A claim covers the entry's records*).
+ *
+ * The paths come from the chain ({@link PendingGateOptions.entryRecords}),
+ * because the engine holds no note layout and a directory it guessed at would
+ * be one consumer's convention wearing the engine's authority
+ * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
+ *
+ * The resolver answers tag → paths, which is the only direction that can be
+ * asked: a claim is keyed by the tag's slug and slugging is not invertible,
+ * so a path cannot be turned back into the tag that owns it. Hence the
+ * candidate tags — every entry the gated commit's queue holds, plus every tag
+ * a touched entry file names. The second half is what covers the entry a
+ * drain **removed** in this very commit: its ledger file is gone from the
+ * tree left to parse, and the note it also deleted still belongs to it.
+ */
+function touchedEntryRecords(
+  ctx: GateContext,
+  queued: readonly PendingEntry[],
+  touchedEntries: readonly { readonly tag: string }[],
+  opts: PendingGateOptions,
+): { readonly path: string; readonly tag: string }[] {
+  const stateRootRel = ctx.stateRootRel;
+  if (opts.entryRecords === undefined || stateRootRel === undefined) return [];
+  const owner = new Map<string, string>();
+  const tags = new Set([
+    ...queued.map((entry) => entry.tag),
+    ...touchedEntries.map(({ tag }) => tag),
+  ]);
+  for (const tag of tags)
+    for (const path of opts.entryRecords(tag, stateRootRel))
+      owner.set(path, tag);
+  return ctx.touchedPaths.flatMap((path) => {
+    const tag = owner.get(path);
+    return tag === undefined ? [] : [{ path, tag }];
   });
 }
 

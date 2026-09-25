@@ -101,14 +101,14 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
     name: INBOX_PHASE,
     live: (inputs) =>
       !queueResolved(inputs) ||
-      recordsPending(inputs.flumeDir) ||
+      recordsPending(inputs.flumeDir, inputs.claimed ?? []) ||
       frictionPending(inputs.flumeDir, friction) ||
       standingRefusals(options.stateRootRel, inputs.pending, inputs.priorAttempts)
         .length > 0 ||
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
-      RECORDS: renderRecords(ctx.flumeDir, friction),
+      RECORDS: renderRecords(ctx.flumeDir, friction, ctx.claimed ?? []),
       BUILD_RECORDS: renderBuildRecords(options.stateRootRel, ctx),
       CI_LANES: lanes.render(ctx.flumeDir),
     }),
@@ -186,10 +186,22 @@ function renderQueueParseFailure(ctx: WindowContext): string {
  * the read, so what the tick is told to open is the path it can open
  * (`.claude/rules/platform-facts.md`, *Windows MAX_PATH (~260 chars) breaks
  * fs calls with no long component*).
+ *
+ * **A note or park whose entry a build tick holds is not among them.** The
+ * listing withholds it (`recordFiles`, `records.ts`), so the drain is never
+ * shown a file it would route away from the tick still writing it — and the
+ * file stays on disk for the listing that follows the claim lifting
+ * (`spec/pending.md`, *A claim covers the entry's records*). Withheld at the
+ * listing rather than filtered here, because the liveness leg above asks the
+ * same listing the same question and the two must not disagree.
  */
-function renderRecords(flumeDir: string, friction: string | undefined): string {
+function renderRecords(
+  flumeDir: string,
+  friction: string | undefined,
+  claimed: readonly string[],
+): string {
   const blocks = [
-    ...renderFiles(recordFiles(flumeDir), RECORD_MAX_BYTES),
+    ...renderFiles(recordFiles(flumeDir, claimed), RECORD_MAX_BYTES),
     ...renderFiles(frictionFiles(flumeDir, friction), undefined),
   ];
   if (blocks.length === 0) return "(no records)";

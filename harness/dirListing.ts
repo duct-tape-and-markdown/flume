@@ -84,5 +84,24 @@ export function listUnderStateRoot(
   return readdirSync(namespacedJoin(dir))
     .filter((name) => name.endsWith(ext))
     .sort()
-    .map((name) => join(dir, name));
+    .map((name) => fileUnderStateRoot(stateRoot, rel, name));
+}
+
+/**
+ * One named file under `stateRoot`'s `rel` directory, at the spelling
+ * {@link listUnderStateRoot} hands a listed file back at.
+ *
+ * The composer, so a caller that means to ask "is *this* file in that
+ * listing" composes the same string the listing produced rather than a
+ * second one that agrees on posix and differs on win32 by a separator
+ * (`.claude/rules/posture-sweep.md`, *A repo-relative path composed with
+ * `node:path`*). The listing above goes through it too — one join, one
+ * answer.
+ */
+export function fileUnderStateRoot(
+  stateRoot: string,
+  rel: string,
+  name: string,
+): string {
+  return join(stateRoot, ...rel.split("/"), name);
 }

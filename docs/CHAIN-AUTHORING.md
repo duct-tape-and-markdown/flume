@@ -849,10 +849,10 @@ const factory: ChainFactory = (flume) => {
   (`{ ...chainLoadGate, when: "afterMerge" }`).
 - `writablePathsGate` — attached automatically by the dispatcher from each
   phase's `writablePaths`. Don't list manually.
-- `pendingGate` — `pendingGate({ targetFence, extension?, fenceWhen?, hint?,
-  when? })`: composed queue validation, a plan-time fence pre-check against
-  the target phase, and a claim check over the entries another tick holds.
-  See below.
+- `pendingGate` — `pendingGate({ targetFence, extension?, fenceWhen?,
+  entryRecords?, hint?, when? })`: composed queue validation, a plan-time
+  fence pre-check against the target phase, and a claim check over the
+  entries another tick holds. See below.
 - `shellGate` — `shellGate({ name, when, cmd, args, failHint? })`, the escape
   hatch for "run a command, fail on non-zero". `tscGate`, `vitestGate` and
   `eslintGate` are `shellGate` instances, built through one shared
@@ -874,7 +874,8 @@ Third, it runs the **claim check**: an entry a concurrent tick holds a claim
 on (§13) must be left byte-identical by the gated commit, or the commit is
 refused naming the entry and the pid holding it. The subject is the gated
 span's own diff, so an edit and a removal are caught the same way and a
-commit that touches no entry file is never judged against the claims at all.
+commit that touches no entry file — and none of that entry's declared
+records, below — is never judged against the claims at all.
 
 ```ts
 const build: Phase = {
@@ -929,6 +930,27 @@ const plan: Phase = {
 every entry) — supply it to exempt park-exempt `gate.kind` values (e.g.
 `"parked"`, `"deferred"`) the same way the build fence itself does.
 
+`entryRecords` widens the claim check's subject from the entry's ledger file
+to **that entry's records** — whatever other per-entry files your chain
+keeps, a note, a park, a sidecar. It is a resolver, `(tag, stateRootRel) =>
+paths`, answering in git's alphabet (the alphabet a commit's touched paths
+arrive in); the engine supplies the tags, the claims walk and the refusal,
+and you supply the layout, because the engine has none. Omitted, the claim
+check's subject is the ledger file alone.
+
+```ts
+pendingGate({
+  targetFence: build,
+  when: "afterMerge",
+  entryRecords: (tag, stateRoot) => [`${stateRoot}/plan/notes/${tag}.md`],
+});
+```
+
+Wire it on the phases that **drain** those files, not on the phase that
+writes them: a worker tick holds the claim on the entry whose note it is
+writing, so a claim check armed over its own note homes would refuse the very
+commit the claim was staked for.
+
 `hint` appends chain-authored operator guidance verbatim to every violation
 message (schema, fence and claim) — the same capability/convention split as
 `failHint` on `shellGate`: you supply the text, the engine supplies the
@@ -955,7 +977,9 @@ const plan: Phase = {
 
 The harness package wires exactly that pair on every plan slice, and the
 `afterCommit` one alone on `build` — whose fence admits no entry file, so the
-merged-tree placement there would re-parse the whole queue to say nothing.
+merged-tree placement there would re-parse the whole queue to say nothing. It
+declares its own note homes as each entry's `entryRecords` on the slices, and
+on `build` never, for the reason above.
 
 The queue this gate validates is `ctx.pendingDir`, the resolved
 `Chain.pendingDir` — there is no `pendingDir` option, because the path is

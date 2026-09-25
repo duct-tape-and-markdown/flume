@@ -41,7 +41,14 @@ import {
 } from "../harness/index.ts";
 import { pendingGate } from "../src/builtinGates.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
-import { isAncestor, readFileAtRef, statusRecords } from "../src/git.ts";
+import {
+  gitCommonDir,
+  isAncestor,
+  readFileAtRef,
+  statusRecords,
+} from "../src/git.ts";
+import { entryClaimPath, entryClaimSlug } from "../src/entryClaims.ts";
+import { renderPidClaim } from "../src/pidClaim.ts";
 import { readGatedQueue, readQueueAtRef } from "../src/pendingLedger.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
@@ -1494,6 +1501,64 @@ it("the merged-tree pending gate is wired to every plan slice, and to build neve
     expect(placements(slice)).toEqual(["afterCommit", "afterMerge"]);
   }
   expect(placements(BUILD_PHASE)).toEqual(["afterCommit"]);
+});
+
+/**
+ * The other half of that claim check's subject: the entry's **records**
+ * (`spec/pending.md`, *A claim covers the entry's records*). The engine
+ * carries the mechanism and the package declares the paths, so this is where
+ * "the paths are this package's note homes" is pinned — over the real
+ * factory, a real claim on disk, and a real commit that folds the note away.
+ *
+ * Both sides of the wiring are asserted: a producer's set refuses, and
+ * build's passes the identical span, because a build tick *holds* the claim
+ * on the entry whose note it writes.
+ */
+it("the package's claim check covers a claimed entry's note, and build's own set leaves it alone", async () => {
+  await writeQueue([queueEntry("HELD")]);
+  await write(`${STATE_ROOT}/plan/notes/HELD.md`, "# Held\n\nmid-flight\n");
+  commitAll("plan: queue an entry and its note");
+
+  // A drain folding the note away while a build tick carries the entry.
+  await rm(join(repo, STATE_ROOT, "plan", "notes", "HELD.md"));
+  const span = commitAll("plan: fold the note");
+  // Non-vacuity: the span is the note alone, so the verdict below is the
+  // records half of the check and not the ledger half riding along.
+  expect(span.touchedPaths).toEqual([`${STATE_ROOT}/plan/notes/HELD.md`]);
+
+  const claim = entryClaimPath(await gitCommonDir(repo), entryClaimSlug("HELD"));
+  await mkdir(dirname(claim), { recursive: true });
+  await writeFile(claim, renderPidClaim(process.pid, new Date()));
+
+  const setFor = (name: string): Gate[] =>
+    harnessGates({
+      phase: { name, writablePaths: [...BUILD_FENCE] },
+      declaration,
+      engine,
+      putDown,
+    }).filter((g) => g.name === "pending-gate");
+
+  const producer = setFor("plan-derive");
+  // Every placement the producer carries refuses it — the check is the
+  // gate's, not one placement's.
+  for (const gate of producer) {
+    const result = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
+    expect(result.ok).toBe(false);
+    expect(result.details).toContain(
+      `  [HELD] ${STATE_ROOT}/plan/notes/HELD.md is claimed by pid ${process.pid}`,
+    );
+  }
+  // Vacuity pin: there were placements to judge.
+  expect(producer.length).toBeGreaterThan(0);
+
+  // And build, whose tick is the claim's own holder, passes the same span.
+  const build = setFor(BUILD_PHASE);
+  expect(build.length).toBeGreaterThan(0);
+  for (const gate of build) {
+    expect((await gate.run(ctxFor(span, { phaseName: BUILD_PHASE }))).ok).toBe(
+      true,
+    );
+  }
 });
 
 /**

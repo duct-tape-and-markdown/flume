@@ -129,6 +129,19 @@ export interface SliceWindow {
   readonly pending?: readonly PendingEntry[] | undefined;
   /** The record store as the tick left it — `TickResult.priorAttempts`. */
   readonly priorAttempts?: ReadonlyMap<string, PriorAttempt> | undefined;
+  /**
+   * The entries a build tick holds a claim on, by tag —
+   * `TickResult.claimedTags`, the set the tick read before it selected.
+   *
+   * A slice's window is narrower for it: a note or park whose entry is in
+   * flight is withheld from the drain's material, so the record leg is not
+   * live over a file only its holder may touch (`spec/pending.md`, *A claim
+   * covers the entry's records*; `records.ts`).
+   *
+   * Optional for the same hand-built-fixture reason as the two above, and
+   * absent reads as nothing in flight — the answer that withholds nothing.
+   */
+  readonly claimed?: readonly string[] | undefined;
 }
 
 /**
@@ -309,6 +322,11 @@ export function defaultHandoff(slices: readonly HandoffSlice[]): Handoff {
       // reads (`standingRefusal.ts`).
       pending: result.pendingAfter,
       priorAttempts: result.priorAttempts,
+      // The claims the tick read, handed over unclassified like the pair
+      // above: which records a drain may take is the inbox slice's window to
+      // narrow, and this is the surface that carries it the same set the
+      // slice's own `shouldRun` consult reads (`records.ts`).
+      claimed: result.claimedTags,
       ...(result.queueParseFailure
         ? { queueParseFailure: result.queueParseFailure }
         : {}),

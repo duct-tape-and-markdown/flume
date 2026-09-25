@@ -297,6 +297,11 @@ export function harnessChain(options: HarnessChainOptions): Chain {
           pickable: (ctx.pickable ?? []).length > 0,
           pending: ctx.pending,
           priorAttempts: ctx.priorAttempts,
+          // The engine's own read again, this time for the leg that decides
+          // whether the slice runs at all: a record leg live over a note only
+          // its claim holder may touch is a tick with nothing to drain
+          // (`spec/pending.md`, *A claim covers the entry's records*).
+          claimed: ctx.claimed,
           // The engine's carve-out runs every slice here over an unparseable
           // queue, because each declares the ledger writable — so this is the
           // fact that tells the one slice which can repair it from the two

@@ -28,8 +28,8 @@
  * reads these paths.
  */
 
-import { listUnderStateRoot } from "./dirListing.js";
-import { RECORD_DIR_NAMES, RECORD_EXT } from "./layout.js";
+import { fileUnderStateRoot, listUnderStateRoot } from "./dirListing.js";
+import { NOTE_DIR_RELS, RECORD_DIR_NAMES, RECORD_EXT } from "./layout.js";
 
 /**
  * The cap a record fits, in bytes — what was observed, where, and why it
@@ -81,16 +81,56 @@ export const RECORD_MAX_BYTES = 2000;
  * adds is which directories and in what order, and the subject that
  * refusal names.
  *
+ * **A claimed entry's note is withheld, and left where it sits.** `claimed`
+ * is the tags a tick read off the claims directory before it selected
+ * (`TickContext.claimed`); a note or park under one of them is a file a
+ * build tick may be rewriting right now, so the drain does not see it and
+ * does not delete it (`spec/pending.md`, *A claim covers the entry's
+ * records*). It is not dropped — the claim lifts when the build attempt
+ * ends, and the next tick's listing carries the file again. Empty is the
+ * reading for a caller with nothing in flight.
+ *
  * One listing, two readers: the inbox slice's liveness predicate below asks
  * whether this is empty, and the slice's own window renders these files'
  * bytes. A second walk beside this one is a window that shows a record the
  * predicate did not count, or counts one it does not show
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
- * restated beside its source*).
+ * restated beside its source*) — which is why the withholding is here and
+ * not at the render: a slice woken by a note only its holder may touch is a
+ * tick with nothing to do.
  */
-export function recordFiles(stateRoot: string): string[] {
+export function recordFiles(
+  stateRoot: string,
+  claimed: readonly string[] = [],
+): string[] {
+  const withheld = claimedNotes(stateRoot, claimed);
   return RECORD_DIR_NAMES.flatMap((name) =>
     listUnderStateRoot("record queue", stateRoot, name, RECORD_EXT),
+  ).filter((file) => !withheld.has(file));
+}
+
+/**
+ * Every note home's file for each claimed tag, at the spelling
+ * {@link recordFiles}'s listing hands one back at — the set a drain does not
+ * see.
+ *
+ * Composed from {@link NOTE_DIR_RELS} through the listing's own composer, so
+ * a home added to that roster is withheld with the rest and the two sides of
+ * the comparison cannot disagree by a separator
+ * (`fileUnderStateRoot`, `dirListing.ts`). The inbox is not among them and
+ * needs no exclusion: an operator's finding is named by date and slug, not by
+ * an entry's tag, so no claimed tag ever composes a path under it.
+ */
+function claimedNotes(
+  stateRoot: string,
+  claimed: readonly string[],
+): ReadonlySet<string> {
+  return new Set(
+    claimed.flatMap((tag) =>
+      NOTE_DIR_RELS.map((rel) =>
+        fileUnderStateRoot(stateRoot, rel, `${tag}${RECORD_EXT}`),
+      ),
+    ),
   );
 }
 
@@ -105,9 +145,12 @@ export function recordFiles(stateRoot: string): string[] {
  * proceeding over the unread bytes (`.claude/rules/engineering.md`, *Loud or
  * nothing*).
  */
-export function recordsPending(stateRoot: string): boolean {
+export function recordsPending(
+  stateRoot: string,
+  claimed: readonly string[] = [],
+): boolean {
   try {
-    return recordFiles(stateRoot).length > 0;
+    return recordFiles(stateRoot, claimed).length > 0;
   } catch {
     return true;
   }

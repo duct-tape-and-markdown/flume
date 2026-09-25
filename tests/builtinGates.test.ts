@@ -704,6 +704,82 @@ describe("pendingGate — claim check over the merged tree (spec/pending.md 'Cla
     expect(result.message).toMatch(/fence pre-check passed/);
   });
 
+  /**
+   * The records half of the claim check (`spec/pending.md`, *A claim covers
+   * the entry's records*). The paths are the chain's — this case declares the
+   * note layout a second implementation would, and the engine supplies the
+   * tags, the claims walk and the refusal.
+   */
+  const withNotes = (): Gate =>
+    pendingGate({
+      targetFence: { writablePaths: ["src/**"] },
+      when: "afterMerge",
+      entryRecords: (tag, root) => [
+        `${root}/plan/notes/${tag}.md`,
+        `${root}/plan/notes/parked/${tag}.md`,
+      ],
+    });
+
+  it("pendingGate refuses a commit that changes a claimed entry's note file", async () => {
+    await commitFiles(dir, {
+      ...queueFiles([entry("HELD"), entry("FREE")]),
+      ".flume/plan/notes/HELD.md": "# Held\n\nmid-flight\n",
+      ".flume/plan/notes/FREE.md": "# Free\n\ndrainable\n",
+    });
+    await claim("HELD");
+    // The drain: both notes folded away, neither entry file touched.
+    const span = await commitSpan({}, [
+      ".flume/plan/notes/HELD.md",
+      ".flume/plan/notes/FREE.md",
+    ]);
+    // Non-vacuity: the span is the two notes and no entry file, so the
+    // verdict below is the records half of the check and not the ledger half
+    // riding along.
+    expect(span.touchedPaths.sort()).toEqual([
+      ".flume/plan/notes/FREE.md",
+      ".flume/plan/notes/HELD.md",
+    ]);
+
+    const result = await withNotes().run(ctx(dir, span));
+    expect(result.ok).toBe(false);
+    // Named the same way a re-scoped ledger file is: the entry, the path,
+    // and the holder.
+    expect(result.message).toMatch(/1 entry another tick holds a claim on/);
+    expect(result.details).toContain(
+      `  [HELD] .flume/plan/notes/HELD.md is claimed by pid ${process.pid}`,
+    );
+    // And the unclaimed sibling's note is no part of the refusal.
+    expect(result.details).not.toContain("FREE");
+
+    // The control, over the same declared layout: with the claim lifted the
+    // identical drain passes, so the refusal is the claim's and not the note
+    // path's.
+    await rm(
+      entryClaimPath(await gitCommonDir(dir), entryClaimSlug("HELD")),
+      { force: true },
+    );
+    expect((await withNotes().run(ctx(dir, span))).ok).toBe(true);
+  });
+
+  it("a chain that declares no entry records leaves a claimed entry's note editable", async () => {
+    await commitFiles(dir, {
+      ...queueFiles([entry("HELD")]),
+      ".flume/plan/notes/HELD.md": "# Held\n\nmid-flight\n",
+    });
+    await claim("HELD");
+    const span = await commitSpan({}, [".flume/plan/notes/HELD.md"]);
+    expect(span.touchedPaths).toEqual([".flume/plan/notes/HELD.md"]);
+
+    // Vacuous by design and spelled as such (`.claude/rules/engineering.md`,
+    // *A green verdict is proven non-vacuous*): the same span over the same
+    // claim refuses once a resolver names that path, so the green here is the
+    // omitted option's and not an unarmed check's.
+    expect((await withNotes().run(ctx(dir, span))).ok).toBe(false);
+    const result = await merged().run(ctx(dir, span));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/fence pre-check passed/);
+  });
+
   it("pendingGate stays at afterCommit unless the chain places it", () => {
     expect(pendingGate({ targetFence: { writablePaths: [] } }).when).toBe(
       "afterCommit",

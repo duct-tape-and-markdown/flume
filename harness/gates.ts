@@ -698,6 +698,21 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
   const queue = {
     extension: entryExtension(entryFields),
     targetFence: buildFence(declaration),
+    // What the package calls an entry's records: its note homes, off the one
+    // roster that already names them (`notePaths`, `layout.ts`), so a fourth
+    // home joins the claim check with the fence and the records gate rather
+    // than one at a time.
+    //
+    // **Wired to the producers alone**, for the reason the merged-tree
+    // placement below is: a build tick *holds* the claim on the entry whose
+    // note it writes, so a claim check armed over build's own note homes
+    // would refuse the very commit the claim was staked for. The collision
+    // the spec names is a drain's — a plan slice deleting or folding a note
+    // whose entry is in flight — and a drain is a producer
+    // (`spec/pending.md`, *A claim covers the entry's records*).
+    ...(producesQueue(phase.name)
+      ? { entryRecords: (tag: string, root: string) => notePaths(root, tag) }
+      : {}),
   };
   return [
     recordsGate(engine, putDown),

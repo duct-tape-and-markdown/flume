@@ -27,7 +27,8 @@ export const WINDOW_LINE_BUDGET = 1200;
 
 /**
  * What rendering a window reads: the tick's own tree, its state root, and the
- * same three facts a liveness predicate is handed off the tick's own records.
+ * same four facts a liveness predicate is handed off the tick's own records
+ * and claims.
  *
  * Shaped so a `TickContext` satisfies it as given — the chain factory hands
  * `ctx` straight through rather than unpacking it into a second vocabulary
@@ -36,7 +37,7 @@ export const WINDOW_LINE_BUDGET = 1200;
  * about to work in rather than whatever a sibling wave left at the repo
  * root.
  *
- * Every one of those three is `Pick`ed off {@link SliceWindow} rather than
+ * Every one of those four is `Pick`ed off {@link SliceWindow} rather than
  * declared again here: both readers are handed the same engine facts — the
  * liveness leg off `TickResult`, the render off `TickContext` — and two
  * spellings of one field is the copy that drifts (`.claude/rules/engineering.md`,
@@ -45,7 +46,7 @@ export const WINDOW_LINE_BUDGET = 1200;
 export interface WindowContext
   extends Pick<
     SliceWindow,
-    "pending" | "priorAttempts" | "queueParseFailure"
+    "pending" | "priorAttempts" | "queueParseFailure" | "claimed"
   > {
   /** The tick's working tree — `TickContext.cwd`. */
   readonly cwd: string;
