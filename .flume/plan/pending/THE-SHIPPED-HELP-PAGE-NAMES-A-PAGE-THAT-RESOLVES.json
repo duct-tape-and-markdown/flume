@@ -28,5 +28,5 @@
   "tests": [
     "every *.md page name a shipped help page states resolves on disk"
   ],
-  "notes": "Off note THE-HARNESS-HELP-PAGE-IS-READ-BY-THE-SHIPPED-SCAN, item 2 — the ladder's carve-out rules a class the predicate admits and the suite does not resolve a plan entry, not a question. Measured over `shippedHelpPages()`: four page names, three resolving (`spec/loop.md` twice, `spec/chain.md`); `PROTOCOL.md` (`harness/cliHelp.ts:28`) reds, `holdsFile` resolving against the repo root while init writes `.flume/PROTOCOL.md`. Seams `commentCitations.ts` with the two section-cite entries."
+  "notes": "Off note THE-HARNESS-HELP-PAGE-IS-READ-BY-THE-SHIPPED-SCAN, item 2 — the carve-out files an unresolved class once a drift in it is measured, the arm shipping the respelling it found. Measured over `shippedHelpPages()`: four page names, three resolving (`spec/loop.md` twice, `spec/chain.md`); `PROTOCOL.md` (`harness/cliHelp.ts:28`) reds, `holdsFile` resolving against the repo root while init writes `.flume/PROTOCOL.md`. Seams `commentCitations.ts` with the two section-cite entries."
 }

@@ -1,6 +1,22 @@
 {
   "sweptThrough": "4fa755e8f25a0f77416f000a763e104853ba2a32",
   "rotation": {
-    "kind": "closed"
+    "kind": "open",
+    "covered": [
+      "bin/execEntry.js",
+      "bin/flume",
+      "bin/flume-harness.js",
+      "bin/flume.js",
+      "examples/backlog-groomer-chain.ts",
+      "examples/prompts/backlog-groomer.md",
+      "harness/init.ts",
+      "harness/layout.ts",
+      "harness/questions.ts",
+      "scripts/pack-harness-assets.mjs",
+      "scripts/smoke-install.mjs",
+      "src/Phase.ts",
+      "src/chainLoad.ts",
+      "src/git.ts"
+    ]
   }
 }
