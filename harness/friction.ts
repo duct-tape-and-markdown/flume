@@ -57,7 +57,7 @@ import { frictionNotes } from "../src/friction.js";
  * `frictionNotes`'s; all this adds is the directory the names sit under.
  *
  * The state root goes down with it, because that absence is proven from the
- * path rather than read off an errno — the descent `listUnderStateRoot`
+ * path rather than read off an errno — the descent `pathsUnderStateRoot`
  * (`harness/dirListing.ts`) runs for the record queue beside it, so an
  * obstructed state root refuses here instead of rendering an empty inbox
  * window on win32 (`.claude/rules/platform-facts.md`, *win32 reports a path

@@ -1,16 +1,27 @@
 /**
- * The one listing under a state root: what the record queue and the
- * questions directory both are — a directory of same-extension files, named
- * at the host's own spelling, whose absence is the honest empty answer.
+ * The one walk under a state root: what the record queue and the questions
+ * directory are both read out of — a directory of same-extension files,
+ * named at the host's own spelling, whose absence is the honest empty
+ * answer.
  *
- * **One walk, because the two legs were one sequence.** `recordFiles`
- * (`harness/records.ts`) and the questions render (`harness/questions.ts`)
- * spelled the same four steps — prove the directory, list it, keep the
- * records, sort, join — and differed only in which directory and which
- * extension. That is one function with two callers
- * (`.claude/rules/engineering.md`, *A module is one job*), and it matters
- * beyond the duplication: the absence arm below is the half a copy gets
- * wrong quietly, so a second copy is a second chance to key it off an errno.
+ * **One walk, because the two legs were one sequence.** The record queue
+ * (`recordFiles`, `harness/records.ts`) and the questions render
+ * (`renderQuestions`, `harness/questions.ts`) spelled the same steps — prove
+ * the directory, list it, keep the files carrying the extension, sort — and
+ * differed only in which directory and which extension. That is one function
+ * with two callers (`.claude/rules/engineering.md`, *A module is one job*),
+ * and it matters beyond the duplication: the absence arm is the half a copy
+ * gets wrong quietly, so a second copy is a second chance to key it off an
+ * errno.
+ *
+ * Where the two callers part is the seam between the halves.
+ * `pathsUnderStateRoot` is the descent and the listing, and it is the half
+ * the record queue reaches (through `checkoutRecords`, `harness/records.ts`),
+ * because that queue applies the filter and the order itself over whichever
+ * of its two trees it was handed. `filesCarrying` is that filter and that
+ * order. `listUnderStateRoot` is the two composed, for the caller that reads
+ * one directory off the disk and wants it filtered and sorted — the
+ * questions render, which is the one it has.
  *
  * What a listed file *holds* — a record's byte cap, a question's prose —
  * belongs to its caller; where the directory sits belongs to `layout.ts`.
@@ -25,7 +36,35 @@ import { namespacedJoin } from "../src/paths.js";
 
 /**
  * Every file under `stateRoot`'s `rel` directory carrying `ext`, as
- * **host-native paths** sorted by name.
+ * **host-native paths** sorted by name — {@link pathsUnderStateRoot} read
+ * through {@link filesCarrying}, and nothing else.
+ *
+ * The composed half, for a caller reading one directory off one tree: the
+ * questions render (`renderQuestions`, `harness/questions.ts`), which asks
+ * for the open questions already filtered and in name order. Every absence
+ * and refusal rule this listing obeys is the descent's below; all this adds
+ * is the filter and the sort.
+ */
+export function listUnderStateRoot(
+  what: string,
+  stateRoot: string,
+  rel: string,
+  ext: string,
+): string[] {
+  return filesCarrying(pathsUnderStateRoot(what, stateRoot, rel), ext);
+}
+
+/**
+ * The walk itself: every name `stateRoot`'s `rel` directory holds,
+ * **unfiltered and unordered**, each under the path
+ * {@link fileUnderStateRoot} composes it at and all of them **host-native**.
+ *
+ * The half a caller takes when the filter and the order are its own to apply
+ * across more than one tree. The record queue is that caller: it reads the
+ * same directories off a checkout here and off a commit's tree
+ * (`tipPathsUnder`, `harness/gitRange.ts`), and the extension filter, the
+ * sort and the claim withholding are one derivation over whichever of them
+ * it was handed (`recordFiles`, `harness/records.ts`).
  *
  * `stateRoot` is the absolute one and `rel` is a directory name in git's
  * alphabet, as `layout.ts` spells every name it holds. The fold into the
@@ -34,10 +73,6 @@ import { namespacedJoin } from "../src/paths.js";
  * (`spec/cli.md`, *win32 is a supported host*). A slash-joined absolute root
  * agrees with this on posix and names every file at `C:\repo\.flume/inbox/x.md`
  * on win32 — a spelling fs accepts and no `join`-built path equals.
- *
- * `ext` is the filter, never taken for granted: a `.gitkeep` holding an
- * otherwise-empty directory in a clone is not a record and not an open
- * question, and must not read as one.
  *
  * **A missing directory contributes nothing** — a consumer that has never
  * written one should not have to create it to say so, and an empty queue and
@@ -58,7 +93,8 @@ import { namespacedJoin } from "../src/paths.js";
  * `readMergingMarkers` run: the state root, then each segment of `rel`,
  * every one asserted a directory before the next is probed
  * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`, which composes those
- * rungs for every reader that runs this descent), so both hosts answer alike. `what` is the noun phrase that refusal names — "record queue",
+ * rungs for every reader that runs this descent), so both hosts answer
+ * alike. `what` is the noun phrase that refusal names — "record queue",
  * "questions dir". The state root is where the descent starts: the caller
  * supplied it, and what stands above it is the caller's to answer for.
  *
@@ -71,29 +107,8 @@ import { namespacedJoin } from "../src/paths.js";
  *
  * Synchronous by its callers' contract: a slice's liveness predicate is pure
  * over its inputs and runs on the selection path, and the prompt composition
- * that renders these builds one prompt per tick. These are small directories.
- */
-export function listUnderStateRoot(
-  what: string,
-  stateRoot: string,
-  rel: string,
-  ext: string,
-): string[] {
-  return filesCarrying(pathsUnderStateRoot(what, stateRoot, rel), ext);
-}
-
-/**
- * The same walk, **unfiltered and unordered** — every name the directory
- * holds, each under the path {@link fileUnderStateRoot} composes it at.
- *
- * The half a caller takes when the filter and the order are its own to apply
- * across more than one tree. The record queue is that caller: it reads the
- * same directories off a checkout here and off a commit's tree
- * (`tipPathsUnder`, `harness/gitRange.ts`), and the extension filter, the
- * sort and the claim withholding are one derivation over whichever of them
- * it was handed (`recordFiles`, `harness/records.ts`). Every absence and
- * refusal rule above is this function's; {@link listUnderStateRoot} adds
- * only what {@link filesCarrying} does.
+ * that renders these builds one prompt per tick. These are small
+ * directories.
  */
 export function pathsUnderStateRoot(
   what: string,
@@ -111,6 +126,10 @@ export function pathsUnderStateRoot(
  * The `ext` files among `paths`, in name order — the one filter and the one
  * order every queue under a state root is read through.
  *
+ * The extension is never taken for granted: a `.gitkeep` holding an
+ * otherwise-empty directory in a clone is not a record and not an open
+ * question, and must not read as one.
+ *
  * Read off the whole path rather than off a name carried beside it: the
  * extension is that path's own tail either way, and a name held alongside is
  * a second value each walk would have to compose and keep in step
@@ -127,14 +146,13 @@ export function filesCarrying(
 
 /**
  * One named file under `stateRoot`'s `rel` directory, at the spelling
- * {@link listUnderStateRoot} hands a listed file back at.
+ * {@link pathsUnderStateRoot} hands a listed file back at.
  *
  * The composer, so a caller that means to ask "is *this* file in that
  * listing" composes the same string the listing produced rather than a
  * second one that agrees on posix and differs on win32 by a separator
  * (`.claude/rules/posture-sweep.md`, *A repo-relative path composed with
- * `node:path`*). The listing above goes through it too — one join, one
- * answer.
+ * `node:path`*). The walk above goes through it too — one join, one answer.
  */
 export function fileUnderStateRoot(
   stateRoot: string,

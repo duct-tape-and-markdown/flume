@@ -106,7 +106,7 @@ export function validateFrictionDeclaration(chain: Chain): void {
  * one host. `isDirectoryOrAbsentUnder` (`src/fsProbe.ts`) runs the descent —
  * the root the caller answers for, then each segment down to `dir`, every one
  * asserted a directory before the next is probed — so both hosts answer
- * alike. It is the descent `listUnderStateRoot` (`harness/dirListing.ts`)
+ * alike. It is the descent `pathsUnderStateRoot` (`harness/dirListing.ts`)
  * takes for the record queue and the questions dir, over the one directory
  * whose names are the engine's rather than the package's.
  *
