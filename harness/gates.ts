@@ -482,10 +482,13 @@ function cleanTreeGate(
  *
  * **Every other invariant rides the table, never this gate.** Each slice's
  * rules sit beside its accessors — `SLICE_STATE_RULES` (`planState.ts`) —
- * which is the set, and this comment names none of them: a slice's invariant
- * arrives at a table that exists, and a roster here would be a second copy
- * the next rule forgets to join (`.claude/rules/engineering.md`, *Derived
- * state is computed, never restated beside its source*). A slice that states
+ * which is the set, and nothing this gate writes names one of them — not
+ * this comment, and not the refusal it hands back, which states how many
+ * clauses it carries and the one check above, leaving each clause's own
+ * wording to the lines under it. A slice's invariant arrives at a table that
+ * exists, and a roster in either place would be a second copy the next rule
+ * forgets to join (`.claude/rules/engineering.md`, *Derived state is
+ * computed, never restated beside its source*). A slice that states
  * no rule of its own is left held to the two ancestry halves alone, and
  * judging one named field here would be a branch on a single instance inside
  * machinery already generic over the type (`.claude/rules/engineering.md`,
@@ -630,7 +633,7 @@ function sliceStateGate(engine: GateEngine): Gate {
 
       if (problems.length > 0) {
         return refuse(
-          `${problems.length} plan-state problem(s); a cursor stepped past commits nobody derived or swept, or coverage dropped from a rotation still open, fails silently on every tick after`,
+          `${problems.length} plan-state problem(s) below; a cursor off the gated commit's own history or stepped back from the value the tick read, and whatever a judged slice's state forbids of its own, fail silently on every tick after`,
           problems,
         );
       }

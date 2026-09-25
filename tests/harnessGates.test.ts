@@ -54,6 +54,7 @@ import { entryFileName } from "../src/PendingSchema.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { BUILD_PHASE, PLAN_SLICES } from "../harness/declaration.ts";
+import { JUDGED_SLICES } from "../harness/planState.ts";
 import { putDownPredicate } from "../harness/putDown.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
 import { sectionOf } from "./helpers/docSections.ts";
@@ -1142,6 +1143,48 @@ it("the slice-state gate refuses a plan commit that drops a lane's drained-run s
   expect((refused.details ?? "").split("\n")).toHaveLength(1);
   expect(refused.details).toContain("plan-inbox state at");
   expect(refused.details).toContain("1 lane(s) (lint)");
+});
+
+/**
+ * The refusal's **headline**, read over the one case whose every clause comes
+ * off a slice's own rule: it says what this gate checks itself and how many
+ * clauses ride under it, and each rule's wording reaches the tick through the
+ * detail lines alone. A headline rostering the rules is the second copy the
+ * next rule forgets to join (`.claude/rules/engineering.md`, *Derived state
+ * is computed, never restated beside its source*).
+ *
+ * The negative reads the headline and nothing around it — one line this gate
+ * composed, which is the arm the case is about — never the verdict, whose
+ * details quote a slice's rule on purpose. The roster is read off
+ * `JUDGED_SLICES` rather than spelled here, so a fourth slice widens this
+ * case by joining that list.
+ */
+it("the slice-state gate's refusal over a dropped lane stamp names no slice's own rule in its headline", async () => {
+  writeInboxState({
+    lint: { run: "17", titles: ["a lint title"] },
+    e2e: { run: "5", titles: [] },
+  });
+  commitAll("plan: stamp the two lanes this slice drained");
+
+  writeInboxState({ e2e: { run: "5", titles: [] } });
+  const span = commitAll("plan: rewrite the stamp file without the lane it drained");
+  const refused = await sliceState().run(
+    ctxFor(span, { phaseName: "plan-inbox" }),
+  );
+
+  // Vacuity pin: the clause under the headline really is the inbox slice's
+  // own rule firing, so the headline below is read over a refusal that has a
+  // rule to have rostered.
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("1 lane(s) (lint)");
+
+  const headline = refused.message;
+  expect(headline).toContain("1 plan-state problem(s)");
+  expect(headline).toContain("cursor");
+  for (const slice of JUDGED_SLICES) {
+    expect(headline).not.toContain(slice);
+    expect(headline).not.toContain(slice.replace(/^plan-/, ""));
+  }
 });
 
 /**
