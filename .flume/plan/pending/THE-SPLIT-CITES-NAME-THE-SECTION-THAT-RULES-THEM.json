@@ -1,0 +1,61 @@
+{
+  "tag": "THE-SPLIT-CITES-NAME-THE-SECTION-THAT-RULES-THEM",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the split's warrant names the section that rules a module's boundaries"
+      },
+      {
+        "path": "src/cliVerdict.ts",
+        "description": "the split's warrant names the section that rules a module's boundaries"
+      },
+      {
+        "path": "src/friction.ts",
+        "description": "the split's warrant names the section that rules a module's boundaries"
+      },
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": "the split's warrant names the section that rules a module's boundaries"
+      },
+      {
+        "path": "src/priorAttempts.ts",
+        "description": "the split's warrant names the section that rules a module's boundaries"
+      },
+      {
+        "path": "src/worktrees.ts",
+        "description": "the split's warrant names the section that rules a module's boundaries"
+      },
+      {
+        "path": "tests/cliVerdict.test.ts",
+        "description": "the split's warrant names the section that rules a module's boundaries"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "both spellings: the split's warrant, and the whole-artifact-negative lens' own bulleted lead"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "the whole-artifact-negative lens' own bulleted lead"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the whole-artifact-negative lens' own bulleted lead"
+      },
+      {
+        "path": "tests/helpers/cliHelpRows.ts",
+        "description": "the whole-artifact-negative lens' own bulleted lead"
+      }
+    ]
+  },
+  "summary": "Eleven comment cites name posture-sweep's *A violation counts only when verified on disk this tick* as the warrant for a module split or for the whole-artifact lens; that section states neither",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "every one of those cites names the section that states the ruling it is given for — `engineering.md`, *A module is one job* for a split's warrant, and posture-sweep's *A negative assertion over a whole rendered artifact* for the lens — so the citation pin's green is a cite that resolves at the right door",
+  "notes": "Sixth body of this family (439dd293, 1160b0e0, 53c8af68, 86ddefde, e646c9fc, aec18ca9); that section states only the sweep's evidence bar. Split warrant: src/cliHelp.ts:4, cliVerdict.ts:3, friction.ts:8, loopSupervisor.ts:4, priorAttempts.ts:7, worktrees.ts:6, tests/cliHelp.test.ts:3, cliVerdict.test.ts:4. Lens: tests/cliHelp.test.ts:467, harnessPrompts.test.ts:890, harnessWindows.test.ts:1013, helpers/cliHelpRows.ts:62. Seams 4 paths with THE-SECTION-CITE-READER-TAKES-THE-PAREN-LESS-SPELLING."
+}
