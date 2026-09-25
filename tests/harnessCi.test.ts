@@ -346,7 +346,16 @@ function plantForge(scenario: ForgeScenario): void {
   if (onPath("git", process.env["PATH"]) === undefined) linkGit();
 }
 
-/** One completed run, shaped as the forge's own `run list --json` prints it. */
+/**
+ * One completed run, shaped as the forge's own `run list --json` prints it —
+ * everything except the commit it was made on, which is a fact about this
+ * fixture repository's own tip and so belongs to {@link listed}.
+ *
+ * `createdAt` stays in the shape the stub prints although the reader asks for
+ * no such field: the two cases below that cross a run's created instant
+ * against its own commit are how this file states which of the two decides a
+ * lane's verdict, and a fixture carrying only the commit could not cross them.
+ */
 const RUN = {
   databaseId: 17420993001,
   displayTitle: "build: pin the CI push trigger",
@@ -356,17 +365,43 @@ const RUN = {
 };
 
 /**
- * An instant before {@link TIP_AT} — the created instant of a run the forge
- * finished before this tree's tip existed.
- *
- * What a forge index answering behind the tree hands a tick that has just
- * pushed: the newest *completed* run is the previous tip's, because this tip's
- * is still queued.
+ * An instant before {@link TIP_AT} — the instant the forge created a run at,
+ * far enough before this tree's tip that any ordering of instants would put
+ * that run behind it.
  */
 const BEFORE_TIP = "2026-09-13T23:59:00Z";
 
-/** {@link RUN} as the forge lists it while its index is behind the tip. */
-const STALE_RUN = { ...RUN, createdAt: BEFORE_TIP };
+/** The commit this fixture repository's tip is, as git states it. */
+const tipCommit = (): string => git("rev-parse", "--verify", "HEAD");
+
+/**
+ * {@link RUN} as the forge lists it for a run made on this tree's own tip,
+ * with `over` on top.
+ *
+ * The commit is read off git rather than spelled here, because the tip is
+ * git's to name: a sha this file invented would be a case asserting over a
+ * tree that does not exist.
+ */
+const listed = (over: Record<string, unknown> = {}) => ({
+  ...RUN,
+  headSha: tipCommit(),
+  ...over,
+});
+
+/**
+ * A commit this tree's tip is not — what the forge made the run it lists on
+ * while this tip's own run is still queued, what an amended tip's predecessor
+ * was, what an older run somebody re-ran was made on.
+ *
+ * A sha this repository does not hold, deliberately: the reader compares the
+ * commit the forge stated against the commit git states, and never asks git
+ * to resolve the forge's word.
+ */
+const ANOTHER_COMMIT = "5f3a9c1e7b2d4086a1c3e5079bd24f6810a9c3e7";
+
+/** {@link RUN} as the forge lists it when the run judged another tree. */
+const elsewhere = (over: Record<string, unknown> = {}) =>
+  listed({ headSha: ANOTHER_COMMIT, ...over });
 
 /** The declared job within that run, as `run view --json jobs` prints it. */
 const job = (conclusion: string) => ({
@@ -409,7 +444,7 @@ function loggedLines(rendered: string): string[] {
 it("the lane block renders the declared lane's failing run under its lane name", () => {
   const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: `pnpm test\n${failure}\n2 failed | 40 passed\n`,
   });
@@ -424,6 +459,10 @@ it("the lane block renders the declared lane's failing run under its lane name",
   expect(asked[0]?.join(" ")).toContain(`--workflow ${LANE.workflow}`);
   expect(asked[0]?.join(" ")).toContain("--branch main");
   expect(asked[0]?.join(" ")).toContain("--status completed");
+  // And asked the forge for the commit it made each run on: the fact every
+  // verdict below turns on is a field this reader requested, not one it
+  // reconstructs.
+  expect(asked[0]?.join(" ")).toContain("headSha");
 
   expect(rendered).toContain(`lane \`${LANE.name}\``);
   expect(rendered).toContain("FAILING");
@@ -443,7 +482,10 @@ it("the lane block renders the declared lane's failing run under its lane name",
 }, SPAWN_BUDGET_MS);
 
 it("the lane block renders a lane whose latest completed run passed as green", () => {
-  plantForge({ runs: [{ ...RUN, conclusion: "success" }], jobs: [job("success")] });
+  plantForge({
+    runs: [listed({ conclusion: "success" })],
+    jobs: [job("success")],
+  });
 
   const rendered = laneBlock();
 
@@ -470,7 +512,7 @@ it("the lane block renders a lane whose latest completed run passed as green", (
  */
 it("a lane's block names the forge invocation the reader made for it", () => {
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: `${framed("FAIL tests/paths.test.ts > a long path is refused by name")}\n`,
   });
@@ -489,7 +531,10 @@ it("a lane's block names the forge invocation the reader made for it", () => {
 }, SPAWN_BUDGET_MS);
 
 it("a green lane's block names the raw conclusion the forge gave its declared job", () => {
-  plantForge({ runs: [{ ...RUN, conclusion: "success" }], jobs: [job("success")] });
+  plantForge({
+    runs: [listed({ conclusion: "success" })],
+    jobs: [job("success")],
+  });
 
   const rendered = laneBlock();
 
@@ -506,7 +551,7 @@ it("a failing lane's block names the raw conclusion the forge gave its declared 
   // this, and the conclusion asserted is the one the fixture's job carries.
   const conclusion = "timed_out";
   plantForge({
-    runs: [{ ...RUN, conclusion }],
+    runs: [listed({ conclusion })],
     jobs: [job(conclusion)],
     log: `${framed("FAIL tests/loop.test.ts > a tick puts the rotation down")}\n`,
   });
@@ -536,15 +581,16 @@ it("the lane block renders a lane as unread when no completed run for the tip's 
   expect(rendered).not.toContain("FAILING");
 }, SPAWN_BUDGET_MS);
 
-it("a lane whose newest completed run predates the tip's own commit reads as unread rather than green", () => {
-  plantForge({ runs: [STALE_RUN], jobs: [job("success")] });
+it("a lane whose newest completed run was made on another commit reads as unread rather than green", () => {
+  plantForge({ runs: [elsewhere()], jobs: [job("success")] });
 
   const rendered = laneBlock();
 
   // Vacuity: the forge was reached for this lane's workflow and did list a
-  // run — this is a run refused for its instant, not an empty listing. And
-  // the listing is the only question asked: a run that predates the tip has
-  // no verdict to give about it, so its job's conclusion is never bought.
+  // run — this is a run refused for the commit it was made on, not an empty
+  // listing. And the listing is the only question asked: a run that judged
+  // another tree has no verdict to give about this one, so its job's
+  // conclusion is never bought.
   expect(calls().length).toBe(1);
   expect(calls()[0]?.join(" ")).toContain(`--workflow ${LANE.workflow}`);
 
@@ -553,10 +599,14 @@ it("a lane whose newest completed run predates the tip's own commit reads as unr
   expect(rendered).not.toContain("GREEN");
 }, SPAWN_BUDGET_MS);
 
-it("a lane whose newest completed run predates the tip's own commit reads as unread rather than failing", () => {
+it("a lane read refuses a run whose own commit is not the tip's", () => {
   const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
   plantForge({
-    runs: [STALE_RUN],
+    // Created after this tip was committed and made on another tree all the
+    // same — the shape a re-run of an older run leaves behind. Every ordering
+    // of instants reads this run as fresh; the forge says which tree it
+    // judged, and that is what the refusal is over.
+    runs: [elsewhere()],
     jobs: [job("failure")],
     log: `pnpm test\n${failure}\n2 failed | 40 passed\n`,
   });
@@ -564,33 +614,60 @@ it("a lane whose newest completed run predates the tip's own commit reads as unr
   const rendered = laneBlock();
 
   // Vacuity: as above, and the log the forge holds for that run never reaches
-  // the block — a stale red's findings are the previous tip's.
+  // the block — another tree's red states another tree's findings.
   expect(calls().length).toBe(1);
   expect(rendered).toContain("UNREAD");
   expect(rendered).not.toContain("FAILING");
   expect(rendered).not.toContain(failure);
 
   // The wake is the same refusal: a run that is not this tree's is not a run
-  // to drain, so a stale red makes the slice live for nothing.
+  // to drain, so it makes the slice live for nothing.
   expect(laneLive()).toBe(false);
 }, SPAWN_BUDGET_MS);
 
-it("the unread reason a stale run resolves to names the run's created instant and the tip's own", () => {
-  plantForge({ runs: [STALE_RUN], jobs: [job("failure")] });
+it("a lane read gives a verdict off the tip's own run whatever instant the forge created it at", () => {
+  const failure = "FAIL tests/loop.test.ts > a tick puts the rotation down";
+  plantForge({
+    // This tip's own run, created before the tip's commit instant — what an
+    // amended tip leaves behind, and what a forge whose clock disagrees with
+    // this host's reports. Ordered by instant it reads as another tree's; the
+    // forge states the commit it was made on, and that is this tree's tip.
+    runs: [listed({ createdAt: BEFORE_TIP })],
+    jobs: [job("failure")],
+    log: `pnpm test\n${failure}\n2 failed | 40 passed\n`,
+  });
 
-  // The tip's instant as git spells it, not as this file does: the block
-  // quotes what git answered, and git states the host's own offset while the
-  // forge states UTC. Vacuity rides the parse — git really answered an
-  // instant, and it is the one the fixture pinned, so a blank string is not
-  // what the block is being searched for.
+  const rendered = laneBlock();
+
+  // Vacuity, and the crossing this case exists for: the run really was
+  // created before the tip's own commit instant — a fixture whose two facts
+  // agreed would pass this with the instant deciding it — and the read
+  // really reached the declared job's log.
   const tipInstant = git("show", "-s", "--format=%cI", "HEAD");
-  expect(Date.parse(tipInstant)).toBe(Date.parse(TIP_AT));
+  expect(Date.parse(BEFORE_TIP)).toBeLessThan(Date.parse(tipInstant));
+  expect(calls().some((call) => call.includes("--log-failed"))).toBe(true);
+
+  expect(rendered).toContain("FAILING");
+  expect(rendered).toContain(failure);
+  expect(laneLive()).toBe(true);
+}, SPAWN_BUDGET_MS);
+
+it("the unread reason a run made on another commit resolves to names both commits", () => {
+  plantForge({ runs: [elsewhere()], jobs: [job("failure")] });
+
+  // The tip as git states it, not as this file spells it: the block quotes
+  // git's own word for the commit. Vacuity rides the read — git really
+  // answered a full sha, and it is not the one the forge named, so neither
+  // string the block is searched for below is blank or the other.
+  const tip = tipCommit();
+  expect(tip).toMatch(/^[0-9a-f]{40}$/);
+  expect(tip).not.toBe(ANOTHER_COMMIT);
 
   const rendered = laneBlock();
 
   expect(rendered).toContain("UNREAD");
-  expect(rendered).toContain(BEFORE_TIP);
-  expect(rendered).toContain(tipInstant);
+  expect(rendered).toContain(ANOTHER_COMMIT);
+  expect(rendered).toContain(tip);
 }, SPAWN_BUDGET_MS);
 
 /**
@@ -627,7 +704,10 @@ it.runIf(process.platform !== "win32")(
 );
 
 it("the lane block renders a lane as unread when the declared job is not in the run", () => {
-  plantForge({ runs: [RUN], jobs: [{ ...job("success"), name: "posix" }] });
+  plantForge({
+    runs: [listed()],
+    jobs: [{ ...job("success"), name: "posix" }],
+  });
 
   const rendered = laneBlock();
 
@@ -642,7 +722,7 @@ it("the lane block renders a lane as unread when the forge CLI refuses", () => {
   // The launcher this plants stays; its script is replaced by a CLI that
   // refuses every question the way an unauthenticated one does — a non-zero
   // exit carrying its reason on stderr.
-  plantForge({ runs: [RUN] });
+  plantForge({ runs: [listed()] });
   writeFileSync(
     join(binDir, "gh.mjs"),
     `process.stderr.write("gh: could not authenticate to the forge");\nprocess.exit(4);\n`,
@@ -659,7 +739,7 @@ it("the lane block renders a lane as unread when the forge CLI refuses", () => {
 it("a failing lane's log arrives without the forge's per-line job and step framing", () => {
   const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: [
       framed("##[group]Run pnpm test"),
@@ -693,7 +773,7 @@ it("a failing lane's log arrives without the forge's per-line job and step frami
 it("a failing lane's log arrives without ANSI escape sequences", () => {
   const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: [
       framed(`${ESC}[31m${ESC}[1m${failure}${ESC}[22m${ESC}[39m`),
@@ -728,7 +808,7 @@ it("the lane block spends a failing lane's line budget on log lines, not the for
       framed("##[endgroup]"),
     ])
     .join("\n");
-  plantForge({ runs: [RUN], jobs: [job("failure")], log });
+  plantForge({ runs: [listed()], jobs: [job("failure")], log });
 
   // Vacuity: the budget really bites on what the forge printed — twice over —
   // so a block carrying every title is the shed's doing and not slack.
@@ -750,7 +830,7 @@ it("the shed strips the forge's frame from a log line the job name frames withou
   // and its leading column does not go with the frame.
   const columns = "tests/paths.test.ts\t2\tfailed";
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: [unstamped(failure), unstamped(columns), ""].join("\n"),
   });
@@ -780,7 +860,7 @@ it("the shed drops a log line the forge framed around an empty message", () => {
     unstamped(""),
     "",
   ].join("\n");
-  plantForge({ runs: [RUN], jobs: [job("failure")], log });
+  plantForge({ runs: [listed()], jobs: [job("failure")], log });
 
   // Vacuity: the budget is smaller than what the forge printed, so a block
   // carrying both titles untrimmed is the drop's doing and not slack.
@@ -795,7 +875,7 @@ it("the shed drops a log line the forge framed around an empty message", () => {
 }, SPAWN_BUDGET_MS);
 
 it("the lane leg reports live when a declared lane's latest completed run failed past the lane's stamp", () => {
-  plantForge({ runs: [RUN], jobs: [job("failure")] });
+  plantForge({ runs: [listed()], jobs: [job("failure")] });
   // Stamped at an older run of the same lane, so the verdict below turns on
   // the comparison rather than on a map that holds nothing for this lane.
   stampLanes({ [LANE.name]: "17420000000" });
@@ -821,7 +901,7 @@ it("the lane leg reports live when a declared lane's latest completed run failed
 }, SPAWN_BUDGET_MS);
 
 it("the lane leg does not report live when the lane's failing run is the one already stamped", () => {
-  plantForge({ runs: [RUN], jobs: [job("failure")] });
+  plantForge({ runs: [listed()], jobs: [job("failure")] });
   stampLanes({ [LANE.name]: String(RUN.databaseId) });
 
   expect(laneLive()).toBe(false);
@@ -837,7 +917,10 @@ it("the lane leg does not report live when the lane's failing run is the one alr
 }, SPAWN_BUDGET_MS);
 
 it("the lane leg does not report live when the lane's latest completed run passed", () => {
-  plantForge({ runs: [{ ...RUN, conclusion: "success" }], jobs: [job("success")] });
+  plantForge({
+    runs: [listed({ conclusion: "success" })],
+    jobs: [job("success")],
+  });
   stampLanes({});
 
   expect(laneLive()).toBe(false);
@@ -852,7 +935,7 @@ it("the lane leg does not report live when the forge CLI cannot read the lane", 
   // The launcher plantForge leaves stays; its script becomes a CLI that
   // records the question and then refuses it, the way an unauthenticated one
   // does — so the call log proves the leg reached the forge.
-  plantForge({ runs: [RUN], jobs: [job("failure")] });
+  plantForge({ runs: [listed()], jobs: [job("failure")] });
   writeFileSync(
     join(binDir, "gh.mjs"),
     [
@@ -951,7 +1034,7 @@ it("a lane's declared title reader gives the liveness leg its failing-title set"
     return readsFailLines(log);
   };
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: logStating(TITLE_A, TITLE_B),
   });
@@ -985,7 +1068,7 @@ it("a drained-run stamp carries the failing titles the reader gave it", () => {
   // Stated in the log in the other order, so the stamp below is a set the
   // reading canonicalized rather than the log's own line order.
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: logStating(TITLE_B, TITLE_A),
   });
@@ -1012,7 +1095,7 @@ it("a lane's sticky title pattern reads every failing title the log states", () 
   // The log's first line is the runner's own preamble, so a sticky read
   // anchored at index 0 fails its first step and stops with nothing.
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: logStating(TITLE_B, TITLE_A),
   });
@@ -1036,7 +1119,7 @@ it("a lane's sticky title pattern reads every failing title the log states", () 
 
 it("a failing run whose title set matches the lane's stamp does not make the inbox slice live", () => {
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: logStating(TITLE_A, TITLE_B),
   });
@@ -1061,7 +1144,7 @@ it("a failing run whose title set matches the lane's stamp does not make the inb
 
 it("a failing run whose title set differs from the lane's stamp makes the inbox slice live", () => {
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: logStating(TITLE_A, TITLE_B),
   });
@@ -1079,7 +1162,7 @@ it("a failing run whose title set differs from the lane's stamp makes the inbox 
 
 it("a lane declaring no title reader makes the inbox slice live once per failing run", () => {
   plantForge({
-    runs: [RUN],
+    runs: [listed()],
     jobs: [job("failure")],
     log: logStating(TITLE_A, TITLE_B),
   });
@@ -1108,7 +1191,7 @@ it("a lane declaring no title reader makes the inbox slice live once per failing
 }, SPAWN_BUDGET_MS);
 
 it("the lane block names the lane whose undrained failing run made the slice live", () => {
-  plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
+  plantForge({ runs: [listed()], jobs: [job("failure")], log: FAILING_LOG });
   // Stamped at an older run of the same lane, so this lane is undrained by the
   // comparison rather than by a map holding nothing for it.
   stampLanes({ [LANE.name]: "17420000000" });
@@ -1130,7 +1213,11 @@ it("the lane block names the lane whose undrained failing run made the slice liv
 const LOG_REFUSAL = "gh: the forge would not hand over this job's log";
 
 it("a lane woken by a run whose log the forge refuses renders unread over that run, not over nothing", () => {
-  plantForge({ runs: [RUN], jobs: [job("failure")], logRefusal: LOG_REFUSAL });
+  plantForge({
+    runs: [listed()],
+    jobs: [job("failure")],
+    logRefusal: LOG_REFUSAL,
+  });
   stampLanes({});
 
   // Vacuity: this lane really is what makes the slice live — nothing else on
@@ -1155,7 +1242,11 @@ it("a lane woken by a run whose log the forge refuses renders unread over that r
 }, SPAWN_BUDGET_MS);
 
 it("the unread block over the run a lane woke on names the stamp that closes that lane", () => {
-  plantForge({ runs: [RUN], jobs: [job("failure")], logRefusal: LOG_REFUSAL });
+  plantForge({
+    runs: [listed()],
+    jobs: [job("failure")],
+    logRefusal: LOG_REFUSAL,
+  });
   stampLanes({});
 
   // Vacuity: this lane is what makes the slice live, so what is asserted below
@@ -1174,7 +1265,11 @@ it("the unread block over the run a lane woke on names the stamp that closes tha
 }, SPAWN_BUDGET_MS);
 
 it("a lane stamped at the run whose log the forge refused no longer reports live", () => {
-  plantForge({ runs: [RUN], jobs: [job("failure")], logRefusal: LOG_REFUSAL });
+  plantForge({
+    runs: [listed()],
+    jobs: [job("failure")],
+    logRefusal: LOG_REFUSAL,
+  });
 
   // Vacuity: unstamped, this is a live lane whose log the forge really did
   // refuse — so the verdict below is the stamp's doing, not an unread the
@@ -1190,7 +1285,7 @@ it("a lane stamped at the run whose log the forge refused no longer reports live
 }, SPAWN_BUDGET_MS);
 
 it("a failing lane already stamped at its latest run renders without the wake marker its unstamped self carries", () => {
-  plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
+  plantForge({ runs: [listed()], jobs: [job("failure")], log: FAILING_LOG });
   stampLanes({ [LANE.name]: String(RUN.databaseId) });
 
   const stamped = laneBlock();
@@ -1207,7 +1302,7 @@ it("a failing lane already stamped at its latest run renders without the wake ma
 }, SPAWN_BUDGET_MS);
 
 it("one tick's liveness leg and render ask the forge once per lane between them", () => {
-  plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
+  plantForge({ runs: [listed()], jobs: [job("failure")], log: FAILING_LOG });
   stampLanes({});
 
   // One lane leg is one tick: the chain factory builds the windows once and
@@ -1247,7 +1342,7 @@ it("one tick's liveness leg and render ask the forge once per lane between them"
  * Every other case here drives that module directly.
  */
 it("the inbox window's CI lane block is the lane leg's own render", () => {
-  plantForge({ runs: [RUN], jobs: [job("failure")], log: FAILING_LOG });
+  plantForge({ runs: [listed()], jobs: [job("failure")], log: FAILING_LOG });
   stampLanes({});
 
   const built = planSliceWindows({
@@ -1303,7 +1398,7 @@ it("every lane-reader case reads its planted forge stub, with the host's own for
   // what the assertions below read is a filter and not an accident of order.
   expect(onPath(FORGE, process.env["PATH"] ?? "")?.startsWith(staged)).toBe(true);
 
-  plantForge({ runs: [RUN], jobs: [job("failure")] });
+  plantForge({ runs: [listed()], jobs: [job("failure")] });
 
   // One directory on the PATH every case is handed holds a forge CLI, and it
   // is the stub's own — wherever the host's copy sat, it is off.
@@ -1340,7 +1435,7 @@ it.runIf(process.platform !== "win32")(
     expect(onPath(FORGE, mixed)).toBe(join(mixed, FORGE));
     expect(onPath("git", mixed)).toBe(join(mixed, "git"));
 
-    plantForge({ runs: [RUN], jobs: [job("failure")] });
+    plantForge({ runs: [listed()], jobs: [job("failure")] });
 
     expect((process.env["PATH"] ?? "").split(delimiter)).toEqual([binDir]);
 

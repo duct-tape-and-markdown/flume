@@ -204,9 +204,16 @@ function woke(
 }
 
 /**
- * One run as every block names it: its identity, its branch, where it sits,
- * and the read the verdict above was reached by — the forge call this tick
- * made, and the word the forge answered the declared job with.
+ * One run as every block names it: its identity, its branch, the commit the
+ * forge made it on, where it sits, and the read the verdict above was reached
+ * by — the forge call this tick made, and the word the forge answered the
+ * declared job with.
+ *
+ * **The commit is the run's, and the block says so.** A verdict off this run
+ * is a verdict about the tree that commit names and no other, so a reader
+ * holding only the run id has to ask the forge again to tell this tip's
+ * evidence from another tip's (`spec/harness.md`, *CI lanes as a findings
+ * source*).
  *
  * **The evidence is the verdict's, so it is stated wherever the verdict is.**
  * The verdict a block heads with is this package's word for what the forge
@@ -222,7 +229,8 @@ function woke(
 function renderRun(at: CiRunEvidence): string {
   const { run } = at;
   return (
-    `run ${run.id} on branch ${at.branch} — ${run.title} (${run.at})\n` +
+    `run ${run.id} on branch ${at.branch}, made on commit ${run.headSha} — ` +
+    `${run.title}\n` +
     `${run.url}\n` +
     `Read by \`${at.asked}\`, which gave this lane's declared job the ` +
     `conclusion \`${at.conclusion}\` — the forge's own word, beside the ` +

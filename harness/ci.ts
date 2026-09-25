@@ -25,7 +25,7 @@
  *
  * **A lane is failing, green, or unread — never green by default.** Every way
  * the read can come up short — no forge CLI on the host, no completed run
- * yet, a newest completed run created before the tip's own commit, a run the
+ * yet, a newest completed run the forge made on another commit, a run the
  * declared job is not in, a conclusion that is neither a pass nor a failure, a
  * CLI that refused, a log the forge would not hand over —
  * resolves to the `unread` arm {@link CiLaneStatus} declares, carrying the
@@ -41,8 +41,9 @@
  * is also the only tree a liveness predicate can consult — `SliceWindow`
  * carries no working tree — so reading it here is what lets the two readers
  * of one window agree on which runs they are talking about (`ciLane.ts`).
- * That same tip states *when* it was committed, and a run the forge created
- * before it is a run that never saw this tree ({@link CiTip}).
+ * That same tip is a commit, and the forge states the commit it made each run
+ * on, so which tree a run judged is a fact both sides state rather than one
+ * either side's clock reconstructs ({@link CiTip}).
  *
  * This module is the reader alone: how a reading is rendered into a prompt,
  * and which slice that prompt belongs to, are `ciLane.ts`'s and the inbox
@@ -174,7 +175,7 @@ const RunSchema = z.object({
   displayTitle: z.string(),
   url: z.string(),
   conclusion: z.string(),
-  createdAt: z.string(),
+  headSha: z.string(),
 });
 
 /** The `--json` argument that asks for exactly {@link RunSchema}'s fields. */
@@ -206,8 +207,11 @@ export interface CiRun {
   readonly title: string;
   /** Where the run sits on the forge. */
   readonly url: string;
-  /** When the forge started it. */
-  readonly at: string;
+  /**
+   * The commit the forge made this run on — its own statement of which tree
+   * it judged, and the only tree a verdict off this run is a verdict about.
+   */
+  readonly headSha: string;
 }
 
 /**
@@ -505,67 +509,65 @@ export function sameTitleSet(
 
 /**
  * The repository's tip, as every lane's read is keyed on it: the branch the
- * runs are filtered by, and the instant the tip itself was committed.
+ * runs are filtered by, and the commit the tip itself is.
  *
  * **Two facts about one tree, resolved together.** A run is only this tip's
- * evidence when the forge created it after this tip existed, so the branch
- * alone names a run without saying whether it is this tree's — which is the
- * whole distance between a green the tick can act on and an older tip's green
- * read as current (`spec/harness.md`, *CI lanes as a findings source*).
+ * evidence when the forge made it on this very commit, so the branch alone
+ * names a run without saying which tree it judged — which is the whole
+ * distance between a green the tick can act on and another tree's green read
+ * as current (`spec/harness.md`, *CI lanes as a findings source*).
  */
 interface CiTip {
   /** The branch the repository's tip sits on. */
   readonly branch: string;
   /**
-   * When git holds the tip as committed, in git's own spelling — reported
-   * verbatim so a refusal names the instant git stated, not a re-rendering of
-   * it.
+   * The commit git holds as that tip, in full — reported verbatim, so a
+   * refusal names the sha git stated rather than a re-rendering of it.
    */
-  readonly at: string;
+  readonly sha: string;
 }
 
 /**
  * The repository's tip for a lane read, or the reason it cannot be named.
  *
  * Either half missing is every lane's unread reason: without the branch there
- * are no runs to name, and without the instant there is no telling whether the
- * newest of them is this tree's at all. Neither is a thing to proceed over
+ * are no runs to name, and without the commit there is no telling which tree
+ * the newest of them judged. Neither is a thing to proceed over
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 function tipAt(repoRoot: string): CiTip | { reason: string } {
   const branch = branchAt(repoRoot);
   if ("reason" in branch) return branch;
-  const committed = commitInstantAt(repoRoot);
-  if ("reason" in committed) return committed;
-  return { branch: branch.branch, at: committed.at };
+  const tip = commitAt(repoRoot);
+  if ("reason" in tip) return tip;
+  return { branch: branch.branch, sha: tip.sha };
 }
 
 /**
- * When git holds the repository's tip as committed, or the reason it cannot be
+ * The commit git holds as the repository's tip, or the reason it cannot be
  * read.
  *
- * The *committer* instant (`%cI`), never the author's: a run can only have seen
- * a tree that existed, and an author date is a fact about when a patch was
- * written — a rebase, a cherry-pick or a mailed patch carries one from long
- * before the commit git holds today, and a stale run compared against it would
- * read as fresh.
+ * The full sha, never an abbreviation: the forge states a run's own commit in
+ * full, and an equality between two spellings of one commit is an equality
+ * that can only answer wrongly.
  *
  * An unborn HEAD fails here rather than being folded into the branch read:
  * `symbolic-ref` answers on a branch with no commits, and a tree with no tip
- * has no instant a run can be ordered against.
+ * is not a tree any run was made on. `--verify` is what makes that a non-zero
+ * exit rather than the word `HEAD` handed back as if it were a commit.
  */
-function commitInstantAt(repoRoot: string): { at: string } | { reason: string } {
+function commitAt(repoRoot: string): { sha: string } | { reason: string } {
   try {
     return {
-      at: captureSync("git", ["show", "-s", "--format=%cI", "HEAD"], {
+      sha: captureSync("git", ["rev-parse", "--verify", "HEAD"], {
         cwd: repoRoot,
       }).trim(),
     };
   } catch (err) {
     return {
       reason:
-        `the commit instant of the tip at ${repoRoot} could not be read, so ` +
-        `no forge run can be ordered against it: ${detailOf(err)}`,
+        `the commit at the tip of ${repoRoot} could not be read, so no forge ` +
+        `run can be told from another tree's: ${detailOf(err)}`,
     };
   }
 }
@@ -573,49 +575,35 @@ function commitInstantAt(repoRoot: string): { at: string } | { reason: string } 
 /**
  * Why `run` cannot be read as `tip`'s verdict, or `undefined` where it can.
  *
- * **A forge index can answer behind the tree it is asked about.** The newest
- * *completed* run for a branch is the newest run the forge has finished, not
- * the newest push: seconds after a push, and for as long as the new run is
- * queued or running, that answer belongs to the tip before this one. Read as
- * current it reports an older tree's verdict as this tree's — a red the tick
- * would drain findings out of, or a green it would close entries on — so the
- * refusal is in both directions (`spec/harness.md`, *CI lanes as a findings
- * source*).
+ * **A forge index can answer about a tree other than the one it is asked
+ * about.** The newest *completed* run for a branch is the newest run the forge
+ * has finished, not the newest push: seconds after a push, and for as long as
+ * this tip's own run is queued or running, that answer belongs to the tip
+ * before this one. Read as current it reports another tree's verdict as this
+ * tree's — a red the tick would drain findings out of, or a green it would
+ * close entries on — so the refusal is in both directions (`spec/harness.md`,
+ * *CI lanes as a findings source*).
  *
- * Ordered as instants rather than as text: two ISO spellings carrying
- * different offsets sort wrongly compared as strings, and git's `%cI` states
- * the host's offset while the forge states UTC. A spelling neither `Date` can
- * parse is a comparison that cannot be made, which is unread and not a quiet
- * `false` (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * Decided on the commit the forge says it made the run on, never on when it
+ * created the run. The commit is the forge's own statement of which tree it
+ * judged; an ordering of created instants is this reader rebuilding that
+ * statement out of evidence, and an amended tip, a re-run of an older run, and
+ * a push made after the tip was committed each pass such an ordering while
+ * naming the wrong tree (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
  */
-function behindTheTip(
+function notTheTipsRun(
   lane: CiLane,
   run: CiRun,
   tip: CiTip,
 ): string | undefined {
-  const created = instant(run.at);
-  const committed = instant(tip.at);
-  if (created === undefined || committed === undefined) {
-    return (
-      `run ${run.id} of ${lane.workflow} reports its created instant as ` +
-      `\`${run.at}\` and git reports the tip's own commit as \`${tip.at}\`, ` +
-      `and one of the two is not an instant this reader can order against the ` +
-      `other`
-    );
-  }
-  if (created >= committed) return undefined;
+  if (run.headSha === tip.sha) return undefined;
   return (
     `the newest completed run of ${lane.workflow} for branch ${tip.branch} — ` +
-    `run ${run.id} — was created ${run.at}, before the tip's own commit at ` +
-    `${tip.at}, so the forge's index is answering behind this tree and ` +
-    `neither a green nor a red off that run is this tip's`
+    `run ${run.id} — was made on commit ${run.headSha}, and this tree's tip ` +
+    `is ${tip.sha}, so that run judged another tree and neither a green nor ` +
+    `a red off it is this tip's`
   );
-}
-
-/** One ISO 8601 instant in epoch milliseconds, or `undefined` where it is not one. */
-function instant(iso: string): number | undefined {
-  const ms = Date.parse(iso);
-  return Number.isNaN(ms) ? undefined : ms;
 }
 
 /**
@@ -686,14 +674,14 @@ function readLaneStatus(
       id: String(latest.databaseId),
       title: latest.displayTitle,
       url: latest.url,
-      at: latest.createdAt,
+      headSha: latest.headSha,
     };
 
-    // Before the declared job's conclusion is even asked for: a run that
-    // predates this tip has no verdict to give about it, and the conclusion
-    // would only make an older tree's answer look like this one's.
-    const stale = behindTheTip(lane, run, tip);
-    if (stale !== undefined) return unread(stale);
+    // Before the declared job's conclusion is even asked for: a run made on
+    // another commit has no verdict to give about this tree, and the
+    // conclusion would only make that tree's answer look like this one's.
+    const elsewhere = notTheTipsRun(lane, run, tip);
+    if (elsewhere !== undefined) return unread(elsewhere);
 
     const jobsAsk = ["run", "view", run.id, "--json", "jobs"];
     const { jobs } = forgeJson(RunJobsSchema, options.repoRoot, jobsAsk);
