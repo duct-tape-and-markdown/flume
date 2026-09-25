@@ -29,7 +29,6 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import { parseDeclaration, type Declaration } from "../harness/declaration.ts";
 import {
-  BUILD_PHASE,
   INBOX_PHASE,
   PHASES,
   PLAN_SLICES,
@@ -1153,11 +1152,11 @@ it("every phase prompt the package renders substitutes its own put-down statemen
 }, SPAWN_BUDGET_MS);
 
 /**
- * The consumer's own conventions page reaches the build prompt, the way the
- * three plan slices' `<artifacts>` blocks already name it.
+ * The consumer's own conventions page reaches every phase prompt from the one
+ * home that holds it, the way the boundary and the put-down above do.
  *
  * The value is a shared arg every phase is handed (`sharedPromptArgs`), so a
- * prompt that names no placeholder for it simply drops it: a build tick then
+ * prompt that names no placeholder for it simply drops it: that tick then
  * never reads the page adoption wrote for it, and the chain hands the same
  * path over itself — the shape
  * `.claude/rules/engineering.md`, *A fact the engine holds is reported, never
@@ -1165,22 +1164,31 @@ it("every phase prompt the package renders substitutes its own put-down statemen
  * like the two cases above: the placeholder at the markdown end, the
  * producer's own state-root-relative path at the render's.
  */
-it("a rendered build prompt names the consumer's PROTOCOL path", async () => {
-  // The producer's value, read from the producer — an empty one would make
-  // the `carries` assertion below trivially true.
-  const at = args(BUILD_PHASE)["PROTOCOL"];
-  expect(at, "the shared args supply no PROTOCOL").toBeDefined();
-  expect(at!.trim()).not.toBe("");
-  // Under this tick's state root, not a bare filename: the page sits at no
-  // path a consumer holds until the root is on the front of it
-  // (`harness/layout.ts`, `protocolPath`).
-  expect(at).toBe(protocolPath(stateRoot));
+it("every phase prompt the package renders substitutes the consumer's PROTOCOL path", async () => {
+  // Non-vacuity: a phase list that collapsed to zero would pass the loop
+  // below over nothing (`.claude/rules/engineering.md`, *A green verdict is
+  // proven non-vacuous*).
+  expect(PHASES.length).toBeGreaterThan(0);
 
-  const raw = await readFile(promptPath(BUILD_PHASE), "utf8");
-  expect({
-    names: raw.includes("{{PROTOCOL}}"),
-    carries: (await render(BUILD_PHASE)).includes(at!),
-  }).toEqual({ names: true, carries: true });
+  for (const name of PHASES) {
+    // The producer's value, read from the producer — an empty one would make
+    // the `carries` assertion below trivially true.
+    const at = args(name)["PROTOCOL"];
+    expect(at, "the shared args supply no PROTOCOL").toBeDefined();
+    expect(at!.trim()).not.toBe("");
+    // Under this tick's state root, not a bare filename: the page sits at no
+    // path a consumer holds until the root is on the front of it
+    // (`harness/layout.ts`, `protocolPath`).
+    expect(at).toBe(protocolPath(stateRoot));
+
+    const raw = await readFile(promptPath(name), "utf8");
+    const rendered = await render(name);
+    expect({
+      name,
+      names: raw.includes("{{PROTOCOL}}"),
+      carries: rendered.includes(at!),
+    }).toEqual({ name, names: true, carries: true });
+  }
 }, SPAWN_BUDGET_MS);
 
 /**
