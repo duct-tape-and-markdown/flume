@@ -2,7 +2,9 @@
   "tag": "THE-CLI-PAGE-IS-PINNED-PER-EXIT-CODE-ARM",
   "gate": {
     "kind": "blockedBy",
-    "tags": ["THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM"]
+    "tags": [
+      "THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM"
+    ]
   },
   "priority": 30,
   "files": {
@@ -22,9 +24,9 @@
     "path": ".claude/rules/engineering.md",
     "section": "Derived state is computed, never restated beside its source"
   },
-  "acceptance": "each `flume tick` exit code's sentences on the page are read against that arm's labelled cause, through the reader already scoped to one code",
+  "acceptance": "each `flume tick` exit code's sentences on the page are read against that arm's labelled cause, through the reader already scoped to one code, with the page keeping its own one-flowing-sentence-per-verb register rather than the help block's clauses spliced in",
   "pins": [
     "docs/CLI.md's flume tick section states each exit code's cause under the phrase its arm is labelled with"
   ],
-  "notes": "Second half of the 46446dc9 ruling: the page is pinned against the producer's map, never against the help text — two prose copies agree while both are wrong (`.claude/rules/engineering.md`, *A seam gate reads what the real writer wrote*). The reader exists; what it lacked was a source of truth for what each sentence must say."
+  "notes": "Second half of the 46446dc9 ruling: the page is pinned against the producer's map, never the help text — two prose copies agree while both are wrong (`.claude/rules/engineering.md`, *A seam gate reads what the real writer wrote*). Parent shipped 49618846; `tickExitCauses` (`src/cliVerdict.ts:139`) is the source each sentence must carry. CLI-DOC-TICK-EXIT-CODES-PINNED (`tests/cliHelp.test.ts:556`) pins the code set alone, so a cause re-routed inside the range ships green."
 }
