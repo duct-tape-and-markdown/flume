@@ -1061,6 +1061,83 @@ it("the retired-claim delta carries a deleted line that begins with two dashes",
   expect(delta).toContain("--- a dashed claim.");
 });
 
+/**
+ * A deleted line is a claim the tree may still assert somewhere — but which
+ * claim it is, and whether it is retired at all rather than reworded a few
+ * lines down, is only decidable against the page it left. A flat list costs
+ * the tick a second diff over the locus to recover a fact the window already
+ * read (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*).
+ */
+it("the retired-claim delta names the locus page each deleted line left", () => {
+  commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "spec/loop.md": "# Loop\n\nA tick is one commit.\n",
+      "spec/chain.md": "# Chain\n\nA chain declares its fence.\n",
+    },
+    "build: a",
+  );
+  writeState();
+
+  commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
+  commit(
+    { "spec/loop.md": "# Loop\n", "spec/chain.md": "# Chain\n" },
+    "spec: retire a claim from each page",
+  );
+
+  const delta = retiredDelta(
+    windows()["plan-sweep"].args({ cwd: repo, flumeDir: stateRoot() })
+      .SWEEP_WINDOW,
+  );
+
+  // Two pages retired a sentence each, and every line of the block sits
+  // under the page it left — in the union's own order, so one range renders
+  // one listing whatever order the commits touched the pages in.
+  expect(delta).toEqual([
+    "=== deleted from spec/chain.md ===",
+    "-",
+    "-A chain declares its fence.",
+    "=== deleted from spec/loop.md ===",
+    "-",
+    "-A tick is one commit.",
+  ]);
+});
+
+it("a retired-claim delta past its budget renders the pages that fit and counts the lines no page shows", () => {
+  commit(
+    {
+      "spec/chain.md": "# Chain\n\nfirst\nsecond\nthird\n",
+      "spec/loop.md": "# Loop\n\nfourth\n",
+    },
+    "spec: two pages",
+  );
+  writeState();
+
+  commit(
+    { "spec/chain.md": "# Chain\n", "spec/loop.md": "# Loop\n" },
+    "spec: retire every claim",
+  );
+
+  // Five deleted lines — four sentences and the blank line above each pair —
+  // against a budget of two.
+  const delta = retiredDelta(
+    windows({}, 2)["plan-sweep"].args({ cwd: repo, flumeDir: stateRoot() })
+      .SWEEP_WINDOW,
+  );
+
+  // The budget is spent on deleted lines, so the page lead costs nothing and
+  // the remainder counts every line no page above it showed — the second
+  // page among them, which never got a lead of its own.
+  expect(delta).toEqual([
+    "=== deleted from spec/chain.md ===",
+    "-",
+    "-first",
+    "=== 4 further deleted line(s) beyond this tick's budget; narrow the " +
+      "range by closing this rotation ===",
+  ]);
+});
+
 it("the retired-claim delta excludes the diff's own file-header lines", () => {
   commit(
     {
@@ -1082,10 +1159,15 @@ it("the retired-claim delta excludes the diff's own file-header lines", () => {
   // Vacuity guard: a delta that carried nothing would exclude the headers
   // by having excluded everything.
   expect(delta.length).toBeGreaterThan(0);
-  // Exactly what the commit removed — the sentence and the blank line above
+  // The page lead this window writes from the path it handed git, then
+  // exactly what the commit removed — the sentence and the blank line above
   // it — and none of `diff --git`, `index`, `--- a/spec/loop.md`,
   // `+++ b/spec/loop.md` or the hunk header.
-  expect(delta).toEqual(["-", "-A ratified claim."]);
+  expect(delta).toEqual([
+    "=== deleted from spec/loop.md ===",
+    "-",
+    "-A ratified claim.",
+  ]);
 });
 
 it("a rendered sweep window names the tip its frontier was drawn from", () => {

@@ -265,12 +265,27 @@ export function diffPrefix(
  */
 const DELETED_MARK = "<";
 
+/** The lines one path lost across a range, under the path that lost them. */
+export interface DeletedPage {
+  readonly path: string;
+  readonly lines: readonly string[];
+}
+
 /**
- * The lines `cursor..HEAD` deleted from `paths`, each back under the `-` a
- * diff conventionally spells a deletion with — the mark above is how git
- * was asked, not what a reader is handed.
+ * The lines `cursor..HEAD` deleted from `paths`, grouped under the path each
+ * left and each back under the `-` a diff conventionally spells a deletion
+ * with — the mark above is how git was asked, not what a reader is handed.
+ * A path the range deleted nothing from is absent rather than empty.
  *
- * Read off one diff over the whole range rather than per commit: a line
+ * Read off one diff per path rather than one over all of them: the page a
+ * line left is then the path this module was handed, already decoded from a
+ * `-z` listing, and never one read back out of a `--- a/<path>` header —
+ * which arrives under a configurable prefix and is octal-quoted for exactly
+ * the names {@link nameOnlyPaths} exists to carry, so reconstructing it
+ * would be a second reading of a name git already stated
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * Each diff spans the whole range rather than a walk of its commits: a line
  * added and then deleted inside the window was never a claim the tree
  * carries, and a per-commit walk would report it as deleted.
  */
@@ -278,16 +293,20 @@ export function deletedLines(
   cwd: string,
   cursor: string,
   paths: readonly string[],
-): string[] {
-  if (paths.length === 0) return [];
-  return git(cwd, [
-    "diff",
-    `--output-indicator-old=${DELETED_MARK}`,
-    `${cursor}..HEAD`,
-    "--",
-    ...paths,
-  ])
-    .split("\n")
-    .filter((line) => line.startsWith(DELETED_MARK))
-    .map((line) => `-${line.slice(DELETED_MARK.length)}`);
+): DeletedPage[] {
+  const pages: DeletedPage[] = [];
+  for (const path of paths) {
+    const lines = git(cwd, [
+      "diff",
+      `--output-indicator-old=${DELETED_MARK}`,
+      `${cursor}..HEAD`,
+      "--",
+      path,
+    ])
+      .split("\n")
+      .filter((line) => line.startsWith(DELETED_MARK))
+      .map((line) => `-${line.slice(DELETED_MARK.length)}`);
+    if (lines.length > 0) pages.push({ path, lines });
+  }
+  return pages;
 }

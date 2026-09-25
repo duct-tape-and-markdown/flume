@@ -32,6 +32,7 @@ import {
   deletedLines,
   touchedPast,
   touches,
+  type DeletedPage,
   type RangeCommit,
 } from "./gitRange.js";
 import { readPlanState } from "./planState.js";
@@ -147,13 +148,7 @@ function renderSweepWindow(
     if (retired.length === 0) {
       lines.push("(none)");
     } else {
-      lines.push(...retired.slice(0, budget));
-      if (retired.length > budget) {
-        lines.push(
-          `=== ${retired.length - budget} further deleted line(s) beyond this ` +
-            `tick's budget; narrow the range by closing this rotation ===`,
-        );
-      }
+      lines.push(...retiredBlock(retired, budget));
     }
 
     const tip = all.at(-1)?.sha ?? cursor;
@@ -231,6 +226,42 @@ function retiredLines(
   cursor: string,
   all: readonly RangeCommit[],
   locus: string[],
-): string[] {
+): DeletedPage[] {
   return deletedLines(cwd, cursor, unionOf(all, locus));
+}
+
+/**
+ * The retired-claim delta's lines, each under the locus page it left.
+ *
+ * **The page is half of what a line says.** The frontier this delta arms is
+ * every site that may still assert the claim, and a tick draws it by
+ * searching the deleted line's key phrases — but whether a line is a retired
+ * claim at all, rather than a heading the same commit reworded a few lines
+ * down, is decidable only against the page it left. Rendered flat, that
+ * costs the tick a second diff over the locus to recover a fact this window
+ * already read (`.claude/rules/posture-sweep.md`, *The frontier is
+ * decidable; the neighborhood is judged*).
+ *
+ * The budget is spent on deleted lines, never on the page leads that carry
+ * them: a page whose lines do not all fit renders the prefix that does, and
+ * the count below names every line no page here shows — so a rotation wide
+ * enough to truncate still reports its own size honestly.
+ */
+function retiredBlock(pages: readonly DeletedPage[], budget: number): string[] {
+  const total = pages.reduce((n, page) => n + page.lines.length, 0);
+  const lines: string[] = [];
+  let used = 0;
+  for (const page of pages) {
+    if (used >= budget) break;
+    const shown = page.lines.slice(0, budget - used);
+    lines.push(`=== deleted from ${page.path} ===`, ...shown);
+    used += shown.length;
+  }
+  if (total > used) {
+    lines.push(
+      `=== ${total - used} further deleted line(s) beyond this tick's ` +
+        `budget; narrow the range by closing this rotation ===`,
+    );
+  }
+  return lines;
 }
