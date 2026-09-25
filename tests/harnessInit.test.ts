@@ -390,8 +390,8 @@ it("a derive window over the state init seeded opens on no commits rather than t
 /**
  * Adopting before the first commit is a real thing to do — the install smoke
  * `git init`s a repository and adopts into it without committing — and a
- * directory that is no checkout at all gives the same answer: no sha for a
- * cursor to stand at. Not a refusal, so the report has to say it: an adopter
+ * directory that is no checkout at all gives the same answer (the case below
+ * this one): no sha for a cursor to stand at. Not a refusal, so the report has to say it: an adopter
  * who reads nothing else learns here why their first plan tick opens over
  * everything they declared.
  */
@@ -431,6 +431,47 @@ it("flume-harness init over a repository with no commit reports the plan state i
   expect(result.planState).toEqual({ kind: "no-commit" });
   for (const slice of PLAN_SLICES) {
     expect(result.written).not.toContain(planStatePath(result.stateRoot, slice));
+  }
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The other leg of that same answer, and a different one to git: a repository
+ * with no commit has a `HEAD` git resolves to nothing, and a directory that is
+ * no checkout at all fails the read outright — one exit status apart. The
+ * cursor probe reads only the first as absence, so that a plan window over a
+ * tree git cannot read refuses as unreadable instead of sending a tick to
+ * repair a correct cursor (`harness/gitRange.ts`); tolerating the second is
+ * this adoption's own position (`PlanStateOutcome`, `no-commit`), and it is
+ * pinned here rather than inherited from the case above.
+ */
+it("flume-harness init over a directory that is no git checkout leaves the plan state unseeded rather than refusing", async () => {
+  const bare = await mkTempDir("flume-harness-init-nogit-");
+  try {
+    // Non-vacuity: git really cannot read this directory, so the arm the case
+    // is named for is the arm it exercises. Read from git rather than assumed,
+    // since a temp root inside somebody's checkout would answer otherwise.
+    let said = "";
+    try {
+      await exec("git", ["rev-parse", "--verify", "-q", "HEAD^{commit}"], {
+        cwd: bare,
+      });
+    } catch (err) {
+      said = err instanceof Error ? err.message : String(err);
+    }
+    expect(said).toContain("not a git repository");
+
+    const result = await harnessInit({ repoRoot: bare });
+    expect(result.planState).toEqual({ kind: "no-commit" });
+
+    // The adoption ran whole, so the unseeded plan state is this arm rather
+    // than a refusal that never got as far as the cursors.
+    expect(result.written).toContain(`${DEFAULT_STATE_ROOT}/declaration.ts`);
+    const stateRootAbs = join(bare, DEFAULT_STATE_ROOT);
+    for (const slice of PLAN_SLICES) {
+      expect(readPlanState(stateRootAbs, slice)).toBeUndefined();
+    }
+  } finally {
+    await rm(bare, { recursive: true, force: true });
   }
 }, SPAWN_BUDGET_MS);
 

@@ -369,6 +369,33 @@ export default factory;
 }
 
 /**
+ * The tip a cursor seeded by this adoption would stand at, or `undefined`
+ * where the repository names none.
+ *
+ * Both ways it names none are one answer, and that is declared here rather
+ * than folded into the predicate: a checkout with no commit yet has a `HEAD`
+ * that resolves to nothing, and a directory that is not a checkout at all
+ * fails the read outright — neither is a reason to refuse an adoption
+ * ({@link PlanStateOutcome}, `no-commit`). The degradation is bounded by what
+ * it leaves behind: no plan state, which every window already reads as
+ * "nothing derived yet" and opens in full over
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * The catch is this site's because the tolerance is. `resolvesInTree` answers
+ * whether a revision names a commit and throws on a tree it could not read,
+ * so a plan window over such a tree refuses as unreadable instead of sending
+ * a tick to repair a cursor that was correct (`gitRange.ts`); an adoption is
+ * the one caller that wants both outcomes spelled the same way.
+ */
+function tipIfAny(repoRoot: string): string | undefined {
+  try {
+    return resolvesInTree(repoRoot, "HEAD") ? tipOf(repoRoot) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Adopt the harness package into `repoRoot`.
  *
  * Refuses rather than overwrites when the state root is already there: a
@@ -414,14 +441,7 @@ export async function harnessInit(
   // The tip the cursors this adoption seeds will stand at — resolved here,
   // in the preflight, rather than at the write, so the sha stamped is one
   // this adoption read before it touched the tree.
-  //
-  // Asked as a question with two answers rather than as a read that throws:
-  // a repository with no commit yet, and a directory that is not a git
-  // checkout at all, both name no tip, and neither is a reason to refuse an
-  // adoption ({@link PlanStateOutcome}). The engine's own predicate answers
-  // it — `HEAD` is a revision like any other, and a second spelling of
-  // "does git resolve this" beside it is the copy that drifts.
-  const tip = resolvesInTree(repoRoot, "HEAD") ? tipOf(repoRoot) : undefined;
+  const tip = tipIfAny(repoRoot);
 
   await mkdir(namespacedJoin(stateRootAbs), { recursive: true });
   const written: string[] = [];

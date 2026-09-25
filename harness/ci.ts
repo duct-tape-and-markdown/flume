@@ -49,7 +49,7 @@
 import { z } from "zod";
 
 import type { Declaration } from "./declaration.js";
-import { captureSync, detailOf } from "./exec.js";
+import { captureSync, detailOf, exitStatusOf } from "./exec.js";
 
 /**
  * One CI lane as the declaration carries it — read off the declaration's own
@@ -491,10 +491,9 @@ function branchAt(repoRoot: string): { branch: string } | { reason: string } {
     }
     return { branch: name };
   } catch (err) {
-    const status = (err as { status?: unknown }).status;
     return {
       reason:
-        status === 1
+        exitStatusOf(err) === 1
           ? `HEAD in ${repoRoot} is detached, so no forge run is keyed to a branch this tick could name`
           : `the branch at ${repoRoot} could not be read: ${detailOf(err)}`,
     };

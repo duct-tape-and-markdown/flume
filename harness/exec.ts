@@ -1,6 +1,7 @@
 /**
  * Reading a child process's output from inside a synchronous call: the spawn
- * itself, the bound on what comes back, and the text a failed one carries.
+ * itself, the bound on what comes back, and the status and text a failed one
+ * carries.
  *
  * **Synchronous because a window's builder is.** The engine calls
  * `promptArgs` synchronously, and every tree and forge read the plan slices
@@ -94,4 +95,26 @@ export function detailOf(err: unknown): string {
   const stderr = (err as { stderr?: unknown }).stderr;
   if (typeof stderr === "string" && stderr.trim() !== "") return stderr.trim();
   return (err instanceof Error ? err.message : String(err)).trim();
+}
+
+/**
+ * The exit status a failed child carried, where it exited at all.
+ *
+ * `undefined` for a failure that is not a child's own answer — a binary the
+ * host does not have, a signal — which is exactly the case a caller keying on
+ * one specific status has to tell from that status: a tool saying "no" in the
+ * number it reserves for "no" is the tool speaking, and everything else is
+ * not (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * `status` because these spawns are `execFileSync`'s, which is where node puts
+ * a child's exit code; the engine's own async spawns carry the same number as
+ * `code` (`src/git.ts`). Read here once so the callers that key on a status —
+ * a detached HEAD against a broken git (`ci.ts`), a cursor naming no commit
+ * against a tree git will not read (`gitRange.ts`) — share the decode rather
+ * than each casting for the field (`.claude/rules/engineering.md`, *The fix
+ * lands at the mechanism*).
+ */
+export function exitStatusOf(err: unknown): number | undefined {
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
 }

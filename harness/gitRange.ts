@@ -25,7 +25,7 @@
 import { literalPathspecEnv, nameOnlyPaths } from "../src/git.js";
 import { matchesAny } from "../src/paths.js";
 
-import { captureSync } from "./exec.js";
+import { captureSync, exitStatusOf } from "./exec.js";
 
 /** One commit in a window's range, with the paths it touched. */
 export interface RangeCommit {
@@ -96,13 +96,33 @@ function git(cwd: string, args: readonly string[]): string {
   });
 }
 
-/** Whether `sha` names a commit in the tree at `cwd`. */
+/**
+ * The status `rev-parse --verify -q` exits with when the revision it was
+ * handed names no commit here — and nothing else. A directory that is not a
+ * repository exits 128 saying so, a git that will not run exits at no status
+ * at all: git spells the absence apart from the failure, so
+ * {@link resolvesInTree} reads the distinction rather than rebuilding it
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). The engine's
+ * own `isAncestor` (`src/git.ts`) keys its probe on the same shape.
+ */
+const NO_SUCH_COMMIT = 1;
+
+/**
+ * Whether `sha` names a commit in the tree at `cwd`.
+ *
+ * Absence is the verdict; every other failure travels out as a throw, for the
+ * window's own bound to name (`cursorWindow.ts`). Folding the two together
+ * would have a tree git could not read render as a cursor to repair, sending
+ * a tick to rewrite a value that was correct
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
 export function resolvesInTree(cwd: string, sha: string): boolean {
   try {
     git(cwd, ["rev-parse", "--verify", "-q", `${sha}^{commit}`]);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    if (exitStatusOf(err) === NO_SUCH_COMMIT) return false;
+    throw err;
   }
 }
 

@@ -889,6 +889,82 @@ it("a window refuses a cursor sha that does not resolve in the tick's tree", () 
   ).toBe(true);
 });
 
+it("a plan window over a tree git cannot read refuses as unreadable rather than as a cursor to repair", () => {
+  // The cursor is this repository's own tip, so it is correct: the only thing
+  // wrong below is the tree the window is drawn in. Pre-fix the cursor probe
+  // folded git's "I cannot read this tree" into its "no such commit" answer,
+  // and the tick was handed a refusal telling it to rewrite that correct sha.
+  const base = commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
+  writeState({ derivedThrough: base, sweptThrough: base });
+  // Material for both windows past that cursor: one path in the spec locus
+  // the derive window reads, one in the sweep domain.
+  commit(
+    { "spec/chain.md": "# Chain\n", "src/thing.ts": "export const x = 1;\n" },
+    "spec: the chain",
+  );
+
+  const notATree = mkTempDirSync("flume-windows-unreadable-");
+
+  // git's own sentence about that directory, read rather than written by
+  // hand, so the assertion is that git's text reached the refusal.
+  let said = "";
+  try {
+    gitOutSync(notATree, ["rev-parse", "--verify", "-q", `${base}^{commit}`]);
+  } catch (err) {
+    said = err instanceof Error ? err.message : String(err);
+  }
+  const fatal =
+    said.split("\n").find((line) => line.startsWith("fatal:")) ?? "";
+  // Vacuity guard: a directory git read happily would leave every assertion
+  // below standing over a window that never failed.
+  expect(fatal).not.toBe("");
+
+  try {
+    const built = windows();
+    const legs = [
+      ["derivedThrough", "plan-derive", "SPEC_WINDOW", "spec: the chain"],
+      ["sweptThrough", "plan-sweep", "SWEEP_WINDOW", "src/thing.ts"],
+    ] as const;
+
+    for (const [field, slice, arg, material] of legs) {
+      // The control: the same cursor in the tree it was stamped in renders
+      // the window's material, so the refusal below is the tree's doing and
+      // not a cursor this fixture got wrong.
+      const readable = built[slice].args({
+        cwd: repo,
+        flumeDir: stateRoot(),
+      })[arg];
+      expect(readable).toContain(material);
+      expect(readable).not.toContain("REFUSE");
+
+      const window = built[slice].args({
+        cwd: notATree,
+        flumeDir: stateRoot(),
+      })[arg];
+      expect(window).toContain("REFUSE");
+      expect(window).toContain(`\`${field}\` window could not be read`);
+      // git's own text, carried whole rather than classified.
+      expect(window).toContain(fatal);
+      // And the bound the unreadable refusal names: the cursor is untouched,
+      // so the same range re-opens next tick.
+      expect(window).toContain(
+        "is untouched, so the window re-opens over the same range next tick",
+      );
+      // The arm this case exists to separate: the cursor-repair refusal,
+      // whose cause clause is the one a correct cursor must never draw. Read
+      // against that clause rather than against the whole render, so an
+      // unrelated sentence elsewhere in the window cannot answer it.
+      // `toContain` above has already refused an absent render, so the
+      // fold to a string here cannot be hiding one.
+      const text = String(window);
+      const cause = text.slice(0, text.indexOf(", so this window"));
+      expect(cause).not.toContain("does not resolve to a commit");
+    }
+  } finally {
+    rmSync(notATree, { recursive: true, force: true });
+  }
+});
+
 it("a window render refuses by name when git fails for a reason other than an unresolvable cursor", () => {
   commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
   // No plan state is written, so both renders take the bootstrap leg — it
