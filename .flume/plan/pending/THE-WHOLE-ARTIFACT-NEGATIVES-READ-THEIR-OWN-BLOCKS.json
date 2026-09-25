@@ -10,7 +10,7 @@
         "description": "the six window negatives read the block `blockUnder` already cuts, or the producer's own marker phrase, rather than a bare English word over the whole render"
       },
       {
-        "path": "tests/Agent.test.ts",
+        "path": "tests/terminalRender.test.ts",
         "description": "the six render negatives read the block each one's arm is about"
       },
       {
@@ -45,5 +45,5 @@
     "section": "Routing"
   },
   "acceptance": "every one of those assertions names a subject its own arm produces — a cut block, the producer's own marker phrase, or one line — so none can red for a path, tag, commit subject or error string the artifact merely happens to quote",
-  "notes": "Off the three-notes escalation, long past it: 8 plan bodies since it was last filed (A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK, c0fbb6a9). Verified on disk: harnessWindows 938/1006/1506/1507/1518/1521 (`\"REFUSE\"`, `\"bootstrap\"`; `blockUnder` at :1209 is the file's own cut, :1006 carries a raw fs error path), Agent 715-720, harnessGates 810, harnessPrompts 871, harnessBuildArgs 508, cliRender 287, worktrees 304, cliVerdict 317 (`\"worktree provisioning\"`, emitted only at `loopSupervisor.ts:690`)."
+  "notes": "Off the three-notes escalation, long past: 8 plan bodies since last filed (A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK, c0fbb6a9). Verified: harnessWindows 938/1006/1506/1507/1518/1521 (`\"REFUSE\"`, `\"bootstrap\"`; `blockUnder` at :1209 is the file's own cut, :1006 carries a raw fs error path), terminalRender 88-93, harnessGates 810, harnessPrompts 871, harnessBuildArgs 508, cliRender 287, worktrees 304, cliVerdict 317 (`\"worktree provisioning\"`, emitted only at `loopSupervisor.ts:690`)."
 }
