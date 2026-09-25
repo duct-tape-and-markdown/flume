@@ -1,0 +1,21 @@
+{
+  "tag": "THE-SMOKE-SHELL-REFUSES-AN-ARGV-IT-WOULD-REWRITE",
+  "gate": {
+    "kind": "open"
+  },
+  "files": {
+    "edit": [
+      {
+        "path": "scripts/smoke-install.mjs",
+        "description": "a step whose argv reaches the shell refuses a value that shell would re-parse, naming it; the helper's doc states what Node does with an argv array under `shell: true` rather than claiming it quotes one"
+      }
+    ]
+  },
+  "summary": "The smoke takes a shell for every win32 step under a doc claiming Node quotes the argv array — measured false — and the tarball path it composes rides that argv",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a step whose argv reaches a shell refuses a value that shell would re-parse, naming the value and the step, so the run either installs the tarball it packed or says why it cannot; the site's own account of the platform matches what Node does rather than denying the re-parse",
+  "notes": "Measured here (node 22.21.0): `spawnSync(cmd, [\"a b\"], { shell: true })` reaches the child as two argv words, and `x; touch <f>` executes — Node quotes nothing. `scripts/smoke-install.mjs:83`-`:85` claims it does and calls the args non-user-controlled, while `--from-registry` (`:204`) and the composed `installTarget` (`:217`) ride the argv at `:240`. Refusal rather than quoting is THE-SHIM-RETRY-ARGV-SURVIVES-ITS-OWN-SHELL's. No `tests[]`: the shell path is `IS_WIN` only, the named exception."
+}

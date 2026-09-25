@@ -1,0 +1,26 @@
+{
+  "tag": "THE-ASSET-COPY-NAMES-A-FILE-IT-CANNOT-CARRY",
+  "gate": { "kind": "open" },
+  "files": {
+    "edit": [
+      {
+        "path": "scripts/pack-harness-assets.mjs",
+        "description": "a candidate that is neither a module nor a carryable directory refuses naming it, beside the directory-carrying-a-module refusal; the premise paragraph states the check rather than the assumption"
+      },
+      {
+        "path": "tests/harnessPackaging.test.ts",
+        "description": "the refusal leg, driven over a source tree carrying such a file through the `sourceDir` argument"
+      }
+    ]
+  },
+  "summary": "The asset copy carries directories alone, so a non-module file under `harness/` is dropped with no refusal and its address dies at a consumer's first import",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a candidate under the harness source that is neither a module `tsc` emits nor a directory the copy can carry refuses naming it — the disposition the directory-carrying-a-module case already takes — so no addressed asset reaches a published install unwritten",
+  "tests": [
+    "pack-harness-assets refuses a non-module file sitting beside the harness package's own modules"
+  ],
+  "notes": "Verified on disk: `readdir(source).filter((entry) => entry.isDirectory())` (`scripts/pack-harness-assets.mjs:137`-`:138`) drops a file with no mention, while the module's premise (`:13`-`:22`) is checked in one direction only — the refusal at `:157`-`:170`. `harness/` holds no such file today, so the hole is latent exactly as that refusal's own precondition is. The `sourceDir` argument declared for refusal cases (`:36`-`:38`) is how the case drives the real writer."
+}

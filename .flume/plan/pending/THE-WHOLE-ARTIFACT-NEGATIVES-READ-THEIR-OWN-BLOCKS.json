@@ -32,14 +32,18 @@
       {
         "path": "tests/worktrees.test.ts",
         "description": "the no-hand-rolled-default claim reads the declaration it is about, not the module's whole text"
+      },
+      {
+        "path": "tests/cliVerdict.test.ts",
+        "description": "the completion-summary negative reads the stage phrase its own arm renders, not the whole summary"
       }
     ]
   },
-  "summary": "Seventeen negative assertions take a whole rendered window, prompt, verdict or module text as their subject \u2014 the family sixteen plan commit bodies have now accepted as debt",
+  "summary": "Eighteen negative assertions take a whole rendered window, prompt, verdict or module text as their subject — the family sixteen plan commit bodies have now accepted as debt",
   "per": {
     "path": ".claude/rules/posture-sweep.md",
     "section": "Routing"
   },
-  "acceptance": "every one of those assertions names a subject its own arm produces \u2014 a cut block, the producer's own marker phrase, or one line \u2014 so none can red for a path, tag, commit subject or error string the artifact merely happens to quote",
-  "notes": "Off the three-notes escalation, long past it: 7 plan bodies since the family was last filed (A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK, c0fbb6a9) \u2014 d0de4ae4 through 4854eca1. Verified on disk this tick: harnessWindows 938/1006/1506/1507/1518/1521 (`\"REFUSE\"`, `\"bootstrap\"`; `blockUnder` at :1209 is the file's own cut, and :1006's render carries a raw fs error path), Agent 715-720, harnessGates 810, harnessPrompts 871, harnessBuildArgs 508, cliRender 287, worktrees 304."
+  "acceptance": "every one of those assertions names a subject its own arm produces — a cut block, the producer's own marker phrase, or one line — so none can red for a path, tag, commit subject or error string the artifact merely happens to quote",
+  "notes": "Off the three-notes escalation, long past it: 8 plan bodies since it was last filed (A-NEGATIVE-ASSERTION-READS-ITS-OWN-BLOCK, c0fbb6a9). Verified on disk: harnessWindows 938/1006/1506/1507/1518/1521 (`\"REFUSE\"`, `\"bootstrap\"`; `blockUnder` at :1209 is the file's own cut, :1006 carries a raw fs error path), Agent 715-720, harnessGates 810, harnessPrompts 871, harnessBuildArgs 508, cliRender 287, worktrees 304, cliVerdict 317 (`\"worktree provisioning\"`, emitted only at `loopSupervisor.ts:690`)."
 }

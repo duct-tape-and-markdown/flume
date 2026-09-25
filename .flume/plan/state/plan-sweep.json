@@ -3,10 +3,20 @@
   "rotation": {
     "kind": "open",
     "covered": [
+      "bin/execEntry.js",
+      "bin/flume",
+      "bin/flume-harness.js",
+      "bin/flume.js",
       "harness/dirListing.ts",
+      "harness/entryExtension.ts",
       "harness/exec.ts",
       "harness/gitRange.ts",
       "harness/init.ts",
+      "harness/layout.ts",
+      "harness/records.ts",
+      "scripts/build-changelog.mjs",
+      "scripts/pack-harness-assets.mjs",
+      "scripts/smoke-install.mjs",
       "src/friction.ts",
       "src/fsProbe.ts",
       "src/mergingMarkers.ts"
