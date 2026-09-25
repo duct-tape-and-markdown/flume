@@ -72,8 +72,9 @@ export type PhaseTickOutcome = {
  * inner seams take, and the batch selection the dispatcher owns.
  *
  * Extends {@link PendingLedgerContext} (`src/pendingLedger.ts`) rather than
- * respelling its fields, so a leg reads the queue by handing itself to the
- * ledger's own readers — the same six values the dispatcher's preview
+ * respelling its fields — the state root among them, which the ledger's disk
+ * read descends from — so a leg reads the queue by handing itself to the
+ * ledger's own readers, with the same values the dispatcher's preview
  * (`Dispatcher.render`) reads them with. `selection` is the dispatcher's
  * callable, not a copy: a leg that re-derived the batch arithmetic beside it
  * would be a second spelling of a decision that preview already shares with
@@ -83,8 +84,6 @@ export type PhaseTickOutcome = {
 export interface TickLegContext extends PendingLedgerContext {
   /** Where the chain config and its prompt files live — reported to every gate. */
   readonly configDir: string;
-  /** The mutable-state root: baton, pending ledger, worktrees, prior-attempt records. */
-  readonly flumeDir: string;
   /** The state root's escape verdict against the repo root, in git's alphabet. */
   readonly stateRootRel: string | undefined;
   /** Prior-attempt records: read, write, clear, and the revert snapshots. */

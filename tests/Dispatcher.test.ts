@@ -321,7 +321,7 @@ async function writePending(
 }
 
 function readPendingFromDisk(repo: string): PendingEntry[] {
-  const files = readQueueOnDisk(queueDirOf(repo));
+  const files = readQueueOnDisk(join(repo, ".flume"), queueDirOf(repo));
   const r = parsePendingQueue(files ?? []);
   if (!r.ok) throw new Error("the queue failed to parse");
   return r.entries;
@@ -2153,7 +2153,7 @@ describe("Dispatcher — Chain.pendingDir (CHAIN-PENDINGPATH, spec/pending.md 'T
     // wave-end rewrite ships it there — not at the default plan/pending.
     expect(outcome.result?.shippedTags).toEqual(["CUSTOM-PATH"]);
     expect(
-      readQueueOnDisk(join(fx.repo, ".flume", customRel)),
+      readQueueOnDisk(join(fx.repo, ".flume"), join(fx.repo, ".flume", customRel)),
     ).toEqual([]);
     expect(existsSync(join(fx.repo, ".flume", "plan", "pending"))).toBe(false);
 
@@ -3548,7 +3548,7 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
 
       // Pending was updated on disk at the relocated path: the shipped
       // entry's file is gone, which is what an empty queue is now.
-      const parsed = parsePendingQueue(readQueueOnDisk(pendingDir) ?? []);
+      const parsed = parsePendingQueue(readQueueOnDisk(dock, pendingDir) ?? []);
       expect(parsed.ok).toBe(true);
       if (parsed.ok) expect(parsed.entries).toEqual([]);
       expect(existsSync(join(pendingDir, entryFileName("RELOC-A")))).toBe(false);
@@ -17448,7 +17448,7 @@ describe.runIf(process.platform === "win32")(
 
         // commitPendingUpdate's own bare-join reads/writes (the no-op-diff
         // check and the rewrite itself) also landed at the deep path.
-        const parsed = parsePendingQueue(readQueueOnDisk(pendingDir) ?? []);
+        const parsed = parsePendingQueue(readQueueOnDisk(deepDock, pendingDir) ?? []);
         expect(parsed.ok).toBe(true);
         if (parsed.ok) expect(parsed.entries).toEqual([]);
         // readPendingTolerant hits the same deep path for pendingAfter.

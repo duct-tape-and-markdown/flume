@@ -14,9 +14,11 @@
  * an out-of-tree dock would write the queue to disk and commit nothing, and
  * the next tick would dispatch off a tip that never moved.
  *
- * Beside it, the one chain-less read (`readPendingLoose`): it takes a bare
- * path because it runs where no chain resolved, so it is driven directly
- * here rather than through a tick.
+ * Beside it, the one chain-less read (`readPendingLoose`): it takes bare
+ * paths because it runs where no chain resolved, so it is driven directly
+ * here rather than through a tick — and under both, the listing's own absence
+ * verdict (`readQueueOnDisk`), which decides whether a tick dispatches at all
+ * and so is pinned against the one input an errno cannot classify portably.
  *
  * And beside both, what this module's reports **name** — the tolerant read's
  * two degrades, the strict read's refusal, and the decide-read's rethrow.
@@ -25,20 +27,21 @@
  * shows up as a lie rather than as a coincidence.
  */
 
-import { rmSync, symlinkSync } from "node:fs";
+import { existsSync, rmSync, symlinkSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
 import type { Logger } from "../src/log.ts";
-import { computeStateRootRel } from "../src/paths.ts";
+import { computeStateRootRel, resolvePendingDir } from "../src/paths.ts";
 import {
   commitPendingUpdate,
   isPendingRelocated,
   readPendingForDecision,
   readPendingLoose,
   readPendingTolerant,
+  readQueueOnDisk,
   type PendingLedgerContext,
 } from "../src/pendingLedger.ts";
 import { entryFileName, PendingParseFailure } from "../src/PendingSchema.ts";
@@ -56,10 +59,11 @@ vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 const REPO = join("/", "tmp", "flume-ledger-repo");
 
-/** The four fields a read takes; only two of them decide this verdict. */
+/** The five fields a read takes; only two of them decide this verdict. */
 function ctx(pendingDir: string): PendingLedgerContext {
   return {
     repoRoot: REPO,
+    flumeDir: REPO,
     pendingDir,
     entryExtension: undefined,
     log: silent,
@@ -86,6 +90,61 @@ describe(
 );
 
 /**
+ * The listing's absence verdict, proven by descent rather than read off the
+ * errno the read raised (`readQueueOnDisk`, `src/pendingLedger.ts`). An
+ * obstructed ancestor is spelled `ENOENT` on win32 and `ENOTDIR` on posix
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so a listing keying its silent arm on the
+ * errno reports an unreachable queue as *nothing pending* on exactly one host
+ * — and every phase then dispatches over a queue it never resolved.
+ *
+ * The parent is denied on purpose, which that same page admits for this one
+ * reader: the descent is exercised by an obstructed *ancestor* and by nothing
+ * else. A plain file denies structurally, so this runs on every host rather
+ * than riding `chmod`, which denies nothing on win32
+ * (`tests/helpers/denial.ts`).
+ */
+describe("readQueueOnDisk — the absence verdict is proven, not read off an errno", () => {
+  it("reading the pending queue under a path obstructed by a plain file refuses naming the queue", async () => {
+    const root = await mkTempDir("flume-queue-obstructed-");
+    try {
+      const stateRoot = join(root, ".flume");
+      const pendingDir = resolvePendingDir(stateRoot);
+      const above = dirname(pendingDir);
+      await mkdir(stateRoot, { recursive: true });
+
+      // The reading the obstruction has to change. A bare state root is the
+      // absent queue, and absent is the silent arm — so a refusal below is
+      // the plain file talking and not a listing that throws at every root
+      // (`.claude/rules/engineering.md`, *A green verdict is proven
+      // non-vacuous*).
+      expect(readQueueOnDisk(stateRoot, pendingDir)).toBeNull();
+
+      denyDirectory(above);
+      // The obstruction really is an ancestor, and the leaf really is the one
+      // a single stat cannot classify: present to the descent, absent to a
+      // bare probe.
+      expect(existsSync(above)).toBe(true);
+      expect(existsSync(pendingDir)).toBe(false);
+
+      let message: string | undefined;
+      try {
+        readQueueOnDisk(stateRoot, pendingDir);
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      // By name: the queue, and the rung an operator has to go fix — not the
+      // leaf that was asked for, and never an empty queue.
+      expect(message).toBe(
+        `[flume] pending queue is unreadable: ${above} is present but is not a directory`,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
  * `readPendingLoose` is the one probe `flume status` reads its count
  * through, and the split it gives a failed read is the whole claim: absent
  * is the empty queue, anything else escapes rather than reading as empty
@@ -96,7 +155,7 @@ describe("readPendingLoose — the ENOENT/other split", () => {
     const dir = await mkTempDir("flume-loose-absent-");
     try {
       const pendingDir = join(dir, "plan", "pending");
-      expect(readPendingLoose(pendingDir)).toEqual({
+      expect(readPendingLoose(dir, pendingDir)).toEqual({
         ok: true,
         entries: [],
         errors: [],
@@ -112,7 +171,7 @@ describe("readPendingLoose — the ENOENT/other split", () => {
       const pendingDir = join(dir, "plan", "pending");
       await mkdir(pendingDir, { recursive: true });
       // Non-vacuity: the queue reads before it is denied.
-      expect(readPendingLoose(pendingDir).ok).toBe(true);
+      expect(readPendingLoose(dir, pendingDir).ok).toBe(true);
 
       // Deny the queue directory structurally (`tests/helpers/denial.ts`):
       // the path is still there to a stat, and the listing fails ENOTDIR —
@@ -124,7 +183,7 @@ describe("readPendingLoose — the ENOENT/other split", () => {
 
       let caught: NodeJS.ErrnoException | undefined;
       try {
-        readPendingLoose(pendingDir);
+        readPendingLoose(dir, pendingDir);
       } catch (err) {
         caught = err as NodeJS.ErrnoException;
       }
@@ -160,7 +219,7 @@ describe("readPendingLoose — the ENOENT/other split", () => {
       await writeFile(join(sidecar, entryFileName("NESTED")), entry("NESTED"));
       await mkdir(join(pendingDir, "archive.json"), { recursive: true });
 
-      const result = readPendingLoose(pendingDir);
+      const result = readPendingLoose(dir, pendingDir);
       expect({ ok: result.ok, errors: result.errors }).toEqual({
         ok: true,
         errors: [],
@@ -210,6 +269,7 @@ describe.runIf(process.platform !== "win32")(
       };
       const ctx: PendingLedgerContext = {
         repoRoot,
+        flumeDir: repoRoot,
         pendingDir,
         entryExtension: undefined,
         log,
@@ -297,6 +357,7 @@ describe("readPending — what a strict refusal names", () => {
 
       const ctx: PendingLedgerContext = {
         repoRoot: repo.dir,
+        flumeDir: repo.dir,
         pendingDir,
         entryExtension: undefined,
         log: silent,
@@ -355,6 +416,7 @@ describe("readPending — what a strict refusal names", () => {
 
       const ctx: PendingLedgerContext = {
         repoRoot: repo.dir,
+        flumeDir: repo.dir,
         pendingDir,
         entryExtension: undefined,
         log: silent,
@@ -430,6 +492,7 @@ describe("readPending — what a strict refusal names", () => {
 
       const ctx: PendingLedgerContext = {
         repoRoot: repo.dir,
+        flumeDir: repo.dir,
         pendingDir,
         entryExtension: undefined,
         log: silent,

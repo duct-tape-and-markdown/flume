@@ -20,7 +20,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { isDirectoryOrAbsent } from "../src/fsProbe.js";
+import { isDirectoryOrAbsentUnder } from "../src/fsProbe.js";
 import { namespacedJoin } from "../src/paths.js";
 
 /**
@@ -57,8 +57,8 @@ import { namespacedJoin } from "../src/paths.js";
  * see is closed. Hence the descent that `PriorAttemptStore.readAll` and
  * `readMergingMarkers` run: the state root, then each segment of `rel`,
  * every one asserted a directory before the next is probed
- * ({@link isDirectoryOrAbsent}, `src/fsProbe.ts`), so both hosts answer
- * alike. `what` is the noun phrase that refusal names — "record queue",
+ * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`, which composes those
+ * rungs for every reader that runs this descent), so both hosts answer alike. `what` is the noun phrase that refusal names — "record queue",
  * "questions dir". The state root is where the descent starts: the caller
  * supplied it, and what stands above it is the caller's to answer for.
  *
@@ -79,13 +79,8 @@ export function listUnderStateRoot(
   rel: string,
   ext: string,
 ): string[] {
-  let dir = stateRoot;
-  const descent: [string, ...string[]] = [dir];
-  for (const segment of rel.split("/")) {
-    dir = join(dir, segment);
-    descent.push(dir);
-  }
-  if (!isDirectoryOrAbsent(what, ...descent)) return [];
+  const dir = join(stateRoot, ...rel.split("/"));
+  if (!isDirectoryOrAbsentUnder(what, stateRoot, dir)) return [];
   return readdirSync(namespacedJoin(dir))
     .filter((name) => name.endsWith(ext))
     .sort()

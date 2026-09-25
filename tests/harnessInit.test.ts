@@ -254,9 +254,8 @@ it("flume-harness init seeds an empty queue directory in the state root", async 
  */
 it("the queue directory flume-harness init writes reads as an empty pending queue", async () => {
   const result = await harnessInit({ repoRoot });
-  const files = readQueueOnDisk(
-    resolvePendingDir(join(repoRoot, result.stateRoot)),
-  );
+  const stateRoot = join(repoRoot, result.stateRoot);
+  const files = readQueueOnDisk(stateRoot, resolvePendingDir(stateRoot));
 
   // Non-vacuity: the directory is there to be listed, so the empty entry
   // list below is the reader's verdict on a real directory rather than on an

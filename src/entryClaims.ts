@@ -27,6 +27,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import { gitCommonDir } from "./git.js";
 import { namespacedJoin, slugify } from "./paths.js";
 import {
@@ -44,6 +45,14 @@ import {
 export function entryClaimsDir(commonDir: string): string {
   return join(commonDir, "flume", "claims");
 }
+
+/**
+ * The subject {@link EntryClaimStore.readHolders}'s descent names when it
+ * refuses (`isDirectoryOrAbsentUnder`, `src/fsProbe.ts`) — one spelling, so
+ * the rung an operator is told to go fix reads the same whichever ancestor
+ * was obstructed.
+ */
+const CLAIM_STORE_SUBJECT = "entry-claim store";
 
 /**
  * Where one entry's claim lives. `slug` is the entry's tag through the
@@ -95,6 +104,20 @@ export class EntryClaimStore {
    * directory that cannot be read is not a repository with nothing in flight
    * (`.claude/rules/engineering.md`, *Loud or nothing*).
    *
+   * That absence is proven from the **path**, never from the errno a listing
+   * raised: a plain file above the claims directory is `ENOENT` on win32 and
+   * `ENOTDIR` on posix (`.claude/rules/platform-facts.md`, *win32 reports a
+   * path through a non-directory as not found*), so an errno-keyed silent arm
+   * tells one host's selection that nothing is in flight and lets two ticks
+   * carry one entry — and tells the pending gate's claim check to pass over
+   * an entry a build tick holds. So the same descent
+   * `PriorAttemptStore.readAll` and `readMergingMarkers` run
+   * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`), from the common dir
+   * git just resolved down to the directory being listed; the listing past it
+   * keeps no absent arm of its own, because every ancestor is proven by then.
+   * The common dir is where the descent starts: git answered for it, and what
+   * stands above it is git's.
+   *
    * The holder rides along because one reader needs it: selection only asks
    * *whether* an entry is in flight ({@link readLive}), while the pending
    * gate's claim check refuses a ledger commit **naming** the holder
@@ -103,15 +126,12 @@ export class EntryClaimStore {
    * the same files.
    */
   async readHolders(): Promise<ReadonlyMap<string, PidClaim>> {
-    const dir = entryClaimsDir(await gitCommonDir(this.repoRoot));
-    let names: string[];
-    try {
-      names = await readdir(namespacedJoin(dir));
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Map();
-      throw err;
-    }
+    const commonDir = await gitCommonDir(this.repoRoot);
+    const dir = entryClaimsDir(commonDir);
     const live = new Map<string, PidClaim>();
+    if (!isDirectoryOrAbsentUnder(CLAIM_STORE_SUBJECT, commonDir, dir))
+      return live;
+    const names = await readdir(namespacedJoin(dir));
     for (const name of names) {
       const held = await livePidClaimAt(join(dir, name));
       if (held !== null) live.set(name, held);

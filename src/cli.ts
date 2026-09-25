@@ -460,6 +460,7 @@ async function main(): Promise<number> {
     // `readPendingLoose` (src/pendingLedger.ts) is the probe, so an absent queue reads
     // 0 and a corrupt one reads "unparsable" rather than failing the verb.
     const pending = readPendingLoose(
+      flumeDir,
       resolvePendingDir(flumeDir, chain?.pendingDir),
     );
     console.log(
@@ -670,7 +671,7 @@ async function main(): Promise<number> {
     const pendingDir = resolvePendingDir(flumeDir, chain.pendingDir);
     let files: QueueFile[] | null;
     try {
-      files = readQueueOnDisk(pendingDir);
+      files = readQueueOnDisk(flumeDir, pendingDir);
     } catch (err) {
       console.error(
         `[flume] check: ${pendingRel} failed to read: ${err instanceof Error ? err.message : String(err)}`,

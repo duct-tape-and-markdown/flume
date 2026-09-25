@@ -5,9 +5,11 @@
  *
  * The wave that drives this store through a real tick is
  * `tests/Dispatcher.test.ts`; what is judged here is the store's own three
- * answers, over a real repository rather than a hand-built common dir — the
- * address a claim resolves to is git's, and a fixture spelling it would be
- * this file's copy of the rule under test.
+ * answers — and, beside the empty one, the descent that separates a
+ * repository which has staked nothing from one whose claims cannot be read —
+ * over a real repository rather than a hand-built common dir: the address a
+ * claim resolves to is git's, and a fixture spelling it would be this file's
+ * copy of the rule under test.
  */
 
 import { existsSync } from "node:fs";
@@ -119,4 +121,51 @@ describe("EntryClaimStore — one file per entry under the git common dir", () =
     expect([...(await store.readLive())]).toEqual([]);
   });
 
+  /**
+   * The absence verdict above, proven by descent rather than read off the
+   * errno the listing raised. An obstructed ancestor is spelled `ENOENT` on
+   * win32 and `ENOTDIR` on posix (`.claude/rules/platform-facts.md`, *win32
+   * reports a path through a non-directory as not found*), so a listing keying
+   * its silent arm on the errno tells one host's selection that nothing is in
+   * flight — two ticks carry one entry, and the pending gate's claim check
+   * passes over an entry a build tick holds.
+   *
+   * The parent is denied on purpose, which that same page admits for this one
+   * reader: the descent is exercised by an obstructed *ancestor* and by
+   * nothing else. A plain file denies structurally, so this runs on every host
+   * rather than riding `chmod`, which denies nothing on win32
+   * (`tests/helpers/denial.ts`).
+   */
+  it("reading a repository's entry claims under an obstructed path refuses naming the claim store", async () => {
+    const commonDir = await gitCommonDir(repo.dir);
+    const dir = entryClaimsDir(commonDir);
+    const above = dirname(dir);
+
+    // The reading the obstruction has to change. Nothing staked is the empty
+    // set, and empty is the silent arm — so a refusal below is the plain file
+    // talking and not a walk that throws over every fresh repository
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(existsSync(above)).toBe(false);
+    expect([...(await store.readLive())]).toEqual([]);
+
+    await writeFile(above, "obstruction\n", "utf8");
+    // The obstruction really is an ancestor, and the leaf really is the one a
+    // single stat cannot classify: present to the descent, absent to a bare
+    // probe.
+    expect(existsSync(above)).toBe(true);
+    expect(existsSync(dir)).toBe(false);
+
+    let message: string | undefined;
+    try {
+      await store.readHolders();
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    // By name: the store, and the rung an operator has to go fix — not the
+    // leaf that was asked for, and never a repository with nothing in flight.
+    expect(message).toBe(
+      `[flume] entry-claim store is unreadable: ${above} is present but is not a directory`,
+    );
+  });
 });

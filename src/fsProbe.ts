@@ -9,7 +9,7 @@
  */
 
 import { statSync, type Stats } from "node:fs";
-import { toNamespacedPath } from "node:path";
+import { join, relative, sep, toNamespacedPath } from "node:path";
 
 /**
  * `path`'s `Stats` iff it exists, `undefined` only when it is absent
@@ -96,6 +96,10 @@ export function existsLoud(path: string): boolean {
  * Unlike {@link statLoud}, this call namespaces each segment itself, because
  * it owns the whole walk rather than a path a caller composed; the refusal
  * names the plain path, which is the one an operator has to go fix.
+ *
+ * A caller holding a root and a directory beneath it rather than the rungs
+ * between them hands both to {@link isDirectoryOrAbsentUnder}, which composes
+ * the descent and delegates here.
  */
 export function isDirectoryOrAbsent(
   what: string,
@@ -110,4 +114,37 @@ export function isDirectoryOrAbsent(
       );
   }
   return true;
+}
+
+/**
+ * {@link isDirectoryOrAbsent} over the descent from `root` down to `path`,
+ * composed here rather than at each reader: the rungs between a root a caller
+ * answers for and the directory it is about to list are mechanical, and a
+ * reader spelling them itself is one forgotten segment from keying its silent
+ * arm off an unproven ancestor again (`.claude/rules/engineering.md`, *The fix
+ * lands at the mechanism*).
+ *
+ * `root` is the outermost directory the caller is willing to answer for — the
+ * state root a chain declared, the common dir git resolved — and every segment
+ * beneath it is asserted a directory in turn, so `false` is the proven absence
+ * an errno cannot make (`.claude/rules/platform-facts.md`, *win32 reports a
+ * path through a non-directory as not found*). A reader whose rungs are not
+ * one contiguous walk — a fan of sibling directories under one proven root —
+ * calls {@link isDirectoryOrAbsent} with its own list instead.
+ */
+export function isDirectoryOrAbsentUnder(
+  what: string,
+  root: string,
+  path: string,
+): boolean {
+  const descent: [string, ...string[]] = [root];
+  let at = root;
+  // `relative` answers in the host's dialect and `join` normalizes each rung,
+  // so a `..` leg of an escaping path still lands on `path` itself last.
+  for (const segment of relative(root, path).split(sep)) {
+    if (segment === "") continue;
+    at = join(at, segment);
+    descent.push(at);
+  }
+  return isDirectoryOrAbsent(what, ...descent);
 }

@@ -660,8 +660,9 @@ export class Dispatcher {
   /**
    * What the pending ledger's reads and its one rewrite
    * (`src/pendingLedger.ts`) take from this dispatcher: the repo root, the
-   * ledger path and entry extension this tick's chain resolved, the logger,
-   * and the two knobs the rewrite's commit takes.
+   * state root a disk read of the queue descends from, the ledger path and
+   * entry extension this tick's chain resolved, the logger, and the two knobs
+   * the rewrite's commit takes.
    *
    * Composed on read for the same reason {@link worktreeCtx} is — two of its
    * fields are rebound by the per-tick chain load, after this object would
@@ -671,6 +672,7 @@ export class Dispatcher {
   private get ledgerCtx(): PendingLedgerContext {
     return {
       repoRoot: this.opts.repoRoot,
+      flumeDir: this.flumeDir,
       pendingDir: this.pendingDir,
       entryExtension: this.entryExtension,
       log: this.log,
@@ -701,7 +703,6 @@ export class Dispatcher {
     return {
       ...this.ledgerCtx,
       configDir: this.opts.configDir,
-      flumeDir: this.flumeDir,
       stateRootRel: this.stateRootRel,
       attempts: this.attempts,
       claims: this.claims,

@@ -27,6 +27,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
+import { isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import type { GateContext } from "./Gate.js";
 import * as git from "./git.js";
 import type { Logger } from "./log.js";
@@ -56,13 +57,20 @@ import { liveForeignClaimPid } from "./tipVerify.js";
  * logger a degraded read announces through, and the two knobs the rewrite's
  * commit takes.
  *
- * Both callers already hold all six, so nothing here is re-derived from disk
+ * Both callers already hold all seven, so nothing here is re-derived from disk
  * and no read can run against a path resolved before this tick's chain load
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
  * beside its source*).
  */
 export interface PendingLedgerContext {
   readonly repoRoot: string;
+  /**
+   * The mutable-state root: baton, pending ledger, worktrees, prior-attempt
+   * records. Here because it is the root a disk read of the queue descends
+   * from ({@link readQueueOnDisk}) — the outermost directory the caller
+   * answers for, whether or not it sits inside the repo.
+   */
+  readonly flumeDir: string;
   /** The pending ledger directory's resolved path, as this tick's chain declared it. */
   readonly pendingDir: string;
   /**
@@ -178,6 +186,16 @@ function writesPendingLedger(
 }
 
 /**
+ * The subject {@link readQueueOnDisk}'s descent names when it refuses
+ * (`isDirectoryOrAbsentUnder`, `src/fsProbe.ts`) — one spelling, so the rung
+ * an operator is told to go fix reads the same whichever ancestor was
+ * obstructed. Not {@link reportedPendingDir}: that names *which* queue a
+ * report is about, while this names *what* the unreadable thing is, and the
+ * refusal already carries the obstructed path itself.
+ */
+const QUEUE_SUBJECT = "pending queue";
+
+/**
  * The queue directory's listing on disk, each entry file read: every
  * `*.json` **directly** under `dir` and nothing else (`spec/pending.md`,
  * *The ledger is a directory — one entry per file*). `null` when the
@@ -193,19 +211,28 @@ function writesPendingLedger(
  * (`.claude/rules/engineering.md`, *Loud or nothing*). A `.json` entry that
  * is a symlink is read as the file it is, and a loop under it throws with it.
  *
+ * That absence is proven from the **path**, never from the errno the listing
+ * raised: a plain file above the queue is `ENOENT` on win32 and `ENOTDIR` on
+ * posix (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so an errno-keyed silent arm dispatches one
+ * host's tick over an obstructed queue as though nothing were planned. So the
+ * same descent `PriorAttemptStore.readAll` and `readMergingMarkers` run
+ * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`), from `stateRoot` down
+ * to `dir`; the listing past it keeps no absent arm of its own, because every
+ * ancestor is proven by then. `stateRoot` is where the descent starts: the
+ * caller declared it, and what stands above it is the caller's to answer for.
+ *
  * Names are sorted so two hosts' directory orders cannot produce two
  * listings; what a selection picks in is the queue's declared order, applied
  * at its own home (`byQueueOrder`, `src/selection.ts`).
  */
-export function readQueueOnDisk(dir: string): QueueFile[] | null {
-  let listing;
-  try {
-    // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
-    listing = readdirSync(namespacedJoin(dir), { withFileTypes: true });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
+export function readQueueOnDisk(
+  stateRoot: string,
+  dir: string,
+): QueueFile[] | null {
+  if (!isDirectoryOrAbsentUnder(QUEUE_SUBJECT, stateRoot, dir)) return null;
+  // win32 MAX_PATH: namespacedJoin (src/paths.ts) is the shared idiom.
+  const listing = readdirSync(namespacedJoin(dir), { withFileTypes: true });
   return listing
     .filter((d) => !d.isDirectory() && d.name.endsWith(ENTRY_FILE_EXT))
     .map((d) => d.name)
@@ -339,7 +366,7 @@ export async function readGatedQueue(
   if (ctx.stateRootRel === undefined) {
     let files: QueueFile[] | null;
     try {
-      files = readQueueOnDisk(ctx.pendingDir);
+      files = readQueueOnDisk(ctx.flumeDir, ctx.pendingDir);
     } catch {
       files = null;
     }
@@ -371,7 +398,7 @@ export async function readGatedQueue(
 async function readQueueFiles(
   ctx: PendingLedgerContext,
 ): Promise<QueueFile[] | null> {
-  if (isPendingRelocated(ctx)) return readQueueOnDisk(ctx.pendingDir);
+  if (isPendingRelocated(ctx)) return readQueueOnDisk(ctx.flumeDir, ctx.pendingDir);
   // Non-relocated by the branch above, so the fold always answers.
   return readQueueAtRef(ctx.repoRoot, "HEAD", pendingDirRel(ctx)!);
 }
@@ -425,7 +452,7 @@ export async function readPendingTolerant(
 ): Promise<PendingEntry[]> {
   let files: QueueFile[] | null;
   try {
-    files = readQueueOnDisk(ctx.pendingDir);
+    files = readQueueOnDisk(ctx.flumeDir, ctx.pendingDir);
   } catch (err) {
     // Present but unreachable — a symlink loop, a permission-denied parent, a
     // `.json` entry whose read failed. `readPending`'s strict twin refuses on
@@ -790,12 +817,17 @@ export async function readPendingForDecision(
  * it, reports the failure, and exits non-zero rather than printing
  * "pending: 0" over a queue it could not read.
  *
- * The one read on this page that takes a bare path rather than a
+ * The one read on this page that takes bare paths rather than a
  * {@link PendingLedgerContext}: it runs where no chain resolved, which is the
  * whole reason it exists beside the reads that compose a declared extension.
+ * `stateRoot` is the root the listing's absence is proven from
+ * ({@link readQueueOnDisk}), which this caller holds either way.
  */
-export function readPendingLoose(pendingDir: string): ParseResult {
-  const files = readQueueOnDisk(pendingDir);
+export function readPendingLoose(
+  stateRoot: string,
+  pendingDir: string,
+): ParseResult {
+  const files = readQueueOnDisk(stateRoot, pendingDir);
   if (files === null) return { ok: true, entries: [], errors: [] };
   return parsePendingQueueLoose(files);
 }

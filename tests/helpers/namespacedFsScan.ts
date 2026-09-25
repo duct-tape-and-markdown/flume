@@ -206,10 +206,12 @@ function answeringPair(
  * first, and a second argument that is content (`writeFile`'s body) or
  * options (`mkdir`'s `{ recursive }`) is not a path and is not scanned.
  *
- * `isDirectoryOrAbsent` (`src/fsProbe.ts`) is the variadic one: argument 0
- * is the noun phrase its refusal names, and every argument after it is a
- * step of a descent the probe namespaces itself, because it owns the whole
- * walk rather than a path a caller composed.
+ * The two descent probes (`isDirectoryOrAbsent` and
+ * `isDirectoryOrAbsentUnder`, `src/fsProbe.ts`) share the last contract:
+ * argument 0 is the noun phrase the refusal names, and every argument after
+ * it is a path the probe namespaces itself, because it owns the whole walk
+ * rather than a path a caller composed — the rungs of the descent at the
+ * variadic spelling, the root and the leaf it composes them from at the other.
  *
  * The middle family is node's path-answering one: each builds its answer
  * from the path it was given (`mkdir`'s under `{ recursive }`, which is why
@@ -251,8 +253,10 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
   ...answeringPair("mkdtemp", "mkdtempSync", false),
   ...answeringPair("mkdir", "mkdirSync", false),
   ...answeringPair("realpath", "realpathSync", true),
-  [
-    "isDirectoryOrAbsent",
+  ...["isDirectoryOrAbsent", "isDirectoryOrAbsentUnder"].map<
+    [string, PathContract]
+  >((fn) => [
+    fn,
     {
       positions: (arity) =>
         Array.from({ length: Math.max(arity - 1, 0) }, (_, i) => i + 1),
@@ -260,7 +264,7 @@ const PATH_CONTRACTS = new Map<string, PathContract>([
       answer: "none",
       nativeOnly: false,
     },
-  ],
+  ]),
 ]);
 
 /**
