@@ -104,8 +104,8 @@ Two consequences of the condition, spelled out because both look like violations
 the older verb-list wording and are not. Both are the engine recording its own
 output:
 
-- **`cherry-pick`.** A fanout wave's per-entry worktree commits are carried onto the
-  tip the tick started on, in order, with `cherry-pick --abort` on conflict.
+- **`cherry-pick`.** A fanout wave's per-entry worktree commits are carried onto the trunk as it then stands,
+each as its agent finishes, under the ship lock, with `cherry-pick --abort` on conflict.
 - **Ephemeral `flume/**` branch names.** `createWorktree` constructs
   `flume/<slug>` —
   the slug is a fanout entry's tag under fanout and the phase name under singleton
@@ -488,9 +488,9 @@ agent invocation, no commit, `handoff` still runs so the chain can pass the bato
   `rev-parse` and the pending read, nothing else; `promptArgs`, which runs after
   provisioning, sees `ctx.cwd` as the worktree and every other field identical.
   A fanout decline is per-entry and consulted with `ctx.cwd` set to that entry's
-  worktree — which means it runs *after* the whole batch
-  has been provisioned (`createWorktree`, serially) and after every `setupWorktree`
-  hook has completed, dependency install included. A declined fanout entry therefore
+  worktree — which means it runs *after* the wave's initial fill has been provisioned (`createWorktree`,
+serially) and after every `setupWorktree` hook has completed — an entry a freed slot
+pulls later is provisioned on its own as it is pulled, from the tip it is pulled at, dependency install included. A declined fanout entry therefore
   saves the agent invocation, not the worktree or its install; the worktree is built,
   skipped, and torn down with the wave.
 - **A declined tick is a distinguishable fact**, never a silent no-op: `declined: true`

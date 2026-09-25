@@ -25,7 +25,8 @@ condition are exercised — these are the details:
   is `flume/<slug>` (`createWorktree`), and `fromRef` is the tip the tick
   started on.
 - `git branch -D <branch>` at teardown.
-- The per-entry commits are `cherry-pick`ed onto that same tip, in batch order —
+- The per-entry commits are `cherry-pick`ed onto the trunk as it then stands, one at a time
+  under the ship lock, each as its agent finishes —
   the other half of the same carve-out, declared in `spec/loop.md`.
 
 The refs involved are engine-created, engine-consumed, and engine-deleted within one wave. No
