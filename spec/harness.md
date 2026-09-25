@@ -204,11 +204,14 @@ invocation, before and after.
 A declared CI lane is a findings source beside the inbox. The inbox slice
 reads the latest completed run of the declared workflow job for the tip's branch
 through the forge's CLI, and the block states that invocation and its raw
-answer — run id, created instant, job conclusion — beside each lane's verdict,
-so a divergence is self-evidencing; a newest run created before the tip's own
-commit reads as `UNREAD`, never green or red, naming both instants, because a
-forge index that can answer stale must not be read as current in either
-direction, takes the failing test titles as findings
+answer — run id, the run's own commit, job conclusion — beside each lane's
+verdict, so a divergence is self-evidencing; a newest run whose own commit is
+not the tip reads as `UNREAD`, never green or red, naming both commits,
+because a forge index that can answer stale must not be read as current in
+either direction, and the run's commit is the forge's statement of which tree
+it judged where an ordering of instants is a reconstruction of it — an amended
+tip, a re-run of an older run, and a push made after the tip was committed all
+pass an instant comparison over the wrong tree. It takes the failing test titles as findings
 keyed by lane name and title, and files or re-files each the way it drains a
 record: a title already heading a queue entry or an open question is not
 re-filed, and a title the latest run reports green closes in the plan commit
@@ -219,7 +222,7 @@ no completed run for the tip yet — renders as unread and says so, never as
 green.
 
 A lane makes the inbox slice live exactly when its latest completed run for
-the tip's branch failed, that run is past the stamp the slice last wrote for
+the tip's branch is the tip's own and failed, that run is past the stamp the slice last wrote for
 the lane, and — where the lane declares a title reader — its failing-title
 set differs from the set the stamp carries. The reader is the consumer's: a
 pattern or a function over the run's log, stating the grammar its runner
