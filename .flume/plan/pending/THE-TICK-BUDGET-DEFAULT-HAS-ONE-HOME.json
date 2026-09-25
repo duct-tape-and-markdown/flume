@@ -8,26 +8,31 @@
     "edit": [
       {
         "path": "src/cli.ts",
-        "description": "`loop`'s `--max` default reads `DEFAULT_TICK_BUDGET` rather than its own literal"
+        "description": "`loop`'s `--max` default reads `DEFAULT_TICK_BUDGET`, and `log`'s `-n` default the constant its own count gains, rather than their own literals"
       },
       {
         "path": "src/cliHelp.ts",
-        "description": "the top-level page's loop cap is interpolated from that constant, as the loop page's own line already is"
+        "description": "the top-level page's loop cap and both pages' log count are interpolated from those constants, as the loop page's own cap line already is"
+      },
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "the log count's home, beside the bound the same history already carries"
       },
       {
         "path": "tests/docComments.test.ts",
-        "description": "the literal scan over both sites, beside the `abortThreshold` one it copies"
+        "description": "the literal scan over every site of both defaults, beside the `abortThreshold` one it copies"
       }
     ]
   },
-  "summary": "`flume loop`'s default cap and the top-level help page each spell 50 beside `DEFAULT_TICK_BUDGET`, whose own doc claims one home — the constant decides nothing",
+  "summary": "`flume loop`'s cap and `flume log`'s count are each spelled as a literal in the verb and again on the help pages — `DEFAULT_TICK_BUDGET` decides nothing and the log count has no constant at all",
   "per": {
     "path": ".claude/rules/engineering.md",
     "section": "Derived state is computed, never restated beside its source"
   },
-  "acceptance": "the value `flume loop` caps a run at and every help page stating that cap both read `DEFAULT_TICK_BUDGET`, so moving the constant moves the behavior and both pages together",
+  "acceptance": "every default a `--help` page states is read from the one constant the verb's own code reads — `DEFAULT_TICK_BUDGET` for `flume loop`'s cap, a home of its own for `flume log`'s count — so moving either moves the behavior and every page stating it together",
   "tests": [
-    "the loop verb and the top-level help page restate no DEFAULT_TICK_BUDGET literal"
+    "the loop verb and the top-level help page restate no DEFAULT_TICK_BUDGET literal",
+    "no help page in src/cliHelp.ts spells the flume log default count as a literal"
   ],
-  "notes": "Verified this tick: `src/cli.ts:1290` is `let max = 50` and always passes `tickBudget: max`, so `DEFAULT_TICK_BUDGET` (`src/loopSupervisor.ts:64`) is unreachable from the CLI; `src/cliHelp.ts:81` spells 50 while `:211` interpolates it. Move the constant and the loop page moves alone, against a cap and a top-level page that did not. `tests/docComments.test.ts:106` is the existing arm for the sibling default. Seams `src/cliHelp.ts` with THE-TICK-EXIT-CODE-CAUSE-IS-LABELLED-AT-ITS-ARM."
+  "notes": "Verified. Cap: `src/cli.ts:1321` is `let max = 50` and always passes `tickBudget: max`, so `DEFAULT_TICK_BUDGET` (`src/loopSupervisor.ts:64`) is unreachable from the CLI; `src/cliHelp.ts:239` spells 50 while `:336` interpolates it. Count: `src/cli.ts:743` is `let n = 10` against no constant, spelled again at `src/cliHelp.ts:247` and `:443`. `tests/docComments.test.ts:159` is the existing arm for the sibling default. Seams `src/cliHelp.ts` with THE-VERB-PAGES-NAME-THE-ROOT-RESOLUTION-REFUSAL."
 }

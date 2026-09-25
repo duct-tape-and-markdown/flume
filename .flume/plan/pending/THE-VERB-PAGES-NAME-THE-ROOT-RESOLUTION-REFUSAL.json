@@ -1,0 +1,34 @@
+{
+  "tag": "THE-VERB-PAGES-NAME-THE-ROOT-RESOLUTION-REFUSAL",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the two root-resolution refusals labelled once as the `74` row's shared causes already are, rendered into every verb's exit-2 row, and `status` gains one"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the `flume status` section's range, and each verb section's exit-2 sentence"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the two refusals driven through a real verb, beside the `74` row's own per-arm cause pin and the status range pin they widen"
+      }
+    ]
+  },
+  "summary": "Both state-root resolution refusals exit 2 from every verb, and `flume status --help` names 0 and 74 alone — a page stating a narrower range than the status a caller keys on",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Exit codes — the run never lies to CI"
+  },
+  "acceptance": "every verb's `--help` exit-code block states the two refusals state-root resolution takes before any verb reaches work of its own — the inherited cross-repo stamp and the second state root in the checkout — among its exit-2 causes, labelled once as the shared `74` causes already are and read against a refusal a real verb really took rather than a fourth hand copy, so `flume status` names 2 at all and no page states a narrower range than its own process returns",
+  "tests": [
+    "flume status --help names the exit code the state-root resolution refusals take",
+    "every verb's --help states both state-root resolution refusals among its exit-2 causes"
+  ],
+  "notes": "Measured: `flume status --help` names 0 and 74 alone, while a cross-repo `FLUME_DIR_RESOLVED_FOR` stamp and a root relocated beside a bay holding `awake` each exit 2 there. `SHARED_ROOT_CAUSES` (`src/cliHelp.ts:43`) holds the three 74 causes while its own doc claims every way root resolution fails lands there; `src/cli.ts:396` is the catch. `docs/CLI.md:25` states it in the preamble, no verb section does; CLI-DOC-STATUS-LOG-EXIT-CODES-PINNED (`:903`) drives three arms, none the seam."
+}
