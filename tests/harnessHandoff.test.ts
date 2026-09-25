@@ -352,7 +352,7 @@ describe("the harness package's default handoff", () => {
     expect(handoff(departed)).toEqual([]);
   });
 
-  it("a build tick whose prompt never rendered wakes the inbox slice", () => {
+  it("a build tick whose prompt never rendered wakes no producer", () => {
     const handoff = defaultHandoff(sliceSet(refusalReader()));
     const queued = {
       pendingAfter: [entry("UNRENDERABLE")],
@@ -365,21 +365,29 @@ describe("the harness package's default handoff", () => {
       priorAttempts: store(record("UNRENDERABLE", "render-refused")),
     });
 
-    // Nothing about the tree changes between attempts on a refused render,
-    // so a set with no producer in it is the wall, forever.
-    expect(handoff(walled)).toEqual([INBOX_PHASE, BUILD_PHASE]);
+    // A prompt whose spans and hooks did not resolve: no agent ran, nothing
+    // was decided about the entry, and the section's enumeration of what a
+    // producer resolves does not name it (`spec/harness.md`, *The default
+    // `handoff`*) — so the drain, which would have nothing to file off this
+    // record, stays out of the set. The entry is the next wave's, which is
+    // also what the per-entry refusal says about it: one table, both surfaces
+    // (`harness/standingRefusal.ts`).
+    expect(handoff(walled)).toEqual([BUILD_PHASE]);
 
-    // The control: a reverted commit is worth retrying from the same queue,
-    // and asks no producer for anything. Both the tick's fate and the record
-    // it left move together, because the engine stamps the one onto the
-    // other.
-    const reverted = tickResult({
+    // The control, one fact at a time: the same tick whose record is a
+    // declined ship wakes the drain, so the answer above is this record's mode
+    // and not a wake set that never names the inbox. Both the tick's fate and
+    // the record it left move together, because the engine stamps the one onto
+    // the other.
+    const parked = tickResult({
       ...queued,
-      committed: false,
-      noCommit: "gate-revert",
-      priorAttempts: store(record("UNRENDERABLE", "gate-revert")),
+      committed: true,
+      priorAttempts: store(record("UNRENDERABLE", "not-shipped")),
+      entries: [
+        outcome({ tag: "UNRENDERABLE", shipped: false, mergeOutcome: "not-shipped" }),
+      ],
     });
-    expect(handoff(reverted)).toEqual([BUILD_PHASE]);
+    expect(handoff(parked)).toEqual([INBOX_PHASE, BUILD_PHASE]);
   });
 
   it("the slice that just ran and committed nothing is not re-woken", () => {

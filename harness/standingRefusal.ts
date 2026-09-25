@@ -1,24 +1,26 @@
 /**
- * Which standing prior-attempt records are refusals only a plan slice can
- * resolve, and which of those are keyed to an entry the queue still carries.
+ * Which standing prior-attempt records are refusals a producer resolves, and
+ * which of those are keyed to an entry the queue still carries.
  *
- * **One question, one reader, two surfaces.** The inbox slice's window is
- * the only thing that asks it (`inboxWindow.ts`), and it asks the same way
- * whichever surface hands it the pair of engine facts — the queue and the
- * record store: `TickContext.pending`/`priorAttempts` at the `shouldRun`
- * consult, `TickResult.pendingAfter`/`priorAttempts` off the window the
- * default handoff builds for the tick that follows (`handoff.ts`). A second
- * classifier beside either surface is how a mode comes to route to the inbox
- * from one and nowhere from the other (`.claude/rules/engineering.md`, *The
- * fix lands at the mechanism*).
+ * **One question, one table, two askers.** Whether a standing record is a
+ * refusal only a producer can move is asked on both halves of the routing
+ * decision: the wake set asks it to route the record to the drain
+ * (`inboxWindow.ts`), and the package's per-entry refusal asks it to hold the
+ * entry back until that drain answers (`defaultRefusesEntry`, `handoff.ts`).
+ * One table answers, and {@link isStandingRefusal} is its one indexing site —
+ * either surface spelling the classification for itself is how an entry comes
+ * to be walled on one surface and re-picked on the other, or woken into a
+ * drain with nothing to file, every tick, for as long as the record stands
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
- * **The park/continuation split has a second reader, and so is exported.**
- * Which declined ship is a park is the same question on both halves of the
- * routing decision: the wake set asks it to route the record to the drain,
- * and the per-entry refusal asks it to hold the entry back until the drain
- * answers ({@link isContinuation}, `handoff.ts`). One of the two spelling it
- * for itself is how an entry comes to be walled on one surface and re-picked
- * on the other, every tick, for as long as the park stands.
+ * The wake set asks it over whichever surface hands it the pair of engine
+ * facts — the queue and the record store: `TickContext.pending`/
+ * `priorAttempts` at the `shouldRun` consult, `TickResult.pendingAfter`/
+ * `priorAttempts` off the window the default handoff builds for the tick that
+ * follows (`handoff.ts`). The per-entry refusal asks it over the one record
+ * the engine hands it, and adds the declaration key that scopes the wall to
+ * the reconciliation it is waiting for — the one thing that surface asks and
+ * this module does not.
  *
  * Nothing here re-derives an engine fact. The record's `mode` is the one the
  * engine stamped, its `touchedPaths` are the list the `shipped` predicate was
@@ -38,51 +40,89 @@ import type { PriorAttempt } from "../src/Prompt.js";
 import { declaredPutDown } from "./putDown.js";
 
 /**
- * Which prior-attempt modes are refusals only a plan slice can resolve.
+ * Which prior-attempt modes are refusals a producer resolves — the modes the
+ * cited section enumerates, and nothing beside them (`spec/harness.md`, *The
+ * default `handoff`*).
  *
- * `clean-exit` is a build agent that looked and declined; `render-refused`
- * is a prompt that never resolved, so no agent ran at all. Both leave the
- * entry exactly as pickable as it was, and neither is a state the next wave
- * can move — for a walled render, forever, since nothing about the tree
- * changes between attempts. `not-shipped` is a commit that landed and passed
- * every gate which the consumer's own `shipped` predicate declined, which is
- * plan's for the park among them — the entry the tick could not do, whose
- * reason is in the note it wrote. Waking the slice that drains records is
- * what puts each of them in front of the only phase that can drop, re-scope,
- * or answer the entry.
+ * `clean-exit` is a build agent that ran, read the entry, and left no usable
+ * commit: what it decided is a function of the entry it was handed, so
+ * re-dispatching it against that same declaration buys the same decision at
+ * full agent price. `not-shipped` is a commit that landed and passed every
+ * gate which the consumer's own `shipped` predicate declined, which is plan's
+ * for the park among them — the entry the tick could not do, whose reason is
+ * in the note it wrote. Each is a producer's to drop, re-scope or answer, so
+ * one standing holds the entry back from the next build wave *and* wakes the
+ * slice that drains records, which is the only phase that can answer it.
  *
  * The mode alone does not settle `not-shipped`, which is why this table is
  * not the whole answer: the package's own predicate declines a continuation
  * on the same mode, and that one is build's ({@link isContinuation}).
  *
- * The other three are not plan's. A `gate-revert` and a `platform-preempt`
- * are a reverted commit and a killed process, both worth retrying from the
- * same queue, and a build wave is what retries them. `tip-moved` is a span
- * discarded because its base stopped being an ancestor: the agent's work was
- * not at fault and the next wave starts from a live base, so it too is the
- * wave's.
+ * The other four are not a producer's. A `gate-revert` and a
+ * `platform-preempt` are a reverted commit and a killed process, both worth
+ * retrying from the same queue, and a build wave is what retries them.
+ * `tip-moved` is a span discarded because its base stopped being an ancestor:
+ * the agent's work was not at fault and the next wave starts from a live
+ * base, so it too is the wave's. And a `render-refused` is a prompt whose
+ * spans and hooks did not resolve against the environment — no agent ran, and
+ * no producer was asked for anything.
+ *
+ * **The render wall is not this table's to declare.** A render that fails
+ * identically every wave is a wall no build agent can move, and holding the
+ * entry for a producer is one answer to it — but it is also nothing the drain
+ * can file, and the enumeration this table answers names three refusals and
+ * not this one. Walling it here is the package minting a fourth member of a
+ * set the spec states; if that wall is wanted, it is stated where the
+ * enumeration is.
  *
  * Exhaustive over `PriorAttempt["mode"]` by type, so a mode the engine adds
- * is a type error here and must be classified rather than defaulting to "not
- * a refusal". That union is `NoCommitMode` plus the two merge fates a record
- * can carry, so a no-commit mode the engine mints is caught here too.
+ * is a type error here and must be classified rather than defaulting either
+ * way — to "not a refusal", which costs the drain a record it never sees, or
+ * to "hand it to build again", which costs an invocation per tick for the
+ * rest of the run. That union is `NoCommitMode` plus the two merge fates a
+ * record can carry, so a no-commit mode the engine mints is caught here too.
  *
- * Module-local: both readers reach it through {@link standingRefusals}
- * below, so the classification has exactly one indexing site and no caller
- * can key it by a mode it decided for itself.
+ * Module-local, and read at exactly one site: both askers reach it through
+ * {@link isStandingRefusal} below, so neither can key it by a mode it decided
+ * for itself.
  */
-const PLAN_RESOLVES_STANDING: Record<PriorAttempt["mode"], boolean> = {
+const RESOLVED_BY_A_PRODUCER: Record<PriorAttempt["mode"], boolean> = {
   "clean-exit": true,
-  "render-refused": true,
   "not-shipped": true,
   "gate-revert": false,
   "platform-preempt": false,
+  "render-refused": false,
   "tip-moved": false,
 };
 
 /**
- * The standing prior-attempt records that are refusals only a plan slice can
- * resolve **and** are keyed to an entry the queue still carries.
+ * Whether one standing record against one entry is a refusal a producer
+ * resolves: its mode is one {@link RESOLVED_BY_A_PRODUCER} names, and it is
+ * not the one `not-shipped` a build tick declared a continuation
+ * ({@link isContinuation}).
+ *
+ * The whole classification, so that a surface asking it asks nothing else.
+ * The queue walk below filters by it; the per-entry refusal calls it over the
+ * record the engine handed it and adds only the declaration-key comparison
+ * that is its own (`defaultRefusesEntry`, `handoff.ts`). Both facts it reads
+ * are on the record — the mode the engine stamped and the footprint the
+ * `shipped` predicate was handed — so no tree is read and neither asker can
+ * answer from a second reading of a note path.
+ */
+export function isStandingRefusal(
+  stateRoot: string,
+  entry: PendingEntry,
+  record: PriorAttempt,
+): boolean {
+  return (
+    RESOLVED_BY_A_PRODUCER[record.mode] &&
+    !isContinuation(stateRoot, entry, record)
+  );
+}
+
+/**
+ * The standing prior-attempt records that are refusals a producer resolves
+ * **and** are keyed to an entry the queue still carries.
  *
  * Keyed to a live entry is the whole test: a record whose entry has left the
  * queue outlived the work it was about, and routing on it would hold a slice
@@ -126,10 +166,7 @@ export function standingRefusals(
   return pending.flatMap((entry) => {
     const record = priorAttempts.get(entryAttemptKey(entry));
     if (record === undefined) return [];
-    return PLAN_RESOLVES_STANDING[record.mode] &&
-      !isContinuation(stateRoot, entry, record)
-      ? [record]
-      : [];
+    return isStandingRefusal(stateRoot, entry, record) ? [record] : [];
   });
 }
 
@@ -146,7 +183,8 @@ export function standingRefusals(
  * wakes the drain on the second with nothing to reconcile, every tick, for as
  * long as the entry takes — and, on the other surface, hands the *first*
  * straight back to a build wave that will read exactly what the last one
- * could not do (`defaultRefusesEntry`, `handoff.ts`).
+ * could not do. Which is why it is read inside
+ * {@link isStandingRefusal} rather than beside either asker.
  *
  * Which one it was is **on the record**, never re-derived: `touchedPaths` is
  * the same list the predicate itself was handed (`buildNotShipped`,
@@ -169,7 +207,7 @@ export function standingRefusals(
  * the record states its own `omittedPaths` and renders whole into the prompt
  * (`inboxWindow.ts`).
  */
-export function isContinuation(
+function isContinuation(
   stateRoot: string,
   entry: PendingEntry,
   record: PriorAttempt,

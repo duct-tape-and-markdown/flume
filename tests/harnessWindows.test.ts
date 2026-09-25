@@ -31,6 +31,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import {
   defaultHandoff,
+  defaultRefusesEntry,
   parseDeclaration,
   planSliceWindows,
   RECORD_MAX_BYTES,
@@ -46,7 +47,8 @@ import {
   INBOX_PHASE,
   type PlanSlice,
 } from "../harness/declaration.ts";
-import type { TickResult } from "../src/Phase.ts";
+import { entryDeclaredKey } from "../src/entryKey.ts";
+import type { EntryRefusalContext, TickResult } from "../src/Phase.ts";
 import type {
   PendingEntry,
   QueueParseFailure,
@@ -854,7 +856,7 @@ it("the inbox window and the build handoff agree on every prior-attempt mode", (
       .filter((v) => v.window)
       .map((v) => v.mode)
       .sort(),
-  ).toEqual(["clean-exit", "not-shipped", "render-refused"]);
+  ).toEqual(["clean-exit", "not-shipped"]);
 });
 
 it("a standing tip-moved prior-attempt record leaves the inbox window shut", () => {
@@ -891,6 +893,140 @@ it("a standing tip-moved prior-attempt record leaves the inbox window shut", () 
     tipMoved: false,
     parked: true,
   });
+});
+
+it("a standing render-refused prior-attempt record leaves the inbox window shut", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+  const inbox = windows()[INBOX_PHASE];
+
+  const tag = "HARNESS-RENDER-REFUSED";
+  const pending = [entry(tag)];
+  // A prompt whose spans and hooks did not resolve: no agent ran, so nothing
+  // was decided about the entry and no producer was asked for anything. The
+  // section's enumeration of what a producer resolves does not name it
+  // (`spec/harness.md`, *The default `handoff`*), and the drain woken over one
+  // would have nothing to file — while the entry is handed to the next build
+  // wave regardless, because the per-entry refusal reads the same table.
+  const refused = record(tag, "render-refused");
+
+  const live = (rec: PriorAttempt): boolean =>
+    inbox.live({
+      flumeDir: stateRoot(),
+      pickable: true,
+      pending,
+      priorAttempts: new Map([[`${rec.key}:${rec.keyedAs}`, rec]]),
+    });
+
+  expect({
+    // Vacuity: nothing waits in the record queue, so the refusal leg is the
+    // window's only possible opener here.
+    noRecords: inbox.live({ flumeDir: stateRoot(), pickable: true }),
+    // ... and the record reaches that leg: it is entry-keyed to a tag the
+    // queue still carries, so `false` below is the mode's doing.
+    keyedToLiveEntry:
+      refused.key === "entry" && slugify(pending[0]!.tag) === refused.keyedAs,
+    renderRefused: live(refused),
+    // Control: the same fixture with the one mode changed opens the window.
+    parked: live(record(tag, "not-shipped")),
+  }).toEqual({
+    noRecords: false,
+    keyedToLiveEntry: true,
+    renderRefused: false,
+    parked: true,
+  });
+});
+
+/**
+ * The same question — "is this standing record a refusal a producer resolves"
+ * — asked on the **two surfaces that act on it**: the window that wakes the
+ * drain (`inboxWindow.ts`), and the per-entry refusal that holds the entry
+ * back from the next build wave until that drain answers
+ * (`defaultRefusesEntry`, `harness/handoff.ts`).
+ *
+ * Both real readers run here over one record per mode, and **neither calls the
+ * other** — which is what the file's sibling agreement case above cannot say,
+ * since the handoff it compares the window against is handed that very window.
+ * The only thing that can make these two answer alike over the engine's whole
+ * roster is the one table they share (`harness/standingRefusal.ts`). They were
+ * two tables that disagreed on `render-refused`: one record woke the drain with
+ * nothing to file and was handed straight back to the wave that produced it.
+ */
+it("the inbox window and the per-entry build refusal agree on every prior-attempt mode", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+  const inbox = windows()[INBOX_PHASE];
+
+  const queued = entry("HARNESS-BOTH-SURFACES");
+  const pending = [queued];
+
+  /**
+   * One standing record of `mode`, keyed as the engine keys one and stamped
+   * with the declaration the queue now carries — the key the refusal compares,
+   * read off the engine's own derivation rather than spelled here.
+   */
+  const standing = (mode: PriorAttemptMode): PriorAttempt => ({
+    ...record(queued.tag, mode),
+    declaredAs: entryDeclaredKey(queued),
+  });
+
+  /** Whether the real inbox window opens over that one record. */
+  const wakesTheDrain = (rec: PriorAttempt): boolean =>
+    inbox.live({
+      flumeDir: stateRoot(),
+      pickable: true,
+      pending,
+      priorAttempts: new Map([[`${rec.key}:${rec.keyedAs}`, rec]]),
+    });
+
+  // The real refusal, bound over the state root the chain factory binds it
+  // over, against the context the engine composes at selection
+  // (`bindEntryRefusal`, `src/selection.ts`).
+  const refuses = defaultRefusesEntry(STATE_ROOT_REL);
+  const wallsTheEntry = (rec: PriorAttempt): boolean => {
+    const ctx: EntryRefusalContext = {
+      entry: queued,
+      priorAttempt: rec,
+      headSha: "0".repeat(40),
+      declaredAs: entryDeclaredKey(queued),
+    };
+    return refuses(ctx);
+  };
+
+  const verdicts = PRIOR_ATTEMPT_MODES.map((mode) => {
+    const rec = standing(mode);
+    return { mode, drain: wakesTheDrain(rec), wall: wallsTheEntry(rec) };
+  });
+
+  // Vacuity: every mode the engine mints is judged, the fixture's records
+  // really do reach both legs — entry-keyed to a tag the queue carries, and
+  // standing against the declaration the refusal compares — and both verdicts
+  // occur on both sides, since an agreement over one constant answer proves
+  // nothing.
+  const sample = standing("clean-exit");
+  expect(verdicts.length).toBe(PRIOR_ATTEMPT_MODES.length);
+  expect(verdicts.length).toBeGreaterThan(0);
+  expect(sample.keyedAs).toBe(slugify(queued.tag));
+  expect(sample.declaredAs).toBe(entryDeclaredKey(queued));
+  expect(inbox.live({ flumeDir: stateRoot(), pickable: true })).toBe(false);
+  expect(verdicts.some((v) => v.drain)).toBe(true);
+  expect(verdicts.some((v) => !v.drain)).toBe(true);
+  expect(verdicts.some((v) => v.wall)).toBe(true);
+  expect(verdicts.some((v) => !v.wall)).toBe(true);
+
+  expect(verdicts.map((v) => [v.mode, v.drain])).toEqual(
+    verdicts.map((v) => [v.mode, v.wall]),
+  );
+
+  // And the set the two share is the section's own enumeration, rather than
+  // whatever pair happens to agree (`spec/harness.md`, *The default
+  // `handoff`*).
+  expect(
+    verdicts
+      .filter((v) => v.wall)
+      .map((v) => v.mode)
+      .sort(),
+  ).toEqual(["clean-exit", "not-shipped"]);
 });
 
 it("a rendered window names the sha its cursor may advance to and defers the commits past its budget", () => {

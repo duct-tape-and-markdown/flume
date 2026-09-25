@@ -69,7 +69,7 @@ import {
   type PlanSlice,
 } from "./declaration.js";
 import { CONTRACT_TOUCHING_FIELD } from "./entryExtension.js";
-import { isContinuation } from "./standingRefusal.js";
+import { isStandingRefusal } from "./standingRefusal.js";
 
 /**
  * A phase's `handoff` as the engine declares it, aliased so the declaration
@@ -159,68 +159,30 @@ export interface HandoffSlice {
 }
 
 /**
- * Which prior-attempt modes describe an outcome only a producer can move.
- *
- * Two of them. A `clean-exit` is an agent that ran, read the entry, and left
- * no usable commit — so what it decided is a function of the entry it was
- * handed, and re-dispatching it against that same declaration buys the same
- * decision at full agent price. A `not-shipped` is a commit that landed and
- * passed every gate which the chain's own `shipped` predicate declined, and
- * the package's build tick declines one by **parking**: the entry it could
- * not do, for a reason it wrote into a note only a plan slice drains. The
- * next wave re-offered that entry reads exactly what the last one parked on.
- *
- * The mode alone does not settle `not-shipped`, because the other thing a
- * build tick declines a ship with is a **continuation** — a green segment
- * whose rest is the next build tick's, and nothing a producer has to
- * reconcile. That one is handed straight back, told apart by where the tick
- * wrote its note and never by the mode
- * ({@link isContinuation}, `harness/standingRefusal.ts`).
- *
- * The remaining three name something the next wave can change with nobody
- * rewriting anything: a `gate-revert` leaves the gate's own verdict on the
- * record for the retry to read, a `platform-preempt` never reached the work
- * at all, a `render-refused` failed on spans and hooks that resolve against
- * the environment, and a `tip-moved` span is the wave's to carry from its
- * next base.
- *
- * Exhaustive over `PriorAttempt["mode"]` by type, for the reason
- * `PLAN_RESOLVES_STANDING` (`harness/standingRefusal.ts`) and `PUT_DOWN`
- * (`harness/judgeGate.ts`) are exhaustive over theirs: a mode the engine adds
- * is a type error here and must be classified, rather than defaulting to "hand
- * it to build again" — the direction that costs an invocation per tick for
- * the rest of the run.
- */
-const RESOLVED_BY_A_PRODUCER: Record<PriorAttempt["mode"], boolean> = {
-  "clean-exit": true,
-  "not-shipped": true,
-  "gate-revert": false,
-  "platform-preempt": false,
-  "render-refused": false,
-  "tip-moved": false,
-};
-
-/**
  * The package's per-entry refusal (`spec/harness.md`, *The default
  * `handoff`*) — the chain's own `refusesEntry` (`src/Phase.ts`), which the
  * engine consults over every entry the gate switch and this run's quarantine
  * both cleared, and which the harness is the first declarer of.
  *
- * Refuses the record a producer has to answer ({@link RESOLVED_BY_A_PRODUCER})
- * written against the entry **as the queue now declares it** — a clean exit,
- * and the declined ship that parked. Both halves are the engine's own facts,
- * and neither is composed here — the `mode` it stamped on the record, and the
- * declaration key it reports twice, once on the record it wrote and once for
- * the entry this selection is about (`EntryRefusalContext.declaredAs`,
- * `src/Phase.ts`). Never a heuristic of the package's own over a commit range,
- * a final message, or a tag it has seen before
- * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ * Refuses the record a producer has to answer ({@link isStandingRefusal},
+ * `harness/standingRefusal.ts`) written against the entry **as the queue now
+ * declares it** — a clean exit, and the declined ship that parked. Both halves
+ * are the engine's own facts, and neither is composed here — the `mode` it
+ * stamped on the record, and the declaration key it reports twice, once on the
+ * record it wrote and once for the entry this selection is about
+ * (`EntryRefusalContext.declaredAs`, `src/Phase.ts`). Never a heuristic of the
+ * package's own over a commit range, a final message, or a tag it has seen
+ * before (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
  *
- * **The park is told from the continuation by the classification the wake set
- * already makes**, over the record's own `touchedPaths`
- * ({@link isContinuation}) — no tree is read and no second reading of a note
- * path is spelled here, so an entry cannot be walled on one surface and
- * re-picked on the other. That reading is why the state root is a parameter:
+ * **Which records those are is not decided here.** Which modes a producer
+ * resolves, and which declined ship is the park rather than the continuation,
+ * are one table and one split read through {@link isStandingRefusal} — the
+ * same predicate the wake set's inbox leg reads, over the record's own `mode`
+ * and `touchedPaths`. A second table beside this surface is how one record
+ * comes to wall a build wave the drain was never woken for, or to be handed
+ * straight back while the drain waits on it
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). No tree
+ * is read either way, which is why the state root is a parameter:
  * where a note lives is a fact of the consumer's layout, and the chain factory
  * holds it in git's own alphabet (`chain.ts`).
  *
@@ -251,9 +213,8 @@ export function defaultRefusesEntry(
     const prior = ctx.priorAttempt;
     if (prior === undefined) return false;
     return (
-      RESOLVED_BY_A_PRODUCER[prior.mode] &&
-      prior.declaredAs === ctx.declaredAs &&
-      !isContinuation(stateRoot, ctx.entry, prior)
+      isStandingRefusal(stateRoot, ctx.entry, prior) &&
+      prior.declaredAs === ctx.declaredAs
     );
   };
 }
