@@ -23,6 +23,10 @@
         "description": "each shared block becomes its placeholder"
       },
       {
+        "path": "harness/prompts/build.md",
+        "description": "the one span this prompt shares with the three slices — the `project conventions` line — becomes its placeholder"
+      },
+      {
         "path": "tests/harnessPrompts.test.ts",
         "description": "the seam: the `PLAN_SLICES` pins reading a block that becomes a placeholder, shared with THE-PROTOCOL-SEAM-IS-PINNED-AT-EVERY-PHASE-PROMPT"
       }
@@ -33,6 +37,6 @@
     "path": ".claude/rules/posture-sweep.md",
     "section": "Routing"
   },
-  "acceptance": "every block the three slice prompts spell byte-identically is one placeholder rendered from one `promptArgs` value, the shape `QUESTIONS_INDEX` already takes, and every rendered prompt is unchanged",
-  "notes": "Third body of this family: 0fe5ae63, 7f0bdf4e, a7c044e8. Target shape is the tree's own: `QUESTIONS_INDEX` (`harness/prompts.ts:200`, `:270`) is one render three prompts share. Measured byte-identical this tick across the three slice prompts: `<pending-now>`, `<plan-state>`, `<plan-state-shape>`, `<artifacts>`, and the `<open-questions-index>` and `<schema>` wrappers. Claims no property; held by the `PLAN_SLICES` pins in `tests/harnessPrompts.test.ts`."
+  "acceptance": "every block the three slice prompts spell byte-identically is one placeholder rendered from one `promptArgs` value, the shape `QUESTIONS_INDEX` already takes — the `project conventions` line all four phase prompts spell alike included — and every rendered prompt is unchanged",
+  "notes": "Third body of this family: 0fe5ae63, 7f0bdf4e, a7c044e8. Target shape is the tree's own: `QUESTIONS_INDEX` (`harness/prompts.ts:200`, `:270`) is one render three prompts share. Measured byte-identical across the three slice prompts: `<pending-now>`, `<plan-state>`, `<plan-state-shape>`, `<artifacts>`, the `<open-questions-index>` and `<schema>` wrappers; and, off note THE-PROTOCOL-SEAM-IS-PINNED-AT-EVERY-PHASE-PROMPT, the `project conventions` line in all four `<artifacts>` blocks. No property."
 }

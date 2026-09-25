@@ -1,0 +1,31 @@
+{
+  "tag": "THE-REFILL-READS-THE-LIVE-QUEUE-AND-THE-STOP-FLAG",
+  "gate": { "kind": "open" },
+  "priority": 30,
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveTick.ts",
+        "description": "a freed slot re-reads the queue and re-selects from it, skipping an attempted set rather than splicing a wave-start snapshot, and reads the stop flag beside the teardown signal"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the mid-wave higher-priority pull, the mid-wave stop, and the never-re-picked pin, beside the wave's refill cases"
+      }
+    ]
+  },
+  "summary": "A freed slot refills from the wave-start snapshot and reads only the teardown signal, so an entry filed mid-wave waits out the whole queue and a flag written mid-run stops nothing",
+  "per": {
+    "path": "spec/worktrees.md",
+    "section": "Fanout and worktrees — provisioning, isolation, teardown"
+  },
+  "acceptance": "a freed slot reads the queue as it stands and re-selects in priority order, skipping every entry this wave has attempted, and reads the stop flag off disk through the reader the supervisor already spends, so an entry filed mid-wave at a higher priority is pulled ahead of lower-ranked work the wave started with, a flag written mid-wave pulls nothing more while every in-flight entry finishes and merges, and the wave ends when nothing it has not attempted is pickable",
+  "tests": [
+    "a wave pulls an entry filed mid-wave at a higher priority before a lower-ranked one it started with",
+    "a wave pulls nothing more once the stop flag is written while a slot's agent runs"
+  ],
+  "pins": [
+    "a wave never pulls an entry it has already attempted"
+  ],
+  "notes": "Rulings 68eba4eb and e74af849, folded as both records asked. `fillSlots` (`src/waveTick.ts:386`) picks from `remaining` (`:249`), the wave-start snapshot, and guards on `leg.attemptCtx.stopSignal` alone (`:390`). `readPendingForDecision` (`:79`) with `leg.selection` (`:116`) is the re-read; `existsLoud(stopFlagPath(flumeDir))` (`src/loopSupervisor.ts:908`) is the flag reader to share, sync and already loud. `fillSlots` must stay sync: await the re-read in the settling slot's continuation."
+}

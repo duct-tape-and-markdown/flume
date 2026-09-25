@@ -17,6 +17,10 @@
       {
         "path": "tests/Dispatcher.test.ts",
         "description": "the interleaved case, beside the wave's merge-ordering ones"
+      },
+      {
+        "path": "src/waveTick.ts",
+        "description": "the seam: the wave leg that calls `closeWaveMerge` and holds the refill this entry's sibling rewrites"
       }
     ]
   },
@@ -30,5 +34,5 @@
     "a wave's first shipped entry leaves the queue on disk while a sibling's agent is still running",
     "each shipped entry's ledger commit lands before the next entry's cherry-pick"
   ],
-  "notes": "Spec 906a1957, half two. Verified: `closeWaveMerge` (`src/waveMerge.ts:800`) takes a second ship lock (`:820`) holding the wave's only `commitPendingUpdate`; `mergeAttempt`'s own hold is `:418`-`:783`. A refusal thrown there rides `mergeError` (`src/waveTick.ts:361`), held so siblings settle. Bound half needs none: `remaining` (`src/waveTick.ts:239`, spliced `:392`) is the wave-start snapshot, each entry once. Seams `src/waveMerge.ts` with THE-VERDICT-CARRIES-A-TIMING-PER-GATE-RUN-AND-MERGE."
+  "notes": "Spec 906a1957, half two. `closeWaveMerge` (`src/waveMerge.ts:800`) takes a second ship lock (`:820`) holding the wave's only `commitPendingUpdate`; `mergeAttempt`'s own hold is `:418`-`:783`. A refusal thrown there rides `mergeError` (`src/waveTick.ts:361`), held so siblings settle. The bound half is no longer this entry's: 68eba4eb retired the wave-start snapshot, and THE-REFILL-READS-THE-LIVE-QUEUE-AND-THE-STOP-FLAG carries it. Seams `src/waveTick.ts` and `tests/Dispatcher.test.ts` with it."
 }

@@ -1,0 +1,22 @@
+{
+  "tag": "THE-DISCIPLINE-ROSTER-NAMES-EVERY-SWEEP-CURSOR",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "harness/prompts/plan-discipline.md",
+        "description": "the plan-state bullet's sweep-slice roster names every cursor that slice's own state carries"
+      }
+    ]
+  },
+  "summary": "The shared discipline lists the sweep slice's state as `sweptThrough` and `rotation`, so a tick writing the shape it names drops `retiredThrough` and re-opens every retired locus line",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "The stamp"
+  },
+  "acceptance": "the discipline's plan-state bullet names every cursor the sweep slice carries — `retiredThrough` beside `sweptThrough` and `rotation` — so the one place a tick reads which cursors are its own agrees with the shape the package renders for that slice",
+  "notes": "Off note THE-SWEEP-PROMPT-POINTS-AT-THE-PAGES-IT-RESTATES (1). The bullet names two; `PLAN_STATE_SHAPES[\"plan-sweep\"]` (`harness/planState.ts:256`) renders three, and the field is optional, so dropping it silently re-reads as the stamp and re-opens the locus lines `harness/sweepWindow.ts:217` retired. No property: a completeness read over harness prose is fenced by `engineering.md`, *Narration is the ladder's bottom rung*. Seams the page with THE-SLICE-PROMPTS-NAME-THE-BAND-THEY-FILE-AT."
+}

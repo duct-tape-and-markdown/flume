@@ -1,0 +1,31 @@
+{
+  "tag": "THE-STATE-ROOT-WRITE-REFUSES-WITH-THE-ROOT-IT-NAMED",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/cli.ts",
+        "description": "the root seam's claim narrows to what it proves, and a failing write under the resolved root is reported with that root"
+      },
+      {
+        "path": "src/Baton.ts",
+        "description": "the awake dir's own mkdir, the measured throw site"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the obstructed-write refusal, beside the not-a-directory seam's cases"
+      }
+    ]
+  },
+  "summary": "The root seam proves the state root stats as a directory, never that anything can be made under it, so a failing write past it exits 1 on a raw stack at every verb",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a write under the resolved state root that fails refuses at the point of detection, `EX_IOERR` naming the resolved root rather than the leaf an errno carried, so no verb reaches `main()`'s catch over an unusable root and the seam above states only the usability it actually proves",
+  "tests": [
+    "flume wake exits EX_IOERR naming the resolved state root when the awake directory cannot be made"
+  ],
+  "notes": "Off note THE-OBSTRUCTED-STATE-ROOT-REFUSES-AT-ONE-SEAM, residual 1, measured decidably here: a plain file at `<flumeDir>/awake` makes `mkdirSync(.., { recursive: true })` (`src/Baton.ts:63`) throw EEXIST on every host and for every uid, so the shape instrument (`tests/helpers/denial.ts`) reaches it with no mode. `src/cli.ts:408` claims the root proven usable; `statLoud` (`:428`) proves it is a directory. `main()`'s catch (`:1744`) is the exit 1. Seams `src/cli.ts` with three standing entries."
+}
