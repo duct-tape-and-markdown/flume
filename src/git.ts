@@ -3,9 +3,9 @@
  * dispatcher needs. We avoid simple-git or isomorphic-git to keep the
  * dependency surface at `git` itself.
  *
- * Every invocation goes through `run` below, so the subcommands this module
- * reaches for are exactly what its call sites spell — read them there rather
- * than from a count here, which a new operation would leave stale.
+ * Every invocation goes through `spawnGit` below, so the subcommands this
+ * module reaches for are exactly what its call sites spell — read them there
+ * rather than from a count here, which a new operation would leave stale.
  */
 
 import { execFile } from "node:child_process";
@@ -54,7 +54,8 @@ const FALLBACK_REMOVE_RETRY_DELAY_MS = 200;
  * position-bound nor per-path: `--literal-pathspecs` is a main-command
  * option, which `ls-tree` rejects as one of its own (exit `129`), and a
  * `:(literal)` prefix has to be remembered at every call site and re-spelled
- * at every new one. Setting it on the child's environment covers every
+ * at every new one. Set on the child's environment at `spawnGit` below —
+ * where this module composes every git child it spawns — it covers every
  * pathspec of every invocation the wrapper makes, including ones not written
  * yet (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
@@ -66,15 +67,35 @@ export function literalPathspecEnv(): NodeJS.ProcessEnv {
   return { ...process.env, GIT_LITERAL_PATHSPECS: "1" };
 }
 
-async function run(
+/**
+ * One git invocation, and the only place this module composes a git child's
+ * options: the repo it runs in, the pathspec dialect every leg needs
+ * (`literalPathspecEnv` above), and the 16 MiB its captured streams are held
+ * to. Composed once rather than re-spelled per leg, so a leg written later
+ * inherits the dialect instead of having to remember it
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * Streams come back exactly as git wrote them. `run` below is the trimming
+ * form, which is what every caller reading git's own line-oriented output
+ * wants; a caller reading a file's committed bytes takes this one.
+ */
+async function spawnGit(
   cwd: string,
   args: string[],
 ): Promise<{ stdout: string; stderr: string }> {
-  const { stdout, stderr } = await exec("git", args, {
+  return exec("git", args, {
     cwd,
     env: literalPathspecEnv(),
     maxBuffer: 16 * 1024 * 1024,
   });
+}
+
+/** `spawnGit` with git's trailing newline trimmed off both streams. */
+async function run(
+  cwd: string,
+  args: string[],
+): Promise<{ stdout: string; stderr: string }> {
+  const { stdout, stderr } = await spawnGit(cwd, args);
   return { stdout: stdout.trimEnd(), stderr: stderr.trimEnd() };
 }
 
@@ -493,11 +514,11 @@ export async function showNameOnly(
  * read throws). Both are the engine substituting a verdict for a path it was
  * handed (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
- * Content comes straight off `exec`, not `run()`: `run()`'s `trimEnd()` is
- * right for git's own line-oriented output but would silently drop a real
- * file's trailing bytes — a content read wants exactly what was committed.
- * It carries the same environment, so the two legs of one read cannot run
- * under different git dialects.
+ * Content comes off `spawnGit`, not `run`: `run`'s `trimEnd()` is right for
+ * git's own line-oriented output but would silently drop a real file's
+ * trailing bytes — a content read wants exactly what was committed. Both legs
+ * of the read are the same invocation composed the same way, so the dialect
+ * they run under is one fact rather than two that agree.
  */
 export async function readFileAtRef(
   repoRoot: string,
@@ -513,11 +534,7 @@ export async function readFileAtRef(
     pathspec,
   ]);
   if (listing.trim().length === 0) return null;
-  const { stdout } = await exec("git", ["show", `${ref}:${pathspec}`], {
-    cwd: repoRoot,
-    env: literalPathspecEnv(),
-    maxBuffer: 16 * 1024 * 1024,
-  });
+  const { stdout } = await spawnGit(repoRoot, ["show", `${ref}:${pathspec}`]);
   return stdout;
 }
 

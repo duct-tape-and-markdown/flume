@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, join, toNamespacedPath } from "node:path";
 
+import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Partial mock: everything passes through to the real implementation except
@@ -131,6 +132,11 @@ import { buildFlumeApi } from "../src/flumeApi.ts";
 
 import { deadPid } from "./helpers/deadPid.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import {
+  REPO_ROOT,
+  expectNoFindings,
+  parseScopeless,
+} from "./helpers/repoProgram.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -168,6 +174,131 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(repo, { recursive: true, force: true });
+});
+
+// --- the pathspec dialect, read off every spawn the module writes ---
+
+/** The `node:child_process` specifiers an import can spell. */
+const CHILD_PROCESS = new Set(["node:child_process", "child_process"]);
+
+/** The capturing APIs a git child could be spawned through from here. */
+const SPAWN_APIS = new Set(["exec", "execFile"]);
+
+/** The composer whose result is the dialect, named as `src/git.ts` spells it. */
+const DIALECT = "literalPathspecEnv";
+
+/** Every node under `node`, itself included. */
+function eachNode(node: ts.Node, visit: (n: ts.Node) => void): void {
+  visit(node);
+  ts.forEachChild(node, (child) => eachNode(child, visit));
+}
+
+/**
+ * Whether the call hands `env: literalPathspecEnv()` to the child it spawns.
+ *
+ * Read off the call's own arguments: the claim is that the dialect is spelled
+ * *at* the invocation, and a site reaching it through a variable a few lines
+ * up is the hand-copy this reading exists to see.
+ */
+function namesDialect(call: ts.CallExpression): boolean {
+  return call.arguments.some(
+    (arg) =>
+      ts.isObjectLiteralExpression(arg) &&
+      arg.properties.some(
+        (prop) =>
+          ts.isPropertyAssignment(prop) &&
+          ts.isIdentifier(prop.name) &&
+          prop.name.text === "env" &&
+          ts.isCallExpression(prop.initializer) &&
+          ts.isIdentifier(prop.initializer.expression) &&
+          prop.initializer.expression.text === DIALECT,
+      ),
+  );
+}
+
+/**
+ * Every spawn `src/git.ts` writes, and the ones that spawn a git child under
+ * no stated dialect.
+ *
+ * A source read rather than a log of the calls these cases drove: the claim
+ * is over every invocation the module makes, and a runtime log only ever
+ * holds the legs some case reached — a leg no case drives would sit under
+ * git's default pathspec parse and the verdict would stay green over it
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ *
+ * Read per module, like the sibling scans' local arms
+ * (`tests/helpers/spawnCaps.ts`), because the alias is bound here: the
+ * promisified `execFile` this module spawns through is its own name, and a
+ * repo-wide name set would let another module's `exec` answer for it. An
+ * import the read cannot take bindings off is refused rather than passed
+ * over, or the module's spawns would be invisible and it would report clean
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function scanGitSpawns(): { scanned: string[]; findings: string[] } {
+  const module = "src/git.ts";
+  const src = parseScopeless(join(REPO_ROOT, "src", "git.ts"));
+
+  const spawns = new Set<string>();
+  for (const st of src.statements) {
+    if (!ts.isImportDeclaration(st)) continue;
+    if (!ts.isStringLiteralLike(st.moduleSpecifier)) continue;
+    if (!CHILD_PROCESS.has(st.moduleSpecifier.text)) continue;
+    const bindings = st.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings))
+      throw new Error(
+        `${module} imports ${st.moduleSpecifier.text} without named ` +
+          "bindings; this read takes the module's spawns off the names it " +
+          "imports and would judge them as none",
+      );
+    for (const el of bindings.elements)
+      if (SPAWN_APIS.has((el.propertyName ?? el.name).text))
+        spawns.add(el.name.text);
+  }
+  if (spawns.size === 0)
+    throw new Error(
+      `${module} binds no child_process spawn by name; every invocation ` +
+        "below would read as no invocation at all",
+    );
+
+  // The local names a spawn is passed around under — `promisify(execFile)`
+  // and anything built on one — to a fixed point, so the alias the call
+  // sites actually spell is judged rather than the import it came from.
+  for (;;) {
+    const before = spawns.size;
+    eachNode(src, (n) => {
+      if (!ts.isVariableDeclaration(n) || !ts.isIdentifier(n.name)) return;
+      const init = n.initializer;
+      if (!init || !ts.isCallExpression(init)) return;
+      if (
+        init.arguments.some(
+          (arg) => ts.isIdentifier(arg) && spawns.has(arg.text),
+        )
+      )
+        spawns.add(n.name.text);
+    });
+    if (spawns.size === before) break;
+  }
+
+  const scanned: string[] = [];
+  const findings: string[] = [];
+  eachNode(src, (n) => {
+    // An identifier callee only: `/re/.exec(s)` spells a spawn's name
+    // without ever naming one, and reading a member access as a spawn hands
+    // this scan a new spawn per regular expression in the module.
+    if (!ts.isCallExpression(n) || !ts.isIdentifier(n.expression)) return;
+    if (!spawns.has(n.expression.text)) return;
+    const line = src.getLineAndCharacterOfPosition(n.getStart(src)).line + 1;
+    const site = `${module}:${line} ${n.expression.text}`;
+    scanned.push(site);
+    if (!namesDialect(n)) findings.push(site);
+  });
+  return { scanned, findings };
+}
+
+it("every git invocation src/git.ts makes carries the literal-pathspec environment", () => {
+  const { scanned, findings } = scanGitSpawns();
+  expect(scanned.length).toBeGreaterThan(0);
+  expectNoFindings(findings);
 });
 
 describe("revParse", () => {
