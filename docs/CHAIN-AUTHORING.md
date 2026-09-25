@@ -1305,7 +1305,7 @@ admit concurrent edits — plan derives the whole queue from disk.
 Two parallel ticks would step on each other.
 
 A singleton tick runs in its own worktree too — branch
-`flume/[<ns>/]<phase>`, a wave of one — and its span is cherry-picked back
+`flume/<checkout>/<phase>`, a wave of one — and its span is cherry-picked back
 onto the trunk. `afterCommit` gates run in that worktree; `afterMerge`
 gates run on the trunk after the cherry-pick. The operator's checkout is
 never the tick's working tree.
@@ -1533,8 +1533,10 @@ Two properties the return type carries, and the reason to take this over a
 
 `worktrees` is keyed by absolute, resolved spellings, and it is git's own
 list — the **primary checkout is in it** too. Each value is the branch that
-worktree is checked out on, short-form (`flume/<slug>`, the spelling `git
-branch -D` takes), and `undefined` for a detached checkout. Which of those
+worktree is checked out on, short-form (`flume/<checkout>/<slug>`, the
+spelling `git branch -D` takes), and `undefined` for a detached checkout. The
+`<checkout>` segment is what keeps two checkouts of one repository off each
+other's branches, since they share one ref namespace. Which of those
 worktrees are yours to reap is your chain's to decide; the engine reports the
 fact and stops there.
 

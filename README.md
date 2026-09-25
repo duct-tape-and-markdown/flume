@@ -185,10 +185,16 @@ commit order and runs `afterMerge` gates against the merged state. A cherry-pick
 conflict keeps that entry in pending; an `afterMerge` failure reverts the
 whole wave.
 
-Worktree branches are named `flume/<entry-slug>`, and the engine mints no
-level beneath the worktree base. Two efforts are two checkouts, each with its
-own state root and so its own base, so identical entry tags in two efforts
-already address two directories.
+Worktree branches are named `flume/<checkout>/<entry-slug>`, and the engine
+mints no level beneath the worktree base. Two efforts are two checkouts, each
+with its own state root and so its own base, so identical entry tags in two
+efforts already address two directories — but linked checkouts share one ref
+namespace and one git common dir, which directories do not separate. The
+`<checkout>` segment does: a name the checkout owns, stable for its life and
+distinct between any two checkouts of one repository, so two efforts at one
+phase mint two branches instead of colliding on one. The per-entry claim a
+build tick stakes carries the same segment, so a sibling checkout's claim on a
+tag of the same spelling never hides this checkout's entry.
 
 Worktrees are the only isolation primitive the harness ships. Docker / sandbox
 layers are deferred until a chain needs a boundary a worktree cannot draw.

@@ -627,7 +627,7 @@ describe("Dispatcher singleton — runs in a flume/<phase> worktree (WORKTREE-CO
     expect(outcome.result?.committed).toBe(true);
     expect(observedCwd).not.toBe(fx.repo);
     expect(observedCwd).toContain(join(".flume", "worktrees", "plan"));
-    expect(observedBranch).toBe("flume/plan");
+    expect(observedBranch).toBe("flume/primary/plan");
 
     // Teardown left git's worktree registry and the branch list clean —
     // same one-`rm` promise a fanout wave's worktree gives. The registry
@@ -642,7 +642,7 @@ describe("Dispatcher singleton — runs in a flume/<phase> worktree (WORKTREE-CO
     );
     const { stdout: branches } = await exec(
       "git",
-      ["branch", "--list", "flume/plan"],
+      ["branch", "--list", "flume/primary/plan"],
       { cwd: fx.repo },
     );
     expect(branches.trim()).toBe("");
@@ -698,7 +698,7 @@ describe("Dispatcher singleton — runs in a flume/<phase> worktree (WORKTREE-CO
     );
     const { stdout: branches } = await exec(
       "git",
-      ["branch", "--list", "flume/plan"],
+      ["branch", "--list", "flume/primary/plan"],
       { cwd: fx.repo },
     );
     expect(branches.trim()).toBe("");
@@ -5599,11 +5599,11 @@ describe("Dispatcher fanout — branch and path take no level beneath the base",
 
     expect(outcome.result?.committed).toBe(true);
     expect(outcome.result?.shippedTags).toEqual(["FAN-BRANCH"]);
-    expect(observedBranch).toBe("flume/fan-branch");
+    expect(observedBranch).toBe("flume/primary/fan-branch");
     // Teardown deleted the branch under the name creation gave it.
     const { stdout: branches } = await exec(
       "git",
-      ["branch", "--list", "flume/fan-branch"],
+      ["branch", "--list", "flume/primary/fan-branch"],
       { cwd: fx.repo },
     );
     expect(branches.trim()).toBe("");
@@ -6169,12 +6169,12 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
     ]);
     expect(seen[1]!.get("mark-b.json")).toEqual({
       tag: "MARK-B",
-      branch: "flume/mark-b",
+      branch: "flume/primary/mark-b",
       baseSha: preHead,
     });
     expect(seen[1]!.get("mark-a.json")).toEqual({
       tag: "MARK-A",
-      branch: "flume/mark-a",
+      branch: "flume/primary/mark-a",
       baseSha: preHead,
     });
   });
@@ -16996,9 +16996,11 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
 
     // Only the tracked-at-HEAD probe against a worktree's own friction
     // mirror fails — every other readFileAtRef call (pending.json's HEAD
-    // read, the second worktree's probe) runs for real. The first probe
-    // call is the one under test; teardown processes worktrees in batch
-    // order, so it lands on FRICTION-PROBE-1.
+    // read, the second worktree's probe) runs for real. Keyed on *which*
+    // worktree the probe reads, never on the call's ordinal: teardown walks
+    // the worktrees in the order their slots provisioned, which is the order
+    // their claim stakes returned, so an ordinal names whichever entry won
+    // that race and the case asserts on a different entry each run.
     const realReadFileAtRef = git.readFileAtRef;
     let frictionProbeCalls = 0;
     const readFileAtRefSpy = vi
@@ -17006,7 +17008,7 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
       .mockImplementation(async (repoRoot, ref, relPath) => {
         if (relPath.endsWith(join("friction", "note.md"))) {
           frictionProbeCalls++;
-          if (frictionProbeCalls === 1) {
+          if (basename(repoRoot) === "friction-probe-1") {
             throw new Error("simulated git failure");
           }
         }
@@ -17077,6 +17079,11 @@ describe("Dispatcher fanout — teardown friction harvest", () => {
     expect(
       existsSync(join(fx.repo, ".flume", "worktrees", "friction-probe-2")),
     ).toBe(false);
+
+    // Non-vacuity: both worktrees' notes reached the probe, so the single
+    // harvested file below is the failed candidate being left behind and not
+    // a wave that only ever probed one.
+    expect(frictionProbeCalls).toBe(2);
 
     // The probe-failed candidate is left unharvested (fail-closed); the
     // sibling whose probe succeeded is delivered normally.
@@ -20094,9 +20101,11 @@ describe("Dispatcher — `priority` is the order every selection takes", () => {
  * real writer wrote*).
  */
 describe("Dispatcher fanout — the per-entry claim", () => {
-  /** Where this repository's claim for `tag` lives, through the engine's own address. */
-  const claimPathFor = async (tag: string): Promise<string> =>
-    entryClaimPath(await git.gitCommonDir(fx.repo), entryClaimSlug(tag));
+  /** Where this checkout's claim for `tag` lives, through the engine's own address. */
+  const claimPathFor = async (tag: string): Promise<string> => {
+    const { commonDir, segment } = await git.checkoutAddress(fx.repo);
+    return entryClaimPath(commonDir, segment, entryClaimSlug(tag));
+  };
 
   /** Plant a claim on `tag` held by `pid`, as a sibling tick would have written it. */
   async function plantClaim(tag: string, pid: number): Promise<string> {

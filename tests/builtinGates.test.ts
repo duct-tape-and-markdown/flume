@@ -48,7 +48,7 @@ import {
 } from "./helpers/dispatcherFixture.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
 import { entryClaimPath, entryClaimSlug } from "../src/entryClaims.ts";
-import { gitCommonDir } from "../src/git.ts";
+import { checkoutAddress } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import { deadPid } from "./helpers/deadPid.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
@@ -525,7 +525,8 @@ describe("pendingGate — stale-tip read (PENDING-GATE-STALE-TIP-READ)", () => {
  *
  * Every case gates a **real commit** and plants its claim through the
  * engine's own statement at the engine's own address — `renderPidClaim` under
- * `entryClaimPath(gitCommonDir(repo), entryClaimSlug(tag))`. A fixture
+ * `entryClaimPath`, composed from the pair git answers for this checkout
+ * (`checkoutAddress`, `src/git.ts`). A fixture
  * spelling either would re-author, by the tester's hand, the two seams the
  * check rides: what git calls changed, and where a claim lives
  * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
@@ -559,9 +560,15 @@ describe("pendingGate — claim check over the merged tree (spec/pending.md 'Cla
   const entryPath = (tag: string): string =>
     `.flume/plan/pending/${entryFileName(tag)}`;
 
+  /** Where this checkout's claim on `tag` lives, through the engine's own address. */
+  async function claimPath(tag: string): Promise<string> {
+    const { commonDir, segment } = await checkoutAddress(dir);
+    return entryClaimPath(commonDir, segment, entryClaimSlug(tag));
+  }
+
   /** A live claim on `tag`, staked at the address the engine addresses. */
   async function claim(tag: string, pid = process.pid): Promise<void> {
-    const path = entryClaimPath(await gitCommonDir(dir), entryClaimSlug(tag));
+    const path = await claimPath(tag);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, renderPidClaim(pid, new Date()), "utf8");
   }
@@ -682,11 +689,7 @@ describe("pendingGate — claim check over the merged tree (spec/pending.md 'Cla
     });
     // Non-vacuity: the claim file is on disk for this read, so the pass is
     // the liveness verdict and not an empty claims directory.
-    expect(
-      existsSync(
-        entryClaimPath(await gitCommonDir(dir), entryClaimSlug("STALE")),
-      ),
-    ).toBe(true);
+    expect(existsSync(await claimPath("STALE"))).toBe(true);
 
     expect((await merged().run(ctx(dir, span))).ok).toBe(true);
   });
@@ -754,10 +757,7 @@ describe("pendingGate — claim check over the merged tree (spec/pending.md 'Cla
     // The control, over the same declared layout: with the claim lifted the
     // identical drain passes, so the refusal is the claim's and not the note
     // path's.
-    await rm(
-      entryClaimPath(await gitCommonDir(dir), entryClaimSlug("HELD")),
-      { force: true },
-    );
+    await rm(await claimPath("HELD"), { force: true });
     expect((await withNotes().run(ctx(dir, span))).ok).toBe(true);
   });
 

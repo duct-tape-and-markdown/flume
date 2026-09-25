@@ -111,7 +111,7 @@ export function worktreeDirName(tag: string): string {
  * beside its source*).
  *
  * The branch is named in the short spelling every other branch on this
- * surface is — `flume/<slug>`, what {@link createWorktree} returns and what
+ * surface is — `flume/<checkout>/<slug>`, what {@link createWorktree} returns and what
  * `git.deleteBranch` (`src/git.ts`) takes — not the `refs/heads/…` ref git
  * prints it as.
  */
@@ -455,12 +455,18 @@ export async function withGateCheckouts<T>(
 }
 
 /**
- * Provision one worktree, branched `flume/<tag>` from `fromRef`. Shared by
- * fanout (`tag` = the entry's own tag) and singleton (`tag` = the phase
- * name — a singleton tick has no entry; spec/worktrees.md "Singleton runs in
- * a worktree" keys its worktree on the phase instead). Directory-name
+ * Provision one worktree, branched `flume/<checkout>/<slug>` from `fromRef`.
+ * Shared by fanout (`tag` = the entry's own tag) and singleton (`tag` = the
+ * phase name — a singleton tick has no entry; spec/worktrees.md "Singleton
+ * runs in a worktree" keys its worktree on the phase instead). Directory-name
  * length-bounding applies identically either way — the caller supplies the
  * identifier, this function doesn't care what it names.
+ *
+ * `<checkout>` is this checkout's own segment (`checkoutAddress`,
+ * `src/git.ts`). Linked checkouts share one ref namespace, so a bare
+ * `flume/<slug>` is the name two efforts at one singleton phase — or at one
+ * tag — reach for at once, and `git worktree add -B` refuses the second: the
+ * branch is already checked out in the sibling's tree.
  */
 export async function createWorktree(
   tag: string,
@@ -468,7 +474,7 @@ export async function createWorktree(
   ctx: WorktreeContext,
 ): Promise<{ path: string; branch: string }> {
   const slug = slugify(tag);
-  const branch = `flume/${slug}`;
+  const branch = `flume/${(await git.checkoutAddress(ctx.repoRoot)).segment}/${slug}`;
   // One resolution for the base, shared with the startup sweep
   // (`worktreesBase`, src/paths.ts — which is also where the override's
   // stray-write rationale lives, and where a chain's declared base is

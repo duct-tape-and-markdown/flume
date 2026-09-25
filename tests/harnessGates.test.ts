@@ -42,7 +42,7 @@ import {
 import { pendingGate } from "../src/builtinGates.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import {
-  gitCommonDir,
+  checkoutAddress,
   isAncestor,
   readFileAtRef,
   statusRecords,
@@ -1569,7 +1569,8 @@ it("the package's claim check covers a claimed entry's note, and build's own set
   // records half of the check and not the ledger half riding along.
   expect(span.touchedPaths).toEqual([`${STATE_ROOT}/plan/notes/HELD.md`]);
 
-  const claim = entryClaimPath(await gitCommonDir(repo), entryClaimSlug("HELD"));
+  const { commonDir, segment } = await checkoutAddress(repo);
+  const claim = entryClaimPath(commonDir, segment, entryClaimSlug("HELD"));
   await mkdir(dirname(claim), { recursive: true });
   await writeFile(claim, renderPidClaim(process.pid, new Date()));
 

@@ -5,8 +5,8 @@
  *
  * The loop lock (`<flumeDir>/loop.pid`), the tip claim
  * (`<git-common-dir>/flume/tip-claims/<ref path>`) and the per-entry claim
- * (`<git-common-dir>/flume/claims/<slug>`) guard different resources under
- * different keying, and each records the same two facts about its holder:
+ * (`<git-common-dir>/flume/claims/<checkout>/<slug>`) guard different
+ * resources under different keying, and each records the same two facts about its holder:
  * the pid on the first line, the instant it took the guard on the second
  * (spec/loop.md, "The loop lock and the tip claim").
  *

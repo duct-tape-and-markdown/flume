@@ -10,12 +10,12 @@
 
 import { execFile } from "node:child_process";
 import { rm } from "node:fs/promises";
-import { join, resolve, toNamespacedPath } from "node:path";
+import { basename, join, resolve, toNamespacedPath } from "node:path";
 import { promisify } from "node:util";
 
 import { existsLoud } from "./fsProbe.js";
 import { consoleLogger, type Logger } from "./log.js";
-import { gitPath } from "./paths.js";
+import { boundedName, gitPath, shortHash, slugify } from "./paths.js";
 import {
   livePidClaimAt,
   stakePidClaim,
@@ -862,6 +862,95 @@ export async function absoluteGitDir(cwd: string): Promise<string> {
   // composer's default, and the cap is declared rather than inherited.
   const { stdout } = await run(cwd, ["rev-parse", "--absolute-git-dir"], 64 * 1024);
   return stdout;
+}
+
+/**
+ * The segment the primary checkout of a repository owns. Its git dir *is* the
+ * common dir, so there is no worktree name to fold and this literal stands in
+ * for one — and no linked checkout can reach it, because every linked segment
+ * ends in {@link shortHash}'s ten hex characters behind a `-`.
+ */
+const PRIMARY_CHECKOUT_SEGMENT = "primary";
+
+/**
+ * The ceiling on a checkout segment. It is a path component under the claims
+ * directory and a ref component in every branch a tick mints, composed with a
+ * second variable-length part in both — so it takes {@link boundedName}
+ * (`src/paths.ts`), and the bound is kept well under the entry slug's because
+ * the two sit in one ref together.
+ */
+const CHECKOUT_SEGMENT_MAX = 32;
+
+/**
+ * The segment for a checkout whose git dir is `gitDir` and whose common dir is
+ * `commonDir`, both in git's own alphabet.
+ *
+ * Git's fact: a linked checkout's git dir is `<common>/worktrees/<name>`,
+ * where `<name>` is unique among that repository's linked checkouts (git
+ * disambiguates two trees sharing a basename itself), while the primary
+ * checkout's git dir is the common dir. So the two cases are told apart by
+ * equality — never by looking for a `worktrees` component, which would be
+ * this module inferring git's layout rather than reading git's answer
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * `<name>` is folded into the ref alphabet by {@link slugify}, which is lossy
+ * — `a.b` and `a-b` are two checkouts and one slug — so the unfolded name's
+ * {@link shortHash} rides along and the distinctness is the hash's, not the
+ * slug's. The slug in front of it is for the operator reading `git branch`.
+ */
+function checkoutSegment(commonDir: string, gitDir: string): string {
+  if (gitDir === commonDir) return PRIMARY_CHECKOUT_SEGMENT;
+  const name = basename(gitDir);
+  return boundedName(
+    `${slugify(name)}-${shortHash(name)}`,
+    CHECKOUT_SEGMENT_MAX,
+    name,
+  );
+}
+
+/**
+ * Which checkout of a repository `cwd` sits in, and the common dir that
+ * checkout shares with its siblings — the pair every per-checkout address is
+ * composed from: the branch a tick's worktree is minted on
+ * (`createWorktree`, `src/worktrees.ts`) and the entry claim a build tick
+ * stakes (`entryClaimPath`, `src/entryClaims.ts`).
+ *
+ * `segment` is stable for the checkout's life and distinct between any two
+ * checkouts of one repository ({@link checkoutSegment}). Linked checkouts
+ * share one ref namespace and one common dir, so a bare `flume/<slug>` branch
+ * is a name two efforts reach for at once — `git worktree add -B` refuses the
+ * second, the ref being already checked out elsewhere — and a bare
+ * `claims/<slug>` is one file two efforts' unrelated entries collide on.
+ *
+ * Both paths come out of **one** `git rev-parse`, under
+ * `--path-format=absolute` (git 2.31+, below the engine's 2.36 floor —
+ * `README.md`): the equality {@link checkoutSegment} decides on is only
+ * sound when the two sides are absolutized by the same hand. Asking twice and
+ * absolutizing one side here would read a primary checkout reached through a
+ * symlinked path as a linked one, and the same checkout as two segments
+ * depending on which spelling of its path a tick was handed.
+ */
+export async function checkoutAddress(cwd: string): Promise<{
+  /** The shared `--git-common-dir`, absolute — one path from every checkout. */
+  readonly commonDir: string;
+  /** This checkout's own segment. */
+  readonly segment: string;
+}> {
+  // Two absolute paths and a newline each — the cap is declared here rather
+  // than inherited, as every spawn site in this module declares its own.
+  const { stdout } = await run(
+    cwd,
+    ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
+    64 * 1024,
+  );
+  // Two absolute paths, in the order the options were spelled.
+  const [gitDir = "", commonDir = ""] = stdout.split("\n").map((l) => l.trim());
+  if (gitDir === "" || commonDir === "") {
+    throw new Error(
+      `git named no git dir and common dir for ${cwd}: ${JSON.stringify(stdout)}`,
+    );
+  }
+  return { commonDir, segment: checkoutSegment(commonDir, gitDir) };
 }
 
 /**

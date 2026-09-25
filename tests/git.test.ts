@@ -100,6 +100,7 @@ function execArgsLogSince(sinceIndex: number): unknown[][] {
 import {
   acquireTipClaim,
   addWorktree,
+  checkoutAddress,
   checkpointBystanderState,
   cherryPickAbort,
   cherryPickRange,
@@ -1336,6 +1337,74 @@ describe.runIf(process.platform === "win32")(
     });
   },
 );
+
+/**
+ * The checkout segment: the name a per-checkout address carries between the
+ * shared common dir and the thing being addressed — a branch a tick mints
+ * (`createWorktree`, `src/worktrees.ts`), an entry claim a build tick stakes
+ * (`entryClaimPath`, `src/entryClaims.ts`).
+ *
+ * Judged over real checkouts of one real repository, because both facts the
+ * segment rests on are git's: that a linked checkout's git dir sits under the
+ * common dir, and that git keeps the names of two linked checkouts distinct.
+ */
+describe("checkoutAddress — the segment a checkout owns", () => {
+  /** Add a linked checkout of `repo` at `name`, and answer its path. */
+  async function linked(name: string): Promise<string> {
+    const path = join(repo, name);
+    await exec("git", ["worktree", "add", "-q", "--detach", path, "HEAD"], {
+      cwd: repo,
+    });
+    return path;
+  }
+
+  it("separates the primary checkout from a linked one, and two linked ones from each other, over one common dir", async () => {
+    const primary = await checkoutAddress(repo);
+    const a = await checkoutAddress(await linked("effort-a"));
+    const b = await checkoutAddress(await linked("effort-b"));
+
+    // One repository: every checkout answers the same common dir, which is
+    // what makes the segment the only thing separating their addresses.
+    expect(primary.commonDir).toBe(await gitCommonDir(repo));
+    expect(a.commonDir).toBe(primary.commonDir);
+    expect(b.commonDir).toBe(primary.commonDir);
+
+    // Three checkouts, three segments.
+    expect(new Set([primary.segment, a.segment, b.segment]).size).toBe(3);
+
+    // Stable for the checkout's life: asked twice, and asked through a
+    // subdirectory of the same checkout, the answer does not move.
+    const nested = join(repo, "effort-a", "nested");
+    await mkdir(nested, { recursive: true });
+    expect((await checkoutAddress(join(repo, "effort-a"))).segment).toBe(
+      a.segment,
+    );
+    expect((await checkoutAddress(nested)).segment).toBe(a.segment);
+
+    // Every segment is a single path/ref component — it sits between two
+    // others in both addresses that carry it.
+    for (const seg of [primary.segment, a.segment, b.segment]) {
+      expect(seg).toMatch(/^[a-z0-9-]+$/);
+    }
+  });
+
+  it("keeps two linked checkouts distinct whose names differ only outside the ref alphabet", async () => {
+    // `slugify` folds both of these to `eff-ort`; git keeps them apart, and
+    // the segment has to as well or two checkouts share one claim file.
+    const dotted = await checkoutAddress(await linked("eff.ort"));
+    const dashed = await checkoutAddress(await linked("eff-ort"));
+
+    // Non-vacuity: git really did register two checkouts under two names.
+    const { stdout: names } = await exec(
+      "git",
+      ["worktree", "list", "--porcelain", "-z"],
+      { cwd: repo },
+    );
+    expect(names.split("\0").filter((f) => f.startsWith("worktree ")).length).toBe(3);
+
+    expect(dotted.segment).not.toBe(dashed.segment);
+  });
+});
 
 /**
  * The advisory per-ref tip claim. Keyed under

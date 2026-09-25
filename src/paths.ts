@@ -319,6 +319,21 @@ export function slugify(tag: string): string {
 }
 
 /**
+ * The distinctness suffix a composed name carries when the fold that produced
+ * it is lossy: ten hex characters of `identity`'s SHA-1.
+ *
+ * One spelling, because two callers key names on it and a second would let
+ * them disagree about what "distinct" means: {@link boundedName} below, whose
+ * truncation drops a tail, and the checkout segment (`checkoutSegment`,
+ * `src/git.ts`), whose {@link slugify} drops every character outside the ref
+ * alphabet. Ten characters is a collision domain of 2^40 over the handful of
+ * names one repository holds — not a cryptographic claim, a naming one.
+ */
+export function shortHash(identity: string): string {
+  return createHash("sha1").update(identity).digest("hex").slice(0, 10);
+}
+
+/**
  * The one truncation any composed path component passes through: `name`
  * unchanged when it already fits `max`, else cut to leave room for a
  * separator plus a 10-hex-character SHA-1, so the finished component is
@@ -345,7 +360,7 @@ export function boundedName(
   identity: string = name,
 ): string {
   if (name.length <= max) return name;
-  const hash = createHash("sha1").update(identity).digest("hex").slice(0, 10);
+  const hash = shortHash(identity);
   return `${name.slice(0, max - hash.length - 1)}-${hash}`;
 }
 

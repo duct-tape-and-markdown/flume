@@ -6,7 +6,7 @@
  * *A seam gate reads what the real writer wrote*): the real `createWorktree`
  * provisions, and the real `teardownWorktreeInstance` is handed exactly what
  * it returned. The two build the same path and branch from opposite ends —
- * one composes `<base>/<dirName>` and `flume/<slug>`, the other removes
+ * one composes `<base>/<dirName>` and `flume/<checkout>/<slug>`, the other removes
  * whatever it is given — so a one-sided change to the naming or the
  * directory bound shows up here as residue left on disk,
  * rather than as a wave that quietly accumulates worktrees and `flume/**`
@@ -204,8 +204,10 @@ describe("worktrees — one lifecycle over one directory tree", () => {
     const wt = await createWorktree(tag, head.trim(), ctx);
 
     // Both components, composed independently of the writer: the branch
-    // keeps the untruncated slug, the directory takes the bound.
-    expect(wt.branch).toBe(`flume/${slugify(tag)}`);
+    // carries this checkout's segment — `primary`, since the fixture repo is
+    // a repository's own checkout and not a linked one — then the untruncated
+    // slug, while the directory takes the bound.
+    expect(wt.branch).toBe(`flume/primary/${slugify(tag)}`);
     expect(wt.path).toBe(join(worktreesBase(flumeDir), worktreeDirName(tag)));
     expect(worktreeDirName(tag)).not.toBe(slugify(tag));
 
@@ -246,6 +248,69 @@ describe("worktrees — one lifecycle over one directory tree", () => {
     expect(await readdir(join(flumeDir, "friction"))).toEqual([
       expect.stringContaining(`${tag}--`),
     ]);
+  });
+
+  /**
+   * Two checkouts of one repository, both running the same singleton phase.
+   * They have two state roots and two worktree bases, so nothing about the
+   * directories collides — but they share one ref namespace, and a branch
+   * checked out in one is a branch `git worktree add -B` refuses to reset in
+   * the other. That refusal is what the checkout segment in the branch name
+   * removes (`spec/worktrees.md`, *Fanout is the engine's declared navigation
+   * carve-out*).
+   *
+   * Both checkouts are real, and both branches come back from the real
+   * `createWorktree` (`.claude/rules/engineering.md`, *A seam gate reads what
+   * the real writer wrote*).
+   */
+  it("two linked checkouts of one repository each provision the same singleton phase at once and both succeed", async () => {
+    const { stdout: head } = await exec("git", ["rev-parse", "HEAD"], {
+      cwd: fx.repo,
+    });
+    const at = (root: string): WorktreeContext => ({
+      repoRoot: root,
+      flumeDir: join(root, ".flume"),
+      stateRootRel: ".flume",
+      log: silent,
+    });
+
+    // Two linked checkouts, so neither is the primary one the round-trip
+    // above provisions from: the segment has to separate two *linked* trees,
+    // which is the case a primary-versus-linked fold alone would miss.
+    const roots: string[] = [];
+    for (const name of ["effort-a", "effort-b"]) {
+      const root = join(fx.repo, name);
+      await exec(
+        "git",
+        ["worktree", "add", "-q", "-b", name, root, head.trim()],
+        { cwd: fx.repo },
+      );
+      roots.push(root);
+    }
+    const [a = "", b = ""] = roots;
+
+    // One phase name, two checkouts. The second call is the one that used to
+    // fail: `flume/plan` was already checked out in the first's worktree.
+    const first = await createWorktree("plan", head.trim(), at(a));
+    const second = await createWorktree("plan", head.trim(), at(b));
+
+    // Both provisioned, both alive at the same moment.
+    expect(existsSync(first.path)).toBe(true);
+    expect(existsSync(second.path)).toBe(true);
+    const registered = await registeredWorktrees(fx.repo);
+    expect(registered).toContain(resolve(first.path));
+    expect(registered).toContain(resolve(second.path));
+
+    // Two branches, differing in the checkout segment alone — and the shared
+    // namespace really is one namespace, since git names both from either
+    // checkout.
+    expect(first.branch).not.toBe(second.branch);
+    expect(first.branch.endsWith(`/${slugify("plan")}`)).toBe(true);
+    expect(second.branch.endsWith(`/${slugify("plan")}`)).toBe(true);
+    expect(await flumeBranches(a)).toEqual(
+      [first.branch, second.branch].sort(),
+    );
+    expect(await flumeBranches(b)).toEqual(await flumeBranches(a));
   });
 });
 
@@ -652,7 +717,7 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     // The branch the real writer named, in the short spelling
     // `git.deleteBranch` takes — not the `refs/heads/…` ref git prints.
     expect(registry.worktrees.get(resolve(wt.path))).toBe(wt.branch);
-    expect(wt.branch).toBe(`flume/${slugify("BRANCH-REPORTED")}`);
+    expect(wt.branch).toBe(`flume/primary/${slugify("BRANCH-REPORTED")}`);
 
     // Detached: registered, and carrying no branch. The two facts are
     // separate — "git names no branch here" must not read as "git does not
