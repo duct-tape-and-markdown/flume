@@ -86,31 +86,61 @@ export function resolveRepoRoot(cwd: string): string {
 export class SecondStateRootError extends StateRootResolutionError {}
 
 /**
+ * Whether the runtime-owned `name` under `bay` **holds** anything — the
+ * evidence test, one level below the name itself.
+ *
+ * A file standing there was written: a stop flag, a loop lock, a verdict log.
+ * Presence is the whole of what each carries, so presence is the evidence. A
+ * directory is the name the runtime creates on the way to using it, and
+ * creating one is not writing state: `flume status` constructs the baton to
+ * read it, and constructing a baton mkdirs `awake/` (`src/Baton.ts`), so one
+ * read-only look at the default root leaves an empty directory behind that
+ * nothing ever wrote a flag into. Hence a directory is evidence only when it
+ * holds an entry.
+ *
+ * Absent is the only silent reading, the disposition every probe in this file
+ * takes: a name that is not there holds nothing. Every other stat failure
+ * throws, and the listing below runs only over a path already proven a
+ * directory (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function holdsState(bay: string, name: string): boolean {
+  const path = namespacedJoin(bay, name);
+  const at = statLoud(path);
+  if (at === undefined) return false;
+  if (!at.isDirectory()) return true;
+  return readdirSync(path).length > 0;
+}
+
+/**
  * The runtime-owned name under `<repoRoot>/.flume` that makes the bay a state
  * root the runtime has written into, or `undefined` when the checkout holds no
  * flume state of its own.
  *
- * The bay the walk above probes for, read one level deeper — and the depth is
+ * The bay the walk above probes for, read two levels deeper — and the depth is
  * the whole distinction. A bay holding a chain and its convention dirs is this
  * run's *config* dir, which `FLUME_CONFIG_DIR` leaves at the default while
  * `FLUME_DIR` relocates state alone: the documented split (spec/cli.md,
  * *State-root and config-dir resolution*), and no second root at all. A bay
- * holding any of `STATE_ROOT_NAMES` is a root with a baton, a worktree base
- * or a verdict log of its own, which is the flume state a second root in the
- * same checkout collides with.
+ * holding one of `STATE_ROOT_NAMES` that {@link holdsState} — a standing flag,
+ * a lock, a verdict, a populated runtime directory — is a root with a baton, a
+ * worktree base or a verdict log of its own, which is the flume state a second
+ * root in the same checkout collides with. A runtime name that holds nothing
+ * is a bay the runtime probed, not state it wrote, and the documented
+ * relocation still composes over it.
  *
  * Only a directory can hold state, so a bay that is a plain file answers
  * `undefined`: what this asks is whether a *second* root stands in the
  * checkout, and an obstructed bay is neither that question nor its refusal.
  */
 function checkoutStateRootArtifact(repoRoot: string): string | undefined {
-  const bay = namespacedJoin(defaultStateRoot(repoRoot));
+  const own = defaultStateRoot(repoRoot);
+  const bay = namespacedJoin(own);
   const at = statLoud(bay);
   if (at === undefined || !at.isDirectory()) return undefined;
-  // The bay is proven a directory here, so a listing failure is real and
-  // throws (`.claude/rules/engineering.md`, *Loud or nothing*).
-  const present = new Set(readdirSync(bay));
-  return Object.values(STATE_ROOT_NAMES).find((name) => present.has(name));
+  // The bay is proven a directory here, so every probe beneath it answers
+  // absent or throws — neither reads an obstructed ancestor as an empty bay
+  // (`.claude/rules/engineering.md`, *Loud or nothing*).
+  return Object.values(STATE_ROOT_NAMES).find((name) => holdsState(own, name));
 }
 
 /**

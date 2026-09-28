@@ -11,7 +11,7 @@
  */
 
 import { existsSync, lstatSync, readdirSync } from "node:fs";
-import { mkdir, readFile, rm, symlink } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
@@ -679,17 +679,22 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
  * clone, each with its own `FLUME_DIR`; the collision arrived several steps
  * later as git's `'flume/plan-derive' is already used by worktree at …`,
  * which names neither root. The evidence the refusal keys on is the bay
- * discovery already probes for, read one level deeper — a bay holding a
- * chain is this run's config dir, a bay holding the runtime's own names is
- * another root.
+ * discovery already probes for, read two levels deeper — a bay holding a
+ * chain is this run's config dir, and a bay holding one of the runtime's own
+ * names is another root only when that name holds something, since a
+ * read-only `flume status` mkdirs an empty `awake/` in the default root and
+ * writes no state into it.
  */
 describe("resolveStateDirs — the second state root in one checkout", () => {
-  /** A checkout whose bay already carries the runtime's own baton. */
+  /**
+   * A checkout whose bay already carries the runtime's own baton — a flag
+   * standing in it, planted by the real writer (`Baton.wake`), because the
+   * directory alone is what one read-only `flume status` leaves behind and is
+   * no longer evidence of a root.
+   */
   async function checkoutHoldingState(): Promise<string> {
     const checkout = await mkFixtureRoot("flume-second-root-");
-    await mkdir(join(checkout, ".flume", STATE_ROOT_NAMES.awake), {
-      recursive: true,
-    });
+    new Baton(join(checkout, ".flume")).wake("probe");
     return checkout;
   }
 
@@ -762,6 +767,58 @@ describe("resolveStateDirs — the second state root in one checkout", () => {
 
       expect(flumeDir).toBe(relocated);
       expect(configDir).toBe(join(checkout, ".flume"));
+    } finally {
+      await rm(checkout, { recursive: true, force: true });
+    }
+  });
+
+  it("a state root relocated beside a bay whose only runtime name is an empty directory resolves rather than refusing as a second root", async () => {
+    const checkout = await mkFixtureRoot("flume-second-root-");
+    try {
+      const own = join(checkout, ".flume");
+      // What one read-only `flume status` leaves in the default root:
+      // constructing the baton mkdirs `awake/` and writes no flag, so the
+      // real writer plants the directory this case is about rather than a
+      // fixture's hand.
+      const baton = new Baton(own);
+      // Non-vacuity, in the direction the title claims: the runtime name is
+      // on disk, it is the bay's only entry, and it holds nothing.
+      expect(readdirSync(own)).toEqual([STATE_ROOT_NAMES.awake]);
+      expect(baton.awake()).toEqual([]);
+      expect(readdirSync(join(own, STATE_ROOT_NAMES.awake))).toEqual([]);
+
+      const relocated = join(checkout, "state");
+      const env: NodeJS.ProcessEnv = { FLUME_DIR: relocated };
+      const { flumeDir, configDir } = resolveStateDirs(env, checkout);
+
+      expect(flumeDir).toBe(relocated);
+      expect(configDir).toBe(own);
+      expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(checkout));
+    } finally {
+      await rm(checkout, { recursive: true, force: true });
+    }
+  });
+
+  it("a bay whose only runtime name is a standing stop flag refuses the relocation", async () => {
+    const checkout = await mkFixtureRoot("flume-second-root-");
+    try {
+      const own = join(checkout, ".flume");
+      await mkdir(own, { recursive: true });
+      // A flag is a file, and standing is the whole of what it carries — so
+      // presence is the evidence, with no entry beneath it to count.
+      await writeFile(join(own, STATE_ROOT_NAMES.stopFlag), "");
+      expect(readdirSync(own)).toEqual([STATE_ROOT_NAMES.stopFlag]);
+
+      const env: NodeJS.ProcessEnv = { FLUME_DIR: join(checkout, "state") };
+      let thrown: unknown;
+      try {
+        resolveStateDirs(env, checkout);
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(SecondStateRootError);
+      expect((thrown as Error).message).toContain(STATE_ROOT_NAMES.stopFlag);
     } finally {
       await rm(checkout, { recursive: true, force: true });
     }
