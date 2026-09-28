@@ -10,6 +10,14 @@
  * the pid on the first line, the instant it took the guard on the second
  * (spec/loop.md, "The loop lock and the tip claim").
  *
+ * The statement is open at the bottom, and the tip claim uses that: it states
+ * the state root its holder resolved on a third line, because the tip is the
+ * one resource two state roots in one checkout contend for, and a refusal
+ * there has two roots to name rather than none (spec/loop.md, "The loop lock
+ * and the tip claim"). A guard whose own path already says its root — the loop
+ * lock, keyed by that root — states nothing there, and a reader that wants
+ * only the lines above ignores whatever follows them.
+ *
  * **The pid stays first because liveness is what every reader needs and the
  * instant is what one reader needs.** A reader after liveness takes line one,
  * where every reader has always looked; `flume status` bounds the live run's
@@ -62,16 +70,43 @@ export interface PidClaim {
    * only the pid is unaffected.
    */
   readonly atMs?: number;
+  /**
+   * The state root the holder resolved, from the third line. Absent when the
+   * guard states none — the loop lock and the entry claim state two lines,
+   * and so does a tip claim written before the third line existed. A reader
+   * that needs the root says so rather than substituting one
+   * (`.claude/rules/engineering.md`, "Loud or nothing"); a reader after
+   * liveness or the instant is unaffected.
+   */
+  readonly stateRoot?: string;
 }
 
 /**
  * The statement a guard writes when it takes the guard: `pid`, a newline, the
- * ISO-8601 instant, a trailing newline. `at` is passed rather than read from
+ * ISO-8601 instant, a trailing newline — and, where the caller names one,
+ * `stateRoot` on a third line under them. `at` is passed rather than read from
  * the clock here, so the caller that takes the guard is the one that says
- * when.
+ * when; `stateRoot` likewise, so no guard file carries a root this module
+ * inferred (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * A `stateRoot` carrying a newline is refused rather than written: a path may
+ * hold one on posix, and written through it would leave a third line stating
+ * a root that is not the caller's and a fourth line no reader expects
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
-export function renderPidClaim(pid: number, at: Date): string {
-  return `${pid}\n${at.toISOString()}\n`;
+export function renderPidClaim(
+  pid: number,
+  at: Date,
+  stateRoot?: string,
+): string {
+  const head = `${pid}\n${at.toISOString()}\n`;
+  if (stateRoot === undefined) return head;
+  if (stateRoot.includes("\n")) {
+    throw new Error(
+      `a guard claim's state root cannot carry a newline: ${JSON.stringify(stateRoot)}`,
+    );
+  }
+  return `${head}${stateRoot}\n`;
 }
 
 /**
@@ -80,16 +115,23 @@ export function renderPidClaim(pid: number, at: Date): string {
  * caller reads as "no live holder" and reclaims over, the same reading a
  * dead pid gets.
  *
- * The second line is decoded independently: a claim whose instant is missing
- * or unparsable still names its holder, because refusing the pid there would
- * turn a cosmetic difference into a reclaim over a live supervisor.
+ * Every line under the first is decoded independently: a claim whose instant
+ * is missing or unparsable, or that states no state root, still names its
+ * holder, because refusing the pid there would turn a cosmetic difference into
+ * a reclaim over a live supervisor. That is what lets the statement grow a
+ * line without the guards that do not write it changing what they read.
  */
 export function parsePidClaim(raw: string): PidClaim | null {
-  const [pidLine = "", atLine = ""] = raw.split("\n");
+  const [pidLine = "", atLine = "", rootLine = ""] = raw.split("\n");
   const pid = Number(pidLine.trim());
   if (!Number.isFinite(pid) || pid <= 0) return null;
   const atMs = Date.parse(atLine.trim());
-  return Number.isFinite(atMs) ? { pid, atMs } : { pid };
+  const stateRoot = rootLine.trim();
+  return {
+    pid,
+    ...(Number.isFinite(atMs) ? { atMs } : {}),
+    ...(stateRoot === "" ? {} : { stateRoot }),
+  };
 }
 
 /**
@@ -208,7 +250,10 @@ export type PidClaimStake =
 /**
  * Take the guard file at `path`: exclusive-create (`wx`) it carrying this
  * process's statement ({@link renderPidClaim}), reclaiming over a holder that
- * is no longer alive.
+ * is no longer alive. `stateRoot` is the root this holder resolved, stated on
+ * the claim's third line where the caller names one — the tip claim does,
+ * because its refusal names both roots; the entry claim does not, being keyed
+ * by the checkout its holder's root already picked.
  *
  * Exclusive-create is the whole arbitration: the loser of a race gets
  * `EEXIST` and reads the winner's statement rather than deciding anything
@@ -230,14 +275,19 @@ export type PidClaimStake =
  * and re-probes rather than answering, which is a different loop over the
  * same two primitives (`acquireWaitLock`, `src/waitLock.ts`).
  */
-export async function stakePidClaim(path: string): Promise<PidClaimStake> {
+export async function stakePidClaim(
+  path: string,
+  stateRoot?: string,
+): Promise<PidClaimStake> {
   const target = namespacedJoin(path);
   await mkdir(namespacedJoin(dirname(path)), { recursive: true });
   for (;;) {
     try {
-      await writeFile(target, renderPidClaim(process.pid, new Date()), {
-        flag: "wx",
-      });
+      await writeFile(
+        target,
+        renderPidClaim(process.pid, new Date(), stateRoot),
+        { flag: "wx" },
+      );
       // The drop is `atMostOnceDrop` above, which is where whose-file-does-
       // this-remove is decided for every guard.
       return {

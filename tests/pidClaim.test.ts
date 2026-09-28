@@ -14,6 +14,10 @@
  * `parsePidClaim`'s own decode — what each line may say and what a claim
  * reads as when it says nothing usable — is judged through these readers and
  * through the tip claim's (`tests/git.test.ts`), which read the same parse.
+ * The third line the tip claim adds is rendered and decoded here, beside the
+ * lock's two, because the claim this file carries is that one guard's extra
+ * statement costs the other's readers nothing; what that root *means* to a
+ * refusal is the tip claim's suite.
  *
  * The stake's half of the same statement — which file a release removes, and
  * how many times — is the last suite below, held here rather than at either
@@ -91,6 +95,56 @@ describe("liveLoopClaim / liveLoopPid — the loop lock's two-line statement", (
     } finally {
       await rm(base, { recursive: true, force: true });
     }
+  });
+
+  /**
+   * The line the loop lock does not write. The tip claim states the state root
+   * its holder resolved under the two lines above (spec/loop.md, "The loop
+   * lock and the tip claim"), and the loop lock is keyed by that root already,
+   * so what is pinned here is that neither guard's reader is disturbed by the
+   * other's statement: a root arrives when the writer stated one, and its
+   * absence is `undefined` rather than a substituted path
+   * (`.claude/rules/engineering.md`, "Loud or nothing").
+   */
+  it("a three-line claim reports its state root, and a two-line one reports none", async () => {
+    const at = new Date("2026-01-02T03:04:05.000Z");
+    const root = join("/srv", "docks", "relocated");
+
+    const three = renderPidClaim(process.pid, at, root);
+    // Non-vacuity: the subject really is a three-line statement, and the two
+    // lines every earlier reader takes are untouched by the third.
+    expect(three.split("\n").filter((line) => line !== "")).toHaveLength(3);
+    expect(three.startsWith(renderPidClaim(process.pid, at))).toBe(true);
+    expect(parsePidClaim(three)).toEqual({
+      pid: process.pid,
+      atMs: at.getTime(),
+      stateRoot: root,
+    });
+
+    // The loop lock's own statement, unchanged: two lines, and a decode that
+    // reports no root rather than one it picked.
+    const two = renderPidClaim(process.pid, at);
+    expect(two.split("\n").filter((line) => line !== "")).toHaveLength(2);
+    expect(parsePidClaim(two)).toEqual({
+      pid: process.pid,
+      atMs: at.getTime(),
+    });
+    expect(parsePidClaim(two)?.stateRoot).toBeUndefined();
+  });
+
+  it("renderPidClaim refuses a state root carrying a newline rather than writing a statement it would misread", async () => {
+    const at = new Date("2026-01-02T03:04:05.000Z");
+    // A posix path may hold a newline, and written through it would leave a
+    // third line naming a root nobody resolved — which the decode would then
+    // report as the holder's.
+    const forged = `/srv/dock\n${join("/srv", "other")}`;
+
+    expect(() => renderPidClaim(process.pid, at, forged)).toThrow(/newline/);
+    // Non-vacuity: the same root without the newline renders and round-trips,
+    // so the refusal is about the newline and not about the path.
+    expect(parsePidClaim(renderPidClaim(process.pid, at, "/srv/dock"))?.stateRoot).toBe(
+      "/srv/dock",
+    );
   });
 });
 

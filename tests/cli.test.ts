@@ -60,8 +60,8 @@ import {
   stopFlagPath,
 } from "../src/paths.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
-import { gitCommonDir, tipClaimPath } from "../src/git.ts";
-import { renderPidClaim } from "../src/pidClaim.ts";
+import { acquireTipClaim, gitCommonDir, tipClaimPath } from "../src/git.ts";
+import { parsePidClaim, renderPidClaim } from "../src/pidClaim.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import {
   tickVerdictPath,
@@ -2697,6 +2697,84 @@ async function signalledLoopRun(opts: {
  * there, so the property is POSIX's alone, and every arm declares that skip
  * rather than passing silently.
  */
+/**
+ * Two state roots on one tip. A checkout has one tip, so two efforts under
+ * two `FLUME_DIR`s in one checkout meet at the tip claim — each has taken a
+ * `loop.pid` of its own, because the state root is what that lock keys on
+ * (spec/loop.md, *The loop lock and the tip claim*). The refusal is therefore
+ * the only surface that can say which roots are involved, and one naming
+ * neither reads as a busy tip.
+ *
+ * Driven end to end: the real writer states the holder's root and the real
+ * `flume tick` reads it back off disk
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+describe("flume tick — two state roots on one tip (spec/loop.md \"The loop lock and the tip claim\")", () => {
+  it(
+    "a second tick in one checkout under its own state root refuses naming both the root that holds the tip and the root it resolved",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const holderRoot = join(repo.dir, "state-a");
+        const refusedRoot = join(repo.dir, "state-b");
+
+        // Both roots are relocated, and the bay holds only the chain, so
+        // resolution composes each one: the second-state-root refusal
+        // (`resolveStateDirs`, `src/cliStateDirs.ts`) is a different guard
+        // than the one under test, and a bay holding state of its own would
+        // take this case out at exit 2 before the tip was ever claimed.
+        expect(
+          readdirSync(join(repo.dir, ".flume")).filter((name) =>
+            (Object.values(STATE_ROOT_NAMES) as string[]).includes(name),
+          ),
+        ).toEqual([]);
+
+        // The first effort, holding the tip for its own root — the vitest
+        // worker plays it, so the holder is live for the duration of the run
+        // below.
+        const held = await acquireTipClaim(
+          repo.dir,
+          "refs/heads/main",
+          holderRoot,
+        );
+        try {
+          // Non-vacuity: the claim on disk really states the holder's root,
+          // so the refusal below is read off the statement rather than out of
+          // a two-line file that could name no root at all.
+          expect(
+            parsePidClaim(await readFile(held.path, "utf8"))?.stateRoot,
+          ).toBe(holderRoot);
+
+          const r = await runCli(repo.dir, ["tick"], {
+            ...hermeticEnv(),
+            FLUME_DIR: refusedRoot,
+          });
+
+          expect(r.code).toBe(1);
+          // Both roots, the ref and the claim path: the operator reads two
+          // state roots on one tip rather than a tip that is merely busy.
+          expect(r.out).toContain(holderRoot);
+          expect(r.out).toContain(refusedRoot);
+          expect(r.out).toContain("refs/heads/main");
+          expect(r.out).toContain(held.path);
+          // The refused effort took nothing: the holder's claim stands as it
+          // wrote it.
+          expect(
+            parsePidClaim(await readFile(held.path, "utf8"))?.stateRoot,
+          ).toBe(holderRoot);
+        } finally {
+          held.release();
+        }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
 describe("flume loop — a signalled run takes down its whole tick tree (spec/loop.md \"The loop lock and the tip claim\")", () => {
   afterEach(async () => {
     await reapAll(signalledPids.splice(0));

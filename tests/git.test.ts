@@ -1413,12 +1413,20 @@ describe("checkoutAddress — the segment a checkout owns", () => {
  * primitive — the tip claim guards a ref, not a state root.
  */
 describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () => {
+  /**
+   * The state root a case hands the claim: the root its caller resolved, which
+   * `flume tick` and `flume loop` hand over rather than have the claim derive
+   * (`src/cli.ts`). A name per effort, because the cases that matter are the
+   * ones where two efforts under two roots meet on one tip.
+   */
+  const stateRootOf = (effort: string): string => join(repo, effort);
+
   it("creates the claim file under <git-common-dir>/flume/tip-claims/<ref path>, holding this process's pid", async () => {
     const refPath = await resolveRefPath(repo);
     const commonDir = await gitCommonDir(repo);
     const expectedPath = tipClaimPath(commonDir, refPath);
 
-    const claim = await acquireTipClaim(repo, refPath);
+    const claim = await acquireTipClaim(repo, refPath, stateRootOf("first"));
 
     expect(claim.path).toBe(expectedPath);
     expect(existsSync(claim.path)).toBe(true);
@@ -1444,7 +1452,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
     const refPath = await resolveRefPath(repo);
     const before = Date.now();
 
-    const claim = await acquireTipClaim(repo, refPath);
+    const claim = await acquireTipClaim(repo, refPath, stateRootOf("first"));
 
     const raw = await readFile(claim.path, "utf8");
     const [pidLine, atLine] = raw.split("\n");
@@ -1460,11 +1468,96 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
     claim.release();
   });
 
+  /**
+   * The third line, through the real writer and the real reader
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*): `acquireTipClaim` is handed a root and `parsePidClaim`
+   * (`src/pidClaim.ts`) — the decode every liveness probe over this file goes
+   * through — reads back what it left.
+   *
+   * The position is the claim, so the raw text is read line by line: a reader
+   * after liveness takes line one and a reader after the instant line two,
+   * whatever stands under them.
+   */
+  it("the tip claim states the state root its holder resolved on its third line", async () => {
+    const refPath = await resolveRefPath(repo);
+    const resolved = stateRootOf("relocated-state");
+
+    const claim = await acquireTipClaim(repo, refPath, resolved);
+
+    const raw = await readFile(claim.path, "utf8");
+    const [pidLine, atLine, rootLine] = raw.split("\n");
+    expect(pidLine).toBe(String(process.pid));
+    expect(atLine).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    expect(rootLine).toBe(resolved);
+    // ...and the decode every reader of this file takes hands the same root
+    // back beside the two facts that were always there.
+    const decoded = parsePidClaim(raw);
+    expect(decoded?.pid).toBe(process.pid);
+    expect(decoded?.atMs).toBeDefined();
+    expect(decoded?.stateRoot).toBe(resolved);
+
+    claim.release();
+  });
+
+  /**
+   * Two roots on one tip, named. A checkout has one tip, so a second effort
+   * under its own `FLUME_DIR` meets the first here — and a refusal naming
+   * neither root reads as a busy tip rather than as the second root it is
+   * (spec/loop.md, *The loop lock and the tip claim*).
+   *
+   * The unstated arm rides the same case: a claim written before the third
+   * line existed still names its holder, and the refusal says the root was
+   * never stated rather than substituting one
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  it("the refusal names the holder's state root beside the refused effort's, and says the holder stated none where it did not", async () => {
+    const refPath = await resolveRefPath(repo);
+    const held = stateRootOf("holder-state");
+    const refused = stateRootOf("refused-state");
+
+    const first = await acquireTipClaim(repo, refPath, held);
+    // Non-vacuity: the holder really stated a root, so the refusal below is a
+    // read of the claim rather than of a two-line file.
+    expect(
+      parsePidClaim(await readFile(first.path, "utf8"))?.stateRoot,
+    ).toBe(held);
+
+    const stated = await acquireTipClaim(repo, refPath, refused).catch(
+      (err: unknown) => err,
+    );
+    expect(stated).toBeInstanceOf(TipClaimHeldError);
+    const statedErr = stated as TipClaimHeldError;
+    expect(statedErr.holderStateRoot).toBe(held);
+    expect(statedErr.stateRoot).toBe(refused);
+    expect(statedErr.message).toContain(held);
+    expect(statedErr.message).toContain(refused);
+    expect(statedErr.message).toContain(refPath);
+    expect(statedErr.message).toContain(first.path);
+
+    // The holder's file rewritten to what a flume before the third line left:
+    // the pid alone, still live, still its holder's.
+    first.release();
+    await writeFile(first.path, `${process.pid}\n`, "utf8");
+
+    const silent = await acquireTipClaim(repo, refPath, refused).catch(
+      (err: unknown) => err,
+    );
+    expect(silent).toBeInstanceOf(TipClaimHeldError);
+    const silentErr = silent as TipClaimHeldError;
+    expect(silentErr.holderStateRoot).toBeUndefined();
+    expect(silentErr.message).toContain("did not state");
+    expect(silentErr.message).toContain(refused);
+    // And no root was invented for the holder: the one root in the sentence is
+    // the refused effort's.
+    expect(silentErr.message).not.toContain(held);
+  });
+
   it("refuses with TipClaimHeldError naming the holder pid when a live pid already holds the claim (EEXIST)", async () => {
     const refPath = await resolveRefPath(repo);
-    const first = await acquireTipClaim(repo, refPath);
+    const first = await acquireTipClaim(repo, refPath, stateRootOf("first"));
 
-    const attempt = acquireTipClaim(repo, refPath);
+    const attempt = acquireTipClaim(repo, refPath, stateRootOf("second"));
     await expect(attempt).rejects.toBeInstanceOf(TipClaimHeldError);
     await expect(attempt).rejects.toThrow(
       new RegExp(`${refPath}.*pid ${process.pid}`.replace(/[/\\]/g, "\\$&")),
@@ -1486,7 +1579,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
     await mkdir(dirname(claimPath), { recursive: true });
     await writeFile(claimPath, String(deadPid()));
 
-    const claim = await acquireTipClaim(repo, refPath);
+    const claim = await acquireTipClaim(repo, refPath, stateRootOf("first"));
 
     expect(claim.path).toBe(claimPath);
     // The dead holder's pid was overwritten by this call's own — proof the
@@ -1513,7 +1606,9 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
     });
     vi.mocked(unlink).mockImplementationOnce(() => Promise.reject(unlinkErr));
 
-    await expect(acquireTipClaim(repo, refPath)).rejects.toBe(unlinkErr);
+    await expect(
+      acquireTipClaim(repo, refPath, stateRootOf("first")),
+    ).rejects.toBe(unlinkErr);
 
     // The stale claim file was never cleared — the rejection came from the
     // unlink itself, not a retried create failing on some other path.
@@ -1544,7 +1639,9 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
 
     // The exclusive create sees the symlink and fails EEXIST, so this is the
     // reclaim branch — the higher-stakes half of the same probe.
-    await expect(acquireTipClaim(repo, refPath)).rejects.toThrow(/ELOOP/);
+    await expect(
+      acquireTipClaim(repo, refPath, stateRootOf("first")),
+    ).rejects.toThrow(/ELOOP/);
     // The claim was never unlinked on the way out: the refusal beat the
     // reclaim rather than following it.
     expect(existsSync(dirname(claimPath))).toBe(true);
@@ -1553,7 +1650,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
 
   it("release removes the claim file", async () => {
     const refPath = await resolveRefPath(repo);
-    const claim = await acquireTipClaim(repo, refPath);
+    const claim = await acquireTipClaim(repo, refPath, stateRootOf("first"));
     expect(existsSync(claim.path)).toBe(true);
 
     claim.release();
@@ -1630,7 +1727,7 @@ describe.runIf(process.platform === "win32")(
       const claimPath = tipClaimPath(commonDir, refPath);
       expect(claimPath.length).toBeGreaterThan(260);
 
-      const claim = await acquireTipClaim(repo, refPath);
+      const claim = await acquireTipClaim(repo, refPath, join(repo, "first"));
       expect(claim.path).toBe(claimPath);
       expect(await liveTipClaimPid(claimPath)).toBe(process.pid);
 

@@ -1271,7 +1271,11 @@ async function main(): Promise<number> {
     process.on("SIGTERM", () => void releaseAndExit(143));
     if (process.env.FLUME_TIP_CLAIM_HELD === undefined) {
       try {
-        bareTipClaim = await acquireTipClaim(repoRoot, tickHeadRef.path);
+        bareTipClaim = await acquireTipClaim(
+          repoRoot,
+          tickHeadRef.path,
+          flumeDir,
+        );
       } catch (err) {
         if (err instanceof TipClaimHeldError) {
           console.error(`[flume] tick refuses: ${err.message}`);
@@ -1505,8 +1509,14 @@ async function main(): Promise<number> {
     // resource than loop.pid (a ref vs. a state root); both stand. A refusal
     // here rolls back the loop.pid claim just taken above — through the same
     // `dropLock` the signal handlers call, so the rollback has one owner.
+    //
+    // The claim is handed the state root this run resolved, so its refusal can
+    // name that root beside the holder's: the two guards above and here are
+    // what a second effort under its own `FLUME_DIR` in this checkout meets,
+    // and the loop lock it passes (a root of its own) is exactly why the tip's
+    // refusal is the one that has to say which roots are involved.
     try {
-      tipClaim = await acquireTipClaim(repoRoot, headRef);
+      tipClaim = await acquireTipClaim(repoRoot, headRef, flumeDir);
     } catch (err) {
       dropLock();
       if (err instanceof TipClaimHeldError) {

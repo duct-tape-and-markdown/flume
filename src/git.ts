@@ -1100,9 +1100,11 @@ async function withWorktreeLock<T>(
  * (`livePidClaimAt`, `src/pidClaim.ts`), including what it refuses to read
  * as absent: a claim file that is present but unreadable is not an unclaimed
  * tip, because read as one, `acquireTipClaim`'s EEXIST branch would reclaim
- * a tip another live writer holds. The pid alone here, because the claim
- * instant is `flume status`'s question about the loop lock and no caller
- * asks it of a tip.
+ * a tip another live writer holds. The pid alone here, because the two facts
+ * under it answer questions no caller asks of a live tip: the claim instant is
+ * `flume status`'s about the loop lock, and the holder's state root is the
+ * refusal's ({@link acquireTipClaim}), which reads the whole claim off the
+ * stake rather than through this path.
  */
 export async function liveTipClaimPid(
   claimPath: string,
@@ -1113,14 +1115,29 @@ export async function liveTipClaimPid(
 /**
  * Thrown by {@link acquireTipClaim} when a live process already holds the
  * claim — the operational-refusal class, same as the loop lock's refusal.
+ *
+ * Both state roots are named, the holder's beside the one the refused effort
+ * resolved: a checkout has one tip, so two efforts under two roots contend
+ * here, and a refusal naming neither root reads as a busy tip rather than as
+ * the second root it is (spec/loop.md, *The loop lock and the tip claim*). A
+ * holder that stated no root — a claim written before the third line existed —
+ * is said to have stated none, never given one this class picked.
  */
 export class TipClaimHeldError extends Error {
   constructor(
     public readonly refPath: string,
     public readonly holderPid: number,
     public readonly claimPath: string,
+    /** The state root the refused effort resolved. */
+    public readonly stateRoot: string,
+    /** The state root the holder stated, absent where it stated none. */
+    public readonly holderStateRoot?: string,
   ) {
-    super(`tip ${refPath} claimed by pid ${holderPid} (${claimPath})`);
+    super(
+      `tip ${refPath} claimed by pid ${holderPid} for ` +
+        `${holderStateRoot ?? "a state root it did not state"} (${claimPath}); ` +
+        `this effort resolved ${stateRoot}`,
+    );
   }
 }
 
@@ -1134,16 +1151,28 @@ export class TipClaimHeldError extends Error {
  * live one — refuse, naming the holder ({@link TipClaimHeldError}) — which is
  * where it parts from the entry claim (`EntryClaimStore`,
  * `src/entryClaims.ts`) and from the wait locks above.
+ *
+ * `stateRoot` is the root this caller resolved, told rather than derived here
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*): the claim states
+ * it on its third line, and the refusal names it beside the holder's, so two
+ * efforts under two roots in one checkout read as what they are.
  */
 export async function acquireTipClaim(
   cwd: string,
   refPath: string,
+  stateRoot: string,
 ): Promise<StakedPidClaim> {
   const commonDir = await gitCommonDir(cwd);
   const claimPath = tipClaimPath(commonDir, refPath);
-  const stake = await stakePidClaim(claimPath);
+  const stake = await stakePidClaim(claimPath, stateRoot);
   if (stake.kind === "held") {
-    throw new TipClaimHeldError(refPath, stake.by.pid, claimPath);
+    throw new TipClaimHeldError(
+      refPath,
+      stake.by.pid,
+      claimPath,
+      stateRoot,
+      stake.by.stateRoot,
+    );
   }
   return stake.claim;
 }
