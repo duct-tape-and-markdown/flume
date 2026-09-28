@@ -1,0 +1,31 @@
+{
+  "tag": "THE-TICK-PAGE-STATES-THE-TIP-CLAIM-IT-TAKES",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "docs/CLI.md",
+        "description": "the `flume tick` section states the tip claim a bare tick takes and the refusal a live holder returns, in place of the sentence denying both"
+      },
+      {
+        "path": "src/cliHelp.ts",
+        "description": "that refusal carries a label the page's copy is read under, as the shared root causes already do"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the arm, driven off a tick that really refused, beside the per-arm tick cause pin"
+      }
+    ]
+  },
+  "summary": "docs/CLI.md's `flume tick` section says a bare tick takes no tip claim; it takes one and returns 1 when another process holds it — a cause that section's exit-1 window omits",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the page section a caller reads before the hover text states the tip claim a bare tick acquires and names the live-holder refusal among its exit-1 causes, labelled at the arm that returns it, so the per-arm read covers that arm instead of resolving against a sentence stating its opposite",
+  "tests": [
+    "docs/CLI.md's flume tick section states the live tip-claim refusal among its exit-1 causes"
+  ],
+  "notes": "Off note THE-TIP-CLAIM-NAMES-THE-STATE-ROOT-IT-HOLDS-FOR (1). Verified: `src/cli.ts:1272` acquires a claim unless `FLUME_TIP_CLAIM_HELD` is set and returns 1 on `TipClaimHeldError` (`:1282`), which is what `spec/loop.md`, *The loop lock and the tip claim* (*Scope*) states and `tests/tip-claim.integration.test.ts` drives; `docs/CLI.md:44` denies it inside the exit-1 sentence CLI-DOC-TICK-EXIT-CAUSES-PINNED-PER-ARM reads. Seams both other paths with three standing entries."
+}

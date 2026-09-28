@@ -1,0 +1,35 @@
+{
+  "tag": "THE-WAVE-REPORTS-EVERY-LEDGER-COMMIT-IT-LANDED",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the ledger commits a wave landed are kept as the set they are, not overwritten per pick"
+      },
+      {
+        "path": "src/waveTick.ts",
+        "description": "the handoff surface carries that set beside the field it narrowed to"
+      },
+      {
+        "path": "src/Phase.ts",
+        "description": "`TickResult.commitSha`'s shipped hover states which commit it holds under fanout"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the two-entry wave's reported ledger commits, beside the per-pick ledger block"
+      }
+    ]
+  },
+  "summary": "A fanout wave lands one ledger commit per pick and the handoff keeps only the last, under a hover calling it the produced commit — a chain wanting the rest has no surface",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "a wave that shipped N entries reports every ledger commit it landed on the surface a handoff reads, and the hover on the single-sha field states which commit that is rather than \"the produced commit\", so a chain reading a fanout wave's ship is not handed the last of N as if it were the whole",
+  "tests": [
+    "a fanout wave that shipped two entries reports both ledger commits it landed"
+  ],
+  "notes": "Off note THE-LEDGER-COMMIT-LANDS-WITH-ITS-OWN-MERGE (2), the per-pick ledger's consequence. Verified: `w.chorSha` keeps the most recent (`src/waveMerge.ts:1004`, last write wins), read into `commitSha` at `src/waveTick.ts:670`; the hover at `src/Phase.ts:337` still reads \"SHA of the produced commit\". Nothing in-tree reads it as the wave's whole ship, so the fix is a surface, not a repair. Seams three paths with THE-LEDGER-REFUSAL-VERDICT-NAMES-THE-SETTLED-WAVE."
+}

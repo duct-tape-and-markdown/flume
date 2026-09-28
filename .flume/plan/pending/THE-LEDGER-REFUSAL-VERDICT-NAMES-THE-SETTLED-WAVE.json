@@ -1,0 +1,38 @@
+{
+  "tag": "THE-LEDGER-REFUSAL-VERDICT-NAMES-THE-SETTLED-WAVE",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveTick.ts",
+        "description": "the refusal verdict is built where the wave is settled, at the throw every slot has finished behind"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the refusal's verdict builder takes the wave's facts as they stand at that point rather than at the refusing pick"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the render refusal raised after the refusing pick, beside the ledger-refusal block's own verdict cases"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the multi-entry case whose `declined` read is the race this closes"
+      }
+    ]
+  },
+  "summary": "The ledger-refusal verdict is built mid-wave from live fact arrays, so a decline or a render refusal that settles after the refusing pick is missing from the tick's facts artifact",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "The tick verdict — one facts artifact"
+  },
+  "acceptance": "the verdict a refused ledger rewrite carries is built from the wave as it settled — every slot finished — so a decline folded or a render refusal raised after the refusing pick is named on it, and the multi-entry case's `declined` read no longer turns on which slot won a race",
+  "tests": [
+    "the ledger-refusal verdict names a decline folded after the refusing pick",
+    "the ledger-refusal verdict names a render refusal raised after the refusing pick"
+  ],
+  "notes": "Off notes THE-LEDGER-COMMIT-LANDS-WITH-ITS-OWN-MERGE (3) and THE-REFILL-READS-THE-LIVE-QUEUE-AND-THE-STOP-FLAG (2) — one defect, and the second's once-failing `expect(verdict.declined)` (`tests/cli.test.ts:801`) is its field evidence. Verified: `renderFailures` is a live array (`src/waveTick.ts:207`) pushed per slot (`:408`), read into the verdict at the refusal (`src/waveMerge.ts:1048`); `throw mergeError` (`:546`) is past every slot. Seams two paths with two standing entries."
+}
