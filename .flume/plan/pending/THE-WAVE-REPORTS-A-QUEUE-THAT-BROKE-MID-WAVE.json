@@ -1,12 +1,22 @@
 {
   "tag": "THE-WAVE-REPORTS-A-QUEUE-THAT-BROKE-MID-WAVE",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
   "priority": 0,
   "files": {
     "edit": [
       {
         "path": "src/waveTick.ts",
-        "description": "the refill read that did not resolve reaches the result through the field the opening read already reports on"
+        "description": "both arms of a refill read that did not resolve reach the result — the walled one through the field the opening read already reports on, the refusing one past the settled wave the way its `mergeError` sibling already throws"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the settled wave's verdict builder the refusing arm rides out on"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the bare-`PendingParseFailure` arm stops claiming no agent ran, and carries the verdict when one rides the refusal"
       },
       {
         "path": "src/Phase.ts",
@@ -14,18 +24,19 @@
       },
       {
         "path": "tests/Dispatcher.test.ts",
-        "description": "the mid-wave unparseable queue's reported failure, beside the live-queue refill block's own cases"
+        "description": "the mid-wave unparseable queue's reported failure and the walled wave's verdict, beside the live-queue refill block's own cases"
       }
     ]
   },
-  "summary": "A refill read that did not parse stops the wave pulling and is reported on no surface, so a queue that broke mid-wave reads to a handoff as a drained one",
+  "summary": "A mid-wave refill read that did not resolve reports nothing: one arm stops the wave pulling off every surface, the other throws bare past a settled wave whose spans are on trunk",
   "per": {
     "path": ".claude/rules/engineering.md",
     "section": "A fact the engine holds is reported, never rediscovered"
   },
-  "acceptance": "a wave whose mid-wave queue re-read did not resolve names that failure on `TickResult.queueParseFailure` — the field the opening read already reports through, and whose own hover states the distinction it buys — so a chain's `handoff` tells a queue that stopped resolving from one the wave drained without re-reading the ledger itself",
+  "acceptance": "both arms of a mid-wave queue re-read that did not resolve reach the tick's facts — the walled arm names the failure on `TickResult.queueParseFailure`, the field the opening read already reports through and whose own hover states the distinction it buys; the arm that refuses outright throws past the settled wave carrying the verdict its `mergeError` sibling already carries — so a chain's `handoff` tells a queue that stopped resolving from one the wave drained, and a tick whose spans landed on trunk is never classified as a decide-read that refused before any agent ran",
   "tests": [
-    "a wave whose mid-wave queue re-read did not parse reports the parse failure on its result"
+    "a wave whose mid-wave queue re-read did not parse reports the parse failure on its result",
+    "a wave walled by a mid-wave queue re-read the phase cannot rewrite reports a verdict naming the spans it shipped"
   ],
-  "notes": "Verified this tick: `refillWalled` (`src/waveTick.ts:292`, set at `:457`) is read only by `wavePulls` (`:430`) and leaves as a `log.warn`; the result's `queueParseFailure` (`:701`) is the opening read's alone. The field's hover (`src/Phase.ts:614`) already states that without it \"a queue that never resolved is indistinguishable from a drained one\", and \"absent on every tick whose queue resolved\" now reads false. Seams `src/waveTick.ts` with THE-REFILL-PULLED-SLOT-TAKES-ONE-SET-OF-FACTS."
+  "notes": "Arm 1: `refillWalled` (`src/waveTick.ts:292`, set `:457`) leaves as a `log.warn`, read only by `wavePulls` (`:430`); `queueParseFailure` (`:701`) is the opening read's alone. Arm 2, off note THE-WAVES-TWO-VERDICT-PRODUCERS-NAME-ONE-FACT-SET: the hard refusal (`src/pendingLedger.ts:796`) lands in `slotError` (`:523`) and throws bare at `:538`, ahead of the `mergeError` sibling (`:546`) that carries a verdict, while `src/Dispatcher.ts:955` calls it a read that refused before any agent ran."
 }
