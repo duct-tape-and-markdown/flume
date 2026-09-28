@@ -1,0 +1,31 @@
+{
+  "tag": "THE-WAVE-REPORTS-A-QUEUE-THAT-BROKE-MID-WAVE",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveTick.ts",
+        "description": "the refill read that did not resolve reaches the result through the field the opening read already reports on"
+      },
+      {
+        "path": "src/Phase.ts",
+        "description": "the field's hover states that a wave's report may come from a read no `TickContext` was handed"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the mid-wave unparseable queue's reported failure, beside the live-queue refill block's own cases"
+      }
+    ]
+  },
+  "summary": "A refill read that did not parse stops the wave pulling and is reported on no surface, so a queue that broke mid-wave reads to a handoff as a drained one",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "a wave whose mid-wave queue re-read did not resolve names that failure on `TickResult.queueParseFailure` — the field the opening read already reports through, and whose own hover states the distinction it buys — so a chain's `handoff` tells a queue that stopped resolving from one the wave drained without re-reading the ledger itself",
+  "tests": [
+    "a wave whose mid-wave queue re-read did not parse reports the parse failure on its result"
+  ],
+  "notes": "Verified this tick: `refillWalled` (`src/waveTick.ts:292`, set at `:457`) is read only by `wavePulls` (`:430`) and leaves as a `log.warn`; the result's `queueParseFailure` (`:701`) is the opening read's alone. The field's hover (`src/Phase.ts:614`) already states that without it \"a queue that never resolved is indistinguishable from a drained one\", and \"absent on every tick whose queue resolved\" now reads false. Seams `src/waveTick.ts` with THE-REFILL-PULLED-SLOT-TAKES-ONE-SET-OF-FACTS."
+}
