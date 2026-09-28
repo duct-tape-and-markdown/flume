@@ -1,7 +1,8 @@
 /**
- * The markdown heading reader — one home for the read every doc pin in this
- * suite makes: which lines of a page are headings, and the section one of
- * them opens (`.claude/rules/engineering.md`, *A module is one job*). Eight
+ * The markdown page reader — one home for the cuts every doc pin in this
+ * suite makes: which lines of a page are headings, the section one of them
+ * opens, the bullet a lead opens, and the sentences a section spends on one
+ * exit code (`.claude/rules/engineering.md`, *A module is one job*). Eight
  * copies across five test files preceded it, each new pin copying whichever
  * was nearest, and they disagreed on both rules below — what closes a
  * section, and whether a fenced `# ` line is a heading at all.
@@ -398,4 +399,73 @@ export function bulletOf(section: string, lead: string): string {
   const body = next === -1 ? rest : rest.slice(0, next);
 
   return `${lead}${body}`.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * How a `docs/CLI.md` section names an exit code: a backticked bare integer
+ * introduced by the word "exit" — "exits `69`", "refuses (exit `1`)", "Exit
+ * code stays `0`" — and that context is what makes a read of it a claim about
+ * the verb's range rather than about any number the prose happens to
+ * backtick. These sections also backtick integers that are values (`--max`'s
+ * default), and a value read as a code would put the page permanently at odds
+ * with every producer. The window between the word and the code admits no
+ * backtick, so the two must sit in one clause.
+ *
+ * One home for the two reads below — the whole range a section names, and the
+ * sentences it spends on one code (`.claude/rules/engineering.md`, *A module
+ * is one job*). `matchAll` works over a clone, so this global pattern carries
+ * no match position between calls.
+ *
+ * One introducing verb per code is the convention the page states in its own
+ * banner (`docs/CLI.md`, *Reading the exit codes*), for its readers and its
+ * authors alike. A section that states a later code trailing a sibling under
+ * one leading "Exits" puts it where every read here is blind; the every-verb
+ * range case in `tests/cliHelp.test.ts` reds on that, naming the convention
+ * in its message.
+ */
+const NAMED_EXIT_CODE = /\bexits?\b[^`\n]{0,24}`(\d+)`/gi;
+
+/** The exit codes a `docs/CLI.md` section names, read by the rule above. */
+export function namedExitCodes(section: string): number[] {
+  const codes = new Set<number>();
+  for (const [, code] of section.matchAll(NAMED_EXIT_CODE)) {
+    codes.add(Number(code));
+  }
+  return [...codes].sort((a, b) => a - b);
+}
+
+/**
+ * Where one sentence of such a section ends and the next one opens: a period,
+ * then the whitespace before the next sentence's own opening — an upper-case
+ * letter, a backticked span, an opening paren, or the `**` a paragraph led by
+ * a bolded phrase opens with.
+ *
+ * The bolded arm is what keeps a window inside its own paragraph. A page
+ * states one flag's behavior in a paragraph led by a bolded name, and a lead
+ * is neither a capital nor a backtick: without this arm the blank line before
+ * it breaks nothing, so that paragraph reads as the tail of the last sentence
+ * of the paragraph above, and a window cut for a code stated there carries
+ * prose about an arm it is not about.
+ */
+const SENTENCE_BREAK = /(?<=\.)\s+(?=\*\*|[A-Z`(])/;
+
+/**
+ * The sentences of a `docs/CLI.md` section that name one exit code — the
+ * window a claim about *that* code's causes is read from.
+ *
+ * Scoped rather than section-wide on purpose: a section documents a verb's
+ * whole range, so a set read off all of it turns on whatever the neighbouring
+ * arms happen to quote rather than on the arm the case is about
+ * (`.claude/rules/posture-sweep.md`, *A violation counts only when verified
+ * on disk this tick*). A sentence ends at the break above — the page's own
+ * arms are one sentence each, semicolons and em-dashes included.
+ */
+export function sentencesNamingExitCode(section: string, code: number): string[] {
+  return section
+    .split(SENTENCE_BREAK)
+    .filter((sentence) =>
+      [...sentence.matchAll(NAMED_EXIT_CODE)].some(
+        ([, named]) => Number(named) === code,
+      ),
+    );
 }

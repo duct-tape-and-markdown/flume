@@ -58,7 +58,11 @@ import {
 } from "./helpers/cliHelpRows.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";
-import { sectionOf } from "./helpers/docSections.ts";
+import {
+  namedExitCodes,
+  sectionOf,
+  sentencesNamingExitCode,
+} from "./helpers/docSections.ts";
 import { topLevelCommandNames } from "./helpers/shippedHelp.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
 import { makeScratchRepo } from "./helpers/scratchRepo.ts";
@@ -489,60 +493,6 @@ function backtickedIntegers(section: string): number[] {
 }
 
 /**
- * How a `docs/CLI.md` section names an exit code: a backticked bare integer
- * introduced by the word "exit" — "exits `69`", "refuses (exit `1`)", "Exit
- * code stays `0`" — and that context is what makes a read of it a claim about
- * the verb's range rather than about any number the prose happens to
- * backtick. These sections also backtick integers that are values (`--max`'s
- * default), and a value read as a code would put the page permanently at odds
- * with every producer. The window between the word and the code admits no
- * backtick, so the two must sit in one clause.
- *
- * One home for the two reads below — the whole range a section names, and the
- * sentences it spends on one code (`.claude/rules/engineering.md`, *The fix
- * lands at the mechanism*). `matchAll` works over a clone, so this global
- * pattern carries no match position between calls.
- *
- * One introducing verb per code is the convention the page states in its own
- * banner (`docs/CLI.md`, *Reading the exit codes*), for its readers and its
- * authors alike. A section that states a later code trailing a sibling under
- * one leading "Exits" puts it where every read here is blind; the every-verb
- * range case below reds on that, naming the convention in its message.
- */
-const NAMED_EXIT_CODE = /\bexits?\b[^`\n]{0,24}`(\d+)`/gi;
-
-/** The exit codes a `docs/CLI.md` section names, read by the rule above. */
-function namedExitCodes(section: string): number[] {
-  const codes = new Set<number>();
-  for (const [, code] of section.matchAll(NAMED_EXIT_CODE)) {
-    codes.add(Number(code));
-  }
-  return ascending(codes);
-}
-
-/**
- * The sentences of a `docs/CLI.md` section that name one exit code — the
- * window a claim about *that* code's causes is read from.
- *
- * Scoped rather than section-wide on purpose: a section documents a verb's
- * whole range, so a set read off all of it turns on whatever the neighbouring
- * arms happen to quote rather than on the arm the case is about
- * (`.claude/rules/posture-sweep.md`, *A violation counts only when verified
- * on disk this tick*). A sentence ends at a period followed by the opening of
- * the next — the page's own arms are one sentence each, semicolons and
- * em-dashes included.
- */
-function sentencesNamingExitCode(section: string, code: number): string[] {
-  return section
-    .split(/(?<=\.)\s+(?=[A-Z`(])/)
-    .filter((sentence) =>
-      [...sentence.matchAll(NAMED_EXIT_CODE)].some(
-        ([, named]) => Number(named) === code,
-      ),
-    );
-}
-
-/**
  * A passage as a phrase read compares it: the page's own wrapping folded
  * out, since a phrase broken across two source lines is one phrase, and case
  * folded, since a phrase opening a `--help` row is capitalized where the
@@ -683,6 +633,58 @@ describe("docs/CLI.md's flume tick causes against the labels their arms carry (C
       missed.length,
       "the per-code read handed back the same text for every code",
     ).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The window every per-code doc read above is cut from, pinned on the page
+ * shape that had widened it. `docs/CLI.md` states one flag's behavior in a
+ * paragraph led by a bolded name, and a bolded lead opens with neither a
+ * capital nor a backtick: the sentence break that ends a code's window read
+ * past the blank line before it, so that paragraph arrived as the tail of the
+ * sentence above — prose about the flag inside a neighbouring code's window,
+ * where a containment read could be satisfied by an arm it is not about
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ *
+ * The cut is read off the shipped page rather than a fixture: the paragraph
+ * shape is what the sibling reads here run over, so a page that stops leading
+ * a paragraph that way reds on this case's own non-vacuity instead of quietly
+ * leaving the arm unexercised.
+ */
+describe("the per-exit-code window is cut at its own paragraph", () => {
+  it("the per-exit-code page window ends where a paragraph opens with a bolded lead", async () => {
+    const section = sectionOf(await readCliDoc(), "## `flume tick`");
+    expect(section.length).toBeGreaterThan(0);
+
+    const paragraphs = section.split(/\n[ \t]*\n/);
+    // The shape this case is about, asserted before the verdict: a paragraph
+    // of this section opens with a bolded lead, the paragraph above it closes
+    // on a period — which is all a sentence break has to work with — and that
+    // paragraph names an exit code, so gluing the two really would widen a
+    // window.
+    const glued = paragraphs.flatMap((paragraph, at) => {
+      const lead = /^\*\*[^*\n]+\*\*/.exec(paragraph)?.[0];
+      const above = at === 0 ? undefined : paragraphs[at - 1]!;
+      if (lead === undefined || above === undefined) return [];
+      if (!above.trimEnd().endsWith(".")) return [];
+      return namedExitCodes(above).map((code) => ({ code, lead }));
+    });
+    expect(
+      glued.length,
+      "no bolded-lead paragraph of this section sits under a closed sentence naming a code",
+    ).toBeGreaterThan(0);
+
+    for (const { code, lead } of glued) {
+      const window = sentencesNamingExitCode(section, code);
+      expect(window.length, `the section spends no sentence on ${code}`).toBeGreaterThan(0);
+      // The subject is the lead phrase, not whatever else the window quotes:
+      // this reds only when the paragraph that lead opens has been carried
+      // into a window cut for a code stated in the paragraph above it.
+      expect(
+        window.join("\n"),
+        `the ${code} window carries the ${lead} paragraph`,
+      ).not.toContain(lead);
+    }
   });
 });
 
