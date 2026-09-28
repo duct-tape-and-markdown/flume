@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { z } from "zod";
 
 // Partial mock: everything passes through to the real tsImport except in the
@@ -21196,5 +21205,324 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     expect(outcome.result?.claimedTags).toEqual([]);
     expect(outcome.result?.shippedTags).toEqual(["STALE"]);
     expect(existsSync(stale)).toBe(false);
+  });
+});
+
+/**
+ * A tick's verdict is assembled at two sites: the dispatcher's, at the end of
+ * a tick that completed (`src/Dispatcher.ts`), and the wave merge stage's, for
+ * the partial verdict a refused pending-ledger rewrite rides out on
+ * (`src/waveMerge.ts`). Both hand `buildTickVerdict` (`src/tickVerdict.ts`) an
+ * argument list spelled by hand over a facts shape whose every fact but four
+ * is optional, so a fact one site never passes compiles — and the verdict a
+ * refused wave leaves behind is then silently narrower than the one the same
+ * wave leaves on completing.
+ *
+ * The check is the seam's own (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*): one wave — one queue, one chain, one set
+ * of agents — driven twice, once completing and once with its ledger rewrite
+ * refused, and the two real producers' verdicts compared field name for field
+ * name. Nothing here hand-authors a verdict, and the wave is shaped to
+ * populate the facts `buildTickVerdict` omits when they are empty: a
+ * comparison over the unconditional floor alone agrees no matter which
+ * optional fact either site forgot.
+ */
+describe("Dispatcher fanout — one wave through both verdict producers", () => {
+  /** The span that will not resolve: RENDER-WALL's prompt refuses on it. */
+  const FAILING_SPAN = "echo span-detail 1>&2; exit 3";
+  /** What a writer outside this wave lands on the queue mid-wave. */
+  const CORRUPT_BYTES = "{ corrupted mid-wave, not json";
+
+  interface WaveLeg {
+    verdict: TickVerdict;
+    /** The refusing site's own class, absent on a leg that completed. */
+    ledgerRefusal: string | undefined;
+    /** Every entry file the queue directory holds after the tick, name → bytes. */
+    queueAfter: Map<string, string>;
+  }
+
+  const queueFilesOnDisk = async (
+    repo: string,
+  ): Promise<Map<string, string>> => {
+    const dir = queueDirOf(repo);
+    const out = new Map<string, string>();
+    for (const name of (await readdir(dir)).sort()) {
+      if (name.endsWith(".json")) {
+        out.set(name, await readFile(join(dir, name), "utf8"));
+      }
+    }
+    return out;
+  };
+
+  /**
+   * One wave, run into whichever verdict producer `corruptMidWave` selects.
+   * Everything else — the queue, the chain, the agents, the operator's own
+   * bystander edit — is the same on both legs, so a field the two verdicts
+   * disagree about is the producers disagreeing and not the waves.
+   *
+   * The wave runs one slot wide, and that is what makes the comparison a
+   * comparison. A pick's ledger rewrite is scoped to that pick
+   * (`commitAttemptLedger`, `src/waveMerge.ts`), so the refusal fires at the
+   * first rewrite past the corruption and the facts the refused verdict can
+   * name are the facts recorded by then. One slot puts every entry through
+   * provisioning, render, agent and merge in queue order, so the corruption
+   * lands in the last entry's agent with every other fact already on the
+   * wave — and the two legs' verdicts are one wave's facts read at one point,
+   * rather than two waves read at different ones.
+   */
+  async function driveWave(
+    target: Fixture,
+    corruptMidWave: boolean,
+  ): Promise<WaveLeg> {
+    const flumeDir = join(target.repo, ".flume");
+
+    // The file CONFLICT-TRUNK's span rewrites, and a writer outside the wave
+    // moves under it (`mergeFailures`).
+    await writeAndCommit(
+      target.repo,
+      "src/shared.ts",
+      "baseline\n",
+      "test: seed shared",
+    );
+
+    // One inline span, one arg: RENDER-WALL is the only entry whose prompt
+    // refuses (`renderFailures`).
+    await writeFile(
+      join(target.configDir, "prompt.md"),
+      "digest: !`{{CMD}}`\n",
+      "utf8",
+    );
+
+    // The claim a sibling tick takes on TAKEN, at the engine's own address and
+    // in the engine's own statement.
+    const { commonDir, segment } = await git.checkoutAddress(target.repo);
+    const takenClaim = entryClaimPath(
+      commonDir,
+      segment,
+      entryClaimSlug("TAKEN"),
+    );
+    await mkdir(dirname(takenClaim), { recursive: true });
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      // The queue directory is declared beside `src/**` for the refused leg's
+      // sake: a decide read over a queue the phase could not rewrite is a bare
+      // refusal wherever it happens (`readPendingForDecision`,
+      // `src/pendingLedger.ts`), so a refill read past the corruption would
+      // wall the wave with a throw of its own. Declared, it walls the refill
+      // and nothing else, and the refusal under judgement stays the rewrite's.
+      writablePaths: ["src/**", ".flume/plan/pending/**"],
+      shouldRun: (ctx) => ctx.assignedEntry?.tag !== "DECLINE-ME",
+      setupWorktree: async (ctx) => {
+        if (ctx.worktreeKey === "SETUP-BOOM") {
+          throw new Error("setupWorktree boom for SETUP-BOOM");
+        }
+        return undefined;
+      },
+      promptArgs: (ctx) => ({
+        CMD: ctx.assignedEntry?.tag === "RENDER-WALL" ? FAILING_SPAN : "exit 0",
+      }),
+    });
+
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      // A sibling takes TAKEN between this wave's selection and its stake: the
+      // claim is planted as the batch is consulted, so the entry was pickable
+      // when the batch was drawn and held by the time the wave staked it
+      // (`stakeLosses`). TAKEN leads the queue for that reason — a later slot
+      // re-reads the live claims and would skip it at selection instead.
+      refusesEntry: (ctx: EntryRefusalContext) => {
+        if (ctx.entry.tag === "TAKEN") {
+          writeFileSync(
+            takenClaim,
+            renderPidClaim(process.pid, new Date()),
+            "utf8",
+          );
+        }
+        return false;
+      },
+    };
+
+    const dispatcherWith = (agent: Agent): Dispatcher =>
+      new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: target.repo,
+        configDir: target.configDir,
+        agent,
+        log: silent,
+        maxParallel: 1,
+      });
+
+    // A prior attempt filed under a tag the judged wave's queue no longer
+    // carries, so that wave retires it and says which
+    // (`clearedPriorAttempts`). The span walls on the writable-paths gate, so
+    // the record it leaves is not retired by its own tick's rewrite the way a
+    // shipped tag's is.
+    await writePending(target.repo, [
+      makeEntry("STALE-ONE", ["src/stale-one.ts"]),
+    ]);
+    new Baton(flumeDir).wake("build");
+    await dispatcherWith(
+      fanoutAgent({
+        "stale-one": (cwd) =>
+          writeAndCommit(cwd, "stale.txt", "x\n", "build: STALE-ONE"),
+      }),
+    ).tick();
+    expect(existsSync(priorAttemptPath(flumeDir, entryRef("STALE-ONE")))).toBe(
+      true,
+    );
+
+    // The judged wave, in the order one slot carries it: a stake lost, a
+    // `setupWorktree` that throws, a prompt that refuses, an entry declined, a
+    // span that ships, a span the trunk moves under, and — last, so that every
+    // fact above is already on the wave when its rewrite runs — the span that
+    // walls on the fence and carries the corruption.
+    await writePending(target.repo, [
+      { ...makeEntry("TAKEN", ["src/taken.ts"]), priority: 7 },
+      { ...makeEntry("SETUP-BOOM", ["src/setup-boom.ts"]), priority: 6 },
+      { ...makeEntry("RENDER-WALL", ["src/render-wall.ts"]), priority: 5 },
+      { ...makeEntry("DECLINE-ME", ["src/decline-me.ts"]), priority: 4 },
+      { ...makeEntry("SHIP-ONE", ["src/ship-one.ts"]), priority: 3 },
+      { ...makeEntry("CONFLICT-TRUNK", ["src/conflict-trunk.ts"]), priority: 2 },
+      { ...makeEntry("GATE-OUT", ["src/gate-out.ts"]), priority: 1 },
+    ]);
+    // The operator's own unstaged edit, which the wave checkpoints before its
+    // first pick (`bystanderCheckpointSha`).
+    await writeFile(join(target.repo, "README.md"), "operator's own edit\n");
+    new Baton(flumeDir).wake("build");
+
+    const outcome = await dispatcherWith(
+      // Registered for the three entries that reach an agent: DECLINE-ME,
+      // RENDER-WALL, SETUP-BOOM or TAKEN arriving at one throws, which is the
+      // loudest failure this fixture can take.
+      fanoutAgent({
+        "ship-one": (cwd) =>
+          writeAndCommit(cwd, "src/ship-one.ts", "ok\n", "build: SHIP-ONE"),
+        "conflict-trunk": async (cwd) => {
+          // The trunk moves under this span after its worktree was cut from
+          // it, so the pick below carries a diff whose context is gone and git
+          // refuses it. The wave is one slot wide, so nothing of the engine's
+          // is touching this checkout's index while this commit lands.
+          await writeAndCommit(
+            target.repo,
+            "src/shared.ts",
+            "from-trunk\n",
+            "test: the trunk moves under the span",
+          );
+          await writeAndCommit(
+            cwd,
+            "src/shared.ts",
+            "from-span\n",
+            "build: CONFLICT-TRUNK",
+          );
+        },
+        "gate-out": async (cwd) => {
+          if (corruptMidWave) {
+            await commitEntryFile(
+              target.repo,
+              entryFileName("CORRUPT"),
+              CORRUPT_BYTES,
+            );
+          }
+          await writeAndCommit(cwd, "outside.txt", "no\n", "build: GATE-OUT");
+        },
+      }),
+    ).tick();
+
+    expect(outcome.verdict).toBeDefined();
+    return {
+      verdict: outcome.verdict!,
+      ledgerRefusal: outcome.ledgerRefusal,
+      queueAfter: await queueFilesOnDisk(target.repo),
+    };
+  }
+
+  let completing: WaveLeg;
+  let refused: WaveLeg;
+  const legFixtures: Fixture[] = [];
+
+  beforeAll(async () => {
+    // Two checkouts: a leg ships spans and rewrites — or refuses to rewrite —
+    // the ledger its sibling leg needs untouched.
+    for (const corruptMidWave of [false, true]) {
+      const target = await makeFixture();
+      legFixtures.push(target);
+      const leg = await driveWave(target, corruptMidWave);
+      if (corruptMidWave) refused = leg;
+      else completing = leg;
+    }
+  });
+
+  afterAll(async () => {
+    for (const target of legFixtures) await target.cleanup();
+  });
+
+  it("a wave's ledger-refusal verdict names every fact field that wave's completing verdict names", async () => {
+    // Non-vacuity, in two halves: each leg really is the producer it stands
+    // for. The refused leg's rewrite never ran — the bytes that broke it stand
+    // on the queue, where a rewrite derived from `[]` would have overwritten
+    // them — and the completing leg's did, dropping the tag it shipped.
+    expect(refused.ledgerRefusal).toBe("parse-failure");
+    expect(refused.queueAfter.get(entryFileName("CORRUPT"))).toBe(
+      CORRUPT_BYTES,
+    );
+    // Only the merge stage's producer summarizes a wave this way, so this is
+    // the refused verdict's own site naming itself.
+    expect(refused.verdict.summary).toContain(
+      "pending-ledger rewrite refused",
+    );
+    expect(completing.ledgerRefusal).toBeUndefined();
+    expect([...completing.queueAfter.keys()]).not.toContain(
+      entryFileName("SHIP-ONE"),
+    );
+    // …and both legs carried the same wave the same distance: the span that
+    // ships is on trunk, and the span the trunk moved under is not.
+    for (const leg of [completing, refused]) {
+      expect(leg.verdict.shippedTags).toEqual(["SHIP-ONE"]);
+      expect(leg.verdict.mergeFailures?.map((f) => f.tag)).toEqual([
+        "CONFLICT-TRUNK",
+      ]);
+    }
+
+    // The claim: one fact set, two producers.
+    expect(Object.keys(refused.verdict).sort()).toEqual(
+      Object.keys(completing.verdict).sort(),
+    );
+  });
+
+  it("the wave both verdict comparisons read populates fact fields buildTickVerdict omits when empty", async () => {
+    // Every fact `buildTickVerdict` (`src/tickVerdict.ts`) spreads
+    // conditionally, less the two a wave that shipped a span cannot reach —
+    // asserted absent below rather than left to read as covered.
+    const omittedWhenEmpty = [
+      "declined",
+      "bystanderCheckpointSha",
+      "provisionFailures",
+      "stakeLosses",
+      "renderFailures",
+      "mergeFailures",
+      "gateFailures",
+      "clearedPriorAttempts",
+    ];
+    const legs: [string, WaveLeg][] = [
+      ["completing", completing],
+      ["refused", refused],
+    ];
+    for (const [name, leg] of legs) {
+      const keys = Object.keys(leg.verdict);
+      for (const field of omittedWhenEmpty) {
+        expect(keys, `${name} verdict names ${field}`).toContain(field);
+      }
+      // Vacuous-by-design, spelled: `noCommit` classifies a tick that produced
+      // no usable commit and `tipMoved` a span the wave refused to pick, and
+      // this wave picked one and shipped it. The field-name comparison beside
+      // this one therefore stands over eight of the ten conditional facts, and
+      // never over these two.
+      expect(leg.verdict.committed).toBe(true);
+      expect(leg.verdict.noCommit).toBeUndefined();
+      expect(leg.verdict.tipMoved).toBeUndefined();
+    }
   });
 });
