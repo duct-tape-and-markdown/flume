@@ -695,33 +695,48 @@ describe("the per-exit-code window is cut at its own paragraph", () => {
  * spells them again per verb section, in its own register, and those copies
  * had drifted apart from each other and from the clause.
  *
- * Scoped to the verbs whose `74` row says the shared refusals are its only
- * ones, read off the shipped pages rather than listed here: a verb with
- * refusals of its own documents those beside these, and which verbs those
- * are is the help table's to say (`.claude/rules/engineering.md`, *A seam
- * gate reads what the real writer wrote*).
+ * Scoped by which rows render the clause, read off the shipped pages rather
+ * than listed here, and that is every verb: bay discovery runs ahead of all
+ * of them, so the row an operator reads states these causes whether or not
+ * the verb has refusals of its own beside them (`.claude/rules/engineering.md`,
+ * *A seam gate reads what the real writer wrote*). The shared-only lead is
+ * the narrower marker inside that scope — the verbs whose `74` row says these
+ * are its only refusals — and it is read here as the witness that the scope
+ * is the clause's and not the lead's, never as the scope itself: a page read
+ * drawn from the lead leaves every verb that documents refusals of its own
+ * unpinned over the same three copies.
  */
 describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-SHARED-ROOT-CAUSES-PINNED-PER-VERB)", () => {
-  it("each docs/CLI.md verb section states the shared state-root exit-code cause the help block renders for that verb", async () => {
+  it("every docs/CLI.md verb section whose 74 row renders the shared state-root clause states all three of its causes", async () => {
     const names = topLevelCommandNames();
-    const sharedOnly = names.filter((name) => {
+    const rowOf = (name: string): string => {
       const page = helpPageFor(name);
       expect(page, `the help table answers no page for \`${name}\``).toBeDefined();
       const row = documentedExitCodeRows(page!).get(EX_IOERR);
-      return (
-        row !== undefined && asStated(row).includes(asStated(SHARED_ROOT_ONLY_LEAD))
-      );
-    });
-    // Non-vacuity in both directions: a marker that matched nothing would
-    // leave this green over no verb at all, and one that matched every verb
-    // would not be reading "this verb's only ones" — the verbs with refusals
-    // of their own are what it has to leave out.
+      expect(row, `flume ${name} --help lists no ${EX_IOERR} row`).toBeDefined();
+      return asStated(row!);
+    };
+    const rendered = names.filter((name) =>
+      SHARED_ROOT_PHRASES.every((phrase) => rowOf(name).includes(asStated(phrase))),
+    );
+    const sharedOnly = rendered.filter((name) =>
+      rowOf(name).includes(asStated(SHARED_ROOT_ONLY_LEAD)),
+    );
+    // Non-vacuity, and the direction the title claims. The count is asserted
+    // because the title names it: "all three" is a claim about the clause,
+    // and a clause that lost an arm would leave this green over two.
+    expect(SHARED_ROOT_PHRASES).toHaveLength(3);
     expect(sharedOnly.length).toBeGreaterThan(1);
-    expect(sharedOnly.length).toBeLessThan(names.length);
-    expect(SHARED_ROOT_PHRASES.length).toBeGreaterThan(1);
+    // And the scope is the clause's, not the lead's: a row rendering the
+    // clause under a lead of its own is what the lead-scoped read left out,
+    // so a scope that had collapsed back to the lead reds here.
+    expect(
+      rendered.length,
+      "every verb rendering the clause says it is its only refusal — the lead is the whole scope",
+    ).toBeGreaterThan(sharedOnly.length);
 
     const doc = await readCliDoc();
-    for (const name of sharedOnly) {
+    for (const name of rendered) {
       // The producer's side first: the phrases are spans of the clause the
       // shipped row really renders, so the page is read against what an
       // operator running `--help` sees.
@@ -748,7 +763,7 @@ describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-
     // these sections documents usage refusals too, and those sentences carry
     // none of the shared causes, so a reader handing back the whole section
     // could not tell a stated cause from a neighbouring one.
-    const elsewhere = sharedOnly.flatMap((name) => {
+    const elsewhere = rendered.flatMap((name) => {
       const section = sectionOf(doc, new RegExp(`^## \`flume ${name}\\b`));
       return namedExitCodes(section)
         .filter((code) => code !== EX_IOERR)
