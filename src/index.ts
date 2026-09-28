@@ -154,6 +154,9 @@ export {
   type InlineExecFailure,
   type NoCommitMode,
   type PriorAttempt,
+  // The base all six `PriorAttempt` variants extend: it stands in the hover
+  // text of each, and importing a variant carries no name for it.
+  type PriorAttemptEnvelope,
   type PriorAttemptKeyspace,
   type PriorAttemptMode,
   type RenderOptions,

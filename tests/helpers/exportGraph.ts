@@ -74,10 +74,11 @@ export interface ExportSite extends ScanSite {
 
 /**
  * Which position named the type. A signature names one in a parameter or a
- * return annotation, a property in its own annotation; the two are found by
- * different halves of the walk, so either can be judged alone.
+ * return annotation, a property in its own annotation, a heritage clause in
+ * the base it extends or implements; the three are found by different halves
+ * of the walk, so any one can be judged alone.
  */
-export type PositionKind = "signature" | "property";
+export type PositionKind = "signature" | "property" | "heritage";
 
 /**
  * One position of the shipped surface the `exports` map reaches, carrying
@@ -90,7 +91,7 @@ export interface ExportPosition extends ExportSite {
 
 /** One reached position naming a type the `exports` map cannot hand out. */
 export interface UnnamableType {
-  /** The signature or property whose annotation names it. */
+  /** The signature, property or heritage clause that names it. */
   readonly position: ExportSite;
   readonly kind: PositionKind;
   /** Where the unnamable type is declared. */
@@ -551,9 +552,9 @@ export const packageSurface = (request: ExportScanRequest): PackageSurface => {
  *
  * The same walk carries a second, stricter verdict alongside it. Reachability
  * asks whether a consumer can *read* a type; `unnamable` asks whether one can
- * *write* it — a type named by a signature or a property position is nameable
- * only when some entry module exports it under a name an import specifier can
- * carry.
+ * *write* it — a type named by a signature, a property or a heritage position
+ * is nameable only when some entry module exports it under a name an import
+ * specifier can carry.
  */
 export const scanExports = (request: ExportScanRequest): ExportScan => {
   const surface = shippedSurface(request);
@@ -584,13 +585,15 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   // reaches: every type one of them names, declared in the shipped tree, must
   // be exported by some entry module.
   //
-  // A position is an annotation a consumer reads but may not be able to
-  // write — a function's parameters and return, and a property's own type.
-  // Scope is every position a reached symbol carries: the reached function or
-  // variable itself, and the members of a reached type. `Chain.worktreesBase`
-  // names a parameter type and `FlumeApi.paths` a property type, each of which
-  // a chain author must be able to annotate exactly as `renderPrompt`'s
-  // parameter demands.
+  // A position is a type a consumer reads but may not be able to write — a
+  // function's parameters and return, a property's own type, and the bases a
+  // declaration extends or implements. Scope is every position a reached
+  // symbol carries: the reached function or variable itself, and the heritage
+  // clauses and members of a reached type. `Chain.worktreesBase` names a
+  // parameter type and `FlumeApi.paths` a property type, each of which a chain
+  // author must be able to annotate exactly as `renderPrompt`'s parameter
+  // demands; and a base sits in the hover text of every type that extends it,
+  // while importing the derived type imports no name for it.
   //
   // Reading the emit rather than the sources is what makes that scope hold: a
   // `const` the source leaves un-annotated still ships an annotation, written
@@ -617,6 +620,11 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     | {
         readonly kind: "property";
         readonly node: ts.TypeNode;
+        readonly name: string;
+      }
+    | {
+        readonly kind: "heritage";
+        readonly node: ts.ExpressionWithTypeArguments;
         readonly name: string;
       };
 
@@ -681,12 +689,33 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
   }
 
   /**
+   * The bases one declaration names in its heritage clauses, each a position
+   * of its own under the clause's keyword — a consumer writes a base by
+   * writing its own `extends`, and has nothing else to write it with. A clause
+   * naming several bases yields one position each, as a container with several
+   * call signatures does.
+   */
+  const fromHeritage = (
+    decl: ts.InterfaceDeclaration | ts.ClassDeclaration,
+    prefix: string,
+    out: FoundPosition[],
+  ): void => {
+    for (const clause of decl.heritageClauses ?? []) {
+      const keyword =
+        clause.token === ts.SyntaxKind.ImplementsKeyword ? "implements" : "extends";
+      for (const base of clause.types) {
+        out.push({ kind: "heritage", node: base, name: `${prefix}.<${keyword}>` });
+      }
+    }
+  };
+
+  /**
    * Every position one emitted declaration carries. A `function` is a
    * signature; so is a `const` the emit typed with a function type, while any
    * other type it carries is a property position — and a `const` the emit gave
    * a literal initializer instead of a type names nothing at all. An interface
-   * or a class carries its members' positions rather than one of its own, and
-   * so does a type alias — except that the alias's own type node is descended
+   * or a class carries its heritage clauses' and its members' positions rather
+   * than one of its own, and a type alias carries its type node's — except that the alias's own type node is descended
    * into rather than reported, being the name it was reached under. A
    * namespace and an enum carry none the map hands out by name.
    */
@@ -700,6 +729,7 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
     } else if (ts.isVariableDeclaration(decl)) {
       if (decl.type) fromAnnotation(decl.type, name, out);
     } else if (ts.isInterfaceDeclaration(decl) || ts.isClassDeclaration(decl)) {
+      fromHeritage(decl, name, out);
       fromMembers(decl.members, name, out);
     } else if (ts.isTypeAliasDeclaration(decl)) {
       fromAnnotation(decl.type, name, out, /* reportsItself */ false);
@@ -728,9 +758,19 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
         };
         positions.push(position);
 
+        // A type reference names its type through a type node; a heritage
+        // clause names one through an expression, which carries no type node
+        // to descend into. Both are the same question — which declaration does
+        // this name resolve to — so both are asked here rather than by a
+        // second walk spelled beside this one.
         const named = (node: ts.Node): void => {
-          if (ts.isTypeReferenceNode(node)) {
-            const sym = emitChecker.getSymbolAtLocation(node.typeName);
+          const reference = ts.isTypeReferenceNode(node)
+            ? node.typeName
+            : ts.isExpressionWithTypeArguments(node)
+              ? node.expression
+              : undefined;
+          if (reference) {
+            const sym = emitChecker.getSymbolAtLocation(reference);
             const target = sym ? unalias(emitChecker, sym) : undefined;
             // Where the named type is declared inside the emit. One declared
             // outside it is the consumer's own or a dependency's, and nameable
@@ -764,13 +804,13 @@ export const scanExports = (request: ExportScanRequest): ExportScan => {
           ts.forEachChild(node, named);
         };
 
-        if (found.kind === "property") {
-          named(found.node);
-        } else {
+        if (found.kind === "signature") {
           for (const param of found.node.parameters) {
             if (param.type) named(param.type);
           }
           if (found.node.type) named(found.node.type);
+        } else {
+          named(found.node);
         }
       }
     }

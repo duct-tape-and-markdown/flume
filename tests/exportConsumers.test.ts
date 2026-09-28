@@ -5,8 +5,9 @@
  *
  * Two verdicts ride the one scan. *Unearned* is the rule's own: an export
  * nothing reaches and nothing references. *Unnamable* is its consumer-facing
- * half — a type the shipped signature and property positions name that no
- * entry module exports, so the hover text shows a name no `import` can carry.
+ * half — a type the shipped signature, property and heritage positions name
+ * that no entry module exports, so the hover text shows a name no `import` can
+ * carry.
  *
  * Both are read off the **declaration emit** the build config produces: the
  * scan runs the real writer and walks what it wrote
@@ -19,10 +20,10 @@
  * drive the scanner over a package whose residue and whose unnamable
  * types are known by construction — otherwise "none of either" is a claim no
  * failing run has ever backed. The repo arms are the pins themselves, and
- * `unnamable` splits across three of them: a top-level function's signature,
- * a reached type's member signature, and a reached type's property
- * annotation are found by different parts of the walk, so each is judged
- * under its own title.
+ * `unnamable` splits across four of them: a top-level function's signature, a
+ * reached type's member signature, a reached type's property annotation and a
+ * reached declaration's heritage clause are found by different parts of the
+ * walk, so each is judged under its own title.
  *
  * The scanner is the same one throughout, reading real tsconfigs and a real
  * manifest, so the fixture cannot drift into testing a second implementation
@@ -60,6 +61,7 @@ const isTopLevelSignature = (found: UnnamableType): boolean =>
 const isMemberSignature = (found: UnnamableType): boolean =>
   found.kind === "signature" && found.position.name.includes(".");
 const isProperty = (found: UnnamableType): boolean => found.kind === "property";
+const isHeritage = (found: UnnamableType): boolean => found.kind === "heritage";
 
 /**
  * The reached positions of one kind. The scan reports them as one judged set
@@ -108,6 +110,14 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * through the namespace, as is the `Box.Lid` that `Box.lid` holds — the
  * exclusion reads from both sides, the position's and the named type's.
  *
+ * Two more cover the heritage walk, the one position a consumer reads in the
+ * hover text of a type it imported and can write only by writing its own
+ * `extends`. `Derived` names two bases in one clause: `Named`, which the entry
+ * module re-exports, and `Heritable`, which it does not and which is the
+ * finding — one clause, one verdict each way. `Implementor implements Named`
+ * is the same question under the other keyword, silent for the same reason
+ * `Derived extends Named` is.
+ *
  * `inferredSurface` is the case a source walk cannot see at all: an entry
  * export with **no type annotation anywhere in the source**, whose whole type
  * `tsc` writes into the emit. Its two properties split the verdict the way
@@ -147,8 +157,8 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     include: ["lib/**/*"],
   }),
   "lib/index.ts": [
-    `export { inferredSurface, publicEntry } from "./surface.js";`,
-    `export type { Container, Guarded } from "./surface.js";`,
+    `export { Implementor, inferredSurface, publicEntry } from "./surface.js";`,
+    `export type { Container, Derived, Guarded } from "./surface.js";`,
     `export type { Box, Named } from "./shapes.js";`,
     ``,
   ].join("\n"),
@@ -190,11 +200,16 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `  }`,
     `}`,
     ``,
+    `export interface Heritable {`,
+    `  readonly base: number;`,
+    `}`,
+    ``,
   ].join("\n"),
   "lib/surface.ts": [
     `import type {`,
     `  Box,`,
     `  Held,`,
+    `  Heritable,`,
     `  Hushed,`,
     `  Inferred,`,
     `  Membered,`,
@@ -231,6 +246,15 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
     `export const residue = (n: number): number => n + 1;`,
     ``,
     `export const internal = (n: number): number => residue(n);`,
+    ``,
+    `// Two bases in one clause: one the entry module re-exports, one it does`,
+    `// not. Nothing but the clause names either.`,
+    `export interface Derived extends Heritable, Named {}`,
+    ``,
+    `// The other keyword, over a base the entry module does re-export.`,
+    `export class Implementor implements Named {`,
+    `  readonly label = "i";`,
+    `}`,
     ``,
   ].join("\n"),
   "consumer/drive.ts": [
@@ -299,9 +323,12 @@ it("the export scan flags an export that no other module references and the expo
   expect(scan.scanned.map((s) => s.name).sort()).toEqual([
     "Box",
     "Container",
+    "Derived",
     "Guarded",
     "Held",
+    "Heritable",
     "Hushed",
+    "Implementor",
     "Inferred",
     "Membered",
     "Named",
@@ -313,7 +340,7 @@ it("the export scan flags an export that no other module references and the expo
     "testOnly",
   ]);
 
-  expect(scan.findings.map(formatSite)).toEqual(["lib/surface.ts:37 residue"]);
+  expect(scan.findings.map(formatSite)).toEqual(["lib/surface.ts:38 residue"]);
 
   // Both earning arms fired, each over the exports it belongs to — so the
   // single finding above is a discrimination, not a scan that flagged
@@ -323,8 +350,11 @@ it("the export scan flags an export that no other module references and the expo
   expect(scan.reachable.map((s) => s.name).sort()).toEqual([
     "Box",
     "Container",
+    "Derived",
     "Guarded",
     "Held",
+    "Heritable",
+    "Implementor",
     "Inferred",
     "Membered",
     "Named",
@@ -404,6 +434,7 @@ it("the export scan flags a property type no entry module exports", () => {
     "dist/lib/shapes.d.ts:17 Inferred.deep",
     "dist/lib/shapes.d.ts:2 Shipped.n",
     "dist/lib/shapes.d.ts:20 Box.lid",
+    "dist/lib/shapes.d.ts:31 Heritable.base",
     "dist/lib/shapes.d.ts:5 Named.label",
     "dist/lib/shapes.d.ts:8 Membered.m",
     "dist/lib/surface.d.ts:12 inferredSurface.seed",
@@ -429,6 +460,32 @@ it("the export scan flags a property type no entry module exports", () => {
   // position's: `Box.lid` is an ordinary property of an ordinary interface,
   // and the `Box.Lid` it holds is written through the namespace.
   expect(scan.positions.findings.map((f) => f.type.name)).not.toContain("Lid");
+});
+
+it("the export scan flags an unnamable type a reached declaration names only in a heritage clause", () => {
+  const scan = fixtureScan();
+
+  // Vacuity guard: the map resolved, and the walk carries every heritage
+  // position the shipped surface has — both bases of the one `extends` clause
+  // and the one `implements`. An empty set would report the same single
+  // finding below for having walked one base and missed the rest.
+  expect(scan.entryModules).toEqual(["lib/index.ts"]);
+  expect(positionsOfKind(scan, "heritage").map(formatSite).sort()).toEqual([
+    // One clause, two bases: each is its own position, at the one line the
+    // clause occupies.
+    "dist/lib/surface.d.ts:18 Derived.<extends>",
+    "dist/lib/surface.d.ts:18 Derived.<extends>",
+    "dist/lib/surface.d.ts:20 Implementor.<implements>",
+  ]);
+
+  // `Heritable` is reachable — it sits in the emit, and hover text on
+  // `Derived` shows its members — and is still the finding, because no entry
+  // module exports a name for it. `Named`, named by the same clause, is
+  // re-exported and silent, as is the base the `implements` clause names.
+  expect(scan.reachable.map((s) => s.name)).toContain("Heritable");
+  expect(scan.positions.findings.filter(isHeritage).map(formatUnnamableType)).toEqual([
+    "dist/lib/surface.d.ts:18 Derived.<extends> names dist/lib/shapes.d.ts:30 Heritable",
+  ]);
 });
 
 // --- what only the emit can see ------------------------------------------
@@ -587,4 +644,27 @@ it("every type a reached property position names is exported from an entry modul
   }
 
   expectNoFindings(scan.positions.findings.filter(isProperty).map(formatUnnamableType));
+});
+
+it("every type a reached declaration's heritage clause names is exported from an entry module", () => {
+  const scan = repoScan();
+
+  // Vacuity guard: the map resolved to both entry modules, and the walk
+  // carries heritage positions — named, because a walk that read members and
+  // annotations alone reports the same empty verdict below. These are the
+  // positions this arm first went red over, every variant of one envelope.
+  expect([...scan.entryModules].sort()).toEqual([
+    "harness/index.ts",
+    "src/index.ts",
+  ]);
+  const walked = new Set(positionsOfKind(scan, "heritage").map((site) => site.name));
+  for (const base of [
+    "GateRevertAttempt.<extends>",
+    "CleanExitAttempt.<extends>",
+    "NotShippedAttempt.<extends>",
+  ]) {
+    expect(walked).toContain(base);
+  }
+
+  expectNoFindings(scan.positions.findings.filter(isHeritage).map(formatUnnamableType));
 });
