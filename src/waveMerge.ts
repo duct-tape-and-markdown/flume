@@ -660,7 +660,8 @@ async function carrySpan(
   // `mergedSha`'s own single-commit show, so an earlier commit in the
   // span isn't missed. Computed once per commit and shared across every
   // gate this loop runs, and reused below as the `afterMerge-reverted`
-  // footprint — same dedup as runAfterCommitGates above.
+  // footprint — the same dedup the afterCommit loop does in
+  // `runAfterCommitGates` (`src/tickAttempt.ts`).
   const commitTouchedPaths = await git.diffNameOnly(
     repoRoot,
     preCherry,
