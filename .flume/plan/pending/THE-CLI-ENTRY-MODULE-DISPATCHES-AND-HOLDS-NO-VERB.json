@@ -3,6 +3,7 @@
   "gate": {
     "kind": "blockedBy",
     "tags": [
+      "THE-FLAG-WRITE-UNDER-THE-STATE-ROOT-REFUSES-WITH-THAT-ROOT",
       "THE-SUPERVISOR-CLAIM-HANDOFF-IS-DECODED-ONCE",
       "THE-TICK-BUDGET-DEFAULT-HAS-ONE-HOME"
     ]
@@ -64,5 +65,5 @@
   "acceptance": "each verb's body is a function in a module named for its job, the four `cli*` modules already split out being the precedent, and `src/cli.ts` holds argv and flag parse, state-root resolution and dispatch with a header stating that job alone; every verb's stdout, stderr and exit code is unchanged, held by the typecheck, the suite and the export and citation pins",
   "tests": [],
   "pins": [],
-  "notes": "Third-note escalation: 3f8dec18, 2b19c560, a858807f. Verified here — `main()` runs `src/cli.ts:299`-`:1676` with verb bodies at `:444`, `:676`, `:693`, `:710`, `:735`, `:779`, `:877`, `:1067`, `:1147`, `:1331`; the header (`:4`) names tick and loop. Behavior-free, so no property. Blocked, not seamed: the move rewrites the bodies four queued fixes cite by line, and a refactor must not re-earn their spans."
+  "notes": "Third-note escalation: 3f8dec18, 2b19c560, a858807f. Verified here — `main()` runs `src/cli.ts:299`-`:1676` with verb bodies at `:444`, `:676`, `:693`, `:710`, `:735`, `:779`, `:877`, `:1067`, `:1147`, `:1331`; the header (`:4`) names tick and loop. Behavior-free, so no property. Blocked, not seamed: the move rewrites the bodies the queued fixes cite by line, and a refactor must not re-earn their spans."
 }
