@@ -456,8 +456,8 @@ const SENTENCE_BREAK = /(?<=\.)\s+(?=\*\*|[A-Z`(])/;
  * Scoped rather than section-wide on purpose: a section documents a verb's
  * whole range, so a set read off all of it turns on whatever the neighbouring
  * arms happen to quote rather than on the arm the case is about
- * (`.claude/rules/posture-sweep.md`, *A violation counts only when verified
- * on disk this tick*). A sentence ends at the break above — the page's own
+ * (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
+ * rendered artifact*). A sentence ends at the break above — the page's own
  * arms are one sentence each, semicolons and em-dashes included.
  */
 export function sentencesNamingExitCode(section: string, code: number): string[] {

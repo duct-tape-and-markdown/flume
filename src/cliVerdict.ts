@@ -1,7 +1,6 @@
 /**
  * Tick/loop verdict formatting and exit-code classification, split out of
- * `src/cli.ts` (`.claude/rules/posture-sweep.md`, "A violation counts only
- * when verified on disk this tick").
+ * `src/cli.ts` (`.claude/rules/engineering.md`, *A module is one job*).
  */
 
 import { type TickOutcome } from "./Dispatcher.js";

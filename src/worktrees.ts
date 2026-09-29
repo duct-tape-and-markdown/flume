@@ -3,11 +3,10 @@
  * tick, tearing it down when the tick is over, and sweeping a dead run's
  * residue at the next start.
  *
- * Split out of `src/Dispatcher.ts` (`.claude/rules/posture-sweep.md`, "A
- * violation counts only when verified on disk this tick"): one directory
- * tree, one branch namespace, one naming rule — a job of its own, depending
- * on nothing the dispatcher holds beyond a repo root, a state root, that
- * root's relative path and a logger. The dependency runs one way: the
+ * Split out of `src/Dispatcher.ts` (`.claude/rules/engineering.md`, *A module
+ * is one job*): one directory tree, one branch namespace, one naming rule — a
+ * job of its own, depending on nothing the dispatcher holds beyond a repo
+ * root, a state root, that root's relative path and a logger. The dependency runs one way: the
  * dispatcher calls in here, nothing here calls back.
  *
  * Sibling to `src/setupWorktree.ts`, which owns the other half of the same

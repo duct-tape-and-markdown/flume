@@ -4,12 +4,12 @@
  * gate-reverted commit's files, and the per-mode builders that mint each
  * variant.
  *
- * Split out of `src/Dispatcher.ts` (`.claude/rules/posture-sweep.md`, "A
- * violation counts only when verified on disk this tick"): persistence of
- * the retry's input is a job of its own — one directory, one file shape, one
- * keyspace rule — and it depends on nothing the dispatcher holds beyond the
- * three values {@link PriorAttemptStore} is constructed with. The dependency
- * runs one way: the dispatcher calls in here, nothing here calls back.
+ * Split out of `src/Dispatcher.ts` (`.claude/rules/engineering.md`, *A module
+ * is one job*): persistence of the retry's input is a job of its own — one
+ * directory, one file shape, one keyspace rule — and it depends on nothing
+ * the dispatcher holds beyond the three values {@link PriorAttemptStore} is
+ * constructed with. The dependency runs one way: the dispatcher calls in
+ * here, nothing here calls back.
  *
  * spec/loop.md "Prior-outcome feedback to the retrying tick" is the contract
  * every shape below serves — a record is anchored, keyspaced, bounded, and

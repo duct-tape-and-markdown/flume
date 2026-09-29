@@ -59,8 +59,8 @@ export function documentedExitCodes(help: string): Set<number> {
  * One row rather than the block, because a claim about one row's cause list
  * read off the whole block would turn on whatever the neighbouring rows
  * happen to quote — the whole-artifact negative the standing lenses name
- * (`.claude/rules/posture-sweep.md`, *A violation counts only when verified
- * on disk this tick*).
+ * (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
+ * rendered artifact*).
  */
 export function helpExitCodeRow(help: string, code: number): string {
   const row = documentedExitCodeRows(help).get(code);

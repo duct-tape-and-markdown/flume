@@ -1,7 +1,7 @@
 /**
  * Help-text and subcommand-table seam — split from tests/cli.test.ts along
- * the same seam as `src/cliHelp.ts` (`.claude/rules/posture-sweep.md`, "A
- * violation counts only when verified on disk this tick").
+ * the same seam as `src/cliHelp.ts` (`.claude/rules/engineering.md`, *A
+ * module is one job*).
  */
 
 import {
@@ -134,8 +134,8 @@ it("flume job is an unknown command and exits 2", async () => {
  * the listing must not advertise a verb the dispatch refuses. Scoped to the
  * `Commands:` block alone, which is the listing the claim is about — a
  * negative read of the whole rendered page would turn on whatever else it
- * happens to quote (`.claude/rules/posture-sweep.md`, *A violation counts
- * only when verified on disk this tick*).
+ * happens to quote (`.claude/rules/posture-sweep.md`, *A negative assertion
+ * over a whole rendered artifact*).
  */
 it("the top-level help names no job verb", () => {
   const names = topLevelCommandNames();

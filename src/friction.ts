@@ -5,11 +5,10 @@
  * and the teardown harvest that drains a worktree's mirror into the primary
  * dir.
  *
- * Split out of `src/Dispatcher.ts` (`.claude/rules/posture-sweep.md`, "A
- * violation counts only when verified on disk this tick"): one declared
- * directory, one reader, one writer — a job of its own, depending on
- * nothing the dispatcher holds beyond a state root, a state-root-relative
- * path and a logger. The dependency runs one way: the dispatcher, the CLI
+ * Split out of `src/Dispatcher.ts` (`.claude/rules/engineering.md`, *A module
+ * is one job*): one declared directory, one reader, one writer — a job of its
+ * own, depending on nothing the dispatcher holds beyond a state root, a
+ * state-root-relative path and a logger. The dependency runs one way: the dispatcher, the CLI
  * and the harness package call in here, nothing here calls back.
  *
  * spec/chain.md "`Chain.friction` — the declared friction channel" and

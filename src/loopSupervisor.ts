@@ -1,11 +1,11 @@
 /**
  * The `flume loop` supervisor — the process-per-tick outer loop.
  *
- * Split out of `src/Dispatcher.ts` (`.claude/rules/posture-sweep.md`, "A
- * violation counts only when verified on disk this tick"): the supervisor
- * spawns child ticks and reads their on-disk leavings — a verdict
- * (`src/tickVerdict.ts`), an exit code (`src/exitCodes.ts`) — so it depends
- * on the dispatcher's surface one way only.
+ * Split out of `src/Dispatcher.ts` (`.claude/rules/engineering.md`, *A module
+ * is one job*): the supervisor spawns child ticks and reads their on-disk
+ * leavings — a verdict (`src/tickVerdict.ts`), an exit code
+ * (`src/exitCodes.ts`) — so it depends on the dispatcher's surface one way
+ * only.
  */
 
 import { Baton } from "./Baton.js";

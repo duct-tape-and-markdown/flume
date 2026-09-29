@@ -1851,8 +1851,8 @@ it("a merge commit that resolved nothing adds no path to the frontier", () => {
  *
  * Cases assert against a block rather than against the whole render, which
  * carries two other blocks and a tip line this one has no say over
- * (`.claude/rules/posture-sweep.md`, *A violation counts only when verified
- * on disk this tick*).
+ * (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
+ * rendered artifact*).
  */
 function blockUnder(rendered: string | undefined, marker: string): string[] {
   if (rendered === undefined) throw new Error("the sweep window is unrendered");

@@ -1,10 +1,10 @@
 /**
  * Tick/loop verdict exit-code + formatting seam — split from
  * tests/cli.test.ts along the same seam as `src/cliVerdict.ts`
- * (`.claude/rules/posture-sweep.md`, "A violation counts only when verified
- * on disk this tick"). Unit-level `tickExitCode`/`loopExitCode`/
- * `loopCompletionSummary` cases plus the real-CLI `flume log` suite, which
- * exercises `formatTickVerdictLine`'s rendering through the CLI read-side.
+ * (`.claude/rules/engineering.md`, *A module is one job*). Unit-level
+ * `tickExitCode`/`loopExitCode`/`loopCompletionSummary` cases plus the
+ * real-CLI `flume log` suite, which exercises `formatTickVerdictLine`'s
+ * rendering through the CLI read-side.
  */
 
 import { existsSync } from "node:fs";

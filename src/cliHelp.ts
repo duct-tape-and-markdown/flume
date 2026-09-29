@@ -1,8 +1,7 @@
 /**
  * Subcommand table + runtime usage text — the authoritative reference for
  * `flume --help` / `flume <cmd> --help`, split out of `src/cli.ts`
- * (`.claude/rules/posture-sweep.md`, "A violation counts only when verified
- * on disk this tick").
+ * (`.claude/rules/engineering.md`, *A module is one job*).
  */
 
 import { tickExitCauses } from "./cliVerdict.js";
