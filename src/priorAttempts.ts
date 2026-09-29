@@ -417,10 +417,9 @@ export class PriorAttemptStore {
    * `readTickVerdict` (`src/tickVerdict.ts`) draws between its probe and its
    * parse.
    *
-   * The path is this refusal's own to state, because the errno does not carry
-   * it: a `readFile` that opens and then fails on the read reports `EISDIR:
-   * illegal operation on a directory, read` — no `path` property, no path in
-   * the message (measured, node 22) — which would leave an operator a store
+   * The path is this refusal's own to state, because a failure past the open
+   * does not carry one (`.claude/rules/platform-facts.md`, *A read that fails
+   * after the open names no path*): without it an operator is handed a store
    * of many record files and no file to go fix. The errno's own sentence
    * rides along as the detail, so nothing about the failure is lost.
    */

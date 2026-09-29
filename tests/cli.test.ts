@@ -508,9 +508,11 @@ describe("cross-process loop lock — real `flume loop` against <flumeDir>/loop.
         // probe above cannot reach. Before that read had a guard the throw
         // escaped to `main()`'s catch — a raw stack under exit 1, the same
         // code the live-holder refusal above takes while naming a pid this
-        // case has none of. EISDIR carries no path of its own, so the
-        // refusal states the one it read or the operator gets a bare name
-        // under a state root that may be relocated.
+        // case has none of. A failure past the open carries no path of its
+        // own (`.claude/rules/platform-facts.md`, *A read that fails after
+        // the open names no path*), so the refusal states the one it read or
+        // the operator gets a bare name under a state root that may be
+        // relocated.
         denyFile(pidPath);
 
         const r = await runCli(repo.dir, ["loop", "--max", "0"]);
@@ -994,9 +996,10 @@ describe("flume status — supervisor liveness", () => {
       // one is the whole of what that reader decides. Before the read joined
       // the probe's guard it threw past the verb into `main()`'s catch — a
       // raw stack and exit 1, the one exit `status` is specced never to take.
-      // EISDIR carries no path of its own, so the refusal states the one it
-      // read or the operator gets a bare name under a state root that may be
-      // relocated.
+      // A failure past the open carries no path of its own
+      // (`.claude/rules/platform-facts.md`, *A read that fails after the open
+      // names no path*), so the refusal states the one it read or the
+      // operator gets a bare name under a state root that may be relocated.
       await mkdir(pidPath);
 
       const r = await runCli(dir, ["status"]);
@@ -1759,10 +1762,12 @@ describe("flume check/friction — the refusing chain load", () => {
    * `tests/Dispatcher.test.ts` drives at the loader: this lane spawns the CLI
    * *under* tsx's own registered loader (`TSX_CLI`,
    * `tests/helpers/subprocess.ts`), and a chain resolved through that loader
-   * parses as a module whatever the manifest says — measured, tsx 4.21 under
-   * node 22, where the import-statement chain loads clean and reaches the
-   * factory-shape check instead. The transform arm reads the manifest itself,
-   * so it refuses through a real verb the way it refuses in production.
+   * parses as a module whatever the manifest says
+   * (`.claude/rules/platform-facts.md`, *A registered tsx loader parses a
+   * `.ts` module as ESM whatever `type` says*), so the import-statement chain
+   * would load clean here and reach the factory-shape check instead. The
+   * transform arm reads the manifest itself, so it refuses through a real
+   * verb the way it refuses in production.
    */
   const CJS_CONTEXT_CHAIN_SRC =
     `const awaited = await Promise.resolve(1);\n` +

@@ -372,8 +372,9 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
    * The refusal, not the platform's spelling of it: the errno an obstruction
    * raises for the paths beneath it is host-dependent
    * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
-   * non-directory as not found*), and a read that opens and then fails
-   * carries no path at all. Asserting the errno pins one host's accident;
+   * non-directory as not found*), and one that fails past the open names no
+   * path either (`.claude/rules/platform-facts.md`, *A read that fails after
+   * the open names no path*). Asserting the errno pins one host's accident;
    * asserting the store's own message pins the behavior these cases are
    * about.
    */
@@ -428,8 +429,9 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
    * the repeated-failure count and hiding the record from every `shouldRun`.
    *
    * The store's own refusal is what is asserted, not the errno: the message a
-   * failed read carries is the platform's, and it carries no path at all,
-   * which is the whole reason the refusal states one.
+   * failed read carries is the platform's, and it names no path
+   * (`.claude/rules/platform-facts.md`, *A read that fails after the open
+   * names no path*), which is the whole reason the refusal states one.
    */
   it("a prior-attempt record present and unreadable refuses rather than reading as no prior attempt", async () => {
     const flumeDir = join(fx.repo, ".flume");
