@@ -1,0 +1,24 @@
+{
+  "tag": "THE-NO-COMMIT-OPERATOR-LINES-READ-A-REAL-REWRITES-EXIT",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "each no-commit exit driven through the real merge stage and its operator line read, beside the relocated-dock ship case that already drives one under a silent log"
+      }
+    ]
+  },
+  "summary": "The two no-commit operator lines the ledger-exit fix corrected are read by no test, so a swapped arm restores the misreport green",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "each no-commit operator line the merge stage renders is driven from the exit a real `commitPendingUpdate` call reported over a real repository, so neither arm can be read into the other without a red; the committing line, the tip-claim warn line and every export are unchanged",
+  "pins": [
+    "a ledger rewrite that exits dock-outside-repo is reported to the operator as a dock git cannot see",
+    "a ledger rewrite that exits nothing-to-write is reported to the operator as a queue already up to date"
+  ],
+  "notes": "Off note THE-LEDGER-REWRITE-NAMES-THE-EXIT-IT-TOOK. Verified: `noCommitLine` (`src/waveMerge.ts:1112`) composes both lines and no test reads either — `tests/Dispatcher.test.ts:4249` drives the dock exit under `log: silent`, and `tests/pendingLedger.test.ts:728` pins the producer's `exit` alone. `mergeAttempt` (`:450`) is the exported path through `commitAttemptLedger` (`:1009`), so the real writer reaches the real reader with no export added. Property holds today: pins, not tests."
+}
