@@ -1,0 +1,31 @@
+{
+  "tag": "A-THROWN-SHIP-HOOK-IS-NOT-A-REFUSAL-THE-REDERIVE-RESOLVES",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "examples/cascade-chain.ts",
+        "description": "the build handoff's `refused` predicate, which reads `mergeOutcome === \"not-shipped\"` for both of that fate's causes while its own comment claims the declined one"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "the refusal-wake case, beside the declined-park and cherry-pick-conflict arms it already carries"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "The shipped example chain wakes the re-derive on a `not-shipped` whose cause was a thrown `shipped` hook, reading the fate the engine now splits on its own report",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "the example chain's build `handoff` reads the split off the engine's own report — `TickResult.shipFailures`, tag-keyed and always blamed — rather than inferring it from `mergeOutcome` alone, and a `not-shipped` a thrown hook caused leaves `refused` false, so the ladder decides as usual exactly as it already does for a cherry-pick conflict. A `shipped` that *returned* `false` still wakes the re-derive, and the comment states the two apart. Typecheck and the standing suite green with the declined arm's assertion unchanged.",
+  "tests": [
+    "a build wave whose shipped hook threw wakes the ladder, not the re-derive"
+  ],
+  "notes": "Verified this tick: `examples/cascade-chain.ts:508`-`:512` folds both causes; its lead (`:501`-`:507`) says \"a `shipped` predicate declined\" and names `entries[].mergeOutcome` as the surface. `src/Dispatcher.ts:1143` states the same read as the shortfall `shipFailures` (landed 31258c5c) closes, and `harness/standingRefusal.ts:268` already splits on `threw`. `tests/examples.test.ts:1290` pins the declined arm only. Plan cannot resolve a broken hook, and the engine already quarantines it."
+}
