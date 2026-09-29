@@ -10606,6 +10606,110 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(reported[0]!.message).toContain("span-detail");
   });
 
+  it("a wave walled before an attempt was carried records that attempt's span with its base and head shas", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SHIP-A", ["src/a.ts"]),
+      makeEntry("CARRY-D", ["src/d.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
+    const corrupt = "{ corrupted mid-wave, not json";
+    const shipLock = join(fx.repo, ".git", "flume", "ship.lock");
+
+    // Same ordering as the two siblings above, with the held slot carrying
+    // the one thing neither of them has: a span that passed its afterCommit
+    // gates. CARRY-D's agent runs strictly behind the pick whose ledger
+    // rewrite refused, so its commit exists on its own worktree branch and
+    // the wave is already walled when it settles — nothing will ever offer it
+    // to cherry-pick.
+    let heldWait: string | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+      setupWorktree: async (ctx: WorktreeSetupContext) => {
+        if (ctx.worktreeKey !== "CARRY-D") return undefined;
+        try {
+          await refusingPickSettled(shipLock);
+        } catch (err) {
+          heldWait = (err as Error).message;
+        }
+        return undefined;
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ship-a": async (cwd) => {
+          await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
+          await writeAndCommit(
+            cwd,
+            "src/a.ts",
+            "from-A\n",
+            "build(SHIP-A): ship",
+          );
+        },
+        "carry-d": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/d.ts",
+            "from-D\n",
+            "build(CARRY-D): uncarried",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The ordering this case turns on happened, rather than the wait giving
+    // up and leaving CARRY-D's pick ahead of the refusal, where it would have
+    // been carried like any other span.
+    expect(heldWait).toBeUndefined();
+
+    // The refusal itself, unchanged from the siblings above.
+    expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBe("parse-failure");
+    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
+
+    const verdict = outcome.verdict;
+    expect(verdict).toBeDefined();
+    // Vacuity and the refusal site: only the `WaveLedgerRefusal` leg
+    // summarizes a wave this way, and both halves of the wave reached it.
+    expect(verdict?.summary).toContain("pending-ledger rewrite refused");
+    expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect([...(verdict?.tags ?? [])].sort()).toEqual(["CARRY-D", "SHIP-A"]);
+
+    // The defect: the walled leg folded CARRY-D's facts and recorded no fate
+    // for its span, so the row that makes it recoverable was never written.
+    const rows = verdict?.mergeOutcomes ?? [];
+    expect(rows.map((m) => `${m.entryTag}:${m.outcome}`)).toEqual([
+      "SHIP-A:merged",
+      "CARRY-D:wave-walled",
+    ]);
+
+    // And the pair is recovery, not decoration: the range it names is exactly
+    // the span the wall left standing, re-cherry-pickable from the verdict
+    // alone.
+    const walled = rows.find((m) => m.entryTag === "CARRY-D");
+    expect(walled?.baseSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(walled?.headSha).toMatch(/^[0-9a-f]{40}$/);
+    const span = await exec(
+      "git",
+      ["log", "--format=%s", `${walled!.baseSha!}..${walled!.headSha!}`],
+      { cwd: fx.repo },
+    );
+    expect(span.stdout.trim().split("\n")).toEqual([
+      "build(CARRY-D): uncarried",
+    ]);
+  });
   it("a ledger-rewrite refusal over a wave that shipped nothing carries the wave's gate-revert cause on its verdict", async () => {
     // The refusal-site verdict reads its no-commit cause through
     // `waveNoCommitCause`, whose first line short-circuits on `committedWave`.

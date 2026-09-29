@@ -533,12 +533,12 @@ export async function mergeAttempt(
  *
  * Two callers, one spelling (`.claude/rules/engineering.md`, *The fix lands at
  * the mechanism*): {@link mergeAttempt}, ahead of the ship lock its pick
- * needs, and the wave leg for an attempt a walled wave will not carry
- * (`src/waveTick.ts`) — a decline folded or a render refusal raised behind a
- * refusing pick is a fact of this tick, and the verdict built where the wave
- * settles names it ({@link waveMergeError}).
+ * needs, and {@link foldUncarriedAttempt} for an attempt a walled wave will
+ * not carry — a decline folded or a render refusal raised behind a refusing
+ * pick is a fact of this tick, and the verdict built where the wave settles
+ * names it ({@link waveMergeError}).
  */
-export async function foldAttemptFacts(
+async function foldAttemptFacts(
   w: WaveMerge,
   r: EntryAttempt,
 ): Promise<void> {
@@ -596,6 +596,39 @@ export async function foldAttemptFacts(
     }
     if (r.gateFailure) w.gateFailures.push(r.gateFailure);
   }
+}
+
+/**
+ * The fold for an attempt a walled wave will never carry, and the one fact
+ * only that leg can state: this span passed its afterCommit gates on its own
+ * worktree branch and no pick was ever attempted over it. The base/head pair
+ * is what makes it recoverable — the refusal leaves the branch standing, the
+ * next start's teardown does not, and the verdict is where the sha outlives
+ * the branch (spec/loop.md "The tick verdict — one facts artifact").
+ *
+ * Its own function rather than a flag on {@link foldAttemptFacts}, because
+ * {@link mergeAttempt} takes a per-pick slice of `mergeOutcomes` across that
+ * fold and hands it to the ledger rewrite: a `wave-walled` row under a tag the
+ * pick is about to carry would be a second, contradictory fate for one span.
+ * Only the wave leg (`src/waveTick.ts`), past the wall, has nothing to carry.
+ */
+export async function foldUncarriedAttempt(
+  w: WaveMerge,
+  r: EntryAttempt,
+): Promise<void> {
+  await foldAttemptFacts(w, r);
+  // `committed` carries the span's base and head (`AttemptOutcome`,
+  // `src/tickAttempt.ts`), so the row always names what it is recovery for.
+  // An uncommitted attempt left no span to re-pick: the ancestry refusal, the
+  // in-worktree revert and the decline the fold above already stated are the
+  // whole of what it has to say.
+  if (!r.committed) return;
+  w.mergeOutcomes.push({
+    entryTag: r.entry.tag,
+    outcome: "wave-walled",
+    baseSha: r.spanBase,
+    headSha: r.headSha,
+  });
 }
 
 /**

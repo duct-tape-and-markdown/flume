@@ -63,7 +63,7 @@ import {
 } from "./tickVerdict.js";
 import {
   closeWaveMerge,
-  foldAttemptFacts,
+  foldUncarriedAttempt,
   mergeAttempt,
   openWaveMerge,
   waveMergeError,
@@ -433,11 +433,12 @@ export async function runFanout(
     // A walled wave carries no further span onto trunk — but what this
     // attempt observed away from trunk is still a fact of this tick, and the
     // verdict below is built where every slot has finished, so the facts half
-    // of the merge runs either way (`foldAttemptFacts`, `src/waveMerge.ts`).
+    // of the merge runs either way, naming the span it will not carry
+    // (`foldUncarriedAttempt`, `src/waveMerge.ts`).
     const queued = mergeTail.then(() =>
       mergeError === undefined
         ? mergeAttempt(merge, r)
-        : foldAttemptFacts(merge, r),
+        : foldUncarriedAttempt(merge, r),
     );
     // The tail itself never rejects: a merge that threw must not take the
     // queue down with it, or every sibling behind it would reject with the

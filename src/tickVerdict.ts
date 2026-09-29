@@ -391,7 +391,16 @@ export function startTiming(): () => number {
  * ancestor of the observed HEAD — never reached cherry-pick either, but
  * distinct from `tip-moved` above, which is the *shared trunk* racing during
  * this wave's own merge step. A sibling fact so a dropped per-entry commit
- * never lands as silence a partial ship summary papers over.
+ * never lands as silence a partial ship summary papers over. - `wave-walled`
+ * the span passed its afterCommit gates in its own worktree and the wave was
+ * already walled when it settled: a ledger rewrite behind an earlier pick
+ * refused (`WaveLedgerRefusal`, `src/waveMerge.ts`), so this attempt's facts
+ * were folded and its span was never offered to cherry-pick. Distinct from
+ * every kind above in what did *not* happen — no pick was attempted, so
+ * neither trunk nor this entry's own branch refused anything — and the
+ * `baseSha`/`headSha` pair is the whole of its point: the refusal leaves the
+ * worktree branch standing, the next start's teardown does not, and the span
+ * is re-cherry-pickable from this row alone.
  */
 export type MergeOutcome =
   | "merged"
@@ -401,7 +410,8 @@ export type MergeOutcome =
   | "afterCommit-reverted"
   | "not-shipped"
   | "tip-moved"
-  | "dropped-work";
+  | "dropped-work"
+  | "wave-walled";
 
 /**
  * One provisioned span's {@link MergeOutcome}, as recorded in a {@link
@@ -431,22 +441,24 @@ export interface TickVerdictMergeOutcome {
    * the pre-cherry-pick trunk tip for a span that reached trunk (`merged`,
    * `afterMerge-reverted`, `afterMerge-revert-refused`, `not-shipped`), else
    * the tip the agent's worktree branched from (`tip-moved`, `dropped-work`,
-   * `afterCommit-reverted`, `cherry-pick-conflict`). Recovery needs both: a
-   * span may hold several commits (spec/loop.md "The check is ancestry, and N
-   * commits are completion"), and `headSha` alone re-picks only the last of
-   * them. Absent only when the span never reached a commit at all.
+   * `afterCommit-reverted`, `cherry-pick-conflict`, `wave-walled`). Recovery
+   * needs both: a span may hold several commits (spec/loop.md "The check is
+   * ancestry, and N commits are completion"), and `headSha` alone re-picks
+   * only the last of them. Absent only when the span never reached a commit
+   * at all.
    */
   baseSha?: string;
   /**
    * The span's own head — the entry's cherry-picked commit sha once one
    * exists (`merged`, `afterMerge-reverted`, `not-shipped`), else the
    * worktree-branch commit sha the entry never got past (`tip-moved`,
-   * `dropped-work`, `afterCommit-reverted`). Recovery, not decoration: a span
-   * parked or refused after its gates passed must be re-cherry-pickable from
-   * the verdict alone, never re-run at full agent price — worktree teardown
-   * deletes the branch, but the commit object survives in the shared store
-   * until gc, and this is the only place its sha outlives the branch. Absent
-   * only when the entry never reached a commit at all.
+   * `dropped-work`, `afterCommit-reverted`, `wave-walled`). Recovery, not
+   * decoration: a span parked or refused after its gates passed must be
+   * re-cherry-pickable from the verdict alone, never re-run at full agent
+   * price — worktree teardown deletes the branch, but the commit object
+   * survives in the shared store until gc, and this is the only place its sha
+   * outlives the branch. Absent only when the entry never reached a commit at
+   * all.
    */
   headSha?: string;
   /**
