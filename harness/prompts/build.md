@@ -21,7 +21,7 @@ The section the entry's `per` cites, from `{{PER_PATH}}` as this tick's tree hol
 </recent-commits>
 
 <artifacts>
-project conventions: {{PROTOCOL}}
+{{PROTOCOL_LINE}}
 </artifacts>
 
 {{DOMAIN}}

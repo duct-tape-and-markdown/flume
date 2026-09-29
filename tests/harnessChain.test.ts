@@ -37,7 +37,11 @@ import {
 } from "../harness/declaration.ts";
 import { defaultHandoff, type Handoff } from "../harness/handoff.ts";
 import { consumerIgnores } from "../harness/ignores.ts";
-import { promptPath, type PromptName } from "../harness/prompts.ts";
+import {
+  PLAN_SLICE_PROMPT_SPAN_KEYS,
+  promptPath,
+  type PromptName,
+} from "../harness/prompts.ts";
 import {
   continuingNotePath,
   continuingNotesDir,
@@ -624,8 +628,19 @@ it("the inbox drain leaves the derive cursor untouched", async () => {
   expect(inbox.promptDataKeys).not.toContain("DERIVE_CURSOR");
 
   // The one plan state path it is handed is its own file, so the block that
-  // sends the drain to a state artifact cannot send it to derive's.
-  expect(args["PLAN_STATE_PATH"]).toBe(planStatePath(flumeDir, INBOX_PHASE));
+  // sends the drain to a state artifact cannot send it to derive's. Read over
+  // every value, because the path reaches the prompt inside the blocks the
+  // slices share (`harness/prompts.ts`, `planStateBlock`, `artifactsBlock`)
+  // rather than as an argument of its own.
+  const handed = Object.values(args).join("\n");
+  expect(handed).toContain(planStatePath(flumeDir, INBOX_PHASE));
+  for (const slice of PLAN_SLICES) {
+    if (slice === INBOX_PHASE) continue;
+    expect({
+      slice,
+      handed: handed.includes(planStatePath(flumeDir, slice)),
+    }).toEqual({ slice, handed: false });
+  }
 
   // And the shipped prompt names no placeholder for the removed leg — a key
   // set, not a text scan, so prose that mentions the cursor cannot answer it.
@@ -937,6 +952,11 @@ it("every prompt-arg key the package's producers return is declared in its phase
     // silently, which is exactly what this reads back.
     const keys = Object.keys(phase.promptArgs?.(tickContext(phase)) ?? {});
     const declared = new Set(phase.promptDataKeys ?? []);
+    // The package's own span carriers are declared as such rather than as
+    // data, because the queue listing inside one of them has to run
+    // (`harness/prompts.ts`, `PLAN_SLICE_PROMPT_SPAN_KEYS`). They are a
+    // roster, not an exemption: a key off both lists still reds below.
+    const spans = new Set<string>(PLAN_SLICE_PROMPT_SPAN_KEYS);
 
     expect({ name: phase.name, produced: keys.length > 0 }).toEqual({
       name: phase.name,
@@ -944,8 +964,14 @@ it("every prompt-arg key the package's producers return is declared in its phase
     });
     expect({
       name: phase.name,
-      undeclared: keys.filter((key) => !declared.has(key)),
+      undeclared: keys.filter((key) => !declared.has(key) && !spans.has(key)),
     }).toEqual({ name: phase.name, undeclared: [] });
+    // And a span carrier declared data would go inert without a placeholder
+    // left unresolved to show it — the one failure this split can hide.
+    expect({
+      name: phase.name,
+      neutralized: [...declared].filter((key) => spans.has(key)),
+    }).toEqual({ name: phase.name, neutralized: [] });
   }
 });
 

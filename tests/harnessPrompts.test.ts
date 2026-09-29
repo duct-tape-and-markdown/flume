@@ -51,6 +51,7 @@ import {
   promptPath,
   sharedPromptArgs,
   type PlanSlicePromptArg,
+  type PlanSliceSpanArg,
   type PromptName,
   type SharedPromptArg,
 } from "../harness/prompts.ts";
@@ -319,6 +320,10 @@ it("every plan slice the package declares points its reader at the discipline pa
  * `layout.ts`'s, with every other plan artifact's. The questions directory is
  * not among them — it is listed by the package rather than opened by a span,
  * and the cases at the end of this file judge that render.
+ *
+ * `key` is the argument the block carrying the span arrives through
+ * (`harness/prompts.ts`, `PLAN_SLICE_PROMPT_SPAN_KEYS`), since that is what
+ * a prompt names and what {@link spanOpens} reads the span out of.
  * A sentinel rides each body so a case
  * asserts the bytes *arrived*, not merely that the render did not throw — a
  * span whose guard mis-fired would render its placeholder over a readable
@@ -344,7 +349,7 @@ const ARTIFACTS: ReadonlyArray<{
   readonly placeholder?: string;
 }> = [
   {
-    key: "PENDING_DIR",
+    key: "PENDING_NOW",
     at: (root) => resolvePendingDir(root),
     seedAt: (root) => join(resolvePendingDir(root), "SENTINEL-TAG.json"),
     body: '{ "note": "PENDING-SENTINEL" }\n',
@@ -355,7 +360,7 @@ const ARTIFACTS: ReadonlyArray<{
     // own: a case damaging it damages the file that prompt opens, and a
     // prompt with no state file of its own (build's) has none to damage
     // (`spec/harness.md`, *Plan state as declared state*).
-    key: "PLAN_STATE_PATH",
+    key: "PLAN_STATE",
     at: (root, prompt) =>
       isPlanSlice(prompt) ? planStatePath(root, prompt) : undefined,
     body: '{ "note": "PLAN-STATE-SENTINEL" }\n',
@@ -365,7 +370,7 @@ const ARTIFACTS: ReadonlyArray<{
 ];
 
 /** An argument the package supplies to a prompt — shared, or a slice's own. */
-type PromptArg = SharedPromptArg | PlanSlicePromptArg;
+type PromptArg = SharedPromptArg | PlanSlicePromptArg | PlanSliceSpanArg;
 
 /**
  * Every path an artifact sits at across the whole roster — one for a shared
@@ -395,9 +400,30 @@ async function seed(root: string): Promise<string> {
   return root;
 }
 
-/** Whether any inline-exec span in `raw` substitutes `key` into its command. */
-function spanSubstitutes(raw: string, key: PromptArg): boolean {
-  return [...raw.matchAll(SPAN)].some((m) => m[1]!.includes(`{{${key}}}`));
+/**
+ * Whether the prompt whose bytes are `raw` opens a span on the artifact at
+ * `at`, judged at both ends of the seam: the markdown names the placeholder
+ * the block arrives through, and the package's own value for that key carries
+ * a span whose command reads that path.
+ *
+ * The block and its span are one render the three slice prompts share
+ * (`harness/prompts.ts`, `pendingNowBlock`), so there is no span left in the
+ * file to scan — reading the producer's value is what keeps this the real
+ * writer's output rather than a span vocabulary re-spelled here
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+function spanOpens(
+  raw: string,
+  argv: Record<string, string>,
+  key: PromptArg,
+  at: string | undefined,
+): boolean {
+  if (at === undefined) return false;
+  if (!raw.includes(`{{${key}}}`)) return false;
+  const value = argv[key];
+  if (value === undefined) return false;
+  return [...value.matchAll(SPAN)].some((m) => m[1]!.includes(at));
 }
 
 /**
@@ -411,17 +437,23 @@ function spanSubstitutes(raw: string, key: PromptArg): boolean {
  * render the plan slices alone, and a count taken over all of `PHASES` cannot
  * tell a plan slice that stopped reading an artifact from
  * `harness/prompts/build.md` never having read it.
+ *
+ * The root is a parameter for the same reason: the span's command now carries
+ * the resolved path rather than a placeholder, so which artifact a value
+ * opens is only answerable against the root it was composed for.
  */
 async function promptsReadingEachArtifact(
   roster: readonly HarnessPhase[] = PHASES,
+  root: string = stateRoot,
 ): Promise<ReadonlyMap<PromptArg, HarnessPhase[]>> {
   const readers = new Map<PromptArg, HarnessPhase[]>(
     ARTIFACTS.map((a) => [a.key, []]),
   );
   for (const name of roster) {
     const raw = await readFile(promptPath(name), "utf8");
+    const argv = args(name, root);
     for (const artifact of ARTIFACTS) {
-      if (spanSubstitutes(raw, artifact.key))
+      if (spanOpens(raw, argv, artifact.key, artifact.at(root, name)))
         readers.get(artifact.key)!.push(name);
     }
   }
@@ -476,7 +508,7 @@ it("every artifact in the harness prompt odd-root table is read by at least one 
 async function everyPromptReadsItsArtifactsUnder(root: string): Promise<void> {
   await seed(root);
 
-  const readers = await promptsReadingEachArtifact();
+  const readers = await promptsReadingEachArtifact(PHASES, root);
   expectEveryArtifactRead(readers);
 
   for (const name of PHASES) {
@@ -595,7 +627,7 @@ function placeholderIsBlockContent(
  * assertions below read the same for every way of breaking one.
  */
 interface Damage {
-  /** The state, as the failure messages say it: "an absent PENDING_DIR". */
+  /** The state, as the failure messages say it: "an absent PENDING_NOW". */
   readonly says: string;
   readonly apply: (at: string) => Promise<void>;
 }
@@ -660,11 +692,12 @@ async function eachSliceVerdictFollowsItsSpansOn(
     // what makes the verdict below this prompt's spans and not the root's.
     const path = artifact.at(root, name);
     expect(path, `${name}: ${key} names a path`).toBeDefined();
+    const opens = spanOpens(raw, args(name, root), key, path);
     await damage.apply(path!);
 
     const outcome = await outcomeOf(name, root);
 
-    if (!spanSubstitutes(raw, key)) {
+    if (!opens) {
       expect(
         { name, opens: false, resolved: "rendered" in outcome },
         `${name}: opens no ${key} span, so nothing of its own can refuse on it`,
@@ -709,7 +742,7 @@ async function everySliceOverWrongKindAt(key: PromptArg): Promise<void> {
 }
 
 it("each plan slice prompt's verdict on a plan state directory in place follows whether its spans read that artifact", async () => {
-  await everySliceOverWrongKindAt("PLAN_STATE_PATH");
+  await everySliceOverWrongKindAt("PLAN_STATE");
 }, SPAWN_BUDGET_MS);
 
 /**
@@ -729,11 +762,10 @@ it("every plan slice prompt opens a span on the plan state file it owns", async 
   // (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
   expect(PLAN_SLICES.length).toBeGreaterThan(0);
 
-  const blind: string[] = [];
-  for (const name of PLAN_SLICES) {
-    const raw = await readFile(promptPath(name), "utf8");
-    if (!spanSubstitutes(raw, "PLAN_STATE_PATH")) blind.push(name);
-  }
+  const readers = await promptsReadingEachArtifact(PLAN_SLICES);
+  const blind = PLAN_SLICES.filter(
+    (name) => !readers.get("PLAN_STATE")!.includes(name),
+  );
   expect(
     blind,
     `plan slices whose prompt reads no plan state: ${blind.join(", ")}`,
@@ -791,7 +823,7 @@ async function everySliceOverAbsentArtifactAt(
 }
 
 it("each plan slice prompt's verdict on an absent queue follows whether its spans read that artifact", async () => {
-  await everySliceOverAbsentArtifactAt("PENDING_DIR");
+  await everySliceOverAbsentArtifactAt("PENDING_NOW");
 }, SPAWN_BUDGET_MS);
 
 /**
@@ -809,13 +841,13 @@ it("a state root flume-harness init just wrote renders every plan slice prompt's
   const result = await harnessInit({ repoRoot: adopted });
   const root = join(adopted, result.stateRoot);
 
+  const readers = await promptsReadingEachArtifact(PLAN_SLICES, root);
   for (const name of PLAN_SLICES) {
-    const raw = await readFile(promptPath(name), "utf8");
     // Non-vacuity: a slice that stopped opening the queue would render clean
     // below while proving nothing about what adoption wrote.
     expect(
-      spanSubstitutes(raw, "PENDING_DIR"),
-      `${name}: opens no PENDING_DIR span`,
+      readers.get("PENDING_NOW")!.includes(name),
+      `${name}: opens no PENDING_NOW span`,
     ).toBe(true);
 
     // The seeded directory arrived as the block's content — an empty queue
@@ -1163,6 +1195,15 @@ it("every phase prompt the package renders substitutes its own put-down statemen
  * rediscovered*, files against the package. Judged at both ends of the seam
  * like the two cases above: the placeholder at the markdown end, the
  * producer's own state-root-relative path at the render's.
+ *
+ * What reaches a prompt is the whole `<artifacts>` line, the one span all
+ * four spelled alike and now one render of it (`harness/prompts.ts`,
+ * `protocolLine`). Which placeholder carries it is the prompt's own business
+ * — the slices take it inside the artifact table they share, build names the
+ * line itself — so the markdown end is judged as *some* placeholder the
+ * prompt names resolving to a value that carries the line, never as one
+ * key's spelling. The path is asserted inside the line as well, so a line
+ * that stopped naming the page reds here rather than passing on its label.
  */
 it("every phase prompt the package renders substitutes the consumer's PROTOCOL path", async () => {
   // Non-vacuity: a phase list that collapsed to zero would pass the loop
@@ -1181,12 +1222,20 @@ it("every phase prompt the package renders substitutes the consumer's PROTOCOL p
     // (`harness/layout.ts`, `protocolPath`).
     expect(at).toBe(protocolPath(stateRoot));
 
+    // The line the prompts carry it on, from the one home that composes it.
+    const line = args(name)["PROTOCOL_LINE"];
+    expect(line, "the shared args supply no PROTOCOL_LINE").toBeDefined();
+    expect(line).toBe(`project conventions: ${at!}`);
+
     const raw = await readFile(promptPath(name), "utf8");
     const rendered = await render(name);
+    const argv = args(name);
+    const named = [...raw.matchAll(PLACEHOLDER)].map((match) => match[1]!);
+    expect({ name, named: named.length > 0 }).toEqual({ name, named: true });
     expect({
       name,
-      names: raw.includes("{{PROTOCOL}}"),
-      carries: rendered.includes(at!),
+      names: named.some((key) => argv[key]?.includes(line!) === true),
+      carries: rendered.includes(line!),
     }).toEqual({ name, names: true, carries: true });
   }
 }, SPAWN_BUDGET_MS);
@@ -1288,7 +1337,11 @@ it("a plan slice tick with nothing in flight renders no in-flight mark and no cl
     // The producer's own empty answer, so the assertion is about what the
     // renderer put in the file rather than about a value this case invented.
     expect(args(name, root, [])["CLAIMED_ENTRIES"]).toBe("");
-    expect(args(name, root, [])["CLAIMED_TAGS"]).toBe("");
+    // And the listing's own membership test, handed the empty set: the tags
+    // reach the span through the block the slices share
+    // (`harness/prompts.ts`, `pendingNowBlock`), so the empty answer is read
+    // where the span carries it rather than from an arg of its own.
+    expect(args(name, root, [])["PENDING_NOW"]).toContain('c="  "');
     const rendered = await render(name, root);
     expect({
       name,

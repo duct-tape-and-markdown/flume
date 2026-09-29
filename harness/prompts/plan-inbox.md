@@ -16,33 +16,17 @@
 {{QUEUE_PARSE_FAILURE}}
 </queue-parse-failure>
 
-<pending-now>
-!`d="{{PENDING_DIR}}"; test -d "$d" || { echo "queue directory absent: $d" >&2; exit 1; }; c=" {{CLAIMED_TAGS}} "; n=0; for f in "$d"/*.json; do test -e "$f" || break; n=$((n+1)); b="${f##*/}"; t="${b%.json}"; m=""; case "$c" in *" $t "*) m=" [in flight]" ;; esac; printf '=== %s%s\n' "$b" "$m"; cat "$f"; done; test "$n" -gt 0 || echo "(queue empty)"`
-</pending-now>
+{{PENDING_NOW}}
 
 {{CLAIMED_ENTRIES}}
 
-<open-questions-index>
 {{QUESTIONS_INDEX}}
-</open-questions-index>
 
-<plan-state>
-!`p="{{PLAN_STATE_PATH}}"; test -e "$p" || { echo "(no plan state yet)"; exit 0; }; cat "$p"`
-</plan-state>
+{{PLAN_STATE}}
 
-<plan-state-shape>
-Your plan state file takes one of these JSON shapes; each `<...>` is a value you fill, and a field not shown is refused:
 {{PLAN_STATE_SHAPE}}
-</plan-state-shape>
 
-<artifacts>
-queue (one `<tag>.json` per entry): {{PENDING_DIR}}
-your plan state (this slice's own file): {{PLAN_STATE_PATH}}
-open questions: {{QUESTIONS_DIR}}
-record queues: {{RECORD_DIRS}}
-project conventions: {{PROTOCOL}}
-discipline: {{DISCIPLINE}}
-</artifacts>
+{{ARTIFACTS}}
 
 {{DOMAIN}}
 
@@ -88,6 +72,4 @@ Entry and artifact discipline: `{{DISCIPLINE}}` — read it before writing the q
 
 One commit prefixed `plan:`; the body names each drained record and where it went. Close per *Closing a slice* in the discipline file.
 
-<schema>
 {{PENDING_SCHEMA}}
-</schema>

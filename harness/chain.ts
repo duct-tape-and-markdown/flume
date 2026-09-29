@@ -278,11 +278,13 @@ export function harnessChain(options: HarnessChainOptions): Chain {
         ...planSlicePromptArgs(name, ctx.flumeDir, ctx.claimed ?? []),
         ...window.args(ctx),
       }),
-      // Every value this phase substitutes is content it did not author, so
-      // the engine neutralizes the inline-exec spans in all of them before
-      // its own scan reads them as commands (`spec/prompt.md`, *The render
-      // pipeline*). Both halves are read off the producers that build the
-      // map above, never spelled again here.
+      // Every value this phase substitutes that it did not author is declared
+      // here, so the engine neutralizes the inline-exec spans in all of them
+      // before its own scan reads them as commands (`spec/prompt.md`, *The
+      // render pipeline*). Read off the producers that build the map above,
+      // never spelled again here — and `PLAN_SLICE_PROMPT_SPAN_KEYS` is
+      // deliberately absent: those two values are the package's own blocks,
+      // and the queue listing inside one of them has to run.
       promptDataKeys: [
         ...SHARED_PROMPT_DATA_KEYS,
         ...PLAN_SLICE_PROMPT_DATA_KEYS,

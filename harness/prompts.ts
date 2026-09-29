@@ -24,6 +24,16 @@
  * the invocation or of the engine's budget line, so the single home *is* the
  * constant and the function below.
  *
+ * **A block several prompts spelled alike is one render too.** Where the
+ * prompts carried the same `<...>` wrapper around the same body — the queue
+ * listing and its span, the plan state block, the shape block, the artifact
+ * table, the questions index, the schema block, and the one `<artifacts>`
+ * line all four phases share — the wrapper rides the value here rather than
+ * being spelled in each file ({@link block}, which {@link slot} has composed
+ * its own wrapper through since an undeclared slot had to render to no
+ * bytes). A wrapper spelled per prompt is the same second copy a fact
+ * spelled per prompt is, and it goes stale the same way.
+ *
  * A placeholder with no argument is refused by the engine's renderer before
  * the agent is invoked, so an arg this module stops supplying is a loud
  * render refusal rather than a `{{TOKEN}}` an agent reads as prose.
@@ -237,14 +247,12 @@ export const SHARED_PROMPT_DATA_KEYS = [
   "RECORD_MAX_BYTES",
   "DISCIPLINE",
   "PROTOCOL",
+  "PROTOCOL_LINE",
   "PENDING_SCHEMA",
   "TESTS_HINT",
   "PINS_HINT",
   "SPEC_LOCUS",
-  "PENDING_DIR",
-  "QUESTIONS_DIR",
   "QUESTIONS_INDEX",
-  "RECORD_DIRS",
   "DOMAIN",
   "AUTONOMY",
 ] as const;
@@ -308,20 +316,24 @@ export function sharedPromptArgs(
      * no path any consumer holds (`layout.ts`).
      */
     PROTOCOL: protocolPath(stateRoot),
-    PENDING_SCHEMA: renderSchemaForPrompt(extension),
+    /**
+     * That same page as the `<artifacts>` line every phase's prompt carries
+     * it on ({@link protocolLine}) — the one span all four spelled alike.
+     */
+    PROTOCOL_LINE: protocolLine(stateRoot),
+    /** The schema, inside the block the prompts carrying it wrap it in. */
+    PENDING_SCHEMA: block("schema", renderSchemaForPrompt(extension)),
     TESTS_HINT: hintOf(extension, "tests"),
     PINS_HINT: hintOf(extension, "pins"),
     SPEC_LOCUS: backticked(declaration.specLocus),
-    PENDING_DIR: resolvePendingDir(stateRoot),
-    QUESTIONS_DIR: questionsDir(stateRoot),
     /**
      * Which questions are open, read off the directory that holds them
      * (`questions.ts`) rather than grepped out of a page by a span in each
      * slice's prompt. Presence is the state, so the listing *is* the index,
-     * and the three prompts carrying the block share one render of it.
+     * and the three prompts carrying the block share one render of it —
+     * block and all, since the wrapper was the same bytes in all three.
      */
-    QUESTIONS_INDEX: renderQuestions(stateRoot),
-    RECORD_DIRS: backticked(recordDirs(stateRoot)),
+    QUESTIONS_INDEX: block("open-questions-index", renderQuestions(stateRoot)),
     DOMAIN: slot("environment", declaration.slots?.domain),
     AUTONOMY: slot("autonomy", declaration.slots?.autonomy),
   };
@@ -337,15 +349,40 @@ export function sharedPromptArgs(
  * pipeline*).
  */
 export const PLAN_SLICE_PROMPT_DATA_KEYS = [
-  "PLAN_STATE_PATH",
   "PLAN_STATE_SHAPE",
+  "ARTIFACTS",
   "FILING_BAND",
   "CLAIMED_ENTRIES",
-  "CLAIMED_TAGS",
 ] as const;
 
 /** One argument every plan slice's prompt is given, beyond the shared set. */
 export type PlanSlicePromptArg = (typeof PLAN_SLICE_PROMPT_DATA_KEYS)[number];
+
+/**
+ * The two arguments a slice's prompt is given that a phase must **not**
+ * declare as data: each carries an inline-exec span the package authored and
+ * needs run.
+ *
+ * The engine neutralizes every span in a declared data key's value before
+ * stage 2 scans it (`spec/prompt.md`, *The render pipeline*), which is the
+ * right answer for content the package did not author and the wrong one for
+ * the prompt's own listing — a neutralized span shows a plan tick the command
+ * text where the queue should be. Spelled as its own roster rather than left
+ * off the data list silently, so a phase composing `promptDataKeys` says
+ * which keys it is deliberately not neutralizing, and a key that ends up in
+ * both lists is a defect something can read.
+ *
+ * What each value substitutes is quoted for `sh` at the composer, exactly as
+ * the prompt file quoted it when the span lived there ({@link pendingNowBlock},
+ * {@link planStateBlock}).
+ */
+export const PLAN_SLICE_PROMPT_SPAN_KEYS = [
+  "PENDING_NOW",
+  "PLAN_STATE",
+] as const;
+
+/** One span-carrying argument a plan slice's prompt is given. */
+export type PlanSliceSpanArg = (typeof PLAN_SLICE_PROMPT_SPAN_KEYS)[number];
 
 /**
  * The arguments one plan slice's prompt is given beyond the shared set: the
@@ -370,7 +407,8 @@ export type PlanSlicePromptArg = (typeof PLAN_SLICE_PROMPT_DATA_KEYS)[number];
  *
  * It is rendered twice from that one value — the block a slice reads once,
  * and the bare tags the queue listing's own span marks its lines by
- * ({@link claimedTagWords}) — because a prose block above a listing is not
+ * ({@link claimedTagWords}, which {@link pendingNowBlock} substitutes) —
+ * because a prose block above a listing is not
  * where a drain decides on an entry: the line is. Two renderings of one
  * argument, not two sources (`.claude/rules/engineering.md`, *Derived state
  * is computed, never restated beside its source*).
@@ -383,15 +421,101 @@ export function planSlicePromptArgs(
   slice: PlanSlice,
   stateRoot: string,
   claimed: readonly string[] = [],
-): Record<PlanSlicePromptArg, string> {
+): Record<PlanSlicePromptArg | PlanSliceSpanArg, string> {
   return {
-    PLAN_STATE_PATH: planStatePath(stateRoot, slice),
-    PLAN_STATE_SHAPE: planStateShape(slice),
+    PENDING_NOW: pendingNowBlock(stateRoot, claimed),
+    PLAN_STATE: planStateBlock(stateRoot, slice),
+    PLAN_STATE_SHAPE: planStateShapeBlock(slice),
+    ARTIFACTS: artifactsBlock(stateRoot, slice),
     /** The band this slice's own filed entries carry ({@link FILING_BANDS}). */
     FILING_BAND: filingBandStatement(slice),
     CLAIMED_ENTRIES: claimedBlock(claimed),
-    CLAIMED_TAGS: claimedTagWords(claimed),
   };
+}
+
+/**
+ * The queue as a plan slice is shown it: every entry file under its own
+ * name, each one a build tick holds marked at its own line, `(queue empty)`
+ * for a directory with nothing in it, and a refusal when the directory is
+ * not there at all (`.claude/rules/engineering.md`, *Loud or nothing*) — a
+ * slice re-deriving a queue it never read would write over work it never saw.
+ *
+ * The span is the package's own and has to run, so the key carrying it is
+ * declared in {@link PLAN_SLICE_PROMPT_SPAN_KEYS} rather than among the data
+ * keys. Both substitutions are quoted as the prompt file quoted them: the
+ * queue path is one shell word inside double quotes, so a state root
+ * carrying a space or a backslash reaches `sh` intact, and the tag words are
+ * safe unquoted by the tag grammar alone ({@link claimedTagWords}).
+ */
+function pendingNowBlock(
+  stateRoot: string,
+  claimed: readonly string[],
+): string {
+  return block(
+    "pending-now",
+    span(
+      `d="${resolvePendingDir(stateRoot)}"; ` +
+        `test -d "$d" || { echo "queue directory absent: $d" >&2; exit 1; }; ` +
+        `c=" ${claimedTagWords(claimed)} "; n=0; ` +
+        `for f in "$d"/*.json; do test -e "$f" || break; n=$((n+1)); ` +
+        `b="\${f##*/}"; t="\${b%.json}"; m=""; ` +
+        `case "$c" in *" $t "*) m=" [in flight]" ;; esac; ` +
+        `printf '=== %s%s\\n' "$b" "$m"; cat "$f"; done; ` +
+        `test "$n" -gt 0 || echo "(queue empty)"`,
+    ),
+  );
+}
+
+/**
+ * The slice's own state file as this tick found it, or the placeholder a
+ * first tick reads — one file per writer, so the path is the slice's and no
+ * sibling's (`spec/harness.md`, *Plan state as declared state*).
+ *
+ * Absence is legitimate here and a failed *read* is not, so the span splits
+ * the fork on the path's existence rather than answering both with one
+ * fallback: a slice handed prose saying it could not see its own state writes
+ * the file whole over fields it was never shown. A span key for the reason
+ * {@link pendingNowBlock} is one.
+ */
+function planStateBlock(stateRoot: string, slice: PlanSlice): string {
+  return block(
+    "plan-state",
+    span(
+      `p="${planStatePath(stateRoot, slice)}"; ` +
+        `test -e "$p" || { echo "(no plan state yet)"; exit 0; }; cat "$p"`,
+    ),
+  );
+}
+
+/** That file's shape as the block the prompts wrap it in. */
+function planStateShapeBlock(slice: PlanSlice): string {
+  return block(
+    "plan-state-shape",
+    "Your plan state file takes one of these JSON shapes; each `<...>` is a " +
+      `value you fill, and a field not shown is refused:\n${planStateShape(slice)}`,
+  );
+}
+
+/**
+ * Where every artifact a plan slice writes or reads sits, as the one table
+ * the three slice prompts spelled alike.
+ *
+ * Each path comes off the module that owns it rather than a layout spelled
+ * here, and the conventions line off the one home all four phases share
+ * ({@link protocolLine}).
+ */
+function artifactsBlock(stateRoot: string, slice: PlanSlice): string {
+  return block(
+    "artifacts",
+    [
+      `queue (one \`<tag>.json\` per entry): ${resolvePendingDir(stateRoot)}`,
+      `your plan state (this slice's own file): ${planStatePath(stateRoot, slice)}`,
+      `open questions: ${questionsDir(stateRoot)}`,
+      `record queues: ${backticked(recordDirs(stateRoot))}`,
+      protocolLine(stateRoot),
+      `discipline: ${promptPath(DISCIPLINE)}`,
+    ].join("\n"),
+  );
 }
 
 /**
@@ -467,6 +591,36 @@ function backticked(items: readonly string[]): string {
 }
 
 /**
+ * A value as the block a prompt carries it in: the block's own tags around
+ * it, and nothing else.
+ *
+ * One home for the wrapper, because a wrapper spelled per prompt is a copy
+ * per prompt — the shape every block above is composed through, and the
+ * reason a block the slice prompts spelled alike is one render here rather
+ * than three in the markdown.
+ */
+function block(name: string, body: string): string {
+  return `<${name}>\n${body}\n</${name}>`;
+}
+
+/** One inline-exec span, as a prompt carries it: `` !`cmd` ``. */
+function span(cmd: string): string {
+  return `!\`${cmd}\``;
+}
+
+/**
+ * Where the consumer's own conventions sit, as the `<artifacts>` line every
+ * phase's prompt carries it on — the one span all four prompts spelled alike,
+ * and the reason the line is composed here rather than in each of them.
+ *
+ * The path itself stays a shared arg of its own: a prompt naming the page
+ * mid-sentence wants the path without the label.
+ */
+function protocolLine(stateRoot: string): string {
+  return `project conventions: ${protocolPath(stateRoot)}`;
+}
+
+/**
  * A declared slot as the block the prompt carries, or nothing at all.
  *
  * The wrapper rides the value rather than the prompt file so an undeclared
@@ -475,7 +629,7 @@ function backticked(items: readonly string[]): string {
  * should cost nothing.
  */
 function slot(name: string, text: string | undefined): string {
-  return text === undefined ? "" : `<${name}>\n${text}\n</${name}>`;
+  return text === undefined ? "" : block(name, text);
 }
 
 /**

@@ -130,6 +130,7 @@ export {
 export {
   BUILD_PROMPT_DATA_KEYS,
   PLAN_SLICE_PROMPT_DATA_KEYS,
+  PLAN_SLICE_PROMPT_SPAN_KEYS,
   PROMPT_NAMES,
   SHARED_PROMPT_DATA_KEYS,
   buildPromptArgs,
@@ -140,6 +141,7 @@ export {
   type BuildPromptArgsInput,
   type BuildTickContext,
   type PlanSlicePromptArg,
+  type PlanSliceSpanArg,
   type PromptName,
   type SharedPromptArg,
   type SharedPromptArgsInput,
