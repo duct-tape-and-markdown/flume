@@ -24842,6 +24842,45 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       expect(leg.verdict.committed).toBe(true);
     }
   });
+
+  it("a wave whose shipped hook throws for one entry records one shipFailure whose tag names that entry", () => {
+    const legs: [string, WaveLeg][] = [
+      ["completing", completing],
+      ["refused", refused],
+    ];
+    for (const [name, leg] of legs) {
+      // Non-vacuity, and what makes the blame a choice rather than the only
+      // candidate on the wave: two spans reached this wave's ship consult and
+      // the other one returned, so a record naming SHIP-THREW is the engine
+      // discriminating between them and not a set with one member.
+      const consulted = leg.verdict.mergeOutcomes.filter(
+        (o) => o.outcome === "merged" || o.outcome === "not-shipped",
+      );
+      expect(consulted.map((o) => o.entryTag).sort(), name).toEqual([
+        "SHIP-ONE",
+        "SHIP-THREW",
+      ]);
+
+      // The claim, read off the verdict the real wave wrote: one record,
+      // blamed on the entry whose consult threw and on no other. A shipped
+      // handoff keys its refusal read off exactly this tag
+      // (`examples/cascade-chain.ts`), so a one-sided change to the blame the
+      // engine stamps reds here instead of handing that reader a set it cannot
+      // key on.
+      const failures = leg.verdict.shipFailures ?? [];
+      expect(
+        failures.map((f) => f.tag),
+        name,
+      ).toEqual(["SHIP-THREW"]);
+      expect(failures[0]?.message, name).toContain(
+        "shipped hook boom for SHIP-THREW",
+      );
+      // Both halves of the pairing or neither (`StageFailureEntry`,
+      // `src/tickVerdict.ts`): the supervisor's quarantine leg holds the
+      // blamed entry under the second one.
+      expect(failures[0]?.quarantineKey, name).toEqual(expect.any(String));
+    }
+  });
 });
 
 /**
