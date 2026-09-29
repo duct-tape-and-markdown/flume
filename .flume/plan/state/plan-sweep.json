@@ -1,21 +1,7 @@
 {
-  "sweptThrough": "1f67126ca06847181e8eb7fff81a138d1e5d1ff0",
+  "sweptThrough": "7310e6ed8c3714474d06bbf62947a67fc66869bf",
   "rotation": {
-    "kind": "open",
-    "covered": [
-      "harness/cursorWindow.ts",
-      "harness/sweepWindow.ts",
-      "src/Baton.ts",
-      "src/cliStateDirs.ts",
-      "src/cliVerdict.ts",
-      "src/entryKey.ts",
-      "src/paths.ts",
-      "src/pathIdentity.ts",
-      "src/priorAttempts.ts",
-      "src/singletonTick.ts",
-      "src/stateRootWrite.ts",
-      "src/worktrees.ts"
-    ]
+    "kind": "closed"
   },
-  "retiredThrough": "b23df6b9274864612fb155159a01d3fa0eb18f97"
+  "retiredThrough": "7310e6ed8c3714474d06bbf62947a67fc66869bf"
 }
