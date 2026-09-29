@@ -1,0 +1,38 @@
+{
+  "tag": "A-RENDERED-PROMPT-LIVES-WHILE-A-RETAINED-VERDICT-NAMES-IT",
+  "gate": { "kind": "open" },
+  "priority": 30,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "`writeTickVerdict`'s window slice, the one place a verdict leaves the retained set, and `MAX_TICK_VERDICTS`'s doc which states what the bound covers"
+      },
+      {
+        "path": "src/runSpend.ts",
+        "description": "the run-window edge (`startedAfter`, the `fsStamp` string compare), shared with the trim rather than respelled beside it"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the verdict-history retention cases, beside the window's own"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the in-flight count's cases, the seam the live-run clause exists to keep right"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "Nothing trims .flume/rendered-prompts/, which spec/prompt.md now bounds by the verdict history's own retention, and flume status readdirs it on every call",
+  "per": {
+    "path": "spec/prompt.md",
+    "section": "The rendered prompt is persisted before the agent runs"
+  },
+  "acceptance": "a rendered prompt is removed once no retained verdict names it as `promptPath` and it is outside a live run's window, so the directory is bounded by the verdict history's own retention and by no second setting. The retained set is read off the history's *lines*, the alphabet `MAX_TICK_VERDICTS` bounds — a line `isTickVerdict` declines still names its prompts and still holds them. The live-run window is the one edge `src/runSpend.ts` already compares against, shared not respelled, so the in-flight count over a trimmed directory stays exactly today's. A trim failure never fails the tick whose verdict it follows.",
+  "tests": [
+    "a rendered prompt no retained verdict names is removed when the history window drops the verdict that named it",
+    "a rendered prompt inside a live run's window is kept though no verdict names it yet"
+  ],
+  "notes": "Ruled in the inbox this tick; f4f77bb1 replaced `Retention is the operator's`. Verified: `recordRenderedPrompt` (`src/tickAttempt.ts:874`) only ever writes, `src/tickVerdict.ts:1171` is the window slice, and nothing else deletes from the dir. `readRunSpend` (`src/runSpend.ts:83`) readdirs the whole directory per `flume status` call. No live supervisor means no window, and the tip claim bounds a bare tick to one per ref."
+}
