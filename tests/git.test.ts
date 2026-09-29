@@ -891,7 +891,10 @@ describe("diffNameOnly (spec/loop.md 'Tip verify', per-entry leg)", () => {
     const tip = await revParse(repo);
 
     // Vacuity pin: unfiltered, the range names both — so the filtered read
-    // below is judged over a listing that really had something to drop.
+    // below is judged over a listing that really had something to drop. The
+    // doomed path is committed before the span for that reason
+    // (`.claude/rules/platform-facts.md`, *A range diff compares two trees, so
+    // a path born and died inside the span is named by neither*).
     expect((await diffNameOnly(repo, base, tip)).sort()).toEqual([
       "doomed.txt",
       "kept.txt",

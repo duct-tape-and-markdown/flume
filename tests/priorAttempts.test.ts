@@ -996,10 +996,10 @@ it("a snapshotReverted failure leaves the revert path unblocked", async () => {
 async function commitTwoStepSpan(
   repo: string,
 ): Promise<{ base: string; head: string }> {
-  // Committed *before* the span: a range diff compares two trees, so a path
-  // created and removed inside the span is named by neither side and never
-  // reaches the listing at all. Only a path the base already held can be a
-  // deletion the range names — which is the selection `excludeDeleted` drops.
+  // Committed *before* the span, because only a path the base already held
+  // can be a deletion the range names (`.claude/rules/platform-facts.md`, *A
+  // range diff compares two trees, so a path born and died inside the span is
+  // named by neither*) — and that deletion is what `excludeDeleted` drops.
   await mkdir(join(repo, "notes"), { recursive: true });
   await writeFile(join(repo, "notes", "doomed.md"), "here before the span\n");
   await gitOut(repo, ["add", "--all"]);
@@ -1072,7 +1072,10 @@ it("the revert snapshot omits a path the span deleted", async () => {
 
     // Vacuity pin: the path is genuinely named by the span's own range and
     // genuinely unreadable at its head, which is the only state under which
-    // `excludeDeleted` over a range has anything to drop.
+    // `excludeDeleted` over a range has anything to drop, and is why the
+    // fixture stages it before the span
+    // (`.claude/rules/platform-facts.md`, *A range diff compares two trees, so
+    // a path born and died inside the span is named by neither*).
     expect(await diffNameOnly(fx.repo, span.base, span.head)).toContain(
       "notes/doomed.md",
     );

@@ -551,9 +551,11 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
 
     // The same state root reached under a second on-disk spelling — a
     // FLUME_DIR typed through a link, or a root whose directory an operator
-    // linked. The base is declared on both sides, so the tick below computes
-    // the very path the stale tree occupies and the only difference is the
-    // name this run calls its own root by.
+    // linked (`.claude/rules/platform-facts.md`, *git records a worktree's
+    // realpath, whatever spelling `add` reached it through*). The base is
+    // declared on both sides, so the tick below computes the very path the
+    // stale tree occupies and the only difference is the name this run calls
+    // its own root by.
     const alias = join(fx.repo, ".flume-alias");
     await symlink(ctx.flumeDir, alias, "dir");
     const aliased: WorktreeContext = {
@@ -595,9 +597,9 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     // The next tick reaching the same state root under a second on-disk name
     // and declaring no base of its own: it composes
     // `<alias>/worktrees/<dirName>`, which is the very directory the stale
-    // tree occupies under a name git never printed — git records a worktree
-    // by the name the OS holds for it, whatever spelling the add reached it
-    // through.
+    // tree occupies under a name git never printed
+    // (`.claude/rules/platform-facts.md`, *git records a worktree's realpath,
+    // whatever spelling `add` reached it through*).
     const alias = join(fx.repo, ".flume-alias");
     await symlink(ctx.flumeDir, alias, "dir");
     const aliased: WorktreeContext = {
@@ -959,9 +961,11 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     const wt = await createWorktree("SECOND-SPELLING", await head(), ctx);
 
     // The same tree reached under a second name for the state root — a
-    // `FLUME_DIR` typed through a link, a linked checkout. A chain holding
-    // the registry composes its worktree paths from the root it was handed,
-    // so this is the path it asks about.
+    // `FLUME_DIR` typed through a link, a linked checkout
+    // (`.claude/rules/platform-facts.md`, *git records a worktree's realpath,
+    // whatever spelling `add` reached it through*). A chain holding the
+    // registry composes its worktree paths from the root it was handed, so
+    // this is the path it asks about.
     const alias = join(fx.repo, ".flume-alias");
     await symlink(ctx.flumeDir, alias, "dir");
     const aliasPath = join(
@@ -1552,9 +1556,11 @@ describe("worktrees — the startup sweep removes on the stamp provisioning mint
 
     // The next start reaching that same root under a second on-disk spelling —
     // a FLUME_DIR typed through a link, or a root whose directory an operator
-    // linked. The base is declared on both, so the sweep reads the one
-    // directory holding the residue and the only difference is the name this
-    // run calls its own root by.
+    // linked (`.claude/rules/platform-facts.md`, *git records a worktree's
+    // realpath, whatever spelling `add` reached it through*). The base is
+    // declared on both, so the sweep reads the one directory holding the
+    // residue and the only difference is the name this run calls its own root
+    // by.
     const alias = join(fx.repo, ".flume-alias");
     await symlink(own.flumeDir, alias, "dir");
     const aliased: WorktreeContext = {
@@ -1585,8 +1591,9 @@ describe("worktrees — the startup sweep removes on the stamp provisioning mint
     const log = collectingLogger();
     const { own, base } = twoRoots(log);
     // This root's abandoned residue: provisioned by the real writer, then
-    // never torn down. git registered it under the state root's own directory
-    // name, which is the name the OS holds for it.
+    // never torn down, and registered under the state root's own directory
+    // name (`.claude/rules/platform-facts.md`, *git records a worktree's
+    // realpath, whatever spelling `add` reached it through*).
     const ours = await createWorktree("SWEEP-ALIASED-BASE", await head(), own);
 
     // The next start reaching that same root under a second on-disk name and

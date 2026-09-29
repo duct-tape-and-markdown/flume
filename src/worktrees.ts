@@ -112,12 +112,13 @@ export function worktreeDirName(tag: string): string {
  * folded through `canonicalDir` (`src/pathIdentity.ts`) exactly as
  * `stampVerdict` folds the stamp it reads a line later. A caller matching a
  * key it composed itself is instead asking whether git's spelling of a
- * directory is the engine's, and one state root reached under a second
- * on-disk spelling — a `FLUME_DIR` typed through a link, a linked checkout —
- * makes every path that run composes a directory git disclaims: provisioning
- * refuses its own residue and the sweep walks past it, each of them one fold
- * short of the stamp read that would have agreed
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ * directory is the engine's (`.claude/rules/platform-facts.md`, *git records
+ * a worktree's realpath, whatever spelling `add` reached it through*), and
+ * one state root reached under a second on-disk spelling makes every path
+ * that run composes a directory git disclaims: provisioning refuses its own
+ * residue and the sweep walks past it, each of them one fold short of the
+ * stamp read that would have agreed (`.claude/rules/engineering.md`, *The fix
+ * lands at the mechanism*).
  *
  * `worktrees` is the *report*: every path git named, in git's own spelling
  * absolutized, valued by the branch that path is checked out on, `undefined`

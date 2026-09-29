@@ -250,18 +250,17 @@ export function nameOnlyPaths(stdout: string): string[] {
  * cumulative footprint of a per-entry fanout span (spec/loop.md "Tip verify
  * — one writer per branch, absorption at the merge", per-entry leg: "N
  * commits are completion"), as opposed to {@link showNameOnly}'s
- * single-commit diff. `from` need not be an ancestor of `to`; git diffs the
- * two trees directly either way.
+ * single-commit diff. `from` need not be an ancestor of `to`.
  *
  * `excludeDeleted` drops the paths the range *removed* (`--diff-filter=d`),
  * leaving only those still readable at `to` — the same selection
  * {@link showNameOnly} names under that flag, for the same caller shape: one
  * that goes on to read each path's content at the range's own head
  * (`PriorAttemptStore.snapshotReverted`, src/priorAttempts.ts). Over a
- * range the flag is load-bearing in a way it is not over one commit: a path
- * an earlier commit in the span created and a later one deleted is named by
- * neither side of the range's trees, and a path the span deleted outright is
- * named and unreadable.
+ * range the flag is load-bearing in a way it is not over one commit, and
+ * what it can drop is bounded by the comparison the range is
+ * (`.claude/rules/platform-facts.md`, *A range diff compares two trees, so a
+ * path born and died inside the span is named by neither*).
  */
 export async function diffNameOnly(
   cwd: string,
