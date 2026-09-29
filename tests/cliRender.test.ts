@@ -31,6 +31,7 @@ import type { Agent, AgentInvocation } from "../src/Agent.ts";
 import { silent } from "./helpers/dispatcherFixture.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
 import { priorAttemptBlockIfAny } from "./helpers/priorAttemptBlock.ts";
+import { listingUnder } from "./helpers/renderedPrompt.ts";
 import {
   SPAWN_BUDGET_MS,
   exec,
@@ -135,23 +136,6 @@ async function makeRenderRepo(
     flumeDir,
     cleanup: () => rm(dir, { recursive: true, force: true }),
   };
-}
-
-/**
- * The paths one `<harness>` listing names, cut out of a rendered prompt: the
- * `  - ` entries under the line `lead` opens, each with its bullet cut off.
- *
- * A case about which fence the verb printed reads that listing rather than the
- * whole render, which also carries the outer ceiling, the assigned entry's own
- * JSON and the task body (`.claude/rules/posture-sweep.md`, *Standing lenses*).
- */
-function listingUnder(stdout: string, lead: string): string[] {
-  const lines = stdout.split("\n");
-  const start = lines.findIndex((line) => line.startsWith(lead));
-  if (start < 0) throw new Error(`the render carries no \`${lead}\` listing`);
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((line) => !line.startsWith("  - "));
-  return (end === -1 ? rest : rest.slice(0, end)).map((line) => line.slice(4));
 }
 
 /**

@@ -32,7 +32,15 @@ import type {
 } from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { priorAttemptBlock } from "./helpers/priorAttemptBlock.ts";
+import {
+  priorAttemptBlock,
+  priorAttemptBlockIfAny,
+} from "./helpers/priorAttemptBlock.ts";
+import {
+  harnessLeads,
+  listingUnder,
+  taskBody,
+} from "./helpers/renderedPrompt.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -106,8 +114,10 @@ describe("renderPrompt — reserved {{FLUME_DIR}} arg", () => {
       args: {}, // chain supplies nothing
     });
 
-    expect(out).toContain("read /abs/state-root/plan/pending.json");
-    expect(out).not.toContain("{{FLUME_DIR}}");
+    // The body as a total: the substituted path is there and no unresolved
+    // copy of the placeholder is anywhere else in it, which a `toContain` of
+    // the resolved line alone would not see.
+    expect(taskBody(out)).toBe("read /abs/state-root/plan/pending.json\n");
   }, SPAWN_BUDGET_MS);
 
   it("FLUME_DIR is reserved — a chain-supplied arg cannot shadow the resolved root", async () => {
@@ -122,12 +132,24 @@ describe("renderPrompt — reserved {{FLUME_DIR}} arg", () => {
       args: { FLUME_DIR: "/chain-supplied-WRONG" },
     });
 
-    expect(out).toContain("root=/resolved");
-    expect(out).not.toContain("chain-supplied-WRONG");
+    // The body as a total: the chain's value reaches no part of it, not just
+    // not the line the reserved key resolved.
+    expect(taskBody(out)).toBe("root=/resolved\n");
   }, SPAWN_BUDGET_MS);
 });
 
 describe("renderPrompt — <harness> states the effective fence", () => {
+  // The renderer's own lead lines. A case names the fence it expects by its
+  // lead and asserts the block's leads as a total, so a reworded lead reds
+  // rather than passing the negative it no longer matches.
+  const UNSCOPED_LEAD =
+    "Writable paths (anything else you modify will revert the commit):";
+  const FENCE_LEAD =
+    "Effective fence (your commit may touch exactly these; anything else reverts the commit whole):";
+  const CEILING_LEAD =
+    "Outer ceiling (also enforced, independently of the fence above — a path must clear both):";
+  const GATES_LEAD = "Gates (run automatically after your commit):";
+
   async function render(
     p: Phase,
     assignedEntry?: PendingEntry,
@@ -171,8 +193,8 @@ describe("renderPrompt — <harness> states the effective fence", () => {
         "\n" +
         "task body\n",
     );
-    expect(out).not.toContain("Effective fence");
-    expect(out).not.toContain("Outer ceiling");
+    // The byte-exact total above is the whole claim — the scoped pair's
+    // absence is part of it, so no negative is stated beside it.
   }, SPAWN_BUDGET_MS);
 
   it("scoped tick (no assignedEntry): byte-identical to a singleton tick's rendering", async () => {
@@ -193,11 +215,10 @@ describe("renderPrompt — <harness> states the effective fence", () => {
 
     const out = await render(p, e);
 
-    expect(out).toContain(
-      "Writable paths (anything else you modify will revert the commit):",
-    );
-    expect(out).not.toContain("Effective fence");
-    expect(out).not.toContain("Outer ceiling");
+    // The leads the block states, as a total: the unscoped label and the gate
+    // lead, so the scoped pair's absence is this same assertion rather than
+    // two negatives over everything else the render quotes.
+    expect(harnessLeads(out)).toEqual([UNSCOPED_LEAD, GATES_LEAD]);
   }, SPAWN_BUDGET_MS);
 
   it("scoped tick with scopeWritesToEntry: true: names entry.files ∪ entryChannelPaths as the effective fence and writablePaths as the outer ceiling", async () => {
@@ -219,28 +240,18 @@ describe("renderPrompt — <harness> states the effective fence", () => {
 
     const out = await render(p, e);
 
-    expect(out).toContain(
-      "Effective fence (your commit may touch exactly these; anything else reverts the commit whole):",
-    );
-    expect(out).toContain("  - src/New.ts");
-    expect(out).toContain("  - src/Existing.ts");
-    expect(out).toContain("  - src/Old.ts");
-    expect(out).toContain("  - .flume/plan/open-questions.md");
-    expect(out).toContain(
-      "Outer ceiling (also enforced, independently of the fence above — a path must clear both):",
-    );
-    expect(out).toContain("  - src/**");
-    expect(out).toContain("  - tests/**");
-    // The unscoped label never appears alongside the scoped one.
-    expect(out).not.toContain(
-      "Writable paths (anything else you modify will revert the commit):",
-    );
-
-    // Effective fence is listed before the outer ceiling.
-    const fenceIdx = out.indexOf("Effective fence");
-    const ceilingIdx = out.indexOf("Outer ceiling");
-    expect(fenceIdx).toBeGreaterThan(-1);
-    expect(ceilingIdx).toBeGreaterThan(fenceIdx);
+    // The leads as a total, in render order — the fence before the ceiling,
+    // and no unscoped label beside them.
+    expect(harnessLeads(out)).toEqual([FENCE_LEAD, CEILING_LEAD, GATES_LEAD]);
+    // Each listing as a total: entry.files in declaration order then the
+    // channel path for the fence, phase.writablePaths for the ceiling.
+    expect(listingUnder(out, FENCE_LEAD)).toEqual([
+      "src/New.ts",
+      "src/Existing.ts",
+      "src/Old.ts",
+      ".flume/plan/open-questions.md",
+    ]);
+    expect(listingUnder(out, CEILING_LEAD)).toEqual(["src/**", "tests/**"]);
   }, SPAWN_BUDGET_MS);
 
   it("scoped tick with no entryChannelPaths: fence is exactly entry.files, no stray empty line", async () => {
@@ -667,6 +678,8 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
   const AT = "2024-06-01T12:00:00.000Z";
   /** The identity every fixture below was written under; the block renders the anchor, not this. */
   const KEYED_AS = "rendered-entry";
+  /** The lead the `not-shipped` record's touched-path listing sits under. */
+  const PATHS_LEAD = "Paths it touched:";
   /** A clean exit whose ref never moved: one tip for both ends of the span. */
   const UNMOVED_TIP = "d".repeat(40);
 
@@ -842,15 +855,25 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
   }, SPAWN_BUDGET_MS);
 
   it("not-shipped renders the landed sha and every touched path, and states the elision when the writer bounded the list", async () => {
-    const whole = await renderWithPrior(notShipped);
-    expect(whole).toContain(`Landed commit: ${notShipped.mergedSha}`);
-    expect(whole).toContain("src/one.ts");
-    expect(whole).toContain("src/two.ts");
-    // No elision claimed when the list is whole.
-    expect(whole).not.toContain("more path(s)");
+    // Vacuity: the record under test actually carries paths to list.
+    expect(notShipped.touchedPaths.length).toBeGreaterThan(0);
 
-    const bounded = await renderWithPrior({ ...notShipped, omittedPaths: 7 });
-    expect(bounded).toContain("…and 7 more path(s)");
+    const whole = priorAttemptBlock(await renderWithPrior(notShipped));
+    expect(whole).toContain(`Landed commit: ${notShipped.mergedSha}`);
+    // The listing as a total, so "no elision claimed when the list is whole"
+    // is the same assertion as "every touched path" rather than a negative
+    // over a render that also quotes the fence and the task body.
+    expect(listingUnder(whole, PATHS_LEAD, "  ")).toEqual(
+      notShipped.touchedPaths,
+    );
+
+    const bounded = priorAttemptBlock(
+      await renderWithPrior({ ...notShipped, omittedPaths: 7 }),
+    );
+    expect(listingUnder(bounded, PATHS_LEAD, "  ")).toEqual([
+      ...notShipped.touchedPaths,
+      "…and 7 more path(s)",
+    ]);
   }, SPAWN_BUDGET_MS);
 
   it("tip-moved names the recorded base and the observed HEAD, never a tip-start comparison on the ref", async () => {
@@ -883,8 +906,10 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
       args: {},
     });
 
-    expect(out).not.toContain("<prior-attempt>");
-    expect(out).not.toContain("Recorded ");
+    // The block cut answering absence, plus the task body as a total: no
+    // block, and no anchor line loose in what the phase itself authored.
+    expect(priorAttemptBlockIfAny(out)).toBeUndefined();
+    expect(taskBody(out)).toBe("task body\n");
   }, SPAWN_BUDGET_MS);
 });
 
