@@ -30,6 +30,7 @@ import {
   harnessGates,
   noteGlobs,
   notePath,
+  notePaths,
   parkedNotePath,
   parseDeclaration,
   planStatePath,
@@ -651,7 +652,7 @@ it("the records gate matches a touched record under a nested state root, reading
   expect(refused.details).toContain(own);
 });
 
-it("the records gate refuses a parked note written under another tick's tag", async () => {
+it("the records gate's park refusal names every note home notePaths renders for the tick's own tag", async () => {
   const entry = assigned("MINE");
   const own = parkedNotePath(STATE_ROOT, "MINE");
 
@@ -684,10 +685,21 @@ it("the records gate refuses a parked note written under another tick's tag", as
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain(parkedNotePath(STATE_ROOT, "OTHER"));
   // And the refusal names the note paths this tick may write — `notePaths`'
-  // whole answer for the tag, spot-checked here at two of them — so a tick
-  // that wrote the wrong tag is told where its own are.
-  expect(refused.details).toContain(own);
-  expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
+  // whole answer for the tag, every home of it — so a tick that wrote the
+  // wrong tag is told where all of its own are, and trimming a home out of
+  // that advice reds here rather than passing over the two spot-checked.
+  const homes = notePaths(STATE_ROOT, "MINE");
+  // Non-vacuity, and the reason the assertion walks the layout's answer
+  // instead of a list spelled here: the roster it walks holds every home this
+  // case can name, so a fourth home added to `notePaths` is asserted too.
+  expect(homes).toEqual(
+    expect.arrayContaining([
+      notePath(STATE_ROOT, "MINE"),
+      own,
+      continuingNotePath(STATE_ROOT, "MINE"),
+    ]),
+  );
+  for (const home of homes) expect(refused.details).toContain(home);
 });
 
 it("the records gate admits a build commit writing its entry's continuing note", async () => {
