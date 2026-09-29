@@ -9,16 +9,11 @@
  */
 
 import { randomUUID } from "node:crypto";
-import {
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { existsLoud } from "./fsProbe.js";
 import { awakeDir, namespacedJoin } from "./paths.js";
+import { mkdirUnderStateRoot } from "./stateRootWrite.js";
 
 /**
  * What a flag carries: the opaque mark {@link Baton.wake} wrote into it, read
@@ -57,10 +52,20 @@ export class Baton {
   /** Absolute path of the awake-flag directory, e.g. `<flumeDir>/awake`. */
   readonly dir: string;
 
-  /** @param flumeDir flume's mutable-state root (default `<repoRoot>/.flume`). */
+  /**
+   * The first write under the state root any verb makes, and so the one that
+   * finds a root nothing can be made under: a plain file standing at
+   * `<flumeDir>/awake` stats clean above and fails this `mkdir` with `EEXIST`,
+   * on every host and for every uid. Refused as
+   * `StateRootWriteError` (`src/stateRootWrite.ts`) naming `flumeDir` — the
+   * root that is unusable, which the errno's own leaf leaves an operator to
+   * infer (`.claude/rules/engineering.md`, *Loud or nothing*).
+   *
+   * @param flumeDir flume's mutable-state root (default `<repoRoot>/.flume`).
+   */
   constructor(flumeDir: string) {
     this.dir = awakeDir(flumeDir);
-    mkdirSync(namespacedJoin(this.dir), { recursive: true });
+    mkdirUnderStateRoot(flumeDir, "awake-flag directory", this.dir);
   }
 
   /** Phases currently awake, sorted by name for stable iteration. */

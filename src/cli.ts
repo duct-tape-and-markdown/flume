@@ -14,7 +14,7 @@
  */
 
 import { resolve, join, basename, dirname, toNamespacedPath } from "node:path";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Stats } from "node:fs";
 
@@ -92,6 +92,10 @@ import {
   resolveStateDirs,
   StateRootResolutionError,
 } from "./cliStateDirs.js";
+import {
+  mkdirUnderStateRoot,
+  StateRootWriteError,
+} from "./stateRootWrite.js";
 import { canonicalDir, onDiskIdentity } from "./pathIdentity.js";
 import {
   agentUsageLine,
@@ -267,7 +271,11 @@ async function chainRefusesPhase(
   return !chain.phases.some((p) => p.name === phase);
 }
 
-async function main(): Promise<number> {
+/**
+ * Every verb's dispatch. Wrapped by {@link main}, which owns the one arm that
+ * turns a state-root write refusal into this process's exit code.
+ */
+async function dispatch(): Promise<number> {
   const argv = process.argv.slice(2);
 
   // Bay discovery's own stat refusal, mapped at the same boundary as every
@@ -376,17 +384,25 @@ async function main(): Promise<number> {
   // `resolveStateDirs` reached rather than re-deriving one from the env.
   const paths: FlumePaths = { repoRoot, configDir, flumeDir };
 
-  // The resolved state root proven usable once, here, rather than at each
-  // verb's first touch of it. A plain file standing where the root belongs
-  // stats clean — so bay discovery above stops at it and resolution names it —
-  // and then every read or write beneath it fails: the baton's `mkdir` of
-  // `awake/`, the stop flag's write, the dispatcher's own construction. Each
-  // of those threw past its verb into `main()`'s catch as a raw stack and
-  // exit 1, which is the one exit none of these verbs may take
+  // The resolved state root proven **a directory**, once here rather than at
+  // each verb's first touch of it — no more than a stat can prove, and never
+  // that anything can be made under it. A plain file standing where the root
+  // belongs stats clean — so bay discovery above stops at it and resolution
+  // names it — and then every read or write beneath it fails: the baton's
+  // `mkdir` of `awake/`, the stop flag's write, the dispatcher's own
+  // construction. Each of those threw past its verb into `main()`'s catch as a
+  // raw stack and exit 1, which is the one exit none of these verbs may take
   // (`spec/loop.md`, *Exit codes — the run never lies to CI*). Refused at the
   // seam the roots resolve because the root is what is unusable, not any one
   // artifact under it: a per-verb copy is one verb behind the next verb added
   // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+  //
+  // What a stat cannot reach — a root that is a directory and still admits no
+  // write, the plain file at `<flumeDir>/awake` this stat walks straight past —
+  // is refused where the write fails, by `StateRootWriteError`
+  // (`src/stateRootWrite.ts`), and reported with the same root and the same
+  // `EX_IOERR` at `main`'s one arm below. So the usability this seam claims is
+  // the usability it proves, and the rest is proven by being attempted.
   //
   // Absence is never this refusal — a state root that is not there yet is
   // every verb's ordinary first run, and `statLoud` answers `undefined` for
@@ -414,11 +430,11 @@ async function main(): Promise<number> {
 
   if (cmd === "status") {
     // Constructing the baton creates `<flumeDir>/awake/` (spec/cli.md,
-    // "Subcommand surface" — this verb's one filesystem effect). The mkdir
-    // an obstructed state root fails is refused above, where the root
-    // resolves, so this read needs no guard of its own for it; the loop-lock
-    // and tip-claim reads below guard their own files, which that refusal
-    // says nothing about.
+    // "Subcommand surface" — this verb's one filesystem effect). A root the
+    // mkdir cannot be made under is refused by the mkdir itself and reported
+    // at `main`'s arm, so this read needs no guard of its own for it; the
+    // loop-lock and tip-claim reads below guard their own files, which that
+    // refusal says nothing about.
     const awake = new Baton(flumeDir).awake();
     console.log(awake.length ? `awake: ${awake.join(", ")}` : "hibernating");
     // Surface supervisor liveness beside the awake markers — the 2026-07-29
@@ -693,7 +709,12 @@ async function main(): Promise<number> {
     // never conditioned on whether a supervisor happens to be live right
     // now (that liveness-conditioned phrasing is `status`'s stop-flag line).
     const stopPath = stopFlagPath(flumeDir);
-    mkdirSync(toNamespacedPath(flumeDir), { recursive: true });
+    // The other raw `mkdir` under the resolved root, through the one refusal
+    // the baton's goes through: a root the seam above found absent is made
+    // here, and one it cannot make is this verb's `EX_IOERR` rather than a
+    // raw stack, without a second spelling of the report
+    // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+    mkdirUnderStateRoot(flumeDir, "the root itself", flumeDir);
     writeFileSync(namespacedJoin(stopPath), "");
     console.log(
       `[flume] wrote ${stopPath}: a live supervisor finishes its in-flight ` +
@@ -1634,6 +1655,35 @@ async function main(): Promise<number> {
   console.error(`unknown command: ${cmd}`);
   console.error("Run `flume --help` for usage.");
   return 2;
+}
+
+/**
+ * The CLI, plus the one arm that reports a failed write under the resolved
+ * state root.
+ *
+ * Wrapped here rather than at each verb because the root the write failed
+ * under is the same root at every one of them, and the next verb added writes
+ * under it too: a per-verb catch is one verb behind
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). The
+ * stat seam in {@link dispatch} proves the root is a directory and no more, so
+ * this is where "a directory that admits no write" stops being a raw stack and
+ * exit 1 — the one exit these verbs may not take (`spec/loop.md`, *Exit codes
+ * — the run never lies to CI*) — and becomes the same `EX_IOERR` and the same
+ * root that seam reports.
+ *
+ * One class only. Everything else still rides the raw-stack arm at the
+ * invocation below, which is what an unclassified harness failure is for.
+ */
+async function main(): Promise<number> {
+  try {
+    return await dispatch();
+  } catch (err) {
+    if (err instanceof StateRootWriteError) {
+      console.error(`[flume] ${err.message}`);
+      return EX_IOERR;
+    }
+    throw err;
+  }
 }
 
 /**

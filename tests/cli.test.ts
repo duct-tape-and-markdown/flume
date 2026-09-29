@@ -48,6 +48,7 @@ import { pendingGate } from "../src/builtinGates.ts";
 import type { GateContext } from "../src/Gate.ts";
 import { RUNTIME_IGNORES } from "../src/runtimeIgnores.ts";
 import {
+  awakeDir,
   computeStateRootRel,
   DEFAULT_PENDING_REL,
   loopLockPath,
@@ -1151,6 +1152,55 @@ describe("the verbs whose whole file read is the state root", () => {
     SPAWN_BUDGET_MS,
   );
 });
+
+/**
+ * The seam those cases refuse at stats the resolved state root, which proves
+ * it is a directory and nothing about whether anything can be *made* under it.
+ * A plain file at `<flumeDir>/awake` walks straight past that stat and fails
+ * the baton's own `mkdir` with `EEXIST` — on every host and for every uid,
+ * which is why the shape instrument reaches it with no mode
+ * (`tests/helpers/denial.ts`). Uncaught, that throw was `main()`'s raw stack
+ * and exit 1 at every verb, the one exit none of them may take
+ * (`spec/loop.md`, *Exit codes — the run never lies to CI*).
+ *
+ * `wake` is the verb whose whole effect is a flag under that directory, so its
+ * success line is exactly the reading this refusal must never take.
+ */
+it(
+  "flume wake exits EX_IOERR naming the resolved state root when the awake directory cannot be made",
+  async () => {
+    const dir = await mkFixtureRoot("flume-unwritable-awake-");
+    try {
+      const flumeDir = join(dir, ".flume");
+
+      // Non-vacuity, in the order the instrument asks for: the verb answers
+      // over this fixture first — making the very directory denied below — so
+      // the refusal is the obstruction's and not a fixture that could never
+      // have woken a phase (`.claude/rules/engineering.md`, *A green verdict
+      // is proven non-vacuous*).
+      const woke = await runCli(dir, ["wake", "plan"]);
+      expect(woke.code).toBe(0);
+      expect(woke.out).toContain("woke plan");
+
+      denyDirectory(awakeDir(flumeDir));
+
+      const refused = await runCli(dir, ["wake", "plan"]);
+
+      expect(refused.code).toBe(EX_IOERR);
+      // The root this process resolved, not the leaf the errno carried:
+      // `<root>/.flume/awake` alone leaves the operator to infer which state
+      // root a walk — or a relocating `FLUME_DIR` — picked.
+      expect(refused.out).toContain(
+        `[flume] state root at ${flumeDir} cannot be written`,
+      );
+      expect(refused.out).not.toContain("    at ");
+      expect(refused.out).not.toContain("woke plan");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+  SPAWN_BUDGET_MS,
+);
 
 // ---------- the real CLI over a scratch repository ----------
 
