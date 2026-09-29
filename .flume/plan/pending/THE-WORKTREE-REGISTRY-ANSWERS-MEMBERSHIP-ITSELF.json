@@ -1,0 +1,33 @@
+{
+  "tag": "THE-WORKTREE-REGISTRY-ANSWERS-MEMBERSHIP-ITSELF",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "src/worktrees.ts",
+        "description": "the registry answers membership and the branch pairing through the fold `stampVerdict` already spends; provisioning's occupied-path leg and the sweep's scope leg ask it rather than composing a key of their own"
+      },
+      {
+        "path": "src/flumeApi.ts",
+        "description": "the hover states the question the registry answers, not a map a chain matches its own spelling against"
+      },
+      {
+        "path": "tests/worktrees.test.ts",
+        "description": "the second-spelling cases, beside the occupied-path and registry blocks the sibling fold already widened"
+      }
+    ]
+  },
+  "summary": "Every registry membership test matches an engine-composed path against git's spelling unfolded, so a root reached under a second spelling refuses provisioning and leaks its own residue",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "the registry answers *is this path a worktree of this repo* itself, folding both sides through `canonicalDir` (`src/pathIdentity.ts`) as its stamp sibling does, so provisioning, the startup sweep and a chain holding one take one verdict rather than three composed keys — and a state root whose base was composed from a second on-disk spelling reclaims and provisions over its own trees instead of refusing them as directories git disclaims; what the map reports, and the `-z` path fidelity it is pinned on, are unchanged",
+  "tests": [
+    "the worktree registry names a path reached under a second on-disk spelling as a worktree of this repo",
+    "the startup sweep reclaims a worktree whose base was composed from a second spelling of the state root",
+    "provisioning over a worktree registered under a second spelling of the base removes it rather than refusing"
+  ],
+  "notes": "Fourth comparison in the family THE-ROOT-IDENTITY-COMPARISONS-FOLD-BEFORE-THEY-REFUSE shipped; that stamp fold is unreachable without it: membership gates ahead of `stampVerdict` at both readers. Verified: keys are `resolve` of git's spelling (`src/worktrees.ts:292`), queried by composed `resolve` at `:535` and `:787`, the miss taking a silent `continue`. The note's upstream suspect — `worktreesBase` composing from the arriving spelling — closes here: both sides fold at the one comparison."
+}
