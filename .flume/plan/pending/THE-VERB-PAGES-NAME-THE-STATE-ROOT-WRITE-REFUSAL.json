@@ -3,6 +3,7 @@
   "gate": {
     "kind": "open"
   },
+  "dependsOnForks": [],
   "priority": 20,
   "files": {
     "new": [],
@@ -33,5 +34,11 @@
     "docs/CLI.md states the state-root write refusal in every verb section whose 74 row renders it"
   ],
   "pins": [],
-  "notes": "Off note THE-FLAG-WRITE-UNDER-THE-STATE-ROOT-REFUSES-WITH-THAT-ROOT. `SHARED_ROOT_CAUSES` (`src/cliHelp.ts:43`) holds three and its doc calls them every way; `SHARED_ROOT_ONLY_LEAD` (`:100`) calls them a verb’s only ones. `StateRootWriteError` is `EX_IOERR` at `src/cli.ts:1685`, reachable from every `new Baton` (`:439`, `:676`, `:693`) and from stop (`:721`); real refusals pinned at `tests/cli.test.ts:1219`, `:1262`. Its length-3 pin (`tests/cliHelp.test.ts:824`) moves with the clause."
+  "notes": "Off note THE-FLAG-WRITE-UNDER-THE-STATE-ROOT-REFUSES-WITH-THAT-ROOT. `SHARED_ROOT_CAUSES` (`src/cliHelp.ts:43`) holds three and its doc calls them every way; `SHARED_ROOT_ONLY_LEAD` (`:100`) calls them a verb’s only ones. `StateRootWriteError` is `EX_IOERR` at `src/cli.ts:1685`, reachable from every `new Baton` (`:439`, `:676`, `:693`) and from stop (`:721`); real refusals pinned at `tests/cli.test.ts:1219`, `:1262`. Its length-3 pin (`tests/cliHelp.test.ts:824`) moves with the clause.",
+  "observedFiles": [
+    ".flume/plan/notes/THE-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL.md",
+    "docs/CLI.md",
+    "src/cliHelp.ts",
+    "tests/cliHelp.test.ts"
+  ]
 }
