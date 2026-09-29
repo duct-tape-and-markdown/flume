@@ -36,5 +36,5 @@
     "the tick usage rows read refuses an obstructed state root, naming the path that is not a directory",
     "the verdict history read refuses an obstructed state root, naming the path that is not a directory"
   ],
-  "notes": "Verified this tick. `src/tickVerdict.ts:1033` (the shared `unreadable` doc), :1232, :1343, :1372 and :1456 take `existsLoud`, which `src/fsProbe.ts:37` states cannot prove absence on win32; the sibling `readAllInvocationRows` (:1284) descends. `src/loopSupervisor.ts:934` and `src/waveTick.ts:484` probe the stop flag bare where `src/cliLoop.ts:122` and `src/cliStatus.ts:102` prove it. `tests/Dispatcher.test.ts:14299` names the gap as its reason to steer a fixture around it."
+  "notes": "Verified this tick, re-cited past 48e9c818. `src/tickVerdict.ts:1076` (the shared `unreadable` doc), :1321, :1432, :1461, :1545 take `existsLoud`, which `src/fsProbe.ts:37` states cannot prove absence on win32; the sibling `readAllInvocationRows` (:1369) descends. `src/loopSupervisor.ts:934` and `src/waveTick.ts:484` probe the stop flag bare where `src/cliLoop.ts:122` and `src/cliStatus.ts:103` prove it. `tests/Dispatcher.test.ts:14398` names the gap as its reason to steer a fixture around it."
 }

@@ -25,5 +25,5 @@
   "pins": [
     "the verdict history read declines a row missing any field buildTickVerdict always writes"
   ],
-  "notes": "Verified this tick: `isTickVerdict` (`src/tickVerdict.ts:1042`) checks exactly the eleven keys `buildTickVerdict` (`:940`) writes unconditionally, so the property holds — a pin, never a test. Nothing holds it: `tests/Dispatcher.test.ts:14260` deletes `timings` to prove the *append* keeps a row the check declines, and no case reads the two sets against each other. A partial row past the check hands `superviseLoop` and a chain's `shouldRun` a typed field that is `undefined`."
+  "notes": "Verified this tick, re-cited past 48e9c818: `isTickVerdict` (`src/tickVerdict.ts:1054`) checks exactly the eleven keys `buildTickVerdict` (`:941`) writes unconditionally, so the property holds — a pin, never a test. Nothing holds it: `tests/Dispatcher.test.ts:14273` deletes `timings` to prove the *append* keeps a row the check declines, and no case reads the two sets against each other. A partial row past the check hands `superviseLoop` and `shouldRun` a typed field that is `undefined`."
 }
