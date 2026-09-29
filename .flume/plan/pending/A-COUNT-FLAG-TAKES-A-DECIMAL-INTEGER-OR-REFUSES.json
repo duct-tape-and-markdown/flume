@@ -34,5 +34,5 @@
     "flume loop refuses a --max value that is not a decimal integer",
     "flume log refuses a -n value that is not a decimal integer"
   ],
-  "notes": "Verified this tick: `src/cliArgs.ts:16` is `Number(value)` — 0 for `\"\"`, `\" \"` and `\"\\t\"`, and it admits `0x10`, `1e3`, `2.5`, `-0`. A wrapper's `--max \"$BUDGET\"` with the var unset starts no child and exits 0 as a completed run. `decodeTipClaimHandoff` (`src/cliRunContext.ts:52`) refuses this class by name next door. Callers: `src/cliLoop.ts:84`, `src/cliHistory.ts:37`. Seam with THE-RENDER-REFUSED-CLASS-IS-ENUMERATED-WHOLE (in flight) on `docs/CLI.md` and `src/cliHelp.ts`."
+  "notes": "Verified this tick: `src/cliArgs.ts:16` is `Number(value)` — 0 for `\"\"`, `\" \"` and `\"\\t\"`, and it admits `0x10`, `1e3`, `2.5`, `-0`. A wrapper's `--max \"$BUDGET\"` with the var unset starts no child and exits 0 as a completed run. `decodeTipClaimHandoff` (`src/cliRunContext.ts:52`) refuses this class by name next door. Callers: `src/cliLoop.ts:84`, `src/cliHistory.ts:37`. Seam with THE-STATUS-SPEND-LINE-NAMES-WHAT-IT-COUNTS on `docs/CLI.md` and `tests/cli.test.ts`."
 }
