@@ -66,8 +66,10 @@ import {
 } from "./PendingSchema.js";
 import {
   InlineExecRenderError,
+  MissingPlaceholderRenderError,
   readPhaseTemplate,
   renderPrompt,
+  RenderRefusal,
 } from "./Prompt.js";
 import { setupWorktree } from "./setupWorktree.js";
 import { checkoutAt, readWorktreeRegistry } from "./worktrees.js";
@@ -446,6 +448,29 @@ export interface FlumeApi {
   /** The error classes chains branch on with `instanceof`, no value import. */
   CjsContextLoadError: typeof CjsContextLoadError;
   PendingParseFailure: typeof PendingParseFailure;
+  /**
+   * The class the engine's own catches branch a refused render on — every
+   * stage of {@link renderPrompt} that could not resolve what the prompt
+   * asked for extends it. A chain rendering a prompt of its own classifies
+   * the refusal the way the engine does: one `instanceof` against the base,
+   * never a roster of the stages it happens to know about and never a match
+   * against the message, so a stage that gains a refusal is classified with
+   * no chain touched.
+   *
+   * `signature` is the fact beneath it: the stable identity of what would
+   * not resolve, which is what the repeated-failure backstop keys on
+   * (`spec/loop.md`, *Repeated identical failures — quarantine, then
+   * abort*). What a refusal means — retry, park, abort — stays the chain's
+   * (`.claude/rules/engine-boundary.md`).
+   */
+  RenderRefusal: typeof RenderRefusal;
+  /**
+   * The leaf stage 1 throws: the prompt named a `{{KEY}}` the merged args
+   * map has no entry for. `missing` is every such key, sorted — the set the
+   * engine already computed, so a chain fixing its args reads them rather
+   * than re-scanning the template for placeholders it did not supply.
+   */
+  MissingPlaceholderRenderError: typeof MissingPlaceholderRenderError;
   InlineExecRenderError: typeof InlineExecRenderError;
   TipClaimHeldError: typeof TipClaimHeldError;
 }
@@ -518,6 +543,8 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     },
     CjsContextLoadError,
     PendingParseFailure,
+    RenderRefusal,
+    MissingPlaceholderRenderError,
     InlineExecRenderError,
     TipClaimHeldError,
   };

@@ -112,6 +112,8 @@ import {
 import { readQueueAtRef, readQueueOnDisk } from "../src/pendingLedger.ts";
 import {
   InlineExecRenderError as realInlineExecRenderError,
+  MissingPlaceholderRenderError as realMissingPlaceholderRenderError,
+  RenderRefusal as realRenderRefusal,
   type CleanExitAttempt,
   type PriorAttempt,
 } from "../src/Prompt.ts";
@@ -18788,7 +18790,9 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
           `description: "", promptPath: "prompt.md", concurrency: "singleton", ` +
           `writablePaths: ["**"], gates: [api.CjsContextLoadError, ` +
           `api.PendingParseFailure, api.InlineExecRenderError, ` +
-          `api.TipClaimHeldError], handoff: () => [] }], humanOnly: [] } });\n`,
+          `api.TipClaimHeldError, api.RenderRefusal, ` +
+          `api.MissingPlaceholderRenderError], handoff: () => [] }], ` +
+          `humanOnly: [] } });\n`,
         "utf8",
       );
 
@@ -18799,9 +18803,98 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
       expect(gates[1]).toBe(realPendingParseFailure);
       expect(gates[2]).toBe(realInlineExecRenderError);
       expect(gates[3]).toBe(git.TipClaimHeldError);
+      expect(gates[4]).toBe(realRenderRefusal);
+      expect(gates[5]).toBe(realMissingPlaceholderRenderError);
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }
+  });
+
+  // The roster above pins identity; these two pin the use it exists for.
+  // The refusal is thrown by the engine's own `renderPrompt` — the api's,
+  // reached through the api — and decoded by the chain, so neither side is
+  // the tester's hand (`.claude/rules/engineering.md`, *A seam gate reads
+  // what the real writer wrote*). The factory stashes a probe into the
+  // phase's `gates[]`, the one real `ChainModule` field that survives
+  // `loadChainModule`'s return.
+  async function runChainProbe<T>(prefix: string, body: string): Promise<T> {
+    const cfg = await mkTempDir(prefix);
+    try {
+      await mkdir(cfg, { recursive: true });
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default (api) => {\n` +
+          `  const phase = { name: "build", description: "", ` +
+          `promptPath: "prompt.md", concurrency: "singleton", ` +
+          `writablePaths: ["**"], gates: [], handoff: () => [] };\n` +
+          `  phase.gates = [async () => {\n` +
+          `    try {\n` +
+          `      await api.renderPrompt({ phase, template: ` +
+          `"a {{NEVER_SUPPLIED}} b {{ALSO_ABSENT}}", cwd: ".", ` +
+          `flumeDir: "/tmp/flume", args: {} });\n` +
+          `      return { threw: false };\n` +
+          `    } catch (err) {\n` +
+          body +
+          `    }\n` +
+          `  }];\n` +
+          `  return { chain: { phases: [phase], humanOnly: [] } };\n` +
+          `};\n`,
+        "utf8",
+      );
+
+      const mod = await loadChainModule(chainPaths(cfg));
+      const probe = mod.chain.phases[0]!.gates[0] as unknown as () =>
+        Promise<T>;
+      return await probe();
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  }
+
+  it("a chain branches on the render-refusal base through the api it was handed", async () => {
+    const seen = await runChainProbe<{
+      threw: boolean;
+      isRefusal?: boolean;
+      isInlineExec?: boolean;
+      signature?: string;
+    }>(
+      "flume-cfg-api-render-refusal-",
+      // The base alone: the chain names no stage, and classifies the leaf
+      // stage 1 threw without knowing stage 1 exists.
+      `      return { threw: true, isRefusal: err instanceof api.RenderRefusal, ` +
+        `isInlineExec: err instanceof api.InlineExecRenderError, ` +
+        `signature: err.signature };
+`,
+    );
+
+    expect(seen.threw).toBe(true);
+    expect(seen.isRefusal).toBe(true);
+    // Classified by the base, not by the one stage the chain could have
+    // enumerated — the leaf is a different class and still answers.
+    expect(seen.isInlineExec).toBe(false);
+    expect(seen.signature).toBe("missing args: ALSO_ABSENT, NEVER_SUPPLIED");
+  });
+
+  it("a chain reads a missing-placeholder refusal's keys through the api it was handed", async () => {
+    const seen = await runChainProbe<{
+      threw: boolean;
+      isMissing?: boolean;
+      missing?: string[];
+    }>(
+      "flume-cfg-api-missing-placeholder-",
+      `      return { threw: true, ` +
+        `isMissing: err instanceof api.MissingPlaceholderRenderError, ` +
+        `missing: err instanceof api.MissingPlaceholderRenderError ? ` +
+        `[...err.missing] : null };
+`,
+    );
+
+    expect(seen.threw).toBe(true);
+    expect(seen.isMissing).toBe(true);
+    // Every unresolved key, sorted — the set the engine computed, not the
+    // first one it hit and not a re-scan of the template by the chain.
+    expect(seen.missing).toEqual(["ALSO_ABSENT", "NEVER_SUPPLIED"]);
   });
 
   // Every engine value a chain composes with rides the api param;

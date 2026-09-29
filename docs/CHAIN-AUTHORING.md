@@ -1966,7 +1966,10 @@ The "why" cite: `{{PER_PATH}}` § `{{PER_SECTION}}`.
 
 Keys must start with an uppercase letter and contain only `A-Z`, `0-9`,
 `_`. If the prompt references a key `promptArgs` doesn't supply,
-`renderPrompt` throws — mismatched contracts fail fast.
+`renderPrompt` throws `api.MissingPlaceholderRenderError` before any span
+runs — mismatched contracts fail fast. Its `missing` array names every
+unsupplied key, sorted, so one refusal hands you the whole set rather than
+the first key the scan hit.
 
 ### Inline-exec: `` !`shell command` ``
 
@@ -2024,6 +2027,15 @@ Notes:
   output length. Keep spans command lines you're confident will succeed;
   a command that can legitimately fail belongs behind `promptArgs`-level
   handling in the chain, not inline-exec.
+
+Both refusals — the unsupplied placeholder above and the failed span here —
+extend **`api.RenderRefusal`**, and that base is what to branch on when you
+render a prompt yourself: one `instanceof` classifies a refused render
+whatever stage refused it, so a stage the engine grows later needs no edit
+in your chain, and you never match against the message. Its `signature` is
+the stable identity of what would not resolve — what the repeated-failure
+backstop counts, never what the refusal printed. What a refused render means
+for your loop stays yours.
 
 ### The `<harness>` block
 
