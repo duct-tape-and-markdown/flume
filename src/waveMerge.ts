@@ -871,46 +871,16 @@ async function carrySpan(
       signature: gateFailureSignature(entryFailure),
       message: entryFailure.message,
     });
-    // spec/loop.md "Tip verify — one writer per branch, absorption at
-    // the merge", "dropping it must not take bystanders": the primary
-    // checkout may hold an operator's uncommitted work, so this reset
-    // carries keep-semantics — never --hard — and a textual collision
-    // refuses loudly rather than silently discarding either writer's
-    // content. Caught here, not propagated: an uncaught throw would
-    // abort the wave's remaining merges before `commitPendingUpdate`
-    // ever ran, dropping the ledger rewrite for every sibling entry
-    // already cherry-picked and shipped ahead of this one.
-    const foreignTip = await checkMergedTipUnmoved(
-      repoRoot,
-      preCherry,
-      mergedSha,
-    );
-    if (foreignTip) {
+    // Both refusals below — trunk having moved out from under the merged
+    // commit, and `resetKeepTo` itself refusing — end this entry the same
+    // way: the commit stays on trunk for the operator, the entry is reported
+    // refused, and the wave carries on. One spelling, two callers; only the
+    // refusal's own words differ, and each side's words already name the shas
+    // the warning would otherwise repeat (`checkMergedTipUnmoved`
+    // (`src/tipVerify.ts`), `ResetKeepRefusedError` (`src/git.ts`)).
+    const refuseRevert = (message: string): string => {
       leg.log.warn(
-        `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} refused (${foreignTip}); commit stays on trunk, left for the operator; other entries continue`,
-      );
-      w.revertRefused.push(r.entry);
-      w.mergeOutcomes.push({
-        entryTag: r.entry.tag,
-        outcome: "afterMerge-revert-refused",
-        footprint: commitTouchedPaths,
-        baseSha: preCherry,
-        headSha: mergedSha,
-      });
-      w.gateFailures.push({
-        ...blame,
-        signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
-        message: foreignTip,
-      });
-      return slug;
-    }
-    try {
-      await git.resetKeepTo(repoRoot, preCherry);
-    } catch (err) {
-      if (!(err instanceof git.ResetKeepRefusedError)) throw err;
-      const message = `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`;
-      leg.log.warn(
-        `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator; other entries continue`,
+        `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} refused (${message}); commit stays on trunk, left for the operator; other entries continue`,
       );
       w.revertRefused.push(r.entry);
       w.mergeOutcomes.push({
@@ -926,6 +896,29 @@ async function carrySpan(
         message,
       });
       return slug;
+    };
+    // spec/loop.md "Tip verify — one writer per branch, absorption at
+    // the merge", "dropping it must not take bystanders": the primary
+    // checkout may hold an operator's uncommitted work, so this reset
+    // carries keep-semantics — never --hard — and a textual collision
+    // refuses loudly rather than silently discarding either writer's
+    // content. Caught here, not propagated: an uncaught throw would
+    // abort the wave's remaining merges before `commitPendingUpdate`
+    // ever ran, dropping the ledger rewrite for every sibling entry
+    // already cherry-picked and shipped ahead of this one.
+    const foreignTip = await checkMergedTipUnmoved(
+      repoRoot,
+      preCherry,
+      mergedSha,
+    );
+    if (foreignTip) return refuseRevert(foreignTip);
+    try {
+      await git.resetKeepTo(repoRoot, preCherry);
+    } catch (err) {
+      if (!(err instanceof git.ResetKeepRefusedError)) throw err;
+      return refuseRevert(
+        `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`,
+      );
     }
     w.mergeReverted.push(r.entry);
     w.mergeOutcomes.push({
