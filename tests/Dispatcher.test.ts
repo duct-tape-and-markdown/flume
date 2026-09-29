@@ -115,6 +115,7 @@ import {
 } from "../src/Prompt.ts";
 import { loopExitCode } from "../src/cliVerdict.ts";
 import * as git from "../src/git.ts";
+import { liveForeignClaimPid } from "../src/tipVerify.ts";
 import { parsePidClaim, renderPidClaim } from "../src/pidClaim.ts";
 import { waitFor } from "./helpers/waitFor.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
@@ -12240,6 +12241,41 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
         ]);
       } finally {
         await rm(claimPath, { force: true });
+      }
+    });
+
+    it("liveForeignClaimPid refuses a tip claim whose git common dir is present and is not a directory", async () => {
+      // The obstruction is planted structurally — a plain file where a
+      // directory belongs — because that is the denial that bites on every
+      // host (`.claude/rules/platform-facts.md`, *chmod denies nothing on
+      // win32*), and this reader is exercised *only* by an obstructed
+      // ancestor (same page, *win32 reports a path through a non-directory
+      // as not found*, closing paragraph). It sits at the first rung beneath
+      // the common dir rather than at the common dir itself: git validates
+      // that root before it answers `rev-parse --git-common-dir` at all — a
+      // non-directory there, however reached, is `fatal: not a git
+      // repository` — so the reachable head of this descent is the `flume`
+      // directory the claim path nests under.
+      const commonDir = await git.gitCommonDir(fx.repo);
+      const obstructed = join(commonDir, "flume");
+      const claimPath = await claimPathFor(fx.repo);
+      // Vacuity: the file about to be planted really is on the descent the
+      // read takes, not a sibling the walk never probes.
+      expect(claimPath.startsWith(obstructed)).toBe(true);
+
+      await rm(obstructed, { recursive: true, force: true });
+      await writeFile(obstructed, "not a directory\n", "utf8");
+      try {
+        // Refuses, rather than answering `null` — an unreadable claim read as
+        // an unclaimed ref is a wave cherry-picking over a tip a live engine
+        // instance holds. The refusal names the obstructed path, which the
+        // pre-descent read's own `ENOTDIR` happened to carry on posix and
+        // nothing carried on win32, where the leaf stat answers `ENOENT`.
+        await expect(
+          liveForeignClaimPid(fx.repo, undefined),
+        ).rejects.toThrow(obstructed);
+      } finally {
+        await rm(obstructed, { force: true });
       }
     });
   });

@@ -12,6 +12,7 @@
  * bookkeeping here, only what the disk says at the moment of the check.
  */
 
+import { existsLoudUnder } from "./fsProbe.js";
 import * as git from "./git.js";
 
 /**
@@ -31,6 +32,10 @@ import * as git from "./git.js";
  * no claim, never a thrown error. A live claim matching `ownTipClaimPid` is
  * this run's own — not foreign — per `DispatcherOptions.ownTipClaimPid`'s
  * doc (`src/Dispatcher.ts`), which is where the value comes from.
+ *
+ * An unreachable claim path is the one reading this never takes: it throws to
+ * the caller, the same refusal every other unreadable guard file already
+ * raises (`livePidClaimAt`, `src/pidClaim.ts`).
  */
 export async function liveForeignClaimPid(
   cwd: string,
@@ -40,6 +45,19 @@ export async function liveForeignClaimPid(
   if (ref.kind !== "ref") return null;
   const commonDir = await git.gitCommonDir(cwd);
   const claimPath = git.tipClaimPath(commonDir, ref.path);
+  // No claim is a **proven** absence before it reads as an unclaimed ref:
+  // `existsLoudUnder` (`src/fsProbe.ts`) descends from the common dir git
+  // just resolved, which is the descent `flume status` already takes over
+  // this same path (`src/cli.ts`) rather than a second one spelled here
+  // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). The
+  // claim nests four segments under that root, and a plain file at any of
+  // them answers the leaf's own stat `ENOENT` on win32
+  // (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+  // non-directory as not found*) — so keyed off the leaf stat alone this
+  // check reported "unclaimed" and the wave cherry-picked over a ref a live
+  // engine instance holds, which is the one interference nothing downstream
+  // catches (`.claude/rules/engineering.md`, *Loud or nothing*).
+  if (!existsLoudUnder("tip claim", commonDir, claimPath)) return null;
   const holder = await git.liveTipClaimPid(claimPath);
   if (holder === null || holder === ownTipClaimPid) return null;
   return holder;
