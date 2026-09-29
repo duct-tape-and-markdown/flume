@@ -47,3 +47,18 @@ cost worth weighing.
 
 **No third reading where the code moves.** The field was retired under a
 ruling, not by drift.
+
+**A second consumer, and the tree now argues for (1).**
+`THE-RENDER-SEAMS-LOADER-REACHES-THE-CHAINS-OWN-SURFACE` shipped
+`readPhaseTemplate` onto the chain surface (`src/flumeApi.ts:204`, documented
+at `docs/CHAIN-AUTHORING.md:1946`), and the resolution rule it put there —
+relative beneath `configDir`, absolute as given — is verbatim the rule this
+paragraph states. So the rule is now spelled on a shipped interface and
+pinned twice, while the only spec copy still hangs it off a retired field.
+
+That is the cost (2) would pay, made concrete: dropping the read from this
+page leaves the corpus with no statement of a rule the package now exposes to
+chain authors. Reading (1) — the rule stays here, renamed onto
+`readPhaseTemplate` — is the one the shipped shape argues for. The fork is
+still the human's; what changed is that (2) now drops a rule the API states
+rather than one only `src/` held.
