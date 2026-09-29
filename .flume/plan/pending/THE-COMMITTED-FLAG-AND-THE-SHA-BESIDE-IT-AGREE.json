@@ -1,0 +1,27 @@
+{
+  "tag": "THE-COMMITTED-FLAG-AND-THE-SHA-BESIDE-IT-AGREE",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/Phase.ts",
+        "description": "`committed`'s hover states the ship it answers, beside the `commitSha` hover that already names a footprint-only wave's tip contribution"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the footprint-only wave's reported pair, beside the merge-failure-footprint block's own case"
+      }
+    ]
+  },
+  "summary": "`committed`'s shipped hover says false means a clean exit or no-op, while `commitSha` beside it names a real tip contribution on the same footprint-only wave",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the two hovers the package's own `.d.ts` carries for `TickResult` agree about a fanout wave that shipped nothing and recorded a merge-failure footprint: `committed` states the ship it actually answers rather than \"a clean exit or no-op\", so a chain author reading the pair is not told the tick did nothing while `commitSha` beside it names the commit that wave put on trunk",
+  "pins": [
+    "a fanout wave that shipped nothing and recorded a footprint reports committed false and names the ledger commit it landed"
+  ],
+  "notes": "Verified: `waveCommitted` (`src/waveMerge.ts:985`) is `w.shipped.length > 0`, reported at `src/waveTick.ts:683`, while `:689` sets `commitSha`/`ledgerCommitShas` off `ledgerShas`, appended at `src/waveMerge.ts:1064` for the footprint-only rewrite (`src/pendingLedger.ts:681`). `tests/Dispatcher.test.ts:4395` is that wave — no ship, footprint commit on trunk. `src/Phase.ts:335` is the hover, `:336`-`:350` its neighbour. `harness/handoff.ts:278` reads the pair."
+}
