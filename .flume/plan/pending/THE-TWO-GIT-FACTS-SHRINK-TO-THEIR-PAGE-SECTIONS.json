@@ -1,0 +1,37 @@
+{
+  "tag": "THE-TWO-GIT-FACTS-SHRINK-TO-THEIR-PAGE-SECTIONS",
+  "gate": { "kind": "open" },
+  "priority": 30,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/git.ts",
+        "description": "`diffNameOnly`'s doc states the range-diff fact outright; it shrinks to a pointer at the page section that now owns it"
+      },
+      {
+        "path": "src/worktrees.ts",
+        "description": "`worktreeAt`'s doc states the realpath fact's consequence without the fact; it shrinks to a pointer at its section"
+      },
+      {
+        "path": "tests/priorAttempts.test.ts",
+        "description": "the `commitTwoStepSpan` precondition and the two vacuity-pin comments gain the cite for why the span is staged that way"
+      },
+      {
+        "path": "tests/git.test.ts",
+        "description": "the vacuity-pin comment on the filtered read gains the same cite"
+      },
+      {
+        "path": "tests/worktrees.test.ts",
+        "description": "the three symlink-alias preconditions gain the cite for why they symlink"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "Two git facts ruled onto `platform-facts.md` are still spelled out in a doc comment and six fixture and vacuity comments that predate the sections",
+  "per": { "path": ".claude/rules/engineering.md", "section": "Narration is the ladder's bottom rung" },
+  "acceptance": "each copy points at the section that now owns its fact — `A range diff compares two trees…` and `git records a worktree's realpath…` — rather than restating it, and each cite resolves through the citation pin. Behavior-free: no test changes, and the typecheck plus the citation and doc-comment pins hold the edit.",
+  "tests": [],
+  "pins": [],
+  "notes": "Two rulings, one shape: both questions said the shrink is the queue entry the drain files once the heading exists, and a0ca492b added both headings. Sites verified this tick: `src/git.ts` (the `excludeDeleted` paragraph), `src/worktrees.ts` (the `worktreeAt` arm), `tests/priorAttempts.test.ts`, `tests/git.test.ts`, `tests/worktrees.test.ts`."
+}

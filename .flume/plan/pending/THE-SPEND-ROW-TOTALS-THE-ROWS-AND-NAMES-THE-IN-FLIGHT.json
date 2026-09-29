@@ -1,0 +1,32 @@
+{
+  "tag": "THE-SPEND-ROW-TOTALS-THE-ROWS-AND-NAMES-THE-IN-FLIGHT",
+  "gate": { "kind": "blockedBy", "tags": ["THE-USAGE-ROW-IS-ON-DISK-AS-IT-IS-PAID"] },
+  "priority": 30,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/cliStatus.ts",
+        "description": "row 7 totals the usage rows written since the lock's start instant, and the line names how many agents are still in flight"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the `status` listing's spend row, as it then reads"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the totalled rows and the in-flight count through the real verb"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`flume status` totals spend from verdict rows, so a live wave's cost reads as its last finished tick — $6.93 against ~$211 actually spent",
+  "per": { "path": "spec/cli.md", "section": "`flume status` owes exactly this" },
+  "acceptance": "the spend row totals the usage rows written since the instant the lock states the run started, so a tick still running is counted up to its last returned agent, and the line names how many agents are still in flight",
+  "tests": [
+    "flume status totals the usage rows written since the lock's start instant",
+    "flume status names how many agents are still in flight"
+  ],
+  "pins": [],
+  "notes": "Ruled in the inbox (2). Second half of that ruling; the rows it reads arrive with THE-USAGE-ROW-IS-ON-DISK-AS-IT-IS-PAID, which is why this is `blockedBy` rather than declaring the row reader as a shared seam."
+}
