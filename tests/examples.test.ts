@@ -1558,14 +1558,19 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
       expect(held.awakeAfter).toEqual([inbox.name]);
 
       // Same window, and this time the slice closed nothing: it does not
-      // re-wake itself, so an unroutable finding costs one tick, not a loop.
+      // re-wake itself, so the tick it would have spent on the same wall
+      // goes to the rung above instead.
       const unroutable = await tick(inbox.name, commitsNothing);
       expect(unroutable.result?.committed).toBe(false);
       expect(unroutable.noCommit).toBe("clean-exit");
       expect(unroutable.awakeAfter).toEqual([derive.name]);
 
       // The exclusion is the slice's own: its sibling still answers with the
-      // rung above, whose window is open.
+      // rung above, whose window is open — and that answer names the excluded
+      // slice straight back, which is how deep a per-tick exclusion goes. A
+      // wall the two keep alternating over is the repeated-failure backstop's
+      // (`spec/loop.md`, *Repeated identical failures — quarantine, then
+      // abort*), never this set's.
       const sibling = await tick(derive.name, commitsNothing);
       expect(sibling.result?.committed).toBe(false);
       expect(sibling.awakeAfter).toEqual([inbox.name]);

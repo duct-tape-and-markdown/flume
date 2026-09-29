@@ -262,9 +262,16 @@ function stopAfterContractTouchingShip(result: TickResult): void {
  *
  * **The one exception is the slice that just ran and committed nothing.** It
  * made no progress, so its window is open for exactly the reason it was open
- * last tick, and naming itself would spend every remaining tick of the loop
- * on the same wall — an unroutable record, a refused render. Excluded, it
- * costs one tick. A slice that *did* commit and is still live re-wakes
+ * last tick, and naming itself would spend the next tick on the same wall —
+ * an unroutable record, a refused render. Excluded, it yields that tick to a
+ * live sibling or to build, and that slot is the whole of what the exclusion
+ * buys: this handoff is stateless and per-tick, so the exclusion is one tick
+ * deep and nothing here holds the slice out past the one answer it is read
+ * from. Two live slices alternate the same wall on their own — each excludes
+ * itself and wakes the sibling, whose answer wakes it straight back. A wall
+ * that outlasts one tick is therefore the repeated-failure backstop's to end
+ * (`spec/loop.md`, *Repeated identical failures — quarantine, then abort*),
+ * never this set's. A slice that *did* commit and is still live re-wakes
  * itself: that window is larger than one tick's budget, which is progress.
  *
  * The exception is read off the phase the engine says produced this result,
