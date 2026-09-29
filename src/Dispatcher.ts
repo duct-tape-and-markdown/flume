@@ -248,7 +248,7 @@ export interface DispatcherOptions {
    * claim *this run* operates under — its own (a bare `flume tick`, which
    * acquires directly in-process, so this equals `process.pid`) or its
    * supervisor's (a loop-spawned child, told via `FLUME_TIP_CLAIM_HELD`).
-   * `liveForeignClaimPid` (the wave's own tip-verify check, consulted before
+   * `liveForeignClaimPid` (either leg's tip-verify check, consulted before
    * every cherry-pick and before the pending-ledger commit) excludes a live
    * claim matching this pid — without it, a run's own claim reads as a
    * concurrent engine instance to its own wave, which refuses every

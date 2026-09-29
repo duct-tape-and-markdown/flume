@@ -31,7 +31,7 @@ import { buildGateRevert, priorAttemptRef } from "./priorAttempts.js";
 import { bindEntryRefusal, pickableSelection } from "./selection.js";
 import { consultShouldRun, runAttempt } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
-import { checkMergedTipUnmoved } from "./tipVerify.js";
+import { checkMergedTipUnmoved, liveForeignClaimPid } from "./tipVerify.js";
 import {
   appendInvocationRow,
   gateFailureSignature,
@@ -290,7 +290,11 @@ export async function runSingleton(
   // The attempt's own verdict, which the afterMerge stage below may still
   // overwrite with its own `gate-revert`.
   let noCommit: NoCommitMode | undefined = attempt.noCommit;
-  const tipMoved = attempt.tipMoved ?? false;
+  // Either tip-verify producer sets this (`TickVerdict.tipMoved`,
+  // `src/tickVerdict.ts`): the attempt's own ancestry check on the worktree
+  // branch, or the live-foreign-claim refusal the merge stage below takes
+  // before its pick.
+  let tipMoved = attempt.tipMoved ?? false;
   // spec/chain.md "What a hook receives": the tip this tick's span
   // branched from — the gates' base, reported on the result as `baseSha`.
   // Unset on a render-refused tick: no span was ever started. (A decline
@@ -364,202 +368,234 @@ export async function runSingleton(
       // the span it produced.
       const spanBase = attempt.spanBase;
       const spanHead = attempt.headSha;
-      // Carry the span back onto trunk through the same cherry-pick +
-      // afterMerge machinery a one-entry wave uses (spec/worktrees.md
-      // "Singleton runs in a worktree"). Trunk may have moved since
-      // `preHead` — the operator's checkout is theirs at every moment of
-      // a run now that the agent never touches it directly — so this
-      // lands onto whatever trunk currently is; only a real conflict
-      // refuses.
-      //
-      // spec/loop.md "Crash equals stop": checkpoint whatever the
-      // operator has staged/unstaged on the primary checkout before
-      // this tick's one pick range begins — recoverable from the tick
-      // verdict alone even if the cherry-pick below conflicts and its
-      // `--abort` (now guarded, but still a reset) or a later gate
-      // revert disturbs it.
-      bystanderCheckpointSha = await git.checkpointBystanderState(repoRoot);
-      const preCherry = await git.revParse(repoRoot);
-      // The commits of this span trunk already held. A range pick absorbs
-      // those rather than refusing over them (`git.cherryPickRange`), so
-      // only a real conflict reaches the catch below.
-      let absorbed: readonly string[] = [];
-      try {
-        ({ absorbed } = await git.cherryPickRange(repoRoot, spanBase, spanHead));
-      } catch (err) {
-        const message = (err as Error).message;
+      // spec/loop.md "Tip verify — one writer per branch, absorption at the
+      // merge", "Harness-driven commits carry no expected-tip bookkeeping —
+      // the claim refuses, git arbitrates": the same question the wave asks
+      // before its own pick (`carrySpan`, `src/waveMerge.ts`), at one
+      // spelling — a singleton's pick is a harness-driven commit onto the
+      // shared ref like any other, and two engine instances interleaving
+      // picks on one ref is the one interference no cherry-pick or conflict
+      // check can catch on its own (`TickVerdict.tipMoved`,
+      // `src/tickVerdict.ts`, which already states that every one of them
+      // asks). No live claim means whatever moved trunk was not an engine,
+      // and the pick below lands onto whatever tip is current.
+      const foreignClaim = await liveForeignClaimPid(
+        repoRoot,
+        leg.ownTipClaimPid,
+      );
+      if (foreignClaim !== null) {
         leg.log.warn(
-          `[flume] cherry-pick failed for ${phase.name}: ${message}; commit stays on the worktree branch, retried next tick`,
+          `[flume] ${phase.name}: tip claimed by pid ${foreignClaim}; refusing to cherry-pick; commit stays on the worktree branch, retried next tick`,
         );
-        await git.cherryPickAbort(repoRoot);
-        mergeFailure = {
-          signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
-          message,
-        };
+        // Refused before the checkpoint and the pick, so trunk holds nothing
+        // of this span and no bystander sha is staked. `committed` stays
+        // false and this row is the whole recovery handle — teardown below
+        // deletes the branch, the commit objects outlive it
+        // ({@link TickVerdictMergeOutcome.headSha}, `src/tickVerdict.ts`).
+        tipMoved = true;
         mergeOutcomes.push({
-          outcome: "cherry-pick-conflict",
+          outcome: "tip-moved",
           baseSha: spanBase,
           headSha: spanHead,
         });
-      }
-
-      if (!mergeFailure) {
-        const mergedSha = await git.revParse(repoRoot);
-        if (absorbed.length > 0) {
-          leg.log.info(
-            `[flume] ${phase.name}: trunk already held ${absorbed.map((sha) => sha.slice(0, 8)).join(", ")} of ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; absorbed, not a conflict`,
-          );
-        }
-        const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
-        const commitTouchedPaths = await git.diffNameOnly(
-          repoRoot,
-          preCherry,
-          mergedSha,
-        );
-        let entryFailure: ReportedGateResult | undefined;
-        for (const gate of afterMergeGates) {
-          const { result: gr, ms } = await runGate(
-            gate,
-            {
-              cwd: repoRoot,
-              repoRoot,
-              flumeDir: leg.flumeDir,
-              stateRootRel: leg.stateRootRel,
-              pendingDir: leg.pendingDir,
-              configDir: leg.configDir,
-              phaseName: phase.name,
-              commitSha: mergedSha,
-              touchedPaths: commitTouchedPaths,
-              // The span's base, not `preCherry`: an afterMerge gate
-              // reading trunk needs the tip the agent branched from to
-              // tell an input this tick ignored from one that landed
-              // after it started (spec/chain.md "What a gate receives").
-              baseSha: spanBase,
-              // The trunk tip the span landed onto — the lower end of the
-              // range `commitTouchedPaths` above is diffed over. Trunk may
-              // have moved since this tick branched, so it is its own fact
-              // and not `spanBase` under another name.
-              landedOnSha: preCherry,
-              log: (l) => leg.log.info(l),
-            },
-            leg.gateScope,
-          );
-          const row = reportedGateRow(gate.name, gr);
-          gateResults.push(row);
-          timings.push({ kind: "gate", gate: gate.name, ms });
-          if (!gr.ok) {
-            entryFailure = row;
-            break;
-          }
-        }
-
-        if (entryFailure) {
+      } else {
+        // Carry the span back onto trunk through the same cherry-pick +
+        // afterMerge machinery a one-entry wave uses (spec/worktrees.md
+        // "Singleton runs in a worktree"). Trunk may have moved since
+        // `preHead` — the operator's checkout is theirs at every moment of
+        // a run now that the agent never touches it directly — so this
+        // lands onto whatever trunk currently is; with no engine holding the
+        // claim, only a real conflict refuses.
+        //
+        // spec/loop.md "Crash equals stop": checkpoint whatever the
+        // operator has staged/unstaged on the primary checkout before
+        // this tick's one pick range begins — recoverable from the tick
+        // verdict alone even if the cherry-pick below conflicts and its
+        // `--abort` (now guarded, but still a reset) or a later gate
+        // revert disturbs it.
+        bystanderCheckpointSha = await git.checkpointBystanderState(repoRoot);
+        const preCherry = await git.revParse(repoRoot);
+        // The commits of this span trunk already held. A range pick absorbs
+        // those rather than refusing over them (`git.cherryPickRange`), so
+        // only a real conflict reaches the catch below.
+        let absorbed: readonly string[] = [];
+        try {
+          ({ absorbed } = await git.cherryPickRange(repoRoot, spanBase, spanHead));
+        } catch (err) {
+          const message = (err as Error).message;
           leg.log.warn(
-            `[flume] afterMerge gate '${entryFailure.gate}' failed for ${phase.name}; reverting`,
+            `[flume] cherry-pick failed for ${phase.name}: ${message}; commit stays on the worktree branch, retried next tick`,
           );
-          // The span the pick added, not `mergedSha` alone: over a span
-          // trunk already held whole the two are equal (the `mergedSha ===
-          // preCherry` arm below), and digesting the tip would hand the
-          // retry whichever writer's commit is standing there as its own
-          // prior attempt (spec/loop.md "Prior-outcome feedback to the
-          // retrying tick"). The same pair the merge row below bounds.
-          const record = await buildGateRevert(
-            "afterMerge",
-            entryFailure,
-            repoRoot,
-            { base: preCherry, head: mergedSha },
-          );
-          await leg.attempts.write(ref, record);
-          noCommit = "gate-revert";
-          gateFailures.push({
-            signature: gateFailureSignature(entryFailure),
-            message: entryFailure.message,
+          await git.cherryPickAbort(repoRoot);
+          mergeFailure = {
+            signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
+            message,
+          };
+          mergeOutcomes.push({
+            outcome: "cherry-pick-conflict",
+            baseSha: spanBase,
+            headSha: spanHead,
           });
-          // spec/loop.md "Tip verify — one writer per branch,
-          // absorption at the merge", "dropping it must not take
-          // bystanders": the primary checkout may hold an operator's
-          // uncommitted work, so this reset carries keep-semantics —
-          // never --hard — and a textual collision refuses loudly
-          // rather than silently discarding either writer's content.
-          // Caught here, not propagated: an uncaught throw would crash
-          // the tick before this phase's own facts (the gate failure
-          // above, teardown, the return below) were ever reached.
-          const foreignTip = await checkMergedTipUnmoved(
+        }
+
+        if (!mergeFailure) {
+          const mergedSha = await git.revParse(repoRoot);
+          if (absorbed.length > 0) {
+            leg.log.info(
+              `[flume] ${phase.name}: trunk already held ${absorbed.map((sha) => sha.slice(0, 8)).join(", ")} of ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; absorbed, not a conflict`,
+            );
+          }
+          const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
+          const commitTouchedPaths = await git.diffNameOnly(
             repoRoot,
             preCherry,
             mergedSha,
           );
-          // The span that reached trunk: `preCherry..mergedSha`, whether
-          // the revert below lands or is refused. Its base is the
-          // pre-cherry-pick tip, not the span's base — `headSha` names the
-          // trunk-side commit, and a span row's two shas always bound the
-          // same range.
-          let mergeFate: MergeOutcome = "afterMerge-reverted";
-          if (foreignTip) {
-            leg.log.warn(
-              `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} refused (${foreignTip}); commit stays on trunk, left for the operator`,
+          let entryFailure: ReportedGateResult | undefined;
+          for (const gate of afterMergeGates) {
+            const { result: gr, ms } = await runGate(
+              gate,
+              {
+                cwd: repoRoot,
+                repoRoot,
+                flumeDir: leg.flumeDir,
+                stateRootRel: leg.stateRootRel,
+                pendingDir: leg.pendingDir,
+                configDir: leg.configDir,
+                phaseName: phase.name,
+                commitSha: mergedSha,
+                touchedPaths: commitTouchedPaths,
+                // The span's base, not `preCherry`: an afterMerge gate
+                // reading trunk needs the tip the agent branched from to
+                // tell an input this tick ignored from one that landed
+                // after it started (spec/chain.md "What a gate receives").
+                baseSha: spanBase,
+                // The trunk tip the span landed onto — the lower end of the
+                // range `commitTouchedPaths` above is diffed over. Trunk may
+                // have moved since this tick branched, so it is its own fact
+                // and not `spanBase` under another name.
+                landedOnSha: preCherry,
+                log: (l) => leg.log.info(l),
+              },
+              leg.gateScope,
             );
-            mergeFate = "afterMerge-revert-refused";
-            gateFailures.push({
-              signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
-              message: foreignTip,
-            });
-          } else {
-            try {
-              await git.resetKeepTo(repoRoot, preCherry);
-            } catch (err) {
-              if (!(err instanceof git.ResetKeepRefusedError)) throw err;
-              leg.log.warn(
-                `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator`,
-              );
-              mergeFate = "afterMerge-revert-refused";
-              gateFailures.push(
-                unrevertableMergeFailure({
-                  refusal: err.message,
-                  mergedSha,
-                  preCherry,
-                }),
-              );
+            const row = reportedGateRow(gate.name, gr);
+            gateResults.push(row);
+            timings.push({ kind: "gate", gate: gate.name, ms });
+            if (!gr.ok) {
+              entryFailure = row;
+              break;
             }
           }
-          mergeOutcomes.push({
-            outcome: mergeFate,
-            footprint: commitTouchedPaths,
-            baseSha: preCherry,
-            headSha: mergedSha,
-          });
-        } else if (mergedSha === preCherry) {
-          // Trunk held the whole span, so the pick had nothing left to add
-          // and the span is merged all the same (spec/loop.md "Tip verify —
-          // one writer per branch, absorption at the merge"). `committed`
-          // and `commitSha` stay unset — naming `preCherry` as this tick's
-          // commit would report a commit it never made — and no merge
-          // failure is recorded: the merge row's equal shas are the whole
-          // fact, and nothing counts this tick as errored.
-          leg.log.info(
-            `[flume] ${phase.name}: trunk already holds the whole span ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; merged with no commit to add`,
-          );
-          mergeOutcomes.push({
-            outcome: "merged",
-            baseSha: preCherry,
-            headSha: mergedSha,
-          });
-          // Nothing failed, so the slot clears exactly as on a clean ship.
-          await leg.attempts.clear(ref);
-        } else {
-          leg.log.info(
-            `[flume] cherry-picked ${phase.name} → ${mergedSha.slice(0, 8)}`,
-          );
-          committed = true;
-          commitSha = mergedSha;
-          mergeOutcomes.push({
-            outcome: "merged",
-            baseSha: preCherry,
-            headSha: mergedSha,
-          });
-          // A clean ship clears the slot so the next tick starts with no
-          // stale prior-attempt signal.
-          await leg.attempts.clear(ref);
+
+          if (entryFailure) {
+            leg.log.warn(
+              `[flume] afterMerge gate '${entryFailure.gate}' failed for ${phase.name}; reverting`,
+            );
+            // The span the pick added, not `mergedSha` alone: over a span
+            // trunk already held whole the two are equal (the `mergedSha ===
+            // preCherry` arm below), and digesting the tip would hand the
+            // retry whichever writer's commit is standing there as its own
+            // prior attempt (spec/loop.md "Prior-outcome feedback to the
+            // retrying tick"). The same pair the merge row below bounds.
+            const record = await buildGateRevert(
+              "afterMerge",
+              entryFailure,
+              repoRoot,
+              { base: preCherry, head: mergedSha },
+            );
+            await leg.attempts.write(ref, record);
+            noCommit = "gate-revert";
+            gateFailures.push({
+              signature: gateFailureSignature(entryFailure),
+              message: entryFailure.message,
+            });
+            // spec/loop.md "Tip verify — one writer per branch,
+            // absorption at the merge", "dropping it must not take
+            // bystanders": the primary checkout may hold an operator's
+            // uncommitted work, so this reset carries keep-semantics —
+            // never --hard — and a textual collision refuses loudly
+            // rather than silently discarding either writer's content.
+            // Caught here, not propagated: an uncaught throw would crash
+            // the tick before this phase's own facts (the gate failure
+            // above, teardown, the return below) were ever reached.
+            const foreignTip = await checkMergedTipUnmoved(
+              repoRoot,
+              preCherry,
+              mergedSha,
+            );
+            // The span that reached trunk: `preCherry..mergedSha`, whether
+            // the revert below lands or is refused. Its base is the
+            // pre-cherry-pick tip, not the span's base — `headSha` names the
+            // trunk-side commit, and a span row's two shas always bound the
+            // same range.
+            let mergeFate: MergeOutcome = "afterMerge-reverted";
+            if (foreignTip) {
+              leg.log.warn(
+                `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} refused (${foreignTip}); commit stays on trunk, left for the operator`,
+              );
+              mergeFate = "afterMerge-revert-refused";
+              gateFailures.push({
+                signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
+                message: foreignTip,
+              });
+            } else {
+              try {
+                await git.resetKeepTo(repoRoot, preCherry);
+              } catch (err) {
+                if (!(err instanceof git.ResetKeepRefusedError)) throw err;
+                leg.log.warn(
+                  `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator`,
+                );
+                mergeFate = "afterMerge-revert-refused";
+                gateFailures.push(
+                  unrevertableMergeFailure({
+                    refusal: err.message,
+                    mergedSha,
+                    preCherry,
+                  }),
+                );
+              }
+            }
+            mergeOutcomes.push({
+              outcome: mergeFate,
+              footprint: commitTouchedPaths,
+              baseSha: preCherry,
+              headSha: mergedSha,
+            });
+          } else if (mergedSha === preCherry) {
+            // Trunk held the whole span, so the pick had nothing left to add
+            // and the span is merged all the same (spec/loop.md "Tip verify —
+            // one writer per branch, absorption at the merge"). `committed`
+            // and `commitSha` stay unset — naming `preCherry` as this tick's
+            // commit would report a commit it never made — and no merge
+            // failure is recorded: the merge row's equal shas are the whole
+            // fact, and nothing counts this tick as errored.
+            leg.log.info(
+              `[flume] ${phase.name}: trunk already holds the whole span ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; merged with no commit to add`,
+            );
+            mergeOutcomes.push({
+              outcome: "merged",
+              baseSha: preCherry,
+              headSha: mergedSha,
+            });
+            // Nothing failed, so the slot clears exactly as on a clean ship.
+            await leg.attempts.clear(ref);
+          } else {
+            leg.log.info(
+              `[flume] cherry-picked ${phase.name} → ${mergedSha.slice(0, 8)}`,
+            );
+            committed = true;
+            commitSha = mergedSha;
+            mergeOutcomes.push({
+              outcome: "merged",
+              baseSha: preCherry,
+              headSha: mergedSha,
+            });
+            // A clean ship clears the slot so the next tick starts with no
+            // stale prior-attempt signal.
+            await leg.attempts.clear(ref);
+          }
         }
       }
     } finally {

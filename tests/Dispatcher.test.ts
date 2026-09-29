@@ -13705,6 +13705,74 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
       expect(existsSync(join(fx.repo, "src/a.ts"))).toBe(false);
     });
 
+    it("singleton: a live foreign tip claim refuses the cherry-pick and leaves the span on its worktree branch", async () => {
+      // The singleton leg's own pick is a harness-driven commit onto the same
+      // shared ref the wave's is, so it asks the same question at the same
+      // point: two engine instances interleaving picks is the interference no
+      // cherry-pick or conflict check catches on its own
+      // (`.claude/rules/engineering.md`, *Loud or nothing*). The fanout arm of
+      // this refusal is the case above; this is the singleton twin.
+      const preHead = await head(fx.repo);
+      new Baton(join(fx.repo, ".flume")).wake("plan");
+      const phase = makePhase({
+        name: "plan",
+        concurrency: "singleton",
+        gates: [],
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+
+      let spanHead = "";
+      const agent = singleAgent(async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/plan-output.ts",
+          "derived\n",
+          "plan: derive",
+        );
+        spanHead = await head(cwd);
+      });
+
+      // The vitest worker's own pid plays the live concurrent engine's
+      // holder — planted before the tick runs, so the merge stage's check
+      // sees it whenever it reaches the pick.
+      await plantClaim(fx.repo, process.pid);
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+      const outcome = await dispatcher.tick();
+
+      // Vacuity: the agent really did leave a committed span on its worktree
+      // branch, so the refusal below is the pick's and not an empty tick's.
+      expect(spanHead).toMatch(/^[0-9a-f]{40}$/);
+      expect(spanHead).not.toBe(preHead);
+
+      expect(outcome.result?.committed).toBe(false);
+      expect(outcome.result?.commitSha).toBeUndefined();
+      expect(outcome.tipMoved).toBe(true);
+      expect(outcome.verdict?.tipMoved).toBe(true);
+      // No entry tag: a singleton phase carries none, and the row's two shas
+      // bound the span the pick never carried.
+      expect(outcome.verdict?.mergeOutcomes).toEqual([
+        { outcome: "tip-moved", baseSha: preHead, headSha: spanHead },
+      ]);
+
+      // Nothing reached trunk — the tip is where the tick opened and the
+      // agent's file never landed.
+      expect(await head(fx.repo)).toBe(preHead);
+      expect(existsSync(join(fx.repo, "src", "plan-output.ts"))).toBe(false);
+      // And the span the row names is still re-pickable: teardown deleted the
+      // worktree branch, the commit object outlives it.
+      await exec("git", ["cat-file", "-e", `${spanHead}^{commit}`], {
+        cwd: fx.repo,
+      });
+    });
+
     it("refuses only the pending-ledger commit when the claim appears after a clean cherry-pick — shipped work stays shipped", async () => {
       await writePending(fx.repo, [makeEntry("TEST-A", ["src/a.ts"])]);
       new Baton(join(fx.repo, ".flume")).wake("build");

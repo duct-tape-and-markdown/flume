@@ -430,12 +430,14 @@ export function startTiming(): () => number {
  *                            entry stays pending. The engine records the
  *                            chain's verdict and holds no vocabulary for its
  *                            reason.
- *  - `tip-moved`             the wave's own commit-onto-trunk step refused
+ *  - `tip-moved`             the leg's own commit-onto-trunk step refused
  *                            because a live claim held the ref (a concurrent
  *                            engine instance, spec/loop.md "Tip verify — one
  *                            writer per branch, absorption at the merge") —
- *                            never reached cherry-pick, entry stays pending
- *                            for a fresh retry once the claim clears. A
+ *                            never reached cherry-pick, so under fanout the
+ *                            entry stays pending and under singleton the
+ *                            phase's span stays unmerged, either way for a
+ *                            fresh retry once the claim clears. A
  *                            foreign non-engine commit on the ref, with no
  *                            live claim, is absorbed instead: git's own
  *                            conflict detection is the only content arbiter.
