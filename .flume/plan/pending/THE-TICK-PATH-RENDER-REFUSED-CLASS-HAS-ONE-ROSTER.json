@@ -1,0 +1,36 @@
+{
+  "tag": "THE-TICK-PATH-RENDER-REFUSED-CLASS-HAS-ONE-ROSTER",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the tick path's roster, composed from `RENDER_REFUSED_PHRASES` rather than respelled beside it"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the `render-refused` bullet, whose fourth member is hand-spelled beside a roster that does not carry it"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the bullet's seam pin, which reads the verb's three over a bullet claiming four"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "docs/CHAIN-AUTHORING.md's render-refused bullet names four members while the roster it is read against is the render verb's three, so the shouldRun member is held by nothing",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "the tick path's `render-refused` class has one roster, composed from the verb's rather than respelled, and `docs/CHAIN-AUTHORING.md`'s bullet is read against it whole — so a member the tick path gains reds that bullet the way its fourth does not today. The verb's own three-member roster, its `65` row, `docs/CLI.md`'s sentence and every exit code stay as they are.",
+  "tests": [
+    "the tick's render-refused roster carries the render verb's members and the shouldRun refusal beside them",
+    "docs/CHAIN-AUTHORING.md's render-refused bullet names every member of the tick's class"
+  ],
+  "notes": "Verified this tick: `RENDER_REFUSED_CAUSES` (`src/cliHelp.ts:293`) is the verb's three; the tick path has a fourth — `consultShouldRun` (`src/tickAttempt.ts:987`) reaching `noCommit: \"render-refused\"` (`src/waveTick.ts:854`). `tests/cliHelp.test.ts:2999` reads the four-member bullet against those three. Home is build's: `src/cliHelp.ts` beside the verb roster (predicted) or `src/Prompt.ts` beside `NO_COMMIT_MODES`. Seam with A-CHAIN-NAMES-THE-CLASS-... on `docs/CHAIN-AUTHORING.md`."
+}
