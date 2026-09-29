@@ -273,19 +273,25 @@ const TICK_TIP_CLAIM_HELD: ExitCauseLabel = {
 export const TICK_TIP_CLAIM_HELD_PHRASE = TICK_TIP_CLAIM_HELD.phrase;
 
 /**
- * The `render-refused` class, member by member — every way the prompt a
- * phase would have been handed fails to resolve, which `flume render` spends
- * one `65` on and a tick spends an invocation to reach
- * (`NO_COMMIT_MODES`, `src/Prompt.ts`). Three members, each with its own
+ * The `render-refused` class as `flume render` reaches it, member by member —
+ * every way the prompt a phase would have been handed fails to resolve while
+ * rendering it, which the verb spends one `65` on and a tick spends an
+ * invocation to reach (`NO_COMMIT_MODES`, `src/Prompt.ts`). Three members,
+ * each with its own
  * refusal type: a span that would not run (`InlineExecRenderError`,
  * `src/Prompt.ts`), a placeholder the merged args had no entry for
  * (`MissingPlaceholderRenderError`, `src/Prompt.ts`), and the hook that
  * composes those args throwing (`RenderUnresolvedError`,
  * `src/Dispatcher.ts`).
  *
+ * These three are the **verb's** class, which is the tick's less one:
+ * `flume render` never consults `phase.shouldRun`, so the member a throw
+ * there contributes joins {@link TICK_RENDER_REFUSED_PHRASES} and not this
+ * row.
+ *
  * Labelled rather than spelled as flat prose for the reason
- * {@link SHARED_ROOT_RESOLUTION_CAUSES} is: `docs/CLI.md` and
- * `docs/CHAIN-AUTHORING.md` each enumerate this class in a register of its
+ * {@link SHARED_ROOT_RESOLUTION_CAUSES} is: `docs/CLI.md` enumerates this
+ * class, and `docs/CHAIN-AUTHORING.md` the tick's, each in a register of its
  * own, and the phrase is what crosses ({@link ExitCauseLabel}). Enumerating
  * two of the three is what those pages did before the phrases had one home.
  */
@@ -325,12 +331,37 @@ const RENDER_REFUSED_LEAD =
 
 /**
  * The phrases those members are labelled with — what every surface
- * enumerating `render-refused` names them under, whatever register it
- * enumerates them in. Exported for the seam that reads `docs/CLI.md`'s and
- * `docs/CHAIN-AUTHORING.md`'s copies against the clause this page renders.
+ * enumerating the verb's `render-refused` names them under, whatever register
+ * it enumerates them in. Exported for the seam that reads `docs/CLI.md`'s copy
+ * against the clause this page renders, and composed into
+ * {@link TICK_RENDER_REFUSED_PHRASES} for the surfaces that enumerate the
+ * tick's wider class.
  */
 export const RENDER_REFUSED_PHRASES: readonly string[] =
   RENDER_REFUSED_CAUSES.map((cause) => cause.phrase);
+
+/**
+ * The one member the **tick path's** `render-refused` class carries beyond
+ * the verb's: `phase.shouldRun` throwing. `flume render` renders a prompt and
+ * never consults that hook, so the `65` row above states the verb's three and
+ * stops; a tick consults it (`consultShouldRun`, `src/tickAttempt.ts`) and
+ * records a throw under the same mode, per entry
+ * (`src/waveTick.ts`) and for a singleton
+ * (`src/singletonTick.ts`).
+ */
+const SHOULD_RUN_REFUSAL_PHRASE = "a `shouldRun` hook that threw";
+
+/**
+ * The phrases the tick path's class is enumerated under — the verb's roster
+ * composed with the member above rather than respelled beside it, so a member
+ * either roster gains reaches every surface read against this one. Exported
+ * for the seam that reads `docs/CHAIN-AUTHORING.md`'s no-commit taxonomy,
+ * which enumerates what a tick records rather than what the verb exits on.
+ */
+export const TICK_RENDER_REFUSED_PHRASES: readonly string[] = [
+  ...RENDER_REFUSED_PHRASES,
+  SHOULD_RUN_REFUSAL_PHRASE,
+];
 
 /** The whole `65` row for `flume render`, the one verb that spends a code on it. */
 function renderRefusedRow(indent: number): string {

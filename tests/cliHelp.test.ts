@@ -25,6 +25,7 @@ import {
 } from "../src/exitCodes.ts";
 import {
   RENDER_REFUSED_PHRASES,
+  TICK_RENDER_REFUSED_PHRASES,
   SHARED_ROOT_ONLY_LEAD,
   ROOT_RESOLUTION_USAGE_PHRASES,
   ROOT_ACCESS_PHRASE,
@@ -2937,6 +2938,15 @@ describe("docs/CLI.md's status I/O refusal causes (CLI-DOC-CHECK-AND-STATUS-IO-R
  * seam gate reads what the real writer wrote*). The class the roster
  * enumerates is the one the verb really refuses on: `tests/cliRender.test.ts`
  * drives each member to a real `EX_DATAERR`.
+ *
+ * Two rosters, because the class has two widths. `flume render` renders a
+ * prompt and never consults `phase.shouldRun`, so its `65` row and
+ * `docs/CLI.md`'s sentence state three; a tick consults that hook and records
+ * a throw under the same mode, so the taxonomy `docs/CHAIN-AUTHORING.md`
+ * documents to a chain author states four and is read against
+ * `TICK_RENDER_REFUSED_PHRASES` — the verb's roster composed with that one
+ * member, not respelled beside it. The bullet's fourth member was
+ * hand-spelled against the verb's three and held by nothing until then.
  */
 describe("the render-refused class, enumerated whole wherever it is named (THE-RENDER-REFUSED-CLASS-IS-ENUMERATED-WHOLE)", () => {
   /**
@@ -2948,6 +2958,41 @@ describe("the render-refused class, enumerated whole wherever it is named (THE-R
   it("the render-refused roster carries three members no one of which states another", () => {
     expect(RENDER_REFUSED_PHRASES.length).toBe(3);
     const stated = RENDER_REFUSED_PHRASES.map(asStated);
+    expect(new Set(stated).size).toBe(stated.length);
+    const nested = stated.filter((phrase) =>
+      stated.some((other) => other !== phrase && other.includes(phrase)),
+    );
+    expect(nested, "a member's phrase is a span of another's").toEqual([]);
+  });
+
+  /**
+   * The tick's roster is the verb's plus the hook the verb never consults,
+   * and it is composed rather than respelled — so this reads membership by
+   * identity against the verb's own array, never against a second spelling of
+   * its phrases. The same non-vacuity and nesting pins ride the wider set,
+   * since the bullet read below is one `toContain` per phrase.
+   */
+  it("the tick's render-refused roster carries the render verb's members and the shouldRun refusal beside them", () => {
+    expect(RENDER_REFUSED_PHRASES.length).toBeGreaterThan(0);
+    for (const phrase of RENDER_REFUSED_PHRASES) {
+      expect(
+        TICK_RENDER_REFUSED_PHRASES,
+        `the tick's roster drops the verb's ${phrase}`,
+      ).toContain(phrase);
+    }
+
+    const beyond = TICK_RENDER_REFUSED_PHRASES.filter(
+      (phrase) => !RENDER_REFUSED_PHRASES.includes(phrase),
+    );
+    expect(beyond, "the tick's roster is the verb's, unwidened").toHaveLength(
+      1,
+    );
+    // The member by the hook it belongs to, not by its whole sentence: the
+    // spelling is the roster's to own, and the pages are read against it.
+    expect(asStated(beyond[0] ?? "")).toContain("`shouldrun`");
+    expect(asStated(beyond[0] ?? "")).toContain("threw");
+
+    const stated = TICK_RENDER_REFUSED_PHRASES.map(asStated);
     expect(new Set(stated).size).toBe(stated.length);
     const nested = stated.filter((phrase) =>
       stated.some((other) => other !== phrase && other.includes(phrase)),
@@ -2996,7 +3041,7 @@ describe("the render-refused class, enumerated whole wherever it is named (THE-R
     ).toBeGreaterThan(window.length);
   });
 
-  it("docs/CHAIN-AUTHORING.md's render-refused bullet names every member of the class", async () => {
+  it("docs/CHAIN-AUTHORING.md's render-refused bullet names every member of the tick's class", async () => {
     const page = await readFile(
       fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
       "utf8",
@@ -3008,7 +3053,10 @@ describe("the render-refused class, enumerated whole wherever it is named (THE-R
     const bullet = asStated(bulletOf(page, "- `render-refused` — "));
     expect(bullet.length).toBeGreaterThan(0);
     expect(asStated(page).length).toBeGreaterThan(bullet.length);
-    for (const phrase of RENDER_REFUSED_PHRASES) {
+    // The tick's roster, not the verb's: this bullet documents what a tick
+    // records, and a tick reaches one member `flume render` cannot.
+    expect(TICK_RENDER_REFUSED_PHRASES.length).toBeGreaterThan(0);
+    for (const phrase of TICK_RENDER_REFUSED_PHRASES) {
       expect(bullet, `the bullet does not name ${phrase}`).toContain(
         asStated(phrase),
       );
