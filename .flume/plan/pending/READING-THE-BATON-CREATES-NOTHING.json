@@ -1,0 +1,44 @@
+{
+  "tag": "READING-THE-BATON-CREATES-NOTHING",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["THE-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL"]
+  },
+  "priority": 30,
+  "files": {
+    "edit": [
+      {
+        "path": "src/Baton.ts",
+        "description": "the `mkdir` moves from the constructor to `wake`, and every read takes an absent directory as the empty baton"
+      },
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the seam with the queue's other help-page entries: a read verb's page stops carrying a write refusal its process can no longer take"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the `status` and `render` sections stop naming the directory as a read verb's one filesystem effect"
+      },
+      {
+        "path": "tests/Baton.test.ts",
+        "description": "the reads over an absent directory and `wake`'s own creation"
+      },
+      {
+        "path": "tests/cliStateDirs.test.ts",
+        "description": "the second-root case's empty `awake/` comes from a real writer that still plants one"
+      }
+    ]
+  },
+  "summary": "A read verb's `new Baton` mkdirs `awake/`, so `status` and `render` write under a state root the spec says reading the baton creates nothing beneath",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Baton — presence wakes, absence hibernates"
+  },
+  "acceptance": "constructing the baton writes nothing; the first `wake` creates the directory, and the flag reads take its absence as the empty baton, so `flume status` prints `hibernating` over a state root it leaves untouched and `flume render` keeps its no-write claim — and the `StateRootWriteError` that `mkdir` raised moves to `wake` with it, so no page states a refusal the verb's process can no longer take",
+  "tests": [
+    "constructing the baton creates no awake-flag directory",
+    "the first wake creates the awake-flag directory the constructor no longer makes",
+    "flume status over a state root with no awake-flag directory prints hibernating and writes nothing"
+  ],
+  "notes": "Operator's ruling; the constructor pin retires with it. Verified: `mkdirUnderStateRoot` at `src/Baton.ts:87`, `awake()` (`:92`) readdirs the dir, `wake()` (`:140`) writes the flag alone. Copies: `docs/CLI.md:33`, `:221`. Blocked, not seamed on the gate: THE-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL is in flight adding that refusal to every verb reachable from `new Baton` — this narrows that set, so it lands after."
+}
