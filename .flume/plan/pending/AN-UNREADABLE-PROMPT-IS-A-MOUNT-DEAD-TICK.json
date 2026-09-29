@@ -1,0 +1,46 @@
+{
+  "tag": "AN-UNREADABLE-PROMPT-IS-A-MOUNT-DEAD-TICK",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/Prompt.ts",
+        "description": "`readPhaseTemplate`'s read gains its own refusal class, so the classification is read off a type rather than an errno's prose"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the load beside the chain load reports its refusal as a tick fact instead of throwing past the catch below it"
+      },
+      {
+        "path": "src/cliVerdict.ts",
+        "description": "`tickExitCode`'s arm for it — the one home for which outcome maps to which code"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the `tick` row's exit list, as it then reads"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the tick's reported fact, and the `render` sibling's standing verdict"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the two verbs' exit codes over one chain, and the loop halting on it"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "An absent prompt file throws a raw ENOENT out of `Dispatcher.tick()`, so `flume tick` exits 1 and `flume loop` spends 50 children on it where `flume render` calls the same chain mount-dead",
+  "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+  "acceptance": "a phase whose declared prompt file is absent or unreadable ends the tick in the mount-dead class — `flume tick` exits `69` naming the path, and `flume loop` halts there instead of spending its remaining children on an input that resolved once and will resolve the same way again, which is the fate `flume render` already gives that chain. The refusal is the load's own named class; no verb reaches it through a raw stack.",
+  "tests": [
+    "flume tick over a phase whose declared prompt file is absent exits mount-dead naming the path",
+    "flume loop halts on a phase whose declared prompt file is absent rather than spending its remaining ticks"
+  ],
+  "pins": [
+    "flume render over a phase whose declared prompt file is absent exits mount-dead"
+  ],
+  "notes": "Verified this tick: `src/Dispatcher.ts:962` throws before its own catch, which rethrows all but two classes (`:995`); `src/cli.ts:370` prints the stack and exits 1; `src/loopSupervisor.ts:872` fail-fasts on `69` alone, and no verdict is written so no failure-signature backstop fires. `src/cliRender.ts:65` already declares this input mount-dead, and `spec/loop.md:777` puts an invalid declaration there. Collides with THE-PLACEHOLDER-REFUSAL-IS-A-RENDER-REFUSAL (in flight) on `src/Prompt.ts`."
+}
