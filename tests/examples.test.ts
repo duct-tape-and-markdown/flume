@@ -1324,6 +1324,67 @@ describe("cascade-chain.ts — the plan ladder", () => {
       }),
     ).toEqual([buildPhase!.name]);
   });
+
+  it("a build wave whose shipped hook threw wakes the ladder, not the re-derive", () => {
+    const pickable = { pendingAfter: [openEntry], pickableAfter: [openEntry] };
+    const derive = planSlices[planSlices.length - 1]!;
+    // One landed span the tick did not ship — the fate a declining predicate
+    // and a throwing one both wear (`entries[].mergeOutcome`).
+    const notShipped = {
+      tag: "PICKABLE",
+      extension: {},
+      committed: true,
+      shipped: false,
+      reverted: false,
+      mergeOutcome: "not-shipped" as const,
+    };
+
+    // Vacuity pin: that fate on its own is the park the re-derive reconciles,
+    // so the ship-stage record below is what moves the verdict — and the
+    // ladder's own answer for this disk is build, which is the direction the
+    // record has to reach.
+    expect(from(buildPhase!, { entries: [notShipped], ...pickable })).toEqual([
+      derive.name,
+    ]);
+    expect(
+      from(buildPhase!, { shippedTags: ["SHIPPED"], ...pickable }),
+    ).toEqual([buildPhase!.name]);
+
+    // Same fate, and the engine names the cause: the chain's own `shipped`
+    // threw over that span, so no verdict on it was ever made. Plan cannot
+    // resolve a broken hook, and the ladder decides as usual.
+    expect(
+      from(buildPhase!, {
+        entries: [notShipped],
+        shipFailures: [
+          {
+            tag: "PICKABLE",
+            quarantineKey: "PICKABLE@0",
+            signature: "Error: shipped hook boom",
+            message: "shipped hook boom",
+          },
+        ],
+        ...pickable,
+      }),
+    ).toEqual([buildPhase!.name]);
+
+    // The record is read by tag, not counted: a throw blamed on a sibling
+    // span leaves this entry's park a park.
+    expect(
+      from(buildPhase!, {
+        entries: [notShipped],
+        shipFailures: [
+          {
+            tag: "OTHER",
+            quarantineKey: "OTHER@0",
+            signature: "Error: shipped hook boom",
+            message: "shipped hook boom",
+          },
+        ],
+        ...pickable,
+      }),
+    ).toEqual([derive.name]);
+  });
 });
 
 /**

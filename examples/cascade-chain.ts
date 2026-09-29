@@ -500,15 +500,29 @@ const factory: ChainFactory = (api) => {
     handoff(result) {
       // A refusal only plan can resolve wakes the re-derive whatever is
       // pickable: a clean exit with no commit, or a commit that landed and a
-      // `shipped` predicate declined — otherwise the ladder hands build the
-      // same entry into the same wall. The engine reports which
-      // (`TickResult.noCommit`, `entries[].mergeOutcome`); what it means is
-      // this chain's reading. A cherry-pick conflict is neither: the next
-      // wave retries it from the new base.
+      // `shipped` predicate *returned* false — otherwise the ladder hands
+      // build the same entry into the same wall. The engine reports which
+      // (`TickResult.noCommit`, `entries[].mergeOutcome`,
+      // `TickResult.shipFailures`); what it means is this chain's reading. A
+      // cherry-pick conflict is neither: the next wave retries it from the
+      // new base.
+      //
+      // `not-shipped` alone does not say which, because a predicate that
+      // *threw* wears the same fate as one that declined — and the engine has
+      // already split them, one tag-keyed `shipFailures` record per throw,
+      // always blamed on the span the consult was made for
+      // (`.claude/rules/engineering.md`, *A fact the engine holds is
+      // reported, never rediscovered*: the split is read off that field, not
+      // rebuilt from the fate). A hook that never reached a verdict is a
+      // broken chain, not a park plan can resolve, so the entry it blames is
+      // no refusal here and the ladder decides as usual.
+      const threwOn = new Set((result.shipFailures ?? []).map((f) => f.tag));
       const refused =
         result.noCommit === "clean-exit" ||
         (result.entries ?? []).some(
-          (e) => e.noCommit === "clean-exit" || e.mergeOutcome === "not-shipped",
+          (e) =>
+            e.noCommit === "clean-exit" ||
+            (e.mergeOutcome === "not-shipped" && !threwOn.has(e.tag)),
         );
       if (refused) return [DERIVE];
       return nextPhase(result.flumeDir, result.pickableAfter.length > 0);
