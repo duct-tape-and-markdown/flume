@@ -3,7 +3,6 @@
   "gate": {
     "kind": "blockedBy",
     "tags": [
-      "THE-FLAG-WRITE-UNDER-THE-STATE-ROOT-REFUSES-WITH-THAT-ROOT",
       "THE-SUPERVISOR-CLAIM-HANDOFF-IS-DECODED-ONCE",
       "THE-TICK-BUDGET-DEFAULT-HAS-ONE-HOME"
     ]
