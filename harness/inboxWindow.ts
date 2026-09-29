@@ -124,7 +124,10 @@ import { standingRefusals } from "./standingRefusal.js";
  * aside for the queue is standing aside for a queue that cannot answer it.
  * By the same classification the leg goes quiet the moment a producer does
  * answer, so a reconciled entry is not a drain this slice keeps being woken
- * for (`standingRefusal.ts`).
+ * for — and quiet while a build tick holds the entry's claim, because a
+ * refusal this slice may not answer yet is the same tick with nothing to do as
+ * a note it may not touch (`standingRefusal.ts`; `spec/pending.md`, *A claim
+ * covers the entry's records*).
  *
  * **The lane leg is asked last, and that ordering is load-bearing.** The
  * refusal leg is a map walk, the friction leg a directory listing, and the
@@ -153,8 +156,12 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       !queueResolved(inputs) ||
       recordsPending(tip, inputs.claimed ?? []) ||
       frictionPending(inputs.flumeDir, friction) ||
-      standingRefusals(options.stateRootRel, inputs.pending, inputs.priorAttempts)
-        .length > 0 ||
+      standingRefusals(
+        options.stateRootRel,
+        inputs.pending,
+        inputs.priorAttempts,
+        inputs.claimed,
+      ).length > 0 ||
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
@@ -412,9 +419,18 @@ function renderFiles(
  * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
  * never rediscovered*).
  *
- * Every record is shown, not only the marked ones: a record keyed to a phase
- * or to an entry that has left the queue is context for what the loop has
- * been doing, and the mark is what says which ones this tick must resolve.
+ * Every record is shown, not only the marked ones: a record keyed to a phase,
+ * to an entry that has left the queue, or to one a build tick is holding a
+ * claim on is context for what the loop has been doing, and the mark is what
+ * says which ones this tick must resolve.
+ *
+ * **The claimed set reaches the mark through the same walk the liveness leg
+ * reads** (`standingRefusals`, `standingRefusal.ts`), so a record withheld
+ * from the wake is a record this block does not send the tick to reconcile.
+ * Marked here while withheld there, the drain would be told to answer a
+ * record on a tick nothing woke for it — and would answer it by editing an
+ * entry the claim check refuses to have edited (`spec/pending.md`, *A claim
+ * covers the entry's records*).
  */
 function renderBuildRecords(stateRoot: string, ctx: WindowContext): string {
   // Ordered by each record's own key, asked of the engine rather than joined
@@ -438,7 +454,7 @@ function renderBuildRecords(stateRoot: string, ctx: WindowContext): string {
   // list holds, so identity is the marking test and no second key spelling
   // can drift from it.
   const standing = new Set<PriorAttempt>(
-    standingRefusals(stateRoot, ctx.pending, ctx.priorAttempts),
+    standingRefusals(stateRoot, ctx.pending, ctx.priorAttempts, ctx.claimed),
   );
   const lines = [`=== ${records.length} standing prior-attempt record(s) ===`];
   for (const record of records) {

@@ -1,6 +1,7 @@
 /**
  * Which standing prior-attempt records are refusals a producer resolves, and
- * which of those are keyed to an entry the queue still carries.
+ * which of those are keyed to an entry the queue still carries and no build
+ * tick holds.
  *
  * **One question, one table, two askers.** Whether a standing record is a
  * refusal only a producer can move is asked on both halves of the routing
@@ -13,11 +14,12 @@
  * drain with nothing to file, every tick, for as long as the record stands
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
- * The wake set asks it over whichever surface hands it the pair of engine
- * facts — the queue and the record store: `TickContext.pending`/
- * `priorAttempts` at the `shouldRun` consult, `TickResult.pendingAfter`/
- * `priorAttempts` off the window the default handoff builds for the tick that
- * follows (`handoff.ts`). The per-entry refusal asks it over the one record
+ * The wake set asks it over whichever surface hands it the facts a drain's
+ * set is drawn from — the queue, the record store and the claims a build wave
+ * is holding: `TickContext.pending`/`priorAttempts`/`claimed` at the
+ * `shouldRun` consult, `TickResult.pendingAfter`/`priorAttempts`/`claimedTags`
+ * off the window the default handoff builds for the tick that follows
+ * (`handoff.ts`). The per-entry refusal asks it over the one record
  * the engine hands it. Neither asks anything beside it — **the declaration
  * key is inside the classification**, not a leg one surface adds: keyed on
  * the tag slug alone, the wake leg stays live over a record whose entry a
@@ -170,12 +172,35 @@ export function isStandingRefusal(
  * path has no safe default for where that note lives and a guess would
  * misclassify every consumer whose state root is not the guessed one.
  *
- * Both queue inputs are optional because both are optional wherever a reader
- * is handed them — `SliceWindow` at the liveness leg (`handoff.ts`),
- * `WindowContext` at the render (`sliceWindow.ts`). Absent, the answer is the
- * empty set — "no standing refusal" — which is what a reader
- * that was handed no store can truthfully say. Every dispatcher-built surface
- * carries both, so no live tick takes that arm.
+ * Every input past the state root is optional because each is optional
+ * wherever a reader is handed it — `SliceWindow` at the liveness leg
+ * (`handoff.ts`), `WindowContext` at the render (`sliceWindow.ts`). Absent, a
+ * queue or a store makes the answer the empty set — "no standing refusal" —
+ * which is what a reader that was handed no store can truthfully say, and an
+ * absent `claimed` reads as nothing in flight, the answer that withholds
+ * nothing. Every dispatcher-built surface carries all three, so no live tick
+ * takes those arms.
+ *
+ * **A claimed entry's refusal is withheld, and left standing.** `claimed` is
+ * the tags a tick read off the claims directory before it selected
+ * (`TickContext.claimed`) — the same set the record leg withholds that
+ * entry's note and park under (`recordFiles`, `records.ts`). A record whose
+ * entry a build tick is carrying is one the drain may not answer: dropping or
+ * re-scoping that entry is the rug the claim check exists to refuse
+ * (`spec/pending.md`, *A claim covers the entry's records*), so the walk skips
+ * it and the record keeps standing for the drain that follows the claim
+ * lifting. Withheld inside the walk rather than beside either reader, because
+ * the liveness leg and the marked block both read this one set — asked at one
+ * of them alone, a claimed entry's park wakes the drain every cycle and the
+ * block that drain is handed marks a record only its holder may touch.
+ *
+ * **The per-entry wall is not withheld with it** (`defaultRefusesEntry`,
+ * `handoff.ts`), which is why the claim is a leg of this walk and not of the
+ * classification: that surface asks {@link isStandingRefusal} over the one
+ * record the engine handed it, and a claim is a tick in flight rather than a
+ * producer's answer, so nothing about one lifts a wall — the engine's own
+ * selection is what leaves a claimed entry alone (`spec/pending.md`, *Claims —
+ * an entry in flight is left alone*).
  *
  * Returns the records themselves rather than a count or a verdict: the inbox
  * window's render marks exactly these, by object identity, so the liveness
@@ -185,9 +210,12 @@ export function standingRefusals(
   stateRoot: string,
   pending: readonly PendingEntry[] | undefined,
   priorAttempts: ReadonlyMap<string, PriorAttempt> | undefined,
+  claimed: readonly string[] | undefined,
 ): PriorAttempt[] {
   if (pending === undefined || priorAttempts === undefined) return [];
+  const held = new Set(claimed ?? []);
   return pending.flatMap((entry) => {
+    if (held.has(entry.tag)) return [];
     const record = priorAttempts.get(entryAttemptKey(entry));
     if (record === undefined) return [];
     return isStandingRefusal(stateRoot, entry, record) ? [record] : [];

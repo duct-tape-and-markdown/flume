@@ -710,6 +710,112 @@ it("the inbox window renders a record whose entry no tick has claimed", () => {
 });
 
 /**
+ * A claim covers the entry's records, and a standing refusal is one of them
+ * (`spec/pending.md`, *A claim covers the entry's records*): answering a
+ * refusal is dropping or re-scoping the entry it stands against, which is
+ * exactly the edit the claim check refuses over a claimed file — so the drain
+ * is not woken for a record only the claim's holder may move, and the record
+ * keeps standing for the drain that follows the claim lifting.
+ *
+ * The per-entry wall is asserted beside the leg, because the two answer the
+ * claim differently and a case reading only one would not say which way it
+ * cut: a claim is a tick in flight, never the producer's answer, so build
+ * stays held off the entry (`defaultRefusesEntry`, `harness/handoff.ts`).
+ */
+it("the inbox window does not go live on a standing refusal whose entry is claimed", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+  const inbox = windows()[INBOX_PHASE];
+
+  const held = entry("HELD-REFUSAL");
+  const walled = record("HELD-REFUSAL", "clean-exit");
+  const live = (claimed: readonly string[] | undefined): boolean =>
+    inbox.live({
+      flumeDir: stateRoot(),
+      pickable: true,
+      pending: [held],
+      priorAttempts: new Map([[entryAttemptKey(held), walled]]),
+      claimed,
+    });
+
+  // Vacuity, both halves: the record really is the refusal this leg reads —
+  // entry-keyed to the tag the queue carries, standing against the
+  // declaration it carries — and no record queue or friction note is open
+  // beside it, so every arm below is the claimed set's doing and not an empty
+  // store.
+  expect(walled.declaredAs).toBe(entryDeclaredKey(held));
+  expect(inbox.live({ flumeDir: stateRoot(), pickable: true })).toBe(false);
+
+  expect({
+    // Unclaimed, the drain is owed the record ...
+    unclaimed: live(undefined),
+    // ... and while a build tick carries the entry, it is not.
+    claimed: live(["HELD-REFUSAL"]),
+    // Keyed to the claimed tag and never to the store: a sibling's claim
+    // withholds nothing.
+    sibling: live(["SOME-OTHER-ENTRY"]),
+    // The wall lifts on the producer's answer alone, so the entry is still
+    // held back for the wave that reads it after the claim ends.
+    wall: defaultRefusesEntry(STATE_ROOT_REL)({
+      entry: held,
+      priorAttempt: walled,
+      headSha: "0".repeat(40),
+      declaredAs: entryDeclaredKey(held),
+    }),
+  }).toEqual({
+    unclaimed: true,
+    claimed: false,
+    sibling: true,
+    wall: true,
+  });
+});
+
+/**
+ * The other reader of that same set: the block the woken tick is handed marks
+ * the records it must reconcile, and a claimed entry's is not among them. The
+ * record still renders — every standing record is context for what the loop
+ * has been doing — and nothing sends the drain to answer it.
+ *
+ * Asserted on the record's own header line rather than over the whole block,
+ * so the verdict is that line's mark and not whatever else the rendered
+ * records happen to quote.
+ */
+it("the inbox window's build-records block leaves a claimed entry's standing record unmarked", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+
+  const held = entry("HELD-REFUSAL");
+  const walled = record("HELD-REFUSAL", "clean-exit");
+  const block = (claimed: readonly string[] | undefined): string =>
+    windows()[INBOX_PHASE].args({
+      cwd: repo,
+      flumeDir: stateRoot(),
+      pending: [held],
+      priorAttempts: new Map([[entryAttemptKey(held), walled]]),
+      claimed,
+    }).BUILD_RECORDS!;
+
+  const MARK = " \u2190 the queue still carries this entry; reconcile it";
+  const head = `--- ${walled.keyedAs} (entry keyspace)`;
+  const headerLine = (rendered: string): string =>
+    rendered.split("\n").find((line) => line.startsWith(head)) ??
+    "(the block rendered no header for this record)";
+
+  // Vacuity: unclaimed, the block really does carry this record's header and
+  // really does mark it, so the claimed arm below is the withholding rather
+  // than a block that rendered nothing.
+  expect(headerLine(block(undefined))).toBe(`${head}${MARK} ---`);
+
+  const claimed = block(["HELD-REFUSAL"]);
+  expect({
+    // Still rendered, and rendered whole ...
+    header: headerLine(claimed),
+    counted: claimed.includes("=== 1 standing prior-attempt record(s) ==="),
+    body: claimed.includes(`"mode": "clean-exit"`),
+  }).toEqual({ header: `${head} ---`, counted: true, body: true });
+});
+
+/**
  * The refusal leg: it is keyed to an entry the queue still carries, so a
  * pickable queue is the state it exists to interrupt. Asserted beside the
  * record leg, since both open the window over the same pickable queue and a
