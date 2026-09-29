@@ -268,11 +268,23 @@ function stopAfterContractTouchingShip(result: TickResult): void {
  * buys: this handoff is stateless and per-tick, so the exclusion is one tick
  * deep and nothing here holds the slice out past the one answer it is read
  * from. Two live slices alternate the same wall on their own — each excludes
- * itself and wakes the sibling, whose answer wakes it straight back. A wall
- * that outlasts one tick is therefore the repeated-failure backstop's to end
- * (`spec/loop.md`, *Repeated identical failures — quarantine, then abort*),
- * never this set's. A slice that *did* commit and is still live re-wakes
- * itself: that window is larger than one tick's budget, which is progress.
+ * itself and wakes the sibling, whose answer wakes it straight back.
+ *
+ * A wall that outlasts one tick is therefore not this set's to end — and the
+ * two walls above part company over who does end it. A **refused render**
+ * writes a stage-failure record, so its unbroken repeat is counted and the
+ * repeated-failure backstop aborts the run (`spec/loop.md`, *Repeated
+ * identical failures — quarantine, then abort*). An **unroutable record** is
+ * a clean exit, which writes no failure record at any stage
+ * (`src/loopSupervisor.ts`, the stage-list fold), so there is nothing for the
+ * streak to count and the backstop never sees it: the run's `tickBudget` is
+ * that wall's only bound, and a run of nothing but clean-exit ticks spends
+ * the whole of it (`tests/loopSupervisor.test.ts`). Either way re-waking the
+ * slice here would neither end the wall nor learn anything new about it,
+ * which is why the tick is better spent on a sibling.
+ *
+ * A slice that *did* commit and is still live re-wakes itself: that window is
+ * larger than one tick's budget, which is progress.
  *
  * The exception is read off the phase the engine says produced this result,
  * so it lands on a slice and never on build: a wave's repeat is held back

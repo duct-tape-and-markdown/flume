@@ -1053,6 +1053,60 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     expect(res.hibernated).toBe(true);
     expect(res.repeatedFailure).toBeUndefined();
   });
+
+  // The other side of the two cases above: they stop a run short of its
+  // budget because the wall recorded a failure fact for the streak fold to
+  // count. A clean exit records none — no provision, render, merge, gate,
+  // ship or platform failure — so the same slice walling every tick is
+  // invisible to the backstop, and `tickBudget` is the only thing that ends
+  // the run. The budget is the bound `harness/handoff.ts`'s `wakeSet` names,
+  // and this is where it is paid.
+  it("a run of nothing but clean-exit ticks spends its whole budget and never reaches the repeated-failure abort", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build"); // never hibernates — only the budget can end this run
+
+    const BUDGET = 6;
+    const written: Array<TickVerdict> = [];
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      const verdict = verdictFixture({
+        committed: false,
+        noCommit: "clean-exit",
+        summary: "build: no commit — agent exited cleanly",
+      });
+      written.push(verdict);
+      await writeFile(verdictPath(phase), JSON.stringify(verdict), "utf8");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: BUDGET,
+      runTick,
+      log: silent,
+    });
+
+    // Vacuity: the run has to have produced clean-exit ticks for the absence
+    // of an abort to mean anything, and each one has to be free of every
+    // stage's failure record — a fixture that quietly grew one would make the
+    // backstop's silence a property of the fixture instead of the mode.
+    expect(written.length).toBe(BUDGET);
+    for (const v of written) {
+      expect(v.noCommit).toBe("clean-exit");
+      expect(v.provisionFailures ?? []).toEqual([]);
+      expect(v.renderFailures ?? []).toEqual([]);
+      expect(v.mergeFailures ?? []).toEqual([]);
+      expect(v.gateFailures ?? []).toEqual([]);
+      expect(v.shipFailures ?? []).toEqual([]);
+      expect(v.platformFailures ?? []).toEqual([]);
+    }
+
+    expect(res.ticks).toBe(BUDGET);
+    expect(res.repeatedFailure).toBeUndefined();
+    expect(res.hibernated).toBe(false);
+    expect(res.erroredTicks).toEqual([]);
+  });
 });
 
 /**
