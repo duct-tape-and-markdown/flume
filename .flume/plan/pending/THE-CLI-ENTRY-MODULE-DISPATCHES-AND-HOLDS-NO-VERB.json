@@ -1,10 +1,7 @@
 {
   "tag": "THE-CLI-ENTRY-MODULE-DISPATCHES-AND-HOLDS-NO-VERB",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "THE-TICK-BUDGET-DEFAULT-HAS-ONE-HOME"
-    ]
+    "kind": "open"
   },
   "dependsOnForks": [],
   "priority": 0,
