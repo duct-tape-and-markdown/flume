@@ -167,11 +167,11 @@ interface SuperviseLoopOptions {
   log?: Logger;
   /**
    * Chain-declared override for the run-scoped quarantine (spec/loop.md
-   * "Repeated identical failures — quarantine, then abort", which covers the
-   * provision, render, merge and gate stages alike). `"none"` disables
-   * per-entry quarantine outright — a tagged provision/render/merge/gate
-   * failure is never
-   * withheld from later ticks this run — while the
+   * "Repeated identical failures — quarantine, then abort"). `"none"` disables
+   * per-entry quarantine outright — a tagged failure at the provision,
+   * render, merge or gate stage is never
+   * withheld from later ticks this run, and a platform-stage failure, blamed
+   * on no entry, reached this leg under neither value — while the
    * consecutive-identical-failure backstop (`abortThreshold` below) still
    * applies. Defaults to {@link DEFAULT_QUARANTINE_SCOPE}, whose hold is
    * pinned by tests/loopSupervisor.test.ts's "a chain declaring neither
@@ -184,7 +184,7 @@ interface SuperviseLoopOptions {
   /**
    * Chain-declared override for the consecutive-identical-failure abort
    * threshold — the number of consecutive ticks the same *stage-tagged*
-   * signature (provision, render, merge, or gate) must repeat, with no
+   * signature (provision, render, merge, gate, or platform) must repeat, with no
    * successful tick between them, before the run aborts. Defaults to {@link DEFAULT_ABORT_THRESHOLD},
    * pinned by tests/loopSupervisor.test.ts's "a chain declaring neither
    * supervisor knob gets both defaults: a run-scoped quarantine and a
@@ -223,14 +223,23 @@ interface SuperviseLoopOptions {
 }
 
 /**
- * Every stage a per-entry failure record can come from — the four the tick
- * verdict carries in separate lists (`provisionFailures`, `renderFailures`,
- * `mergeFailures`, `gateFailures`), declared once as a runtime value so
+ * Every stage a failure record the accounting reads can come from — the five
+ * the tick verdict carries in separate lists (`provisionFailures`,
+ * `renderFailures`, `mergeFailures`, `gateFailures`, `platformFailures`),
+ * declared once as a runtime value so
  * whatever enumerates the stages — the fold below, a prompt, a test driving
  * every stage through the abort path — names them from the engine rather than
  * from a copy an engine rename would strand
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
  * beside its source*).
+ *
+ * Four of the five are per-entry records (`StageFailureEntry`,
+ * `./tickVerdict.js`) a tick may blame on one entry, so they reach both legs.
+ * `platform` is the one that cannot: a preempt's wall — an expired login, a
+ * spent cap, an OOM kill — belongs to the host, never to the entry the slot
+ * happened to be carrying, so `PlatformFailure` declares no tag and the
+ * quarantine leg has nothing to hold. It joins the roster for the backstop
+ * alone, which is exactly the class quarantine cannot isolate.
  *
  * Load-bearing rather than decorative: `superviseLoop`'s per-stage failure
  * fold is keyed by this roster, so a member added here is a compile error
@@ -241,6 +250,7 @@ export const FAILURE_STAGES = [
   "render",
   "merge",
   "gate",
+  "platform",
 ] as const;
 
 /**
@@ -360,13 +370,16 @@ interface QuarantineHold {
 /**
  * The stages whose holds expire with the tip they were placed at (spec/loop.md,
  * *Repeated identical failures — quarantine, then abort*). Deliberately a
- * proper subset of {@link FAILURE_STAGES}: render, merge and gate, never
- * provision. Each of the three judges one tree — a gate's verdict is over the
- * tree it ran on, a merge's conflict is against the trunk it picked onto, and
- * a render reads the declaration and the host that trunk holds (a chain's own
- * hook fixed on trunk is a new render) — so once trunk is not that tree, none
- * of those judgments has been re-made, while nothing landing on trunk changes
- * what a worktree could not provision. Spelled as a membership set over the
+ * proper subset of {@link FAILURE_STAGES}: render, merge and gate, leaving out
+ * provision and platform. Each of the three judges one tree — a gate's verdict
+ * is over the tree it ran on, a merge's conflict is against the trunk it
+ * picked onto, and a render reads the declaration and the host that trunk
+ * holds (a chain's own hook fixed on trunk is a new render) — so once trunk is
+ * not that tree, none of those judgments has been re-made, while nothing
+ * landing on trunk changes what a worktree could not provision. `platform` is
+ * left out from further up still: a preempt is blamed on no entry, so no hold
+ * of that stage is ever placed for this set to expire.
+ * Spelled as a membership set over the
  * roster rather than as an inequality against `provision`, so a stage added
  * there keeps the run-scoped default until this line says otherwise.
  */
@@ -488,7 +501,9 @@ export async function superviseLoop(
   let latestTip: string | undefined;
   // spec/loop.md "Repeated identical failures — quarantine, then abort"
   // generalizes both legs past provisioning to the render, merge and gate
-  // stages, keyed by *stage-tagged* signature (`${stage}:${signature}`) so a
+  // stages, and the backstop alone to the platform stage, whose preempts are
+  // blamed on no entry.
+  // The accounting is keyed by *stage-tagged* signature (`${stage}:${signature}`) so a
   // coincidentally-identical message from a different stage never shares a
   // streak with this one, and never shadows it in the quarantine loop either.
   // Keyed by signature, not "the last one seen" — a tick's failures can carry
@@ -747,10 +762,10 @@ export async function superviseLoop(
       }
     }
 
-    // Every per-entry failure fact the
+    // Every failure fact the
     // verdict records, tagged with the stage it came from — a clean exit
-    // never joins this list, since it writes no provision/render/merge/gate
-    // failure record at all.
+    // never joins this list, since it writes no provision, render, merge,
+    // gate or platform failure record at all.
     // The one place a roster member meets the verdict list that carries it.
     // Keyed by `FailureStage`, so the mapping is exhaustive over
     // `FAILURE_STAGES` by type: a stage added to the roster is a compile
@@ -764,6 +779,11 @@ export async function superviseLoop(
       render: verdict?.renderFailures ?? [],
       merge: verdict?.mergeFailures ?? [],
       gate: verdict?.gateFailures ?? [],
+      // The one member with no blame half to carry: `PlatformFailure`
+      // (`./tickVerdict.js`) declares no `tag`, so the quarantine loop below
+      // skips it by type rather than by a branch on the stage name, and it
+      // reaches the streak fold alone.
+      platform: verdict?.platformFailures ?? [],
     };
     const failures = FAILURE_STAGES.flatMap((stage) =>
       stageLists[stage].map((f) => ({ stage, ...f })),

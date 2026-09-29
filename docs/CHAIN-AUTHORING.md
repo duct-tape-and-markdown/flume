@@ -2398,19 +2398,26 @@ other prompt-args decision (§1).
 ## 9. Supervisor policy (`supervisorPolicy`)
 
 `flume loop`'s supervisor runs a deterministic-failure safety net around every
-tick, singleton and fanout alike. It accounts for every per-entry failure fact
+tick, singleton and fanout alike. It accounts for every failure fact
 the tick verdict records, keyed by **stage-tagged signature** — `provision` (a
 pre-tick worktree sweep, create, or `setupWorktree` throw), `render` (a prompt
 that refused to render, so no agent ever read the entry), `merge` (a cherry-pick
-conflict or a dirty trunk refusing the pick), and `gate` (a gate revert). The
+conflict or a dirty trunk refusing the pick), `gate` (a gate revert), and
+`platform` (an agent that failed for non-work reasons — a crash, an OOM kill,
+an expired login, a spent cap — keyed by its preempt class). The
 two legs reach different failures: an entry a failure can be
-**blamed** on is quarantined for the rest of the run, whichever stage it failed
-at, so the supervisor stops re-attempting a wall it already hit (entry-keyed,
+**blamed** on is quarantined for the rest of the run, whichever of the first
+four stages it failed at,
+so the supervisor stops re-attempting a wall it already hit (entry-keyed,
 so fanout's in practice), and a consecutive-identical-failure backstop aborts
 the run outright when the same stage-tagged signature repeats with no clearing
 tick in between — the non-entry-scoped class quarantine can't isolate, which is
-a repo-level failure like `git worktree prune` *and* every singleton failure,
-since a singleton tick has no entry to blame.
+a repo-level failure like `git worktree prune`, every singleton failure,
+since a singleton tick has no entry to blame, *and* every `platform` preempt,
+which belongs to the host rather than to the entry the slot happened to be
+carrying: an expired login fails every tick identically, no retry this run can
+make moves it, and holding the entry it struck first would isolate a healthy
+one for the rest of the run.
 
 Beside the net, the block carries the knobs that shape the run and the tick
 themselves and have nowhere else to be set from a chain: how many tick
@@ -2437,7 +2444,7 @@ const chain: Chain = {
 ```
 
 - **`quarantineScope`** — `"run"` (default): a tagged failure at any of the
-  stages above quarantines that entry for the rest of the run, under the key
+  four entry-scoped stages above quarantines that entry for the rest of the run, under the key
   the failing tick reported — its slug plus a hash of its bytes in
   its queue file, so a re-scope on trunk is a new key and lifts the hold.
   A **render**-, **merge**- or **gate**-stage hold carries one expiry beyond

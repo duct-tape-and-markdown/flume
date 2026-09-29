@@ -2473,14 +2473,20 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
   });
 
   /**
-   * The section opens by spelling the stage-tagged roster both legs key on,
-   * and that roster is `FAILURE_STAGES`' (`src/loopSupervisor.ts`) — the one
-   * the supervisor's own fold is exhaustive over by type. The page is read
+   * The section opens by spelling the stage-tagged roster the accounting keys
+   * on, and that roster is `FAILURE_STAGES`' (`src/loopSupervisor.ts`) — the
+   * one the supervisor's own fold is exhaustive over by type. The page is read
    * back against it rather than against a hand-kept list, so a member added
    * to the roster reds here instead of shipping beside prose that names the
    * old set (*Derived state is computed, never restated beside its source*).
+   *
+   * The claim is the roster, never what each member costs an entry: `platform`
+   * is accounted like the other four and quarantines nothing, so a title
+   * saying "as a quarantine stage" would name a property the body never reads
+   * (*A green verdict is proven non-vacuous*: a title is a claim its body
+   * asserts). What each stage does reach is the bullets' to say, below.
    */
-  it("docs/CHAIN-AUTHORING.md's supervisor-policy section names every FAILURE_STAGES member as a quarantine stage", () => {
+  it("docs/CHAIN-AUTHORING.md's supervisor-policy section names every FAILURE_STAGES member in its stage-tagged roster", () => {
     const { section } = docWalk(POLICY);
 
     // The roster paragraph is the one that keys the two legs, found by the

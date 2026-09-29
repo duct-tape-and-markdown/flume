@@ -427,7 +427,7 @@ it("the src/ entry module's header names every subpath the package's exports map
 
 /**
  * `FAILURE_STAGES` (`src/loopSupervisor.ts`) is the one home for the stages a
- * per-entry failure record can come from, and the supervisor's fold is
+ * failure record the accounting reads can come from, and the supervisor's fold is
  * exhaustive over it by type — so a member added there is a compile error
  * until its verdict list is named. Prose is the rung the compiler does not
  * reach: comments across the engine spelled the roster out by hand, and the
@@ -439,7 +439,8 @@ it("the src/ entry module's header names every subpath the package's exports map
  * A comment that lists the stages is read against the real constant, so the
  * next member reds here rather than stranding a hand-kept roster. A comment
  * that deliberately names a subset — the lift set's, whose three holds each
- * judge a tree — says so at the site, and saying so names the member it
+ * judge a tree; the quarantine leg's, which the one member blamed on no entry
+ * never reaches — says so at the site, and saying so names the member it
  * leaves out, which is what this scan reads.
  *
  * The suite is read beside the engine, because a roster restated in a test
@@ -464,7 +465,8 @@ const ROSTER_TREES: readonly string[] = ["src", "tests"];
  * How a stage's name is spelled in prose: `provision` also appears as the
  * gerund the worktree leg is named by, and every member may carry the
  * `-stage`/` stage` suffix the summary line writes, or the bare hyphen an
- * elided one leaves (`a provision-, render-, merge- or gate-stage wall`).
+ * elided one leaves (`a provision-, render-, merge-, gate- or platform-stage
+ * wall`).
  */
 const stageWord = (stage: FailureStage): string =>
   stage === "provision" ? String.raw`provision(?:ing)?` : stage;
@@ -472,8 +474,8 @@ const stageToken = (): string =>
   `(?:${FAILURE_STAGES.map(stageWord).join("|")})(?:[-\\s]stages?|-(?=[,\\s]))?`;
 
 /**
- * A run of stage names joined as a list — `provision, render, merge or gate`,
- * `merge/gate`, `render and gate`. The separator alphabet carries only
+ * A run of stage names joined as a list — `provision, render, merge, gate or
+ * platform`, `merge/gate`, `render and gate`. The separator alphabet carries only
  * punctuation and the two connectives, never bare whitespace: `after-merge
  * gate` is two words that happen to be adjacent, not a list.
  */

@@ -1044,7 +1044,8 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 /**
  * spec/loop.md "Repeated identical failures — quarantine, then abort"
  * generalizes both backstop legs past provisioning to the render, merge and
- * gate stages — sibling coverage to the provision-only suite above, same `runTick`
+ * gate stages, and the backstop alone to the platform stage, whose own suite
+ * is below — sibling coverage to the provision-only suite above, same `runTick`
  * fixture idiom (a stub writing the verdict file directly, standing in for
  * a real fanout wave/singleton tick whose own mechanism the Dispatcher-level
  * suites above prove).
@@ -2292,6 +2293,14 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
       noCommit: "gate-revert" as const,
       gateFailures: [record],
     }),
+    // The one member with no blame half to hand it: a preempt's record
+    // carries the signature and the message alone (`PlatformFailure`,
+    // `src/tickVerdict.ts`), so this arm passes `record` through as the whole
+    // thing rather than spreading a tag fixture over it.
+    platform: (record) => ({
+      noCommit: "platform-preempt" as const,
+      platformFailures: [record],
+    }),
   };
 
   /**
@@ -2366,6 +2375,135 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
     expect(res.repeatedFailure?.count).toBe(3);
     expect(res.repeatedFailure?.signature).toBe(SIGNATURE);
     expect(res.repeatedFailure?.signature.startsWith("merge:")).toBe(false);
+  });
+});
+
+/**
+ * spec/loop.md "Repeated identical failures — quarantine, then abort": the
+ * platform stage is the one roster member that reaches the backstop alone. An
+ * agent that failed for non-work reasons — an expired login, a spent cap, an
+ * OOM kill — records a `PlatformFailure` (`src/tickVerdict.ts`) keyed by its
+ * preempt class and blamed on no entry, because the wall belongs to the host
+ * rather than to the entry the slot happened to be carrying. So nothing is
+ * quarantined, nothing on trunk can lift a hold that was never placed, and the
+ * streak is the only thing bounding the burn: without it the class repeated to
+ * `--max` at full agent price, every tick, while `noCommit: "platform-preempt"`
+ * said so on every verdict.
+ *
+ * Same `runTick` fixture idiom as the sibling suites: a stub writes the record
+ * a real child would, whose own production `tests/Dispatcher.test.ts` proves.
+ */
+describe("superviseLoop — the platform stage feeds the backstop alone", () => {
+  const verdictPath = (phase: string): string =>
+    childVerdictPath(join(fx.repo, ".flume"), phase);
+
+  /** The preempt class a spent cap leaves, identical on every tick of the run. */
+  const PREEMPT = "exit 1: Credit balance is too low";
+
+  /**
+   * A verdict as a preempted tick writes it: nothing committed, the tick-level
+   * `noCommit` classing the attempt, and the stage record carrying the class
+   * as its comparison key with no entry named. Returned as well as written, so
+   * a case can assert the set it judged was populated rather than trusting the
+   * stub it just called (`.claude/rules/engineering.md`, *A green verdict is
+   * proven non-vacuous*).
+   */
+  const preemptedVerdict = (): TickVerdict =>
+    verdictFixture({
+      committed: false,
+      noCommit: "platform-preempt",
+      platformFailures: [{ signature: PREEMPT, message: PREEMPT }],
+    });
+
+  it("the backstop aborts a run whose ticks repeat one platform failure class", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build"); // never hibernates — the abort must come from the backstop alone
+
+    let calls = 0;
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      await writeFile(
+        verdictPath(phase),
+        JSON.stringify(preemptedVerdict()),
+        "utf8",
+      );
+      return { exitCode: 0 };
+    };
+
+    const errors: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      runTick,
+      log: { info: () => {}, warn: () => {}, error: (l) => errors.push(l) },
+    });
+
+    // The budget was 10 and the streak stopped it at 3: the seven ticks the
+    // run did not spend are what this leg buys.
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    expect(res.repeatedFailure).toEqual({
+      stage: "platform",
+      signature: PREEMPT,
+      count: 3,
+    });
+    expect(
+      errors.some((e) => e.includes("platform-stage") && e.includes(PREEMPT)),
+    ).toBe(true);
+    // Every tick that ran is an errored tick in the run's own accounting, so
+    // the abort is not the only place the class is visible.
+    expect(res.erroredTicks).toHaveLength(3);
+  });
+
+  it("a repeated platform failure quarantines no entry", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    const written: TickVerdict[] = [];
+    let calls = 0;
+    const runTick = async ({
+      phase,
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      const verdict = preemptedVerdict();
+      written.push(verdict);
+      await writeFile(verdictPath(phase), JSON.stringify(verdict), "utf8");
+      // Two ticks, one short of the threshold: the run ends on the baton, so
+      // what the second child was handed is read rather than lost to an abort.
+      if (calls >= 2) baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const warnings: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      runTick,
+      log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
+    });
+
+    expect(res.ticks).toBe(2);
+    expect(res.hibernated).toBe(true);
+    expect(res.repeatedFailure).toBeUndefined();
+
+    // Vacuity pin: the failure this case is about was on every verdict the
+    // supervisor read, so the empty quarantine below is a hold declined
+    // rather than a record that never arrived.
+    expect(written).toHaveLength(2);
+    for (const verdict of written) {
+      expect(verdict.platformFailures ?? []).toHaveLength(1);
+    }
+
+    // The second child is the one that would have carried a hold placed by
+    // the first, and it was handed nothing.
+    expect(receivedSlugs).toEqual([[], []]);
+    expect(warnings.some((w) => w.includes("quarantining"))).toBe(false);
   });
 });
 

@@ -41,8 +41,9 @@ const DECLARED_KEY_HASH_LENGTH = 10;
  * attempt's footprint onto the entry in the *same* wave that blames it, so
  * hashing it would have every quarantine whose failing attempt left a
  * footprint — the merge- and gate-stage holds, never a provision- or
- * render-stage one, since neither ran an agent — mint a fresh key on the
- * next read and lift its own hold: the run re-attempts the wall at full
+ * render-stage one, since neither ran an agent, and never a platform-stage
+ * one, which is blamed on no entry and so places no hold at all — mint a
+ * fresh key on the next read and lift its own hold: the run re-attempts the wall at full
  * agent price, which is the burn the section exists to prevent.
  * A key identifying the work as declared cannot be keyed on the engine's
  * notes about it (`.claude/rules/engine-boundary.md`, *Told, not

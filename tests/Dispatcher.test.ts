@@ -21926,8 +21926,8 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     const verdict = (await dispatcher.tick()).verdict;
     expect(verdict).toBeDefined();
     // Non-vacuity: this run's only queue-unchanged fact is the decline —
-    // nothing shipped, no no-commit mode, and no provision-, render-, merge-
-    // or gate-stage failure for the derivation to key off instead. The whole
+    // nothing shipped, no no-commit mode, and no provision-, render-, merge-,
+    // gate- or platform-stage failure for the derivation to key off instead. The whole
     // roster is asserted, not the three a reader happens to reach for: a
     // stage left unasserted is one the derivation could have keyed off
     // unseen (`.claude/rules/engineering.md`, *A green verdict is proven
@@ -21942,6 +21942,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(verdict!.renderFailures ?? []).toEqual([]);
     expect(verdict!.mergeFailures ?? []).toEqual([]);
     expect(verdict!.gateFailures ?? []).toEqual([]);
+    expect(verdict!.platformFailures ?? []).toEqual([]);
 
     baton.wake("build");
     const res = await superviseLoop({

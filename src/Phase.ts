@@ -1029,9 +1029,10 @@ export interface Chain {
    * Override for the `flume loop` supervisor's repeated-failure policy —
    * the run-scoped quarantine and the consecutive-identical-failure abort
    * threshold ship as engine defaults; this block lets a chain choose
-   * otherwise. Both legs read every failure a tick reported, whichever
-   * stage it came from — provision, render, merge or gate alike — never
-   * provisioning alone. Undeclared or omitted fields fall through to the defaults in
+   * otherwise. Between them the two legs read every failure a tick reported,
+   * whichever stage it came from — provision, render, merge, gate or platform
+   * alike — never provisioning alone. Only the backstop reads a platform
+   * preempt: it is blamed on no entry, so there is nothing to quarantine. Undeclared or omitted fields fall through to the defaults in
    * `src/loopSupervisor.ts`'s
    * `SuperviseLoopOptions.quarantineScope`/`abortThreshold` docs, whose exact
    * byte shape is pinned by the chain-declares-neither-knob case in
@@ -1040,7 +1041,8 @@ export interface Chain {
   supervisorPolicy?: {
     /**
      * `"run"`: a failure a tick blamed on one entry — at the provision,
-     * render, merge or gate stage alike — quarantines that entry's slug for
+     * render, merge or gate stage alike, never the platform stage, whose
+     * preempts name no entry — quarantines that entry's slug for
      * the rest of the run. `"none"`: quarantine never engages — every entry stays pickable
      * every tick regardless of an earlier failure. The
      * consecutive-identical-failure backstop (`abortThreshold`) applies either
@@ -1050,8 +1052,8 @@ export interface Chain {
     /**
      * Number of consecutive ticks the same stage-tagged failure signature
      * must repeat, with no successful tick between them, before the
-     * supervisor aborts the run — a provision-, render-, merge- or
-     * gate-stage wall alike, each streak counted separately.
+     * supervisor aborts the run — a provision-, render-, merge-, gate- or
+     * platform-stage wall alike, each streak counted separately.
      */
     abortThreshold?: number;
     /**
