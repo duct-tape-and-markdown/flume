@@ -290,13 +290,54 @@ export async function isAncestor(
  * commit. Equivalent to a single-commit cherry-pick when the range holds
  * exactly one commit, so this is the one cherry-pick primitive the
  * dispatcher needs — no separate single-sha form beside it.
+ *
+ * **A commit the tip already holds is absorbed, never a conflict.** Such a
+ * commit empties against the tip, and git stops the sequence on it with a
+ * non-zero exit — the same exit a content conflict takes. The two are told
+ * apart by git's own sequencer state, never by its message
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*):
+ * {@link emptiedPickHead} below reads `CHERRY_PICK_HEAD` against an index
+ * identical to `HEAD`, and on that state alone the commit is skipped
+ * (`cherry-pick --skip`) and the rest of the span carries on. Anything else
+ * git stopped on throws, which is the conflict both merge legs handle. The
+ * shas skipped come back rather than being left in git's state for a caller
+ * to re-derive (`.claude/rules/engineering.md`, *A fact the engine holds is
+ * reported, never rediscovered*); a span the tip holds whole leaves the tip
+ * exactly where it was, which is the caller's "no commit to add".
+ *
+ * `--empty=drop` would say this to git directly, and is git 2.45 — above
+ * this engine's floor (`.claude/rules/platform-facts.md`), so the stopped
+ * sequence plus `--skip` is the mechanism.
  */
 export async function cherryPickRange(
   repoRoot: string,
   base: string,
   head: string,
-): Promise<void> {
-  await run(repoRoot, ["cherry-pick", `${base}..${head}`]);
+): Promise<{
+  /**
+   * The commits in `(base, head]` the tip already held, in the order git
+   * stopped on them. Empty on a pick that added every commit in the range.
+   */
+  absorbed: string[];
+}> {
+  const absorbed: string[] = [];
+  let args = ["cherry-pick", `${base}..${head}`];
+  for (;;) {
+    try {
+      await run(repoRoot, args);
+      return { absorbed };
+    } catch (err) {
+      const emptied = await emptiedPickHead(repoRoot);
+      if (emptied === undefined) throw err;
+      // A range names each commit once, so a sequence stopping twice on one
+      // sha is git not advancing past it — throw the stop rather than spin
+      // on `--skip` forever (`.claude/rules/engineering.md`, *Loud or
+      // nothing*).
+      if (absorbed.includes(emptied)) throw err;
+      absorbed.push(emptied);
+      args = ["cherry-pick", "--skip"];
+    }
+  }
 }
 
 /**
@@ -741,6 +782,65 @@ async function hasCherryPickSequencerState(repoRoot: string): Promise<boolean> {
     existsLoud(toNamespacedPath(headPath)) ||
     existsLoud(toNamespacedPath(sequencerPath))
   );
+}
+
+/**
+ * The commit a stopped cherry-pick emptied against the current tip, or
+ * `undefined` when git stopped on anything else — the one reading that lets
+ * {@link cherryPickRange} skip a commit rather than refuse over it.
+ *
+ * Two facts, both git's own: `CHERRY_PICK_HEAD` names the commit the sequence
+ * is stopped on, and an index identical to `HEAD` is what "the previous
+ * cherry-pick is now empty" leaves behind — nothing to commit, the patch
+ * having already been on the tip. Every other stop fails one of the two: a
+ * content conflict leaves unmerged entries in the index, and a pick git
+ * refused before it started (an operator's uncommitted change over a path the
+ * pick would touch) writes no `CHERRY_PICK_HEAD` at all. Read structurally,
+ * never off git's message (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
+ */
+async function emptiedPickHead(repoRoot: string): Promise<string | undefined> {
+  const pickHead = await revParseVerify(repoRoot, "CHERRY_PICK_HEAD");
+  if (pickHead === undefined) return undefined;
+  return (await indexMatchesHead(repoRoot)) ? pickHead : undefined;
+}
+
+/**
+ * `git rev-parse --verify --quiet <ref>` — the sha, or `undefined` for a ref
+ * git does not resolve. `--quiet` is what makes the absent case exit `1`
+ * rather than `128`, so it is data here and every other exit code still
+ * throws (`isAncestor` above is the established pattern).
+ */
+async function revParseVerify(
+  cwd: string,
+  ref: string,
+): Promise<string | undefined> {
+  try {
+    const { stdout } = await run(cwd, ["rev-parse", "--verify", "--quiet", ref]);
+    return stdout;
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    if (code === 1) return undefined;
+    throw err;
+  }
+}
+
+/**
+ * Whether the index is identical to `HEAD` — `git diff-index --quiet --cached
+ * HEAD`, exit `0` for identical and `1` for any staged difference, the
+ * unmerged entries a conflicted cherry-pick leaves included. Unstaged
+ * working-tree changes are not read: an operator's uncommitted work beside a
+ * pick is not the pick's state.
+ */
+async function indexMatchesHead(repoRoot: string): Promise<boolean> {
+  try {
+    await run(repoRoot, ["diff-index", "--quiet", "--cached", "HEAD"]);
+    return true;
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    if (code === 1) return false;
+    throw err;
+  }
 }
 
 /**

@@ -5933,6 +5933,182 @@ describe("Dispatcher fanout — the wave's merge failures reach handoff (TICK-RE
 });
 
 /**
+ * AN-EMPTY-PICK-IS-ABSORBED-NEVER-READ-AS-A-CONFLICT — a span whose content
+ * trunk already holds empties against it, and git stops the sequence with the
+ * same non-zero exit a content conflict takes. Both merge legs read that
+ * throw as a `cherry-pick-conflict`: the entry stayed pending, the failure was
+ * blamed and quarantined, and the tick counted errored toward the hibernate —
+ * over work that was already shipped. A commit the tip holds is absorbed, not
+ * a conflict (spec/loop.md "Tip verify — one writer per branch, absorption at
+ * the merge"), and the evidence is git's own sequencer state: a pick stopped
+ * with nothing staged.
+ */
+describe("Dispatcher — a span trunk already holds is absorbed at the merge (AN-EMPTY-PICK-IS-ABSORBED-NEVER-READ-AS-A-CONFLICT)", () => {
+  it("a span whose only commit the tip already holds merges with no commit to add and no merge failure", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    let spanHead = "";
+    let trunkSha = "";
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(
+        cwd,
+        "src/plan-output.ts",
+        "derived\n",
+        "plan: derive",
+      );
+      spanHead = await head(cwd);
+      // The very same content reaches trunk while the agent is mid-tick — a
+      // sibling checkout that shipped it, or an operator applying it by
+      // hand. The span still has a non-empty diff against its own base, so
+      // it is no `clean-exit`; it is a pick with nothing left to add.
+      await writeAndCommit(
+        fx.repo,
+        "src/plan-output.ts",
+        "derived\n",
+        "operator: the same content, landed first",
+      );
+      trunkSha = await head(fx.repo);
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the agent really committed a span, and trunk really
+    // carried the same content before the pick ran — without both, what
+    // follows would pass over an ordinary no-commit tick.
+    expect(spanHead).not.toBe("");
+    expect(trunkSha).not.toBe("");
+    expect(spanHead).not.toBe(trunkSha);
+
+    // Trunk is exactly where the operator left it: nothing added, nothing
+    // reset.
+    expect(await head(fx.repo)).toBe(trunkSha);
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.commitSha).toBeUndefined();
+    // And no failure of any kind: the throw git took on the emptied pick is
+    // not a conflict, so nothing is blamed and nothing counts this tick as
+    // errored.
+    expect(outcome.mergeFailures ?? []).toEqual([]);
+    expect(outcome.result?.mergeFailures ?? []).toEqual([]);
+    expect(outcome.noCommit).toBeUndefined();
+    expect(outcome.tipMoved).toBeUndefined();
+    // The span was merged — with no commit to add, which the row says by
+    // bounding an empty range.
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      { outcome: "merged", baseSha: trunkSha, headSha: trunkSha },
+    ]);
+  });
+
+  it("a fanout entry whose span the tip already holds is asked for shipped as for any merge", async () => {
+    // Two entries whose agents commit byte-identical content to the shared
+    // channel path and nothing else. Whichever pick runs first lands it;
+    // the other's span empties against trunk whole.
+    await writeAndCommit(
+      fx.repo,
+      "src/shared.ts",
+      "baseline\n",
+      "seed shared",
+    );
+    await writePending(fx.repo, [
+      makeEntry("ABSORB-A", ["src/absorb-a.ts"]),
+      makeEntry("ABSORB-B", ["src/absorb-b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const writeShared = () => async (cwd: string) => {
+      await writeAndCommit(cwd, "src/shared.ts", "agreed\n", "build: agreed");
+    };
+
+    const asked: {
+      tag: string;
+      mergedSha: string;
+      touchedPaths: string[];
+    }[] = [];
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      entryChannelPaths: ["src/shared.ts"],
+      gates: [],
+      shipped: (ctx) => {
+        asked.push({
+          tag: ctx.entry.tag,
+          mergedSha: ctx.mergedSha,
+          touchedPaths: [...ctx.touchedPaths],
+        });
+        return true;
+      },
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "absorb-a": writeShared(),
+        "absorb-b": writeShared(),
+      }),
+      log: silent,
+      maxParallel: 2,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Which span lands and which empties is the wave's finish order, so the
+    // absorbed one is read off the rows rather than pinned by batch
+    // position: its range is empty, both ends the same tip.
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    expect(rows.map((r) => r.outcome)).toEqual(["merged", "merged"]);
+    const absorbedRows = rows.filter((r) => r.baseSha === r.headSha);
+    // Non-vacuity: exactly one of the two picks really did empty, so the
+    // shipped verdict below is judged over an absorbed span and not over two
+    // ordinary merges.
+    expect(absorbedRows).toHaveLength(1);
+    const absorbedTag = absorbedRows[0]!.entryTag;
+
+    // The predicate was asked for it exactly as for the sibling that added a
+    // commit — same call, same fields, and its `mergedSha` is the tip the
+    // wave picked onto, which already carried the entry's own content.
+    expect(asked.map((a) => a.tag).sort()).toEqual(["ABSORB-A", "ABSORB-B"]);
+    const absorbedAsk = asked.find((a) => a.tag === absorbedTag);
+    expect(absorbedAsk).toBeDefined();
+    expect(absorbedAsk!.mergedSha).toBe(absorbedRows[0]!.headSha);
+    // Nothing was added, so the span's touched paths over trunk are empty —
+    // the sibling's own ask carries the channel file it landed.
+    expect(absorbedAsk!.touchedPaths).toEqual([]);
+    const landedAsk = asked.find((a) => a.tag !== absorbedTag);
+    expect(landedAsk!.touchedPaths).toEqual(["src/shared.ts"]);
+
+    // Answered `true`, so both entries ship and the queue drains — the whole
+    // point: an entry whose work is already on trunk leaves the ledger
+    // instead of retrying its empty pick forever.
+    expect([...(handedToHandoff?.shippedTags ?? [])].sort()).toEqual([
+      "ABSORB-A",
+      "ABSORB-B",
+    ]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(outcome.mergeFailures ?? []).toEqual([]);
+    expect(await readFile(join(fx.repo, "src", "shared.ts"), "utf8")).toBe(
+      "agreed\n",
+    );
+  });
+});
+
+/**
  * THE-EMPTY-SPAN-IS-A-CLEAN-EXIT — an agent that commits and changes nothing
  * (an `--allow-empty` commit, or an edit it undoes before committing again)
  * used to clear the ref-moved check, run the whole afterCommit stack and

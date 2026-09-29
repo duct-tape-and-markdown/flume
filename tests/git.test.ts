@@ -951,6 +951,102 @@ describe("cherryPickRange (spec/loop.md 'Tip verify', per-entry leg)", () => {
     expect(log.trim().split("\n")).toEqual(["second", "first"]);
   });
 
+  /**
+   * A two-commit span whose first commit is already on the target tip —
+   * spec/loop.md "Tip verify — one writer per branch, absorption at the
+   * merge": the emptied commit is absorbed, never a conflict. Set up by
+   * cherry-picking that commit onto the target first, which is exactly how
+   * trunk comes to hold it in the field (a sibling wave, or a retry after a
+   * partial ship).
+   */
+  async function spanOverHeldCommit(): Promise<{
+    base: string;
+    head: string;
+    firstSha: string;
+    target: string;
+  }> {
+    const base = await revParse(repo);
+    await exec("git", ["checkout", "-q", "-b", "entry-branch"], { cwd: repo });
+    await writeFile(join(repo, "first.txt"), "first");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "first"], { cwd: repo });
+    const firstSha = await revParse(repo);
+    await writeFile(join(repo, "second.txt"), "second");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "second"], { cwd: repo });
+    const head = await revParse(repo);
+
+    await exec("git", ["checkout", "-q", "-b", "target", base], { cwd: repo });
+    await exec("git", ["cherry-pick", firstSha], { cwd: repo });
+    return { base, head, firstSha, target: await revParse(repo) };
+  }
+
+  it("a span the tip holds one commit of skips that commit and lands the rest", async () => {
+    const { base, head, firstSha, target } = await spanOverHeldCommit();
+    // Non-vacuity: the tip really does hold the span's first commit and not
+    // its second, so the pick below has something to absorb and something
+    // left to land.
+    expect(existsSync(join(repo, "first.txt"))).toBe(true);
+    expect(existsSync(join(repo, "second.txt"))).toBe(false);
+
+    const { absorbed } = await cherryPickRange(repo, base, head);
+
+    expect(existsSync(join(repo, "second.txt"))).toBe(true);
+    // Exactly one commit added — the one the tip did not hold. The absorbed
+    // commit is named as the span's, not as the tip's copy of it.
+    const { stdout: log } = await exec(
+      "git",
+      ["log", "--format=%s", `${target}..HEAD`],
+      { cwd: repo },
+    );
+    expect(log.trim().split("\n")).toEqual(["second"]);
+    expect(absorbed).toEqual([firstSha]);
+    // Nothing stopped: git's sequencer state is gone, so the next operation
+    // on this checkout is not standing on a half-finished pick.
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: repo,
+    });
+    expect(status.trim()).toBe("");
+  });
+
+  it("a span the tip holds whole leaves the tip where it was and names every commit it absorbed", async () => {
+    const base = await revParse(repo);
+    await exec("git", ["checkout", "-q", "-b", "entry-branch"], { cwd: repo });
+    await writeFile(join(repo, "only.txt"), "only");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "only"], { cwd: repo });
+    const head = await revParse(repo);
+
+    await exec("git", ["checkout", "-q", "-b", "target", base], { cwd: repo });
+    await exec("git", ["cherry-pick", head], { cwd: repo });
+    const target = await revParse(repo);
+
+    const { absorbed } = await cherryPickRange(repo, base, head);
+
+    expect(absorbed).toEqual([head]);
+    expect(await revParse(repo)).toBe(target);
+  });
+
+  it("a conflicting pick still throws rather than being absorbed", async () => {
+    const base = await revParse(repo);
+    await exec("git", ["checkout", "-q", "-b", "entry-branch"], { cwd: repo });
+    await writeFile(join(repo, "clash.txt"), "entry\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "entry"], { cwd: repo });
+    const head = await revParse(repo);
+
+    await exec("git", ["checkout", "-q", "-b", "target", base], { cwd: repo });
+    await writeFile(join(repo, "clash.txt"), "trunk\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "trunk"], { cwd: repo });
+
+    await expect(cherryPickRange(repo, base, head)).rejects.toThrow();
+    // The stopped sequence is the caller's to abort — the absorption leg
+    // never quietly skipped past it.
+    expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(true);
+    await cherryPickAbort(repo);
+  });
+
   it("cherry-picks a single-commit range identically to the plain single-sha form", async () => {
     const base = await revParse(repo);
     await writeFile(join(repo, "solo.txt"), "solo");

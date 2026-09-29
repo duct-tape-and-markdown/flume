@@ -351,9 +351,16 @@ export function startTiming(): () => number {
  * put it on trunk:
  *  - `merged`                cherry-picked, passed every afterMerge gate,
  *                            and the agent's own termination never stated a
- *                            park — counted shipped.
+ *                            park — counted shipped. A span the tip already
+ *                            held empties against it and is absorbed rather
+ *                            than refused (spec/loop.md "Tip verify — one
+ *                            writer per branch, absorption at the merge"), so
+ *                            a `merged` row whose `baseSha` and `headSha` are
+ *                            equal is a span merged with no commit to add.
  *  - `cherry-pick-conflict`  the cherry-pick itself failed; entry stays
- *                            pending, no commit reached trunk.
+ *                            pending, no commit reached trunk. A commit the
+ *                            tip already holds is never this: it is skipped,
+ *                            and the rest of the span lands.
  *  - `afterMerge-reverted`   landed, then an afterMerge gate failed; that
  *                            entry's commit alone was reset back off trunk.
  *  - `afterMerge-revert-refused` landed, an afterMerge gate failed, and the

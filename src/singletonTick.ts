@@ -374,8 +374,12 @@ export async function runSingleton(
       // revert disturbs it.
       bystanderCheckpointSha = await git.checkpointBystanderState(repoRoot);
       const preCherry = await git.revParse(repoRoot);
+      // The commits of this span trunk already held. A range pick absorbs
+      // those rather than refusing over them (`git.cherryPickRange`), so
+      // only a real conflict reaches the catch below.
+      let absorbed: readonly string[] = [];
       try {
-        await git.cherryPickRange(repoRoot, spanBase, spanHead);
+        ({ absorbed } = await git.cherryPickRange(repoRoot, spanBase, spanHead));
       } catch (err) {
         const message = (err as Error).message;
         leg.log.warn(
@@ -395,6 +399,11 @@ export async function runSingleton(
 
       if (!mergeFailure) {
         const mergedSha = await git.revParse(repoRoot);
+        if (absorbed.length > 0) {
+          leg.log.info(
+            `[flume] ${phase.name}: trunk already held ${absorbed.map((sha) => sha.slice(0, 8)).join(", ")} of ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; absorbed, not a conflict`,
+          );
+        }
         const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
         const commitTouchedPaths = await git.diffNameOnly(
           repoRoot,
@@ -505,6 +514,24 @@ export async function runSingleton(
             baseSha: preCherry,
             headSha: mergedSha,
           });
+        } else if (mergedSha === preCherry) {
+          // Trunk held the whole span, so the pick had nothing left to add
+          // and the span is merged all the same (spec/loop.md "Tip verify —
+          // one writer per branch, absorption at the merge"). `committed`
+          // and `commitSha` stay unset — naming `preCherry` as this tick's
+          // commit would report a commit it never made — and no merge
+          // failure is recorded: the merge row's equal shas are the whole
+          // fact, and nothing counts this tick as errored.
+          leg.log.info(
+            `[flume] ${phase.name}: trunk already holds the whole span ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; merged with no commit to add`,
+          );
+          mergeOutcomes.push({
+            outcome: "merged",
+            baseSha: preCherry,
+            headSha: mergedSha,
+          });
+          // Nothing failed, so the slot clears exactly as on a clean ship.
+          await leg.attempts.clear(ref);
         } else {
           leg.log.info(
             `[flume] cherry-picked ${phase.name} → ${mergedSha.slice(0, 8)}`,

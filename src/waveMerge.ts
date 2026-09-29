@@ -658,6 +658,10 @@ async function carrySpan(
   // the same span onto trunk a second time.
   const slug = slugify(r.entry.tag);
   await writeMergingMarker(leg, r.entry, r.branch, r.spanBase);
+  // The commits of this span trunk already held. A range pick absorbs those
+  // rather than refusing over them (`git.cherryPickRange`), so only a real
+  // conflict reaches the catch below.
+  let absorbed: readonly string[] = [];
   try {
     // The per-entry leg's ancestry check already cleared the whole
     // `spanBase..headSha` span as one completed entry — cherry-pick
@@ -665,7 +669,7 @@ async function carrySpan(
     // (spec/loop.md "The check is ancestry, and N commits are
     // completion"). Equivalent to a single-sha pick when the span
     // holds exactly one commit.
-    await git.cherryPickRange(repoRoot, r.spanBase, r.headSha);
+    ({ absorbed } = await git.cherryPickRange(repoRoot, r.spanBase, r.headSha));
   } catch (err) {
     const message = (err as Error).message;
     leg.log.warn(
@@ -701,6 +705,16 @@ async function carrySpan(
     return slug;
   }
   const mergedSha = await git.revParse(repoRoot);
+  if (absorbed.length > 0) {
+    // Absorbed, never a conflict (spec/loop.md "Tip verify — one writer per
+    // branch, absorption at the merge"). Said out loud, because the span
+    // reaching trunk with fewer commits than it carried — or, when
+    // `mergedSha === preCherry`, with none — is otherwise only visible as a
+    // merge row whose two shas are equal.
+    leg.log.info(
+      `[flume] ${r.entry.tag}: trunk already held ${absorbed.map((sha) => sha.slice(0, 8)).join(", ")} of ${r.spanBase.slice(0, 8)}..${r.headSha.slice(0, 8)}; absorbed, not a conflict`,
+    );
+  }
 
   // Gate this entry's merged commit. The first failing afterMerge gate
   // attributes the failure to *this* entry — it is the only delta
@@ -859,8 +873,15 @@ async function carrySpan(
     return slug;
   }
 
+  // Trunk holding the whole span leaves the pick nothing to add, and the
+  // entry is merged all the same. `shipped` below is asked exactly as for any
+  // other merge — whether work already on trunk ships is the chain's reading,
+  // never the engine's (spec/loop.md "Tip verify — one writer per branch,
+  // absorption at the merge").
   leg.log.info(
-    `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
+    mergedSha === preCherry
+      ? `[flume] ${r.entry.tag}: trunk already holds the whole span ${r.spanBase.slice(0, 8)}..${r.headSha.slice(0, 8)}; merged with no commit to add`
+      : `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
   );
 
   // Landing on trunk isn't shipping, and the engine does not decide
