@@ -15,6 +15,8 @@
  * no real consumer produces the extension a refusal exists to catch.
  */
 
+import { readFile } from "node:fs/promises";
+
 import { expect, it } from "vitest";
 
 import {
@@ -31,6 +33,7 @@ import { parsePendingQueue, renderSchemaForPrompt } from "../src/index.ts";
 // file*).
 import { entryFileName } from "../src/PendingSchema.ts";
 import type { EntryExtension, QueueFile } from "../src/index.ts";
+import { bulletOf, sectionOf } from "./helpers/docSections.ts";
 
 /** The six the spec section lists, in the order it lists them. */
 const SPEC_FIELDS = ["summary", "per", "acceptance", "tests", "pins", "notes"];
@@ -134,6 +137,61 @@ it("parsePendingQueue accepts an entry carrying a value for every field the pack
   expect(parsed.errors).toEqual([]);
   expect(parsed.entries).toHaveLength(1);
   expect(parsed.entries[0]).toMatchObject(everyPackageField);
+});
+
+/**
+ * The roster a consumer reads before the hover text, read against the
+ * declaration itself (`.claude/rules/engineering.md`, *Narration is the
+ * ladder's bottom rung*, the `docs/` carve-out): the page states which fields
+ * the package brings to an entry, so it is pinned for what it says against
+ * the interface it describes.
+ *
+ * The names come from `entryExtension()` — the same call every other case here
+ * drives — so a field added to the declaration reds this until the page names
+ * it, and a rename carries the page with it. A list field is rostered with its
+ * brackets, `tests[]` for `tests`: that is the page spelling a shape, not a
+ * second name, so the suffix folds out before the compare.
+ *
+ * The span is the parenthetical roster inside the harness-package bullet,
+ * rather than the bullet or the page whole: `docs/CHAIN-AUTHORING.md` walks a
+ * consumer's *own* entry extension further down, under an example naming
+ * `summary` and `per`, so a wider read would report a roster naming none of
+ * the package's fields as complete. Nothing here restates a hint or a cap —
+ * what a field means is the declaration's, and this is only which fields
+ * exist.
+ */
+it("docs/CHAIN-AUTHORING.md names every field the package's entry extension declares", async () => {
+  const fields = Object.keys(entryExtension());
+
+  // Vacuity pin on the demand: the declaration handed over its whole set, the
+  // risk flag included, before a page is read against it. A demand read as
+  // empty is rostered in full by every page there is.
+  expect(fields).toEqual(expect.arrayContaining(PACKAGE_FIELDS));
+
+  const page = await readFile(
+    new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
+    "utf8",
+  );
+  const bullet = bulletOf(
+    sectionOf(page, "## First: do you need to write one?"),
+    "- **The harness package** — ",
+  );
+  const roster = /\bthe entry extension \(([^)]*)\)/.exec(bullet)?.[1] ?? "";
+  const rostered = [...roster.matchAll(/`([^`]+)`/g)].map((match) =>
+    match[1]!.replace(/\[\]$/, ""),
+  );
+
+  // Vacuity pin on the subject: the cut reached a roster of names. `bulletOf`
+  // throws on an absent lead, and this is the other half — a parenthetical the
+  // page reworded away would leave the verdict below green over no names. The
+  // floor is one name rather than the declared count, so a page short of the
+  // set reds at the verdict, where the diff names the field it is missing.
+  expect(rostered.length).toBeGreaterThan(0);
+
+  // The verdict, both ways over a closed roster: a field the package adds
+  // cannot ship beside a page still naming the old set, and a field it retires
+  // leaves no name standing there.
+  expect([...rostered].sort()).toEqual([...fields].sort());
 });
 
 it("a consumer field is merged into the entry extension beside the package's own", () => {

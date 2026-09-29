@@ -494,10 +494,14 @@ const declaredName = (name: ts.PropertyName | undefined): string | undefined => 
  * name** is the export and the type. A **member name** is how a chain author
  * addresses one — `writablePaths`, `flumeDir` — read off every declaration
  * the walk reached, nested type literals included, since an inline object
- * type is addressed exactly like a named one. And a **string literal type**
- * is a vocabulary the surface declares rather than a value it happens to
- * carry: `afterCommit` and `"fanout"` are names the interface holds, and a
- * page naming one is naming the surface.
+ * type is addressed exactly like a named one. And a **string literal** is a
+ * vocabulary the surface declares rather than a value it happens to carry:
+ * `afterCommit` and `"fanout"` are names the interface holds, and a page
+ * naming one is naming the surface. Both spellings of that last kind count —
+ * a literal type, and the initializer a shipped `const` carries, which is
+ * what the emit writes for a literal-typed constant (`export declare const
+ * CONTRACT_TOUCHING_FIELD = "contractTouching"`). A constant whose value is
+ * the key a consumer types is the surface naming that key.
  */
 export const packageSurface = (request: ExportScanRequest): PackageSurface => {
   const surface = shippedSurface(request);
@@ -520,6 +524,12 @@ export const packageSurface = (request: ExportScanRequest): PackageSurface => {
       if (name !== undefined) names.add(name);
     } else if (ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)) {
       names.add(node.literal.text);
+    } else if (
+      ts.isStringLiteral(node) &&
+      node.parent !== undefined &&
+      ts.isVariableDeclaration(node.parent)
+    ) {
+      names.add(node.text);
     }
     ts.forEachChild(node, walk);
   };

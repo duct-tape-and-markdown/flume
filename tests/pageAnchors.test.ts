@@ -22,6 +22,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { externalVocabulary } from "./helpers/externalVocabulary.ts";
 import { packageSurface } from "./helpers/exportGraph.ts";
+import { CONTRACT_TOUCHING_FIELD } from "../harness/index.ts";
 import { formatCitation } from "./helpers/commentCitations.ts";
 import {
   anchorSlug,
@@ -500,6 +501,12 @@ it("every backticked identifier docs/CHAIN-AUTHORING.md, docs/CLI.md and README.
   // correct span, and an emit that resolved nothing would hold none at all.
   expect(surface.entryModules).toEqual(["src/index.ts", "harness/index.ts"]);
   expect(surface.names.size).toBeGreaterThan(500);
+
+  // And it holds the vocabulary a shipped constant declares, not only the
+  // vocabulary a type does: an entry-extension key the package spells as a
+  // `const` is emitted as an initializer rather than an annotation, so a walk
+  // reading type positions alone would red every page that rosters one.
+  expect(surface.names.has(CONTRACT_TOUCHING_FIELD)).toBe(true);
 
   const scan = scanPageIdentifiers({
     root: REPO_ROOT,
