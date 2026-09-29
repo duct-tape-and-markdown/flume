@@ -1,0 +1,32 @@
+{
+  "tag": "A-PROVEN-ABSENCE-NEEDS-A-ROOT-THE-PATH-SITS-UNDER",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/fsProbe.ts",
+        "description": "the composed descent refuses a root `path` does not sit under, rather than walking up through it; the doc states the bound it then holds, and `existsLoudUnder` inherits it"
+      },
+      {
+        "path": "src/flumeApi.ts",
+        "description": "the member's doc, as the refusal then reads for a chain"
+      },
+      {
+        "path": "tests/fsProbe.test.ts",
+        "description": "the refusal on both descents, beside the standing absence and obstruction cases"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`isDirectoryOrAbsentUnder` answers a root the path does not sit under with the root's own absence, so a proven absence reports over a directory that stands",
+  "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+  "acceptance": "a root `path` does not sit under is a refusal at the helper, not an answer — the caller cannot receive `false` from a descent that never reached its subject. The rooted descent and its file-leaf sibling refuse alike, and the engine's own callers, every one of which passes an ancestor, read as they did.",
+  "tests": [
+    "the rooted descent refuses a root the directory does not sit under",
+    "the file-leaf descent refuses a root the file does not sit under"
+  ],
+  "pins": [],
+  "notes": "Build note from READING-THE-BATON-CREATES-NOTHING. Verified this tick: `relative` walks up-and-back, so the descent's first rung is the non-ancestor root itself and its absence short-circuits (`src/fsProbe.ts:136`). Its one engine caller that hit it is fixed at the site; the helper is on `FlumeApi` (`src/flumeApi.ts:245`), so a chain reaches it next. Collides with THE-RENDER-SEAMS-LOADER-REACHES-THE-CHAINS-OWN-SURFACE on `src/flumeApi.ts`."
+}
