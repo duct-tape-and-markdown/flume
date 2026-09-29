@@ -1,8 +1,8 @@
 /**
  * The sweep slice's window (`spec/harness.md`, *The phases*): the declared
  * sweep-domain paths the commits past `sweptThrough` touched, the posture
- * pages among them, and the lines the spec locus no longer states — the
- * retired-claim delta.
+ * pages among them with the domain a touched page arms, and the lines the
+ * spec locus no longer states — the retired-claim delta.
  *
  * **Two cursors, one file.** The frontier is drawn past `sweptThrough`, which
  * the rotation pins in place; the retired-claim delta is drawn past
@@ -38,6 +38,7 @@ import type { Declaration } from "./declaration.js";
 import {
   commitsPast,
   deletedLines,
+  filesMatching,
   resolvesInTree,
   touchedPast,
   touches,
@@ -165,7 +166,13 @@ function renderSweepWindow(
 
     const touching = all.filter((commit) => touches(commit, frontier));
 
-    const lines = frontierListing(cursor, touching, domain, posturePages);
+    const lines = frontierListing(
+      ctx.cwd,
+      cursor,
+      touching,
+      domain,
+      posturePages,
+    );
 
     lines.push(
       "",
@@ -265,17 +272,38 @@ const unionOf = (
   [...new Set(commits.flatMap((commit) => pathsIn(commit, globs)))].sort();
 
 /**
- * The frontier, as the two things a sweep tick decides from it: which domain
- * paths the range touched, and whether the range touched a posture page at
- * all.
+ * The frontier, as the three things a sweep tick decides from it: which
+ * domain paths the range touched, whether the range touched a posture page at
+ * all, and — where it did — the domain modules that page armed.
  *
- * The second is called out on its own because it is not one more frontier
- * path — a touched posture page is a phrase delta, and a phrase delta puts
- * *every* domain module in the frontier however few paths the listing above
- * it carries. Folding the pages into the path union would render that as a
+ * The pages are called out on their own because a touched page is not one
+ * more frontier path — it is a phrase delta, and a phrase delta puts *every*
+ * domain module in the frontier however few paths the listing above it
+ * carries. Folding the pages into the path union would render that as a
  * one-line addition to a list, which is the opposite of what it means.
+ *
+ * **And a frontier that sentence names is enumerated, not left to the tick.**
+ * A window whose widest arm is a sentence about "every module" hands the tick
+ * a set it has to rebuild — by re-reading the declaration the window was
+ * handed, or by walking the tree the window already has a working copy of, and
+ * a tick that walks it differently sweeps a domain nobody declared
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). Drawn through {@link filesMatching}, which is the
+ * listing the bootstrap window already opens its whole-corpus frontier with
+ * (`bootstrap`, `cursorWindow.ts`): one reading of the declared domain, in
+ * git's own alphabet, for both windows whose frontier is all of it.
+ *
+ * **The listing rides the pages and nothing else.** A range that touched no
+ * page arms no whole-domain frontier, so it renders no such block at all —
+ * an empty one would read as a phrase delta that armed nothing, and a
+ * populated one as a frontier the range never drew.
+ *
+ * It costs one line per tracked module and no diff, so it is outside the
+ * budget the deleted lines below are cut to — the bootstrap listing is
+ * unbudgeted for the same reason.
  */
 function frontierListing(
+  cwd: string,
   cursor: string,
   touching: readonly RangeCommit[],
   domain: string[],
@@ -292,6 +320,22 @@ function frontierListing(
       `touched page is a phrase delta, which puts every sweep-domain module ` +
       `in the frontier ===`,
     ...(pages.length === 0 ? ["(none)"] : pages),
+    ...(pages.length === 0 ? [] : armedDomain(cwd, domain)),
+  ];
+}
+
+/**
+ * The whole declared domain, as the frontier a phrase delta arms: every
+ * tracked file the domain globs name, read off the tree the window is drawn
+ * in.
+ */
+function armedDomain(cwd: string, domain: string[]): string[] {
+  const modules = filesMatching(cwd, domain);
+  return [
+    "",
+    `=== ${modules.length} declared sweep-domain module(s) the phrase delta ` +
+      `arms — the frontier whole, read every file below ===`,
+    ...(modules.length === 0 ? ["(none)"] : modules),
   ];
 }
 

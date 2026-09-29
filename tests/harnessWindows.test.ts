@@ -1898,10 +1898,31 @@ it("a merge commit that resolved nothing adds no path to the frontier", () => {
  * rendered artifact*).
  */
 function blockUnder(rendered: string | undefined, marker: string): string[] {
+  const block = blockIfAny(rendered, marker);
+  if (block === undefined) {
+    throw new Error(`the window renders no block under \`${marker}\``);
+  }
+  return block;
+}
+
+/**
+ * The same cut, with an absent block as an answer rather than a failure — what
+ * a case about a block the window *should not* render asserts against.
+ *
+ * A `not.toContain` over the whole render would turn on whatever the other
+ * blocks quote: the retired-claim delta pastes deleted spec lines verbatim, so
+ * a fixture whose spec happened to retire the forbidden phrase would red a
+ * case about something else entirely (`.claude/rules/posture-sweep.md`,
+ * *Standing lenses*).
+ */
+function blockIfAny(
+  rendered: string | undefined,
+  marker: string,
+): string[] | undefined {
   if (rendered === undefined) throw new Error("the sweep window is unrendered");
   const lines = rendered.split("\n");
   const start = lines.findIndex((line) => line.includes(marker));
-  expect(start, `the window renders no block under \`${marker}\``).not.toBe(-1);
+  if (start === -1) return undefined;
   const rest = lines.slice(start + 1);
   const end = rest.indexOf("");
   return end === -1 ? rest : rest.slice(0, end);
@@ -1918,6 +1939,95 @@ const posturePageHits = (rendered: string | undefined): string[] =>
 /** The retired-claim delta's own lines, cut out of a rendered sweep window. */
 const retiredDelta = (rendered: string | undefined): string[] =>
   blockUnder(rendered, "(retired-claim delta)");
+
+/**
+ * The domain modules a phrase delta armed, cut out of a rendered sweep window
+ * — `undefined` where the window rendered no such block, which is the whole
+ * claim for a range that touched no posture page.
+ */
+const armedModules = (rendered: string | undefined): string[] | undefined =>
+  blockIfAny(rendered, "declared sweep-domain module(s) the phrase delta arms");
+
+/**
+ * A phrase delta arms every module across the domain, and the window's own
+ * sentence saying so names none of them. The set is the declaration's, read
+ * against the tree the window already has open — so a tick handed the
+ * sentence alone has to rebuild it, and a tick that walks the tree its own
+ * way sweeps a domain nobody declared
+ * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*).
+ */
+it("a sweep window whose range touched a posture page lists the domain modules the phrase delta arms", () => {
+  const base = commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "src/quiet.ts": "export const q = 1;\n",
+      "elsewhere/x.md": "outside the declared domain\n",
+    },
+    "build: a",
+  );
+  writeState();
+
+  commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
+  commit(
+    { "rules/posture.md": "# Posture\n\nA phrase.\n" },
+    "rules: a phrase delta",
+  );
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  // Vacuity guards: the range really carries a phrase delta, and the touched
+  // union really is narrower than the domain that delta arms — otherwise the
+  // listing below could be the frontier's own paths under a second header.
+  expect(posturePageHits(rendered)).toEqual(["rules/posture.md"]);
+  expect(frontierPaths(rendered)).toEqual(["src/a.ts"]);
+
+  // Every tracked module the declared domain names, whatever the range
+  // touched — and nothing outside it.
+  expect(armedModules(rendered)).toEqual(["src/a.ts", "src/quiet.ts"]);
+  expect(rendered).toContain(
+    `=== 2 declared sweep-domain module(s) the phrase delta arms`,
+  );
+  // The cursor is unchanged by the widening: the frontier's own header still
+  // counts the range it was drawn over.
+  expect(rendered).toContain(`touched since ${base}, by 2 commit(s) ===`);
+});
+
+/**
+ * The converse, and what keeps the listing a statement rather than a fixture:
+ * a range that touched no posture page drew no whole-domain frontier, so the
+ * window renders no such block. An empty one would read as a phrase delta
+ * that armed nothing; a populated one as a frontier the range never drew.
+ */
+it("a sweep window whose range touched no posture page lists no domain module", () => {
+  commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "src/quiet.ts": "export const q = 1;\n",
+    },
+    "build: a",
+  );
+  writeState();
+
+  commit({ "src/a.ts": "export const a = 2;\n" }, "build: bump a");
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  // Vacuity guards: a frontier really was drawn, over a domain carrying a
+  // module the range left alone — so an absent listing is the window
+  // declining to widen, not a tree with nothing to list.
+  expect(frontierPaths(rendered)).toEqual(["src/a.ts"]);
+  expect(posturePageHits(rendered)).toEqual(["(none)"]);
+  expect(gitLines("ls-files", "src")).toContain("src/quiet.ts");
+
+  expect(armedModules(rendered)).toBeUndefined();
+});
 
 it("the retired-claim delta carries a deleted line that begins with two dashes", () => {
   commit(
