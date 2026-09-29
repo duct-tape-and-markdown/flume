@@ -3130,6 +3130,160 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
     expect([...refilled.keys()]).toEqual([entryAttemptKey(first)]);
     expect(refilled.get(entryAttemptKey(first))?.mode).toBe("clean-exit");
   });
+
+  /**
+   * What a freed slot's re-read hands back when the queue stopped resolving
+   * under the wave — the two arms of `readPendingForDecision`
+   * (`src/pendingLedger.ts`) reached from the refill rather than from a tick's
+   * opening read.
+   *
+   * Both cases are one slot wide and shaped the same way: the first entry
+   * ships over a queue that still parses, and the second commits nothing, so
+   * its own pick writes no ledger rewrite (`commitAttemptLedger`,
+   * `src/waveMerge.ts`) and the corruption it lands on trunk is first read by
+   * the refill behind it. Which arm the read takes is the phase's declared
+   * fence and nothing else.
+   */
+  const MID_WAVE_CORRUPT = "{ corrupted mid-wave, not json";
+
+  /**
+   * The wave both cases drive: `A` ships a span, `B` corrupts the committed
+   * queue and exits clean. Returns the tick settled either way — whether it
+   * throws at all is one of the two properties under test.
+   */
+  async function waveWalledByRefillRead(writablePaths: string[]): Promise<{
+    outcome: Awaited<ReturnType<Dispatcher["tick"]>> | undefined;
+    thrown: unknown;
+    invocations: string[];
+  }> {
+    await writePending(fx.repo, [
+      { ...makeEntry("QR-A", ["src/qr-a.ts"]), priority: 20 },
+      { ...makeEntry("QR-B", ["src/qr-b.ts"]), priority: 10 },
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths,
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      // One slot, so QR-B reaches an agent only as the refill of the slot
+      // QR-A's merge freed, and the read after QR-B is the one that meets the
+      // corruption — with QR-A's span already on trunk.
+      supervisorPolicy: { maxParallel: 1 },
+    };
+
+    const invocations: string[] = [];
+    const agent: Agent = {
+      name: "refill-read-probe",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        invocations.push(slug);
+        if (slug === "qr-a") {
+          await writeAndCommit(
+            inv.cwd,
+            "src/qr-a.ts",
+            "A\n",
+            "build(QR-A): ship",
+          );
+        } else {
+          await commitEntryFile(
+            fx.repo,
+            entryFileName("CORRUPT"),
+            MID_WAVE_CORRUPT,
+          );
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    let outcome: Awaited<ReturnType<Dispatcher["tick"]>> | undefined;
+    let thrown: unknown;
+    try {
+      outcome = await dispatcher.tick();
+    } catch (err) {
+      thrown = err;
+    }
+    return { outcome, thrown, invocations };
+  }
+
+  it("a wave whose mid-wave queue re-read did not parse reports the parse failure on its result", async () => {
+    // The queue's entry files are this phase's to rewrite, so the re-read
+    // hands the failure back rather than refusing: the wave pulls nothing
+    // further and completes with the entries it already had.
+    const { outcome, thrown, invocations } = await waveWalledByRefillRead([
+      "src/**",
+      ".flume/plan/pending/*.json",
+    ]);
+
+    expect(thrown).toBeUndefined();
+    // Vacuity: both slots ran, so this wave really did take a refill read
+    // over a queue that parsed and then one that did not — and the span
+    // behind the wall reached trunk.
+    expect(invocations).toEqual(["qr-a", "qr-b"]);
+    expect(outcome?.result?.shippedTags).toEqual(["QR-A"]);
+    expect(outcome?.result?.nothingPickable).toBeUndefined();
+
+    // The claim: the wall is a fact of this tick on the surface a handoff
+    // reads, under the field the opening read already reports through — so
+    // "the queue stopped resolving" is distinguishable from "the wave drained
+    // it", which `pendingAfter`/`pickableAfter` alone cannot say.
+    const failure = outcome?.result?.queueParseFailure;
+    expect(failure?.path).toBe(".flume/plan/pending");
+    expect(failure?.errors.map((e) => e.file)).toEqual([
+      entryFileName("CORRUPT"),
+    ]);
+  });
+
+  it("a wave walled by a mid-wave queue re-read the phase cannot rewrite reports a verdict naming the spans it shipped", async () => {
+    // The same wave, with the queue outside the fence: this re-read refuses
+    // outright (`readPendingForDecision`, `src/pendingLedger.ts`) from inside
+    // a freed slot's continuation, and QR-A's span is already on trunk when
+    // it does.
+    const { outcome, thrown, invocations } = await waveWalledByRefillRead([
+      "src/**",
+    ]);
+
+    expect(thrown).toBeUndefined();
+    expect(invocations).toEqual(["qr-a", "qr-b"]);
+    expect(outcome?.failed).toBe(true);
+    // A queue a fresh process reads the same bytes out of: mount-dead, the
+    // same class the opening read's refusal carries.
+    expect(outcome?.ledgerRefusal).toBe("parse-failure");
+
+    // The claim: the refusal rides out past the settled wave carrying its
+    // facts, the way the ledger rewrite's refusal already does — not bare,
+    // where `tick()` would read it as a decide-read that refused before any
+    // agent ran and the wave's verdict would vanish with the throw.
+    const verdict = outcome?.verdict;
+    expect(verdict).toBeDefined();
+    expect(verdict?.shippedTags).toEqual(["QR-A"]);
+    expect(verdict?.committed).toBe(true);
+    // Both picks are named, so the verdict is the settled wave's and not one
+    // built at the refusing slot.
+    expect(verdict?.tags).toEqual(["QR-A", "QR-B"]);
+    // And it names which read refused: an operator repairs a queue nothing
+    // can parse differently from a ledger commit git refused.
+    expect(verdict?.summary).toContain("mid-wave queue re-read refused");
+
+    // The refusal preserved the bytes rather than deriving a rewrite from a
+    // read that failed.
+    expect(
+      await readFile(join(queueDirOf(fx.repo), entryFileName("CORRUPT")), "utf8"),
+    ).toBe(MID_WAVE_CORRUPT);
+  });
 });
 
 

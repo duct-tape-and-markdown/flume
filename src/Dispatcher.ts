@@ -952,18 +952,23 @@ export class Dispatcher {
           : await runFanout(this.legCtx, phase, agent, chain, forkResolver);
     } catch (err) {
       // Two throws reach here, and neither leaves this tick any more work to
-      // do. A bare `PendingParseFailure` is the decide-read refusing before
-      // any agent ran, because this phase's declared fence does not admit the
-      // ledger (`readPendingForDecision`, `src/pendingLedger.ts`, whose
-      // reason `err.message` carries); its repair is a tick of the phase that
-      // *does* declare the queue writable, which the decide-read's carve-out
-      // lets run over exactly this file (spec/pending.md, "Queue reads are
-      // strict"), and that classification stays this arm's alone. A
-      // `WaveLedgerRefusal` is a wave whose shipped work already landed on
-      // trunk and whose ledger rewrite then refused — the rewrite read that
-      // would not parse, a `git commit --only` fatal under a paused merge, a
-      // disk error; its `cause` says which, and the tags it carries are the
-      // same either way, which is why the carry is not keyed on one of them.
+      // do. A bare `PendingParseFailure` is the *opening* decide-read
+      // refusing before any agent ran, because this phase's declared fence
+      // does not admit the ledger (`readPendingForDecision`,
+      // `src/pendingLedger.ts`, whose reason `err.message` carries); its
+      // repair is a tick of the phase that *does* declare the queue writable,
+      // which the decide-read's carve-out lets run over exactly this file
+      // (spec/pending.md, "Queue reads are strict"). The claim that no agent
+      // ran is this arm's because a wave's own mid-wave re-read arrives
+      // wrapped: a freed slot that refuses over the same fence leaves as a
+      // `WaveLedgerRefusal` carrying the spans already on trunk
+      // (`waveReadRefusal`, `src/waveMerge.ts`). That is the other throw — a
+      // wave whose shipped work landed and whose pending-ledger read or write
+      // then refused: the rewrite read that would not parse, a freed slot's
+      // re-read, a `git commit --only` fatal under a paused merge, a disk
+      // error; its `cause` says which, and the tags it carries are the same
+      // in every case, which is why the rewrite's carry is not keyed on one
+      // of them.
       //
       // Everything else is an ordinary throw and keeps propagating. Both arms
       // are `failed: true` and neither is softened — but they are not one

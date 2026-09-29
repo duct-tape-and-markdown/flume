@@ -42,6 +42,7 @@ import {
 import {
   entryExtensionPayload,
   type PendingEntry,
+  type QueueParseFailure,
 } from "./PendingSchema.js";
 import type {
   Chain,
@@ -66,6 +67,7 @@ import {
   mergeAttempt,
   openWaveMerge,
   waveMergeError,
+  waveReadRefusal,
   type EntryAttempt,
 } from "./waveMerge.js";
 import { createWorktree, teardownWorktreeInstance } from "./worktrees.js";
@@ -295,11 +297,19 @@ export async function runFanout(
   // which is the one command an operator has for testing a staged fix before
   // acking the stop.
   let stopFlagSeen = false;
-  // A refill read that did not resolve — an unparseable queue this phase
-  // cannot rewrite. The entries in flight settle and the wave leaves with
-  // them; it pulls nothing more over a queue it could not read
-  // (`.claude/rules/engineering.md`, *Loud or nothing*).
-  let refillWalled = false;
+  // A refill read that did not resolve, held as the failure it read rather
+  // than a flag beside it: the entries in flight settle and the wave leaves
+  // with them, pulling nothing more over a queue it could not read
+  // (`.claude/rules/engineering.md`, *Loud or nothing*), and the failure
+  // itself rides the result on the field the opening read already reports
+  // through (`TickResult.queueParseFailure`) — the wall is the fact of this
+  // tick, not a log line a `handoff` cannot reach.
+  //
+  // This is the arm the phase's own fence admits, so the read handed the
+  // failure back; the arm it does not admit throws instead, and leaves this
+  // wave past the settled merge stage carrying its verdict (`waveReadRefusal`
+  // (`src/waveMerge.ts`)).
+  let refillParseFailure: QueueParseFailure | undefined;
   // One promise per slot this wave opened, appended to as freed slots refill.
   const slots: Promise<void>[] = [];
   // The first throw out of a slot's own leg — the attempt machinery, not the
@@ -447,7 +457,7 @@ export async function runFanout(
   const wavePulls = (): boolean =>
     !leg.attemptCtx.stopSignal?.aborted &&
     !stopFlagSeen &&
-    !refillWalled &&
+    refillParseFailure === undefined &&
     mergeError === undefined &&
     slotError === undefined;
 
@@ -476,7 +486,7 @@ export async function runFanout(
     const { pending: live, queueParseFailure: broken } =
       await readPendingForDecision(leg, phase);
     if (broken) {
-      refillWalled = true;
+      refillParseFailure = broken;
       leg.log.warn(
         `[flume] ${phase.name}: the queue did not parse mid-wave; this wave pulls nothing further and the entries in flight finish`,
       );
@@ -560,7 +570,13 @@ export async function runFanout(
   // awaiting a slot is what guarantees its own refill is already appended:
   // the append happens in the slot promise's own `finally`.
   for (let i = 0; i < slots.length; i++) await slots[i]!;
-  if (slotError !== undefined) throw slotError;
+  // A queue re-read this phase's fence cannot rewrite refused inside a freed
+  // slot's continuation, and leaves here rather than bare: every slot has
+  // finished behind this line, so the spans this wave already carried onto
+  // trunk are facts a verdict has to record — the same reason its `mergeError`
+  // sibling below carries one (`waveReadRefusal`, `src/waveMerge.ts`). Any
+  // other throw out of a slot's own leg passes through untouched.
+  if (slotError !== undefined) throw await waveReadRefusal(merge, slotError);
   // A refused ledger rewrite becomes its `WaveLedgerRefusal` here and not at
   // the pick that hit it: every slot has finished behind this line, so the
   // verdict the error carries names the whole wave — the spans already landed
@@ -675,6 +691,15 @@ export async function runFanout(
     };
   });
 
+  // The queue read that did not resolve, whichever of this wave's two reads
+  // hit it: the opening decide-read (which leaves nothing pickable, so that
+  // wave returned above) or a freed slot's refill, which walls a wave whose
+  // earlier spans are already on trunk. One field either way — a `handoff`
+  // asking "did this tick's queue resolve" reads one place
+  // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+  // never rediscovered*).
+  const queueFailure = queueParseFailure ?? refillParseFailure;
+
   const pendingAfterWave = await readPendingTolerant(leg);
   // The post-wave re-derivation is a second selection over a second world:
   // this wave's cherry-picks and ledger commit moved the tip, and its own
@@ -737,7 +762,7 @@ export async function runFanout(
       ...(stakeLosses.length > 0 ? { stakeLosses } : {}),
       shippedTags: mergeStage.shipped.map((s) => s.tag),
       revertedTags: mergeStage.mergeReverted.map((e) => e.tag),
-      ...(queueParseFailure ? { queueParseFailure } : {}),
+      ...(queueFailure ? { queueParseFailure: queueFailure } : {}),
     },
     ...(mergeStage.noCommit ? { noCommit: mergeStage.noCommit } : {}),
     ...(mergeStage.tipMoved ? { tipMoved: mergeStage.tipMoved } : {}),

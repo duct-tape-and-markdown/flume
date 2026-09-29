@@ -652,15 +652,23 @@ export interface TickResult {
    */
   nothingPickable?: boolean;
   /**
-   * The same fact `TickContext.queueParseFailure` handed this tick's agent,
-   * reported back on the result so a `handoff` reads it too. Absent on every
-   * tick whose queue resolved.
+   * The queue read this tick acted on that did not resolve, reported so a
+   * `handoff` reads it too. Absent on every tick whose queue reads resolved.
+   *
+   * Usually the fact `TickContext.queueParseFailure` handed this tick's agent
+   * — the opening decide-read's. On a wave it may instead come from a read no
+   * `TickContext` was ever handed: a freed slot re-reads the live queue and an
+   * unparseable one walls the wave there (`refillRead`, `src/waveTick.ts`),
+   * after the agents that ran had already been given a queue that parsed. One
+   * field for both, because the question a `handoff` asks is whether this
+   * tick's queue resolved, not which of the tick's reads asked.
    *
    * What it buys a `handoff`: `pendingAfter`/`pickableAfter` come from the
    * post-tick re-read and say nothing about the decide-read this tick acted
    * on, and a fanout wave over an unparseable queue has nothing pickable by
    * construction — so without this field a queue that never resolved is
-   * indistinguishable from a drained one, which is the silent degradation
+   * indistinguishable from a drained one, and a wave walled mid-flight from
+   * one that drained the queue it was given, which is the silent degradation
    * the strict read exists to prevent (`.claude/rules/engineering.md`, *Loud
    * or nothing*).
    */
